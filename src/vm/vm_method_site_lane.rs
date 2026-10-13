@@ -305,7 +305,8 @@ impl Interpreter {
             // The answer can be the receiver's own live node (`%(%x)`), which
             // another thread may restructure while this renders it (#13079).
             Ok(v) => {
-                let _read = crate::value::container_lock::ContainerStructGuard::acquire_for(None, v);
+                let _read =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, v);
                 format!("ok:{}", crate::runtime::gist_value(v))
             }
             Err(e) => format!("err:{}", e.message),

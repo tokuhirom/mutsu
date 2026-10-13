@@ -10,11 +10,11 @@
 //
 // Spec: https://docs.raku.org/routine/Hash and https://docs.raku.org/routine/Map
 
-use crate::value::container_lock::ContainerStructGuard;
 use crate::runtime::Interpreter;
 use crate::runtime::utils::set_hash_original_keys;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
+use crate::value::container_lock::ContainerStructGuard;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
