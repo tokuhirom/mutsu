@@ -320,14 +320,23 @@ fn lower_contextualized(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeE
     })())
 }
 
-/// `<rx=$r>` / `<foo=[bao]>`: an alias over an assertion that is no subrule
-/// call (those are the tree's own `SubruleAlias`).
+/// `<rx=$r>` / `<foo=[bao]>` / `<q=::(EXPR)>`: an alias over an assertion
+/// that is no named subrule call (those are the tree's own `SubruleAlias`).
 fn lower_alias(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
     let assertion = super::lower::named_child(node, "assertion").ok()?;
-    if !matches!(
-        assertion.class,
-        RakuAstClass::RegexAssertionInterpolatedVar | RakuAstClass::RegexAssertionCharClass
-    ) {
+    let symbolic_call = assertion.class == RakuAstClass::RegexAssertionNamed
+        && super::lower::named_child(assertion, "name").is_ok_and(|name| {
+            matches!(
+                super::name_parts::name_shape(name),
+                Some(super::name_parts::NameShape::Indirect { .. })
+            )
+        });
+    if !symbolic_call
+        && !matches!(
+            assertion.class,
+            RakuAstClass::RegexAssertionInterpolatedVar | RakuAstClass::RegexAssertionCharClass
+        )
+    {
         return None;
     }
     Some((|| {

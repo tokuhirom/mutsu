@@ -4602,6 +4602,7 @@ t/rakuast/rakuast-regex-quote-escapes.t
 t/rakuast/rakuast-regex-source-cohort.t
 t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
+t/rakuast/rakuast-regex-symbolic-subrule.t
 t/rakuast/rakuast-regex-tree-gaps.t
 t/rakuast/rakuast-regex.t
 t/rakuast/rakuast-require-statement.t
@@ -4808,6 +4809,7 @@ t/regex/match/regex-separator-conjunction-captures.t
 t/regex/match/regex-separator-quant-capture.t
 t/regex/match/regex-smartmatch-type-object.t
 t/regex/match/regex-stale-named-capture-cleared.t
+t/regex/match/regex-symbolic-call-capture.t
 t/regex/match/regex-trailing-unmatched-optional-capture.t
 t/regex/match/regex-tree-array-captures.t
 t/regex/match/regex-tree-captures.t
@@ -4936,6 +4938,7 @@ t/regex/regex-ltm-furthest-fate.t
 t/regex/regex-ltm-litlen-subrule-llmarks.t
 t/regex/regex-ltm-losing-branch-code.t
 t/regex/regex-ltm-measured-branch-rank.t
+t/regex/regex-ltm-nfa-entry-points.t
 t/regex/regex-ltm-nfa-proto.t
 t/regex/regex-ltm-nfa.t
 t/regex/regex-ltm-proto-dispatch.t
@@ -5008,6 +5011,7 @@ t/regex/regex-str-coercion-warns.t
 t/regex/regex-subpattern-parse-memo.t
 t/regex/regex-subrule-absolute-position.t
 t/regex/regex-subrule-parse-cache.t
+t/regex/regex-symbolic-call-lazy.t
 t/regex/regex-temp-dynamic-keeps-value.t
 t/regex/regex-tilde.t
 t/regex/regex-tree-angle-interpolation.t

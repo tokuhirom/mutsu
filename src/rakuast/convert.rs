@@ -4603,6 +4603,25 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             fields.push(node_field(Some("assertion"), interpolated));
             (RakuAstClass::RegexAssertionLookahead, fields)
         }
+        // `<::(EXPR)>` -> `Assertion::Named` over `Name(Part::Empty,
+        // Part::Expression(EXPR))` (measured on 2026.09).
+        RegexNode::SymbolicSubrule {
+            expr, capturing, ..
+        } => {
+            let part = RakuAstNode {
+                class: RakuAstClass::NamePartExpression,
+                fields: vec![node_field(None, convert_expr(expr)?)],
+            };
+            let name = name_parts::name_from_parts(vec![
+                name_parts::leading_empty(),
+                Value::rakuast(Box::new(part)),
+            ]);
+            let mut fields = vec![node_field(Some("name"), name)];
+            if *capturing {
+                fields.push(leaf_field(Some("capturing"), Value::truth(true)));
+            }
+            (RakuAstClass::RegexAssertionNamed, fields)
+        }
         RegexNode::Callable { name, args, .. } => {
             let mut fields = vec![node_field(Some("callee"), var_lexical("&", name))];
             if !args.is_empty() {

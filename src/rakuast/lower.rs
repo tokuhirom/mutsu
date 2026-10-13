@@ -3595,6 +3595,22 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
             array: bool_field(node, "array")?,
             regex: Box::new(lower_regex_node(named_child(node, "regex")?)?),
         }),
+        RakuAstClass::RegexAssertionNamed
+            if let Some(NameShape::Indirect {
+                expr,
+                tail,
+                trailing: false,
+            }) = name_parts::name_shape(named_child(node, "name")?)
+                && tail.is_empty() =>
+        {
+            let expr = lower_expr(expr)?;
+            Ok(RegexNode::SymbolicSubrule {
+                source: crate::regex_tree::expression_source(&expr)
+                    .ok_or_else(|| unsupported(node))?,
+                expr: Box::new(expr),
+                capturing: bool_field(node, "capturing")?,
+            })
+        }
         RakuAstClass::RegexAssertionNamed => Ok(RegexNode::Subrule {
             name: lower_regex_subrule_name(named_child(node, "name")?)?,
             capturing: bool_field(node, "capturing")?,

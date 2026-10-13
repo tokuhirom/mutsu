@@ -761,3 +761,16 @@ the built-in keyword (`class`, `role`, `grammar`) otherwise. The parser's
 record: conversion renders it (`rakuast::declare_how`), lowering hands it back
 through the package head, and registration resolves the HOW from the keyword
 exactly as for a parsed declaration. Nothing has to encode the metaobject.
+
+### 6.28 S10: symbolic subrule calls in regexes (2026-10-13)
+
+`<::(EXPR)>` calls the rule whose name `EXPR` computes when the cursor reaches
+it. Measured on rakudo 2026.09, it is a `Regex::Assertion::Named` whose name
+is `Name(Part::Empty, Part::Expression(EXPR))`, with `capturing => True`
+unless written `<.::(EXPR)>`; `<q=::(EXPR)>` wraps it in
+`Regex::Assertion::Alias`. The regex tree had no node for it, so a whole regex
+holding one lost its tree. `RegexNode::SymbolicSubrule` keeps the parsed
+expression and its written source; execution stays on the runtime parser path
+(the matcher resolves the name from the regex text, as before), and lowering
+rebuilds the source with `expression_source`, which now also renders an
+interpolated string.
