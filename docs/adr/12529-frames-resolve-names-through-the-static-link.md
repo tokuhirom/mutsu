@@ -490,6 +490,16 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      the *last* iteration's lexicals there (`for 1, 2 -> $v { multi m(Int) {
      $v }; @a.push: -> { m(0) } }` gives `2 2` in rakudo); mutsu gives `1 2`.
      Neither is pinned.
+   - The dispatcher records the registry generation its candidates were
+     gathered under. While that generation is current (the declaring block
+     is live) and the package matches, the closure's `&q(...)` takes the
+     `CallFunc` path and its multi light cache
+     (`family_dispatcher_is_current`); without it the call went through
+     `call_sub_value`'s by-name resolution and cost 80.7k Ir instead of 28.8k
+     (`perf/12529-block-multi-callfunc-path`). Out of scope,
+     `captured_candidates_are_live` compares the compiled candidates'
+     fingerprints, not only package and name: a later block's own `multi
+     q7(Int)` used to take a call meant for the captured one.
 
    Left on the registry: a multi family's generation is still the registry's
    `fn_resolve_gen`, a multi *method* call has no cache in front of the
