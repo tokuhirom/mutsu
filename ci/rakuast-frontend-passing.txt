@@ -4731,6 +4731,7 @@ t/rakuast/rakuast-role.t
 t/rakuast/rakuast-routine-trait-order.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sigilled-constant.t
+t/rakuast/rakuast-sigilless-declarator-init.t
 t/rakuast/rakuast-signature-decl.t
 t/rakuast/rakuast-signature-literal.t
 t/rakuast/rakuast-signature-members.t
@@ -7271,6 +7272,7 @@ t/vm/sigilless-bind-chain.t
 t/vm/sigilless-bind-class-body-scratch-var.t
 t/vm/sigilless-bind-writability-source.t
 t/vm/sigilless-bind-writable-alias.t
+t/vm/sigilless-bound-to-declarator.t
 t/vm/sigilless-comma-decl.t
 t/vm/sigilless-map-args.t
 t/vm/sigilless-map-assign-ro.t

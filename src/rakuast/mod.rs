@@ -3425,6 +3425,22 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(Value::str(sigil.to_string()));
     }
+    // `VarDeclaration::Simple.name`: the full spelling, sigil, twigil and
+    // `desigilname` together (`$x`, `$*x`, `@!a`), as rakudo derives it.
+    if method == "name"
+        && node.class == RakuAstClass::VarDeclarationSimple
+        && let Ok(sigil) = lower::leaf_str(node, "sigil")
+        && let Some(RakuAstFieldValue::Node(desigil)) = node
+            .fields
+            .iter()
+            .find(|f| f.name == Some("desigilname"))
+            .map(|f| &f.value)
+        && let Some(desigil) = lower::rakuast_node_of(desigil)
+        && let Some(name_parts::NameShape::Identifier(desigil)) = name_parts::name_shape(desigil)
+    {
+        let twigil = lower::leaf_str(node, "twigil").unwrap_or_default();
+        return Some(Value::str(format!("{sigil}{twigil}{desigil}")));
+    }
     // `Name.from-identifier("a")` stores one identifier leaf; `.parts` answers
     // the one `Name::Part::Simple` it denotes (rakudo does not split on `::`).
     if method == "parts"

@@ -1077,3 +1077,21 @@ keeps under their `\name` spelling.
 against the scope that runs `.AST` and renders a caller's constant *and* a
 caller's class as `Term::Name` (only the source's own and the setting's types
 are `Type::Simple`), so `.AST` passes all of them as terms.
+
+### 6.49 S10: a sigilless term bound to a declarator (2026-10-13)
+
+`my \foo = my $x = 3` and `my \foo = my $ = -3` bind `foo` to the new
+Scalar. The parser splits them into the inner declaration (an anonymous `$`
+renamed `anon-sigilless-src-N`, so two of them in a scope stay apart) followed
+by the sigilless bind to its variable. Rakudo 2026.09 renders the inner
+declaration itself as the initializer:
+`VarDeclaration::Term(initializer => Initializer::Assign(VarDeclaration::Simple
+| VarDeclaration::Anonymous))`. `sigilless_decl::declaration` now recognises
+the pair (`declarator`), the converter renders the inner declaration with its
+anonymous name restored, and lowering hands it back to
+`build_sigilless_bind_stmt`, which splits it again.
+
+A `my $ = EXPR` in expression position is a `VarDeclaration::Anonymous` with
+rakudo's default scope (no `scope` field), no longer a `VarDeclaration::Simple`
+named `__ANON_STATE__`; lowering gives it a non-`state` declaration.
+`VarDeclaration::Simple.name` answers the full spelling (`$x`, `$*x`).
