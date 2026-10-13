@@ -2864,7 +2864,23 @@ impl Interpreter {
                     // the body's `$colour` read finds an (undefined) value
                     // instead of throwing "not declared".
                     if let Some(sub_params) = &pd.sub_signature {
-                        bind_named_rename_sub_signature(self, sub_params, &value, &pd.traits)?;
+                        // `:exitcode([$e = 0, :pass($p) = True])` with no `:exitcode`
+                        // passed destructures an empty list, so the inner
+                        // defaults apply; the placeholder would unpack as one
+                        // undefined element and hide them.
+                        let anonymous_unpack = matches!(
+                            sub_params.as_slice(),
+                            [only] if matches!(only.name.as_str(), "@" | "%")
+                                && only.sub_signature.is_some()
+                        );
+                        let empty;
+                        let target = if anonymous_unpack {
+                            empty = Value::real_array(Vec::new());
+                            &empty
+                        } else {
+                            &value
+                        };
+                        bind_named_rename_sub_signature(self, sub_params, target, &pd.traits)?;
                     }
                 }
                 // Check the where constraint against the *bound* value, whether it
