@@ -880,3 +880,16 @@ the converter's declared-name table and the module export scan share; an
 lowered form, so the converter reads it as the node and lowering builds it
 back (`src/rakuast/hyper_prefix.rs`), the way the atomic operators map to
 `ast::atomic_op`'s calls.
+
+### 6.38 S10: loop controls with a value or a slip (2026-10-13)
+
+Rakudo 2026.09 renders every loop control as a bare
+`Call::Name::WithoutParentheses` over its argument, whether that is a label
+(`next L`, a `Term::Name`), a v6.e value (`last $_ * 10`, `next Empty`) or a
+slip (`next |$c`). Statement lowering only accepted a label and refused the
+rest; a non-label argument now lowers to the expression form the parser keeps
+for it. Two parser rules are shared rather than restated: a bare word is a
+label when one of that name is in scope or by the parser's own
+`is_loop_control_label` (any word before v6.e, a declared or all-caps one
+from v6.e), and a slipped argument stays the call form in
+`loop_control_expr`, as `loop_control_call_form` parses it.

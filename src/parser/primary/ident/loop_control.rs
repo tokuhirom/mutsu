@@ -21,6 +21,7 @@ use crate::parser::expr::{expression, term_expr};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::symbol::Symbol;
+use crate::token_kind::TokenKind;
 use crate::value::{Value, ValueView};
 
 /// `last |c` / `next |c` / `redo |c`: the loop-control term applied to a slipped
@@ -120,6 +121,14 @@ fn opens_empty_parens(input: &str) -> bool {
 
 /// Whether the language version in force has the value-taking `last` /
 /// `next` candidates (v6.e and later).
+/// Whether the bare word `name` after `last` / `next` / `redo` is a loop
+/// label rather than the v6.e value term (`next Empty`): before v6.e every
+/// bare word is a label; from v6.e only a declared or all-caps one is.
+// Cost: O(n), n = length of `name`.
+pub(crate) fn is_loop_control_label(name: &str) -> bool {
+    !v6e_loop_values() || crate::parser::helpers::is_loop_label_name(name)
+}
+
 fn v6e_loop_values() -> bool {
     let version = crate::parser::current_language_version();
     version
@@ -134,6 +143,17 @@ fn v6e_loop_values() -> bool {
 /// error; the lowering leaves the call to run time).
 // Cost: O(a), a = number of arguments.
 pub(crate) fn loop_control_expr(name: &str, args: Vec<Expr>) -> Option<Expr> {
+    // `next |c` slips a capture that may hold a label: the call form, never a
+    // value (see `loop_control_call_form`).
+    if let [
+        Expr::Unary {
+            op: TokenKind::Pipe,
+            ..
+        },
+    ] = args.as_slice()
+    {
+        return Some(loop_control_call(name, args));
+    }
     loop_control_with_args(name, args, "").ok()
 }
 
