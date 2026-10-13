@@ -53,6 +53,7 @@ pub(super) static ROWS: &[MethodRow] = rows! {
     "gist" => gist,
     "raku" => raku,
     "Str" => str_of,
+    "Stringy" => stringy_of,
 };
 
 /// `Blob` declares `Buf` but not `Blob`; `Buf` declares both.
@@ -263,10 +264,16 @@ pub(crate) fn str_of(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
     str_or_stringy(target, "Str")
 }
 
+/// `.Stringy`: as `.Str`, naming `Stringy` in the exception.
+// Cost: O(e) for `utf8`, O(1) otherwise, e = elements.
+fn stringy_of(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    str_or_stringy(target, "Stringy")
+}
+
 /// `.Str` and `.Stringy` of a buffer; `method` names the one called, for the
 /// exception.
 // Cost: O(e) for `utf8`, O(1) otherwise, e = elements.
-pub(crate) fn str_or_stringy(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+fn str_or_stringy(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     let class = class_of(target)?;
     if class.resolve() == "utf8"
         && let Some(decoded) = crate::builtins::decode_buf_method(target, Some("utf-8"))

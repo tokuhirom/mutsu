@@ -2158,6 +2158,41 @@ Left in `dispatch_core_coerce.rs`: `Str`/`Stringy` (a deletion probe lost only `
 an unhandled `Failure`, but `Str` is the most common method there is, so it wants its own slice and a full debug run), the
 `Buf`/`Blob` reinterpret block (the `Blob`/`Buf` rows' implementation, reached by a buffer class with no shape) and `Complex.Complex`.
 
+### 9.93 Slice 5: `Mu.Str` and `Mu.Stringy` are rows (2026-10-13)
+
+`refactor/11276-mu-str-rows`. The `Str`/`Stringy` arm of `dispatch_core_coerce.rs` rendered every receiver no `Str` row reached, and
+`methods_0arg/mod.rs` kept a second `Str`/`Stringy` block for buffers. Rakudo declares both names on `Mu` (`Stringy` is `self.Str`)
+and `Str` again on most built-in types; every closed shape but the `IO::Spec` type objects has its own `Str` row already, and only
+`Str` (`Str.Stringy` is `self`), `Seq` and now `Blob`/`Buf` have their own `Stringy`. Decisions:
+
+1. **`Mu.Str` is a pure row** (`method_table::ctors_mop::mu_str`, `TYPE_OBJECT_OK`) with the arm's body: an unhandled `Failure`
+   throws, a lazy array is `...`, a collection holding a zero-denominator Rational dies, everything else with no shape (a
+   `Junction`, a `Promise`, a `Channel`, `Nil`) renders. A built-in type object warns and resumes with `""` through
+   `warn_signal_with_resume`, the mechanism `Mu.Numeric` uses (§9.92). It declines what needs the interpreter: an instance or a
+   mixin (a class or role may declare `Str` or `message`), a user type object, an enum, a lazy list, a list or quant hash with an
+   object element, a regex (it warns) and a code object (`Code.Str`).
+2. **`Mu.Stringy` is an interpreter row that calls `Str`** on the receiver, which is Rakudo's definition. A closed shape with no
+   `Stringy` (`Array`, `Hash`, `Date`, `IO::Path`, ...) reaches it through `MU_FOR_CLOSED_SHAPES`, so its `Stringy` is its `Str`.
+   It cannot answer a pure entry; no pure caller asks `Stringy` (the debug `prove t/` run over the whole suite agrees).
+3. **A subclass instance keeps the interpreter's answer.** `answer_shapeless`'s MRO walk would find a built-in ancestor's `Str` row
+   (`Exception.Str`, `Str.Str`), which reads the ancestor's state: an `Exception` subclass with its own `message` rendered "E with
+   no message" and a `Str` subclass lost its type. For `Str`/`Stringy` the walk answers only when it reaches `Mu`; a built-in
+   ancestor that declares the name declines to the interpreter, as before. (The first debug run found these four regressions.)
+4. **`Blob.Stringy`/`Buf.Stringy` are rows** (`str_or_stringy`, which names `Stringy` in `X::Buf::AsStr`'s message), and the
+   slow path's buffer guard no longer refuses `.Str`: `$u."Str"()` on a `utf8` variable threw `X::Buf::AsStr` where `$u.Str`
+   decoded, because the quoted call takes `call_method_with_values` and its guard ignored `utf8`.
+5. **`Stringy` of a lazy list renders `...`** like `Str`: the VM's lazy-placeholder intercepts named `gist`/`Str`/`raku`/`perl`,
+   so `@lazy.Stringy` and `(1..*).lazy.Stringy` forced the list and threw `X::Cannot::Lazy`.
+
+`method-rows-report.py --arms`: the pure arity cascades go from 149 to 148 arms (the `Str`/`Stringy` arm; the buffer block was a
+`method ==` test the report does not count). The probe (`Str`/`Stringy`/`gist` over 110 receivers) changed only toward Rakudo:
+`Stringy` of an `IO::Special`, an `IO::Handle`, an `Exception`, a `NumStr`, a `Signature`, `1/0` and a lazy array now agree with their
+`Str`. Pinned in `t/types/mu-str-rows.t`.
+
+Found, not fixed: an allomorph's `.Stringy` is a plain `Str` (#13108) and `Signature.Str` renders the source form (#13109).
+
+Left in `dispatch_core_coerce.rs`: the `Buf`/`Blob` reinterpret block, `Complex.Complex` and the `Any.serial` arm.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

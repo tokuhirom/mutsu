@@ -1549,7 +1549,7 @@ impl Interpreter {
         // `...` for Str. An eager gather has neither `sequence_spec` nor
         // `lazy_pipe` and is forced & rendered normally below.
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "raku" | "perl")
+            && matches!(method, "gist" | "Str" | "Stringy" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-placeholder");

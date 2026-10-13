@@ -947,7 +947,7 @@ impl Interpreter {
         // rather than forcing the (possibly infinite) sequence. Must run before
         // the gather-coroutine force below, which would hang on an infinite list.
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "raku" | "perl")
+            && matches!(method, "gist" | "Str" | "Stringy" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
