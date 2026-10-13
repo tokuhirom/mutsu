@@ -74,7 +74,10 @@ pub(crate) fn export_registration(type_name: &str, tags: &[String]) -> Stmt {
 }
 
 fn is_declaration(stmt: &Stmt) -> bool {
-    matches!(stmt, Stmt::ClassDecl { .. } | Stmt::Package { .. })
+    matches!(
+        stmt,
+        Stmt::ClassDecl { .. } | Stmt::Package { .. } | Stmt::RoleDecl { .. }
+    )
 }
 
 /// The declaration `stmt` is, or the one inside its header wrapper (the
@@ -97,8 +100,11 @@ pub(crate) fn unwrap(stmt: &Stmt) -> Option<(&Stmt, Header)> {
     let at = parts.iter().position(is_declaration)?;
     let (before, rest) = parts.split_at(at);
     let (declaration, after) = rest.split_first()?;
-    let (Stmt::ClassDecl { name, .. } | Stmt::Package { name, .. }) = declaration else {
-        return None;
+    let name = match declaration {
+        Stmt::ClassDecl { name, .. } | Stmt::Package { name, .. } | Stmt::RoleDecl { name, .. } => {
+            name
+        }
+        _ => return None,
     };
     let type_name = name.resolve();
     let mut header = Header::default();

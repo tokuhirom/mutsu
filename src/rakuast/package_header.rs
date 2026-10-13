@@ -215,7 +215,9 @@ pub(super) fn lower_with_header(
     let (stripped, mut header) = strip(node)?;
     let mut stmt = lower(&stripped)?;
     let name = match &stmt {
-        Stmt::ClassDecl { name, .. } | Stmt::Package { name, .. } => name.resolve(),
+        Stmt::ClassDecl { name, .. } | Stmt::Package { name, .. } | Stmt::RoleDecl { name, .. } => {
+            name.resolve()
+        }
         _ => return Err(super::lower::unsupported(node)),
     };
     if let Stmt::ClassDecl {
@@ -223,6 +225,14 @@ pub(super) fn lower_with_header(
         custom_traits,
         ..
     } = &mut stmt
+        && let Some(tags) = header.export_tags.take()
+    {
+        custom_traits.push(crate::parser::export_type_marker(&tags));
+    }
+    if let Stmt::RoleDecl { custom_traits, .. } = &mut stmt
+        && custom_traits
+            .iter()
+            .any(|(name, _)| name == super::convert::MY_SCOPED)
         && let Some(tags) = header.export_tags.take()
     {
         custom_traits.push(crate::parser::export_type_marker(&tags));

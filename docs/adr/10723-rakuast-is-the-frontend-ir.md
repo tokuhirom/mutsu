@@ -673,3 +673,14 @@ initiating declaration as Rakudo does and retains declarations from its colon
 argument list as hidden model metadata. The RakuAST round-trip tests cover
 typed groups, `is rw`, typed defaults, nested colon declarations, and chained
 colon lists. The refreshed frontend ratchet passes 7,101 of 7,389 files.
+
+### 6.22 S10: role name adverbs (2026-10-13)
+
+Role declarations with `:ver`, `:auth` and `:api` now pass through the shared
+package-header conversion instead of being refused as parser-generated
+synthetic blocks. Conversion keeps the adverbs as colonpairs on the role name
+and retains a following parameterization signature. Lowering restores the
+parser's metadata setters around the role declaration, which keeps role body
+lexicals in scope for its methods. The focused RakuAST test checks the measured
+name and signature shape, round-trip composition, and a role body lexical. The
+frontend ratchet now passes 7,105 of 7,393 files.

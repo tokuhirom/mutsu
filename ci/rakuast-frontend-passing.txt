@@ -261,6 +261,7 @@ t/collections/lazy-seq/gather-lazy-hyper.t
 t/collections/lazy-seq/gather-lazy.t
 t/collections/lazy-seq/gather-map-take-lazy-resume.t
 t/collections/lazy-seq/gather-nested-loop-pull.t
+t/collections/lazy-seq/gather-receiver-args.t
 t/collections/lazy-seq/gather-returns-seq.t
 t/collections/lazy-seq/gather-self-reference-iterator.t
 t/collections/lazy-seq/gather-seq-body-oracle.t
@@ -3554,6 +3555,7 @@ t/oo/method/code-set-name-and-add-method-sub.t
 t/oo/method/code-str-method-rows.t
 t/oo/method/code-unknown-method-not-found.t
 t/oo/method/coercion-method-captured-writeback.t
+t/oo/method/coercion-method-rows.t
 t/oo/method/coercion-param-type-object-user-method.t
 t/oo/method/coercion-str-method-dispatch.t
 t/oo/method/collection-aggregate-method-rows.t
@@ -4018,6 +4020,7 @@ t/oo/role/mro-roles-last-declared-first.t
 t/oo/role/multi-method-nested-role-narrowness.t
 t/oo/role/multi-method-roles.t
 t/oo/role/multi-subset-param-vs-unrelated-role-param-narrowness.t
+t/oo/role/my-enum-and-type-params-in-role.t
 t/oo/role/my-role-compound-name-qualification.t
 t/oo/role/my-role-declaration-site-identity.t
 t/oo/role/my-role-in-role.t
@@ -4103,6 +4106,7 @@ t/oo/role/role-composed-method-param-typo.t
 t/oo/role/role-composition-gaps.t
 t/oo/role/role-conflict.t
 t/oo/role/role-constraint-transitive-narrowness.t
+t/oo/role/role-decl-adverbs-signature.t
 t/oo/role/role-decl-expr-value.t
 t/oo/role/role-default-param-pun-name.t
 t/oo/role/role-default-type-capture-with-named-param.t
@@ -5325,6 +5329,7 @@ t/routines/dispatch/anonymous-any-multi-dispatch.t
 t/routines/dispatch/assoc-multidim-lvalue-edges.t
 t/routines/dispatch/begin-selective-import-proto-multi.t
 t/routines/dispatch/block-local-sub-dispatch.t
+t/routines/dispatch/block-multi-call-after-exit.t
 t/routines/dispatch/block-scoped-use-main-not-dispatched.t
 t/routines/dispatch/block-tail-assign-and-main-dispatch.t
 t/routines/dispatch/buf-range-slice-and-multidim-list-assign.t
@@ -6842,6 +6847,7 @@ t/vm/scope/compound-declared-name-is-not-a-scope.t
 t/vm/scope/conditional-my-declaration.t
 t/vm/scope/declaration-initializer-self-scope.t
 t/vm/scope/declaration-scope.t
+t/vm/scope/declarator-adverb-body-lexicals.t
 t/vm/scope/dynamic-array-hash-var-not-found.t
 t/vm/scope/dynamic-codevar-chdir.t
 t/vm/scope/dynamic-codevar-unbound.t

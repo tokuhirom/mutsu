@@ -523,7 +523,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::RegexDeclaration
         | RakuAstClass::TokenDeclaration
         | RakuAstClass::RuleDeclaration => lower_regex_declaration(node),
-        RakuAstClass::Role => super::role::lower(node),
+        RakuAstClass::Role => super::package_header::lower_with_header(node, super::role::lower),
         RakuAstClass::Method if super::proto::is_proto(node) => super::proto::lower(node),
         RakuAstClass::Method | RakuAstClass::Submethod
             if !node.fields.iter().any(|f| f.name == Some("name")) =>
