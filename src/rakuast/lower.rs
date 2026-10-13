@@ -467,6 +467,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             super::attribute_group::lower_colon(node)
         }
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
+        // `my $o .= $m.uc`: a postfix chain over a `.=` declaration.
+        RakuAstClass::ApplyPostfix if super::method_assign_decl::is_chained_declaration(node) => {
+            super::method_assign_decl::lower_chained(node)
+        }
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_statement(node),
@@ -1036,25 +1040,13 @@ pub(super) fn lower_dotty_assign(
 ) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let call = named_child(node, "right")?;
-    if !is_method_call(call) {
+    if !is_method_call(call) && !super::dynamic_method::is_dynamic(call) {
         return Err(unsupported(node));
     }
-    let quoted = call.class == RakuAstClass::CallQuotedMethod;
-    let name = crate::symbol::Symbol::intern(&if quoted {
-        quoted_method_name(call)?
-    } else {
-        call_name_str(call)?
-    });
-    let args = arg_exprs(call)?;
-    let modifier = dispatch_modifier(call)?;
-    let method_call = move |invocant: Expr| Expr::MethodCall {
-        target: Box::new(invocant),
-        name,
-        args: args.clone(),
-        modifier,
-        quoted,
-        sugar: false,
-    };
+    // The call over a placeholder invocant; each target the expansion reaches
+    // gets its own copy.
+    let template = lower_method_postfix(Expr::Literal(Value::NIL), call)?;
+    let method_call = move |invocant: Expr| super::dynamic_method::retarget(&template, invocant);
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
         return Ok(crate::parser::topic_dot_assign(method_call(target)));
     }
@@ -2919,10 +2911,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             is_binding = init.class == RakuAstClass::InitializerBind;
             if init.class == RakuAstClass::InitializerCallAssign {
                 let call = named_child_or_positional(init)?;
-                if call.class != RakuAstClass::CallMethod || dispatch_modifier(call)?.is_some() {
-                    return Err(unsupported(node));
-                }
-                call_assign = Some((call_name_str(call)?, arg_exprs(call)?));
+                call_assign = Some(super::dynamic_method::call_assign_initializer(call)?);
                 (Expr::Literal(Value::NIL), false)
             } else {
                 let source = named_child_or_positional(init)?;
@@ -2961,21 +2950,10 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     // A shaped array: the parser's `Array.new(shape => ..., data => ...)`.
     let shape_dims = super::keyed_hash::lower_dimensions(node, &sigil)?;
-    if shape_dims.is_some() && (is_binding || call_assign.is_some()) {
+    if shape_dims.is_some() && is_binding {
         return Err(unsupported(node));
     }
-    let expr = match shape_dims {
-        Some(dims) if has_initializer => {
-            custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
-            crate::ast::shaped_decl::new_with_data_expr(dims, expr)
-        }
-        Some(dims) => crate::ast::shaped_decl::new_expr(dims),
-        None => expr,
-    };
-    if has_initializer {
-        custom_traits.push(("__has_initializer".to_string(), None));
-    }
-    if let Some((method, args)) = call_assign {
+    if let Some((method, callee, args)) = call_assign {
         return Ok(crate::ast::method_assign_decl::expand(
             crate::ast::method_assign_decl::MethodAssignDecl {
                 name,
@@ -2988,10 +2966,26 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 custom_traits,
                 where_constraint: None,
                 method: crate::symbol::Symbol::intern(&method),
+                callee: callee.map(Box::new),
                 args,
+                chain: None,
+                // The parser keeps a shaped `.=` declaration's dimensions for
+                // its source only (`my @c[2;2] .= new(:shape(2,2), …)`).
+                shape: shape_dims,
                 is_v6c: crate::parser::current_language_version_starts_with("6.c"),
             },
         ));
+    }
+    let expr = match shape_dims {
+        Some(dims) if has_initializer => {
+            custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
+            crate::ast::shaped_decl::new_with_data_expr(dims, expr)
+        }
+        Some(dims) => crate::ast::shaped_decl::new_expr(dims),
+        None => expr,
+    };
+    if has_initializer {
+        custom_traits.push(("__has_initializer".to_string(), None));
     }
     // `:=`: the same declaration the parser builds, expanded by the same
     // function (`ast::bind_decl`). A natively typed scalar cannot be bound;
@@ -5165,7 +5159,7 @@ fn is_method_call(node: &RakuAstNode) -> bool {
 /// The `.?` / `.+` / `.*` dispatch modifier of a `Call::Method`, as the single
 /// character mutsu's `MethodCall.modifier` keeps. The field is absent for a
 /// plain `.method`.
-fn dispatch_modifier(node: &RakuAstNode) -> Result<Option<char>, RuntimeError> {
+pub(super) fn dispatch_modifier(node: &RakuAstNode) -> Result<Option<char>, RuntimeError> {
     // `self!priv(...)` is a class of its own, with no `dispatch` string.
     if node.class == RakuAstClass::CallPrivateMethod {
         return Ok(Some('!'));

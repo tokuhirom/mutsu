@@ -2192,14 +2192,15 @@ pub(super) fn dotty_assignment_with_left(
     left: RakuAstNode,
     call: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let Some(crate::ast::dotty_assign::DottyCall {
-        name,
-        args,
-        modifier,
-        quoted,
-    }) = crate::ast::dotty_assign::method_call(call)
-    else {
-        return Err(unsupported("`.=` with a call that is not a method call"));
+    let right = match crate::ast::dotty_assign::method_call(call) {
+        Some(crate::ast::dotty_assign::DottyCall {
+            name,
+            args,
+            modifier,
+            quoted,
+        }) => method_call_postfix(name, args, modifier, quoted)?,
+        // `$x .= &f` / `$x .= $m` / `$x .= "{...}"()`: a term as the method.
+        None => super::dynamic_method::call_assign_postfix(call)?,
     };
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyDottyInfix,
@@ -2212,10 +2213,7 @@ pub(super) fn dotty_assignment_with_left(
                     fields: Vec::new(),
                 },
             ),
-            node_field(
-                Some("right"),
-                method_call_postfix(name, args, modifier, quoted)?,
-            ),
+            node_field(Some("right"), right),
         ],
     })
 }
@@ -2561,7 +2559,10 @@ pub(super) fn var_declaration(
                 class: RakuAstClass::InitializerCallAssign,
                 fields: vec![node_field(
                     None,
-                    call_method(&form.method.resolve(), &form.args, None)?,
+                    match &form.callee {
+                        Some(callee) => super::dynamic_method::callee_postfix(callee, &form.args)?,
+                        None => call_method(&form.method.resolve(), &form.args, None)?,
+                    },
                 )],
             },
         };
@@ -6099,7 +6100,10 @@ fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeE
 /// Construct `Call::QuotedMethod` from the quoted-string expression that names
 /// it.  Dynamic quoted names retain their interpolation tree here rather than
 /// being flattened into a static method-name string.
-fn call_quoted_method_expr(name: RakuAstNode, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn call_quoted_method_expr(
+    name: RakuAstNode,
+    args: &[Expr],
+) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = vec![node_field(Some("name"), name)];
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));

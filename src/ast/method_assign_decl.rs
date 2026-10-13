@@ -20,7 +20,16 @@ pub(crate) struct MethodAssignDecl {
     pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
     pub(crate) where_constraint: Option<Box<Expr>>,
     pub(crate) method: Symbol,
+    /// A term as the method (`my $x .= &f`, `my $x .= $m`): the call's
+    /// `name_expr`. `method` is then empty.
+    pub(crate) callee: Option<Box<Expr>>,
     pub(crate) args: Vec<Expr>,
+    /// A postfix chain after the call (`my $o .= $m.uc`), over the declared
+    /// variable: it applies to the new value and is sunk, as in Rakudo.
+    pub(crate) chain: Option<Box<Expr>>,
+    /// A shaped array's dimensions (`my @c[2;2] .= new(...)`), kept for the
+    /// source only: the call builds the container.
+    pub(crate) shape: Option<Vec<Expr>>,
     pub(crate) is_v6c: bool,
 }
 
@@ -61,12 +70,18 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Stmt {
     let mut custom_traits = form.custom_traits.clone();
     if !matches!(target, Expr::BareWord(_)) {
         custom_traits.push((METHOD_ASSIGN_DECL_TRAIT.to_string(), None));
-    } else if !custom_traits.iter().any(|(n, _)| n == "__has_initializer") {
+    } else if form.shape.is_none() && !custom_traits.iter().any(|(n, _)| n == "__has_initializer") {
         custom_traits.push(("__has_initializer".to_string(), None));
     }
-    Stmt::VarDecl {
-        name: form.name.clone(),
-        expr: Expr::MethodCall {
+    let expr = match &form.callee {
+        Some(callee) => Expr::DynamicMethodCall {
+            target: Box::new(target),
+            name_expr: callee.clone(),
+            args: form.args.clone(),
+            modifier: None,
+            quoted: false,
+        },
+        None => Expr::MethodCall {
             target: Box::new(target),
             name: form.method,
             args: form.args.clone(),
@@ -74,6 +89,10 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Stmt {
             quoted: false,
             sugar: false,
         },
+    };
+    Stmt::VarDecl {
+        name: form.name.clone(),
+        expr,
         type_constraint: form.type_constraint.clone(),
         is_state: form.is_state,
         is_our: form.is_our,
@@ -88,8 +107,11 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Stmt {
 /// Keep the source form ahead of its bytecode-ready expansion.
 pub(crate) fn expand(form: MethodAssignDecl) -> Stmt {
     let declaration = expanded_declaration(&form);
-    Stmt::SyntheticBlock(vec![
+    let chain = form.chain.clone();
+    let mut stmts = vec![
         Stmt::SourceForm(Box::new(SourceForm::MethodAssignDecl(form))),
         declaration,
-    ])
+    ];
+    stmts.extend(chain.map(|chain| Stmt::Expr(*chain)));
+    Stmt::SyntheticBlock(stmts)
 }
