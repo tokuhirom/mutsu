@@ -940,3 +940,23 @@ Within one unit, a `constant` bound to a package the unit declares is that
 package (`constant E = Outer::Inner`): the converter renders `E` as a
 `Type::Simple` and copies every name declared under the target to the alias
 (`E::Status::Started`), in `src/rakuast/bareword/package_alias.rs`.
+
+### 6.41 S10: interpolating `words` quotes and colonpair word quotes (2026-10-13)
+
+An interpolating `words` quote (`qqw/a $x b/`, `qq:w/$foo $bar/`) is, on
+rakudo 2026.09, a `QuotedString` with `processors => ("words",)` (`<words
+val>` with `:v`) over the string's interpolation segments: the words are only
+known once the string is built. The parser spells it as the call
+`__mutsu_words_atom(STRING)` (`__mutsu_quotewords_atom` with allomorphs) the
+runtime splits; that call is the lowered form, so the converter reads it as
+the node and lowering rebuilds it over the interpolation
+(`src/rakuast/word_quote.rs`).
+
+A colonpair whose value is a `«…»` / `<<…>>` word quote (`:args«green
+yellow»`) is a `ColonPair::Value` over the same `QuotedString(processors =>
+<quotewords val>)` a bare `«…»` term is. The colonpair parser built the word
+list without the term's spelling record; it now parses the value with the
+term parser (`french_quote_term` / `double_angle_term`), which evaluates to the
+same list. A `<<…>>` that nests its own opener (`<< a <<b>> c >>`) is still
+rendered as one literal run; rakudo nests a `QuotedString` there, and that
+spelling stays open.

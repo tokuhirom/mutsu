@@ -3997,6 +3997,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             if let Some(val) = interpolating_words(node, segments)? {
                 return super::word_quote::lower(node, val);
             }
+            // `qqw/a $x/`: the interpolated string, split into words at run time.
+            if node.fields.iter().any(|f| f.name == Some("processors"))
+                && let Some(val) = super::word_quote::interpolating_plain_words(node, segments)
+            {
+                let mut plain = node.clone();
+                plain.fields.retain(|f| f.name != Some("processors"));
+                return Ok(super::word_quote::lower_words_atom(lower_expr(&plain)?, val));
+            }
             if let Some((quotewords, val, content)) = word_quote_content(node)? {
                 // `<…>` keeps its own lowering (a lone numeric word is a
                 // literal term there).

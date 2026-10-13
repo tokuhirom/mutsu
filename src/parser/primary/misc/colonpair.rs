@@ -709,7 +709,9 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     }
     // :name«words» (French-quote colonpair, equivalent to :name(«words»))
     if rest.starts_with('\u{00AB}') {
-        let (r, val_expr) = crate::parser::primary::container::french_quote_list(rest)?;
+        // The term form keeps the raw text for the RakuAST boundary
+        // (`ColonPair::Value(value => QuotedString(<quotewords val>))`).
+        let (r, val_expr) = crate::parser::primary::container::french_quote_term(rest)?;
         return Ok((
             r,
             Expr::Binary {
@@ -722,7 +724,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     }
     // :name<<words>> (double-angle colonpair, equivalent to :name(<<words>>))
     if rest.starts_with("<<") {
-        let (r, val_expr) = crate::parser::primary::container::double_angle_list(rest)?;
+        let (r, val_expr) = crate::parser::primary::container::double_angle_term(rest)?;
         return Ok((
             r,
             Expr::Binary {
