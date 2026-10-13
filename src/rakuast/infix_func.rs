@@ -71,7 +71,16 @@ pub(super) fn convert(
     if modifier.is_some() || !is_operator_name(name) || right.is_empty() {
         return Err(unsupported_expr(&format!("{whole:?}")));
     }
-    // A named argument on the operator has no node of its own here.
+    // `1 foo 3 :round`: the trailing adverbs `attach_trailing_adverbs`
+    // appended are the application's `colonpairs`.
+    let operand_count = right.len()
+        - right
+            .iter()
+            .skip(1)
+            .rev()
+            .take_while(|e| is_adverb(e))
+            .count();
+    let (right, adverbs) = right.split_at(operand_count);
     if right.iter().skip(1).any(is_adverb) {
         return Err(unsupported_expr(&format!("{whole:?}")));
     }
@@ -84,14 +93,28 @@ pub(super) fn convert(
         plain_infix(name)
     };
     if right.len() == 1 && !is_list_assoc(name) {
+        let mut fields = vec![
+            node_field(Some("left"), convert_expr(left)?),
+            node_field(Some("infix"), infix),
+            node_field(Some("right"), convert_expr(&right[0])?),
+        ];
+        if !adverbs.is_empty() {
+            let mut colonpairs = Vec::with_capacity(adverbs.len());
+            for adverb in adverbs {
+                colonpairs.push(Value::rakuast(Box::new(convert_expr(adverb)?)));
+            }
+            fields.push(RakuAstField {
+                name: Some("colonpairs"),
+                value: RakuAstFieldValue::List(colonpairs),
+            });
+        }
         return Ok(RakuAstNode {
             class: RakuAstClass::ApplyInfix,
-            fields: vec![
-                node_field(Some("left"), convert_expr(left)?),
-                node_field(Some("infix"), infix),
-                node_field(Some("right"), convert_expr(&right[0])?),
-            ],
+            fields,
         });
+    }
+    if !adverbs.is_empty() {
+        return Err(unsupported_expr(&format!("{whole:?}")));
     }
     // List-associative: the left spine of the same operator is one operand
     // list, and a multi-operand node (`a op b op c`) already is.
@@ -247,6 +270,23 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     // unit overloads their operator (the overload is a dispatch candidate of the
     // native operator, ADR-0071); every other layer rewrites an overloaded
     // operator into an `InfixFunc` call. A flip-flop is syntax, not a routine.
+    // An application with adverbs (`1 foo 3 :round`) calls the routine,
+    // whatever its operator: the native layers take no named arguments.
+    let adverbs = list_field(node, "colonpairs").unwrap_or_default();
+    if !adverbs.is_empty() {
+        if node.class != RakuAstClass::ApplyInfix || !is_declared(&name) {
+            return Some(Err(unsupported(node)));
+        }
+        return Some(fold(node, name).and_then(|mut call| {
+            if let Expr::InfixFunc { right, .. } = &mut call {
+                for adverb in adverbs {
+                    let child = rakuast_node_of(adverb).ok_or_else(|| unsupported(node))?;
+                    right.push(lower_expr(child)?);
+                }
+            }
+            Ok(call)
+        }));
+    }
     let overloaded = is_declared(&name) && !keeps_native_dispatch(&name);
     if !is_flip_flop(&name) && !overloaded {
         return None;

@@ -1010,3 +1010,15 @@ adverbs honoured, and a Str for its value. It is now an `Expr::Subst` whose
 the lowering) with the written `OP` beside it (`SubstThunk::infix`), so the
 converter renders the written EXPR (`parser::subst_compound_rhs`) and the
 operator without reconstructing either. The `=` form is unchanged.
+
+### 6.46 S10: adverbs on a user-declared infix (2026-10-13)
+
+`1 foo 3 :round` passes `:round` to `infix:<foo>`. The parser appends the
+trailing colonpairs to the `Expr::InfixFunc` operands
+(`attach_trailing_adverbs`); rakudo 2026.09 renders them as the
+`ApplyInfix`'s `colonpairs`. The converter splits the trailing adverbs off
+the operands (a two-operand application only; a list-associative chain with
+adverbs stays the boundary), and lowering appends them to the `InfixFunc`
+call again. An application with adverbs is always a routine call, also for a
+core operator the unit declares (`infix:</>`), whose plain application keeps
+the native layer; one whose operator the unit does not declare is refused.

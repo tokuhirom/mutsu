@@ -2256,6 +2256,7 @@ t/lang/operators/metaoperators-custom-infix.t
 t/lang/operators/negated-pair.t
 t/lang/operators/nonassoc-comparison.t
 t/lang/operators/nonassoc-range-and-unless-else.t
+t/lang/operators/operator-adverbs.t
 t/lang/operators/operator-associativity-traits.t
 t/lang/operators/operator-lvalue-defined-or.t
 t/lang/operators/operator-precedence-so-ternary.t
@@ -4624,6 +4625,7 @@ t/rakuast/rakuast-imported-bareword-call.t
 t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
 t/rakuast/rakuast-indirect-name.t
+t/rakuast/rakuast-infix-adverbs.t
 t/rakuast/rakuast-internal-arg-and-range-ops.t
 t/rakuast/rakuast-interp-code-block.t
 t/rakuast/rakuast-interpolating-angle-subscript.t
