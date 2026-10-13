@@ -14,6 +14,7 @@ pub(crate) mod coerce;
 pub(crate) mod complex;
 pub(crate) mod complex_math;
 pub(crate) mod complex_real;
+mod cool_coerce;
 pub(crate) mod cool_real;
 mod int;
 pub(crate) mod math;
@@ -112,6 +113,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     real_misc::COOL_NATIVE_INT_ROWS,
     real_misc::INT_NATIVE_INT_ROWS,
     cool_real::COOL_ROWS,
+    cool_coerce::COOL_ROWS,
     cool_real::BOOL_ROWS,
     numeric_coerce::INT_ROWS,
     numeric_coerce::NUM_ROWS,

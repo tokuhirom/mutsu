@@ -59,7 +59,14 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
 pub(super) static COOL_ROWS: &[MethodRow] = &[
     narrow!("Cool", "Complex", cool_complex),
     narrow!("Cool", "Failure", cool_failure),
-    narrow!("Cool", "Num", cool_num),
+    MethodRow {
+        owner: "Cool",
+        name: "Num",
+        arity: 0,
+        handler: Handler::Narrow(cool_num),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
     narrow!("Cool", "Rat", cool_rat),
     MethodRow {
         owner: "Cool",
@@ -126,6 +133,13 @@ fn cool_int(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
 /// `Cool.Num`.
 // Cost: as `cool_int`.
 fn cool_num(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let ValueView::Package(name) = target.view() {
+        return type_object_num(&name.resolve());
+    }
+    // A lazy list cannot count itself (`X::Cannot::Lazy`).
+    if crate::builtins::methods_0arg::is_lazy_count_source(target) {
+        return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
+    }
     if let ValueView::Str(s) = target.view() {
         return num_of_str(&s).map(Ok);
     }
@@ -133,6 +147,25 @@ fn cool_num(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
         Ok(number) => super::coerce::num_of(&number?).map(Ok),
         Err(failure) => Some(Ok(failure)),
     }
+}
+
+/// `.Num` of a type object (ADR-11276 §9.92): `Num.Num` is the type object
+/// itself (`method Num() { self }`); the concrete-only types (`Int`, `Str`,
+/// `Complex`, `Rat`, `FatRat` and the `UInt` subset) die with
+/// `X::Parameter::InvalidConcreteness`; every other type object inherits
+/// `Mu`'s warn-and-zero, which the interpreter answers.
+// Cost: O(1).
+fn type_object_num(name: &str) -> Option<Result<Value, RuntimeError>> {
+    let expected = match name {
+        "Num" => return Some(Ok(Value::package(crate::symbol::Symbol::intern("Num")))),
+        "Int" | "Str" | "Complex" => name,
+        "UInt" => "Int",
+        "Rat" | "FatRat" => "Rational",
+        _ => return None,
+    };
+    Some(Err(RuntimeError::parameter_invalid_concreteness(
+        expected, name, "Num", "self", true, true,
+    )))
 }
 
 /// `Cool.Failure` (`method Failure(Cool:D:)`): a `Failure` wrapping an `X::AdHoc`

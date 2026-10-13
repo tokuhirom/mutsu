@@ -345,6 +345,12 @@ fn dispatch(
 /// `X::Method::NotFound`).
 const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
 
+/// `Cool`'s coercions a receiver with no shape reaches ([`answer_shapeless`];
+/// ADR-11276 §9.92): an enum, a lazy or shaped array, an unsettled `Seq`, an
+/// instance whose MRO reaches `Cool` with no built-in class declaring the name
+/// first, and a `Cool` type object with no shape.
+const COOL_COERCE_FOR_SHAPELESS: [&str; 2] = ["Real", "Num"];
+
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,
 /// `List` or `Seq` declares, for a receiver with no shape (ADR-11276 §9.79,
 /// §9.80, §9.81).
@@ -430,6 +436,8 @@ pub(crate) fn shapeless_row(
     let list = crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let iterable = ITERABLE_FOR_SHAPELESS.contains(&method.as_str());
+    let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str());
+    let text = text || coerce;
     if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
         return None;
     }
@@ -497,6 +505,19 @@ pub(crate) fn shapeless_row(
             owner?
         }
         ValueView::Instance { .. } => return None,
+        // A lazy or shaped array coerces as the `Array` it is; a type object
+        // with no shape (`RatStr`, `IntStr`) as the `Cool` its catalog MRO
+        // reaches.
+        ValueView::Array(..) if coerce => cool,
+        ValueView::Package(name) if coerce => {
+            // `UInt`, the one built-in subset, is not in the catalog: it is
+            // an `Int`.
+            let name = name.resolve();
+            let class = if name == "UInt" { "Int" } else { name.as_ref() };
+            crate::builtin_types::catalog::builtin_type_mro_strs(class)?
+                .contains(&"Cool")
+                .then_some(cool)?
+        }
         // `Mu` is no `Any`: `Mu.flat` and `Mu.pick` have no candidate.
         ValueView::Package(name) if name == "Mu" => return None,
         // Every other receiver the cascades declined (a code object, a regex,

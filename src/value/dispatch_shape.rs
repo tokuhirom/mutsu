@@ -460,12 +460,12 @@ pub(crate) const ROLES_WITH_ROWS: [&str; 7] = [
 
 /// The `Cool` numeric methods a `Range` or `Seq` reaches
 /// ([`DispatchShape::reaches_audited`]).
-const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 49] = [
+const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 51] = [
     "sin", "cos", "tan", "sec", "cosec", "cotan", "sinh", "cosh", "tanh", "sech", "cosech",
     "cotanh", "asin", "acos", "atan", "asec", "acosec", "acotan", "asinh", "acosh", "atanh",
     "asech", "acosech", "acotanh", "exp", "log", "log2", "log10", "sqrt", "cis", "atan2", "roots",
     "unpolar", "abs", "sign", "floor", "ceiling", "truncate", "round", "is-prime", "conj", "chr",
-    "rand", "int", "uint", "byte", "Complex", "UInt", "Version",
+    "rand", "int", "uint", "byte", "Complex", "UInt", "Version", "Real", "Num",
 ];
 
 /// The `Cool` text methods a `Range`, `Seq`, `IO::Path` or `Match` reaches

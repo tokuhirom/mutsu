@@ -2,7 +2,6 @@
 /// `clone`, `defined`, `DEFINITE`, `Bool`, `WHICH` and `WHERE` are `Mu`'s rows
 /// (`method_table::ctors_mop::mu_identity`, ADR-11276 §9.91).
 use crate::symbol::Symbol;
-use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::value_buf::buf_len_or_zero;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -136,7 +135,7 @@ pub(super) fn dispatch(
     // range yields `Inf` for the real-valued coercions and fails for `.Int`
     // ("Cannot convert Inf to Int"). Handle this before the per-method arms,
     // which only know how to numerify scalar types.
-    if target.is_range() && matches!(method, "Int" | "Numeric" | "Real" | "Num") {
+    if target.is_range() && matches!(method, "Int" | "Numeric") {
         return Some(Some(
             crate::builtins::method_table::range::numeric_coercion(target, method),
         ));
@@ -146,7 +145,7 @@ pub(super) fn dispatch(
     // for every numeric coercion (`.Int`/`.Numeric`/`.Real`/`.Num`/prefix `+`).
     // Guard before the per-method arms, which would return the capped backing
     // length. (`.elems` itself is handled in `dispatch_core_numeric`.)
-    if matches!(method, "Int" | "Numeric" | "Real" | "Num") && super::is_lazy_count_source(target) {
+    if matches!(method, "Int" | "Numeric") && super::is_lazy_count_source(target) {
         return Some(super::range_elems_lazy_failure("elems"));
     }
     // `.Buf` / `.Blob` on any byte-string (Buf/Blob/utf8/blob8/...) returns a
@@ -174,7 +173,7 @@ pub(super) fn dispatch(
     // cleanly for these, but `Rat.Rat`/`FatRat.FatRat` throw "must be an object
     // instance" (no `method Rat() { self }`), so those are left to fall through.
     if let ValueView::Package(name) = target.view()
-        && matches!(method, "Int" | "Num" | "Complex")
+        && matches!(method, "Int" | "Complex")
         && (name.resolve() == method
             // `UInt.Int` also returns the invocant unchanged: UInt is a subset
             // of Int, so it inherits Int's `method Int() { self }`.
@@ -331,114 +330,6 @@ pub(super) fn dispatch(
                 return Some(None);
             };
             Some(int.map(|r| r.map(crate::builtins::method_table::str_numeric::uint_of_int)))
-        }
-        // The `Cool.Version` row's implementation (`method_table::version`).
-        "Version" => match target.view() {
-            ValueView::Version { .. }
-            | ValueView::Str(_)
-            | ValueView::Int(_)
-            | ValueView::BigInt(_)
-            | ValueView::Num(_)
-            | ValueView::Rat(_, _)
-            | ValueView::BigRat(_, _)
-            | ValueView::FatRat(_, _)
-            | ValueView::Bool(_) => Some(Some(Ok(
-                crate::builtins::method_table::version::version_of(target),
-            ))),
-            _ => None,
-        },
-        "Num" => {
-            // `.Num` on a concrete-only Cool type's type object dies with
-            // X::Parameter::InvalidConcreteness; `Num.Num` is identity (below)
-            // and the other type objects inherit Mu/Cool's warn-and-0.
-            if let ValueView::Package(name) = target.view() {
-                let n = name.resolve();
-                let expected = match n.as_str() {
-                    "Int" | "Str" | "Complex" => Some(n.as_str()),
-                    "UInt" => Some("Int"),
-                    "Rat" | "FatRat" => Some("Rational"),
-                    _ => None,
-                };
-                if let Some(expected) = expected {
-                    return Some(Some(Err(RuntimeError::parameter_invalid_concreteness(
-                        expected, &n, "Num", "self", true, true,
-                    ))));
-                }
-            }
-            // A real number: the numeric types' `Num` rows' implementation
-            // (ADR-11276, `method_table::coerce`).
-            if let Some(result) = crate::builtins::method_table::coerce::num_of(target) {
-                return Some(Some(Ok(result)));
-            }
-            let result = match target.view() {
-                // The `Str.Num` row's implementation (`method_table::str_numeric`); a
-                // string that numifies to a `Complex` is the interpreter's.
-                ValueView::Str(s) => {
-                    return Some(
-                        crate::builtins::method_table::str_numeric::num_of_str(&s).map(Ok),
-                    );
-                }
-                ValueView::Bool(b) => Value::num(if b { 1.0 } else { 0.0 }),
-                // The runtime checks the imaginary part against `$*TOLERANCE`
-                // (`Interpreter::dispatch_complex_to_real`).
-                ValueView::Complex(..) => return Some(None),
-                ValueView::Array(items, ..) => Value::num(items.len() as f64),
-                ValueView::Seq(items) => Value::num(items.len() as f64),
-                ValueView::Slip(items) => Value::num(items.len() as f64),
-                _ => return Some(None),
-            };
-            Some(Some(Ok(result)))
-        }
-        "Real" => {
-            // Calling .Real on a type object (Package) should warn and return zero
-            if let ValueView::Package(name) = target.view() {
-                let type_name = name.resolve();
-                let zero = match type_name.as_str() {
-                    "Int" | "IntStr" => Value::int(0),
-                    "Rat" | "FatRat" | "RatStr" => Value::rat_raw(0, 1),
-                    "Num" | "NumStr" | "Complex" | "ComplexStr" => Value::num(0.0),
-                    _ => return Some(None),
-                };
-                let msg = format!(
-                    "Use of uninitialized value of type {} in numeric context",
-                    type_name
-                );
-                return Some(Some(Err(RuntimeError::warn_signal_with_resume(msg, zero))));
-            }
-            // A real number: the numeric types' `Real` rows' implementation
-            // (`method_table::numeric_coerce`).
-            if let Some(result) = crate::builtins::method_table::numeric_coerce::real_of(target) {
-                return Some(Some(Ok(result)));
-            }
-            let result = match target.view() {
-                // A Complex is Real when its imaginary part is `≅ 0`; the runtime
-                // reads `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`).
-                ValueView::Complex(..) => return Some(None),
-                // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`).
-                ValueView::Str(s) => {
-                    // `.Real` yields the natural numeric type (Int/Rat/Num); use the
-                    // canonical parser so radix prefixes and underscores work and the
-                    // result agrees with `.Numeric`.
-                    if str_numifies_to_complex(&s).is_some() {
-                        // As `.Int`: coerced as the `Complex` it numifies to.
-                        return Some(None);
-                    }
-                    if let Some(v) =
-                        crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
-                    {
-                        v
-                    } else {
-                        // Same X::Str::Numeric Failure (typed, with the `⏏` marker)
-                        // as `.Int`/`.Numeric`.
-                        return Some(Some(Ok(str_numeric_failure(&s))));
-                    }
-                }
-                ValueView::Array(items, ..) => Value::int(items.len() as i64),
-                ValueView::Hash(h) => Value::int(h.len() as i64),
-                ValueView::Seq(items) => Value::int(items.len() as i64),
-                _ => return Some(None),
-            };
-            Some(Some(Ok(result)))
         }
         "Numeric" => {
             // Calling .Numeric on a type object (Package) should warn and return zero
