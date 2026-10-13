@@ -57,7 +57,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             rhs,
             true,
         );
-        return Ok(crate::parser::expand_attribute_compound_assign(decl, assign));
+        return Ok(crate::parser::expand_attribute_compound_assign(
+            decl, assign,
+        ));
     }
     let Stmt::VarDecl { name, .. } = &decl else {
         return Err(unsupported(node));

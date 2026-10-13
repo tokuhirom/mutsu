@@ -1,9 +1,7 @@
 use super::super::super::expr::expression;
 use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
-use super::super::assign::{
-    parse_assign_expr_or_comma, parse_compound_assign_op,
-};
+use super::super::assign::{parse_assign_expr_or_comma, parse_compound_assign_op};
 use super::super::{ident, keyword};
 use super::handles::parse_handle_specs;
 use super::helpers::{
