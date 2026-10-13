@@ -50,7 +50,9 @@ pub(crate) fn expand(decl: Stmt, name: String, value: Expr, source: Option<Sourc
 }
 
 /// The declaration, operator and right-hand side of an expansion [`expand`]
-/// built with its record, or `None` for any other statement.
+/// built with its record, or `None` for any other statement. The declaration
+/// may also be an attribute's (`has $!g //= 5`, built by the parser's
+/// `expand_attribute_compound_assign`).
 // Cost: O(1).
 pub(crate) fn parts(stmt: &Stmt) -> Option<(&Stmt, &str, &Expr)> {
     let Stmt::SyntheticBlock(stmts) = stmt else {
@@ -59,7 +61,7 @@ pub(crate) fn parts(stmt: &Stmt) -> Option<(&Stmt, &str, &Expr)> {
     match stmts.as_slice() {
         [
             Stmt::SourceForm(form),
-            decl @ Stmt::VarDecl { .. },
+            decl @ (Stmt::VarDecl { .. } | Stmt::HasDecl { .. }),
             Stmt::Assign {
                 expr: Expr::CompoundAssign { op, rhs, .. },
                 ..
