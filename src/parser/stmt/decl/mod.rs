@@ -6,7 +6,7 @@ mod enum_decl_traits;
 mod handles;
 mod has_decl;
 pub(crate) use has_decl::attribute_type_seed;
-pub(crate) use my_decl_helpers::build_sigilless_bind_stmt;
+pub(crate) use my_decl_helpers::{build_sigilless_bind_stmt, is_anon_sigilless_source};
 mod helpers;
 mod my_decl;
 mod my_decl_assign;

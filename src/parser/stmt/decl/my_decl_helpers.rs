@@ -44,6 +44,16 @@ use super::parse_comma_or_expr;
 ///
 /// This does NOT depend on whether a type constraint was written — `my Mu
 /// \a := $a` and `my \a := $a` behave the same way in raku.
+/// The prefix of the name an anonymous `$` bound to a sigilless term gets.
+const ANON_SIGILLESS_SRC_PREFIX: &str = "anon-sigilless-src-";
+
+/// Whether `name` is the fresh name [`build_sigilless_bind_stmt`] gives an
+/// anonymous `$` (`my \foo = my $ = -3`).
+// Cost: O(1).
+pub(crate) fn is_anon_sigilless_source(name: &str) -> bool {
+    name.starts_with(ANON_SIGILLESS_SRC_PREFIX)
+}
+
 static ANON_SIGILLESS_SRC_COUNTER: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
@@ -79,7 +89,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         let mut inner_decl = inner.as_ref().clone();
         let var_name = if inner_name == "__ANON_STATE__" {
             let fresh = format!(
-                "anon-sigilless-src-{}",
+                "{ANON_SIGILLESS_SRC_PREFIX}{}",
                 ANON_SIGILLESS_SRC_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             );
             if let Stmt::VarDecl { name, .. } = &mut inner_decl {
