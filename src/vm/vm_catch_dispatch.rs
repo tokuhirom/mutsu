@@ -217,6 +217,25 @@ impl Interpreter {
                     // Run from the resume point to the end of the try body
                     match self.run_range(code, resume_point, catch_begin, compiled_fns) {
                         Ok(()) => {}
+                        // The resumed remainder of the body is still inside
+                        // this CATCH's region: a further exception is handled
+                        // (and may be resumed) by the same handler.
+                        Err(resume_err) if !resume_err.is_resume() => {
+                            return self.dispatch_to_catch_handler(
+                                code,
+                                resume_err,
+                                catch_begin,
+                                control_begin,
+                                end,
+                                explicit_catch,
+                                catch_value,
+                                traps,
+                                catch_token,
+                                saved_depth,
+                                ip,
+                                compiled_fns,
+                            );
+                        }
                         Err(resume_err) => return Err(resume_err),
                     }
                 }
