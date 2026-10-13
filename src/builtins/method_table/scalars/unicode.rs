@@ -90,11 +90,12 @@ pub(super) static UNI_ROWS: &[MethodRow] = &[
     row!("Uni", "NFKD", 0, uni_nfkd, NONE),
 ];
 
-/// A type object of a built-in type: `Int`, `Str`, ...
+/// A type object of a built-in type (`Int`, `Str`, ...) or `Nil`: no
+/// candidate of these methods takes one.
 fn is_type_object(target: &Value) -> bool {
     matches!(
         target.view(),
-        ValueView::Package(_) | ValueView::CustomType { .. }
+        ValueView::Nil | ValueView::Package(_) | ValueView::CustomType { .. }
     )
 }
 
@@ -139,46 +140,58 @@ pub(crate) fn uninames(target: &Value, _args: &[Value]) -> Option<Result<Value, 
     Some(Ok(Value::seq(names)))
 }
 
-/// How an integer receiver of `uniprop` reads as a codepoint.
-enum UnipropCodepoint {
-    /// A codepoint MoarVM looks up (`0 .. 2**31`, including the unassigned
-    /// range past `0x10FFFF`).
+/// How an integer receiver of the Unicode methods reads as a codepoint.
+enum IntCodepoint {
+    /// A codepoint MoarVM looks up (`0 .. 2**31`, including the surrogates
+    /// and the unassigned range past `0x10FFFF`).
     Lookup(u32),
-    /// `2**31` or more (a `BigInt` included): every property is `""`.
+    /// `2**31` or more (a `BigInt` included): past what MoarVM can look up.
     TooLarge,
 }
 
-/// Classify an `Int`/`BigInt`/`Bool` receiver as a `uniprop` codepoint; `None`
-/// for any other receiver (read through its first character instead). A
-/// negative codepoint is the X::AdHoc rakudo raises.
-// Cost: O(1) for an Int; O(d) for a BigInt, d = limb count (the error message).
-fn uniprop_codepoint(
-    target: &Value,
-    routine: &str,
-) -> Option<Result<UnipropCodepoint, RuntimeError>> {
-    let negative = |display: String, magnitude_hex: String| {
-        Err(RuntimeError::new(format!(
-            "Codepoint {display} (0x-{magnitude_hex}) is out of bounds in '{routine}'"
-        )))
-    };
-    match target.view() {
-        ValueView::BigInt(n) => Some(if n.sign() == num_bigint::Sign::Minus {
-            negative(n.to_string(), format!("{:X}", n.magnitude()))
-        } else {
-            Ok(UnipropCodepoint::TooLarge)
-        }),
-        _ => {
-            let cp = codepoint(target)?;
-            Some(if cp < 0 {
-                negative(cp.to_string(), format!("{:X}", cp.unsigned_abs()))
+/// Rakudo's error for a codepoint a Unicode routine cannot take:
+/// `Codepoint -1 (0x-1) is out of bounds in 'unival'`.
+// Cost: O(d), d = the receiver's digits (the message).
+fn codepoint_out_of_bounds(target: &Value, routine: &str) -> RuntimeError {
+    let (display, hex) = match target.view() {
+        ValueView::BigInt(n) => {
+            let sign = if n.sign() == num_bigint::Sign::Minus {
+                "-"
             } else {
-                Ok(u32::try_from(cp)
-                    .ok()
-                    .filter(|&cp| cp < 1 << 31)
-                    .map_or(UnipropCodepoint::TooLarge, UnipropCodepoint::Lookup))
-            })
+                ""
+            };
+            (n.to_string(), format!("{sign}{:X}", n.magnitude()))
         }
+        _ => {
+            let cp = codepoint(target).unwrap_or_default();
+            let sign = if cp < 0 { "-" } else { "" };
+            (cp.to_string(), format!("{sign}{:X}", cp.unsigned_abs()))
+        }
+    };
+    RuntimeError::new(format!(
+        "Codepoint {display} (0x{hex}) is out of bounds in '{routine}'"
+    ))
+}
+
+/// Classify an `Int`/`BigInt`/`Bool` receiver as a codepoint; `None` for any
+/// other receiver (read through its first character instead). A negative
+/// codepoint is the X::AdHoc rakudo raises.
+// Cost: O(1) for an Int; O(d) for a BigInt, d = limb count (the error message).
+fn int_codepoint(target: &Value, routine: &str) -> Option<Result<IntCodepoint, RuntimeError>> {
+    let negative = match target.view() {
+        ValueView::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
+        _ => codepoint(target)? < 0,
+    };
+    if negative {
+        return Some(Err(codepoint_out_of_bounds(target, routine)));
     }
+    let cp = match target.view() {
+        ValueView::BigInt(_) => None,
+        _ => codepoint(target).and_then(|cp| u32::try_from(cp).ok()),
+    };
+    Some(Ok(cp
+        .filter(|&cp| cp < 1 << 31)
+        .map_or(IntCodepoint::TooLarge, IntCodepoint::Lookup)))
 }
 
 /// `.uniprop` and `.uniprop($property)` (and the `uniprop` routine, which
@@ -188,11 +201,12 @@ fn uniprop_value(target: &Value, property: Option<&str>) -> Result<Value, Runtim
     if is_type_object(target) {
         return Err(make_no_match_error("uniprop"));
     }
-    Ok(match uniprop_codepoint(target, "uniprop").transpose()? {
-        Some(UnipropCodepoint::Lookup(cp)) => {
+    Ok(match int_codepoint(target, "uniprop").transpose()? {
+        Some(IntCodepoint::Lookup(cp)) => {
             uniprop::unicode_property_value_for_codepoint(cp, property)
         }
-        Some(UnipropCodepoint::TooLarge) => Value::str_from(""),
+        // MoarVM answers "" for every property here.
+        Some(IntCodepoint::TooLarge) => Value::str_from(""),
         None => first_char(target).map_or(Value::NIL, |ch| match property {
             Some(property) => uniprop::unicode_property_value(ch, property),
             None => Value::str_from(crate::builtins::unicode::unicode_general_category(ch)),
@@ -253,34 +267,37 @@ fn unival_of_char(ch: char) -> Value {
     }
 }
 
-/// `.unival`: the numeric value of the codepoint or first character, `Nil`
-/// for the empty string or an invalid codepoint.
+/// `.unival`: the numeric value of the codepoint or first character: `Nil`
+/// for the empty string or a codepoint past `0x10FFFF`, `NaN` for a surrogate;
+/// a negative codepoint or one of `2**31` or more dies.
 // Cost: O(1) (a table lookup).
 pub(crate) fn unival(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if is_type_object(target) {
         return Some(Err(make_no_match_error("unival")));
     }
-    let ch = match codepoint(target) {
-        Some(cp) => char::from_u32(cp as u32),
-        None => first_char(target),
-    };
-    Some(Ok(ch.map_or(Value::NIL, unival_of_char)))
+    Some(match int_codepoint(target, "unival") {
+        Some(Ok(IntCodepoint::Lookup(cp))) => Ok(match char::from_u32(cp) {
+            Some(ch) => unival_of_char(ch),
+            // A surrogate has no numeric value; past 0x10FFFF there is none.
+            None if (0xD800..=0xDFFF).contains(&cp) => Value::num(f64::NAN),
+            None => Value::NIL,
+        }),
+        Some(Ok(IntCodepoint::TooLarge)) => Err(codepoint_out_of_bounds(target, "unival")),
+        Some(Err(err)) => Err(err),
+        None => Ok(first_char(target).map_or(Value::NIL, unival_of_char)),
+    })
 }
 
-/// `.univals`: the numeric value of every character, as a `Seq`.
+/// `.univals`: the numeric value of every character of the receiver's
+/// string form, as a `Seq` -- an `Int` is not read as a codepoint here
+/// (`65.univals` is `(6 5)`), as in rakudo.
 // Cost: O(n), n = chars of the receiver.
 pub(crate) fn univals(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if is_type_object(target) {
         return Some(Err(make_no_match_error("univals")));
     }
-    let text = match codepoint(target) {
-        Some(cp) => match char::from_u32(cp as u32) {
-            Some(ch) => ch.to_string(),
-            None => return Some(Ok(Value::seq(Vec::new()))),
-        },
-        None => target.to_string_value(),
-    };
-    Some(Ok(Value::seq(text.chars().map(unival_of_char).collect())))
+    let vals = with_str(target, |s| s.chars().map(unival_of_char).collect());
+    Some(Ok(Value::seq(vals)))
 }
 
 /// `.unimatch($value)`: whether the codepoint or first character has the
@@ -308,8 +325,10 @@ fn unimatch_with(
     if is_type_object(target) {
         return Some(Err(make_no_match_error("unimatch")));
     }
-    Some(Ok(match codepoint(target) {
-        Some(cp) => uniprop::unimatch_for_codepoint(cp as u32, value, property),
+    Some(Ok(match int_codepoint(target, "unimatch") {
+        Some(Ok(IntCodepoint::Lookup(cp))) => uniprop::unimatch_for_codepoint(cp, value, property),
+        Some(Ok(IntCodepoint::TooLarge)) => Value::FALSE,
+        Some(Err(err)) => return Some(Err(err)),
         None => first_char(target).map_or(Value::NIL, |ch| {
             Value::truth(uniprop::unimatch(ch, value, property))
         }),

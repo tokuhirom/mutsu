@@ -365,44 +365,12 @@ pub(crate) fn native_function_2arg(
             arg1,
             std::slice::from_ref(arg2),
         ),
-        "unimatch" => {
-            // unimatch(target, property_value)
-            let prop_value = arg2.to_string_value();
-            match arg1.view() {
-                ValueView::Package(_) => {
-                    let msg = "Cannot resolve caller unimatch".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    Some(Err(err))
-                }
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
-                        cp,
-                        &prop_value,
-                        None,
-                    )))
-                }
-                _ => {
-                    let s = arg1.to_string_value();
-                    if s.is_empty() {
-                        return Some(Ok(Value::NIL));
-                    }
-                    let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
-                        ch,
-                        &prop_value,
-                        None,
-                    ))))
-                }
-            }
-        }
+        // `unimatch($x, $value)` is `$x.unimatch($value)` -- one implementation.
+        // Cost: O(1) (a table lookup) plus the value name's parse.
+        "unimatch" => crate::builtins::method_table::scalars::unicode::unimatch(
+            arg1,
+            std::slice::from_ref(arg2),
+        ),
         _ => None,
     }
 }
