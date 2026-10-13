@@ -418,6 +418,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     match node.class {
         RakuAstClass::StatementPrefixReact => super::react::lower_react(node),
+        // `sub f { … }(ARGS)`: the parser's declaration-then-call expansion.
+        RakuAstClass::ApplyPostfix if super::immediate_call::is_immediate_call(node) => {
+            super::immediate_call::lower(node)
+        }
         // A bare `done` is the react/supply completion unless a lexical
         // `&done` shadows it; the compiler decides that for the bare word
         // (`Expr::BareWord("done")`), so lower to it rather than to a fixed
@@ -4870,6 +4874,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // method call (`@a>>.abs`), a postfix operator (`$x++`), or a positional
         // subscript (`@a[1]`). Associative subscripts carry a different postfix
         // and are deferred.
+        RakuAstClass::ApplyPostfix if super::immediate_call::is_immediate_call(node) => {
+            Ok(Expr::DoStmt(Box::new(super::immediate_call::lower(node)?)))
+        }
         RakuAstClass::ApplyPostfix => {
             let operand_node = named_child(node, "operand")?;
             let operand =

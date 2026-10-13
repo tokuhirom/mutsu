@@ -2844,6 +2844,7 @@ mod chains;
 pub(crate) mod decl_modifier;
 pub(crate) mod decl_tail;
 pub(crate) mod dotty_assign;
+pub(crate) mod immediate_call;
 pub(crate) mod keyed_hash;
 mod lvalue;
 pub(crate) mod method_assign_decl;

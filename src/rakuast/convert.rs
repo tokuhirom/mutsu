@@ -380,6 +380,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
                 super::method_assign_decl::convert(decl)?,
             ))),
+            // `sub f { … }(ARGS)`: the routine as the operand of its call.
+            Some(crate::ast::SourceForm::ImmediateCall) => super::immediate_call::convert(stmt)
+                .ok_or_else(|| unsupported("source form"))?
+                .map(|node| Some(statement_expression(node))),
             // `BEGIN say 1`: the phaser (second statement) over its bare statement.
             Some(crate::ast::SourceForm::BarePhaser) => match stmt {
                 Stmt::SyntheticBlock(stmts) if stmts.len() == 2 => {
@@ -3383,6 +3387,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => {
                 super::method_assign_decl::convert(decl)
+            }
+            // `do sub f { … }(ARGS)`: the call statement under the prefix.
+            Some(crate::ast::SourceForm::ImmediateCall) => {
+                let node = super::immediate_call::convert(stmt)
+                    .ok_or_else(|| unsupported("source form"))??;
+                Ok(RakuAstNode {
+                    class: RakuAstClass::StatementPrefixDo,
+                    fields: vec![node_field(None, statement_expression(node))],
+                })
             }
             // Only the on-demand lambda opens with a supply record.
             Some(

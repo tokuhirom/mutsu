@@ -705,3 +705,17 @@ exported qualified type (`class A::B::C is export` imports `C`). These were
 the `BareWord` first refusals of the `t/modules/` import tests; a name the
 importer cannot see in rakudo either (an undeclared name under `try`) stays
 a refusal.
+
+### 6.24 S10: immediately called routine declarations (2026-10-13)
+
+`sub foo($n) { … }(21)` declares `foo` and calls it in place. The parser
+expands it into the declaration followed by a call of the declared name;
+rakudo's tree is an `ApplyPostfix` whose operand is the `Sub` and whose
+postfix is a `Call::Term` (measured on 2026.09). `ast::immediate_call::expand`
+is the one builder: a spelling-keeping parse opens the expansion with a
+`SourceForm::ImmediateCall` record, which the converter reads to render the
+source form, and lowering hands a measured node back to the same function, so
+the routine stays declared in the enclosing scope. Under `do` the node is
+the statement of a `StatementPrefix::Do`. A routine declaration with a
+statement modifier (`sub f { } given …`) is a separate parser expansion and
+stays a refusal.

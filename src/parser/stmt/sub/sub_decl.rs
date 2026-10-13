@@ -587,12 +587,10 @@ pub(crate) fn sub_decl_body(
                 _ => None,
             })
             .collect();
-        let call_expr = Stmt::Expr(Expr::Call {
-            name: sub_name_sym,
-            args: positional_args,
-            listop: false,
-        });
-        return Ok((r, Stmt::SyntheticBlock(vec![sub_decl, call_expr])));
+        return Ok((
+            r,
+            crate::ast::immediate_call::expand(sub_decl, positional_args),
+        ));
     }
     Ok((rest, sub_decl))
 }
