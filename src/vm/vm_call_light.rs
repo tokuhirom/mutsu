@@ -475,7 +475,14 @@ impl Interpreter {
         // journaled by the readonly frame, so it is restored on return — before
         // the param loop below, which re-marks `_` if the routine has an
         // explicit (readonly) `$_` parameter.
-        if cf.code.is_routine {
+        //
+        // A body that never names `$_` cannot observe the mark, and the
+        // readonly frame restores it on return, so the unmark (and its journal
+        // replay on every call from inside a caller's `for`) is skipped there
+        // (#12526).
+        if cf.code.is_routine
+            && (cf.code.reads_topic || crate::opcode::reflective_name_access_possible())
+        {
             self.unmark_readonly_topic();
         }
         // Bind params to slots. Also write the param into the overlay when a
