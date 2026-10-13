@@ -525,6 +525,7 @@ pub(in crate::parser) use number::wrap_divergent_literal;
 pub(in crate::parser) use regex::parse_call_arg_list;
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
+    let _nesting = crate::parser::NestingGuard::enter(input)?;
     if let Some(cached) = PRIMARY_MEMO.get(input) {
         return cached;
     }
