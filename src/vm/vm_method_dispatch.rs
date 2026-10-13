@@ -2112,6 +2112,9 @@ impl Interpreter {
                     // into an Array (mirrors `bind_param_value`); scalar named
                     // params are item bindings (mirrors the slow binder's
                     // named arm).
+                    Some(v) if pd.name.starts_with("@!") || pd.name.starts_with("@.") => {
+                        Self::attributive_array_param_value(v)
+                    }
                     Some(v) if pd.name.starts_with('@') => {
                         Self::normalize_positional_param_value(v)
                     }
