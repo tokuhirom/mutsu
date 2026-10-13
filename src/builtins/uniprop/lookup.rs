@@ -319,9 +319,7 @@ pub(crate) fn unicode_property_value_for_codepoint(cp: u32, prop: Option<&str>) 
     // Past 0x10FFFF MoarVM has no Unicode data: each property answers its
     // type's default.
     match prop {
-        Some(p) if super::binary_props::try_binary_property('\0', p).is_some() => {
-            Value::FALSE
-        }
+        Some(p) if super::binary_props::try_binary_property('\0', p).is_some() => Value::FALSE,
         Some("Numeric_Value") | Some("nv") => Value::NIL,
         Some("Name") | Some("na") => Value::str_from("<unassigned>"),
         _ => Value::str_from(""),

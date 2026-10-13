@@ -5,7 +5,7 @@ use Test;
 # or more (a BigInt included) answer "" for everything. The routine form
 # is the method form (#13173).
 
-plan 26;
+plan 24;
 
 for -1, -255, -(2**70) -> $cp {
     my $hex = $cp.abs.base(16);
