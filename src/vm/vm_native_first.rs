@@ -143,7 +143,9 @@ impl Interpreter {
     /// incrementally via the coroutine and test the matcher, instead of forcing
     /// the whole (possibly infinite) list. Returns `Some` when handled, `None`
     /// to fall back to the eager full-force path (adverbs / `Bool` matcher).
-    pub(super) fn try_lazy_gather_first(
+    // Cost: O(i) pulls and matcher calls, i = index of the first match, plus
+    // running the gather body that far.
+    pub(crate) fn try_lazy_gather_first(
         &mut self,
         list: &crate::value::LazyList,
         args: &[Value],
@@ -200,16 +202,17 @@ impl Interpreter {
         let mut idx = 0usize;
         loop {
             self.current_code = caller_code;
-            let items = match self.force_lazy_list_vm_n(list, idx + 1) {
+            // Only element `idx` is copied out: copying the whole prefix on
+            // every pull made a long scan quadratic.
+            let items = match self.force_lazy_list_vm_window(list, idx, idx + 1) {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
-            // Fewer items than requested => the gather body finished (finite
-            // source) without a match.
-            if items.len() <= idx {
+            // No element => the gather body finished (finite source) without
+            // a match.
+            let Some(item) = items.into_iter().next() else {
                 return Some(Ok(Value::NIL));
-            }
-            let item = items[idx].clone();
+            };
             let matched = {
                 let mut matcher = VmFirstMatcher(self);
                 match matcher.item_matches(&func, &item) {
