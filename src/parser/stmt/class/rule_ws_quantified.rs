@@ -23,11 +23,15 @@ pub(super) fn is_quantifier_start(next: Option<char>) -> bool {
 // Cost: O(n), n = length of `out` (one backward scan for the atom start).
 pub(super) fn mark_backtracking_before_ws(out: &mut String, next: Option<char>, escaped: bool) {
     // Nothing follows inside this rule (`… <x>? }`): there is nothing to give
-    // an element back to, and the rule itself returns ratcheted.
-    if escaped || next.is_none() || next == Some('%') {
+    // an element back to, and the rule itself returns ratcheted. The one
+    // exception is the inner term of `A ~ GOAL TERM`, which the goal follows.
+    if escaped || next == Some('%') {
         return;
     }
     let trimmed_len = out.trim_end().len();
+    if next.is_none() && !ends_goal_inner_term(&out[..trimmed_len]) {
+        return;
+    }
     let Some(atom_end) = backtrackable_term_atom_end(&out[..trimmed_len]) else {
         return;
     };
@@ -38,6 +42,32 @@ pub(super) fn mark_backtracking_before_ws(out: &mut String, next: Option<char>, 
     }
     out.truncate(trimmed_len);
     out.push_str(":!");
+}
+
+/// Whether the term that ends `text` is the inner term of a `A ~ GOAL TERM`
+/// construct: the text before it is `~`, the goal atom and the `<.ws>` the rule
+/// injected between them. Rakudo compiles that to `A TERM GOAL`, so the goal
+/// follows the term and the term may give its match back.
+// Cost: O(n), n = length of `text` (a few backward atom scans).
+fn ends_goal_inner_term(text: &str) -> bool {
+    let Some(term_start) = last_atom_start(text) else {
+        return false;
+    };
+    let before_goal = strip_injected_ws(&text[..term_start]);
+    let Some(goal_start) = last_atom_start(before_goal) else {
+        return false;
+    };
+    strip_injected_ws(&before_goal[..goal_start]).ends_with('~')
+}
+
+/// `text` without trailing blanks and the `<.ws>` tokens a rule injected.
+// Cost: O(w), w = length of the stripped suffix.
+fn strip_injected_ws(text: &str) -> &str {
+    let mut text = text.trim_end();
+    while let Some(rest) = text.strip_suffix("<.ws>") {
+        text = rest.trim_end();
+    }
+    text
 }
 
 /// If `text` ends with a term that can backtrack, the byte offset where the
