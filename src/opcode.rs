@@ -939,6 +939,12 @@ pub(crate) enum OpCode {
     /// Unlike `GetLocalRaw` this keeps the env fallback, which a method frame's
     /// parameter slot depends on.
     GetLocalDeferred(u32),
+    /// [`Self::GetGlobal`] for a by-name dynamic (`$*p`) that keeps a deferred
+    /// `HashEntryRef` bind token unresolved, the by-name twin of
+    /// [`Self::GetLocalDeferred`]: `$*p := $*p<k>` in a routine that did not
+    /// declare `$*p` walks the caller's binding one key at a time.
+    // Cost: O(d) on a hit, d = env tiers walked, like `GetGlobal`.
+    GetGlobalDeferred(u32),
     /// Load a scalar variable's container for `take-rw`.  A plain scalar is
     /// promoted to a shared cell in its authoritative store; an already-bound
     /// scalar keeps its existing cell.  Ordinary reads must continue to
@@ -7916,6 +7922,7 @@ impl CompiledCode {
         for op in &self.ops[start.min(end)..end] {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
                 | OpCode::PostIncrement(idx, _)
@@ -8534,6 +8541,7 @@ impl CompiledCode {
         for op in &self.ops {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
                 | OpCode::PostIncrement(idx, _)
@@ -9144,6 +9152,7 @@ impl CompiledCode {
         for op in &self.ops {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
                 | OpCode::PostIncrement(idx, _)
@@ -9652,6 +9661,7 @@ impl CompiledCode {
         match op {
             OpCode::GetUpvalue { name_idx: idx, .. }
             | OpCode::GetGlobal(idx)
+            | OpCode::GetGlobalDeferred(idx)
             | OpCode::GetScalarContainer { name_idx: idx, .. }
             | OpCode::SetGlobal(idx)
             | OpCode::SetGlobalRaw { name_idx: idx, .. }

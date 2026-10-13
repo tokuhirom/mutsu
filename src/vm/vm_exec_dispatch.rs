@@ -333,8 +333,24 @@ impl Interpreter {
             }
             // Cost: O(d) on a hit, d = env tiers walked (overlay -> parent chain -> base);
             // a miss runs the fallback chain, O(d + p*|name|), p = enclosing packages probed.
-            OpCode::GetGlobal(name_idx) => {
+            OpCode::GetGlobal(name_idx) | OpCode::GetGlobalDeferred(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
+                // `GetGlobalDeferred` hands a pending `HashEntryRef` bind token
+                // over whole; every other value reads exactly like `GetGlobal`.
+                if matches!(code.ops[*ip], OpCode::GetGlobalDeferred(_))
+                    && let Some(held) = self.get_env_with_main_alias(name)
+                {
+                    // The caller's binding may be a shared cell that holds the token.
+                    let token = match held.view() {
+                        ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                        _ => held,
+                    };
+                    if matches!(token.view(), ValueView::HashEntryRef { .. }) {
+                        self.stack.push(token);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                }
                 if self.rw_return_context
                     && !name.starts_with(['@', '%', '&', '*', '!', '?'])
                     && !crate::qualified::is_qualified(code.const_sym(*name_idx))
@@ -2411,7 +2427,17 @@ impl Interpreter {
                         let container = match val.view() {
                             ValueView::ContainerRef(arc) => Value::container_ref(arc.clone()),
                             _ => {
-                                let existing =
+                                // A `__mutsu_bind_index_ref_N` source (a subscript
+                                // RHS) names no variable: its temp is numbered per
+                                // compilation unit, so a cell found under it is an
+                                // earlier bind's. Reusing it makes `$*p := $*p<k>`
+                                // revisit the previous step of a walk instead of
+                                // advancing (the SetLocal twin excludes it as
+                                // `synthetic_index_source`).
+                                let existing = if source_name.starts_with("__mutsu_bind_index_ref_")
+                                {
+                                    None
+                                } else {
                                     match self.env().get(&resolved_source).map(Value::view) {
                                         Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
                                         _ => None,
@@ -2420,7 +2446,8 @@ impl Interpreter {
                                     // source in the plain env chain; fall back to the
                                     // mainline capture store before minting a
                                     // disconnected cell (see `mainline_lexical_cell`).
-                                    .or_else(|| self.mainline_lexical_cell(&resolved_source));
+                                    .or_else(|| self.mainline_lexical_cell(&resolved_source))
+                                };
                                 match existing {
                                     Some(arc) => Value::container_ref(arc),
                                     None => val.clone().into_container_ref(),

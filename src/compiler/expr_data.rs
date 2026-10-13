@@ -848,6 +848,24 @@ impl Compiler {
     /// their own read emitters in `compile_expr_var`. Returns whether it emitted
     /// the read.
     fn emit_bind_chain_raw_target(&mut self, target: &Expr) -> bool {
+        // A dynamic (`$*p := $*p<k>`): the deferred token lives in its slot when
+        // this code declared it, else in env under the caller's binding (TOML's
+        // table walk rebinds the caller's `$*tml` from a callee).
+        if let Expr::Var(name) = target
+            && name.len() > 1
+            && name.starts_with('*')
+            && !name[1..].starts_with('*')
+            && !name.contains("::")
+        {
+            match self.local_map.get(name.as_str()).copied() {
+                Some(slot) => self.code.emit(OpCode::GetLocalDeferred(slot)),
+                None => {
+                    let idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetGlobalDeferred(idx))
+                }
+            };
+            return true;
+        }
         let name = match target {
             Expr::Var(name) if Self::is_plain_lexical_name(name) => name.as_str(),
             // A bare word only *is* the variable under the same conditions the

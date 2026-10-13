@@ -2533,7 +2533,15 @@ impl Compiler {
                         // through to `@a[1]`, exactly like the `my $x := @a[1]`
                         // VarDecl path. Without cell promotion the rebind just
                         // snapshots the element value.
-                        scalar_elem_bind = matches!(expr, Expr::Index { .. });
+                        // A conditional over elements (`$t := $c ?? 1 !! $t<k>`)
+                        // binds the selected branch's element the same way.
+                        scalar_elem_bind = matches!(expr, Expr::Index { .. })
+                            || matches!(
+                                expr,
+                                Expr::Ternary { then_expr, else_expr, .. }
+                                    if matches!(then_expr.as_ref(), Expr::Index { .. })
+                                        || matches!(else_expr.as_ref(), Expr::Index { .. })
+                            );
                     }
                     // Signal rebind context for cleanup of old bind pairs.
                     self.code.emit(OpCode::MarkRebindContext);
