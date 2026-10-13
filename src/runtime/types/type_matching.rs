@@ -974,6 +974,9 @@ impl Interpreter {
                     name == "UInt"
                         || name == "Int"
                         || self.resolve_subset_base_type(&name) == "UInt"
+                        // Any other `Int` type object (`Bool`, `IntStr`, a user
+                        // `Int` subclass) is not `.DEFINITE`, so it passes.
+                        || self.type_matches_value_resolved("Int", value)
                 }
                 ValueView::Enum {
                     value: crate::value::EnumValue::Int(i),
@@ -983,6 +986,15 @@ impl Interpreter {
                 ValueView::Mixin(inner, _) => {
                     let inner = inner.as_ref().clone();
                     self.type_matches_value_resolved("UInt", &inner)
+                }
+                // An instance of a user `Int` subclass is the number it wraps.
+                ValueView::Instance { .. } => {
+                    match crate::value::numeric_payload::numeric_subclass_payload(value) {
+                        Some(payload) if self.type_matches_value_resolved("Int", value) => {
+                            self.type_matches_value_resolved("UInt", &payload)
+                        }
+                        _ => false,
+                    }
                 }
                 _ => false,
             };
@@ -1040,6 +1052,23 @@ impl Interpreter {
             && self
                 .resolve_enum_type_key(constraint)
                 .is_some_and(|key| key.as_str() == package_name.resolve().as_str())
+        {
+            return true;
+        }
+        // The type object of an `Int`-based enum (`enum E <a b>`) is an `Int`
+        // type, so it satisfies `Int` and everything `Int` does.
+        if let ValueView::Package(package_name) = value.view()
+            && self
+                .registry()
+                .enum_types
+                .get(package_name.resolve().as_str())
+                .is_some_and(|variants| {
+                    !variants.is_empty()
+                        && variants
+                            .iter()
+                            .all(|(_, v)| matches!(v, crate::value::EnumValue::Int(_)))
+                })
+            && Self::type_matches(constraint, "Int")
         {
             return true;
         }
