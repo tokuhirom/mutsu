@@ -201,7 +201,7 @@ pub(crate) fn def_is_plain_positional(pd: &ParamDef) -> bool {
 /// lexical key) and the parser's synthetic `__type_only__` / `__subsig__` /
 /// `__type_capture__…` names. A WhateverCode's `__wc_N` and other
 /// `_`-prefixed identifiers are accepted: their itemization (or exemption from
-/// it) is [`Interpreter::scalar_param_bind`]'s to decide.
+/// it) is `Interpreter::scalar_param_bind`'s to decide.
 // Cost: O(n), n = the name's length.
 pub(crate) fn is_plain_scalar_param_name(name: &str) -> bool {
     let mut chars = name.chars();
