@@ -369,6 +369,7 @@ fn starts_with_type_smiley(rest: &str) -> bool {
 pub(super) fn can_name_type_smiley(name: &str) -> bool {
     name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
         || crate::native_types::is_native_type_name(name)
+        || crate::parser::stmt::simple::is_user_declared_type(name)
 }
 
 /// Hand a just-parsed CORE term keyword to the run-time resolver when the
