@@ -1,4 +1,14 @@
 use super::*;
+
+/// What a call site's argument descriptor says about its arguments
+/// ([`Interpreter::stack_arg_kinds`]).
+#[derive(Clone, Copy, Default)]
+pub(super) struct CallArgKinds {
+    /// A syntactically named argument (ADR-0021).
+    pub(super) named: bool,
+    /// A `|EXPR` argument-list interpolation (ADR-0054).
+    pub(super) slip: bool,
+}
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -90,19 +100,19 @@ impl Interpreter {
     pub(super) fn stack_arg_kinds(
         code: &CompiledCode,
         arg_sources_idx: Option<u32>,
-    ) -> (bool, bool) {
+    ) -> CallArgKinds {
+        let mut kinds = CallArgKinds::default();
         let Some(idx) = arg_sources_idx else {
-            return (false, false);
+            return kinds;
         };
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
-            return (false, false);
+            return kinds;
         };
-        let (mut named, mut slip) = (false, false);
         for item in items.iter() {
-            named |= Self::arg_source_entry_is_named(item);
-            slip |= matches!(item.view(), ValueView::Bool(true));
+            kinds.named |= Self::arg_source_entry_is_named(item);
+            kinds.slip |= matches!(item.view(), ValueView::Bool(true));
         }
-        (named, slip)
+        kinds
     }
 
     #[inline]

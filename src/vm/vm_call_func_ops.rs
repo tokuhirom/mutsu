@@ -1,3 +1,4 @@
+use super::vm_call_helpers::CallArgKinds;
 use super::*;
 use crate::runtime::dispatch_key;
 use crate::runtime::native_increment_dispatch::IncrementOp;
@@ -494,8 +495,10 @@ impl Interpreter {
             name_idx,
             arity,
             arg_sources_idx,
-            true,
-            call_has_slip,
+            CallArgKinds {
+                named: true,
+                slip: call_has_slip,
+            },
             compiled_fns,
         )
     }
@@ -520,14 +523,13 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
         let saved_static = std::mem::replace(&mut self.static_call_args, static_arg_types);
-        let (call_has_named, call_has_slip) = Self::stack_arg_kinds(code, arg_sources_idx);
+        let arg_kinds = Self::stack_arg_kinds(code, arg_sources_idx);
         let r = self.exec_call_func_op_inner(
             code,
             name_idx,
             arity,
             arg_sources_idx,
-            call_has_named,
-            call_has_slip,
+            arg_kinds,
             compiled_fns,
         );
         self.literal_native_args = saved;
@@ -541,10 +543,13 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
-        call_has_named: bool,
-        call_has_slip: bool,
+        arg_kinds: CallArgKinds,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        let CallArgKinds {
+            named: call_has_named,
+            slip: call_has_slip,
+        } = arg_kinds;
         crate::vm::vm_stats::record_function_dispatch();
         // ADR-0113: a frame-lexical routine is resolved at compile time and is
         // in no registry the name-keyed dispatch below could consult.
