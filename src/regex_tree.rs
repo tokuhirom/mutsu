@@ -2105,10 +2105,14 @@ impl Parser {
 
     fn parse_callable(&mut self, start: usize) -> Option<RegexNode> {
         self.pos += 1; // '&'
+        // `<&$var(...)>` calls the Callable a scalar holds; the name keeps
+        // its `$`.
+        let scalar = self.consume_if('$');
         let Some(name) = self.parse_variable_name() else {
             self.pos = start;
             return None;
         };
+        let name = if scalar { format!("${name}") } else { name };
         self.skip_whitespace();
         let mut args = Vec::new();
         let mut arg_source = None;
@@ -2343,6 +2347,14 @@ impl Parser {
 
     fn parse_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
         self.pos += 1; // '$'
+        // `$^a`: a placeholder parameter of the enclosing block.
+        if self.consume_if('^') {
+            let name = self.parse_variable_name()?;
+            return Some(RegexNode::Extension(RegexExtension::Placeholder {
+                name,
+                sequential,
+            }));
+        }
         let name = if self.consume_if('{') {
             let name = self.parse_twigil_variable_name()?;
             if !self.consume_if('}') {

@@ -91,7 +91,12 @@ impl<'ast> Visit<'ast> for TokenReads {
                 }
             }
             RegexNode::Callable { name, .. } => {
-                self.vars.push(format!("&{name}"));
+                // `<&$var>` reads the scalar itself.
+                self.vars.push(if name.starts_with('$') {
+                    name.clone()
+                } else {
+                    format!("&{name}")
+                });
                 walk_regex_node(self, node);
             }
             _ => walk_regex_node(self, node),

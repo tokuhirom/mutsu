@@ -4660,7 +4660,15 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             (RakuAstClass::RegexAssertionNamed, fields)
         }
         RegexNode::Callable { name, args, .. } => {
-            let mut fields = vec![node_field(Some("callee"), var_lexical("&", name))];
+            // `<&$var>`: rakudo item-contextualizes the scalar.
+            let callee = match name.strip_prefix('$') {
+                Some(name) => RakuAstNode {
+                    class: RakuAstClass::ContextualizerItem,
+                    fields: vec![node_field(None, var_lexical("$", name))],
+                },
+                None => var_lexical("&", name),
+            };
+            let mut fields = vec![node_field(Some("callee"), callee)];
             if !args.is_empty() {
                 fields.push(node_field(Some("args"), arg_list(args)?));
             }
