@@ -540,6 +540,39 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `plain_fn_resolve_memo`, the light-call caches) are still tagged with the
    map generation only; a multi *method* call has no cache in front of the
    resolver; value-dependent families take the generic path.
+
+   Measured after slice 7 (release callgrind, Ir per call): the plain-routine
+   memos need no family generation, because their map version alternates
+   between two states `GenCache` keeps both of (`for ^3000 { { sub g {..};
+   f($i) } }` resolves `f` twice in all); a multi method call costs 24.1k
+   against 23.2k for a plain one, so a cache in front of its resolver buys
+   little; a `where` family cost 18.0k against 10.8k for a type-only one,
+   almost all of it the generic path around a cheap inline `where`.
+
+   **Slice 8 done** (`perf/12529-where-multi-light-call`): a value-dependent
+   family takes the light call path (`vm/vm_multi_plan_light_call.rs`).
+
+   - `multi_plan_light_cache`, keyed like `multi_light_cache`, holds the
+     family's keyed `BareMultiPlan` and the light body of every candidate its
+     stage program can pick, found by body fingerprint among the family's
+     keys when the generic path first light-binds a winner. A call with the
+     same argument types runs only the stage program and goes to the
+     winner's positional light bind, with the dispatch frame and samewith
+     context of the type-deterministic hit.
+   - The value checks are user code and must run once per call: every
+     candidate's light-bind admission is decided before the program runs, so
+     a winner it picks is always taken. Only "no winner" falls back, and the
+     generic path then raises the dispatch failure. Only a program whose
+     checks are all inline WhateverCode `where`s is taken (a `subset`
+     predicate may be any block); a refused family is remembered per
+     `(package, name)` (`multi_plan_light_refused`).
+   - `multi f(Int $x where * > 0)` + `multi f(Int $x)` called 3000 times:
+     -26% Ir, one full resolution instead of 3000. `bench-multi-dispatch`
+     +0.22% (+0.37% with the JIT): its `where` families use `subset`s and are
+     refused, and each of their generic light calls pays the refusal probe.
+     Other rows within ±0.06%.
+   - Found on the way: a block-declared multi runs its winner's `where`
+     twice per call on every path (#13183).
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay
