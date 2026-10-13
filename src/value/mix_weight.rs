@@ -229,8 +229,10 @@ impl MixWeight {
         let (mut n, mut d) = (an * bd + bn * ad, ad * bd);
         let g = gcd(n, d).max(1);
         (n, d) = (n / g, d / g);
+        // Either operand a `Rat` keeps the result a `Rat` (`1/3 + 2/3` is `1.0`).
+        let rational = matches!(self, MixWeight::Rat(..)) || matches!(other, MixWeight::Rat(..));
         match (i64::try_from(n), i64::try_from(d)) {
-            (Ok(n), Ok(1)) => MixWeight::Int(n),
+            (Ok(n), Ok(1)) if !rational => MixWeight::Int(n),
             (Ok(n), Ok(d)) => MixWeight::Rat(n, d),
             _ => MixWeight::Num(n as f64 / d as f64),
         }
@@ -240,8 +242,6 @@ impl MixWeight {
     /// them first so a `Num` operand cannot make the total depend on hash order.
     // Cost: O(n), n = the number of weights.
     pub fn sum(weights: impl IntoIterator<Item = MixWeight>) -> MixWeight {
-        weights
-            .into_iter()
-            .fold(MixWeight::Int(0), MixWeight::add)
+        weights.into_iter().fold(MixWeight::Int(0), MixWeight::add)
     }
 }
