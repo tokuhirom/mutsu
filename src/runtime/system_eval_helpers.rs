@@ -197,6 +197,9 @@ impl Interpreter {
             matches!(value.view(), ValueView::Package(_))
                 .then(|| name.split('\u{0}').next().unwrap_or(&name).to_string())
         }));
+        // A loaded module's package is global, whatever frame the `EVAL` runs
+        // in (`require Test; ... eval-lives-ok 'Test'` from inside `Test`).
+        names.extend(self.module.loaded_modules.iter().cloned());
         names
     }
 
