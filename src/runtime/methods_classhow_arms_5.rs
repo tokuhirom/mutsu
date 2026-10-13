@@ -313,7 +313,19 @@ impl Interpreter {
             // / `Blob[uint8]`, whose pun is that parameterised class itself
             // (`nqp::create(buf8.^pun)` in path-utils).
             let canonical = crate::runtime::utils::normalize_buf_type_name(&role_name);
-            if canonical != role_name {
+            if canonical != role_name
+                || matches!(
+                    role_name.as_str(),
+                    "Buf[uint8]"
+                        | "Buf[uint16]"
+                        | "Buf[uint32]"
+                        | "Buf[uint64]"
+                        | "Blob[uint8]"
+                        | "Blob[uint16]"
+                        | "Blob[uint32]"
+                        | "Blob[uint64]"
+                )
+            {
                 return Ok(Value::package(Symbol::intern(&canonical)));
             }
             self.punned_role_type_object(&role_name)
