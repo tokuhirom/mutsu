@@ -1860,12 +1860,10 @@ impl Compiler {
                     // (`my UInt \x = $o`); its right-hand side reaches the
                     // check wrapped in a VarRef, which only the bind check
                     // looks through.
-                    if sigilless_bind_vardecl || self.sigilless_locals.contains(name.as_str()) {
+                    if sigilless_bind_vardecl {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
-                    } else if scalar_bind_decont
-                        && !name.starts_with('@')
-                        && !name.starts_with('%')
+                    } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')
                     {
                         if *is_state {
                             self.code
