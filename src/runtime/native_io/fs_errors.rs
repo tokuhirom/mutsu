@@ -201,22 +201,6 @@ pub(crate) fn open_error_failure(err: RuntimeError) -> Value {
     }
 }
 
-/// Throw an exception instance: a `RuntimeError` carrying it and its message.
-/// Cost: O(m), m = the message length.
-pub(crate) fn error_of(exception: Value) -> RuntimeError {
-    let message = match exception.view() {
-        ValueView::Instance { attributes, .. } => attributes
-            .as_map()
-            .get("message")
-            .map(Value::to_string_value)
-            .unwrap_or_default(),
-        _ => String::new(),
-    };
-    let mut err = RuntimeError::new(message);
-    err.exception = Some(Box::new(exception));
-    err
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

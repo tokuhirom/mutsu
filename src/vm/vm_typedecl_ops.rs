@@ -397,7 +397,11 @@ impl Interpreter {
                     let p = if does_parents.contains(&p) {
                         p
                     } else {
-                        self.canonical_class_parent_name(&p)
+                        let canonical = self.canonical_class_parent_name(&p);
+                        // `use A::Base; unit class A::Kid is Base`: the parent is
+                        // the compunit's imported short name for `A::Base`.
+                        self.child_package_type_alias(&qualified_name, &canonical)
+                            .unwrap_or(canonical)
                     };
                     (p, pre_args)
                 })
