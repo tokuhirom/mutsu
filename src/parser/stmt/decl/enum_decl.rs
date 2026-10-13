@@ -29,10 +29,7 @@ fn register_enum_values(variants: &[(String, Option<Expr>)]) {
 /// parenthesized enum body. The runtime still evaluates the complete body, but
 /// the parser needs these names before the following statements are parsed so
 /// they are treated as complete enum-value terms.
-fn collect_dynamic_enum_value_names(
-    body: &Expr,
-    out: &mut Vec<String>,
-) {
+fn collect_dynamic_enum_value_names(body: &Expr, out: &mut Vec<String>) {
     let Expr::ArrayLiteral(items) = body.peel_parens() else {
         return;
     };

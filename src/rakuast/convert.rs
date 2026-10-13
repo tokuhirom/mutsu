@@ -22,8 +22,7 @@ use super::{
 };
 use crate::ast::spelled::Spelling;
 use crate::ast::{
-    AssignOp, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef,
-    Stmt, WithBlockKind,
+    AssignOp, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef, Stmt, WithBlockKind,
 };
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexModifierKind, RegexNode, RegexTree};

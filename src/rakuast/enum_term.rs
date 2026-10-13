@@ -144,7 +144,11 @@ fn pair_list_term(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, Ru
             let value = match value {
                 Some(value) => convert_expr(value)?,
                 // A bare `'name'` element: the parser keeps no value for it.
-                None => return Ok(Value::rakuast(Box::new(quoted_string(Value::str(name.clone()))))),
+                None => {
+                    return Ok(Value::rakuast(Box::new(quoted_string(Value::str(
+                        name.clone(),
+                    )))));
+                }
             };
             Ok(Value::rakuast(Box::new(RakuAstNode {
                 class: RakuAstClass::FatArrow,

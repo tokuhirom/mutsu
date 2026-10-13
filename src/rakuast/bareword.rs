@@ -304,8 +304,10 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 } => {
                     if !is_my {
                         for variant in crate::parser::enum_value_names(variants) {
-                            for composed in
-                                self.compositions(Symbol::intern(&variant)).into_iter().skip(1)
+                            for composed in self
+                                .compositions(Symbol::intern(&variant))
+                                .into_iter()
+                                .skip(1)
                             {
                                 self.0
                                     .entry(composed.resolve())
