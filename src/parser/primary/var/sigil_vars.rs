@@ -1074,7 +1074,10 @@ pub(crate) fn is_known_word_infix(name: &str) -> bool {
 fn unbracketed_meta_op(op: &str) -> std::borrow::Cow<'_, str> {
     let mut chars = op.chars();
     if let Some(meta @ ('R' | 'Z' | 'X')) = chars.next()
-        && let Some(inner) = chars.as_str().strip_prefix('[').and_then(|r| r.strip_suffix(']'))
+        && let Some(inner) = chars
+            .as_str()
+            .strip_prefix('[')
+            .and_then(|r| r.strip_suffix(']'))
         && !inner.is_empty()
     {
         return std::borrow::Cow::Owned(format!("{meta}{}", unbracketed_meta_op(inner)));
