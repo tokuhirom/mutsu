@@ -1150,4 +1150,31 @@ allocation counts; the JIT-on rows agree to the same digits.
   finds it. A `with_items` accessor would make that impossible, at the cost of rewriting the
   borrowing sites.
 - #13078 (the in-place celled push) can now be reconsidered: the reader-family harnesses no
-  longer find an unguarded walk of a shared node.
+  longer find an unguarded walk of a shared node. Done in §21.
+
+## 21. A celled array's push is written in place (2026-10-13, #13078)
+
+`celled_array_mutate` (every `push`/`unshift`/`append`/`prepend`/`pop`/`shift`/`splice`
+on a `my @a` bound to a decl-site cell) and the `ContainerRef` arm of `exec_array_push_op`
+wrote through `Gc::make_mut`. Other holders of the cell's node are routine: the worker's
+slot, a parameter bound to the node, a `for` source, an element store's copy. With any of
+them alive, `make_mut` copied the node and appended to the copy, so the push was lost. That
+happened without a race, too: `my @a = ^3; await start { @a[0] = 5; @a.push(1) }` printed
+`[5 1 2]`, where raku prints `[5 1 2 1]`.
+
+Both now write in place (`gc_contents_mut`) while holding the cell's stripe, the node's
+stripe and the cell's mutex. The push arm also follows the cell's alias chain first
+(`value_cell_of`) and takes the stripes it lacked. This is rakudo's model: a VMArray grows
+in place. MoarVM keeps it memory-safe by freeing the old slots only at a safepoint; mutsu
+relies on §20's readers instead, which hold the stripe or read a snapshot.
+
+**Maintainer decision.** Without `make_mut`, an unguarded reader is no longer protected by
+the copy, and AGENTS.md reserves that weakening for the maintainer. The maintainer approved
+it on 2026-10-13, on the grounds that rakudo has the same semantics and §20 guards the
+readers. §20.1's caveat applies in full: a future reader that walks a shared `ArrayData`
+outside §20's funnels can now crash rather than read a stale copy.
+
+Measured on a debug build. Each of the four single-thread shapes and the two 4-thread races
+(a mutating and a read-only callee racing `push`, expecting 1010) failed 6 of 6 before this
+change and pass 5 of 5 after it (`t/concurrency/concurrent-celled-push-is-not-lost.t`). The
+array, hash and container-mutation harnesses pass 3 of 3.
