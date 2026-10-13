@@ -2511,19 +2511,26 @@ new one. Decisions:
    now also for a receiver with no shape (through `shapeless_row`) and a type object (`Int.EXISTS-POS("0")` is `False`).
 2. **Reach**: the open shapes by their MRO; the closed ones through `ANY_LIST_FOR_CLOSED_SHAPES` (a `Hash`, a quant hash, a `Pair`
    are not `Positional`), except `Blob`/`Buf`, which are and keep their cascade arms until their rows land; a receiver with no shape
-   through `answer_shapeless` (an instance by its MRO, a type object, an enum, a code object), except a list with no settled shape (a
-   lazy or shaped array, a `Seq`, a `Slip`, a buffer storage), which indexes its elements through the interpreter but still reaches the
-   associative pair, and a `Junction`, a `Proxy` and `Nil`.
+   through `answer_shapeless` (an instance by its MRO, which declines at a built-in class such as `Map` or `Array`; a type object; an
+   enum; a code object). `answer_shapeless` leaves to the interpreter a list with no settled shape (a lazy or shaped array, a `Seq`,
+   a `Slip`, a buffer storage) for the positional pair, a `Junction`, a `Proxy`, `Nil` and a mixin for all four, and for the
+   associative pair a package (its stash is `Associative`: `CORE::<&say>`), an instance (its `{ }` may be a user
+   `postcircumfix:<{ }>` or a tied store, resolved first) and a hash with no settled shape (a `Map` subclass's raw storage, which
+   keeps the associative rows' implementation in the cascade). `Map` gains its own `AT-KEY` row, which it would otherwise miss.
 3. **A `Match` reaches `Capture`'s `AT-POS`/`EXISTS-POS`** (`CAPTURE_FOR_MATCH`): the handlers read its positional captures, and an
    optional group that did not match does not exist. The `Match` branch of the cascade arm goes.
 4. **The associative rows of the collections take a user-object key** (`OBJECT_ARGS` on `subscript.rs`'s rows); their delegation
-   from the cascade arm goes.
+   from the cascade arm goes for every settled shape.
+5. **The subscript opcode keeps the cascade's instance branch of `AT-POS`** (`$obj[0]` of a `Positional` class with no `AT-POS`),
+   which now calls the row's handler: the opcode asks the cascade without an interpreter, so it cannot walk the instance's MRO to
+   the row (a `TODO` in the arm).
 
-Behaviour changes toward Rakudo: `Int.AT-POS(0)`, `C.AT-POS(0)`, `Int.EXISTS-POS(0)`, `Int.AT-KEY("x")`, `C.AT-KEY("x")`,
-`C.new.EXISTS-POS(0)`, `C.new.AT-KEY("x")` and `C.new.EXISTS-KEY("x")` answer (all were `X::Method::NotFound`); `5.AT-POS(N.new)`
+Behaviour changes toward Rakudo: `Int.AT-POS(0)`, `C.AT-POS(0)`, `Int.EXISTS-POS(0)`, `Int.AT-KEY("x")` and
+`C.new.EXISTS-POS(0)` answer (all were `X::Method::NotFound`); `5.AT-POS(N.new)`
 reads the index's `.Int` (was `Nil`); `5.EXISTS-POS("0")` is `True`; `5.AT-POS(-1)` names `0..0`. Not changed: `Nil.EXISTS-POS` and
 `Nil.EXISTS-KEY` answer `Nil` (Rakudo: `False`; the interpreter answers a method on `Nil` before the table); `Buf.EXISTS-POS` is still
-missing (#13294, with the `Nil` answers); `%h.AT-KEY($obj)` keys a `Str`-keyed hash by the object's own string form, not its `.Str` (#13293). The arms stay
+missing (#13294, with the `Nil` answers); `C.AT-KEY("x")`, `C.new.AT-KEY("x")` and `C.new.EXISTS-KEY("x")` stay
+`X::Method::NotFound` (Rakudo: `Any`, a failure, `False`; point 2); `%h.AT-KEY($obj)` keys a `Str`-keyed hash by the object's own string form, not its `.Str` (#13293). The arms stay
 counted by `method-rows-report.py`: what is left of them is the list, buffer-instance, `IO::Path::Parts` and `Nil` branches. Pinned in
 `t/collections/subscript/any-subscript-rows.t`.
 
