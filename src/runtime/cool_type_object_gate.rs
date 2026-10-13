@@ -119,6 +119,19 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let subject = string_sub_subject(name, args)?;
+        // `uniname(Nil)`: `Nil` is a `Cool` type object whose only candidate
+        // wants a defined invocant, like `Int:U`.
+        if subject.is_nil() && name == "uniname" {
+            return Some(Err(
+                super::methods_signature_errors::make_multi_no_match_error_detailed(
+                    name,
+                    "Nil",
+                    false,
+                    "",
+                    &[],
+                ),
+            ));
+        }
         if !matches!(subject.view(), ValueView::Package(_)) {
             return None;
         }

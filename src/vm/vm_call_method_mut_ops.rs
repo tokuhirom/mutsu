@@ -2139,7 +2139,7 @@ impl Interpreter {
         // dispatch, and the post-dispatch FALLBACK absorb in
         // `exec_call_method_mut_op` keeps handling genuinely-unknown methods.
         if modifier.is_none() && target.is_nil() {
-            match crate::vm::vm_call_method_ops::nil_predispatch_verdict(method, args.is_empty()) {
+            match crate::vm::vm_call_method_ops::nil_predispatch_verdict(method, &args) {
                 Some(crate::vm::vm_call_method_ops::NilPredispatchVerdict::Error(err)) => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmut",
