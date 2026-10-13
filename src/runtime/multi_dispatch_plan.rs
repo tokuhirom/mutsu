@@ -330,4 +330,71 @@ impl Interpreter {
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, ranked, None)
     }
+
+    /// The cached, keyed plan of a bare multi call with argument type keys
+    /// `arg_keys`, when its stage has an inline-checks program
+    /// (`StageProgram::checks_are_inline_wheres`): what the multi light call
+    /// of a value-dependent family runs (ADR-12529 §2.4). `None` for an
+    /// imported operator, whose visibility depends on the executing unit.
+    // Cost: O(a) for the key, a = arguments, plus one cache probe.
+    pub(crate) fn light_bare_multi_plan(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        arg_keys: &[Symbol],
+    ) -> Option<(BareMultiPlanKey, Arc<BareMultiPlan>)> {
+        let key = self.bare_multi_plan_key(name, args, Some(arg_keys))?;
+        if key.visibility.is_some() {
+            return None;
+        }
+        let plan = self.caches.bare_multi_plan_cache.get(
+            self.caches.fn_resolve_gen,
+            &key,
+            || self.dispatch.fn_family_gens.of_name(key.name),
+        )?;
+        let usable = plan.keyed
+            && plan
+                .program
+                .get()
+                .is_some_and(|p| p.as_ref().is_some_and(|p| p.checks_are_inline_wheres()));
+        usable.then_some((key, plan))
+    }
+
+    /// Whether `key` (from [`Self::light_bare_multi_plan`]) still describes a
+    /// call made here: the same package search inputs, proto generation and
+    /// subsets. Its name and argument keys are the caller's to match.
+    // Cost: O(1), one registry read.
+    pub(crate) fn light_plan_key_current(&self, key: &BareMultiPlanKey) -> bool {
+        key.package == self.current_package_sym()
+            && key.lexical_package
+                == self
+                    .routine_stack()
+                    .last()
+                    .and_then(|frame| frame.lexical_package)
+            && {
+                let registry = self.registry();
+                key.proto_generation == registry.proto_generation()
+                    && key.subsets == registry.subsets.len()
+            }
+    }
+
+    /// Run `plan`'s stage program against `args`: the winner, if any.
+    // Cost: O(c) plus the value checks, c = candidates up to the best rank.
+    pub(crate) fn run_light_bare_multi_plan(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        plan: &BareMultiPlan,
+    ) -> Resolved {
+        match plan.program.get() {
+            Some(Some(program)) => self.run_stage_program(name, args, program),
+            _ => Ok(None),
+        }
+    }
+
+    /// Whether `def` is one of `plan`'s candidates (by identity).
+    // Cost: O(c), c = candidates.
+    pub(crate) fn plan_has_candidate(plan: &BareMultiPlan, def: &Arc<FunctionDef>) -> bool {
+        plan.stage.iter().any(|entry| Arc::ptr_eq(&entry.def, def))
+    }
 }
