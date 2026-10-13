@@ -2356,6 +2356,39 @@ reach `Any`'s rows for these names, and `batch(:elems(N))`, whose named argument
 
 `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 27 to 24 arms. Pinned in `t/types/any-combinations-batch-rows.t`.
 
+### 9.101 Slice 5: an allomorph is answered by the rows, on the part each reads (2026-10-13)
+
+`refactor/11276-allomorph-shape`. An allomorph (`IntStr`, `RatStr`, `NumStr`, `ComplexStr`) is its number with the source string
+mixed in (`Value::Mixin`), which has no dispatch shape, so the `Mixin` block of `methods_0arg/mod.rs` answered it by name: a ~30-name
+list of string methods on the `Str` part, then every other name on the number (`native_method_0arg(inner, ...)`), and the 1-arg
+cascade kept a twin for `uniprop`/`uniprops`/`unimatch`/`samemark`/`samecase`/`indent`. Probed: every name declared on `Str`, `Int`,
+`Rat`, `Num`, `Complex`, `Cool`, `Allomorph`, `Any`, `Mu`, `Real`, `Numeric`, `Stringy` and `Rational` (283 after dropping the I/O and
+effectful ones), with no argument, on `<1>`, `<1.5>`, `<1e0>`, `<1+2i>`, `IntStr.new(5, "zero")` and `<0x10>`, plus 45 one-argument
+calls, on `raku`, the pre-change binary and the new one. Decisions:
+
+1. **No new shape: a receiver redirect** (`method_table::allomorph`, called by the guard step after the native-base redirect of
+   §9.79). Rakudo's MRO is `IntStr Allomorph Str Int Cool Any Mu`, so the row is looked up along it: `Str`'s own rows first, invoked on
+   the string part; then the numeric type's shape (open, so it reaches `Cool`, `Any` and `Mu`), whose own rows (`Int`, `Real`,
+   `Rational`, `Num`, `Complex`, `Numeric`) are invoked on the number. A `Cool` row reads the number when it is one of `Cool`'s
+   numeric methods (`self.Numeric.METHOD`, `COOL_NUMERIC_FOR_COLLECTIONS`) and the string otherwise (`self.Str.METHOD`); an `Any`
+   row in `ANY_LIST_FOR_CLOSED_SHAPES` reads the allomorph itself as its one element; a `Mu` row declines. `Allomorph`'s own
+   numeric overrides (`Bool`, the numeric coercions, `Bridge`, `succ`, `pred`, `narrow`) skip `Str`'s rows.
+2. **What an allomorph answers about itself stays in the block**: `raku`/`perl`, `gist`, `Str`, `Stringy`, `WHICH`, `clone`,
+   `Capture`, `VAR`, `wordcase` (Rakudo re-allomorphs its result) and `ACCEPTS` (a `Str` argument compares the string, anything
+   else the number: `methods_narg::allomorph`). These are `Allomorph`'s methods, which neither part's row can answer.
+3. **Only a plain allomorph is redirected**: one carrying a role (`<42> but R`) or a value mixed with a `Str` (`5 but "x"`) keeps the
+   mixin dispatch.
+4. **The cascades decline what the table answers** (`allomorph::answers`, asked at the top of the `Mixin` block and in the 1-arg
+   cascade), so the debug cross-check compares a row with a declining cascade, as for every migrated name.
+5. **`Any.join` reads an allomorph** as the one element it is, stringified to its string part (`<1e0>.join` is `"1e0"`; it was `"1"`).
+
+Behaviour changes toward Rakudo: `Any`'s list methods (`head`, `tail`, `pick`, `roll`, `min`, `max`, `minmax`, `sort`, `serial`,
+`unique`) keep the allomorph where they answered the bare number; `Str.Version` parses the string (`<1e0>.Version` is `v1.e.0`, was
+`v1`); `Str.Date`/`DateTime` parse the string (`X::Temporal::InvalidFormat`, was `X::Method::NotFound`); `naive-word-wrapper` answers.
+Not changed: a numeric row that returns its invocant answers the bare number where Rakudo returns the allomorph (`<1>.floor`,
+`<1.5>.abs`, #13236); `.unique` on any scalar answers the scalar, not a one-element `Seq` (#13235). `method-rows-report.py --arms`:
+the pure arity cascades go from 133 to 132 arms (the string list was one `match` arm). Pinned in `t/oo/method/allomorph-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
