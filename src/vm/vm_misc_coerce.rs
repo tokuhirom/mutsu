@@ -243,7 +243,8 @@ impl Interpreter {
         }
         // `~/a/` warns and yields the empty string, like every other Str
         // coercion of a Regex -- see `regex_str_coercion`.
-        if let Some(coerced) = self.regex_str_coercion(&val) {
+        // A `Sub`/`Method` code object warns the same way (`code_str`).
+        if let Some(coerced) = self.code_str(&val) {
             let caller_code = self.current_code;
             let resumed = coerced?;
             self.reconcile_caller_after_internal_dispatch(caller_code);

@@ -420,7 +420,7 @@ impl Interpreter {
         }
         // A `Regex` in string context warns and yields the empty string, not
         // its source text -- see `regex_str_coercion`.
-        if let Some(coerced) = self.regex_str_coercion(&v) {
+        if let Some(coerced) = self.code_str(&v) {
             return coerced;
         }
         // A `Seq` whose source has not been pulled yet (an
