@@ -290,7 +290,8 @@ impl Interpreter {
             && !bare.contains("::")
             && !crate::qualified::is_global_package(self.current_package_sym())
         {
-            let real = crate::qualified::qualified(self.current_package_sym(), Symbol::intern(bare));
+            let real =
+                crate::qualified::qualified(self.current_package_sym(), Symbol::intern(bare));
             if self.get_our_var(real.as_str()).is_some() {
                 return self.push_bare_word_value_in(real, compiled_fns, false);
             }
