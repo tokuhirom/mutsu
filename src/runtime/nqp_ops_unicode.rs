@@ -135,7 +135,7 @@ fn prop_value_code(op: &str, cp: i64, code: i64) -> Result<i64, RuntimeError> {
                 .and_then(|name| SCRIPT_VALUES.iter().position(|&(n, _)| n == name))
                 .unwrap_or(0) as i64,
             Prop::EastAsianWidth => char_of(cp)
-                .map(|ch| crate::builtins::uniprop::east_asian_width_abbrev(ch))
+                .map(crate::builtins::uniprop::east_asian_width_abbrev)
                 .and_then(|abbrev| {
                     EAST_ASIAN_WIDTH_VALUES
                         .iter()
