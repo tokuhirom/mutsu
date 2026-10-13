@@ -23,9 +23,15 @@ impl Interpreter {
     /// body here would change observable ordering (for example, a `say` in the
     /// module must still happen after CHECK), while the routine registry and
     /// export table are the compile-time interface needed by `import`.
+    ///
+    /// With `only_nested`, only the routines below a package body's (or the
+    /// unit's) own statement list are taken: an `EVAL` leaves a package
+    /// body's own routines to the body, whose registration is what notices a
+    /// redeclaration across re-opened package bodies (#13137).
     pub(crate) fn preregister_inline_package_subs(
         &mut self,
         stmts: &[Stmt],
+        only_nested: bool,
     ) -> Result<(), RuntimeError> {
         let mut collector = InlinePackageSubCollector::default();
         crate::ast_visit::walk_stmts(&mut collector, stmts);
@@ -33,6 +39,7 @@ impl Interpreter {
         let declarations: Vec<_> = collector
             .out
             .into_iter()
+            .filter(|decl| !only_nested || decl.nested)
             .map(|decl| (decl.package.clone().unwrap_or_else(|| unit_package.clone()), decl))
             .collect();
 
