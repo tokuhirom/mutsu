@@ -107,7 +107,9 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
                 }
             }
         }
-        SourceForm::BarePhaser | SourceForm::ImmediateCall => {}
+        SourceForm::BarePhaser
+        | SourceForm::ImmediateCall
+        | SourceForm::DeclarationCompoundAssign => {}
     }
 }
 

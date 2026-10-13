@@ -246,10 +246,14 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 }
                 // `STMT for LIST`: the parser's `Stmt::For` holding the statement.
                 if modifier.class == RakuAstClass::StatementModifierFor {
+                    // `my $x OP= … for LIST` declares once, before the loop, as
+                    // the parser's expansion does.
+                    let (hoisted, statement) =
+                        crate::ast::decl_compound_assign::split_for_modifier(statement);
                     let (param, params) = crate::parser::for_modifier_loop_params(&statement);
                     let uses_block_magic =
                         super::callable_context::uses_block(std::slice::from_ref(&statement));
-                    return Ok(Stmt::For {
+                    let loop_stmt = Stmt::For {
                         iterable: lower_expr(named_child_or_positional(modifier)?)?,
                         param,
                         param_def: Box::new(None),
@@ -262,6 +266,13 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         explicit_zero_params: false,
                         is_statement_modifier: true,
                         uses_block_magic,
+                    };
+                    return Ok(match hoisted {
+                        Some(mut hoisted) => {
+                            hoisted.push(loop_stmt);
+                            Stmt::SyntheticBlock(hoisted)
+                        }
+                        None => loop_stmt,
                     });
                 }
                 if matches!(
@@ -411,6 +422,11 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         .any(|field| field.name == Some("export-term-name"))
     {
         return Ok(Stmt::Expr(lower_expr(node)?));
+    }
+    // `my $x OP= EXPR`: the parser's declaration-then-assignment expansion,
+    // not a declaration with a loose tail.
+    if super::decl_compound_assign::is_declaration_compound_assign(node) {
+        return super::decl_compound_assign::lower(node);
     }
     // `my $x = 1 and 2`: a declaration is the leftmost operand of the statement.
     if let Some(stmt) = super::decl_tail::lower(node) {
@@ -4650,6 +4666,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // RakuAST's implicit named hash placeholder (`%_`) lowers back to the
         // legacy hash variable used by `make_anon_sub`.
         RakuAstClass::VarDeclarationPlaceholderSlurpyHash => Ok(Expr::HashVar("_".to_string())),
+        RakuAstClass::ApplyInfix
+            if super::decl_compound_assign::is_declaration_compound_assign(node) =>
+        {
+            Ok(Expr::DoStmt(Box::new(super::decl_compound_assign::lower(
+                node,
+            )?)))
+        }
         // `($x OP= EXPR)` in expression position -> a compound assignment.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
             lower_compound_assign_expr(node)

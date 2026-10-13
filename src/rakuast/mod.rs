@@ -29,6 +29,7 @@ use constructor_positional::single_positional_class;
 mod convert;
 mod core_term_names;
 mod core_type_names;
+mod decl_compound_assign;
 mod decl_tail;
 mod decl_traits;
 mod declared_routines;

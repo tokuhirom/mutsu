@@ -719,3 +719,20 @@ the routine stays declared in the enclosing scope. Under `do` the node is
 the statement of a `StatementPrefix::Do`. A routine declaration with a
 statement modifier (`sub f { } given …`) is a separate parser expansion and
 stays a refusal.
+
+### 6.25 S10: compound-assignment declarations (2026-10-13)
+
+`my $x OP= EXPR` parses to the declaration (with its default value) and one
+assignment of the operator applied to it; rakudo's tree is an `ApplyInfix`
+whose `left` is the `VarDeclaration` and whose infix is `MetaInfix::Assign`
+(measured on 2026.09). `ast::decl_compound_assign::expand` builds the
+expansion; when the written operator is known (a spelling-keeping parse of a
+built-in operator, or the lowering) it opens with a
+`SourceForm::DeclarationCompoundAssign` record and the assignment keeps the
+operator and right-hand side in its `Expr::CompoundAssign` marker, which the
+compiler already sees through. A postfix `for` hoists the declaration out of
+the loop (`split_for_modifier`, shared by the parser and the lowering), so the
+variable is declared once rather than reset per iteration; the converter
+renders that loop as the assignment statement with its `loop-modifier` and the
+declaration as the assignment's left operand. `Z=` and user-defined compound
+operators keep their own expansions and stay refusals.

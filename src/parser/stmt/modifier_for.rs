@@ -223,10 +223,14 @@ pub(super) fn parse_for_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str,
             is_statement_modifier: true,
             uses_block_magic: false,
         };
-        let stmt = if let Some(declaration) = hoisted_decl {
-            Stmt::SyntheticBlock(vec![declaration, loop_stmt])
-        } else {
-            loop_stmt
+        let stmt = match hoisted_decl {
+            // A recorded compound declaration hoists its record with it.
+            Some(Stmt::SyntheticBlock(mut hoisted)) => {
+                hoisted.push(loop_stmt);
+                Stmt::SyntheticBlock(hoisted)
+            }
+            Some(declaration) => Stmt::SyntheticBlock(vec![declaration, loop_stmt]),
+            None => loop_stmt,
         };
         return Ok(Some((r, stmt)));
     }

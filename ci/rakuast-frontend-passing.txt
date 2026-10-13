@@ -1466,6 +1466,7 @@ t/control/statement-level-begin-side-effects-with-vardecl-split.t
 t/control/statement-mod-not-taken-after-pair-block-value.t
 t/control/statement-modifier-after-block-argument-call.t
 t/control/statement-modifier-after-trailing-comma-comment.t
+t/control/statement-modifier-compound-assign-decl.t
 t/control/statement-modifier-for-regression.t
 t/control/statement-modifier-let-temp-scope.t
 t/control/statement-modifier-sequence.t
@@ -3497,6 +3498,7 @@ t/oo/construct/new-ctor-lane.t
 t/oo/construct/new-ignores-undeclared-named-args.t
 t/oo/construct/new-on-builtin-instance.t
 t/oo/construct/new-on-instance.t
+t/oo/construct/new-operators.t
 t/oo/construct/nqp-rebless.t
 t/oo/construct/parameter-signature-new-construction.t
 t/oo/construct/pun-before-construction.t
@@ -4412,6 +4414,7 @@ t/rakuast/rakuast-control-words.t
 t/rakuast/rakuast-control.t
 t/rakuast/rakuast-core-type-names.t
 t/rakuast/rakuast-decl-default-trait.t
+t/rakuast/rakuast-declaration-compound-assign.t
 t/rakuast/rakuast-declaration-headers.t
 t/rakuast/rakuast-declaration-loose-tail.t
 t/rakuast/rakuast-declaration-modifier-cohort.t

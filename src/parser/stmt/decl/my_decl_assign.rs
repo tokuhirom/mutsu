@@ -61,7 +61,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
 
     // Compound assignment
     if let Some((stripped, op)) = super::super::assign::parse_compound_assign_op(rest) {
-        return handle_compound_assign(stripped, s, |var_expr, rhs| {
+        return handle_compound_assign(stripped, s, Some(op.symbol()), |var_expr, rhs| {
             super::super::assign::compound_assigned_value_expr(var_expr, op, rhs)
         });
     }
@@ -77,14 +77,14 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         && meta == "Z"
         && op == "="
     {
-        return handle_compound_assign(stripped, s, |var_expr, rhs| Expr::Call {
+        return handle_compound_assign(stripped, s, None, |var_expr, rhs| Expr::Call {
             name: Symbol::intern("__mutsu_zip_assign"),
             args: vec![var_expr, rhs],
             listop: false,
         });
     }
     if let Some((stripped, op_name)) = super::super::assign::parse_custom_compound_assign_op(rest) {
-        return handle_compound_assign(stripped, s, |var_expr, rhs| Expr::InfixFunc {
+        return handle_compound_assign(stripped, s, None, |var_expr, rhs| Expr::InfixFunc {
             name: op_name,
             left: Box::new(var_expr),
             right: vec![rhs],
@@ -316,10 +316,13 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
     Ok((rest, stmt))
 }
 
-/// Handle compound assignment operators (e.g. `my $x += expr`).
+/// Handle compound assignment operators (e.g. `my $x += expr`). `op` is the
+/// written operator of a built-in compound assignment, which a
+/// spelling-keeping parse records for RakuAST (`ast::decl_compound_assign`).
 fn handle_compound_assign<'a, F>(
     stripped: &'a str,
     s: MyDeclState,
+    op: Option<&str>,
     make_expr: F,
 ) -> PResult<'a, Stmt>
 where
@@ -351,13 +354,14 @@ where
         custom_traits: s.custom_traits.clone(),
         where_constraint: s.where_constraint.clone(),
     };
-    let assign_stmt = Stmt::Assign {
-        name: s.name.clone(),
-        expr: make_expr(Expr::Var(s.name.clone()), rhs),
-        op: AssignOp::Assign,
-        target_is_sigilless: false,
-    };
-    let stmt = Stmt::SyntheticBlock(vec![decl_stmt, assign_stmt]);
+    let source = op.filter(|_| crate::ast::spelled::keeping()).map(|op| {
+        crate::ast::decl_compound_assign::Source {
+            op: op.to_string(),
+            rhs: rhs.clone(),
+        }
+    });
+    let value = make_expr(Expr::Var(s.name.clone()), rhs);
+    let stmt = crate::ast::decl_compound_assign::expand(decl_stmt, s.name.clone(), value, source);
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);
     }
