@@ -2585,6 +2585,37 @@ answers `contains`/`starts-with` and the method form of `unpack` where Rakudo ha
 `method-rows-report.py --arms`: pure cascades 116 -> 102 arms (`buf.rs` 10 -> 0, `dispatch_1arg.rs` 8 -> 7, `dispatch_2arg.rs`
 7 -> 4), runtime slow path 542 -> 541. Pinned in `t/oo/method/buffer-instance-method-rows.t`.
 
+### 9.108 Slice 5: `ACCEPTS` of the open shapes, `Uni`, the buffers, `Match` and `Any` are rows (2026-10-13)
+
+`refactor/13282-accepts-rows`, #13282. The runtime's generic `Mu.ACCEPTS` arm (`methods_call_dispatch.rs`) answered
+`$x.ACCEPTS($y)` with `$y ~~ $x` for the plain scalars and the buffers only; every other receiver without a row of its own (a
+`List`, a `Hash`, a `Date`, a `Duration`, a `FatRat`, a `Capture`, a `Uni`, a `Seq`, a `Match`, a user instance) was
+`X::Method::NotFound`. Probed: 28 receivers × 20 topics, then the edge cases (junction topics, type objects, user `ACCEPTS` in a
+class and a role, subclasses), on `raku` and the new binary; Rakudo's owners read from
+`.^find_method('ACCEPTS').candidates`. Decisions:
+
+1. **Rows on the owners Rakudo declares**, in `collections/accepts_open.rs`: `Numeric` (a role, added to `ROLES_WITH_ROWS`: it
+   reaches `Int`, `Num`, `Rat`, `FatRat`, `Complex`, `Duration` and `Instant`; Rakudo's `Int.ACCEPTS(Int:D)` agrees with it),
+   `Str`, `List` (and `Array`), `Map` (and `Hash`), `Date`, `DateTime`, `Seq` and `IO::Path` answer the smartmatch operator
+   (`$topic ~~ self`, the one implementation of both); `Bool` is the receiver whatever the topic; `Uni` compares codepoints,
+   whatever the normalization form (`"ab".NFC.ACCEPTS("ab".NFKC)` is `True`, a `Str` topic `False`); `Blob`/`Buf` compare a
+   buffer topic's elements and are `False` for anything else; `Match` is the match itself (`Match:D: Mu $`). All bind
+   `Mu \topic` (`OBJECT_ARGS`), so a `Junction` topic still autothreads.
+2. **`Any.ACCEPTS` is `self === topic`** (`values_identical`), reaching a `Capture` through `ANY_LIST_FOR_CLOSED_SHAPES` (only
+   it: `reaches_audited_any_method` withholds `ACCEPTS` from the other closed shapes) and an instance of a user class through
+   `answer_shapeless`, which admits `ACCEPTS` at arity 1 for an `Instance` alone (a code object, a regex, an enum and a mixin
+   keep the interpreter's). A class or role that declares `ACCEPTS` still answers first. `Capture` and `Uni` do not delegate to
+   the operator, which disagrees with Rakudo there (`1 ~~ \(1)` is `True` in mutsu).
+3. **The recognition table** gains the rows; `Map.ACCEPTS` and `Any.ACCEPTS` are `SPECIAL` (a `Map` has no shape, and a type
+   object's `ACCEPTS` is `Mu`'s type check, which the runtime's `Package` arm answers), so the cascade-backing tests do not
+   expect a pure answer for their samples.
+4. The runtime's scalar/buffer `Mu.ACCEPTS` arm is deleted.
+
+Not changed: the operator's own disagreements with Rakudo, which the rows now share (`Duration` against a number, a numeric
+`Str` against a `Complex`, a `Hash` against a `Map`, a `Str` against a buffer; #13332); an enum value, an `Exception`
+instance and a subclass of a built-in class with its own row (`class DD is Date`) (#13333); the allomorphs keep
+`allomorph.rs`'s path. Pinned in `t/oo/method/accepts-method-open-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
