@@ -6,7 +6,7 @@ use Test;
 # what the full closure entry answers, for each thing the entry has to get
 # right, and that the shapes it declines still work.
 
-plan 58;
+plan 67;
 
 # Plain results through a value call, a `.map` and a `.sort`.
 {
@@ -174,4 +174,29 @@ plan 58;
     my $f = -> $a, $b { $a + $b };
     $s = $f($s, 1) for ^10;
     is $s, 10, 'the accumulator passed back in';
+}
+
+# A numbered WhateverCode placeholder binds `is raw` only when the body
+# mutates it (#13310): a read-only `* + *` binds values, a mutating one
+# still writes through to the caller's variable.
+{
+    my $x = 1;
+    my $y = 2;
+    is (* + *)($x, $y), 3, 'a read-only two-star body reads both variables';
+    (*++ + *)($x, $y);
+    is "$x $y", '2 2', 'the first placeholder of `*++ + *` writes through';
+    (* + *++)($x, $y);
+    is "$x $y", '2 3', 'the second placeholder of `* + *++` writes through';
+    (++* + ++*)($x, $y);
+    is "$x $y", '3 4', 'both prefix-incremented placeholders write through';
+    ok (* =:= *)($x, $x), '`* =:= *` sees the same container';
+    nok (* =:= *)($x, $y), '`* =:= *` tells different containers apart';
+    my $z = 1;
+    (* += 1)($z);
+    is $z, 2, '`* += 1` writes through to the argument variable';
+    $_ = 10;
+    is ($_ + *)(2), 12, 'a star next to the topic reads its argument';
+    my $w = 5;
+    ($_ + *++)($w);
+    is $w, 6, 'a star next to the topic writes through when mutated';
 }

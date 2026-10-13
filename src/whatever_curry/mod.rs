@@ -26,8 +26,10 @@
 
 mod build;
 pub(crate) mod mark;
+mod mutation;
 mod plant;
 mod replace;
 
 pub(crate) use build::{build_closure, make_wc_param};
+pub(crate) use mutation::body_mutates_placeholder;
 pub(crate) use plant::{is_thunk_barrier, plant_barriers_here, plant_here, with_all_scopes};

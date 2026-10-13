@@ -40,11 +40,18 @@ pub(crate) fn make_wc_param(name: String) -> ParamDef {
     }
 }
 
-/// A WhateverCode parameter (`__wc_N`) is `is raw`, so `*++`, `*.=foo` and
-/// `* =:= $x` write back to the caller's container.
-fn make_wc_param_raw(name: String) -> ParamDef {
+/// A WhateverCode parameter (`__wc_N`) is `is raw` when `body` mutates it, so
+/// `*++`, `*.=foo` and `* =:= $x` write back to the caller's container. A
+/// read-only placeholder binds by value, like the single-`*` `_` parameter
+/// (`compile_expr_lambda`), which keeps `* + *` on the light closure call.
+fn make_wc_param_for(name: String, body: &[Stmt]) -> ParamDef {
+    let traits = if super::body_mutates_placeholder(body, &name) {
+        vec!["raw".to_string()]
+    } else {
+        Vec::new()
+    };
     ParamDef {
-        traits: vec!["raw".to_string()],
+        traits,
         ..make_wc_param(name)
     }
 }
@@ -121,11 +128,12 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
         let mut counter = 0;
         let body_expr = replace_whatever_numbered(expr, &mut counter);
         let param_name = "__wc_0".to_string();
+        let body = vec![Stmt::Expr(body_expr)];
         Expr::AnonSubParams {
             params: vec![param_name.clone()],
-            param_defs: vec![make_wc_param_raw(param_name)],
+            param_defs: vec![make_wc_param_for(param_name, &body)],
             return_type: None,
-            body: vec![Stmt::Expr(body_expr)],
+            body,
             is_rw: false,
             is_raw: false,
             custom_traits: Default::default(),
@@ -137,11 +145,15 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
         let mut counter = 0;
         let body_expr = replace_whatever_numbered(expr, &mut counter);
         let params: Vec<String> = (0..counter).map(|i| format!("__wc_{i}")).collect();
+        let body = vec![Stmt::Expr(body_expr)];
         Expr::AnonSubParams {
             params: params.clone(),
-            param_defs: params.iter().cloned().map(make_wc_param_raw).collect(),
+            param_defs: params
+                .iter()
+                .map(|p| make_wc_param_for(p.clone(), &body))
+                .collect(),
             return_type: None,
-            body: vec![Stmt::Expr(body_expr)],
+            body,
             is_rw: false,
             is_raw: false,
             custom_traits: Default::default(),
