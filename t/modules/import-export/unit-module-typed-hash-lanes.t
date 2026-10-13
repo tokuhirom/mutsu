@@ -24,6 +24,6 @@ is log-b('x'), 1, "the second module's Str array accepts a Str";
 is %seen.keys.map(*.^name).join(','), 'Int', "the importer's hash keeps its Int key type";
 nok (try { %seen{'s'} = 1; True }), "the importer's hash still rejects a Str key";
 
-# Last: a routine-local typed hash's key type currently leaks into the
-# caller's same-named hash on return (#13139).
+# A routine-local typed hash of the same name keeps its key type to itself
+# (#13139).
 is local-a('k'), 'Str', "a routine's own same-named hash uses its own key type";
