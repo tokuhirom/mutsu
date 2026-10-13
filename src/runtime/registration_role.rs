@@ -37,8 +37,8 @@ impl Interpreter {
         }
         if let Some(captured) = role_def.captured_env.as_ref() {
             for (k, v) in captured.iter() {
-                if !self.env.contains_key(k) {
-                    self.env.insert(k.clone(), v.clone());
+                if !self.env.contains_key_sym(*k) {
+                    self.env.insert_sym(*k, v.clone());
                 }
             }
         }

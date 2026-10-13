@@ -1761,7 +1761,7 @@ impl Interpreter {
                                 &inv,
                                 &attrs,
                                 super::attr_build_defaults::AttrDeclScope {
-                                    env: captured_env.as_deref(),
+                                    env: captured_env.as_ref(),
                                     unit: captured_unit,
                                     package: declaring_package.map(|p| p.as_str()),
                                 },
@@ -1990,7 +1990,7 @@ impl Interpreter {
                             self.env.insert("self".to_string(), inv.clone());
                             let result = self.eval_decl_trait_arg_with_captured_context(
                                 &arg,
-                                captured_env.as_deref(),
+                                captured_env.as_ref(),
                                 captured_unit.or_else(|| {
                                     declaring_package
                                         .and_then(|p| {
