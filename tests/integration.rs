@@ -14,6 +14,7 @@
 //! `tests/*.rs` file is declared by neither root, which would otherwise make
 //! a new test silently never run.
 
+mod my_enum_thread_registry_cow;
 mod profile_doc;
 
 mod adr0044_listop_fast_path;

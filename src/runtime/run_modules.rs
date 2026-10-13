@@ -1051,6 +1051,7 @@ impl Interpreter {
         // `use` and `require` of an installed/on-path module name. A verdict
         // that depends on a conditional `use` runs right after the prologue.
         let guards = self.guards_for_recorded_calls(facts.recorded_calls.as_ref())?;
+        self.preregister_routine_enums(&facts.routine_enums);
         let code_slot =
             super::module_bytecode::ModuleCodeSlot::new(super::module_bytecode::MainlineParts {
                 unit: module_unit,
