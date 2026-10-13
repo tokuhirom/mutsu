@@ -22,3 +22,5 @@ Gaps that kept `CSS::Module`'s own suite from running:
   a tie run the first candidate declared (rakudo trial-binds it) instead of
   raising "Ambiguous call", and the sub-signature of a slurpy is matched
   against the same flattened list the binder sees.
+- A `:i` written directly against a quote (`:i'only'|'not'`) scopes over the
+  whole alternation, not just its first branch.
