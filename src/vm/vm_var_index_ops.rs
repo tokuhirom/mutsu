@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::container_lock::ContainerStructGuard;
 use crate::value::ValueMap;
 use crate::value::value_buf::{buf_elems, buf_elems_in, buf_len_or_zero};
 
@@ -1807,10 +1808,14 @@ impl Interpreter {
                     Value::NIL
                 }
             }
+            // A zen read walks every entry; another thread sharing the hash
+            // can rehash it meanwhile, so hold its stripe (ADR-0068, #13079).
             (ValueView::Hash(items), ValueView::Whatever) => {
+                let _read = ContainerStructGuard::acquire_for(None, &target);
                 Value::array(items.values().cloned().collect())
             }
             (ValueView::Hash(items), ValueView::Num(f)) if f.is_infinite() && f > 0.0 => {
+                let _read = ContainerStructGuard::acquire_for(None, &target);
                 Value::array(items.values().cloned().collect())
             }
             (ValueView::Hash(items), ValueView::Nil) => Value::hash_with_data(items.clone()),

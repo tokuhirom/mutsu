@@ -194,6 +194,24 @@ impl ContainerStructGuard {
         }
     }
 
+    /// [`Self::acquire_for`] for a pure read that walks two containers
+    /// together (`eqv`): keyed on both nodes, taken in stripe order like
+    /// every pair (#13079).
+    // Cost: O(1).
+    pub(crate) fn acquire_for_both(
+        a: &crate::value::Value,
+        b: &crate::value::Value,
+    ) -> Option<Self> {
+        if !multi_mutator_threads_live() {
+            return None;
+        }
+        match (container_node_addr(a), container_node_addr(b)) {
+            (Some(x), Some(y)) => Self::acquire_pair(x, y),
+            (Some(x), None) | (None, Some(x)) => Self::acquire(x),
+            (None, None) => None,
+        }
+    }
+
     /// Lock the stripes of two keys. They are taken in stripe order, which is
     /// the one order every pair acquisition uses, so two threads cannot wait
     /// on each other; a single-key acquisition holds one stripe and waits for
@@ -361,6 +379,10 @@ pub(crate) fn is_snapshot_read(method: &str) -> bool {
             | "sum"
             | "flat"
             | "unique"
+            // A copy of the whole container (#13079): the clone is built from
+            // the snapshot, itself a copy. (`.Hash`/`.Map` are not: on a Hash
+            // they answer the receiver itself.)
+            | "clone"
     )
 }
 
