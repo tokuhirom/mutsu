@@ -2159,14 +2159,24 @@ fn var_decl_statement(
         is_dynamic,
         custom_traits,
         where_constraint,
+        is_export,
+        export_tags,
     } = parts;
+    let export_trait = super::package_header::export_trait_value(is_export, export_tags);
     // Real `is`/`does` traits carry richer shape, deferred.
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
     // mutsu marks it with a `__constant` pseudo-trait (plus a
     // `__constant_sigil` recording the declared sigil) and sets
     // `is_our` for the package-scoped default spelling.
     if !is_binding && custom_traits.iter().any(|(n, _)| n == "__constant") {
-        return constant_declaration(name, expr, custom_traits, type_constraint, is_our);
+        return constant_declaration(
+            name,
+            expr,
+            custom_traits,
+            type_constraint,
+            is_our,
+            export_trait,
+        );
     }
     let is_internal = |n: &str| {
         n == "__has_initializer"
@@ -2272,6 +2282,14 @@ fn var_decl_statement(
         }
         traits.push(decl_traits::dynamic_trait());
     }
+    if let Some(export) = export_trait {
+        // Like `is dynamic`, `is export` is a flag of the parsed declaration,
+        // so only a lone one keeps the written trait order.
+        if !traits.is_empty() {
+            return Err(unsupported("`is export` beside other traits"));
+        }
+        traits.push(export);
+    }
     decl_traits::insert(&mut decl, traits);
     // `where` is the declaration's last field, after the initializer.
     if let Some(constraint) = where_constraint {
@@ -2334,6 +2352,10 @@ struct VarDeclParts<'a> {
     custom_traits: &'a [(String, Option<Expr>)],
     /// The declaration's `where` expression.
     where_constraint: Option<&'a Expr>,
+    /// Whether it is `is export`, and with which tags (`["DEFAULT"]` for the
+    /// bare form): the parser keeps the trait as these two fields.
+    is_export: bool,
+    export_tags: &'a [String],
 }
 
 fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
@@ -2346,7 +2368,8 @@ fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
         is_dynamic,
         custom_traits,
         where_constraint,
-        ..
+        is_export,
+        export_tags,
     } = stmt
     else {
         return Err(unsupported("variable declaration"));
@@ -2360,6 +2383,8 @@ fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
         is_dynamic: *is_dynamic,
         custom_traits,
         where_constraint: where_constraint.as_deref(),
+        is_export: *is_export,
+        export_tags,
     })
 }
 
@@ -5067,6 +5092,7 @@ fn constant_declaration(
     custom_traits: &[(String, Option<Expr>)],
     type_constraint: &Option<String>,
     is_our: bool,
+    export_trait: Option<Value>,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
     // `__constant_sigil` carries the declared sigil; only the sigilless form
     // (a plain `constant X`) maps onto the measured node shape.
@@ -5106,6 +5132,14 @@ fn constant_declaration(
         fields.push(node_field(Some("type"), build_type_node(type_name)?));
     }
     fields.push(leaf_field(Some("name"), Value::str(name)));
+    // `constant X is export = …`: the trait sits between the name and the
+    // initializer (measured on rakudo 2026.09).
+    if let Some(export) = export_trait {
+        fields.push(RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(vec![export]),
+        });
+    }
     fields.push(node_field(
         Some("initializer"),
         RakuAstNode {

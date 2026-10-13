@@ -1028,6 +1028,16 @@ pub(super) fn lower_dotty_assign(
 }
 
 fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // `constant X is export`: the trait is the declaration's export flag.
+    let (stripped, header) = super::package_header::strip(node, true)?;
+    if stripped.fields.iter().any(|f| f.name == Some("traits")) {
+        return Err(unsupported(node));
+    }
+    let node = &stripped;
+    let (is_export, export_tags) = match header.export_tags {
+        Some(tags) => (true, tags),
+        None => (false, Vec::new()),
+    };
     let written = leaf_str(node, "name")?;
     // The parser strips a `$` sigil into `__constant_sigil` and keeps the
     // others in the name.
@@ -1073,8 +1083,8 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_state: false,
         is_our,
         is_dynamic: false,
-        is_export: false,
-        export_tags: Vec::new(),
+        is_export,
+        export_tags,
         custom_traits: vec![
             ("__constant".to_string(), None),
             ("__has_initializer".to_string(), None),
@@ -2843,6 +2853,13 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     {
         return super::attribute_decl::lower(node);
     }
+    // `is export` is the parsed declaration's flag and tags, not a custom trait.
+    let (stripped, header) = super::package_header::strip(node, true)?;
+    let node = &stripped;
+    let (is_export, export_tags) = match header.export_tags {
+        Some(tags) => (true, tags),
+        None => (false, Vec::new()),
+    };
     // The remaining scopes the converter renders are `our` and `state`; `my` is
     // the default and carries no `scope` field at all. Anything else (a scope
     // raku has that the converter never emits) stays the boundary.
@@ -2855,6 +2872,10 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             _ => return Err(unsupported(node)),
         },
     };
+    // Only an `our` variable can be exported; the parser rejects the rest.
+    if is_export && !is_our {
+        return Err(unsupported(node));
+    }
     // `*` is a dynamic variable (`my $*x`); any other twigil on a non-`has`
     // declaration stays the boundary.
     let is_dynamic = match node.fields.iter().find(|f| f.name == Some("twigil")) {
@@ -2956,8 +2977,8 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 is_state,
                 is_our,
                 is_dynamic,
-                is_export: false,
-                export_tags: Vec::new(),
+                is_export,
+                export_tags: export_tags.clone(),
                 custom_traits,
                 where_constraint: None,
                 method: crate::symbol::Symbol::intern(&method),
@@ -2986,8 +3007,8 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             is_state,
             is_our,
             is_dynamic,
-            is_export: false,
-            export_tags: Vec::new(),
+            is_export,
+            export_tags: export_tags.clone(),
             custom_traits,
             where_constraint: None,
         }));
@@ -2999,8 +3020,8 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_state,
         is_our,
         is_dynamic,
-        is_export: false,
-        export_tags: Vec::new(),
+        is_export,
+        export_tags,
         custom_traits,
         where_constraint,
     })
