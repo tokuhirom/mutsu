@@ -425,7 +425,6 @@ impl Interpreter {
         // Per Raku semantics the handler sees its own `$!`, starting out `Nil`:
         // inside the handler the exception is the topic, and the enclosing scope's
         // `$!` has not been written yet.
-        let prior_bang = self.env().get("!").map(Value::deref_container);
         let handler_env = (!same_frame)
             .then(|| self.enter_installing_env(installing_base, installing_call_depth));
         let handler_env = handler_env.flatten();
@@ -457,13 +456,12 @@ impl Interpreter {
             self.env_mut().remove("_");
         }
 
-        // A resumed exception leaves `$!` at its pre-throw value; a handled one
-        // (not resumed) is published in `$!`, as rakudo's `try` does (#12904).
-        let restored = prior_bang.clone().unwrap_or(Value::NIL);
+        // A handled (or resumed) exception is published in `$!`, as rakudo's
+        // `try` does (#12904).
         match result {
             // `.resume` — the throw resumes at its own call site.
             Err(ce) if ce.is_resume() => {
-                self.env_mut().assign_error_var(restored);
+                self.env_mut().assign_error_var(err_val);
                 CatchRunOutcome::Resumed
             }
             // A `when`/`default` matched and exited via succeed: handled, but not

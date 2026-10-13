@@ -169,13 +169,6 @@ impl Interpreter {
             None => None,
         });
         let saved_topic = self.env().get("_").cloned();
-        // Per Raku semantics `$!` is only *updated* to the exception when it
-        // propagates out of the `try` unhandled (swallowed by the implicit
-        // trap). A CATCH that handles the exception (a matching
-        // `when`/`default`, or `.resume`) leaves `$!` at whatever it held
-        // before the `try`. Remember that prior value so the handled paths
-        // below can restore it.
-        let prior_bang = self.env().get("!").map(Value::deref_container);
         // The CATCH block gets its own `$!`, which starts out `Nil`: inside
         // the handler the exception is the *topic* (`$_`), and the enclosing
         // scope's `$!` has not been written yet. It is only updated below,
@@ -216,11 +209,9 @@ impl Interpreter {
                 } else {
                     self.env_mut().remove("_");
                 }
-                // A resumed exception is handled: restore `$!` to its
-                // pre-`try` value so the resumed body and the code after
-                // the `try` see the prior `$!`, not the handled exception.
-                self.env_mut()
-                    .assign_error_var(prior_bang.unwrap_or(Value::NIL));
+                // A resumed exception is handled: like any handled one it is
+                // left in `$!`.
+                self.env_mut().assign_error_var(err_val);
                 // Resume from the instruction after die
                 if let Some(resume_point) = self.take_resume_ip_for(code) {
                     // Run from the resume point to the end of the try body
