@@ -239,14 +239,21 @@ impl Interpreter {
             (!matches!(first, '$' | '@' | '%' | '&') && !bare.contains(':'))
                 .then(|| bare.to_string())
         }
+        // Every enclosing scope's markers count, not only the current frame's
+        // tier: a block whose frame does not flatten its outer scope still sees
+        // the outer `constant b` (`constant b = 1; { EVAL 'b' }`).
         let mut names: Vec<String> = self
             .env
-            .keys()
-            .filter_map(|key| {
-                let name = key.resolve();
+            .visible_keys_where(|name| name.starts_with(MARKER))
+            .into_iter()
+            .filter_map(|name| {
                 let stored = name.strip_prefix(MARKER)?;
                 // A `False` marker hides a table marker for this scope.
-                if !self.env.get_sym(*key).is_some_and(Value::truthy) {
+                if !self
+                    .env
+                    .get_sym(Symbol::intern(&name))
+                    .is_some_and(Value::truthy)
+                {
                     return None;
                 }
                 term_name(stored)
