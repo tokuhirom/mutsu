@@ -363,6 +363,31 @@ impl Interpreter {
         if let Some(coerced) = self.coerce_into_builtin_inheriting_class(base_target, &value) {
             return coerced;
         }
+        // A role target that declares `COERCE` (PDF's `role PDF::IO` with a
+        // `proto method COERCE` and one `multi` per source type): Rakudo calls
+        // it on the role's pun, and the result has to do the role.
+        if self.has_role(&remapped_base_target)
+            && self.role_or_parent_has_method(&remapped_base_target, "COERCE")
+        {
+            // A failing call is an impossible coercion, as for a class target
+            // above.
+            // TODO: an exception the COERCE method itself throws should
+            // propagate (Rakudo asks `.cando` first and only reports "no
+            // acceptable coercion method" for a no-match); today the binder
+            // re-runs a call whose coercion died, so propagating it runs the
+            // caller twice (#13077).
+            let Ok(coerced) = self.call_method_with_values(
+                Value::package(Symbol::intern(&remapped_base_target)),
+                "COERCE",
+                vec![value.clone()],
+            ) else {
+                return Err(coerce_impossible_error(target, &value));
+            };
+            if self.type_matches_value(&remapped_base_target, &coerced) {
+                return Ok(coerced);
+            }
+            return Err(coerce_impossible_error(target, &value));
+        }
         if let Some(coerced) = self.coerce_into_builtin_inheriting_role(base_target, &value) {
             return coerced;
         }
