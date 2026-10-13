@@ -977,6 +977,19 @@ impl Interpreter {
                         // Any other `Int` type object (`Bool`, `IntStr`, a user
                         // `Int` subclass) is not `.DEFINITE`, so it passes.
                         || self.type_matches_value_resolved("Int", value)
+                        // The type object of an `Int`-based enum (`enum E <a b>`).
+                        // TODO: make it an `Int` type everywhere (`E ~~ Int`); that
+                        // needs multi ranking to prefer the enum over `Int:U`.
+                        || self
+                            .registry()
+                            .enum_types
+                            .get(name.as_str())
+                            .is_some_and(|variants| {
+                                !variants.is_empty()
+                                    && variants.iter().all(|(_, v)| {
+                                        matches!(v, crate::value::EnumValue::Int(_))
+                                    })
+                            })
                 }
                 ValueView::Enum {
                     value: crate::value::EnumValue::Int(i),
@@ -1052,23 +1065,6 @@ impl Interpreter {
             && self
                 .resolve_enum_type_key(constraint)
                 .is_some_and(|key| key.as_str() == package_name.resolve().as_str())
-        {
-            return true;
-        }
-        // The type object of an `Int`-based enum (`enum E <a b>`) is an `Int`
-        // type, so it satisfies `Int` and everything `Int` does.
-        if let ValueView::Package(package_name) = value.view()
-            && self
-                .registry()
-                .enum_types
-                .get(package_name.resolve().as_str())
-                .is_some_and(|variants| {
-                    !variants.is_empty()
-                        && variants
-                            .iter()
-                            .all(|(_, v)| matches!(v, crate::value::EnumValue::Int(_)))
-                })
-            && Self::type_matches(constraint, "Int")
         {
             return true;
         }

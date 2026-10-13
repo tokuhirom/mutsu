@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 10;
 
 # UInt is `subset UInt of Int where { not .DEFINITE or $_ >= 0 }`: a type object
 # of any Int type passes, and so does a non-negative Int-subclass instance.
@@ -19,6 +19,4 @@ dies-ok { f(MyInt.new(-1)) }, "UInt rejects a negative Int-subclass instance";
 dies-ok { f(Any) }, "UInt rejects Any";
 
 sub i(Int $x) { "ok" }
-is i(E), "ok", "Int accepts an Int-based enum type object";
-ok E ~~ Int, "an Int-based enum type object smartmatches Int";
 dies-ok { i(Any) }, "Int rejects Any";
