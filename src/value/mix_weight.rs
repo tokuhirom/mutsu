@@ -278,12 +278,46 @@ impl MixWeight {
         }
     }
 
-    /// `a + b` through the numeric tower on `Value`s: exact for big operands.
-    // Cost: O(b), b = the bit length of the operands.
+    /// Exact `a + b` for operands that may be big: the result is a `Num` when
+    /// either is, a `FatRat` when either is, a `Rat` when either is rational,
+    /// else an `Int`. (The value layer cannot call the arithmetic builtins.)
+    // Cost: O(b^2), b = the bit length of the operands.
     fn add_exact(a: &MixWeight, b: &MixWeight) -> MixWeight {
-        match crate::builtins::arith::arith_add(a.to_value(), b.to_value()) {
-            Ok(v) => MixWeight::from_value(&v).unwrap_or_else(|| MixWeight::Num(v.to_f64())),
-            Err(_) => MixWeight::Num(a.to_f64() + b.to_f64()),
+        use num_bigint::BigInt;
+        use num_integer::Integer;
+        // (numerator, denominator, is_rational, is_fat)
+        fn parts(w: &MixWeight) -> Option<(BigInt, BigInt, bool, bool)> {
+            Some(match w {
+                MixWeight::Int(i) => (BigInt::from(*i), BigInt::from(1), false, false),
+                MixWeight::Rat(n, d) => (BigInt::from(*n), BigInt::from(*d), true, false),
+                MixWeight::Num(_) => return None,
+                MixWeight::Big(b) => match &**b {
+                    BigWeight::Int(n) => (n.clone(), BigInt::from(1), false, false),
+                    BigWeight::Rat(n, d) => (n.clone(), d.clone(), true, false),
+                    BigWeight::Fat(n, d) => (n.clone(), d.clone(), true, true),
+                },
+            })
+        }
+        let (Some((an, ad, ar, af)), Some((bn, bd, br, bf))) = (parts(a), parts(b)) else {
+            return MixWeight::Num(a.to_f64() + b.to_f64());
+        };
+        let n = &an * &bd + &bn * &ad;
+        let d = &ad * &bd;
+        let g = n.gcd(&d);
+        let (n, d) = if g.sign() == num_bigint::Sign::NoSign {
+            (n, d)
+        } else {
+            (n / &g, d / &g)
+        };
+        if af || bf {
+            MixWeight::Big(Box::new(BigWeight::Fat(n, d)))
+        } else if ar || br {
+            match (i64::try_from(&n), i64::try_from(&d)) {
+                (Ok(n), Ok(d)) => MixWeight::Rat(n, d),
+                _ => MixWeight::Big(Box::new(BigWeight::Rat(n, d))),
+            }
+        } else {
+            MixWeight::from_bigint(&n)
         }
     }
 
