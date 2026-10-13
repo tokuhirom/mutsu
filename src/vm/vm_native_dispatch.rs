@@ -32,9 +32,9 @@ impl Interpreter {
         // A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
         // captures (ADR-11276 §9.98).
         if let Some(list) = self.match_list_receiver(target, method_sym.as_str()) {
-            // `Any.List` is `self.list` itself: a `List`'s own `.List` would
-            // read an unbound capture's hole as `Nil`.
-            if method_sym == "List" && args.is_empty() {
+            if args.is_empty()
+                && crate::value::match_view::match_list_answers_itself(method_sym.as_str())
+            {
                 return Some(Ok(list));
             }
             return self.try_native_method(&list, method_sym, args);

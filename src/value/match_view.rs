@@ -108,6 +108,15 @@ pub(crate) fn is_capture_list_method(method: &str) -> bool {
     )
 }
 
+/// Whether [`Value::match_list_receiver`]'s answer for `method` is the call's
+/// answer itself: `Any.List` is `self.list` and `Any.Hash` is `self.hash`
+/// (a fresh copy of the named captures), so neither is asked again of the
+/// list or map (`List.List` would read an unbound capture's hole as `Nil`).
+// Cost: O(1).
+pub(crate) fn match_list_answers_itself(method: &str) -> bool {
+    matches!(method, "List" | "Hash")
+}
+
 impl Value {
     /// Is this value a `Match` instance (regex match object)? True for both
     /// the lazy repr (`ValueRepr::Match`, checked WITHOUT materializing) and

@@ -141,6 +141,16 @@ pub(crate) fn native_method_0arg(
     if let Some(result) = crate::builtins::method_table::answer(target, method_sym, &[]) {
         return Some(result);
     }
+    // A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
+    // captures (ADR-11276 §9.98), as the interpreter's entries do
+    // (`Interpreter::match_list_receiver`, which also asks the grammar).
+    // Cost: O(1) unless the receiver is a Match and the name one of those.
+    if let Some(list) = target.match_list_receiver(method_sym.as_str()) {
+        if crate::value::match_view::match_list_answers_itself(method_sym.as_str()) {
+            return Some(Ok(list));
+        }
+        return native_method_0arg(&list, method_sym);
+    }
     native_method_0arg_cascade(target, method_sym)
 }
 

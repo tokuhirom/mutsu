@@ -803,8 +803,7 @@ impl Interpreter {
         // (`Interpreter::match_list_receiver`), unless the grammar defines the
         // method.
         if let Some(list) = self.match_list_receiver(&target, method) {
-            // `Any.List` is `self.list` itself (see `try_native_method`).
-            if method == "List" && args.is_empty() {
+            if args.is_empty() && crate::value::match_view::match_list_answers_itself(method) {
                 return Ok(list);
             }
             return self.call_method_with_values(list, method, args);

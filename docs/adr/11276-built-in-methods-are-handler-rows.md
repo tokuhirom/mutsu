@@ -2300,7 +2300,7 @@ rest of `Any`'s list methods answered on the `Match` as one element (#13161). Th
    (`Interpreter::match_list_receiver`, over `Value::match_list_receiver` and `match_view::is_capture_list_method`) before
    anything answers the call, as they already do for a user subclass of `IO::Path` (#12149) and an `Array` enum's base. A
    grammar that declares the method keeps its own (the memoized `has_user_method` probe). `Hash` reads the named captures
-   (`self.hash`), and `List` answers the list itself, so an unbound capture's hole is not read as `Nil` by `List.List`.
+   (`self.hash`); for `List` and `Hash` the swapped-in value is the answer itself (`match_list_answers_itself`), so an unbound capture's hole is not read as `Nil` by `List.List`. The pure entry `native_method_0arg` applies the same rewrite (without the grammar probe), so the recognition rows `Match.Array`/`Match.Hash` stay recognized.
 2. **The `Match` shape still reaches only `join`, `end` and `serial` of `Any`'s rows** (§9.96): the rewrite runs first, so no
    call-site lane caches a `Match` for the other names.
 3. **`minpairs`/`maxpairs` are not in the set**: Rakudo reads them through `self.pairs`, named captures included.
