@@ -127,6 +127,8 @@ impl Interpreter {
             }
             _ => None,
         }
+    }
+
     /// `flat` over a gather's coroutine list (the §8.2 Stream class hands
     /// `flat` the stolen list): a `Seq` that pulls the list one element at a
     /// time and flattens each, descending into the nested Seqs and gathers it
