@@ -1,6 +1,6 @@
 use Test;
 
-plan 41;
+plan 48;
 
 # A `:m` (ignoremark) rule called as `<r>` runs as a frame, entering its ends
 # one at a time: a code block in the callee runs once per end entered, not once
@@ -119,3 +119,19 @@ grammar S3 { regex TOP { <r> .* }; regex r { :m a <.ws> { @log.push: $/.to } } }
 nok S3.parse("a\x[301]e\x[301]"), '<.ws> fails between two marked word graphemes';
 @log = ();
 is ~S3.parse("a\x[301]-")<r>, "a\x[301]", '... and matches before a non-word grapheme';
+
+# A conjunction in a markless callee runs its other branches as markless
+# nested runs over the same subject (#13176).
+grammar C1 { regex TOP { <r> 'x' }; regex r { :m [a+ && <[ab]>+] { @log.push: $/.to } } }
+@log = ();
+is ~C1.parse("a\x[301]a\x[300]x")<r>, "a\x[301]a\x[300]", '&& over marked graphemes';
+is @log.join(','), '2', '... entering one end';
+grammar C2 { regex TOP { <r> 'b' }; regex r { :m [.+ & a+] { @log.push: $/.to } } }
+@log = ();
+is ~C2.parse("a\x[301]aa\x[300]b")<r>, "a\x[301]aa\x[300]", '& over marked graphemes';
+is @log.join(','), '3', '... entering one end';
+grammar C3 { regex TOP { <r> .* }; regex r { :m [(a) . && . (b)] } }
+my $c3 = C3.parse("a\x[301]b\x[302]c");
+is ~$c3<r>, "a\x[301]b\x[302]", 'a conjunction with captures in both branches';
+is ~$c3<r>[0], "a\x[301]", '... the first branch captures';
+is ~$c3<r>[1], "b\x[302]", '... and so does the second';

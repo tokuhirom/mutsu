@@ -99,7 +99,8 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
 /// included, which the subject's own positions give), and `<.ws>` (a call,
 /// which does not inherit `:m`: it runs over the subject's own text). A
 /// construct that reads the subject another way (an interpolation or a nested
-/// `:m` group) declines, and the call keeps the eager `:m` path.
+/// `:m` group) declines, and the call keeps the eager `:m` path. A
+/// conjunction is covered when its other branches compile markless too.
 // Cost: O(t), t = the number of tokens in the pattern tree.
 pub(in crate::runtime::regex) fn compile_markless(
     pattern: &RegexPattern,
@@ -112,12 +113,15 @@ pub(in crate::runtime::regex) fn compile_markless(
             RegexAtom::Lookaround { pattern, .. }
                 if super::rx_entry::markless_program_for(pattern).is_some()
         ),
-        op => !matches!(
-            op,
-            RxOp::InterpEnds(_)
-                | RxOp::GroupEnds(_)
-                | RxOp::ConjTail { .. }
+        // The other branches run as markless nested runs (`ConjTail`).
+        RxOp::ConjTail { tok, .. } => matches!(
+            &program.toks[*tok as usize].atom,
+            RegexAtom::Conjunction(branches)
+                if branches[1..]
+                    .iter()
+                    .all(|b| super::rx_entry::markless_program_for(b).is_some())
         ),
+        op => !matches!(op, RxOp::InterpEnds(_) | RxOp::GroupEnds(_)),
     });
     if !covered {
         return Err("markless-uncovered");
