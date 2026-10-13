@@ -1020,3 +1020,20 @@ Measured on a debug build, `main` → this slice:
   rebuild a copy of the source and store it whole. Under a concurrent writer that loses the
   other thread's update. It is no longer a crash, but it is still a wrong answer. Tracked as
   #13078.
+
+### 18.2 The chained store's probes hold the root's stripe (2026-10-13, #11538)
+
+#11538's intermittent `Gc::make_mut strong-count underflow` in
+`t/concurrency/concurrent-nested-subscript-store.t` now has a repro. Sixteen threads, each
+storing `%h<k>[$i] = 1` 500 times through a named sub, die about once in 35 debug runs with
+`double free or corruption (out)`. The crash is in `chained_element_store_proxy`, a read-only
+probe that walks the root and its inner level before the store. The chained store itself
+resizes the inner array in place under the stripe of the *root* (`acquire_for` on the descended
+root). The probes ran before that, with nothing held: the `Proxy` probe, the `Pair` and
+`is default` peeks, `prepare_bound_cell_for_chained_store`'s peek, and the typed-autoviv check.
+So a probe could clone an element out of a `Vec` that another thread was reallocating.
+
+They now hold the root's stripe (`chained_root_guard`; cell and node for a celled root, as the
+writer keys it). All of them are leaves; the `WhateverCode` index resolution, which runs user
+code, stays outside. The repro is 0 in 180 runs after this slice and 2 in 74 before it.
+Pinned by the 16-thread blocks added to the test file.

@@ -3868,6 +3868,7 @@ impl Interpreter {
         // element is not a `Scalar`, so its `STORE` takes the raw `Nil`. A
         // `:=` bind replaces the element container rather than storing into
         // it, so `Nil` stays `Nil` there too.
+        let row_structure = self.chained_root_guard(&var_name);
         let row = self
             .env()
             .get(&var_name)
@@ -3879,6 +3880,7 @@ impl Interpreter {
                 })
             })
             .flatten();
+        drop(row_structure);
         let val = if let Some(cell) = &bound_leaf_cell {
             self.element_store_through_cell(cell, val)?
         } else if val.is_nil() && !is_bind_value {
@@ -3909,7 +3911,10 @@ impl Interpreter {
             // and bypasses the element-store arms below — which recognize no
             // Pair and would clobber it with a fresh container.
             if !outer_positional
-                && let Some(step) = Self::subscript_peek_step(&root, &inner_key, inner_positional)
+                && let Some(step) = {
+                    let _structure = self.chained_root_guard(&var_name);
+                    Self::subscript_peek_step(&root, &inner_key, inner_positional)
+                }
                 && let Some(aggregate) = Self::pair_subscript_aggregate(&step, Some(&outer_key))
             {
                 Self::store_into_pair_aggregate(&aggregate, val_unitemized);
@@ -4021,10 +4026,12 @@ impl Interpreter {
         // threads (a node-keyed lock excludes nothing — `Gc::make_mut` copies
         // an aliased node, see ADR-0068 §7).
         if !is_bind_value
-            && let Some(mut slot) = self
-                .env()
-                .get(&var_name)
-                .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
+            && let Some(mut slot) = {
+                let _structure = self.chained_root_guard(&var_name);
+                self.env()
+                    .get(&var_name)
+                    .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
+            }
         {
             self.prepare_bound_cell_for_chained_store(&mut slot, outer_positional)?;
         }
@@ -4181,10 +4188,12 @@ impl Interpreter {
             self.locals[slot] = Value::NIL;
         }
         if !is_bind_value
-            && let Some(mut slot) = self
-                .env()
-                .get(&var_name)
-                .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
+            && let Some(mut slot) = {
+                let _structure = self.chained_root_guard(&var_name);
+                self.env()
+                    .get(&var_name)
+                    .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
+            }
         {
             self.prepare_bound_cell_for_chained_store(&mut slot, outer_positional)?;
         }
@@ -4854,6 +4863,7 @@ impl Interpreter {
         inner_key: &str,
         outer_positional: bool,
     ) -> Option<RuntimeError> {
+        let structure = self.chained_root_guard(var_name);
         let root = self.env().get(var_name)?.deref_container();
         let (ty, existing, slot_name) = match root.view() {
             ValueView::Array(arr, _) => {
@@ -4885,6 +4895,7 @@ impl Interpreter {
             return None;
         }
         drop(root);
+        drop(structure);
         let probe = if outer_positional {
             Value::real_array(Vec::new())
         } else {
@@ -4894,6 +4905,29 @@ impl Interpreter {
             return None;
         }
         Some(self.type_check_element_failure(&slot_name, &ty, &probe))
+    }
+
+    /// The ADR-0068 structure guard over the root of a chained subscript store,
+    /// for its read-only probes (`subscript_peek_step` and kin). They walk the
+    /// root and its inner level, and another thread's chained store resizes
+    /// that inner level in place under the ROOT's stripe (`acquire_for` on the
+    /// descended root), so the probe has to hold that stripe too; keyed on the
+    /// inner node it would exclude nothing (#11538). A leaf: no probe runs user
+    /// code. `None` until a second mutator thread exists.
+    // Cost: O(1).
+    fn chained_root_guard(
+        &self,
+        var_name: &str,
+    ) -> Option<crate::value::container_lock::ContainerStructGuard> {
+        use crate::value::container_lock::ContainerStructGuard;
+        if !crate::value::container_lock::multi_mutator_threads_live() {
+            return None;
+        }
+        let root = self.env().get(var_name)?;
+        match root.descalarize().view() {
+            ValueView::ContainerRef(cell) => ContainerStructGuard::acquire_for_celled(&cell),
+            _ => ContainerStructGuard::acquire_for(None, root),
+        }
     }
 
     /// The `Proxy` a chained subscript store would land ON, if any -- for a
@@ -4919,6 +4953,7 @@ impl Interpreter {
         leaf_idx: &Value,
         leaf_positional: bool,
     ) -> Option<Value> {
+        let _structure = self.chained_root_guard(var_name);
         let mut current = self.env().get(var_name)?.clone();
         for (key, is_positional) in path_keys.iter().zip(path_positional) {
             current = Self::subscript_peek_step(&current, key, *is_positional)?;
@@ -5182,6 +5217,7 @@ impl Interpreter {
         // step the `*-1` resolution above takes) and decay against that. A
         // level that does not exist yet stops the walk, and `None` then means
         // the row is about to be walk-created untyped.
+        let row_structure = self.chained_root_guard(&var_name);
         let mut row = self.env().get(&var_name).cloned();
         for level in 0..depth - 1 {
             let Some(current) = row.as_ref() else { break };
@@ -5198,6 +5234,7 @@ impl Interpreter {
                 })
             })
             .flatten();
+        drop(row_structure);
         let val = if let Some(cell) = &bound_leaf_cell {
             self.element_store_through_cell(cell, val)?
         } else if val.is_nil() && !is_bind_value {
