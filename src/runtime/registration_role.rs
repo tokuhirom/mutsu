@@ -444,6 +444,10 @@ impl Interpreter {
         {
             return Ok(());
         }
+        // A role declared with a compound name (`unit role PDF::COS::Bool`) is
+        // not a declaration inside `PDF::COS`, exactly as for a class: a bare
+        // `Bool` in code under `PDF::COS` stays the core `Bool` (#12907).
+        self.note_compound_declared_type(name);
         let prev_parents = self.reset_role_registration_state(name, type_params);
         let role_def = RoleDef {
             attributes: Vec::new(),
