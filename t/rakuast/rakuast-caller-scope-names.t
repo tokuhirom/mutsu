@@ -32,8 +32,8 @@ is q[CallerType.v].AST.EVAL, 7, 'EVAL of the tree reaches the caller class';
     }
 }
 {
-    { constant inner-c = 42; }
-    is (EVAL 'inner-c'), 42, 'an inner-block constant is visible to a later EVAL';
+    { constant innerc = 42; }
+    is (EVAL 'innerc'), 42, 'an inner-block constant is visible to a later EVAL';
 }
 
 sub declared-after { 1 }

@@ -4517,6 +4517,7 @@ t/rakuast/rakuast-call-assign-initializer.t
 t/rakuast/rakuast-call-lvalue-assign.t
 t/rakuast/rakuast-callable-and-slurpy-signatures.t
 t/rakuast/rakuast-callable-lvalue.t
+t/rakuast/rakuast-caller-scope-names.t
 t/rakuast/rakuast-calls-assign.t
 t/rakuast/rakuast-class-traits-multi-constant.t
 t/rakuast/rakuast-class.t
@@ -6846,9 +6847,11 @@ t/vm/binding/constant-rebind.t
 t/vm/binding/constant-scalar-my-bare-name-collision.t
 t/vm/binding/constant-shadow.t
 t/vm/binding/constant-statement-modifier-value-kept.t
+t/vm/binding/constant-term-vs-same-named-scalar.t
 t/vm/binding/constant-twigil-nyi.t
 t/vm/binding/constant-type-alias-smiley-term.t
 t/vm/binding/constant-type-alias.t
+t/vm/binding/constant.t
 t/vm/binding/decl-as-expression.t
 t/vm/binding/decl-block-init-not-stmt-modifier.t
 t/vm/binding/decl-marker-fusion.t

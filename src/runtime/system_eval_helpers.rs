@@ -265,6 +265,18 @@ impl Interpreter {
                 .filter(|stored| self.constant_marker_visible(stored))
                 .filter_map(term_name),
         );
+        // A constant is `our`-scoped too: one declared in a block that has
+        // already ended (`{ constant c = 1 }; EVAL 'c'`) is still a GLOBAL
+        // member. `our_vars` keeps a GLOBAL sigilless symbol under its `\name`
+        // spelling; a named package's members carry no such mark, so only
+        // code running in GLOBAL gets them.
+        if crate::qualified::is_global_package(Symbol::intern(&self.current_package())) {
+            names.extend(
+                self.our_vars_iter()
+                    .filter_map(|(key, _)| key.strip_prefix('\\'))
+                    .filter_map(term_name),
+            );
+        }
         // The sigilless `_` term is stored under a private key because `_` is
         // also the environment spelling of the topical `$_`. Re-seed its
         // source spelling so the EVAL parser canonicalizes `_` to that key.
