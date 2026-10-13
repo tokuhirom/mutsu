@@ -1,6 +1,6 @@
 use Test;
 
-plan 17;
+plan 22;
 
 # A `:m` (ignoremark) rule called as `<r>` runs as a frame, entering its ends
 # one at a time: a code block in the callee runs once per end entered, not once
@@ -53,3 +53,19 @@ is ~$m<r><k>, "b\x[302]", 'a named capture too';
 
 grammar H { token TOP { <r> }; token r { :m 'café' } }
 ok H.parse("cafe\x[301]") && H.parse("cafè") && H.parse("cafe"), 'a marked literal matches any marks on its base';
+
+# An LTM `|` in a markless callee ranks its branches over the mark-stripped
+# subject (#13176).
+grammar L { regex TOP { <r> 'x' }; regex r { :m [a | b]+ { @log.push: $/.to } } }
+@log = ();
+is ~L.parse("a\x[301]b\x[300]x")<r>, "a\x[301]b\x[300]", 'an LTM alternation over marked graphemes';
+is @log.join(','), '2', '... entering one end';
+grammar M { token TOP { <r> }; token r { :m [ 'ab' | 'abc' ] } }
+is ~M.parse("a\x[301]bc\x[302]")<r>, "a\x[301]bc\x[302]", 'the longest branch wins, measured on bases';
+
+# A zero-width assertion in a markless callee decides on the bases: a word
+# boundary does not fall between a letter and its mark.
+grammar W2 { regex TOP { <r> }; regex r { :m << \w+ >> } }
+is ~W2.parse("e\x[301]te\x[300]")<r>, "e\x[301]te\x[300]", '<< and >> around marked graphemes';
+grammar W3 { regex TOP { <r> .* }; regex r { :m ^^ a <|w> } }
+is ~W3.parse("a\x[301] b")<r>, "a\x[301]", '<|w> after a marked grapheme';

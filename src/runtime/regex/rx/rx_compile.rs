@@ -95,8 +95,8 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
 /// as a markless program ([`RxProgram::markless`]), or say why not. Only the
 /// ops whose every character test goes through a consuming atom are covered;
 /// a construct that reads the subject another way (a look-around, a
-/// backreference, LTM, `<.ws>`, an interpolation, a nested `:m` group or an
-/// assertion) declines, and the call keeps the eager `:m` path.
+/// backreference, `<.ws>`, an interpolation or a nested `:m` group)
+/// declines, and the call keeps the eager `:m` path.
 // Cost: O(t), t = the number of tokens in the pattern tree.
 pub(in crate::runtime::regex) fn compile_markless(
     pattern: &RegexPattern,
@@ -106,10 +106,8 @@ pub(in crate::runtime::regex) fn compile_markless(
         !matches!(
             op,
             RxOp::Ws
-                | RxOp::Assert(_)
                 | RxOp::Look(_)
                 | RxOp::CapAtom(_)
-                | RxOp::LtmAlt(_)
                 | RxOp::InterpEnds(_)
                 | RxOp::GroupEnds(_)
                 | RxOp::ConjTail { .. }
