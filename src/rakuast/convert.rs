@@ -1149,7 +1149,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 ),
                 (*is_our && *is_submethod, "`our` submethod"),
                 (*our_variable_form, "`our &m = method` form"),
-                (!handles.is_empty(), "method with `handles`"),
+                (
+                    !handles.is_empty() && !super::routine_source::keeps_handles(body),
+                    "method with `handles`",
+                ),
                 (
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__") && !is_return_spelling_marker(t)

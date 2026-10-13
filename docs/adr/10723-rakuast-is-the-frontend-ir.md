@@ -996,3 +996,19 @@ written `::("MY::" ~ $k)`, so the lookup records the two parts as a spelling
 (`Spelling::PackageIndirect`) and lowering builds the concatenation back
 (`src/rakuast/symbolic_deref.rs`). A lookup with further `::(…)` / `::name`
 segments after the first keeps the old boundary.
+
+### 6.44 S10: `handles` on a method (2026-10-13)
+
+`method NAME handles TERM { … }` makes the method a delegation source.
+Rakudo 2026.09 renders `Method(traits => (Trait::Handles(TERM),))`, the
+written term (`QuotedString(<words val>)` for `<a b>`, `Term::Whatever` for
+`*`) in written order among the other traits. `Stmt::MethodDecl` keeps only
+the folded `handles: Vec<HandleSpec>`, and a field beside it would touch every
+`MethodDecl` constructor; instead the term rides the routine source-trait
+record the parser already keeps in `.AST` mode
+(`ast::routine_trait::RoutineTrait::Handles`, attached to the body like
+`is`/`returns`/`of`). The converter renders it, and lowering rebuilds the specs
+from the retained terms with `parser::handle_specs_from_term`, the routine the
+attribute form uses. A clause whose spelling the parser does not rebuild specs
+from (`parser::handles_clause_term` answers `None`) records an `Unsupported`
+trait, so it stays the boundary.
