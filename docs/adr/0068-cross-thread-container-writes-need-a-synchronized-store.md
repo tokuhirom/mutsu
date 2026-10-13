@@ -1037,3 +1037,38 @@ They now hold the root's stripe (`chained_root_guard`; cell and node for a celle
 writer keys it). All of them are leaves; the `WhateverCode` index resolution, which runs user
 code, stays outside. The repro is 0 in 180 runs after this slice and 2 in 74 before it.
 Pinned by the 16-thread blocks added to the test file.
+
+## 19. Hash readers: the `%h` harness and nine more funnels (2026-10-13, #13079)
+
+`t/concurrency/concurrent-param-hash-reader-families.t` is the `%h` twin of §18's array
+harness. Eight threads share one parameter hash: four restructure it (insert/delete,
+overwrite, delete-and-re-add, `.push`) and four run one of 31 reader families, directly and
+through a routine call. Nine families crashed on a debug build before this slice, with nanbox
+`classify` panics, `double free` aborts and SIGSEGV. Each crash was a walk of a map that
+another thread was rehashing:
+
+| family | funnel | fix |
+| --- | --- | --- |
+| `my %c = %x` | `coerce_hash_var_value`'s entry probes | `shared_snapshot` on entry |
+| `%x{*}` | the zen arms of `exec_index_op_with_positional` | node stripe around the walk |
+| `.gist`, `eqv` (through `value_has_proxy`) | `value_has_proxy_seen`'s Array/Hash arms | node stripe |
+| `\|%x` | `exec_make_slip_op` | `shared_snapshot` before the item walk |
+| `.Map` | `to_map`'s decont walk (and `to_hash`'s Array arm) | node stripe |
+| `.clone` | the method dispatch | `clone` joins `is_snapshot_read` |
+| `%(%x)` | the debug-build site-lane cross-check rendering the answer | node stripe around `gist_value` |
+| `eqv` | `eqv_inner`'s Array/Hash arms | `acquire_for_both`: both nodes' stripes, in stripe order |
+
+`.Hash` and `.Map` are deliberately **not** snapshot reads. On a Hash they answer the receiver
+itself (`%h.Hash<b> = 2` writes `%h`, as in raku), and a snapshot would quietly break that
+identity once a thread exists. The test file pins it.
+
+### 19.1 Still open
+
+This is still the funnel-by-funnel pattern that #13079 asks to replace. The array harness,
+extended the same way (`tmp`-only, not landed), still crashes in the general subscript path
+(`@x[1..3]`, `@x[0,1,2]`, `@x[*-1]`), in `.List`/`.Array` (`array_holes.rs`), `.sort`,
+`.head`/`.tail`, `.kv`/`.pairs`, `(elem)`, `.max`, `my @c = @x`, and in `eqv`, which reaches
+`vm_comparison_order_ops.rs` for arrays and not `eqv_inner`. The structural fix (§18.1's
+options: a guard inside the node accessor or `gc_contents_mut`, or a closure-based
+`with_items`) remains #13079's goal. It is also #13078's prerequisite: an in-place celled push
+is safe only once no reader walks a shared node unguarded.
