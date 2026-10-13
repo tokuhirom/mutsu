@@ -22,6 +22,7 @@ use crate::value::ValueMap;
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 mod activation_capture;
+mod frame_scope;
 mod outer_scope;
 mod rebind;
 mod routine_owned;

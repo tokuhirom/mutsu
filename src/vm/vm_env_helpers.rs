@@ -729,7 +729,7 @@ impl Interpreter {
     /// example, `Test::Probe` must not see the private `$output` lexical owned
     /// by the separately loaded `Test` unit. `owner` is the package registered
     /// for the routine's defining unit; when present, the walk stops there.
-    fn lookup_unit_lexical_chain<'a>(
+    pub(super) fn lookup_unit_lexical_chain<'a>(
         table: &'a crate::runtime::PackageLexicals,
         candidate: &str,
         name: &str,
@@ -908,7 +908,7 @@ impl Interpreter {
     /// mangled package is never a candidate; both are flag reads on the
     /// symbol, not string compares.
     // Cost: O(1).
-    fn unit_lexical_candidates(&self, cur: Symbol) -> [Option<Symbol>; 4] {
+    pub(super) fn unit_lexical_candidates(&self, cur: Symbol) -> [Option<Symbol>; 4] {
         let frame = self.routine_stack().last();
         [
             frame.and_then(|f| f.lexical_package),

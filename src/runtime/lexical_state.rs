@@ -134,6 +134,13 @@ pub(crate) struct LexicalState {
     /// snapshot keeping a module's bare names reachable once the loading frame is
     /// gone; this store is authoritative and consulted BEFORE `env`.
     pub(crate) unit_lexicals: std::sync::Arc<PackageLexicals>,
+    /// The declared element/key types of a unit's own file-scope `@`/`%`
+    /// lexicals, keyed by unit and then by the env metadata lane
+    /// (`__mutsu_type::%h`, `__mutsu_hash_key_type::%h`), each a `Str`.
+    /// The module body runs in its loader's env, so those lanes are taken out
+    /// of it when the load ends, like the values moving into `unit_lexicals`;
+    /// the unit's routines read them here (#13086, `vm_unit_lexical_meta_lanes`).
+    pub(crate) unit_lexical_meta_lanes: std::sync::Arc<PackageLexicals>,
     /// Bumped by [`Interpreter::unit_lexicals_cow_mut`] and
     /// [`Interpreter::package_lexicals_cow_mut`], the funnels through which
     /// `unit_lexicals` and `package_lexicals` are mutated. TRIR's per-routine
@@ -398,6 +405,7 @@ impl LexicalState {
             class_body_static_names: Default::default(),
             class_body_static_types: Default::default(),
             unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
+            unit_lexical_meta_lanes: std::sync::Arc::new(PackageLexicals::default()),
             mainline_lexical_subs: Default::default(),
             lexsub_free_aliases: Default::default(),
             lexsub_latest_cells: Default::default(),
@@ -457,6 +465,7 @@ impl LexicalState {
             class_body_static_names: self.class_body_static_names.clone(),
             class_body_static_types: self.class_body_static_types.clone(),
             unit_lexicals: self.unit_lexicals.clone(),
+            unit_lexical_meta_lanes: self.unit_lexical_meta_lanes.clone(),
             mainline_lexical_subs: self.mainline_lexical_subs.clone(),
             lexsub_free_aliases: self.lexsub_free_aliases.clone(),
             lexsub_latest_cells: self.lexsub_latest_cells.clone(),
