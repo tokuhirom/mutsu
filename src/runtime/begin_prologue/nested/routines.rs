@@ -22,7 +22,7 @@
 //! not lifted from a scope that declares routines, since that routine may
 //! evaluate a string where it was called from.
 
-use super::routine_copy::copyable_routine;
+use super::routine_copy::{copyable_routine, copyable_token};
 use super::scan::{Scan, is_core_routine};
 use super::{BindingKind, Walker};
 use crate::ast::Stmt;
@@ -41,6 +41,9 @@ pub(super) struct Routine {
     /// How many bindings the scope held when the routine was declared. The
     /// routine closes over those and no later ones.
     pub(super) bindings: usize,
+    /// Copied whether or not the body seems to use it: an operator or other
+    /// category routine, or a token, which code reaches through syntax.
+    pub(super) always: bool,
 }
 
 /// How the lifted body reaches one inner name.
@@ -105,10 +108,30 @@ impl Walker<'_> {
         };
         match copyable_routine(decl) {
             Some((name, multi, decl)) => frame.routines.push(Routine {
+                always: name.contains(':'),
                 name,
                 multi,
                 decl,
                 bindings: frame.bindings.len(),
+            }),
+            None => frame.blocked = true,
+        }
+    }
+
+    /// Note a `token`, `rule` or `regex` declared in the current scope. A
+    /// plain one is declared again in every lifted BEGIN's block; any other
+    /// blocks the scope ([`copyable_token`]).
+    pub(super) fn declare_token(&mut self, decl: &Stmt) {
+        let Some(frame) = self.frames.last_mut() else {
+            return;
+        };
+        match copyable_token(decl) {
+            Some((name, decl)) => frame.routines.push(Routine {
+                name,
+                multi: false,
+                decl,
+                bindings: frame.bindings.len(),
+                always: true,
             }),
             None => frame.blocked = true,
         }
@@ -334,7 +357,7 @@ impl Walker<'_> {
     ) {
         for (frame, f) in self.frames.iter().enumerate() {
             for (index, routine) in f.routines.iter().enumerate() {
-                if routine.name.contains(':') && deps.routines.insert((frame, index)) {
+                if routine.always && deps.routines.insert((frame, index)) {
                     let scope = Scope {
                         frame,
                         bindings: routine.bindings,
