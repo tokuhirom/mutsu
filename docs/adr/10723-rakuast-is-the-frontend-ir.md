@@ -791,3 +791,15 @@ A statement-level `anon class C { }` was a second mechanism: it registered
 `C` and then removed it again with a `__MUTSU_UNREGISTER_CLASS__` call. It
 now parses to the expression form's marked declaration, so there is one
 mechanism; the builtin and the compiler's special case for its block are gone.
+
+### 6.30 S10: package-qualified variable declarations (2026-10-13)
+
+`my $pkg::x` declares a variable in the stub package `pkg`. Measured on
+rakudo 2026.09, the declaration's `desigilname` is
+`Name.from-identifier-parts("pkg", "x")`, which the converter already built;
+lowering now reads a multi-part desigilname back as the parser's `::`-joined
+name. The declaration also makes `pkg` a type at parse time, so the unit's
+name scan lists the stub packages of a qualified variable, and `OUR::A` /
+`MY::A` over a name that resolves is a `Term::Name` of the qualified name,
+whether `A` is a type or a term (it was a `Call::Name`, which lowered to a
+sub lookup).
