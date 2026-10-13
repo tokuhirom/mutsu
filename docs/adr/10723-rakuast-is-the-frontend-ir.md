@@ -736,3 +736,14 @@ variable is declared once rather than reset per iteration; the converter
 renders that loop as the assignment statement with its `loop-modifier` and the
 declaration as the assignment's left operand. `Z=` and user-defined compound
 operators keep their own expansions and stay refusals.
+
+### 6.26 S10: type-smiley pragmas (2026-10-13)
+
+`use variables :D` (and `attributes`, `parameters`, `invocant`) is a
+`RakuAST::Pragma` whose `argument` is a `ColonPair::True` of the smiley
+(measured on 2026.09). The parser keeps the smiley as a `":D"` string
+argument; only the colonpair spelling produces it (a written string argument
+is a parse error), so the string is the smiley's own record rather than a
+lost distinction. Conversion renders the colonpair, and lowering turns the
+colonpair, which the generic `use` lowering would read as an import tag,
+back into that argument.
