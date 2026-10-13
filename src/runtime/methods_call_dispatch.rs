@@ -3393,40 +3393,6 @@ impl Interpreter {
             return Ok(Value::truth(numeric_match && str_match));
         }
 
-        // Pair.ACCEPTS for Package/Instance: call method named by key, compare result
-        if method == "ACCEPTS"
-            && matches!(
-                target.view(),
-                ValueView::Pair(..) | ValueView::ValuePair(..)
-            )
-            && args.len() == 1
-            && matches!(
-                args[0].view(),
-                ValueView::Instance { .. } | ValueView::Package(_)
-            )
-        {
-            let (pair_key, pair_value) = match target.view() {
-                ValueView::Pair(k, v) => (k.to_string(), v.clone()),
-                ValueView::ValuePair(k, v) => (k.to_string_value(), v.clone()),
-                _ => unreachable!(),
-            };
-            let method_result = self.call_method_with_values(args[0].clone(), &pair_key, vec![])?;
-            // Use smartmatch semantics: pair_value.ACCEPTS(method_result)
-            let result = match pair_value.view() {
-                // Bool pair value: True matches any truthy result, False matches falsy
-                ValueView::Bool(expected) => {
-                    if expected {
-                        method_result.truthy()
-                    } else {
-                        !method_result.truthy()
-                    }
-                }
-                // Otherwise: use equality
-                _ => method_result == pair_value,
-            };
-            return Ok(Value::truth(result));
-        }
-
         if let Some(result) = native_result {
             return result;
         }

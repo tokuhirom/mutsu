@@ -50,6 +50,7 @@ pub(crate) mod allomorph;
 mod collections;
 mod ctors_mop;
 mod dispatch;
+pub(crate) mod index_arg;
 mod instances;
 mod io_concurrency;
 mod mutating;

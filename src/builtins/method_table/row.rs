@@ -77,7 +77,7 @@ impl Handler {
 /// Facts about a row that the guard step reads before it calls the handler
 /// (ADR-11276 §2, `RowFlags`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct RowFlags(u8);
+pub(crate) struct RowFlags(u16);
 
 impl RowFlags {
     /// No flag: the row answers a defined receiver of a plain shape, and its
@@ -133,6 +133,26 @@ impl RowFlags {
     /// would end the very liveness the row exists to keep, so it skips the
     /// row. The handler is still pure.
     pub(crate) const LIVE_VIEW: RowFlags = RowFlags(1 << 7);
+    /// The row's one positional argument is a positional index, which it
+    /// takes only as an `Int` (Rakudo's `Int:D \pos` candidate). The guard
+    /// step admits nothing else; every other argument (a `Num`, a `Str`, a
+    /// collection, a user object, a type object) is bound by
+    /// [`index_arg`](super::index_arg) the way Rakudo's other candidates bind
+    /// it: `Any.AT-POS(Any:D \pos)` re-dispatches on `pos.Int`,
+    /// `Any.EXISTS-POS(Any:D \pos)` is `pos.Int == 0`, and a type object
+    /// cannot be an index. The `.Int` call is user code for a user object, so
+    /// only the interpreter's entry binds it.
+    pub(crate) const INDEX_ARG: RowFlags = RowFlags(1 << 8);
+    /// With [`Self::INDEX_ARG`]: the index parameter is `Int(Any)` (Rakudo's
+    /// `Capture`), so every argument, a type object included, is coerced
+    /// through its `.Int` and handed to the row.
+    pub(crate) const INDEX_COERCES: RowFlags = RowFlags(1 << 9);
+    /// The row binds `Mu \topic`: any argument, a user object included, which
+    /// its [`Handler::Interp`] handler reads through the object's own methods
+    /// (`Pair.ACCEPTS` calls the method its key names). The guard step hands it
+    /// the arguments [`Self::ANY_ARGS`] admits; `invoke_unadmitted` hands it
+    /// every other one but a `Junction`, a `Failure` and a named argument.
+    pub(crate) const OBJECT_ARGS: RowFlags = RowFlags(1 << 10);
 
     /// The flags of both.
     // Cost: O(1).

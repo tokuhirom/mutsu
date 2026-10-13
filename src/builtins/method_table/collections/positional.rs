@@ -55,7 +55,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "AT-POS",
         arity: 1,
         handler: Handler::Narrow(at_pos),
-        flags: RowFlags::NONE,
+        // `Int:D $pos`; any other index is `Any`'s (`index_arg`).
+        flags: RowFlags::INDEX_ARG,
         named: &[],
     },
     MethodRow {
@@ -63,7 +64,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "EXISTS-POS",
         arity: 1,
         handler: Handler::Narrow(exists_pos),
-        flags: RowFlags::NONE,
+        // `Int:D $pos`; any other index is `Any`'s (`index_arg`).
+        flags: RowFlags::INDEX_ARG,
         named: &[],
     },
     MethodRow {
@@ -71,7 +73,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "EXISTS-POS",
         arity: 1,
         handler: Handler::Narrow(exists_pos),
-        flags: RowFlags::NONE,
+        // `Int:D $pos`; any other index is `Any`'s (`index_arg`).
+        flags: RowFlags::INDEX_ARG,
         named: &[],
     },
     MethodRow {

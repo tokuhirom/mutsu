@@ -50,7 +50,8 @@ fn is_builtin_value_argument(arg: &Value) -> bool {
 /// guard step did not admit. `None` when the receiver has no shape, no such row exists, or an argument is not a
 /// built-in value ([`is_builtin_value_argument`]): a named argument (split by
 /// the guard step), a `Junction` (which autothreads), a `Failure` (which may
-/// explode) or a user object.
+/// explode) or a user object. A row flagged [`RowFlags::OBJECT_ARGS`] takes a
+/// user object too.
 // Cost: O(a) to check a arguments, plus O(1) to find the row (a bit test, a
 // tag probe and one hash lookup), plus the handler's own cost.
 pub(crate) fn invoke_unadmitted(
@@ -63,10 +64,11 @@ pub(crate) fn invoke_unadmitted(
     if args.is_empty() || !names_a_row(method, args.len()) {
         return None;
     }
-    if !args
-        .iter()
-        .all(|arg| !arg.is_string_pair_value() && is_builtin_value_argument(arg))
-    {
+    // A positional index is bound by its own rules, a user object included.
+    if let Some(answer) = super::index_arg::invoke(interp, target, method, args) {
+        return Some(answer);
+    }
+    if args.iter().any(Value::is_string_pair_value) {
         return None;
     }
     // An allomorph receiver is answered on the part the row reads (§9.101).
@@ -77,7 +79,22 @@ pub(crate) fn invoke_unadmitted(
             (Some(part), id)
         }
     };
-    if !row(id).flags.contains(RowFlags::ANY_ARGS) {
+    let flags = row(id).flags;
+    if !flags.contains(RowFlags::ANY_ARGS) {
+        return None;
+    }
+    // A user object is an argument only a row that binds `Mu` takes; a
+    // `Junction` autothreads and a `Failure` may explode before any row.
+    let admitted = if flags.contains(RowFlags::OBJECT_ARGS) {
+        args.iter().all(|arg| {
+            let arg = arg.descalarize();
+            !arg.is_junction_value()
+                && !matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+        })
+    } else {
+        args.iter().all(is_builtin_value_argument)
+    };
+    if !admitted {
         return None;
     }
     let args: Vec<Value> = args.iter().map(|arg| arg.descalarize().clone()).collect();

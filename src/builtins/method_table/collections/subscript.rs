@@ -1,6 +1,7 @@
-//! The associative subscript protocol and `ACCEPTS` of the collections
-//! (ADR-11276 §10, slice 3C): `AT-KEY`, `EXISTS-KEY` and `ACCEPTS` on `Hash`,
-//! `Map`, the six quant hashes, `Pair`, `Capture` and `Range`.
+//! The associative subscript protocol of the collections (ADR-11276 §10,
+//! slice 3C): `AT-KEY` and `EXISTS-KEY` on `Hash`, `Map`, the six quant
+//! hashes, `Pair` and `Capture`, and the comparisons the `ACCEPTS` rows
+//! (`accepts`) make for a built-in topic.
 //!
 //! The rows take any plain argument (a key may be any object), and the
 //! cascade's own arms for the same calls delegate here for the receivers the
@@ -46,14 +47,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("MixHash", "EXISTS-KEY", exists_key),
     row!("Pair", "EXISTS-KEY", exists_key),
     row!("Capture", "EXISTS-KEY", exists_key),
-    row!("Set", "ACCEPTS", accepts_quant),
-    row!("SetHash", "ACCEPTS", accepts_quant),
-    row!("Bag", "ACCEPTS", accepts_quant),
-    row!("BagHash", "ACCEPTS", accepts_quant),
-    row!("Mix", "ACCEPTS", accepts_quant),
-    row!("MixHash", "ACCEPTS", accepts_quant),
-    row!("Pair", "ACCEPTS", accepts_pair),
-    row!("Range", "ACCEPTS", accepts_range),
 ];
 
 /// `.AT-KEY($key)`: the value stored under `key`, or the type's default
@@ -167,59 +160,6 @@ pub(crate) fn accepts_quant(target: &Value, args: &[Value]) -> Option<Result<Val
         }
         (ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..), _) => false,
         _ => return None,
-    };
-    Some(Ok(Value::truth(result)))
-}
-
-/// `Pair.ACCEPTS($other)`: whether `other` has the entry the pair names (the
-/// same value stored under the same key).
-// Cost: O(1) expected; O(k) in the key's string form, k = chars.
-pub(crate) fn accepts_pair(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let arg = &args[0];
-    let (pk, pv) = match target.view() {
-        ValueView::Pair(k, v) => (k.to_string(), v.clone()),
-        ValueView::ValuePair(k, v) => (k.to_string_value(), v.clone()),
-        _ => return None,
-    };
-    // Set/Bag/Mix store elements under their `.WHICH` key, so membership
-    // lookups must key by the pair-key's `.WHICH`, not its raw string.
-    let elem_key = match target.view() {
-        ValueView::Pair(k, _) => crate::runtime::utils::str_elem_key(k),
-        ValueView::ValuePair(k, _) => crate::runtime::utils::value_which_key(k),
-        _ => return None,
-    };
-    let result = match arg.view() {
-        ValueView::Bag(data, _) => {
-            let count = data
-                .counts
-                .get(&elem_key)
-                .cloned()
-                .unwrap_or_else(BigInt::zero);
-            Value::from_bigint(count) == pv
-        }
-        ValueView::Mix(data, _) => {
-            let w = data.weights.get(&elem_key).copied().unwrap_or_default();
-            w.to_value() == pv
-        }
-        ValueView::Set(data, _) => {
-            let in_set = data.elements.contains(&elem_key);
-            Value::truth(in_set) == pv
-        }
-        ValueView::Hash(items) => {
-            let hv = items.get(&pk).cloned().unwrap_or(Value::int(0));
-            hv == pv
-        }
-        ValueView::Pair(ok, ov) => pk == ok.as_str() && *ov == pv,
-        ValueView::ValuePair(ok, ov) => {
-            let tk = match target.view() {
-                ValueView::Pair(k, _) => Value::str(k.to_string()),
-                ValueView::ValuePair(k, _) => k.clone(),
-                _ => return None,
-            };
-            tk == *ok && *ov == pv
-        }
-        ValueView::Instance { .. } | ValueView::Package(_) => return None,
-        _ => false,
     };
     Some(Ok(Value::truth(result)))
 }
