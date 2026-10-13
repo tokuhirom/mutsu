@@ -2310,6 +2310,7 @@ The two quoted-name arms of the block are gone; what is left of it is the `match
 `t/regex/match/match-any-list-methods.t`. The remaining differences from Rakudo are `List`'s own over a list of `Match`es
 (#13195): `minmax` and `sum` do not numify the elements, `chrs` does not refuse them, `minpairs`/`maxpairs` answer a `Seq`, and
 `iterator`/`batch()`/`rotor()` differ.
+
 ### 9.99 Slice 5: the 1-arg `Rat`/`FatRat` arms are gone; `Cool.Rat` takes no epsilon (2026-10-13)
 
 `refactor/11276-rat-epsilon-arms`. `methods_narg/dispatch_1arg.rs` kept three arms for `.Rat($epsilon)` and `.FatRat($epsilon)`:
