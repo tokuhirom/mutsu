@@ -449,8 +449,9 @@ pub(crate) fn shapeless_row(
 ) -> Option<RowId> {
     use crate::value::ValueView;
     // `join` (its separator), `pick`, `roll`, `head` and `tail` (their count)
-    // and the `Cool` text methods that read a property, a pattern or an
-    // amount (§9.90) alone take an argument.
+    // and the `Cool` text methods that read a property, a pattern, an
+    // amount (§9.90) or a count (`words`, `lines`, `chop`) alone take an
+    // argument.
     if arity > 0
         && (arity > 1
             || !matches!(
@@ -468,6 +469,9 @@ pub(crate) fn shapeless_row(
                     | "samecase"
                     | "samemark"
                     | "indent"
+                    | "words"
+                    | "lines"
+                    | "chop"
             ))
     {
         return None;

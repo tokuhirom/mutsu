@@ -2389,6 +2389,29 @@ Not changed: a numeric row that returns its invocant answers the bare number whe
 `<1.5>.abs`, #13236); `.unique` on any scalar answers the scalar, not a one-element `Seq` (#13235). `method-rows-report.py --arms`:
 the pure arity cascades go from 133 to 132 arms (the string list was one `match` arm). Pinned in `t/oo/method/allomorph-method-rows.t`.
 
+### 9.102 Slice 5: `words($limit)`, `lines($limit)` and `chop($n)` are rows (2026-10-13)
+
+`refactor/11276-text-count-args`, stacked on §9.101. `methods_narg/dispatch_1arg.rs` answered `chop($n)`, `lines($limit)`,
+`lines(:chomp)`/`lines(:count)` and `words($limit)` for any receiver by its string form. Rakudo declares each on `Str` and again on
+`Cool` (`self.Str.METHOD`). Probed: the three names on thirteen receivers (`Str`s, `Int`, `Rat`, a `List`, an `Array`, an allomorph,
+a `Range`, the `Str` type object, a `Pair`, a `Hash`, an `IO::Path`) with eleven arguments each, on `raku`, the pre-change binary and the
+new one. Decisions:
+
+1. **Rows on `Str` and `Cool`**: `words` at arity 1, `lines` at arity 0 (now `Handler::Named`, declaring `chomp` and `count`) and 1
+   (declaring `chomp`), and `chop` at arity 1. The arity-1 rows are `ANY_ARGS`. A receiver with no shape reaches them through
+   `shapeless_row`, which now takes these three names with one argument.
+2. **The count is read as `.Int`** (`value::str_iter::parse_limit`, the one reader, and `chop`'s own): a `Str` parses, a `Rat`
+   truncates, an allomorph reads its number, a negative count is `0`; `*` and `Inf` cap nothing. Before, a `Rat`, `Str` or allomorph
+   limit was `X::Method::NotFound`.
+3. **An allomorph receiver with an argument the guard step declines** (`<1e0>.words(<1>)`) is answered by `invoke_unadmitted`, which now
+   redirects an allomorph as the guard step does (§9.101); the mixin dispatch asks it before delegating the call to the number, which
+   answered `("1",)`.
+
+Behaviour changes toward Rakudo: a `Pair` (not a `Cool`) refuses `words`/`lines`/`chop` with `X::Method::NotFound` (they answered on its
+`.Str`); the limits above. Not changed: `chop(*)`/`chop(Inf)` answer where Rakudo raises a bind failure, and a positional `Pair` argument
+is read as a named one (ADR-0021). `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 24 to 21 arms. Pinned in
+`t/types/string/str-count-arg-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

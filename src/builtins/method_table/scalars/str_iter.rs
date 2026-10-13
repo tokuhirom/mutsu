@@ -7,7 +7,7 @@
 //! lazy `Seq` over the receiver's string form (`value::str_iter_seq`), and
 //! `ords` an eager `Seq` of the NFC codepoints.
 
-use super::{Handler, MethodRow, RowFlags};
+use super::{Handler, MethodRow, Named, RowFlags};
 use crate::value::{RuntimeError, StrIterMode, Value};
 
 /// The rows one owner declares.
@@ -40,13 +40,31 @@ macro_rules! iter_rows {
                 flags: RowFlags::NONE,
                 named: &[],
             },
+            // `words($limit)`: `*`, `Inf` or a count, read as `.Int`.
+            MethodRow {
+                owner: $owner,
+                name: "words",
+                arity: 1,
+                handler: Handler::Narrow(words_limit),
+                flags: RowFlags::ANY_ARGS,
+                named: &[],
+            },
+            // `lines(:$chomp, :$count)`: `:count` answers the number of lines.
             MethodRow {
                 owner: $owner,
                 name: "lines",
                 arity: 0,
-                handler: Handler::Pure(lines),
+                handler: Handler::Named(lines),
                 flags: RowFlags::NONE,
-                named: &[],
+                named: &["chomp", "count"],
+            },
+            MethodRow {
+                owner: $owner,
+                name: "lines",
+                arity: 1,
+                handler: Handler::Named(lines_limit),
+                flags: RowFlags::ANY_ARGS,
+                named: &["chomp"],
             },
             MethodRow {
                 owner: $owner,
@@ -79,14 +97,50 @@ pub(crate) fn words(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErr
     Ok(crate::value::str_iter_seq(target, StrIterMode::Words, None))
 }
 
-/// `Str.lines`: a lazy Seq of the lines, each without its line ending.
+/// `Str.words($limit)`: at most `$limit` words; `*` and `Inf` cap nothing.
+/// A limit that is not a number declines (the slow path reports it).
 // Cost: O(1), a lazy Seq over the invocant (`value::StrIterSpec`).
-pub(crate) fn lines(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(crate::value::str_iter_seq(
+fn words_limit(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let limit = crate::value::str_iter_limit(args.first()?)?;
+    Some(Ok(crate::value::str_iter_seq(
         target,
-        StrIterMode::Lines { chomp: true },
-        None,
-    ))
+        StrIterMode::Words,
+        limit,
+    )))
+}
+
+/// `Str.lines(:$chomp = True, :$count)`: a lazy Seq of the lines, each
+/// without its line ending unless `:!chomp`; with a true `:count`, the number
+/// of lines.
+// Cost: O(1), a lazy Seq over the invocant (`value::StrIterSpec`); `:count`
+// is O(n), n = bytes of the invocant, and builds no line.
+pub(crate) fn lines(
+    target: &Value,
+    _args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let mode = StrIterMode::Lines {
+        chomp: named.get("chomp").is_none_or(Value::truthy),
+    };
+    if named.get("count").is_some_and(Value::truthy) {
+        let n = crate::value::str_iter_count(target, mode, None);
+        return Some(Ok(Value::int(n as i64)));
+    }
+    Some(Ok(crate::value::str_iter_seq(target, mode, None)))
+}
+
+/// `Str.lines($limit, :$chomp = True)`: at most `$limit` lines.
+// Cost: O(1), a lazy Seq over the invocant (`value::StrIterSpec`).
+fn lines_limit(
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let limit = crate::value::str_iter_limit(args.first()?)?;
+    let mode = StrIterMode::Lines {
+        chomp: named.get("chomp").is_none_or(Value::truthy),
+    };
+    Some(Ok(crate::value::str_iter_seq(target, mode, limit)))
 }
 
 /// `Str.ords`: a Seq of the codepoints of the NFC form.
