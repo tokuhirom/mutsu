@@ -347,9 +347,9 @@ pub(crate) fn unimatch(ch: char, prop_value: &str, prop_name: Option<&str>) -> b
         return true;
     }
 
-    // 4. Block name (normalize underscores/spaces/case)
-    let block = super::char_props::unicode_block(ch);
-    if block_matches(&block, prop_value) {
+    // 4. Block name (case and underscores normalized)
+    let block = unimatch_block(ch);
+    if block_matches_bare(&block, prop_value) {
         return true;
     }
 
@@ -365,7 +365,7 @@ fn unimatch_property(ch: char, prop_value: &str, prop_name: &str) -> bool {
             script.eq_ignore_ascii_case(prop_value)
         }
         "blk" | "Block" => {
-            let block = super::char_props::unicode_block(ch);
+            let block = unimatch_block(ch);
             block_matches(&block, prop_value)
         }
         "ea" | "East_Asian_Width" => {
@@ -432,6 +432,25 @@ fn east_asian_width_short(value: &str) -> &'static str {
     }
 }
 
+/// The block `unimatch` reads for `ch`: an unassigned codepoint (`Cn`) is in
+/// `No_Block`, though `uniprop("Block")` still answers its range's block.
+// Cost: O(1) (a table lookup).
+fn unimatch_block(ch: char) -> String {
+    if unimatch_general_category(ch, "Cn") {
+        "No_Block".to_string()
+    } else {
+        super::char_props::unicode_block(ch)
+    }
+}
+
+/// Whether a property-less `unimatch` value names `block`: case and
+/// underscores are ignored, but not spaces or hyphens (Rakudo matches
+/// `Basic_Latin`, not `Basic Latin` or `Basic-Latin`).
+// Cost: O(n), n = chars of the names.
+fn block_matches_bare(block: &str, target: &str) -> bool {
+    !target.contains([' ', '-']) && block_matches(block, target)
+}
+
 /// Check if a block name matches, normalizing case, underscores, spaces, and hyphens.
 fn block_matches(block: &str, target: &str) -> bool {
     let normalize = |s: &str| -> String {
@@ -487,7 +506,7 @@ pub(crate) fn unimatch_for_codepoint(cp: u32, prop_value: &str, prop_name: Optio
                 || super::binary_props::try_binary_property(UNASSIGNED, prop_value).unwrap_or(false)
                 || crate::builtins::unicode::unicode_script_name(UNASSIGNED)
                     .eq_ignore_ascii_case(prop_value)
-                || block_matches(block, prop_value)
+                || block_matches_bare(block, prop_value)
         }
     })
 }

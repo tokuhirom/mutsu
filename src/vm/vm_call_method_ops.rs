@@ -27,6 +27,13 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "unshift"
             | "prepend"
             // Introspection/coercion Nil genuinely defines.
+            // Cool's Unicode methods: a Nil invocant fails their signature.
+            | "uniprop"
+            | "uniprops"
+            | "unival"
+            | "univals"
+            | "unimatch"
+            | "uniname"
             | "defined"
             | "Bool"
             | "so"
@@ -148,9 +155,25 @@ pub(crate) enum NilPredispatchVerdict {
 /// apply to the 0-ary form; an argument makes them fall through unchanged).
 pub(crate) fn nil_predispatch_verdict(
     method: &str,
-    no_args: bool,
+    args: &[Value],
 ) -> Option<NilPredispatchVerdict> {
+    let no_args = args.is_empty();
     match method {
+        // `Cool` defines these, so `Nil` (a `Cool` type object) does not absorb
+        // them: the call fails the multi signature instead.
+        "uniprop" | "uniprops" | "unival" | "univals" | "unimatch" | "uniname" => {
+            let profile: String = args
+                .iter()
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                .map(|a| format!("{}:D", crate::value::types::what_type_name(a)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some(NilPredispatchVerdict::Error(
+                crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+                    method, "Nil", false, &profile, &[],
+                ),
+            ))
+        }
         "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
             Some(NilPredispatchVerdict::Error(RuntimeError::new(format!(
                 "Invocant of method '{}' must be an object instance of type \
@@ -2173,7 +2196,7 @@ impl Interpreter {
                     // errors live in `nil_predispatch_verdict`, shared with the
                     // named-receiver opcode (`exec_call_method_mut_op_impl`)
                     // so `my $v := Nil; $v.Int` reaches the same verdict.
-                    match nil_predispatch_verdict(method, args.is_empty()) {
+                    match nil_predispatch_verdict(method, &args) {
                         Some(NilPredispatchVerdict::Error(err)) => {
                             crate::vm::vm_stats::record_dispatch_entry_intercept(
                                 "callmethod",
