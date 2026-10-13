@@ -51,6 +51,20 @@ impl Interpreter {
         Self::apply_scalar_param_bind(Self::scalar_param_bind(pd), val)
     }
 
+    /// [`Self::itemize_plain_scalar_param`] for a positional argument the
+    /// compiled method fast binder takes: a plain `$` parameter holds a List
+    /// argument as one item (`method m($k) { %h{$k} }` stores one key, not a
+    /// slice), as the sub binders' parameters do. A parameter the binder has
+    /// no declaration for binds the argument as passed.
+    // Cost: O(1), as `itemize_plain_scalar_param`.
+    #[inline]
+    pub(super) fn itemize_fast_method_arg(pd: Option<&crate::ast::ParamDef>, val: Value) -> Value {
+        match pd {
+            Some(pd) => Self::itemize_plain_scalar_param(pd, val),
+            None => val,
+        }
+    }
+
     /// [`Self::itemize_plain_scalar_param`] for a parameter of a compiled
     /// routine, answered from the precomputed `param_itemize_on_bind` mode.
     /// An index past the end means the chunk never ran the precompute (a

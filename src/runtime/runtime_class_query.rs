@@ -434,6 +434,28 @@ impl Interpreter {
         for (k, v) in to_inject {
             self.env.insert(k, v);
         }
+        for (k, v) in self.class_body_static_meta_lanes(class_name) {
+            self.env.insert(k, v);
+        }
+    }
+
+    /// The env metadata lanes of `class_name`'s `@`/`%` statics recorded when
+    /// its body was left (`leave_class_body_static_type`): each static's
+    /// declared element and key type, re-injected with the statics so the
+    /// class's methods check their stores against their own declarations.
+    // Cost: O(t), t = typed statics of `class_name`.
+    fn class_body_static_meta_lanes(&self, class_name: &str) -> Vec<(String, Value)> {
+        self.lexicals
+            .class_body_static_types
+            .get(class_name)
+            .map(|types| {
+                types
+                    .iter()
+                    .filter(|(k, _)| k.starts_with("__mutsu_"))
+                    .map(|(k, v)| (k.clone(), Value::str(v.clone())))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// [`Self::inject_class_body_statics`], recording each injected name's
@@ -455,6 +477,10 @@ impl Interpreter {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         for (k, v) in to_inject {
+            saved.push((k.clone(), self.env.get(&k).cloned()));
+            self.env.insert(k, v);
+        }
+        for (k, v) in self.class_body_static_meta_lanes(class_name) {
             saved.push((k.clone(), self.env.get(&k).cloned()));
             self.env.insert(k, v);
         }
