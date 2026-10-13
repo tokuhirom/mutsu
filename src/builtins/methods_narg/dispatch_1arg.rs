@@ -1,11 +1,9 @@
 use super::allomorph::allomorph_accepts;
 
 use super::fmt_contains::fmt_value_needs_coercion;
-use super::numeric::{int_to_subscript, int_to_superscript};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
-use num_traits::ToPrimitive;
 
 /// A built-in method call with one argument: the row of the built-in method
 /// table (ADR-11276), then the cascade, then the row a receiver with no shape
@@ -296,36 +294,6 @@ fn native_method_1arg_cascade(
             target,
             std::slice::from_ref(arg),
         ),
-        "Str" => {
-            // Int.Str(:superscript) and Int.Str(:subscript)
-            if let ValueView::Pair(key, val) = arg.view()
-                && val.truthy()
-            {
-                let int_val = match target.view() {
-                    ValueView::Int(i) => Some(i),
-                    ValueView::BigInt(bi) => bi.to_i64(),
-                    ValueView::Num(f) => Some(f as i64),
-                    ValueView::Bool(b) => Some(if b { 1 } else { 0 }),
-                    _ => {
-                        let s = target.to_string_value();
-                        s.parse::<i64>().ok()
-                    }
-                };
-                if let Some(n) = int_val {
-                    match key.as_str() {
-                        "superscript" => {
-                            return Some(Ok(Value::str(int_to_superscript(n))));
-                        }
-                        "subscript" => {
-                            return Some(Ok(Value::str(int_to_subscript(n))));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            // Default: just stringify
-            Some(Ok(Value::str(target.to_string_value())))
-        }
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
         // A Capture's positional part: the `Capture` row's implementation
         // (`method_table::capture`).
