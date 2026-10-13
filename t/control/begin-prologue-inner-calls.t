@@ -1,6 +1,6 @@
 use Test;
 
-plan 20;
+plan 23;
 
 # A BEGIN nested in a routine runs at compile time (ADR-0134, slice 2), even
 # when it calls a routine of its scope that is a multi, an `our` or exported
@@ -119,3 +119,18 @@ is $quant-token, 'xx', 'a quantifier block reading a lexical of the scope';
 sub declares-code-token { my token cu { y { 1 } }; BEGIN 1 }
 sub after-code-token { BEGIN $after-code-token = 'lifted' }
 is $after-code-token, 'lifted', 'a scope declaring a token with a code block no longer keeps later BEGINs in place';
+
+# A call qualified by a pseudo-package (`GLOBAL::`, `MY::`, `OUTER::`) makes
+# the body reach the whole scope, so it no longer keeps the BEGIN (and every
+# later nested BEGIN) in place (#13096). As on rakudo, `MY::name()` finds no
+# routine at all (it looks up `name`, not `&name`), while `GLOBAL::` reaches
+# an `our` routine installed at compile time.
+my ($pseudo-global, $pseudo-my, $after-pseudo);
+sub with-pseudo-global { our sub glob-helper { 'g' }; BEGIN $pseudo-global = GLOBAL::glob-helper() }
+is $pseudo-global, 'g', 'a GLOBAL-qualified call to an our routine of the scope';
+
+sub with-pseudo-my { sub my-helper { 1 }; BEGIN $pseudo-my = (try MY::my-helper()) // 'failed' }
+is $pseudo-my, 'failed', 'a MY-qualified call finds no routine, as on rakudo';
+
+sub after-pseudo { BEGIN $after-pseudo = 'lifted' }
+is $after-pseudo, 'lifted', 'a pseudo-package call no longer keeps later BEGINs in place';

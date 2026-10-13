@@ -606,6 +606,24 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   parameters, and a multi token. `t/control/begin-time-region-unwind.t` now
   uses a `:my` token as its in-place device.
 
+**Slice 2 follow-up — a pseudo-package qualified call, implemented**
+(`src/runtime/begin_prologue/nested/routines.rs`,
+`t/control/begin-prologue-inner-calls.t`; #13096).
+
+- A call qualified by a pseudo-package (`MY::h()`, `OUTER::h()`,
+  `GLOBAL::h()`, `CORE::uc(...)`) already made the body reflective, so it is
+  supplied the whole of the scopes it sees. Its callee is not a routine the
+  scan can select, and the rule "a body calling a routine it does not know is
+  not lifted from a scope that declares routines" refused the lift. That rule
+  exists because such a routine may evaluate a string where it was called
+  from; a reflective body already has every name of its scopes, so the rule
+  no longer applies to a pseudo-qualified callee.
+- Compared against `raku`: `MY::h()` and `OUTER::h()` find no routine on
+  rakudo, at BEGIN time or not (they look up `h`, not `&h`), and fail in both
+  (with different messages, the same as at run time); `OUTER::<&h>()` was
+  already lifted and fails the same way on both; `GLOBAL::h()` reaches an
+  `our` routine of the scope on both.
+
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
 `t/modules/import-export/use-if-begin-time.t`,

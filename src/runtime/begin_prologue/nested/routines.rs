@@ -23,7 +23,7 @@
 //! evaluate a string where it was called from.
 
 use super::routine_copy::{copyable_routine, copyable_token};
-use super::scan::{Scan, is_core_routine};
+use super::scan::{Scan, is_core_routine, is_pseudo_qualified};
 use super::token_reads::TokenReads;
 use super::{BindingKind, Walker};
 use crate::ast::Stmt;
@@ -215,7 +215,12 @@ impl Walker<'_> {
                 // `EVAL` reaches the scope by name, which the whole scope
                 // supplied above covers.
                 let evaluates = scan.reflective && matches!(name.as_str(), "EVAL" | "EVALFILE");
-                if !selected && routines_in_scope && !is_core_routine(*callee) && !evaluates {
+                if !selected
+                    && routines_in_scope
+                    && !is_core_routine(*callee)
+                    && !evaluates
+                    && !is_pseudo_qualified(*callee)
+                {
                     return None;
                 }
             }
