@@ -79,7 +79,7 @@ pub(crate) fn at_key(target: &Value, args: &[Value]) -> Option<Result<Value, Run
         }
         ValueView::Mix(data, _) => {
             let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-            let weight = data.weights.get(&key).copied().unwrap_or_default();
+            let weight = data.weights.get(&key).cloned().unwrap_or_default();
             Some(Ok(crate::value::mix_weight_to_value(weight)))
         }
         // A `Pair` does `Associative` with a single entry.
@@ -155,7 +155,7 @@ pub(crate) fn accepts_quant(target: &Value, args: &[Value]) -> Option<Result<Val
             mix1.len() == mix2.len()
                 && mix1.iter().all(|(k, v)| {
                     mix2.get(k)
-                        .copied()
+                        .cloned()
                         .is_some_and(|v2| (v.to_f64() - v2.to_f64()).abs() < f64::EPSILON)
                 })
         }

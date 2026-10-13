@@ -141,7 +141,7 @@ pub(crate) fn values(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
     Some(Ok(Value::seq(match target.view() {
         ValueView::Set(s, _) => s.iter().map(|_| Value::TRUE).collect(),
         ValueView::Bag(b, _) => b.values().map(|v| Value::from_bigint(v.clone())).collect(),
-        ValueView::Mix(m, _) => m.values().map(|v| mix_weight_to_value(*v)).collect(),
+        ValueView::Mix(m, _) => m.values().map(|v| mix_weight_to_value(v.clone())).collect(),
         _ => return None,
     })))
 }
@@ -166,7 +166,7 @@ pub(crate) fn kv(target: &Value, _args: &[Value]) -> Option<Result<Value, Runtim
         ValueView::Mix(m, _) => {
             for (k, v) in m.iter() {
                 kv.push(m.typed_key(k));
-                kv.push(mix_weight_to_value(*v));
+                kv.push(mix_weight_to_value(v.clone()));
             }
         }
         _ => return None,
@@ -188,7 +188,7 @@ pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
             .collect(),
         ValueView::Mix(m, _) => m
             .iter()
-            .map(|(k, v)| quanthash_typed_pair(m.typed_key(k), mix_weight_to_value(*v)))
+            .map(|(k, v)| quanthash_typed_pair(m.typed_key(k), mix_weight_to_value(v.clone())))
             .collect(),
         _ => return None,
     })))
@@ -208,7 +208,7 @@ pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Option<Result<Value,
             .collect(),
         ValueView::Mix(m, _) => m
             .iter()
-            .map(|(k, v)| Value::value_pair(mix_weight_to_value(*v), m.typed_key(k)))
+            .map(|(k, v)| Value::value_pair(mix_weight_to_value(v.clone()), m.typed_key(k)))
             .collect(),
         _ => return None,
     })))
@@ -256,7 +256,7 @@ pub(crate) fn total(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
             // regardless of HashMap iteration order: a weight that only
             // decodes to `Num` still sums non-associatively (e.g.
             // 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
-            let mut vals: Vec<MixWeight> = m.values().copied().collect();
+            let mut vals: Vec<MixWeight> = m.values().cloned().collect();
             vals.sort_by(|a, b| a.to_f64().total_cmp(&b.to_f64()));
             // Sum under the numeric tower and decode the total the same way
             // every other weight read-out does, so `.total` is `Int` for a

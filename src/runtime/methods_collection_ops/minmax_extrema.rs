@@ -124,9 +124,9 @@ impl Interpreter {
                     let mut best_weight: Option<crate::value::MixWeight> = None;
                     let mut out: Vec<Value> = Vec::new();
                     for (key, weight) in mix.iter() {
-                        let ord = if let Some(current) = best_weight {
+                        let ord = if let Some(current) = &best_weight {
                             weight
-                                .partial_cmp(&current)
+                                .partial_cmp(current)
                                 .unwrap_or(std::cmp::Ordering::Equal)
                         } else {
                             std::cmp::Ordering::Equal
@@ -135,16 +135,16 @@ impl Interpreter {
                             || (want_max && ord == std::cmp::Ordering::Greater)
                             || (!want_max && ord == std::cmp::Ordering::Less);
                         if replace {
-                            best_weight = Some(*weight);
+                            best_weight = Some(weight.clone());
                             out.clear();
                             out.push(crate::runtime::utils::quanthash_typed_pair(
                                 mix.typed_key(key),
-                                crate::value::mix_weight_to_value(*weight),
+                                crate::value::mix_weight_to_value(weight.clone()),
                             ));
                         } else if ord == std::cmp::Ordering::Equal {
                             out.push(crate::runtime::utils::quanthash_typed_pair(
                                 mix.typed_key(key),
-                                crate::value::mix_weight_to_value(*weight),
+                                crate::value::mix_weight_to_value(weight.clone()),
                             ));
                         }
                     }

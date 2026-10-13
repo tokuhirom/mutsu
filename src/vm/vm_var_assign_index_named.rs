@@ -2136,7 +2136,7 @@ impl Interpreter {
                                                 &str_key,
                                             );
                                         } else {
-                                            m.insert(str_key.clone(), weight);
+                                            m.insert(str_key.clone(), weight.clone());
                                             Self::record_quanthash_object_key(
                                                 &mut m.original_keys,
                                                 &str_key,

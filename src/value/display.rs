@@ -722,10 +722,12 @@ impl Value {
                         .collect();
                     keys.sort_by_key(|(k, _)| k.clone());
                     keys.iter()
-                        .map(|(k, v)| match crate::value::mix_weight_render(**v) {
-                            Some(w) => format!("{}({})", k, w),
-                            None => k.clone(),
-                        })
+                        .map(
+                            |(k, v)| match crate::value::mix_weight_render((**v).clone()) {
+                                Some(w) => format!("{}({})", k, w),
+                                None => k.clone(),
+                            },
+                        )
                         .collect::<Vec<_>>()
                         .join(" ")
                 })

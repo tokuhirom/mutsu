@@ -116,7 +116,7 @@ pub(crate) fn invert_value(target: &Value) -> Option<Value> {
         ValueView::Mix(items, _) => {
             for (k, weight) in items.iter() {
                 result.push(make_inverted_pair(
-                    crate::value::mix_weight_to_value(*weight),
+                    crate::value::mix_weight_to_value(weight.clone()),
                     items.typed_key(k),
                 ));
             }

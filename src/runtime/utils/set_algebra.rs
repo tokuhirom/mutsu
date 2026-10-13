@@ -152,30 +152,32 @@ fn combine_mixes(
     match op {
         SetOp::Union => {
             for (k, v) in b {
-                a.entry(k).and_modify(|e| *e = e.max(v)).or_insert(v);
+                a.entry(k)
+                    .and_modify(|e| *e = e.clone().max(v.clone()))
+                    .or_insert(v);
             }
         }
         SetOp::Addition => {
             for (k, v) in b {
                 let e = a.entry(k).or_insert(MixWeight::Int(0));
-                *e = mix_weight::add(*e, v);
+                *e = mix_weight::add(e.clone(), v);
             }
         }
-        SetOp::Intersect => a = keep_common(a, &b, |x, y| x.min(*y)),
-        SetOp::Multiply => a = keep_common(a, &b, |x, y| mix_weight::mul(*x, *y)),
+        SetOp::Intersect => a = keep_common(a, &b, |x, y| x.clone().min(y.clone())),
+        SetOp::Multiply => a = keep_common(a, &b, |x, y| mix_weight::mul(x.clone(), y.clone())),
         SetOp::Diff => {
             for (k, v) in b {
                 let e = a.entry(k).or_insert(MixWeight::Int(0));
-                *e = mix_weight::sub(*e, v);
+                *e = mix_weight::sub(e.clone(), v);
             }
         }
         SetOp::SymDiff => {
             for (k, v) in b {
                 let e = a.entry(k).or_insert(MixWeight::Int(0));
-                *e = mix_weight::sub(*e, v);
+                *e = mix_weight::sub(e.clone(), v);
             }
             for v in a.values_mut() {
-                *v = v.abs();
+                *v = v.clone().abs();
             }
         }
     }

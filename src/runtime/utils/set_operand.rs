@@ -179,7 +179,7 @@ fn mix_add_item(result: &mut HashMap<String, MixWeight>, originals: &mut ValueMa
         }
     };
     let e = result.entry(key).or_insert(MixWeight::Int(0));
-    *e = crate::builtins::mix_weight::add(*e, weight);
+    *e = crate::builtins::mix_weight::add(e.clone(), weight);
 }
 
 /// An operand read as a Mix: element -> weight, non-zero weights only.
@@ -206,7 +206,7 @@ pub(crate) fn operand_mix_weights(val: &Value, originals: &mut ValueMap) -> Hash
             for (k, v) in map.iter() {
                 let key = hash_elem_key(&map, k, originals);
                 let e = result.entry(key).or_insert(MixWeight::Int(0));
-                *e = crate::builtins::mix_weight::add(*e, mix_weight_of(v));
+                *e = crate::builtins::mix_weight::add(e.clone(), mix_weight_of(v));
             }
             result
         }

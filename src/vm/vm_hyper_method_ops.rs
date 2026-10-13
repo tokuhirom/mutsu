@@ -493,8 +493,10 @@ impl Interpreter {
             ValueView::Mix(mix, _) => {
                 let mut weights = std::collections::HashMap::new();
                 for (k, w) in mix.iter() {
-                    let n =
-                        crate::builtins::mix_weight::add(*w, crate::value::MixWeight::Int(delta));
+                    let n = crate::builtins::mix_weight::add(
+                        w.clone(),
+                        crate::value::MixWeight::Int(delta),
+                    );
                     if n != 0.0 {
                         weights.insert(k.clone(), n);
                     }
