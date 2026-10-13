@@ -2842,11 +2842,11 @@ pub(crate) mod sigilless_decl;
 pub(crate) mod signature_decl;
 pub(crate) mod spelled;
 pub(crate) mod stable_hash;
-mod where_match;
 pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
 pub(crate) mod temporize;
 pub(crate) mod var_does;
+mod where_match;
 pub(crate) use signature_decl::{
     ControlPointyKind, ParamTrait, SignatureDecl, SignatureInit, SignatureVar, SourceForm,
     is_group_declaration,

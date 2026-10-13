@@ -5,9 +5,9 @@
 //! and best-effort partial parsing for module loading. Re-exported from
 //! `mod.rs` at their original visibility.
 
+use super::unit_use_hoist::hoist_unit_uses;
 use super::*;
 use crate::parser::parse_result::PError;
-use super::unit_use_hoist::hoist_unit_uses;
 
 /// Parse a block: { stmts }
 /// Pushes/pops a lexical import scope so that `use` inside a block

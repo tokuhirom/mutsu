@@ -20,7 +20,12 @@ use crate::ast::Stmt;
 // Cost: O(n), n = statements in the body.
 pub(super) fn hoist_unit_uses(body: &[Stmt]) -> Vec<Stmt> {
     body.iter()
-        .filter(|stmt| matches!(stmt, Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. }))
+        .filter(|stmt| {
+            matches!(
+                stmt,
+                Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. }
+            )
+        })
         .cloned()
         .collect()
 }
