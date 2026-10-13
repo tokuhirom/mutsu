@@ -1061,6 +1061,7 @@ and `§`. A user operator may be named `__` (`infix:<__>`, exported from an
 `EXPORT` sub in Understitch's style); rakudo 2026.09 renders it as an
 ordinary `ApplyInfix(Infix("__"))`, and `[__]` as a `Term::Reduce`. The
 prefix test is gone.
+
 ### 6.48 S10: names of the scope that runs `EVAL` or `Str.AST` (2026-10-13)
 
 An `EVAL` string's bare names are classified against the names its calling
