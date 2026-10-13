@@ -169,6 +169,18 @@ impl Interpreter {
             self.stack.push(Value::package(storage));
             return Ok(());
         }
+        // `buf16` and its siblings are constants bound to the parameterized
+        // types in Rakudo, so the type object IS `Buf[uint16]` (#13314).
+        if matches!(
+            name,
+            "buf8" | "buf16" | "buf32" | "buf64" | "blob8" | "blob16" | "blob32" | "blob64"
+        ) && !over_scalar
+            && !self.registry().classes.contains_key(name)
+        {
+            let canonical = crate::runtime::utils::normalize_buf_type_name(name);
+            self.stack.push(Value::package(Symbol::intern(&canonical)));
+            return Ok(());
+        }
         let over_scalar = over_scalar && !self.registry().has_lexical_type_key_for(name);
         let mut preferred_module_bareword = None;
         // `Pkg::tail` split once per symbol; `None` for an unqualified name.
