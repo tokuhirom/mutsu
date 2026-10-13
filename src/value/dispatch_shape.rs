@@ -567,12 +567,28 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// `self.list.METHOD`, and their handlers read any receiver as its list (a
 /// `Pair` or a `Set` as one element or its pairs, a `Blob` as its bytes).
 /// A shape whose own type declares one of them (`Seq.reverse`, `Range.flat`)
-/// answers its own row first. `join` (`self.list.join`) reads a `Pair` as its
+/// answers its own row first. `combinations` and `batch` read any receiver
+/// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 15] = [
-    "flat", "sort", "unique", "repeated", "reverse", "end", "join", "pick", "roll", "minmax",
-    "head", "tail", "min", "max", "serial",
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 17] = [
+    "flat",
+    "sort",
+    "unique",
+    "repeated",
+    "reverse",
+    "end",
+    "join",
+    "pick",
+    "roll",
+    "minmax",
+    "head",
+    "tail",
+    "min",
+    "max",
+    "serial",
+    "combinations",
+    "batch",
 ];
 
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];

@@ -2333,6 +2333,29 @@ answers already has a row: `Int`/`Num`/`Rat` (`numeric_coerce`'s `with_epsilon` 
 `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 29 to 27 arms (the allomorph arm was a guarded `|` arm the report
 counts once with the `Rat` arm). Pinned in `t/types/coercion/coerce-rat-epsilon-rows.t`.
 
+### 9.100 Slice 5: `Any.combinations` and `Any.batch` reach the closed shapes; three 1-arg arms are gone (2026-10-13)
+
+`refactor/11276-shapeless-1arg`. Three arms of `methods_narg/dispatch_1arg.rs` called a row's handler "for the receivers the
+table has no shape for": `combinations` (`List.combinations`' `combinations_of`), `batch` (`Any.batch`) and `round` (`Cool.round`'s
+`round_to`, for an allomorph). They answered a `Seq`, a `Range`, a `Str`, a `Pair` or a quant hash, whose closed shapes did not
+reach `Any`'s rows for these names, and `batch(:elems(N))`, whose named argument the arity-1 row could not take. Decisions:
+
+1. **`Any.combinations($of)` is a row** (Rakudo declares it `only` on `Any`; the recognition table gains it), `TYPE_OBJECT_OK`
+   (`Str.combinations(1)` is `(((Str)))` in Rakudo too). Its handler counts the list first, so an infinite `Range` or a lazy list
+   is `X::Cannot::Lazy` where the arm hung.
+2. **`combinations` and `batch` join `ANY_LIST_FOR_CLOSED_SHAPES`**: their handlers read any receiver through
+   `value_to_list_for_receiver`, so every closed shape with instances reaches them, and so does a receiver with no shape
+   (`shapeless_row` takes them with one argument).
+3. **`Any.batch(:$elems!)` is an arity-0 `Handler::Named` row**, Rakudo's named candidate. Without `:elems` it raises
+   `X::Multi::NoMatch`, as Rakudo does (`.batch()` used to be `X::Method::NotFound`).
+4. **`round` needed nothing**: an allomorph already reaches `Cool.round($scale)` through its numeric value.
+5. **The sub form calls the handler**: `combinations($n, $k)` asked the method entry on its list, which the guard step declines
+   for an allomorph `$k` (`roast/S32-list/combinations.t`: `combinations(|<3.5 2e0>)`); it now calls `combinations_of`, the
+   rows' one implementation. The handler reads an itemized `$k` (`my $k = 1..2`) as its value, and `invoke_unadmitted` (§9.99)
+   hands an `ANY_ARGS` row an itemized plain argument without its `Scalar`, so `$seq.combinations($k)` answers too.
+
+`method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 27 to 24 arms. Pinned in `t/types/any-combinations-batch-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -15,7 +15,8 @@ use crate::value::{DispatchShape, RuntimeError, Value, ValueView};
 
 /// Whether `arg` is an argument the guard step declines but whose value is
 /// built in, so an `ANY_ARGS` row reads it purely: an allomorph (`<1>`, a
-/// number mixed with its `Str`) or a `Duration`/`Instant`. A user object is
+/// number mixed with its `Str`), a `Duration`/`Instant`, or an itemized plain
+/// value (handed to the row without its `Scalar`). A user object is
 /// not (its `.Numeric` or `.Real` is user code, which the slow path calls).
 // Cost: O(1), tag probes.
 fn is_builtin_value_argument(arg: &Value) -> bool {
@@ -23,6 +24,9 @@ fn is_builtin_value_argument(arg: &Value) -> bool {
         return true;
     }
     match arg.view() {
+        // An itemized value read out of a variable (`$k` holding `1..2`): the
+        // row is handed the value itself.
+        ValueView::Scalar(inner) => is_builtin_value_argument(inner),
         ValueView::Mixin(inner, mixins) => {
             mixins.contains_key("Str")
                 && matches!(
@@ -69,5 +73,6 @@ pub(crate) fn invoke_unadmitted(
     if !row(id).flags.contains(RowFlags::ANY_ARGS) {
         return None;
     }
-    invoke_in(id, interp, target, args)
+    let args: Vec<Value> = args.iter().map(|arg| arg.descalarize().clone()).collect();
+    invoke_in(id, interp, target, &args)
 }

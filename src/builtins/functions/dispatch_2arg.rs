@@ -90,11 +90,12 @@ pub(crate) fn native_function_2arg(
                     }
                 }
             };
-            // Dispatch based on $k type (Int or Range)
-            crate::builtins::native_method_1arg(
+            // `$k` is an Int or a Range, read by the `combinations($of)` rows'
+            // handler itself (an allomorph `$k` is one the guard step does not
+            // admit, so the method entry would decline it).
+            crate::builtins::method_table::list_aggregate::combinations_of(
                 &Value::array(items),
-                crate::symbol::Symbol::intern("combinations"),
-                arg2,
+                std::slice::from_ref(arg2),
             )
         }
         // Cost: O(n + k), n = elements of the list (copied), k = count rolled.

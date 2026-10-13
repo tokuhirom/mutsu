@@ -574,19 +574,6 @@ fn native_method_1arg_cascade(
         }
         // Cost: O(k) on Array/List, k = selected elements; O(e) otherwise,
         // e = receiver elements materialized before selecting a window.
-        // Cost: O(e) per call, e = elements of the invocant (snapshotted), then O(k)
-        // per combination of size k pulled (`ListGen::Combinations`).
-        // The `List.combinations` row's handler (ADR-11276): the cascade
-        // answers the receivers the table has no shape for.
-        "combinations" => crate::builtins::method_table::list_aggregate::combinations_of(
-            target,
-            std::slice::from_ref(arg),
-        ),
-        // The `Any.batch` row's implementation (`method_table::collections::any_misc`).
-        "batch" => crate::builtins::method_table::collection_any_misc::batch(
-            target,
-            std::slice::from_ref(arg),
-        ),
         "zprintf" => {
             // Method form: '%f'.zprintf(value) — like sprintf but with zprintf
             // semantics. Mirrors the "sprintf" arm above: an Instance/Package/
@@ -617,12 +604,6 @@ fn native_method_1arg_cascade(
             ) =>
         {
             crate::builtins::method_table::numeric_base::base_of(target, arg, None)
-        }
-        // `round($scale)` is the `Cool.round` row's handler; this arm keeps the
-        // receivers the table has no shape for (an allomorph: `<1.5>.round(0.5)`).
-        // Cost: see `cool_real::round_to`.
-        "round" => {
-            crate::builtins::method_table::cool_real::round_to(target, std::slice::from_ref(arg))
         }
         // Buf/Blob `read-*` (1 arg: offset, native byte order): the rows'
         // implementation (`method_table::blob_read`).
