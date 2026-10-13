@@ -488,6 +488,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "Buf", 1, 24),
     ("Blob", "Bool", 1, 24),
     ("Blob", "Str", 3, 24),
+    ("Blob", "Stringy", 1, 24),
     ("Blob", "gist", 1, 24),
     ("Blob", "raku", 1, 24),
     // ADR-0019 E2b (sixth slice, 2026-08-10): `Blob`/`Buf`-family extra rows
@@ -1976,6 +1977,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mu", "WHICH", 1, 24),
     ("Mu", "Bool", 1, 24),
     ("Mu", "Str", 2, 24),
+    ("Mu", "Stringy", 1, 24),
     ("Mu", "gist", 1, 24),
     ("Mu", "raku", 1, 24),
     ("Mu", "clone", 1, 24),

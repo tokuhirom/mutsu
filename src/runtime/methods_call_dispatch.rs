@@ -2201,8 +2201,9 @@ impl Interpreter {
                 }
             }
         }
-        // Buf/Blob .chars throws X::Buf::AsStr
-        if (method == "chars" || method == "Str" || method == "chop" || method == "chomp")
+        // Buf/Blob .chars throws X::Buf::AsStr (`.Str` is the `Blob` row's,
+        // which decodes a `utf8`).
+        if (method == "chars" || method == "chop" || method == "chomp")
             && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.resolve();
