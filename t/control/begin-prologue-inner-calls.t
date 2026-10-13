@@ -1,6 +1,6 @@
 use Test;
 
-plan 15;
+plan 20;
 
 # A BEGIN nested in a routine runs at compile time (ADR-0134, slice 2), even
 # when it calls a routine of its scope that is a multi, an `our` or exported
@@ -83,3 +83,39 @@ is $rule, '1 + 2', 'a rule calling a token of the scope';
 sub declares-token { my token u { y }; BEGIN 1 }
 sub after-token { BEGIN $after-token = 'lifted' }
 is $after-token, 'lifted', 'a scope declaring a token no longer keeps later BEGINs in place';
+
+# A token whose pattern runs code or interpolates a variable closes over the
+# scope's lexicals, which the lifted block supplies as it does for a routine:
+# the variables the code blocks read and the ones the pattern interpolates.
+my ($code-token, $code-count, $interp-token, $array-token, $quant-token, $after-code-token);
+sub with-code-token {
+    my $c = 0;
+    my token ct { x { $c++ } };
+    BEGIN { $code-token = so 'xx' ~~ /<ct>+/; $code-count = $c }
+}
+is-deeply ($code-token, $code-count), (True, 2), 'a token code block updates a lexical of the scope';
+
+sub with-interp-token {
+    my $w; BEGIN $w = 'ab';
+    my token it { $w <?{ $w.chars == 2 }> };
+    BEGIN $interp-token = so 'zab' ~~ /<it>/;
+}
+ok $interp-token, 'a token interpolating a lexical, and asserting on it';
+
+sub with-array-token {
+    my @alts; BEGIN @alts = <p q>;
+    my regex ar { @alts+ };
+    BEGIN $array-token = ~('ppq' ~~ /<ar>/);
+}
+is $array-token, 'ppq', 'a regex interpolating an array of the scope';
+
+sub with-quant-token {
+    my $n; BEGIN $n = 2;
+    my token qt { x ** {$n} };
+    BEGIN $quant-token = ~('xxx' ~~ /<qt>/);
+}
+is $quant-token, 'xx', 'a quantifier block reading a lexical of the scope';
+
+sub declares-code-token { my token cu { y { 1 } }; BEGIN 1 }
+sub after-code-token { BEGIN $after-code-token = 'lifted' }
+is $after-code-token, 'lifted', 'a scope declaring a token with a code block no longer keeps later BEGINs in place';

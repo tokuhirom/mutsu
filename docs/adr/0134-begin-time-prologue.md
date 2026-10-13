@@ -588,6 +588,24 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   `t/control/begin-time-region-unwind.t` now uses a token with a code block as
   its in-place device.
 
+**Slice 2 follow-up — a token that runs code or interpolates, implemented**
+(`src/runtime/begin_prologue/nested/token_reads.rs`,
+`t/control/begin-prologue-inner-calls.t`; #13096).
+
+- A token's pattern reads the scope through its code blocks, predicates,
+  interpolated blocks, quantifier blocks, subrule/callable arguments and
+  interpolated variables (`$x`, `@alts`, `<@alts>`, `<&r>`). None of that is in
+  the compiled declaration, but all of it is in the pattern's static regex
+  tree, so `TokenReads` collects it there and the token's dependencies are
+  scanned from it instead of from the declaration (`Routine::reads`). The
+  variables are then supplied like a routine's: the token closes over the
+  static cells of the bindings declared ahead of it.
+- Still refused, and so still blocking the scope: a pattern without a static
+  regex tree, one that declares a variable (`:my`/`:our`/`:state`, which the
+  scan of a code block cannot tell from a read of the scope's), a token with
+  parameters, and a multi token. `t/control/begin-time-region-unwind.t` now
+  uses a `:my` token as its in-place device.
+
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
 `t/modules/import-export/use-if-begin-time.t`,
