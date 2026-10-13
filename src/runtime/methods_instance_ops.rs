@@ -3246,6 +3246,13 @@ impl Interpreter {
                 {
                     Ok(target.clone())
                 }
+                // `Method.Str` is `Code.Str`: the name, with the coercion warning.
+                ValueView::Instance { class_name, .. }
+                    if matches!(class_name.as_str(), "Method" | "Submethod")
+                        && !self.has_user_method(&class_name.resolve(), "Str") =>
+                {
+                    self.code_str(&target).unwrap_or_else(|| Ok(Value::str(target.to_string_value())))
+                }
                 ValueView::Instance { class_name, .. } => {
                     // Stringy defaults to Str, but Str does not default back to
                     // Stringy. A class that defines only Stringy therefore keeps
