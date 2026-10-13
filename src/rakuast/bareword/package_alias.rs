@@ -21,25 +21,39 @@ pub(super) struct PackageAlias {
 
 /// Give each alias whose target is a type the unit declares the target's
 /// kind and a copy of every name declared under the target.
-// Cost: O(a * n), a = number of aliases, n = number of declared names.
+// Cost: O(a * n * d), a = number of aliases, n = number of declared names,
+// d = segments of a name.
 pub(super) fn apply(aliases: &[PackageAlias], out: &mut HashMap<String, DeclaredKind>) {
     for alias in aliases {
         if out.get(&alias.target) != Some(&DeclaredKind::Type) {
             continue;
         }
+        let target = Symbol::intern(&alias.target);
         let nested: Vec<(Symbol, DeclaredKind)> = out
             .iter()
-            .filter_map(|(name, kind)| {
-                let rest = name.strip_prefix(alias.target.as_str())?.strip_prefix("::")?;
-                Some((Symbol::intern(rest), *kind))
-            })
+            .filter(|(name, _)| name.as_str() != alias.target)
+            .map(|(name, kind)| (Symbol::intern(name), *kind))
             .collect();
         for spelling in &alias.spellings {
             out.insert(spelling.resolve(), DeclaredKind::Type);
-            for (rest, kind) in &nested {
-                out.entry(qualified(*spelling, *rest).resolve())
-                    .or_insert(*kind);
+            for (name, kind) in &nested {
+                if let Some(rebased) = rebase(*name, target, *spelling) {
+                    out.entry(rebased.resolve()).or_insert(*kind);
+                }
             }
         }
     }
+}
+
+/// `name` with its package prefix `target` replaced by `alias`, or `None`
+/// when `name` is not declared under `target` (`Outer::Inner::Status`, with
+/// `Outer::Inner` → `E`, is `E::Status`).
+// Cost: O(d), d = number of `::` segments of `name`.
+fn rebase(name: Symbol, target: Symbol, alias: Symbol) -> Option<Symbol> {
+    if name == target {
+        return Some(alias);
+    }
+    let parent = crate::qualified::package_parent(name)?;
+    let rebased = rebase(parent, target, alias)?;
+    Some(qualified(rebased, crate::qualified::unqualified_part(name)))
 }

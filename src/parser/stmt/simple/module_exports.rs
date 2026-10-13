@@ -13,11 +13,11 @@ mod source_scan;
 use decl_scan::scan_module_decls;
 use dynamic_stash::probe_dynamic_exports;
 use enum_values::import_admits;
-pub(crate) use import_tags::register_import_tags;
 use export_hook::{
     collect_export_hook_literal_keys, collect_export_hook_operator_subs,
     collect_export_hook_value_terms, collect_unit_scope_routines, declares_export_sub,
 };
+pub(crate) use import_tags::register_import_tags;
 
 /// Everything one module-file scan learns that importers need replayed:
 /// the `is export` subs, the declared type names (own + transitive), and the
