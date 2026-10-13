@@ -127,6 +127,37 @@ impl Interpreter {
             }
             _ => None,
         }
+    /// `flat` over a gather's coroutine list (the §8.2 Stream class hands
+    /// `flat` the stolen list): a `Seq` that pulls the list one element at a
+    /// time and flattens each, descending into the nested Seqs and gathers it
+    /// took. Rakudo's `flat` reads its input lazily, so an infinite gather
+    /// works (`flat(gather { loop {...} }).head(3)`), and the result is a
+    /// plain Seq, not a lazy one. The flattening pipe stays inside the Seq's
+    /// adapter source, like a gather's own coroutine list.
+    // Cost: O(1); each element is flattened when it is pulled.
+    pub(crate) fn lazy_flat_gather(list: Value) -> Value {
+        let pipe = crate::value::LazyList::new_index_pipe(list, crate::value::IndexTransform::Flat);
+        Value::seq_deferred(crate::value::SeqSource::Gather(Value::lazy_list(
+            crate::gc::Gc::new(pipe),
+        )))
+    }
+
+    /// `.flat` on a plain gather: the gather's coroutine list flattened as it
+    /// is pulled ([`Self::lazy_flat_gather`]), consuming the Seq as Rakudo's
+    /// `.flat` does (a cached one stays readable). `None` for every other
+    /// call, which dispatches as usual.
+    // Cost: O(1).
+    pub(crate) fn gather_flat_method(
+        &self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Value> {
+        if method != "flat" || !args.is_empty() || !Self::is_gather_seq(target) {
+            return None;
+        }
+        let list = self.gather_operand(target.clone());
+        matches!(list.view(), ValueView::LazyList(_)).then(|| Self::lazy_flat_gather(list))
     }
 
     /// The arguments of builtin routine `name` with every plain gather `Seq`
@@ -322,7 +353,8 @@ enum GatherRead {
 // Cost: O(1).
 fn builtin_gather_read(name: &str) -> GatherRead {
     match name {
-        "list" | "item" | "defined" | "push" | "unshift" => GatherRead::Pass,
+        // `cache` returns a List that pulls the gather as it is read.
+        "list" | "item" | "defined" | "push" | "unshift" | "cache" => GatherRead::Pass,
         "first" | "zip" | "roundrobin" | "flat" | "map" | "grep" => GatherRead::Stream,
         "sum" | "min" | "max" | "minmax" | "unique" | "repeated" | "squish" | "pick" | "roll"
         | "classify" | "categorize" | "produce" | "reduce" | "keys" | "values" | "kv" | "pairs"
@@ -343,8 +375,9 @@ fn method_gather_read(target: &Value, method: &str) -> GatherRead {
             GatherRead::Cache
         }
         // `Supply.from-list` pulls the gather itself, so that a gather that
-        // dies quits the supply.
-        "push" | "unshift" | "from-list" => GatherRead::Pass,
+        // dies quits the supply; `polymod` pulls only the divisors the
+        // decomposition reaches, leaving the Seq readable.
+        "push" | "unshift" | "from-list" | "polymod" => GatherRead::Pass,
         "new" | "append" | "prepend" => GatherRead::Consume,
         _ => GatherRead::Cache,
     }

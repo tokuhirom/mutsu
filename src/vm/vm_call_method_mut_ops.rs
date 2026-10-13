@@ -689,6 +689,12 @@ impl Interpreter {
         // shares, so no writeback is needed: every alias (this frame's
         // variable, a second alias, a value passed to a sub one call frame
         // away) observes it for free.
+        // `.flat` on a gather flattens it as it is pulled (ADR-11678).
+        if let Some(result) = self.gather_flat_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "gather-flat");
+            self.stack.push(result);
+            return Ok(());
+        }
         let target = match self.take_seq_prefix(&target, method, &args)? {
             Some(prefix) => prefix,
             None => target,

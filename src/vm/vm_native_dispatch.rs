@@ -1047,16 +1047,21 @@ impl Interpreter {
             if matches!(name.as_str(), "flat" | "eager") {
                 // For `flat`, a single lazy argument stays lazy (`flat 42 xx *`
                 // / `flat 10,11 ... *` propagate `.is-lazy`). The one exception
-                // is a finite `gather` coroutine: it must be forced and
-                // flattened here so `flat` descends into its nested lazy elements
-                // (`take internals($child)` in a binary-tree walk), which a raw
-                // return would leave un-descended (`('A', Seq(...), ...)`). Only
-                // a coroutine-backed, not-yet-forced gather is force-flattened;
-                // every other lazy list keeps its laziness.
-                // TODO: an actually-infinite `gather` (`flat gather { loop {
-                // take $i++ } }`) is forced eagerly here and would hang — raku
-                // keeps it lazy. (A `lazy gather` takes the flattening-pipe
-                // path below and stays lazy.)
+                // is a `gather` coroutine: `flat` must descend into its nested
+                // lazy elements (`take internals($child)` in a binary-tree
+                // walk), which a raw return would leave un-descended
+                // (`('A', Seq(...), ...)`).
+                // A plain gather's coroutine list (`flat(gather {...})`, the
+                // §8.2 Stream class) is flattened as it is pulled instead, so
+                // an infinite one works; the result is a Seq, as in Rakudo.
+                if name.as_str() == "flat"
+                    && let [arg] = args
+                    && let ValueView::LazyList(ll) = arg.view()
+                    && ll.is_gather_coroutine()
+                    && !ll.is_genuinely_lazy()
+                {
+                    return Some(Ok(Self::lazy_flat_gather(arg.clone())));
+                }
                 let is_finite_gather = |v: &Value| {
                     matches!(v.view(), ValueView::LazyList(ll)
                         if ll.coroutine.is_some() && ll.cache.lock().unwrap().is_none())
