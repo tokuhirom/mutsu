@@ -149,22 +149,12 @@ impl Interpreter {
                     // Do NOT close stdin here -- let the explicit .close handle it.
                     // Closing stdin prematurely breaks concurrent writes from `start` blocks.
                     let captured_out: Option<String> = if state.capture_out {
-                        state.child.stdout.take().map(|mut s| {
-                            let mut buf = String::new();
-                            use std::io::Read;
-                            let _ = s.read_to_string(&mut buf);
-                            buf
-                        })
+                        state.child.stdout.take().and_then(|s| crate::runtime::exit_aware_read::slurp_pipe(s).ok())
                     } else {
                         None
                     };
                     let captured_err: Option<String> = if state.capture_err {
-                        state.child.stderr.take().map(|mut s| {
-                            let mut buf = String::new();
-                            use std::io::Read;
-                            let _ = s.read_to_string(&mut buf);
-                            buf
-                        })
+                        state.child.stderr.take().and_then(|s| crate::runtime::exit_aware_read::slurp_pipe(s).ok())
                     } else {
                         None
                     };
