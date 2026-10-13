@@ -220,11 +220,12 @@ impl Interpreter {
         let left = Self::deitemize_hyper_operand(&left);
         // The operator runs user code per element pair, so a shared Array/Hash
         // operand is walked as a snapshot (ADR-0068 §20) -- unless the operator
-        // assigns (`@a »+=» 1`), which must write the live elements.
-        let op_name = op.as_str();
-        let assigns = op_name.ends_with('=')
-            && !matches!(op_name, "==" | "!=" | "<=" | ">=" | "===" | "=:=" | "=~=" | "≅");
-        let (left, right) = if assigns {
+        // assigns (`@a >>+=>> 1`), which must write the live elements.
+        let (left, right) = if !crate::value::container_lock::multi_mutator_threads_live() || {
+            let name = op.as_str();
+            name.ends_with('=')
+                && !matches!(name, "==" | "!=" | "<=" | ">=" | "===" | "=:=" | "=~=")
+        } {
             (left, right)
         } else {
             (
