@@ -145,6 +145,7 @@ mod vm_lexical_role;
 mod vm_lexical_use;
 mod vm_lexsub_aliases;
 mod vm_lexsub_capture;
+mod vm_light_aggregate_params;
 mod vm_sequence_role_delegate;
 use vm_frame_lexical::FrameLexicalCallSite;
 pub(crate) use vm_frame_lexical::{FrameLexicalClosureBodies, FrameLexicalTarget};

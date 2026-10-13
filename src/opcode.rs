@@ -13012,6 +13012,41 @@ impl FastParamCheck {
         Self::of(pd.type_constraint.as_ref())
     }
 
+    /// The sigil (`@` or `%`) of a plain positional aggregate parameter the
+    /// positional-light paths may bind, or `None` for every other parameter.
+    ///
+    /// Plain means: untyped, no trait, no default, `where`, shape or
+    /// sub-signature, and a bare identifier after the sigil (no twigil, not
+    /// the implicit `@_`/`%_`). Such a parameter binds the caller's container
+    /// itself: mutsu's `Array`/`Hash` are shared by reference and assignment
+    /// to one stores in place, so element writes, `.push` and a whole `=`
+    /// all reach the caller with no writeback. Whether a given *argument* may
+    /// take that bind is decided per call
+    /// (`Interpreter::positional_light_aggregate_args_admitted`).
+    pub(crate) fn light_aggregate_sigil(pd: &ParamDef) -> Option<char> {
+        let mut chars = pd.name.chars();
+        let sigil = chars.next().filter(|c| matches!(c, '@' | '%'))?;
+        let plain = chars.next().is_some_and(|c| c.is_alphabetic())
+            && !pd.named
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && !pd.onearg
+            && !pd.sigilless
+            && !pd.is_invocant
+            && !pd.optional_marker
+            && pd.default.is_none()
+            && pd.type_constraint.is_none()
+            && pd.type_capture.is_none()
+            && pd.where_constraint.is_none()
+            && pd.traits.is_empty()
+            && pd.literal_value.is_none()
+            && pd.sub_signature.is_none()
+            && pd.outer_sub_signature.is_none()
+            && pd.code_signature.is_none()
+            && pd.shape_constraints.is_none();
+        plain.then_some(sigil)
+    }
+
     /// Is `pd` an untyped parameter whose implicit nominal type is `Any`? The
     /// general binder's rule (`bind_function_args_values`): a routine's `$x` /
     /// `\x` / `:$x`, but not a block's (implicitly `Mu`), and not one whose
@@ -13070,6 +13105,13 @@ pub(crate) struct CompiledFunction {
     /// no `is rw` parameter — the overwhelming majority — pays no per-call
     /// scan for one. Computed once in `precompute_param_name_syms`.
     pub(crate) has_rw_positional_param: bool,
+    /// True when at least one positional parameter is a plain `@x`/`%x`
+    /// the positional-light paths may bind
+    /// ([`FastParamCheck::light_aggregate_sigil`]). Gates the per-call argument
+    /// shape check (`positional_light_aggregate_args_admitted`) so a routine
+    /// without one pays nothing for it. Computed once in
+    /// `precompute_param_name_syms`.
+    pub(crate) has_aggregate_positional_param: bool,
     /// Pre-computed mapping from positional parameter index to locals slot index.
     /// Used by the positional light call fast path to avoid name-based lookup per call.
     pub(crate) param_local_slots: Option<Vec<usize>>,
@@ -13683,6 +13725,10 @@ impl CompiledFunction {
             .param_defs
             .iter()
             .any(|pd| !pd.named && pd.traits.iter().any(|t| t == "rw"));
+        self.has_aggregate_positional_param = self
+            .param_defs
+            .iter()
+            .any(|pd| FastParamCheck::light_aggregate_sigil(pd).is_some());
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -13798,6 +13844,7 @@ mod compiled_fns_identity {
             is_raw: false,
             uses_return_rw: false,
             has_rw_positional_param: false,
+            has_aggregate_positional_param: false,
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,

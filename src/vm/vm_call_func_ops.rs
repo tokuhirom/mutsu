@@ -884,6 +884,13 @@ impl Interpreter {
                                 cf,
                                 &self.stack[self.stack.len() - arity_usize..],
                             )
+                            // Same per-call re-check for a plain `@x`/`%x`
+                            // parameter's argument shape; one bool test for
+                            // a routine without one.
+                            && Self::positional_light_aggregate_args_admitted(
+                                cf,
+                                &self.stack[self.stack.len() - arity_usize..],
+                            )
                         {
                             // Bind straight out of the stack (no args buffer):
                             // the callee takes the arguments in place from
