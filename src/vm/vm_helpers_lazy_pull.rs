@@ -246,6 +246,12 @@ impl Interpreter {
         // pull's own takes suspend normally.
         let saved_take_defer_to_op_end =
             std::mem::replace(&mut self.async_state.take_defer_to_op_end, false);
+        // Likewise a condition-driven loop around the forcing site (a `supply`
+        // block's run loop) is not a loop of this body: a take with no loop of
+        // its own to defer to suspends at the limit, instead of running the
+        // body on past it (#13318).
+        let saved_lazy_take_boundary_defer =
+            std::mem::replace(&mut self.async_state.lazy_take_boundary_defer, false);
 
         // Run the compiled code
         let run_fns = fns.as_ref();
@@ -296,6 +302,7 @@ impl Interpreter {
         self.async_state.lazy_pull_entry_call_depth = saved_pull_depth;
         self.async_state.lazy_pull_entry_routine_depth = saved_routine_depth;
         self.async_state.take_defer_to_op_end = saved_take_defer_to_op_end;
+        self.async_state.lazy_take_boundary_defer = saved_lazy_take_boundary_defer;
         // The body may finish (or error) with the deferred-suspension flag
         // still set (straight-line takes, last iteration); it must not leak
         // into an unrelated later loop.
