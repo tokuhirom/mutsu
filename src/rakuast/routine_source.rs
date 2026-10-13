@@ -50,6 +50,10 @@ pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, Runti
                 },
                 fields: vec![node_field(None, return_constraint_node(ty)?)],
             },
+            RoutineTrait::Handles(term) => RakuAstNode {
+                class: RakuAstClass::TraitHandles,
+                fields: vec![node_field(None, super::convert::convert_expr(term)?)],
+            },
             RoutineTrait::Unsupported(name) => return Err(unsupported(name)),
         };
         nodes.push(Value::rakuast(Box::new(trait_node)));
@@ -100,6 +104,28 @@ pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, Runti
     Ok(true)
 }
 
+/// Whether a routine body keeps the written term of every `handles` clause,
+/// so its `Trait::Handles` can be rendered as written.
+// Cost: O(b + t), b = body statements, t = traits.
+pub(super) fn keeps_handles(body: &[Stmt]) -> bool {
+    crate::ast::routine_trait::get(body)
+        .is_some_and(|traits| traits.iter().any(|t| matches!(t, RoutineTrait::Handles(_))))
+}
+
+/// The `handles` specifications of the retained `Trait::Handles` terms, as
+/// the parser builds them from the same terms; `None` when one does not name
+/// a delegation the parser knows.
+// Cost: O(b + t + a), b = body statements, t = traits, a = size of the terms.
+pub(super) fn handle_specs(body: &[Stmt]) -> Option<Vec<crate::ast::HandleSpec>> {
+    let mut specs = Vec::new();
+    for item in crate::ast::routine_trait::get(body).unwrap_or_default() {
+        if let RoutineTrait::Handles(term) = item {
+            specs.extend(crate::parser::handle_specs_from_term(term)?);
+        }
+    }
+    Some(specs)
+}
+
 /// Retain a constructed node's traits when lowering it to the execution AST.
 // Cost: O(b + t + a), b = body statements, t = traits, a = argument size.
 pub(super) fn retain(node: &RakuAstNode, body: &mut Vec<Stmt>) -> Result<(), RuntimeError> {
@@ -119,6 +145,9 @@ pub(super) fn retain(node: &RakuAstNode, body: &mut Vec<Stmt>) -> Result<(), Run
                 } else {
                     RoutineTrait::Of(ty)
                 }
+            }
+            RakuAstClass::TraitHandles => {
+                RoutineTrait::Handles(super::lower::lower_expr(named_child_or_positional(item)?)?)
             }
             RakuAstClass::TraitIs => {
                 let name = positional_leaf(named_child(item, "name")?)?;

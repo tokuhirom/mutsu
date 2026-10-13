@@ -99,7 +99,22 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             // in `has_decl.rs` has always used `ws` for the same reason.
             let (r_after, _) = ws(r_after)?;
             let mut rest_out = r_after;
+            let before = handles.len();
             super::super::decl::parse_handle_specs(r_after, &mut handles, &mut rest_out)?;
+            if keeping {
+                source_traits.push(
+                    match super::super::decl::handles_clause_term(
+                        r_after,
+                        rest_out,
+                        &handles[before..],
+                    ) {
+                        Some(term) => RoutineTrait::Handles(term),
+                        None => RoutineTrait::Unsupported(
+                            "method with a `handles` spelling not kept as a term".to_string(),
+                        ),
+                    },
+                );
+            }
             input = rest_out;
             continue;
         }
