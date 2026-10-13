@@ -92,3 +92,68 @@ fn is_category_routine(name: &str) -> bool {
             && (rest.starts_with('<') || rest.starts_with('«') || rest.starts_with('['))
     })
 }
+
+/// A `token`, `rule` or `regex` a lifted BEGIN can declare again, or `None`.
+/// Code uses one through a regex (`/<t>/`), which a scan of the called names
+/// need not see, so every one of the enclosing scopes is copied, as operators
+/// are. Only a pattern that runs no code and reads no variable is: a code
+/// block or an interpolation could read a lexical of the scope, which a scan
+/// of the compiled declaration does not see either. The copy is lexical only,
+/// like a routine's ([`copyable_routine`]).
+// Cost: O(p), p = the length of the pattern.
+pub(super) fn copyable_token(decl: &Stmt) -> Option<(String, Stmt)> {
+    let (Stmt::TokenDecl {
+        name,
+        params,
+        body,
+        multi: false,
+        ..
+    }
+    | Stmt::RuleDecl {
+        name,
+        params,
+        body,
+        multi: false,
+        ..
+    }) = decl
+    else {
+        return None;
+    };
+    let [Stmt::Expr(crate::ast::Expr::Literal(literal))] = body.as_slice() else {
+        return None;
+    };
+    let crate::value::ValueView::Regex(pattern) = literal.view() else {
+        return None;
+    };
+    let runs_code = pattern
+        .chars()
+        .any(|c| matches!(c, '{' | '}' | '$' | '@' | '&' | '%'))
+        || pattern.contains(":my")
+        || pattern.contains(":our");
+    if !params.is_empty() || runs_code {
+        return None;
+    }
+    let mut copy = decl.clone();
+    match &mut copy {
+        Stmt::TokenDecl {
+            is_export,
+            export_tags,
+            is_our,
+            ..
+        } => {
+            *is_export = false;
+            export_tags.clear();
+            *is_our = false;
+        }
+        Stmt::RuleDecl {
+            is_export,
+            export_tags,
+            ..
+        } => {
+            *is_export = false;
+            export_tags.clear();
+        }
+        _ => {}
+    }
+    Some((name.resolve(), copy))
+}

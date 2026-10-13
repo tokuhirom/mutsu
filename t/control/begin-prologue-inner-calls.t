@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 15;
 
 # A BEGIN nested in a routine runs at compile time (ADR-0134, slice 2), even
 # when it calls a routine of its scope that is a multi, an `our` or exported
@@ -69,3 +69,17 @@ is $method-eval, 'm', '.EVAL reaches a multi of the scope';
 
 sub with-symbolic { sub sym-helper { 'sym' }; BEGIN $symbolic = &::('sym-helper').() }
 is $symbolic, 'sym', 'a symbolic lookup reaches a routine of the scope';
+
+# A token, rule or regex of the scope is declared again in the lifted block,
+# whether or not the body seems to use it: a regex reaches it as a subrule
+# (#13096).
+my ($token, $rule, $after-token);
+sub with-token { my token t { x+ }; BEGIN $token = so 'axxb' ~~ /<t>/ }
+ok $token, 'a token of the scope, used as a subrule';
+
+sub with-rule { my token d { \d+ }; my rule p { <d> '+' <d> }; BEGIN $rule = ~('1 + 2' ~~ /<p>/) }
+is $rule, '1 + 2', 'a rule calling a token of the scope';
+
+sub declares-token { my token u { y }; BEGIN 1 }
+sub after-token { BEGIN $after-token = 'lifted' }
+is $after-token, 'lifted', 'a scope declaring a token no longer keeps later BEGINs in place';

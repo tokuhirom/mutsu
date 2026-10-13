@@ -27,12 +27,12 @@ plan 4;
 }
 
 # A nested BEGIN is normally lifted into the unit's BEGIN prologue (ADR-0134),
-# where a throw fails the whole unit, as it does on rakudo. The token
-# declared ahead of it in this scope keeps it on its pre-ADR, in-place path
-# (the prologue cannot declare a token yet), which is the path whose region
-# unwinding this block tests.
+# where a throw fails the whole unit, as it does on rakudo. The token with a
+# code block declared ahead of it in this scope keeps it on its pre-ADR,
+# in-place path (the prologue cannot declare such a token yet, #13096), which
+# is the path whose region unwinding this block tests.
 {
-    my token keeps-begin-in-place { x }
+    my token keeps-begin-in-place { x { } }
     my $caught = False;
     try {
         BEGIN { die "boom" }

@@ -570,6 +570,24 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   type of any other kind that runs code, or a user trait at any level, still
   keeps the BEGIN in place.
 
+**Slice 2 follow-up — a token, rule or regex declared ahead, implemented**
+(`src/runtime/begin_prologue/nested/routine_copy.rs`,
+`t/control/begin-prologue-inner-calls.t`; #13096).
+
+- A `token`, `rule` or `regex` of an inner scope used to block the scope, so a
+  BEGIN after it stayed in place, and through `Lifted::halted` so did every
+  later nested BEGIN of the unit.
+- A regex reaches one as a subrule (`/<t>/`), which a scan of the called names
+  need not see, so every such declaration of the scopes is copied into the
+  lifted block, as operator routines are (`Routine::always`). The copy is
+  lexical only (`our` and `is export` dropped).
+- Only a pattern that runs no code and reads no variable is copied: no code
+  block, no `$`/`@`/`%`/`&` interpolation, no `:my`/`:our`, no parameters, not
+  a multi. Such a code block could read a lexical of the scope, which the scan
+  of the compiled declaration does not see. Any other still blocks the scope;
+  `t/control/begin-time-region-unwind.t` now uses a token with a code block as
+  its in-place device.
+
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
 `t/modules/import-export/use-if-begin-time.t`,
