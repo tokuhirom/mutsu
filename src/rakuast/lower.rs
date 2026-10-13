@@ -159,6 +159,17 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             {
                 return Ok(Stmt::Block(lower_block(expression)?));
             }
+            // `anon sub f { }` written as a statement is still an expression:
+            // the parser keeps it a `DoStmt`, which declares nothing.
+            if expression.class == RakuAstClass::Sub
+                && leaf_str(expression, "scope").is_ok_and(|s| s == "anon")
+                && !node
+                    .fields
+                    .iter()
+                    .any(|f| matches!(f.name, Some("loop-modifier" | "condition-modifier")))
+            {
+                return Ok(Stmt::Expr(Expr::DoStmt(Box::new(lower_sub(expression)?))));
+            }
             let loop_modifier = node
                 .fields
                 .iter()
@@ -1203,7 +1214,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Some(_) => Some(leaf_str(node, "repr")?),
         None => None,
     };
-    Ok(Stmt::ClassDecl {
+    Ok(head.finish(Stmt::ClassDecl {
         name: crate::symbol::Symbol::intern(&head.name),
         name_expr: None,
         parents,
@@ -1229,7 +1240,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         decl_id: crate::ast::next_class_decl_id(),
         parent_args,
         body_parents,
-    })
+    }))
 }
 
 /// What a package declaration node (`class`, `grammar`, `role`) says about its
@@ -1249,9 +1260,21 @@ pub(super) struct PackageHead {
     /// Written with a registered `EXPORTHOW::DECLARE` declarator: the
     /// parser's marker for its keyword (`declare_how`).
     pub declarator: Option<(String, Option<Expr>)>,
+    /// Written `anon class Name`: built but not installed under its name.
+    pub anon: bool,
 }
 
 impl PackageHead {
+    /// `stmt`, the declaration built from this head, marked and renamed the
+    /// way the parser marks a named `anon` declaration.
+    // Cost: O(k), k = length of the name.
+    pub(super) fn finish(&self, mut stmt: Stmt) -> Stmt {
+        if self.anon {
+            crate::parser::mark_anon_package_stmt(&mut stmt);
+        }
+        stmt
+    }
+
     /// The `custom_traits` the head asks the declaration to carry.
     pub(super) fn custom_traits(&self) -> Vec<(String, Option<Expr>)> {
         let mut traits = if self.colons {
@@ -1276,6 +1299,16 @@ pub(super) fn package_head(
         None => None,
     };
     match scope.as_deref() {
+        // `anon class { }`: a nameless package, minted a fresh internal name.
+        Some("anon") if !node.fields.iter().any(|f| f.name == Some("name")) => Ok(PackageHead {
+            name: fresh(),
+            is_lexical: false,
+            is_unit: false,
+            colons: false,
+            leading_colons: false,
+            declarator: super::declare_how::marker(node)?,
+            anon: true,
+        }),
         Some("anon") => match name_parts::name_shape(named_child(node, "name")?) {
             Some(NameShape::Stash(stash)) if stash == "::" => Ok(PackageHead {
                 name: fresh(),
@@ -1284,6 +1317,16 @@ pub(super) fn package_head(
                 colons: true,
                 leading_colons: false,
                 declarator: super::declare_how::marker(node)?,
+                anon: false,
+            }),
+            Some(NameShape::Identifier(_)) => Ok(PackageHead {
+                name: call_name_str(node)?,
+                is_lexical: false,
+                is_unit: false,
+                colons: false,
+                leading_colons: false,
+                declarator: super::declare_how::marker(node)?,
+                anon: true,
             }),
             _ => Err(unsupported(node)),
         },
@@ -1308,6 +1351,7 @@ pub(super) fn package_head(
                     _ => false,
                 }),
             declarator: super::declare_how::marker(node)?,
+            anon: false,
         }),
         Some(_) => Err(unsupported(node)),
     }
@@ -1334,7 +1378,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if implicit_grammar_parent {
         parents.insert(0, "Grammar".to_string());
     }
-    Ok(Stmt::ClassDecl {
+    Ok(head.finish(Stmt::ClassDecl {
         name: crate::symbol::Symbol::intern(&head.name),
         name_expr: None,
         parents,
@@ -1353,7 +1397,7 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         decl_id: crate::ast::next_class_decl_id(),
         parent_args,
         body_parents: Vec::new(),
-    })
+    }))
 }
 
 /// `(my, our)` of a regex declaration's `scope`.
@@ -2919,8 +2963,10 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let type_constraint =
         super::keyed_hash::lower(node, &sigil, type_constraint, &mut custom_traits)?;
     let desigil_node = named_child(node, "desigilname")?;
-    let desigil = match positional_leaf(desigil_node)?.view() {
-        ValueView::Str(s) => s.to_string(),
+    let desigil = match name_parts::name_shape(desigil_node) {
+        // `my $a::b`: a package-qualified name, `::`-joined as the parser
+        // keeps it (`Name.from-identifier-parts("a", "b")`).
+        Some(NameShape::Identifier(name)) if !name_parts::has_leading_empty(desigil_node) => name,
         _ => return Err(unsupported(node)),
     };
     let twigil = if is_dynamic { "*" } else { "" };
@@ -3595,6 +3641,22 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
             array: bool_field(node, "array")?,
             regex: Box::new(lower_regex_node(named_child(node, "regex")?)?),
         }),
+        RakuAstClass::RegexAssertionNamed
+            if let Some(NameShape::Indirect {
+                expr,
+                tail,
+                trailing: false,
+            }) = name_parts::name_shape(named_child(node, "name")?)
+                && tail.is_empty() =>
+        {
+            let expr = lower_expr(expr)?;
+            Ok(RegexNode::SymbolicSubrule {
+                source: crate::regex_tree::expression_source(&expr)
+                    .ok_or_else(|| unsupported(node))?,
+                expr: Box::new(expr),
+                capturing: bool_field(node, "capturing")?,
+            })
+        }
         RakuAstClass::RegexAssertionNamed => Ok(RegexNode::Subrule {
             name: lower_regex_subrule_name(named_child(node, "name")?)?,
             capturing: bool_field(node, "capturing")?,

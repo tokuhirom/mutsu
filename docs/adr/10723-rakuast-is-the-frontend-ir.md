@@ -761,3 +761,45 @@ the built-in keyword (`class`, `role`, `grammar`) otherwise. The parser's
 record: conversion renders it (`rakuast::declare_how`), lowering hands it back
 through the package head, and registration resolves the HOW from the keyword
 exactly as for a parsed declaration. Nothing has to encode the metaobject.
+
+### 6.28 S10: symbolic subrule calls in regexes (2026-10-13)
+
+`<::(EXPR)>` calls the rule whose name `EXPR` computes when the cursor reaches
+it. Measured on rakudo 2026.09, it is a `Regex::Assertion::Named` whose name
+is `Name(Part::Empty, Part::Expression(EXPR))`, with `capturing => True`
+unless written `<.::(EXPR)>`; `<q=::(EXPR)>` wraps it in
+`Regex::Assertion::Alias`. The regex tree had no node for it, so a whole regex
+holding one lost its tree. `RegexNode::SymbolicSubrule` keeps the parsed
+expression and its written source; execution stays on the runtime parser path
+(the matcher resolves the name from the regex text, as before), and lowering
+rebuilds the source with `expression_source`, which now also renders an
+interpolated string.
+
+### 6.29 S10: named `anon` declarations (2026-10-13)
+
+`anon sub g { }`, `anon class Foo { }`, `anon role R { }` and
+`anon grammar G { }` build a routine or type that keeps its name but is not
+installed under it. Measured on rakudo 2026.09, each is the ordinary `Sub` /
+`Class` / `Role` / `Grammar` with `scope => "anon"` before the name (a
+nameless `anon class { }` has the scope and no name). The parser's
+`ANON_DECL_TRAIT` marker is that scope: conversion renders it, and lowering
+marks the declaration again (`mark_anon_package_stmt`, which also gives a
+package's registry name its site suffix). A statement-level `anon sub` lowers
+back to the parser's expression statement, which declares nothing.
+
+A statement-level `anon class C { }` was a second mechanism: it registered
+`C` and then removed it again with a `__MUTSU_UNREGISTER_CLASS__` call. It
+now parses to the expression form's marked declaration, so there is one
+mechanism; the builtin and the compiler's special case for its block are gone.
+
+### 6.30 S10: package-qualified variable declarations (2026-10-13)
+
+`my $pkg::x` declares a variable in the stub package `pkg`. Measured on
+rakudo 2026.09, the declaration's `desigilname` is
+`Name.from-identifier-parts("pkg", "x")`, which the converter already built;
+lowering now reads a multi-part desigilname back as the parser's `::`-joined
+name. The declaration also makes `pkg` a type at parse time, so the unit's
+name scan lists the stub packages of a qualified variable, and `OUR::A` /
+`MY::A` over a name that resolves is a `Term::Name` of the qualified name,
+whether `A` is a type or a term (it was a `Call::Name`, which lowered to a
+sub lookup).

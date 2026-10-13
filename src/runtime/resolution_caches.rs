@@ -20,6 +20,17 @@ pub(crate) struct MultiLightWinner {
     pub(crate) fingerprint: u64,
 }
 
+/// `multi_plan_light_cache`'s entry: a value-dependent multi family's keyed
+/// dispatch plan, whose stage program picks the winner per call, and the
+/// compiled body of each candidate it can pick (`vm_multi_plan_light_call.rs`).
+pub(crate) struct MultiPlanLight {
+    pub(crate) plan_key: crate::runtime::multi_dispatch_plan::BareMultiPlanKey,
+    pub(crate) plan: Arc<crate::runtime::multi_dispatch_plan::BareMultiPlan>,
+    /// One per candidate the stage program can pick, so a winner it picks
+    /// always has its body here.
+    pub(crate) winners: Vec<MultiLightWinner>,
+}
+
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
     pub(super) protect_block_cache: ProtectBlockCache,
@@ -390,6 +401,14 @@ pub(crate) struct ResolutionCaches {
     /// there (`try_multi_light_call`, #10109, ADR-12529 §2.4). `None` records
     /// a key whose winner has no body in the caller's compiled table.
     pub(crate) multi_light_cache: FamilyGenCache<FuncMultiResolveKey, Option<MultiLightWinner>>,
+    /// The value-dependent twin of `multi_light_cache` (`where` families):
+    /// same key, but the entry runs the family's stage program to pick the
+    /// winner per call (ADR-12529 §2.4, `vm_multi_plan_light_call.rs`).
+    pub(crate) multi_plan_light_cache: FamilyGenCache<FuncMultiResolveKey, Arc<MultiPlanLight>>,
+    /// `(package, name)` of the value-dependent families the plan light path
+    /// refused (no inline-checks program): their generic light calls skip
+    /// the per-call plan-key derivation (`note_multi_plan_light_call`).
+    pub(crate) multi_plan_light_refused: FamilyGenCache<(Symbol, Symbol), ()>,
     /// Type-keyed dispatch plans for bare-name multi calls: the gathered,
     /// ranked candidate passes, so a value-dependent family (`where`,
     /// `subset`) re-runs only its bind checks per call (#9967,

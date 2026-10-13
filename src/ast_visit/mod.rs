@@ -358,6 +358,14 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
             sequential: _,
         }
         | RegexNode::ArrayLookaround { name, negated: _ } => v.visit_name(name, NameKind::Regex),
+        RegexNode::SymbolicSubrule {
+            expr,
+            source,
+            capturing: _,
+        } => {
+            v.visit_expr(expr);
+            names(v, std::iter::once(source), NameKind::Source);
+        }
         RegexNode::Callable {
             name,
             args,

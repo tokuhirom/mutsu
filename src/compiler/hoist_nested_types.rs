@@ -70,12 +70,13 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
                 is_unit,
                 name_expr,
                 body,
+                custom_traits,
                 ..
             } => {
-                // A lexical or runtime-named class is not installed in a
-                // package, and neither is anything nested in it that this
+                // A lexical, `anon` or runtime-named class is not installed in
+                // a package, and neither is anything nested in it that this
                 // pass could name.
-                if *is_lexical || name_expr.is_some() {
+                if *is_lexical || name_expr.is_some() || is_anon(custom_traits) {
                     return;
                 }
                 if self.in_code && !*is_unit && !Compiler::is_stub_class_body(body) {
@@ -88,7 +89,7 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
                 custom_traits,
                 ..
             } => {
-                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") || is_anon(custom_traits) {
                     return;
                 }
                 if self.in_code {
@@ -102,10 +103,6 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
             Stmt::Package { is_unit: true, .. } => {}
             Stmt::Package { is_my: true, .. } => {}
             Stmt::Package { name, .. } => self.walk_package(&name.resolve(), stmt),
-            // An `anon class C { }` (the declaration followed by the call that
-            // takes `C` back out of scope, see `anon_class_decl`) is installed
-            // nowhere, so it gets no compile-time shell.
-            Stmt::Block(body) if is_anon_class_decl(body) => {}
             // Transparent groupings: they open no scope that runs later.
             Stmt::SetLine(_) | Stmt::SyntheticBlock(_) => walk_stmt(self, stmt),
             _ => {
@@ -117,14 +114,13 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
     }
 }
 
-/// Whether `body` is the block an `anon class` declaration parses to.
-// Cost: O(1).
-fn is_anon_class_decl(body: &[Stmt]) -> bool {
-    matches!(
-        body,
-        [Stmt::ClassDecl { .. }, Stmt::Expr(Expr::Call { name, .. })]
-            if name.resolve() == "__MUTSU_UNREGISTER_CLASS__"
-    )
+/// Whether a declaration is `anon`-scoped: installed nowhere, so it gets no
+/// compile-time shell.
+// Cost: O(t), t = number of custom traits.
+fn is_anon(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits
+        .iter()
+        .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT)
 }
 
 /// The non-lexical classes and roles declared inside code anywhere in one

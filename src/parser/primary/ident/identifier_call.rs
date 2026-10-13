@@ -1208,7 +1208,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     && let Ok((r_decl, mut stmt)) = crate::parser::stmt::sub_decl_body_pub(r_sub)
                 {
                     if let Stmt::SubDecl { custom_traits, .. } = &mut stmt {
-                        custom_traits.push(("__anon_decl".to_string(), None));
+                        custom_traits.push((crate::parser::ANON_DECL_TRAIT.to_string(), None));
                     }
                     return Ok((r_decl, Expr::DoStmt(Box::new(stmt))));
                 }

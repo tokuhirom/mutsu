@@ -264,6 +264,7 @@ fn holds_extension(node: &RegexNode) -> bool {
         | RegexNode::ArrayInterpolation { .. }
         | RegexNode::ArrayLookaround { .. }
         | RegexNode::Callable { .. }
+        | RegexNode::SymbolicSubrule { .. }
         | RegexNode::CodeAssertion { .. }
         | RegexNode::CodeBlock { .. }
         | RegexNode::InterpolatedBlock { .. }

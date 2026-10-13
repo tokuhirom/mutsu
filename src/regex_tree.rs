@@ -14,6 +14,7 @@ mod parse_captures;
 mod parse_lookaround;
 mod parse_quotes;
 mod quantifier;
+mod symbolic;
 
 pub(crate) use char_class::{BackslashClass, CharClassAtom};
 pub(crate) use enumeration::{
@@ -226,6 +227,15 @@ pub(crate) enum RegexNode {
         /// representable argument subset.
         #[serde(default)]
         arg_source: Option<String>,
+    },
+    /// `<::(EXPR)>` / `<.::(EXPR)>` — call the rule whose name `EXPR`
+    /// computes when the cursor reaches the call. Execution stays on the
+    /// runtime parser path; the expression and its written source are
+    /// retained for RakuAST.
+    SymbolicSubrule {
+        expr: Box<crate::ast::Expr>,
+        source: String,
+        capturing: bool,
     },
     /// `<?{ ... }>` / `<!{ ... }>` — a zero-width predicate whose body runs
     /// inline in the real interpreter. Keep both the source spelling and the
@@ -885,7 +895,7 @@ impl RegexTree {
                 RegexNode::ArrayInterpolation { .. }
                 | RegexNode::ArrayLookaround { .. }
                 | RegexNode::RegexValueInterpolation { .. } => None,
-                RegexNode::Callable { .. } => None,
+                RegexNode::Callable { .. } | RegexNode::SymbolicSubrule { .. } => None,
                 RegexNode::CodeAssertion {
                     code,
                     negated,
@@ -1023,6 +1033,7 @@ impl RegexNode {
             | Self::ArrayLookaround { .. }
             | Self::RegexValueInterpolation { .. }
             | Self::Callable { .. }
+            | Self::SymbolicSubrule { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. } => {}
@@ -1051,7 +1062,7 @@ impl RegexNode {
             Self::Interpolation { .. } => false,
             Self::ArrayInterpolation { .. } | Self::ArrayLookaround { .. } => true,
             Self::RegexValueInterpolation { .. } => false,
-            Self::Callable { .. } => false,
+            Self::Callable { .. } | Self::SymbolicSubrule { .. } => false,
             Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. } => false,
@@ -1131,6 +1142,7 @@ impl RegexNode {
             | Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
             | Self::Callable { .. }
+            | Self::SymbolicSubrule { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. }
@@ -1190,6 +1202,7 @@ impl RegexNode {
             | Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
             | Self::Callable { .. }
+            | Self::SymbolicSubrule { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. }
@@ -1359,6 +1372,9 @@ impl RegexNode {
                     format!("<&{name}({})>", rendered.unwrap_or_default())
                 }
             }
+            Self::SymbolicSubrule {
+                source, capturing, ..
+            } => format!("<{}::({source})>", if *capturing { "" } else { "." }),
             Self::CodeAssertion { code, negated, .. } => {
                 let marker = if *negated { '!' } else { '?' };
                 format!("<{marker}{{{code}}}>")
@@ -1517,6 +1533,32 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             _ => None,
         },
         crate::ast::Expr::LiteralSrc(_, source) => Some(source.to_string()),
+        // `"a$b"`: each computed part as an interpolated `{…}` block, which
+        // reads the same value as the variable spelling.
+        crate::ast::Expr::StringInterpolation(parts) => {
+            let mut out = String::from("\"");
+            for part in parts {
+                match part {
+                    crate::ast::Expr::Literal(value)
+                        if let crate::value::ValueView::Str(text) = value.view() =>
+                    {
+                        for ch in text.chars() {
+                            if matches!(ch, '\\' | '"' | '$' | '@' | '%' | '&' | '{' | '}') {
+                                out.push('\\');
+                            }
+                            out.push(ch);
+                        }
+                    }
+                    other => {
+                        out.push('{');
+                        out.push_str(&expression_source(other)?);
+                        out.push('}');
+                    }
+                }
+            }
+            out.push('"');
+            Some(out)
+        }
         crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
         crate::ast::Expr::CaptureVar(name) => Some(format!("${name}")),
         crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_) => {
@@ -2396,6 +2438,15 @@ impl Parser {
                     args,
                 });
             }
+            // `<q=::(EXPR)>`: an alias over a symbolic subrule call.
+            if is_simple_subrule_name(alias)
+                && let Some(call) = symbolic::parse(target, capturing)
+            {
+                return Some(RegexNode::Extension(RegexExtension::Alias {
+                    alias: alias.to_string(),
+                    assertion: Box::new(call),
+                }));
+            }
             // `<rx=$r>` / `<foo=[bao]>`: an alias over an assertion that is
             // no subrule call.
             if is_simple_subrule_name(alias)
@@ -2420,6 +2471,9 @@ impl Parser {
         } else {
             (true, contents.as_str())
         };
+        if let Some(node) = symbolic::parse(name, capturing) {
+            return Some(node);
+        }
         let (name, args) = parse_subrule_target(name)?;
         is_subrule_name(&name).then(|| RegexNode::Subrule {
             name,
@@ -3349,7 +3403,9 @@ fn is_executable_lookaround_body(node: &RegexNode) -> bool {
         // A subrule has no execution plan of its own (the matcher keeps its
         // text), so a lookaround over one is a tree only the RakuAST boundary
         // reads, like the constructs of `RegexExtension`.
-        RegexNode::Subrule { .. } | RegexNode::SubruleAlias { .. } => true,
+        RegexNode::Subrule { .. }
+        | RegexNode::SubruleAlias { .. }
+        | RegexNode::SymbolicSubrule { .. } => true,
         RegexNode::CapturingGroup(_)
         | RegexNode::NamedCapture { .. }
         | RegexNode::ArrayLookaround { .. }

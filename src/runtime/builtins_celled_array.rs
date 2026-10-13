@@ -44,7 +44,19 @@ impl Interpreter {
             if *kind == crate::value::ArrayKind::List {
                 *kind = crate::value::ArrayKind::Array;
             }
-            f(crate::gc::Gc::make_mut(arc))
+            // In place, not `Gc::make_mut`: the node is this variable's own
+            // container, and every holder of it (a worker's slot, a parameter
+            // bound to it, a `for` source) must see the write. `make_mut`
+            // copied a node another holder still referenced, so the write
+            // landed on the copy and was lost (#13078). Rakudo's VMArray also
+            // grows in place. Approved by the maintainer as a memory-safety
+            // trade-off on 2026-10-13: a reader of a shared node holds its
+            // stripe or reads a snapshot (ADR-0068 §20).
+            // SAFETY: the cell's and the node's stripes are held
+            // (`acquire_for_celled`) and so is the cell's mutex, so no other
+            // thread mutates the node or walks it through a guarded reader,
+            // and no `&`/`&mut` into it is live on this thread while `f` runs.
+            f(unsafe { crate::value::gc_contents_mut(arc) })
         })?;
         Some((result, inner.clone()))
     }

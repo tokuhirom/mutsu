@@ -4753,7 +4753,9 @@ impl Compiler {
                 // redeclares (the current-scope set is reset on block entry).
                 // An `anon class NAME { ... }` installs no symbol at all, so it
                 // neither claims the name nor collides with a previous claim.
-                let is_anon_decl = custom_traits.iter().any(|(t, _)| t == "__anon_decl");
+                let is_anon_decl = custom_traits
+                    .iter()
+                    .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT);
                 if !is_anon_decl && !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
                     // Package blocks share this compiler scope, so key the

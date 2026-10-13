@@ -17,6 +17,7 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         None => {}
         Some(_) => match leaf_str(node, "scope")?.as_str() {
             "our" => custom_traits.push((super::convert::OUR_SCOPED.to_string(), None)),
+            "anon" => custom_traits.push((crate::parser::ANON_DECL_TRAIT.to_string(), None)),
             "my" => {}
             _ => return Err(unsupported(node)),
         },

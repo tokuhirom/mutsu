@@ -141,6 +141,16 @@ pub(crate) fn native_method_0arg(
     if let Some(result) = crate::builtins::method_table::answer(target, method_sym, &[]) {
         return Some(result);
     }
+    // A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
+    // captures (ADR-11276 §9.98), as the interpreter's entries do
+    // (`Interpreter::match_list_receiver`, which also asks the grammar).
+    // Cost: O(1) unless the receiver is a Match and the name one of those.
+    if let Some(list) = target.match_list_receiver(method_sym.as_str()) {
+        if crate::value::match_view::match_list_answers_itself(method_sym.as_str()) {
+            return Some(Ok(list));
+        }
+        return native_method_0arg(&list, method_sym);
+    }
     native_method_0arg_cascade(target, method_sym)
 }
 
@@ -1248,35 +1258,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         if let Some(result) = match_owner_row(target, Symbol::intern(method), &[]) {
             return Some(result);
         }
-        match method {
-            // Cost: O(p), p = positional captures (copied once into the result).
-            // The 0-arg members of `is_capture_list_method` that arrays answer
-            // natively: a Match is never coerced to its `.Str` for them.
-            "Array" | "List" | "Slip" | "Seq" | "flat" | "cache" | "eager" | "reverse" => {
-                let list = target.match_positional_list(method == "Array");
-                // `Capture.List` is the positional list itself; a `List`'s own
-                // `.List` would materialize an unbound slot's hole as `Nil`.
-                if method == "List" {
-                    return Some(Ok(list));
-                }
-                return native_method_0arg(&list, Symbol::intern(method));
-            }
-            // `keys`, `values`, `kv`, `pairs`, `antipairs`, `hash`, `elems`,
-            // `list` and `Capture` are `Capture`'s rows (`CAPTURE_FOR_MATCH`,
-            // §9.95, §9.96).
-            "Hash" => {
-                return Some(Ok(target
-                    .match_named()
-                    .unwrap_or_else(|| Value::hash(ValueMap::default()))));
-            }
-            // Every other name is answered on the Match itself, never on its
-            // matched string (ADR-11276 §9.96): a row of `Mu`, `Any`, `Capture`
-            // or `Cool` it reaches, or the generic arms below. `.so` of a
-            // zero-width match is True (#9180), `.head` is its first positional
-            // capture, and a name Rakudo's `Match` lacks is
-            // `X::Method::NotFound`.
-            _ => {}
-        }
+        // `Any`'s list methods (`self.list.METHOD`) were answered on the
+        // positional captures before the call reached here
+        // (`Interpreter::match_list_receiver`, §9.98); every other name is
+        // answered on the Match itself, never on its matched string (§9.96):
+        // a row of `Mu`, `Any`, `Capture` or `Cool` it reaches, or the generic
+        // arms below. `.so` of a zero-width match is True (#9180), and a name
+        // Rakudo's `Match` lacks is `X::Method::NotFound`.
     }
 
     // Kernel type object methods

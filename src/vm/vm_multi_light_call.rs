@@ -36,7 +36,8 @@ impl Interpreter {
         let name_sym = code.const_sym(name_idx);
         // The empty test first: a program that never took a multi's light
         // path pays one load per call here, not the multi-name probe.
-        if self.caches.multi_light_cache.is_empty()
+        if (self.caches.multi_light_cache.is_empty()
+            && self.caches.multi_plan_light_cache.is_empty())
             || self.in_lvalue_assignment
             || !self.has_multi_candidates_cached_sym(name_sym)
         {
@@ -69,14 +70,33 @@ impl Interpreter {
             return Ok(false);
         };
         let key = (self.current_package_sym(), name_sym, keys);
-        let Some(Some(hit)) =
-            self.caches
-                .multi_light_cache
-                .get(self.caches.fn_resolve_gen, &key, || {
-                    self.dispatch.fn_family_gens.of_name(name_sym)
-                })
-        else {
-            return Ok(false);
+        let name = Self::const_str(code, name_idx);
+        let typed = self
+            .caches
+            .multi_light_cache
+            .get(self.caches.fn_resolve_gen, &key, || {
+                self.dispatch.fn_family_gens.of_name(name_sym)
+            });
+        // A type-deterministic family's winner comes from the key alone; a
+        // value-dependent one's from its stage program, which has already
+        // checked the winner's `where` clauses (`vm_multi_plan_light_call`).
+        let (hit, where_verified) = match typed {
+            Some(Some(hit)) => (hit, false),
+            Some(None) => return Ok(false),
+            None => {
+                match self.multi_plan_light_winner(code, name, name_sym, &args, &key, compiled_fns)
+                {
+                    Some(hit) => {
+                        let verified = hit
+                            .def
+                            .param_defs
+                            .iter()
+                            .any(|pd| pd.where_constraint.is_some());
+                        (hit, verified)
+                    }
+                    None => return Ok(false),
+                }
+            }
         };
         let Some(cf) = compiled_fns
             .get(&hit.key)
@@ -84,14 +104,13 @@ impl Interpreter {
         else {
             return Ok(false);
         };
-        let name = Self::const_str(code, name_idx);
         if !Self::is_positional_light_call_eligible_where(
             cf,
             name,
             Self::positional_light_argc(&args),
             &args,
             Some(code),
-            false,
+            where_verified,
         ) || Self::call_shares_container_into_scalar_param(cf, &args)
             || loan_env!(self, routine_is_test_assertion_by_name(name, &args))
             || self.wrap_sub_id_for_name(name).is_some()
@@ -152,9 +171,11 @@ impl Interpreter {
             return;
         };
         let pkg_sym = self.current_package_sym();
-        if self.operator_has_import_scope_sym(name_sym)
-            || !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name)
-        {
+        if self.operator_has_import_scope_sym(name_sym) {
+            return;
+        }
+        if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name) {
+            self.note_multi_plan_light_call(name, name_sym, args, def, cf, compiled_fns);
             return;
         }
         let Some(keys) = self.multi_arg_type_keys(args) else {

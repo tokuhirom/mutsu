@@ -1,6 +1,6 @@
 use Test;
 
-plan 22;
+plan 28;
 
 # A `:m` (ignoremark) rule called as `<r>` runs as a frame, entering its ends
 # one at a time: a code block in the callee runs once per end entered, not once
@@ -69,3 +69,19 @@ grammar W2 { regex TOP { <r> }; regex r { :m << \w+ >> } }
 is ~W2.parse("e\x[301]te\x[300]")<r>, "e\x[301]te\x[300]", '<< and >> around marked graphemes';
 grammar W3 { regex TOP { <r> .* }; regex r { :m ^^ a <|w> } }
 is ~W3.parse("a\x[301] b")<r>, "a\x[301]", '<|w> after a marked grapheme';
+
+# A look-around in a markless callee runs its body markless over the same
+# subject: it compares bases, and a lookbehind starts only on a grapheme
+# boundary (#13176).
+grammar K2 { regex TOP { <r> 'x' }; regex r { :m [a <!before b>]+ { @log.push: $/.to } a b } }
+@log = ();
+is ~K2.parse("a\x[301]a\x[300]ab\x[300]x")<r>, "a\x[301]a\x[300]ab\x[300]", 'a negative lookahead over marked graphemes';
+is @log.join(','), '2', '... entering one end';
+grammar K3 { regex TOP { <r> 'x' }; regex r { :m a+ <?after a> { @log.push: $/.to } } }
+@log = ();
+is ~K3.parse("a\x[301]a\x[300]x")<r>, "a\x[301]a\x[300]", 'a lookbehind over a marked grapheme';
+is @log.join(','), '2', '... entering one end';
+grammar K5 { regex TOP { <r> .* }; regex r { :m .+ <?before 'é'> { @log.push: $/.to } } }
+@log = ();
+is ~K5.parse("abe\x[300]e")<r>, "abe\x[300]", 'a lookahead body compares bases';
+is @log.join(','), '3', '... entering one end';

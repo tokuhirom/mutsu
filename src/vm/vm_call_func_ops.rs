@@ -2168,16 +2168,14 @@ impl Interpreter {
                     && self.wrap_sub_id_for_name(name).is_none()
                     && !self.light_call_blocked_by_mainline_capture(name)
                 {
-                    if !where_verified {
-                        self.note_multi_light_call(
-                            name,
-                            name_sym,
-                            &args,
-                            multi_def_memo.as_ref(),
-                            cf,
-                            compiled_fns,
-                        );
-                    }
+                    self.note_multi_light_call(
+                        name,
+                        name_sym,
+                        &args,
+                        multi_def_memo.as_ref(),
+                        cf,
+                        compiled_fns,
+                    );
                     let pushed_dispatch = loan_env!(
                         self,
                         push_multi_dispatch_frame_with_winner_sym(

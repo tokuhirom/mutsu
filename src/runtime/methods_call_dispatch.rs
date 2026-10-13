@@ -800,12 +800,12 @@ impl Interpreter {
             return self.call_method_with_values(Value::array(items), method, args);
         }
         // A `Match` answers `Any`'s list methods from its positional captures
-        // (see `is_capture_list_method`), unless the grammar defines the method.
-        if crate::value::match_view::is_capture_list_method(method)
-            && target.is_match_instance()
-            && !self.has_user_method(target.match_dispatch_class(), method)
-        {
-            let list = target.match_positional_list(method == "Array");
+        // (`Interpreter::match_list_receiver`), unless the grammar defines the
+        // method.
+        if let Some(list) = self.match_list_receiver(&target, method) {
+            if args.is_empty() && crate::value::match_view::match_list_answers_itself(method) {
+                return Ok(list);
+            }
             return self.call_method_with_values(list, method, args);
         }
         // A buffer-backed positional (upstream NativeCall's `CArray[T]`, a

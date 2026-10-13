@@ -216,6 +216,11 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
             args,
             arg_source: _,
         } => exprs_mut(v, args),
+        RegexNode::SymbolicSubrule {
+            expr,
+            source: _,
+            capturing: _,
+        } => v.visit_expr_mut(expr),
         RegexNode::CodeAssertion {
             code: _,
             negated: _,
