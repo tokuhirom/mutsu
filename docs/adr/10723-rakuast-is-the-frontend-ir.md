@@ -828,6 +828,19 @@ Two runtime-parser bugs surfaced on the way and are fixed in the matcher's
 right after an atom (`/x:i<[ab]>/`) was read as that atom's `:` backtrack
 control.
 
+### 6.32 S10: regex placeholders, scalar callees and package variables (2026-10-13)
+
+Measured on rakudo 2026.09: `/$^a/` is a `Regex::Interpolation` whose `var`
+is a `VarDeclaration::Placeholder::Positional` (a new
+`RegexExtension::Placeholder`; the enclosing block still finds the
+placeholder by scanning the lowered regex text, as for a parsed one);
+`<&$tok(1)>` is an `Assertion::Callable` whose callee is
+`Contextualizer::Item(Var::Lexical("$tok"))` (the tree's `Callable` keeps
+the name with its `$`); `<@Pkg::list>` is an `Assertion::InterpolatedVar`
+over a `Var::Package`. A `:my token T { … }` statement whose block ends its
+line needs no `;` and takes no `WithWhitespace` wrapper, and the quotes in
+the character class of a regex nested in `$( … )` no longer open a string
+in the contextualizer's scanner.
 ### 6.33 S10: a declaration followed by a postfix (2026-10-13)
 
 `my @a.[2] = 42`, `my %h.<k> = 1`, `my @a.push(1)` and `my Int $x.say`

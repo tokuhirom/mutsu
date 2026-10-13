@@ -133,10 +133,19 @@ impl Parser {
         {
             let sigil = self.chars[self.pos];
             self.pos += 1;
-            let Some(name) = self.parse_twigil_variable_name() else {
+            let Some(mut name) = self.parse_twigil_variable_name() else {
                 self.pos = start;
                 return None;
             };
+            // `<@Pkg::name>`: a package-qualified variable.
+            while self.chars[self.pos..].starts_with(&[':', ':']) {
+                self.pos += 2;
+                let Some(part) = self.parse_variable_name() else {
+                    self.pos = start;
+                    return None;
+                };
+                name = crate::qualified::qualified_text(name.as_str(), part.as_str()).to_string();
+            }
             if !self.consume_if('>') {
                 self.pos = start;
                 return None;

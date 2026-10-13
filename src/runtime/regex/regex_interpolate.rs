@@ -458,6 +458,21 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn interpolate_bound_regex_scalars(&self, pattern: &str) -> String {
+        self.interpolate_bound_regex_scalars_declared(
+            pattern,
+            &mut std::collections::HashSet::new(),
+        )
+    }
+
+    /// [`Self::interpolate_bound_regex_scalars`] with the `:my` names the
+    /// enclosing pattern declared so far, so a lookaround body (`<!before
+    /// $*closer>`) keeps referring to the match-time lexical instead of the
+    /// caller's value of the same name.
+    fn interpolate_bound_regex_scalars_declared(
+        &self,
+        pattern: &str,
+        declared_my_vars: &mut std::collections::HashSet<String>,
+    ) -> String {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
         let mut i = 0usize;
@@ -465,7 +480,6 @@ impl Interpreter {
         // Keep both the declaration and later references to it out of this
         // caller-scope interpolation pass, which runs before the pattern is
         // parsed and matched.
-        let mut declared_my_vars = std::collections::HashSet::new();
         while i < chars.len() {
             let ch = chars[i];
             if ch == ':' {
@@ -519,7 +533,7 @@ impl Interpreter {
                 match Self::split_lookaround_body(&inner) {
                     Some((keyword, body)) => {
                         out.push_str(keyword);
-                        out.push_str(&self.interpolate_bound_regex_scalars(body));
+                        out.push_str(&self.interpolate_bound_regex_scalars_declared(body, declared_my_vars));
                     }
                     None => out.push_str(&inner),
                 }

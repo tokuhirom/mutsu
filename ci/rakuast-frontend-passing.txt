@@ -4616,6 +4616,7 @@ t/rakuast/rakuast-regex-match-markers.t
 t/rakuast/rakuast-regex-modifiers-anchors.t
 t/rakuast/rakuast-regex-named-default-pointy.t
 t/rakuast/rakuast-regex-outer-adverbs.t
+t/rakuast/rakuast-regex-placeholders-and-callees.t
 t/rakuast/rakuast-regex-proto-multi.t
 t/rakuast/rakuast-regex-qualified-subrules.t
 t/rakuast/rakuast-regex-quantifiers.t
@@ -4702,6 +4703,7 @@ t/rakuast/rakuast-word-list-spelling.t
 t/rakuast/rakuast-word-quotes.t
 t/rakuast/rakuast-yada-stubs.t
 t/rakuast/rakuast-zen-slice-adverbs.t
+t/regex/anon-regex-declarator-signature.t
 t/regex/associative-at-key-regex-subscript.t
 t/regex/contains-regex.t
 t/regex/dir-test-bare-regex-predicate.t
@@ -4871,6 +4873,7 @@ t/regex/match/when-only-block-nonmatch-value.t
 t/regex/match/zen-slice-match-var.t
 t/regex/monkey-see-no-eval-regex-code.t
 t/regex/null-regex.t
+t/regex/placeholder-in-regex.t
 t/regex/recursive-frugal-regex-subrule.t
 t/regex/regex-accepts-method.t
 t/regex/regex-adverb-error.t
@@ -4879,6 +4882,7 @@ t/regex/regex-alias-subrule-quantified.t
 t/regex/regex-alias-zero-width-assertion.t
 t/regex/regex-aliased-group-subcap.t
 t/regex/regex-angle-word-list-bare-quote.t
+t/regex/regex-array-interp-imported-constant.t
 t/regex/regex-array-sigil-alias.t
 t/regex/regex-assertion-outer-scalar-write.t
 t/regex/regex-assertion-quoted-angle.t
@@ -4915,12 +4919,14 @@ t/regex/regex-counted-adverbs.t
 t/regex/regex-crlf-grapheme-pair.t
 t/regex/regex-crlf-literal-escape-pair.t
 t/regex/regex-decl-class-lexical-closure.t
+t/regex/regex-decl-self-referential-slash.t
 t/regex/regex-decl-stmt-terminator.t
 t/regex/regex-declarative-modifiers.t
 t/regex/regex-declarator-block-comment.t
 t/regex/regex-dq-atom-qq-interpolation.t
 t/regex/regex-dq-hex-escape.t
 t/regex/regex-embedded-code-blocks.t
+t/regex/regex-embedded-code-fragments-repeated.t
 t/regex/regex-embedded-comment-brackets.t
 t/regex/regex-embedded-my-decl-value.t
 t/regex/regex-empty-array-interpolation.t
@@ -5171,6 +5177,7 @@ t/regex/syntax/regex-charclass-subrule-union.t
 t/regex/syntax/regex-code-sees-plain-quantifier-fold.t
 t/regex/syntax/regex-conjunction-inline-adverbs.t
 t/regex/syntax/regex-conjunction-same-span.t
+t/regex/syntax/regex-contextualizer-nested-rx-charclass-quotes.t
 t/regex/syntax/regex-counted-quantifier-alternation-backtrack.t
 t/regex/syntax/regex-end-anchor-then-atom.t
 t/regex/syntax/regex-end-of-string-anchor.t
@@ -5703,6 +5710,7 @@ t/routines/p5-time-routines-not-core.t
 t/routines/placeholder-bare-alias-callback.t
 t/routines/placeholder-block-alias.t
 t/routines/placeholder-block-readonly.t
+t/routines/placeholder-block-topic.t
 t/routines/placeholder-in-nested-whatevercode.t
 t/routines/placeholder-in-parens.t
 t/routines/placeholder-index-assign-target.t
@@ -5874,6 +5882,7 @@ t/routines/signature/multi-typed-array-param.t
 t/routines/signature/multi-where-optional-param.t
 t/routines/signature/named-arg-alias-external-key.t
 t/routines/signature/named-arg-rightmost-wins.t
+t/routines/signature/named-arg-statement-call.t
 t/routines/signature/named-arg-stmt-call-keeps-caller-cell.t
 t/routines/signature/named-array-destructure-absent-key.t
 t/routines/signature/named-array-destructure-alias.t

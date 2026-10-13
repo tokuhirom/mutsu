@@ -7,6 +7,7 @@ pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
 mod dispatch;
 pub(crate) use dispatch::Resolved;
+mod class_scoped_accessor;
 mod dispatch_candidates;
 mod role_type_distance;
 mod multi_rank;

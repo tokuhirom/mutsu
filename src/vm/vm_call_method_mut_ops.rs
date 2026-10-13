@@ -1671,6 +1671,12 @@ impl Interpreter {
                     ValueView::Package(_) => {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
+                            // A class-scoped `my @.list` / `our $.elems`
+                            // accessor shadows the `Any` method of that name
+                            // (`C.list.push(...)`, BDD::Behave's
+                            // `Failures.list`), as `should_bypass_native_fastpath`
+                            // already decides for the interpreter's dispatch.
+                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }
                     _ => {
                         self.grammar_has_user_method_memo(cn, method_sym)
@@ -1681,6 +1687,8 @@ impl Interpreter {
                             // accessor read are skipped for a quoted name.
                             || ((quoted || matches!(method, "WHICH" | "WHY"))
                                 && self.has_public_accessor(&cn.resolve(), method))
+                            // The class-scoped accessor, as for a type object.
+                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }
                 }
             {

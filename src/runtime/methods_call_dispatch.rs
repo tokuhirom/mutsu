@@ -4038,6 +4038,7 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => {
                     let class_name = class_name.resolve();
                     self.class_has_user_method(&class_name, method)
+                        || self.class_scoped_accessor_shadows(&class_name, method, &args)
                         // A Cool-only builtin (`.subst`, `.trans`, ...) is not
                         // resolvable on a plain Any-derived instance in raku, so
                         // a class declaring `handles *` / `FALLBACK` must be
@@ -4065,7 +4066,15 @@ impl Interpreter {
                     // receiver-blind sites are the correct granularity; this match arm's older
                     // `handles */FALLBACK` term above is unaffected.
                 }
-                ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
+                ValueView::Package(name) => {
+                    let name = name.resolve();
+                    self.class_has_user_method(&name, method)
+                        // A class-scoped `my $.elems` accessor shadows the
+                        // `Any` method of that name (see
+                        // `should_bypass_native_fastpath`); the by-name arms
+                        // would answer it, recursing on the type object.
+                        || self.class_scoped_accessor_shadows(&name, method, &args)
+                }
                 // `Foo.new but role {...}` keeps `Foo`'s own `$.elems` (#10232).
                 ValueView::Mixin(..) => self.mixin_wrapped_instance_has_method(&target, method),
                 _ => false,
