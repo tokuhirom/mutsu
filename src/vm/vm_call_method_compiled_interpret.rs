@@ -18,7 +18,7 @@ impl Interpreter {
     /// Symbol-keyed entry: callers that already hold the method name as an
     /// interned `Symbol` (the CallMethod opcode via `CompiledCode::const_sym`)
     /// use this to keep the per-call `Symbol::intern` off the dispatch path.
-    pub(super) fn try_compiled_method_or_interpret_sym(
+    pub(crate) fn try_compiled_method_or_interpret_sym(
         &mut self,
         target: Value,
         method_sym: crate::symbol::Symbol,

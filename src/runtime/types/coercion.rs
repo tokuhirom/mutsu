@@ -161,6 +161,38 @@ fn gcd_i64(a: i64, b: i64) -> i64 {
 }
 
 impl Interpreter {
+    /// The method of user class `class` that coerces into `target`, as
+    /// Rakudo names it: the target type's full name (`method
+    /// NativeCall::Types::Pointer { ... }` answers `Pointer()`, as
+    /// Font::FreeType's `Face` does; `method M::T` answers `M::T()`), with a
+    /// written name that aliases another type (`constant Pointer = ...`)
+    /// resolved first. The name as written is the fallback. `None` when the
+    /// class declares neither.
+    // Cost: O(m), m = the class's MRO, per name probed.
+    fn user_coercion_method(&mut self, class: &str, target: &str) -> Option<String> {
+        if let Some(full) = self.resolve_type_alias_chain(target)
+            && full != target
+            && self.class_has_user_method(class, &full)
+        {
+            return Some(full);
+        }
+        self.class_has_user_method(class, target)
+            .then(|| target.to_string())
+    }
+
+    /// Call coercion method `method` on `value`. A qualified name (`M::T`)
+    /// names the method literally, so it goes through the VM's dispatch by
+    /// name: `call_method_with_values` would read it as a qualified call to
+    /// `M`'s `T`.
+    // Cost: one method dispatch.
+    fn call_coercion_method(&mut self, value: Value, method: &str) -> Result<Value, RuntimeError> {
+        if crate::qualified::is_qualified_str(method) {
+            self.try_compiled_method_or_interpret_sym(value, Symbol::intern(method), vec![])
+        } else {
+            self.call_method_with_values(value, method, vec![])
+        }
+    }
+
     /// Coerce a value to the target type, trying built-in coercions first,
     /// then falling back to target class COERCE when available.
     pub(in crate::runtime) fn try_coerce_value_with_method(
@@ -199,9 +231,9 @@ impl Interpreter {
             return Ok(value);
         }
         if let ValueView::Instance { class_name, .. } = value.view()
-            && self.class_has_user_method(&class_name.resolve(), base_target)
+            && let Some(method) = self.user_coercion_method(&class_name.resolve(), base_target)
         {
-            let coerced = self.call_method_with_values(value.clone(), base_target, vec![])?;
+            let coerced = self.call_coercion_method(value.clone(), &method)?;
             if self.type_matches_value(base_target, &coerced) {
                 return Ok(coerced);
             }
@@ -215,9 +247,9 @@ impl Interpreter {
         // type object falls through to the ordinary coercion below (`Str(Int)`
         // stays ""), which is what rakudo does.
         if let ValueView::Package(class_name) = value.view()
-            && self.class_has_user_method(&class_name.resolve(), base_target)
+            && let Some(method) = self.user_coercion_method(&class_name.resolve(), base_target)
         {
-            let coerced = self.call_method_with_values(value.clone(), base_target, vec![])?;
+            let coerced = self.call_coercion_method(value.clone(), &method)?;
             if self.type_matches_value(base_target, &coerced) {
                 return Ok(coerced);
             }
