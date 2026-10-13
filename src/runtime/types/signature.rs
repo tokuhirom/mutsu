@@ -33,6 +33,8 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
         ValueView::Array(data, _) => data.items().to_vec(),
         ValueView::Seq(items) => items.to_vec(),
         ValueView::Slip(items) => (**items).clone(),
+        // `Hash.Capture` is purely named: no positional part.
+        ValueView::Hash(..) => Vec::new(),
         // A `Match` destructures through its `.Capture`: the positional
         // captures are its positional part (`-> ($a, $b) {...}($/)`).
         ValueView::Instance {
@@ -618,12 +620,14 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     // A `Pair` element of a list is a named part of that list's Capture
     // (`('item', :over-ride)` is `\('item', :over-ride)`), so once the
     // sub-signature takes named parameters it is not a positional element.
-    if sub_params.iter().any(|p| p.named)
-        && matches!(
-            value.unwrap_varref().deref_container().descalarize().view(),
-            ValueView::Array(..) | ValueView::Seq(..)
-        )
-    {
+    // This holds whether or not the sub-signature takes named parameters: the
+    // binder (`drop_pairs_captured_as_named`) never offers a Pair positionally,
+    // so dispatch has to agree or it selects a candidate whose bind then dies
+    // (`*@rhs (%, *@)` over a flattened Hash, CSS::Module's calc `type`).
+    if matches!(
+        value.unwrap_varref().deref_container().descalarize().view(),
+        ValueView::Array(..) | ValueView::Seq(..)
+    ) {
         positional.retain(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
     }
     let mut positional_idx = 0usize;
@@ -1109,6 +1113,21 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 // Slurpy *@rest or *$rest: collect remaining positional values
                 let remaining: Vec<Value> = positional[nested_positional_idx..].to_vec();
                 nested_positional_idx = positional.len();
+                // A bare `|c` destructures into a Capture of the leftover
+                // positionals and the named arguments no named sub-param took
+                // (`-> % (:$m!, |c)`), not an Array.
+                if sub_pd.is_plain_capture() {
+                    let mut named = named_values_from_unpack_target(value);
+                    named.retain(|k, _| !consumed_named_keys.contains(k));
+                    if !sub_pd.name.is_empty() {
+                        bind_sub_param_name(
+                            interpreter,
+                            &sub_pd.name,
+                            Value::capture(remaining, named),
+                        );
+                    }
+                    continue;
+                }
                 // A destructured slurpy is an Array in Raku, not the List
                 // representation used for ordinary listified values.
                 let remaining_value = Value::real_array(remaining);

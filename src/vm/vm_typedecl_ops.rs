@@ -397,7 +397,19 @@ impl Interpreter {
                     let p = if does_parents.contains(&p) {
                         p
                     } else {
-                        let canonical = self.canonical_class_parent_name(&p);
+                        let mut canonical = self.canonical_class_parent_name(&p);
+                        // `also is Outer::Inner` names a type the body itself
+                        // declares and has not registered yet; the bare tail
+                        // `canonical` falls back to would be an unrelated
+                        // outer `Inner` (possibly package-qualified). Keep the spelling so registration
+                        // resolves it once the body has run.
+                        if body_parents.contains(&p)
+                            && crate::qualified::is_qualified_str(&p)
+                            && canonical != p
+                            && !self.has_type_direct(&p)
+                        {
+                            canonical = p.clone();
+                        }
                         // `use A::Base; unit class A::Kid is Base`: the parent is
                         // the compunit's imported short name for `A::Base`.
                         self.child_package_type_alias(&qualified_name, &canonical)

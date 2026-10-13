@@ -674,11 +674,19 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     // exists so the shared helper can serve the grammar path too.
     let mut implicit_grammar_parent = false;
     let mut body_parents: Vec<String> = Vec::new();
+    let nested_types = nested_type_names(&body);
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
             class_is_rw = true;
             false
         } else if let Some(parent_name) = stmt_also_is_parent(stmt) {
+            // `also is Inner` names the type this body declares, not an outer
+            // type of the same name.
+            let parent_name = if nested_types.contains(&parent_name) {
+                format!("{name}::{parent_name}")
+            } else {
+                parent_name
+            };
             push_also_is_parent(
                 &mut parents,
                 &mut body_parents,

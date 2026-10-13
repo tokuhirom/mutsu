@@ -1538,11 +1538,10 @@ impl Interpreter {
                 source = rest.trim_start();
                 continue;
             }
+            // `:i` ends at any non-identifier character, so `:i'only'|'not'`
+            // scopes the modifier over the whole alternation like `:i 'only'|'not'`.
             if let Some(rest) = source.strip_prefix(":i")
-                && (rest.is_empty()
-                    || rest.starts_with(|c: char| c.is_whitespace())
-                    || rest.starts_with(':')
-                    || rest.starts_with('/'))
+                && !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
                 ignore_case = true;
                 source = rest.trim_start();

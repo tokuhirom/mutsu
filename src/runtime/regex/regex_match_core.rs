@@ -265,7 +265,7 @@ impl Interpreter {
         if let RegexAtom::Named(atom_name) = &token.atom {
             let spec = atom_name.spec();
             if spec.silent && !spec.lookup_name.is_empty() && sub.action_name.is_none() {
-                std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.lookup_sym);
+                std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.action_sym);
             }
         }
         // A sigil-prefixed alias (`$<alias> = <rule>`) shares the subrule's
@@ -290,7 +290,7 @@ impl Interpreter {
                 && std::sync::Arc::ptr_eq(original, &sub)
             {
                 let node = std::sync::Arc::make_mut(original);
-                node.action_name = Some(spec.lookup_sym);
+                node.action_name = Some(spec.action_sym);
                 sub = std::sync::Arc::clone(original);
             }
         }

@@ -160,7 +160,7 @@ impl Interpreter {
             // whole descendant subtree for every aliased subrule capture.
             let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
             if is_alias {
-                subcap.set_action_name(Some(spec.lookup_sym));
+                subcap.set_action_name(Some(spec.action_sym));
             }
             let subcap = Arc::new(subcap.into_cap_node());
             // This subrule has just REDUCED. Log it so a parse that fails
@@ -210,7 +210,7 @@ impl Interpreter {
             if subcap.sym().is_none() && sym_key.is_some() {
                 subcap.set_sym(sym_key);
             }
-            subcap.set_action_name(Some(spec.lookup_sym));
+            subcap.set_action_name(Some(spec.action_sym));
             // Keep the silent subrule's inline blocks on its own (marker) node
             // for the reduce-time walk to run once — see the non-silent branch.
             let subcap = Arc::new(subcap.into_cap_node());
