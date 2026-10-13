@@ -34,7 +34,8 @@ plan 19;
     my $buf = $u.Buf;
     is $buf.^name, "Buf", ".Buf returns a Buf";
     is $buf.elems, 2, ".Buf preserves bytes";
-    is "ab".encode.Blob.^name, "Blob", ".Blob returns a Blob";
+    # Rakudo's `Blob` declares `Buf` but not `Blob` (ADR-11276 §9.94).
+    throws-like { "ab".encode.Blob }, X::Method::NotFound, "utf8 has no .Blob";
     is "\r\n".encode.Buf.list.join(","), "13,10", ".Buf bytes are correct";
 }
 

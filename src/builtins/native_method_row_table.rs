@@ -516,8 +516,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `.DEFINITE` is a quoted pseudo-method (like `.WHAT`/`.HOW`/`.WHICH`),
     // deliberately excluded from `MU_METHODS`'s `.^methods` introspection
     // list since it is a compiler-level construct rather than an ordinary
-    // dispatchable method -- but `dispatch_core_coerce::dispatch` still
-    // recognizes it via the plain arity-0 cascade for any receiver, so it
+    // dispatchable method -- but `Mu`'s `DEFINITE` row (ADR-11276 §9.91)
+    // answers it for any receiver, so it
     // needs a SPECIAL row (never claims a `.^methods`-visible slot) to stop
     // being counted as unmodeled.
     ("Mu", "DEFINITE", 1, 60),

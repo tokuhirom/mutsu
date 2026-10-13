@@ -11,7 +11,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "serial",
         arity: 0,
         handler: Handler::Pure(serial),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
     MethodRow {

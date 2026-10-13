@@ -1,9 +1,13 @@
-/// Type coercion helpers. `self`, `clone`, `defined`, `DEFINITE`, `Bool`,
-/// `WHICH` and `WHERE` are `Mu`'s rows (`method_table::ctors_mop::mu_identity`,
-/// ADR-11276 §9.91), the numeric coercions `Cool`'s and `Mu`'s (§9.92), and
-/// `Str`/`Stringy` `Mu`'s (`method_table::ctors_mop::mu_str`, §9.93).
+/// The exceptions the coercion rows raise: `X::Str::Numeric` for a string that
+/// is no number and `X::Numeric::Real` for a `Complex` with an imaginary part.
+/// The coercions themselves are rows: `self`, `clone`, `defined`, `DEFINITE`,
+/// `Bool`, `WHICH` and `WHERE` of `Mu` (`method_table::ctors_mop::mu_identity`,
+/// ADR-11276 §9.91), the numeric coercions of `Cool` and `Mu` (§9.92), `Str`/
+/// `Stringy` of `Mu` (`method_table::ctors_mop::mu_str`, §9.93), and
+/// `Complex.Complex`, `Any.serial` and the `Blob`/`Buf` reinterpretations
+/// (§9.94).
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 use crate::value::ValueMap;
 
@@ -123,39 +127,4 @@ pub(crate) fn complex_not_real_error(
         source,
     )));
     err
-}
-
-pub(super) fn dispatch(
-    target: &Value,
-    method: &str,
-) -> Option<Option<Result<Value, RuntimeError>>> {
-    // `.Buf` / `.Blob` on any byte-string (Buf/Blob/utf8/blob8/...) returns a
-    // value of the requested role carrying the same bytes. `utf8` (what
-    // `.encode` produces) does Blob, so `.Buf`/`.Blob` reinterpret those bytes
-    // as a plain `Buf[uint8]` / `Blob[uint8]`. Humming-Bird's HTTPServer uses
-    // `"\r\n".encode.Buf` to build its constant delimiters.
-    if matches!(method, "Buf" | "Blob")
-        && let ValueView::Instance { class_name, .. } = target.view()
-        && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
-    {
-        // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
-        return Some(crate::builtins::method_table::blob::reinterpret(
-            target, method,
-        ));
-    }
-    // `Complex.Complex` is the identity coercion (`method Complex() { self }`);
-    // `Int.Int` is `Mu.Int`'s row (`method_table::ctors_mop::mu_numeric`).
-    if let ValueView::Package(name) = target.view()
-        && method == "Complex"
-        && name == "Complex"
-    {
-        return Some(Some(Ok(target.clone())));
-    }
-    match method {
-        // The `Any.serial` row's implementation (`method_table::collections::any_misc`).
-        "serial" => Some(Some(
-            crate::builtins::method_table::collection_any_misc::serial(target, &[]),
-        )),
-        _ => None,
-    }
 }
