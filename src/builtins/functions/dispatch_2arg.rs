@@ -359,31 +359,12 @@ pub(crate) fn native_function_2arg(
                 limit,
             )))
         }
-        "uniprop" => {
-            // uniprop(target, property_name)
-            let prop_name = arg2.to_string_value();
-            match arg1.view() {
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    Some(Ok(
-                        crate::builtins::uniprop::unicode_property_value_for_codepoint(
-                            cp,
-                            Some(&prop_name),
-                        ),
-                    ))
-                }
-                _ => {
-                    let s = arg1.to_string_value();
-                    if s.is_empty() {
-                        return Some(Ok(Value::NIL));
-                    }
-                    let ch = s.chars().next().unwrap();
-                    Some(Ok(crate::builtins::uniprop::unicode_property_value(
-                        ch, &prop_name,
-                    )))
-                }
-            }
-        }
+        // `uniprop($x, $prop)` is `$x.uniprop($prop)` -- one implementation.
+        // Cost: O(1) (a table lookup) plus the property name's parse.
+        "uniprop" => crate::builtins::method_table::scalars::unicode::uniprop_of(
+            arg1,
+            std::slice::from_ref(arg2),
+        ),
         "unimatch" => {
             // unimatch(target, property_value)
             let prop_value = arg2.to_string_value();

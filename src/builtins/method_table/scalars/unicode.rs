@@ -139,33 +139,77 @@ pub(crate) fn uninames(target: &Value, _args: &[Value]) -> Option<Result<Value, 
     Some(Ok(Value::seq(names)))
 }
 
+/// How an integer receiver of `uniprop` reads as a codepoint.
+enum UnipropCodepoint {
+    /// A codepoint MoarVM looks up (`0 .. 2**31`, including the unassigned
+    /// range past `0x10FFFF`).
+    Lookup(u32),
+    /// `2**31` or more (a `BigInt` included): every property is `""`.
+    TooLarge,
+}
+
+/// Classify an `Int`/`BigInt`/`Bool` receiver as a `uniprop` codepoint; `None`
+/// for any other receiver (read through its first character instead). A
+/// negative codepoint is the X::AdHoc rakudo raises.
+// Cost: O(1) for an Int; O(d) for a BigInt, d = limb count (the error message).
+fn uniprop_codepoint(
+    target: &Value,
+    routine: &str,
+) -> Option<Result<UnipropCodepoint, RuntimeError>> {
+    let negative = |display: String, magnitude_hex: String| {
+        Err(RuntimeError::new(format!(
+            "Codepoint {display} (0x-{magnitude_hex}) is out of bounds in '{routine}'"
+        )))
+    };
+    match target.view() {
+        ValueView::BigInt(n) => Some(if n.sign() == num_bigint::Sign::Minus {
+            negative(n.to_string(), format!("{:X}", n.magnitude()))
+        } else {
+            Ok(UnipropCodepoint::TooLarge)
+        }),
+        _ => {
+            let cp = codepoint(target)?;
+            Some(if cp < 0 {
+                negative(cp.to_string(), format!("{:X}", cp.unsigned_abs()))
+            } else {
+                Ok(u32::try_from(cp)
+                    .ok()
+                    .filter(|&cp| cp < 1 << 31)
+                    .map_or(UnipropCodepoint::TooLarge, UnipropCodepoint::Lookup))
+            })
+        }
+    }
+}
+
+/// `.uniprop` and `.uniprop($property)` (and the `uniprop` routine, which
+/// calls these): the property of the codepoint or first character.
+// Cost: O(1) (a table lookup) plus the property name's parse.
+fn uniprop_value(target: &Value, property: Option<&str>) -> Result<Value, RuntimeError> {
+    if is_type_object(target) {
+        return Err(make_no_match_error("uniprop"));
+    }
+    Ok(match uniprop_codepoint(target, "uniprop").transpose()? {
+        Some(UnipropCodepoint::Lookup(cp)) => {
+            uniprop::unicode_property_value_for_codepoint(cp, property)
+        }
+        Some(UnipropCodepoint::TooLarge) => Value::str_from(""),
+        None => first_char(target).map_or(Value::NIL, |ch| match property {
+            Some(property) => uniprop::unicode_property_value(ch, property),
+            None => Value::str_from(crate::builtins::unicode::unicode_general_category(ch)),
+        }),
+    })
+}
+
 /// `.uniprop`: the general category of the codepoint or first character.
 // Cost: O(1) (a table lookup).
 pub(crate) fn uniprop(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if is_type_object(target) {
-        return Some(Err(make_no_match_error("uniprop")));
-    }
-    Some(Ok(match codepoint(target) {
-        Some(cp) => uniprop::unicode_property_value_for_codepoint(cp as u32, None),
-        None => first_char(target).map_or(Value::NIL, |ch| {
-            Value::str_from(crate::builtins::unicode::unicode_general_category(ch))
-        }),
-    }))
+    Some(uniprop_value(target, None))
 }
 
 /// `.uniprop($property)`.
 // Cost: O(1) (a table lookup) plus the property name's parse.
 pub(crate) fn uniprop_of(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if is_type_object(target) {
-        return Some(Err(make_no_match_error("uniprop")));
-    }
-    let property = args[0].to_string_value();
-    Some(Ok(match codepoint(target) {
-        Some(cp) => uniprop::unicode_property_value_for_codepoint(cp as u32, Some(&property)),
-        None => first_char(target).map_or(Value::NIL, |ch| {
-            uniprop::unicode_property_value(ch, &property)
-        }),
-    }))
+    Some(uniprop_value(target, Some(&args[0].to_string_value())))
 }
 
 /// `.uniprops`: the general category of every character, as a `Seq`.

@@ -293,38 +293,38 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
 /// Get the property value for a codepoint (as u32), handling
 /// codepoints that may not be valid chars (like surrogates or
 /// very high codepoints).
+// Cost: O(1) (a table lookup) plus the property name's parse.
 pub(crate) fn unicode_property_value_for_codepoint(cp: u32, prop: Option<&str>) -> Value {
-    match char::from_u32(cp) {
-        Some(ch) => match prop {
+    if let Some(ch) = char::from_u32(cp) {
+        return match prop {
             Some(p) => unicode_property_value(ch, p),
             None => Value::str_from(crate::builtins::unicode::unicode_general_category(ch)),
-        },
-        None => {
-            // Invalid codepoint (surrogate or out of range)
-            let is_surrogate = (0xD800..=0xDFFF).contains(&cp);
-            match prop {
-                Some("General_Category") | Some("gc") | None => {
-                    if is_surrogate {
-                        Value::str_from("Cs")
-                    } else {
-                        Value::str_from("Cn")
-                    }
-                }
-                Some("Block") | Some("blk") => {
-                    // Try to find block for surrogate codepoints
-                    if (0xD800..=0xDB7F).contains(&cp) {
-                        Value::str_from("High Surrogates")
-                    } else if (0xDB80..=0xDBFF).contains(&cp) {
-                        Value::str_from("High Private Use Surrogates")
-                    } else if (0xDC00..=0xDFFF).contains(&cp) {
-                        Value::str_from("Low Surrogates")
-                    } else {
-                        Value::str_from("No_Block")
-                    }
-                }
-                _ => Value::str_from(""),
-            }
+        };
+    }
+    let prop = prop.map(super::prop_names::canonical_property_name);
+    let prop = prop.as_deref();
+    if (0xD800..=0xDFFF).contains(&cp) {
+        return match prop {
+            Some("General_Category") | Some("gc") | None => Value::str_from("Cs"),
+            Some("Block") | Some("blk") => Value::str_from(if cp <= 0xDB7F {
+                "High Surrogates"
+            } else if cp <= 0xDBFF {
+                "High Private Use Surrogates"
+            } else {
+                "Low Surrogates"
+            }),
+            _ => Value::str_from(""),
+        };
+    }
+    // Past 0x10FFFF MoarVM has no Unicode data: each property answers its
+    // type's default.
+    match prop {
+        Some(p) if super::binary_props::try_binary_property('\0', p).is_some() => {
+            Value::FALSE
         }
+        Some("Numeric_Value") | Some("nv") => Value::NIL,
+        Some("Name") | Some("na") => Value::str_from("<unassigned>"),
+        _ => Value::str_from(""),
     }
 }
 
