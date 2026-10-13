@@ -756,15 +756,11 @@ fn bare_block_body(expr: &Expr) -> Option<Vec<Stmt>> {
 /// Try to parse an inline statement modifier inside parenthesized expression.
 /// Handles: ($_ with data), (expr if cond), (expr for list), etc.
 pub(crate) fn try_inline_modifier<'a>(input: &'a str, expr: Expr) -> Option<PResult<'a, Expr>> {
-    use crate::parser::stmt::modifier::parse_statement_modifier;
-    // Check if the input starts with a modifier keyword
-    let modifier_keywords = [
-        "if", "unless", "with", "without", "for", "while", "until", "given", "when",
-    ];
-    let is_modifier = modifier_keywords
-        .iter()
-        .any(|kw| keyword(kw, input).is_some());
-    if !is_modifier {
+    use crate::parser::stmt::modifier::{
+        is_stmt_modifier_after_trailing_comma, parse_statement_modifier,
+    };
+    // A keyword followed by => is a pair key, including after a list's comma.
+    if !is_stmt_modifier_after_trailing_comma(input) {
         return None;
     }
     // A bare `{ ... }` block is the *statement* the modifier modifies, not a
@@ -788,7 +784,7 @@ pub(crate) fn try_inline_modifier<'a>(input: &'a str, expr: Expr) -> Option<PRes
         let (mut rest, mut modified_stmt) = parse_statement_modifier(input, stmt)?;
         loop {
             let (r, _) = ws(rest)?;
-            if !modifier_keywords.iter().any(|kw| keyword(kw, r).is_some()) {
+            if !is_stmt_modifier_after_trailing_comma(r) {
                 rest = r;
                 break;
             }
