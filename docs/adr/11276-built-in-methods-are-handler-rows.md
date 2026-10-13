@@ -2239,6 +2239,33 @@ the next remainder: each name it serves is a `Cool` method Rakudo reaches throug
 declares it, and the audit lists (`COOL_TEXT_FOR_MATCH`) already name most of them. `method-rows-report.py --arms`: the pure arity
 cascades go from 147 to 142 arms. Pinned in `t/regex/match/match-capture-method-rows.t`.
 
+### 9.96 Slice 5: a `Match` answers the names it does not declare on itself, not on its matched text (2026-10-13)
+
+`refactor/11276-match-fallback`. After §9.95 the `Match` block of `methods_0arg/mod.rs` still answered every name it did not
+know on the matched string (`native_method_0arg(&str_val, ...)`), so `$m.head` was the whole text, `$m.pick` a `Str`,
+`$m.naive-word-wrapper` (a `Str` method) answered, and `$m.pairup` failed on an odd one-element list. Probed: every name declared
+on `Cool`, `Str`, `Any`, `Mu` and `List`, over a plain match and a grammar match, on the pre-change binary, the new one and
+`raku`. Decisions:
+
+1. **The fallback falls through**: a name the block does not answer reaches the rows and the generic arms below, on the `Match`
+   itself. `head`, `pick`, `roll`, `pairup`, `permutations`, `combinations`, `tree` and the grammar match's `minmax` now give
+   Rakudo's answers; `naive-word-wrapper` is `X::Method::NotFound`.
+2. **The `Match` shape reaches `Cool`'s numeric methods** (`COOL_NUMERIC_FOR_COLLECTIONS`) and `COOL_COERCE_FOR_MATCH`
+   (`Rat`, `FatRat`, `Failure`, `parse-names`, `uniparse`, `AST`), which the fallback used to serve on the string. `numify` reads a
+   `Match` as its text (`Match.Numeric` is `self.Str.Numeric`), and so does `Cool.Real`.
+3. **`Cool.FatRat` and `Cool.AST` are rows** (Rakudo declares both on `Cool`; the recognition table gains them). `FatRat` reads its
+   receiver as `Cool.Rat` does, `AST` (an interpreter row: the parse scans `use`d modules with the interpreter's paths) parses
+   the receiver's string form.
+4. **`Any.end` reaches a `Match`** and counts its positional captures (`1` for two, `-1` for a grammar match with none).
+5. **`list` and `Capture` are `Capture`'s rows** (`CAPTURE_FOR_MATCH`): `Capture.list` returns a `Match`'s live positional view
+   (`match_list_view`), `Capture.Capture` the `Match` itself. `reaches_audited_ancestor`, the fallback's only reader, is gone.
+
+Left in the block: the positional coercions (`Array`, `List`, `Slip`, `Seq`, `flat`, `cache`, `eager`, `reverse`) and `Hash`,
+which are `Any`'s methods in Rakudo and have no `Any` row yet. Found and filed: #13160 (`+` and `.sum` read a non-numeric `Match` as
+`0`), #13161 (`min`/`max`/`minmax`/`sort`/`unique`/`combinations`/`chrs` of a `Match` do not read its positional captures; they were
+wrong on the string before too). `method-rows-report.py --arms`: the pure arity cascades go from 142 to 140 arms. Pinned in
+`t/regex/match/match-cool-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

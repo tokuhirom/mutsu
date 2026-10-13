@@ -86,6 +86,10 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// `.Str`, which is user code for a custom class.
 // Cost: O(e), e = elements of the receiver.
 fn to_capture(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    // A `Match` is a `Capture` already: `Capture.Capture` is the receiver.
+    if target.is_match_instance() {
+        return Some(Ok(target.clone()));
+    }
     if crate::builtins::methods_0arg::coercion::capture_needs_str_key(target) {
         return None;
     }
@@ -247,9 +251,14 @@ pub(crate) fn hash_coerce(target: &Value, _args: &[Value]) -> Option<Result<Valu
     Some(Ok(Value::hash(map)))
 }
 
-/// `.list`: the positional part.
-// Cost: O(p), p = positional arguments.
+/// `.list`: the positional part. A `Match`'s is a live view of its positional
+/// captures, an unbound one a hole (`Value::match_list_view`).
+// Cost: O(p), p = positional arguments; O(1) for a Match with no unbound
+// capture (shared), O(p) otherwise.
 pub(crate) fn list(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if target.is_match_instance() {
+        return Some(Ok(target.match_list_view()));
+    }
     let ValueView::Capture { positional, .. } = target.view() else {
         return None;
     };

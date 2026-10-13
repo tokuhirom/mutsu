@@ -1,6 +1,6 @@
 //! `Str`'s and `Cool`'s conversions to a number: `Str.Numeric`, `Str.Int`,
-//! `Str.Num`, and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (ADR-11276 §9.71) and
-//! `Cool.Complex` (§9.72). `Cool.Int` has
+//! `Str.Num`, and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (ADR-11276 §9.71),
+//! `Cool.Complex` (§9.72), and `Cool.FatRat` and `Cool.AST` (§9.96). `Cool.Int` has
 //! no row: `List`, `Map`, `Str` and the numeric shapes all declare their own `Int`, so
 //! no shape would reach it (`every_row_is_reached_and_answers`).
 //!
@@ -68,6 +68,15 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
         named: &[],
     },
     narrow!("Cool", "Rat", cool_rat),
+    narrow!("Cool", "FatRat", cool_fat_rat),
+    MethodRow {
+        owner: "Cool",
+        name: "AST",
+        arity: 0,
+        handler: Handler::Interp(cool_ast),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     MethodRow {
         owner: "Cool",
         name: "UInt",
@@ -232,6 +241,36 @@ fn cool_rat(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
         Ok(number) => super::numeric_coerce::rat_of(&number?).map(Ok),
         Err(failure) => Some(Ok(failure)),
     }
+}
+
+/// `Cool.FatRat` (ADR-11276 §9.96): as `Cool.Rat`, the receiver's number (a
+/// `Str` or a `Match` parses its text, an aggregate is its count).
+// Cost: as `cool_rat`.
+fn cool_fat_rat(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let ValueView::Str(s) = target.view() {
+        return fat_rat_of_str(&s).map(Ok);
+    }
+    match number_of(target) {
+        Ok(number) => super::numeric_coerce::fat_rat_of(&number?).map(Ok),
+        Err(failure) => Some(Ok(failure)),
+    }
+}
+
+/// `Cool.AST`: the receiver's string form parsed as Raku source, a RakuAST
+/// tree (ADR-0010; ADR-11276 §9.96). A `Match` parses its matched text. An
+/// interpreter row: the parse scans the modules the source `use`s with this
+/// interpreter's module search paths (`Interpreter::str_ast_with_paths`).
+// Cost: O(n), n = chars of the source (one parse), plus the `use`d modules' scan.
+fn cool_ast(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if matches!(target.view(), ValueView::Package(_)) {
+        return None;
+    }
+    Some(interp.str_ast_with_paths(&target.to_string_value(), false))
 }
 
 /// `Cool.UInt`: `.Int`, then the range check. An interpreter row: a `Complex`

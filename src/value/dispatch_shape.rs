@@ -312,13 +312,6 @@ impl DispatchShape {
             || (!self.inherits() && const_str_eq(owner, "Mu"))
     }
 
-    /// Whether `Mu`'s or `Any`'s row `method` reaches this shape through the
-    /// per-method audit of a closed shape.
-    // Cost: O(m), m = audited names.
-    pub(crate) const fn reaches_audited_ancestor(self, method: &str) -> bool {
-        self.reaches_audited("Mu", method) || self.reaches_audited("Any", method)
-    }
-
     /// Whether this closed shape reaches some of `Any`'s list rows
     /// ([`ANY_LIST_FOR_CLOSED_SHAPES`]; [`Self::reaches_audited_any_method`]
     /// says which).
@@ -341,10 +334,14 @@ impl DispatchShape {
             return false;
         }
         match self {
-            // A `Match` answers the others on its matched string (`methods_0arg`'s
-            // `Match` delegation), but joins its positional captures and is
-            // its own `serial`.
-            DispatchShape::Match => const_str_eq(method, "join") || const_str_eq(method, "serial"),
+            // A `Match` joins its positional captures, counts them for `end`
+            // and is its own `serial`; the others' handlers do not read a
+            // `Match`'s captures (ADR-11276 §9.96).
+            DispatchShape::Match => {
+                const_str_eq(method, "join")
+                    || const_str_eq(method, "serial")
+                    || const_str_eq(method, "end")
+            }
             _ if const_str_eq(method, "sort") => false,
             // `min`/`max` read a `Pair` as its one element; the other closed
             // shapes take the interpreter's extremum walk.
@@ -398,9 +395,12 @@ impl DispatchShape {
         if matches!(self, DispatchShape::Match) {
             return const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
                 || const_list_contains(&COOL_TEXT_FOR_MATCH, method)
-                // `Match` declares `Int`/`Num`/`Numeric`, not `UInt`: `Cool.UInt`
-                // reads the matched text (§9.92).
-                || const_str_eq(method, "UInt");
+                // `Match` declares `Int`/`Num`/`Numeric`, not `UInt` or the
+                // numeric methods: `Cool`'s read the matched text through
+                // `numify` (§9.92, §9.96). `Match.Num` is its own row.
+                || const_str_eq(method, "UInt")
+                || const_list_contains(&COOL_NUMERIC_FOR_COLLECTIONS, method)
+                || const_list_contains(&COOL_COERCE_FOR_MATCH, method);
         }
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
@@ -555,6 +555,13 @@ const COOL_TEXT_FOR_MATCH: [&str; 12] = [
     "IO",
 ];
 
+/// The `Cool` coercions and parsers a `Match` reaches besides the numeric
+/// methods ([`DispatchShape::reaches_audited`]; ADR-11276 §9.96): neither
+/// `Match` nor `Capture` declares them, so each is `Cool`'s candidate, which
+/// reads the matched text (`self.Str.METHOD` or `self.Numeric.METHOD`).
+const COOL_COERCE_FOR_MATCH: [&str; 6] =
+    ["Rat", "FatRat", "Failure", "parse-names", "uniparse", "AST"];
+
 /// The `Any` list methods every closed shape with instances reaches
 /// ([`DispatchShape::reaches_audited_any`]): Rakudo's `Any` declares them as
 /// `self.list.METHOD`, and their handlers read any receiver as its list (a
@@ -571,10 +578,9 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 15] = [
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];
 /// ADR-11276 §9.95): Rakudo's `Match` is a `Capture` and declares none of
 /// them, and their handlers (`method_table::collections::capture`) read a
-/// `Match`'s captures as its parts. `list` and `Hash` stay `Match`'s own
-/// answers in `methods_0arg` (a live view of the positional captures, a
-/// mutable `Hash`).
-pub(crate) const CAPTURE_FOR_MATCH: [&str; 7] = [
+/// `Match`'s captures as its parts, `list` as a live view of its positional
+/// captures and `Capture` as the `Match` itself (§9.96).
+pub(crate) const CAPTURE_FOR_MATCH: [&str; 9] = [
     "keys",
     "values",
     "kv",
@@ -582,6 +588,8 @@ pub(crate) const CAPTURE_FOR_MATCH: [&str; 7] = [
     "antipairs",
     "hash",
     "elems",
+    "list",
+    "Capture",
 ];
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])
