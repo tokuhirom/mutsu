@@ -15,12 +15,14 @@
 //! and a call with the same argument types runs the program and goes to the
 //! winner's light bind.
 //!
-//! The program runs before the winner's own light-bind admissions are known,
-//! so a winner the bind does not admit for these arguments falls back to the
-//! generic path, which runs the value checks again. Only a program whose
+//! The value checks are user code, so they must run exactly once per call: a
+//! hit that ran them and then fell back to the generic path would run them
+//! again. So an entry records the light body of every candidate the program
+//! can pick, and every candidate's light-bind admission for the call's
+//! arguments is decided before the program runs. Only "no winner" falls back after the checks ran,
+//! and the generic path then raises the dispatch failure. Only a program whose
 //! checks are all inline WhateverCode `where`s
-//! (`StageProgram::checks_are_inline_wheres`) is taken: a `subset` predicate
-//! may be any user block.
+//! (`StageProgram::checks_are_inline_wheres`) is taken.
 
 use super::*;
 use crate::runtime::resolution_caches::{MultiLightWinner, MultiPlanLight};
@@ -28,16 +30,23 @@ use crate::runtime::resolution_caches::{MultiLightWinner, MultiPlanLight};
 impl Interpreter {
     /// The winner of a cached value-dependent multi call, with its compiled
     /// body, or `None` when the call is not one the cache can serve: no entry
-    /// for `key`, a changed package search or proto/subset set, a wrapper or a
-    /// test assertion, a winner whose body the light path has not run yet, or
-    /// no winner (the generic path reports the dispatch failure).
-    // Cost: O(1) cache probe plus the stage program's value checks.
+    /// for `key`, a changed package search or proto/subset
+    /// set, a wrapper or a test assertion, a candidate whose light bind does
+    /// not admit these arguments, or no winner (the generic path then reports
+    /// the dispatch failure, running the value checks again).
+    ///
+    /// Every candidate's admission is decided before the stage program runs,
+    /// so a winner it picks is always taken.
+    // Cost: O(c·p) admissions, c = candidates, p = their parameters, plus the
+    // stage program's value checks.
     pub(super) fn multi_plan_light_winner(
         &mut self,
+        code: &CompiledCode,
         name: &str,
         name_sym: Symbol,
         args: &[Value],
         key: &crate::runtime::FuncMultiResolveKey,
+        compiled_fns: &CompiledFns,
     ) -> Option<MultiLightWinner> {
         if self.caches.multi_plan_light_cache.is_empty() {
             return None;
@@ -56,6 +65,30 @@ impl Interpreter {
         {
             return None;
         }
+        let argc = Self::positional_light_argc(args);
+        let admitted = entry.winners.iter().all(|w| {
+            compiled_fns
+                .get(&w.key)
+                .filter(|cf| cf.fingerprint == w.fingerprint)
+                .is_some_and(|cf| {
+                    let where_verified = w
+                        .def
+                        .param_defs
+                        .iter()
+                        .any(|pd| pd.where_constraint.is_some());
+                    Self::is_positional_light_call_eligible_where(
+                        cf,
+                        name,
+                        argc,
+                        args,
+                        Some(code),
+                        where_verified,
+                    ) && !Self::call_shares_container_into_scalar_param(cf, args)
+                })
+        });
+        if !admitted {
+            return None;
+        }
         let Ok(Some(winner)) = self.run_light_bare_multi_plan(name, args, &entry.plan) else {
             return None;
         };
@@ -69,8 +102,9 @@ impl Interpreter {
     /// Record a value-dependent multi call the generic path is about to run
     /// through the positional light bind, for [`Self::multi_plan_light_winner`]:
     /// only when the family's keyed plan has an inline-checks program and
-    /// `winner` is one of its candidates.
-    // Cost: O(a + c) for a family already recorded, a = arguments,
+    /// `winner` is one of its candidates, and the compiled body of every
+    /// candidate the program can pick is found.
+    // Cost: O(a + c) for a winner already recorded, a = arguments,
     // c = candidates; plus O(f) to find the body's key, f = `compiled_fns`
     // entries, once per winner.
     pub(super) fn note_multi_plan_light_call(
@@ -91,36 +125,49 @@ impl Interpreter {
         let Some((plan_key, plan)) = self.light_bare_multi_plan(name, args, &keys) else {
             return;
         };
-        if !Self::plan_has_candidate(&plan, winner) {
+        let candidates = Self::plan_program_candidates(&plan);
+        if !candidates.iter().any(|c| Arc::ptr_eq(c, winner)) {
             return;
         }
         let key = (self.current_package_sym(), name_sym, keys);
         let generation = self.caches.fn_resolve_gen;
-        let previous = self
+        if self
             .caches
             .multi_plan_light_cache
             .get(generation, &key, || {
                 self.dispatch.fn_family_gens.of_name(name_sym)
-            });
-        let mut winners = match &previous {
-            Some(entry) if Arc::ptr_eq(&entry.plan, &plan) => entry.winners.clone(),
-            _ => Vec::new(),
-        };
-        if winners.iter().any(|w| Arc::ptr_eq(&w.def, winner)) {
+            })
+            .is_some_and(|entry| Arc::ptr_eq(&entry.plan, &plan))
+        {
             return;
         }
-        let Some(body_key) = compiled_fns
-            .iter()
-            .find(|(_, f)| std::ptr::eq(Arc::as_ptr(f), cf))
-            .map(|(k, _)| *k)
-        else {
-            return;
-        };
-        winners.push(MultiLightWinner {
-            def: Arc::clone(winner),
-            key: body_key,
-            fingerprint: cf.fingerprint,
-        });
+        // The winner's body is the one this call is about to run; every other
+        // candidate's is found the way `find_compiled_function_inner` finds a
+        // multi winner's, by its body fingerprint, among the family's keys.
+        let base = crate::runtime::dispatch_resolve::function_key_base_name(name);
+        let mut winners = Vec::with_capacity(candidates.len());
+        for candidate in &candidates {
+            let fingerprint = candidate.body_fingerprint();
+            let mut found = compiled_fns.iter().filter(|(k, f)| {
+                if Arc::ptr_eq(candidate, winner) {
+                    std::ptr::eq(Arc::as_ptr(f), cf)
+                } else {
+                    f.fingerprint == fingerprint
+                        && crate::runtime::dispatch_resolve::function_key_base_name(k.as_str())
+                            == base
+                }
+            });
+            let (Some((body_key, body)), None) = (found.next(), found.next()) else {
+                // No body yet, or two that cannot be told apart: the family
+                // stays on the generic path.
+                return;
+            };
+            winners.push(MultiLightWinner {
+                def: Arc::clone(candidate),
+                key: *body_key,
+                fingerprint: body.fingerprint,
+            });
+        }
         self.caches.multi_plan_light_cache.insert(
             generation,
             self.caches.fn_resolve_gen,

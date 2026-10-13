@@ -83,17 +83,20 @@ impl Interpreter {
         let (hit, where_verified) = match typed {
             Some(Some(hit)) => (hit, false),
             Some(None) => return Ok(false),
-            None => match self.multi_plan_light_winner(name, name_sym, &args, &key) {
-                Some(hit) => {
-                    let verified = hit
-                        .def
-                        .param_defs
-                        .iter()
-                        .any(|pd| pd.where_constraint.is_some());
-                    (hit, verified)
+            None => {
+                match self.multi_plan_light_winner(code, name, name_sym, &args, &key, compiled_fns)
+                {
+                    Some(hit) => {
+                        let verified = hit
+                            .def
+                            .param_defs
+                            .iter()
+                            .any(|pd| pd.where_constraint.is_some());
+                        (hit, verified)
+                    }
+                    None => return Ok(false),
                 }
-                None => return Ok(false),
-            },
+            }
         };
         let Some(cf) = compiled_fns
             .get(&hit.key)

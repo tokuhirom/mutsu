@@ -53,6 +53,12 @@ pub(crate) struct StageProgram {
 }
 
 impl StageProgram {
+    /// The candidates the program can pick, in narrowness order.
+    // Cost: O(1) to start, O(s) to drain, s = steps.
+    pub(crate) fn candidates(&self) -> impl Iterator<Item = &Arc<FunctionDef>> {
+        self.steps.iter().map(|step| &step.def)
+    }
+
     /// Whether every value check is an inline WhateverCode `where` (no
     /// `subset` predicate, which may be any user block). The multi light
     /// call (`vm_multi_plan_light_call`) runs such a program and may still

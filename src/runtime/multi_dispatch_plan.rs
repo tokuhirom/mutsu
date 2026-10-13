@@ -392,9 +392,12 @@ impl Interpreter {
         }
     }
 
-    /// Whether `def` is one of `plan`'s candidates (by identity).
-    // Cost: O(c), c = candidates.
-    pub(crate) fn plan_has_candidate(plan: &BareMultiPlan, def: &Arc<FunctionDef>) -> bool {
-        plan.stage.iter().any(|entry| Arc::ptr_eq(&entry.def, def))
+    /// The candidates `plan`'s stage program can pick (empty without one).
+    // Cost: O(s), s = program steps.
+    pub(crate) fn plan_program_candidates(plan: &BareMultiPlan) -> Vec<Arc<FunctionDef>> {
+        match plan.program.get() {
+            Some(Some(program)) => program.candidates().cloned().collect(),
+            _ => Vec::new(),
+        }
     }
 }

@@ -22,11 +22,12 @@ pub(crate) struct MultiLightWinner {
 
 /// `multi_plan_light_cache`'s entry: a value-dependent multi family's keyed
 /// dispatch plan, whose stage program picks the winner per call, and the
-/// compiled body of each winner the positional light path has run so far
-/// (`vm_multi_plan_light_call.rs`).
+/// compiled body of each candidate it can pick (`vm_multi_plan_light_call.rs`).
 pub(crate) struct MultiPlanLight {
     pub(crate) plan_key: crate::runtime::multi_dispatch_plan::BareMultiPlanKey,
     pub(crate) plan: Arc<crate::runtime::multi_dispatch_plan::BareMultiPlan>,
+    /// One per candidate the stage program can pick, so a winner it picks
+    /// always has its body here.
     pub(crate) winners: Vec<MultiLightWinner>,
 }
 
