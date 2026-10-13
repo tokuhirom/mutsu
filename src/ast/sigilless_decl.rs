@@ -48,16 +48,22 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
             is_dynamic: false,
             ..
         },
-        bind @ Stmt::SyntheticBlock(_),
+        Stmt::SyntheticBlock(bind),
     ] = stmts.as_slice()
     {
-        let decl = declaration(bind)?;
+        let decl = expansion(bind)?;
         return (matches!(decl.expr, Expr::Var(v) if v == inner)).then_some(SigillessDecl {
             declarator: Some(declarator),
             ..decl
         });
     }
-    let (decl, marked) = match stmts.as_slice() {
+    expansion(stmts)
+}
+
+/// The statements of the parser's sigilless expansion, read back.
+// Cost: O(t), t = custom traits of the declaration.
+fn expansion(stmts: &[Stmt]) -> Option<SigillessDecl<'_>> {
+    let (decl, marked) = match stmts {
         [
             decl @ Stmt::VarDecl { .. },
             Stmt::MarkSigillessReadonly(marked),
