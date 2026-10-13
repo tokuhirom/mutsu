@@ -781,10 +781,9 @@ impl Interpreter {
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
     /// compile each element as a regex pattern, collapsing to a character class
-    /// when possible. Returns `None` (caller should `continue`) when the array
-    /// is empty / unset. Shared by `<@var>` and its `<?@var>` / `<!@var>`
+    /// when possible. An empty array never matches (`<!>`). Shared by `<@var>` and its `<?@var>` / `<!@var>`
     /// lookahead forms.
-    fn array_var_alternation_atom(&self, env_key: &str, mode: RegexParseMode) -> Option<RegexAtom> {
+    fn array_var_alternation_atom(&self, env_key: &str, mode: RegexParseMode) -> RegexAtom {
         // Reads the array's VALUE at parse time; the tree is not a function of
         // the pattern text alone. `.deref_container()` mirrors the `<$var>`
         // form's `.into_deref()` a few match arms below: a lexical the
@@ -842,13 +841,13 @@ impl Interpreter {
                 alt_patterns.push(parsed);
             }
         }
+        // An empty array is an alternation with no branches: it never
+        // matches, like Rakudo's (#13152): the `<!>` always-fail atom.
         if alt_patterns.is_empty() {
-            return None;
+            return RegexAtom::Named("!".into());
         }
-        Some(
-            try_collapse_alternation_to_charclass(&alt_patterns)
-                .unwrap_or(RegexAtom::Alternation(alt_patterns)),
-        )
+        try_collapse_alternation_to_charclass(&alt_patterns)
+            .unwrap_or(RegexAtom::Alternation(alt_patterns))
     }
 
     /// Build a zero-width lookahead assertion wrapping a *named subrule* call:
@@ -3735,11 +3734,8 @@ impl Interpreter {
                                         // `!@` is not mistaken for a negated named-class assertion.
                                         let negated = trimmed.starts_with('!');
                                         let env_key = &trimmed[1..]; // drop '?'/'!', keep '@var'
-                                        let Some(inner_atom) =
-                                            self.array_var_alternation_atom(env_key, mode)
-                                        else {
-                                            continue;
-                                        };
+                                        let inner_atom =
+                                            self.array_var_alternation_atom(env_key, mode);
                                         // ADR-0046 Slice 1: array interpolation
                                         // terminates the declarative LTM prefix
                                         // unconditionally (ADR §2.1) -- mark the
@@ -4274,13 +4270,8 @@ impl Interpreter {
                                         // prefix unconditionally, so mark the resulting
                                         // token as runtime-interpolated (propagated to
                                         // the token push below via `runtime_value_atom`).
-                                        match self.array_var_alternation_atom(trimmed, mode) {
-                                            Some(atom) => {
-                                                runtime_value_atom = true;
-                                                atom
-                                            }
-                                            None => continue,
-                                        }
+                                        runtime_value_atom = true;
+                                        self.array_var_alternation_atom(trimmed, mode)
                                     } else if let Some(prop_name) = trimmed.strip_prefix("?:") {
                                         // <?:PropName> — zero-width positive Unicode property assertion
                                         // (the positive twin of `<!:PropName>` above).
