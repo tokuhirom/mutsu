@@ -25,6 +25,8 @@
 //! a & b      Regex::Conjunction(a, b)           a && b   Regex::SequentialConjunction(a, b)
 //! $(1+1)     Regex::Interpolation(sequential => False,
 //!                                 var => Contextualizer::Item(StatementSequence(...)))
+//! @$ref      Regex::Interpolation(sequential => False,
+//!                                 var => Contextualizer::List(Var::Lexical("$ref")))
 //! <rx=$r>    Assertion::Alias(name => "rx", assertion => Assertion::InterpolatedVar(...))
 //! ```
 
@@ -85,6 +87,12 @@ pub(crate) enum RegexExtension {
         sequential: bool,
         code: Box<RegexCode>,
     },
+    /// `@$ref`: a variable interpolated in the context its sigil names.
+    ContextualizedVariable {
+        sigil: char,
+        name: String,
+        sequential: bool,
+    },
     /// `<rx=$r>`, `<foo=[bao]>`: an alias over an assertion that is not a
     /// subrule call.
     Alias {
@@ -110,7 +118,8 @@ impl RegexExtension {
             | Self::BackReferencePositional(_)
             | Self::Recurse
             | Self::InterpolatedQuote { .. }
-            | Self::ContextualizedInterpolation { .. } => Vec::new(),
+            | Self::ContextualizedInterpolation { .. }
+            | Self::ContextualizedVariable { .. } => Vec::new(),
         }
     }
 
@@ -130,7 +139,8 @@ impl RegexExtension {
             | Self::BackReferencePositional(_)
             | Self::Recurse
             | Self::InterpolatedQuote { .. }
-            | Self::ContextualizedInterpolation { .. } => Vec::new(),
+            | Self::ContextualizedInterpolation { .. }
+            | Self::ContextualizedVariable { .. } => Vec::new(),
         }
     }
 
@@ -178,6 +188,13 @@ impl RegexExtension {
     // Cost: O(n), n = size of the construct.
     pub(super) fn to_source(&self) -> String {
         match self {
+            // `<?|b>` / `<!|b>`: a lookahead over a boundary that always
+            // holds passes or fails outright.
+            Self::Lookahead { negated, assertion }
+                if matches!(**assertion, RegexNode::AssertionPass) =>
+            {
+                if *negated { "<!>" } else { "<?>" }.to_string()
+            }
             Self::Lookahead { negated, assertion } => {
                 let marker = if *negated { '!' } else { '?' };
                 let inner = assertion.to_source();
@@ -216,6 +233,7 @@ impl RegexExtension {
             Self::ContextualizedInterpolation { sigil, code, .. } => {
                 format!("{sigil}({})", code.code)
             }
+            Self::ContextualizedVariable { sigil, name, .. } => format!("{sigil}${name}"),
             Self::Alias { alias, assertion } => {
                 let inner = assertion.to_source();
                 format!("<{alias}={}", inner.strip_prefix('<').unwrap_or(&inner))

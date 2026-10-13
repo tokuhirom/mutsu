@@ -803,3 +803,27 @@ name scan lists the stub packages of a qualified variable, and `OUR::A` /
 `MY::A` over a name that resolves is a `Term::Name` of the qualified name,
 whether `A` is a type or a term (it was a `Call::Name`, which lowered to a
 sub lookup).
+
+### 6.31 S10: regex boundary assertions and other tree gaps (2026-10-13)
+
+Several regex spellings had no regex-tree node, so a regex holding one lost
+its whole tree and refused to round-trip. Measured on rakudo 2026.09:
+`<|b>`, `<|c>` and `<|g>` are `Assertion::Pass` (a grapheme or codepoint
+boundary holds at every position of an NFG string), and `<?|w>` / `<!|w>` /
+`<!|b>` are an `Assertion::Lookahead` over `wb` / `Pass`; the tree models
+them so, and spells a lookahead over `Pass` back as `<?>` / `<!>`. An inline
+adverb before an atom (`:i<[ab]>`) is the modifier followed by the atom,
+`*:?` / `*:!` are the frugal / greedy quantifier, `@$ref` is an
+`Interpolation` over `Contextualizer::List(Var::Lexical)` (a new
+`RegexExtension::ContextualizedVariable`), `$( a; b )` may hold several
+statements, `<rx={$r}>` is an `Assertion::Alias` over an
+`InterpolatedBlock`, a lookaround may hold any RakuAST-only construct (a
+back-reference), and a regex literal argument of a subrule call
+(`<v(/\d+/)>`) is spelled back from its tree. Execution keeps the regex text.
+
+Two runtime-parser bugs surfaced on the way and are fixed in the matcher's
+`<?before …>` body scanner: a bracketed escape inside a class
+(`<-[\x[22]]>`) and whitespace between the parts of a compound class
+(`<[0..9] + [x]>`) closed the assertion early; and an inline adverb written
+right after an atom (`/x:i<[ab]>/`) was read as that atom's `:` backtrack
+control.

@@ -1533,6 +1533,14 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             _ => None,
         },
         crate::ast::Expr::LiteralSrc(_, source) => Some(source.to_string()),
+        // `<v(/\d+/)>`: a regex argument, spelled from its tree. A `/` in the
+        // pattern would end the spelled literal early.
+        crate::ast::Expr::RegexLiteral { tree, .. }
+            if tree.adverbs.is_empty() && tree.declaration_kind.is_none() =>
+        {
+            let source = tree.to_source();
+            (!source.contains('/')).then(|| format!("/{source}/"))
+        }
         // `"a$b"`: each computed part as an interpolated `{…}` block, which
         // reads the same value as the variable spelling.
         crate::ast::Expr::StringInterpolation(parts) => {
@@ -2052,8 +2060,9 @@ impl Parser {
                 return None;
             }
         };
-        // An argument (`:i(0)`) is not modelled.
-        if matches!(self.chars.get(self.pos), Some('(' | '<' | '[')) {
+        // An argument (`:i(0)`) is not modelled. A `<` or `[` right after the
+        // adverb starts the next atom, as in rakudo (`:i<[ab]>`).
+        if self.chars.get(self.pos) == Some(&'(') {
             self.pos = start;
             return None;
         }
@@ -2347,6 +2356,22 @@ impl Parser {
     }
 
     fn parse_array_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
+        // `@$ref`: the array a scalar holds.
+        if self.chars.get(self.pos + 1) == Some(&'$') {
+            let start = self.pos;
+            self.pos += 2;
+            let Some(name) = self.parse_variable_name() else {
+                self.pos = start;
+                return None;
+            };
+            return Some(RegexNode::Extension(
+                RegexExtension::ContextualizedVariable {
+                    sigil: '@',
+                    name,
+                    sequential,
+                },
+            ));
+        }
         self.pos += 1; // '@'
         let name = self.parse_twigil_variable_name()?;
         Some(RegexNode::ArrayInterpolation { name, sequential })
@@ -2447,16 +2472,18 @@ impl Parser {
                     assertion: Box::new(call),
                 }));
             }
-            // `<rx=$r>` / `<foo=[bao]>`: an alias over an assertion that is
-            // no subrule call.
+            // `<rx=$r>` / `<foo=[bao]>` / `<rx={$r}>`: an alias over an
+            // assertion that is no subrule call.
             if is_simple_subrule_name(alias)
                 && capturing
-                && target.starts_with(['$', '@', '%', '[', '-', '+', ':'])
+                && target.starts_with(['$', '@', '%', '[', '-', '+', ':', '{'])
                 && let Some(tree) =
                     RegexTree::parse_lookaround_body(&format!("<{target}>"), self.in_unit_parse)
                 && matches!(
                     tree.body,
-                    RegexNode::RegexValueInterpolation { .. } | RegexNode::CharClassAssertion(_)
+                    RegexNode::RegexValueInterpolation { .. }
+                        | RegexNode::CharClassAssertion(_)
+                        | RegexNode::InterpolatedBlock { .. }
                 )
             {
                 return Some(RegexNode::Extension(RegexExtension::Alias {
@@ -2567,7 +2594,7 @@ impl Parser {
             .iter()
             .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(_)))
             .count();
-        if statements != 1 {
+        if statements == 0 {
             return None;
         }
         self.pos = end + 1;
@@ -3365,6 +3392,9 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::MatchTo
         | RegexNode::AssertionPass
         | RegexNode::AssertionFail => true,
+        // A construct only the RakuAST boundary reads (`$<x>`, `<?alpha>`):
+        // execution keeps the text, which the lowerer's own check declines.
+        RegexNode::Extension(_) => true,
         other => is_executable_lookaround_body(other),
     }
 }

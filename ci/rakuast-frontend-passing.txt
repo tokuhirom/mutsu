@@ -1246,6 +1246,7 @@ t/concurrency/thread-lock/method-in-nested-block-lexicals-shared-across-threads.
 t/concurrency/thread-lock/module-lexical-reassigned-seen-by-thread.t
 t/concurrency/thread-lock/module-scalar-callable-thread-visible.t
 t/concurrency/thread-lock/module-scope-atomicint-from-imported-routine.t
+t/concurrency/thread-lock/my-enum-thread-registry-cow.t
 t/concurrency/thread-lock/new-bless-junction-no-autothread.t
 t/concurrency/thread-lock/nqp-atomic-ops.t
 t/concurrency/thread-lock/nqp-istrue-hllize-lock-ops.t
@@ -1748,6 +1749,7 @@ t/grammar/grammar-actions-type-object-sparse.t
 t/grammar/grammar-alias-action-fires-once.t
 t/grammar/grammar-alias-actions.t
 t/grammar/grammar-alias-capture-identity.t
+t/grammar/grammar-aliased-regex-subrule.t
 t/grammar/grammar-also-is-replaces-implicit-parent.t
 t/grammar/grammar-assertion-side-effects.t
 t/grammar/grammar-backtracked-action-replay.t
@@ -1783,6 +1785,7 @@ t/grammar/grammar-instance-parse.t
 t/grammar/grammar-is-export.t
 t/grammar/grammar-left-recursion-compiled-call.t
 t/grammar/grammar-lexical-and-wrap-subrule-frames.t
+t/grammar/grammar-ltm-rule-ws-after-zero-width.t
 t/grammar/grammar-ltm-unknown-subrule.t
 t/grammar/grammar-make-builtin-lane.t
 t/grammar/grammar-make-named-argument.t
@@ -1832,6 +1835,7 @@ t/grammar/grammar-rule-comment-and-lookaround-layout.t
 t/grammar/grammar-rule-constant-argument-forms.t
 t/grammar/grammar-rule-dynvar-decl-frames.t
 t/grammar/grammar-rule-optional-separator-whitespace.t
+t/grammar/grammar-rule-params-bound-per-call.t
 t/grammar/grammar-rule-percent-percent-sep.t
 t/grammar/grammar-rule-separated-quantifier-whitespace.t
 t/grammar/grammar-scratch-interp-lean.t
@@ -2315,6 +2319,7 @@ t/lang/parsing/parser-anonymous-state-assignment.t
 t/lang/parsing/parser-batch3.t
 t/lang/parsing/parser-batch4.t
 t/lang/parsing/parser-expression-gaps.t
+t/lang/parsing/parser-lowercase-type-smiley-union.t
 t/lang/parsing/parser-modifier-key-after-comma.t
 t/lang/parsing/parser-pipe-prefixed-declaration.t
 t/lang/parsing/semicolon-list-literal.t
@@ -2367,6 +2372,7 @@ t/lang/quoting/interpolation-uninit-warning-names.t
 t/lang/quoting/line-number-after-heredoc.t
 t/lang/quoting/line-var-interpolation.t
 t/lang/quoting/paren-quote-delimiter.t
+t/lang/quoting/parser-single-quoted-q-escape-consumes-following-source.t
 t/lang/quoting/pod-not-collected-from-heredoc.t
 t/lang/quoting/q-delimiter-escape-semantics.t
 t/lang/quoting/q-fatarrow-key.t
@@ -2975,6 +2981,7 @@ t/nativecall/cstruct-carray-expr-index-write.t
 t/nativecall/cstruct-field-constant-type-alias.t
 t/nativecall/cstruct-field-enum-write.t
 t/nativecall/cstruct-new-reference-fields.t
+t/nativecall/cstruct-pointer-field-module-class.t
 t/nativecall/cstruct-private-attr-read.t
 t/nativecall/cstruct-returned-arg-body.t
 t/nativecall/dynamic-array-parameterization-push-wrap.t
@@ -3515,6 +3522,7 @@ t/oo/construct/ctor-lane-user-new-declines.t
 t/oo/construct/ctor-plan-cached-class-shape.t
 t/oo/construct/ctor-self-identity.t
 t/oo/construct/datetime-constructor-container-arg.t
+t/oo/construct/hash-subclass-bless-nameds.t
 t/oo/construct/hash-subclass-positional-construction.t
 t/oo/construct/int-constructor-and-typeobject-regression.t
 t/oo/construct/mixin-type-object-custom-new-bless.t
@@ -4126,6 +4134,7 @@ t/oo/role/raku-container-mixin-role-raku.t
 t/oo/role/rational-role.t
 t/oo/role/return-type-imported-parameterized-role.t
 t/oo/role/role-anonymous-enum.t
+t/oo/role/role-assign-key-hash-subclass.t
 t/oo/role/role-attr-default-captured-scope.t
 t/oo/role/role-attr-shadows-builtin-method.t
 t/oo/role/role-attribute-built-bind.t
@@ -4164,6 +4173,7 @@ t/oo/role/role-coerce-method.t
 t/oo/role/role-composed-by-class-and-parent-mro.t
 t/oo/role/role-composed-method-param-typo.t
 t/oo/role/role-composition-gaps.t
+t/oo/role/role-compound-name-not-a-scope.t
 t/oo/role/role-conflict.t
 t/oo/role/role-constraint-transitive-narrowness.t
 t/oo/role/role-decl-adverbs-signature.t
@@ -4592,6 +4602,7 @@ t/rakuast/rakuast-regex-argumented-aliases.t
 t/rakuast/rakuast-regex-argumented-subrules.t
 t/rakuast/rakuast-regex-assertions-and-backrefs.t
 t/rakuast/rakuast-regex-blocks-properties-quotes.t
+t/rakuast/rakuast-regex-boundaries-and-args.t
 t/rakuast/rakuast-regex-char-class-assertions.t
 t/rakuast/rakuast-regex-char-classes.t
 t/rakuast/rakuast-regex-conjunction-interpolation.t
@@ -4719,6 +4730,7 @@ t/regex/match/frugal-quantifier-global-match.t
 t/regex/match/instance-regex-smartmatch.t
 t/regex/match/io-path-smartmatch-permissions.t
 t/regex/match/make-requires-match.t
+t/regex/match/match-any-list-methods.t
 t/regex/match/match-caps-chunks.t
 t/regex/match/match-caps.t
 t/regex/match/match-capture-exists.t
@@ -4870,9 +4882,11 @@ t/regex/regex-assertion-outer-scalar-write.t
 t/regex/regex-assertion-quoted-angle.t
 t/regex/regex-atom-run-giveback-prune.t
 t/regex/regex-attribute-twigil-rejected.t
+t/regex/regex-backref-in-group.t
 t/regex/regex-backslash-negated-classes.t
 t/regex/regex-basic.t
 t/regex/regex-bool-lexical-topic.t
+t/regex/regex-boundary-assertions-bcg.t
 t/regex/regex-carrier-writeback-coherence.t
 t/regex/regex-cclass-parity.t
 t/regex/regex-code-assertion-quoted-braces.t
@@ -4884,6 +4898,7 @@ t/regex/regex-code-block-process-magicals.t
 t/regex/regex-code-block-quoted-brace.t
 t/regex/regex-code-block-slash-var.t
 t/regex/regex-code-block-writeback.t
+t/regex/regex-code-count-and-list-interpolation.t
 t/regex/regex-code-interp-lazy-frame.t
 t/regex/regex-code-interp-regex-value.t
 t/regex/regex-code-runs-on-caller.t
@@ -4943,6 +4958,7 @@ t/regex/regex-lr-bookkeeping-gate.t
 t/regex/regex-ltm-declarative-prefix.t
 t/regex/regex-ltm-first-step-guard.t
 t/regex/regex-ltm-furthest-fate.t
+t/regex/regex-ltm-interpolation-provenance.t
 t/regex/regex-ltm-litlen-subrule-llmarks.t
 t/regex/regex-ltm-losing-branch-code.t
 t/regex/regex-ltm-measured-branch-rank.t
@@ -5005,6 +5021,7 @@ t/regex/regex-scoped-splice-compiled.t
 t/regex/regex-separator-after-prefix.t
 t/regex/regex-separator-leading-empty.t
 t/regex/regex-separator-zero-iterations-slots.t
+t/regex/regex-short-adverb-tight-atom.t
 t/regex/regex-sibling-subrule-same-position.t
 t/regex/regex-sigil-alias-quantified-subrule.t
 t/regex/regex-sigil-alias-regex-var-call.t
@@ -5018,6 +5035,7 @@ t/regex/regex-str-coercion-name.t
 t/regex/regex-str-coercion-warns.t
 t/regex/regex-subpattern-parse-memo.t
 t/regex/regex-subrule-absolute-position.t
+t/regex/regex-subrule-parameter-typecheck.t
 t/regex/regex-subrule-parse-cache.t
 t/regex/regex-symbolic-call-lazy.t
 t/regex/regex-temp-dynamic-keeps-value.t
@@ -5122,6 +5140,7 @@ t/regex/syntax/charclass-fold-cycle.t
 t/regex/syntax/charclass-negated-lead-union.t
 t/regex/syntax/charclass-unicode-property-hyphen-operator.t
 t/regex/syntax/explicit-greedy-quantifier-marker.t
+t/regex/syntax/frugal-backtracking-control.t
 t/regex/syntax/lookbehind.t
 t/regex/syntax/multi-name-shadows-builtin-char-class.t
 t/regex/syntax/quantifier-alternation-backtrack.t
@@ -5143,6 +5162,7 @@ t/regex/syntax/regex-char-class-literal-brace.t
 t/regex/syntax/regex-charclass-crlf-boundary.t
 t/regex/syntax/regex-charclass-escapes.t
 t/regex/syntax/regex-charclass-grapheme-fastpath.t
+t/regex/syntax/regex-charclass-in-lookaround.t
 t/regex/syntax/regex-charclass-negated-property-union.t
 t/regex/syntax/regex-charclass-property-value.t
 t/regex/syntax/regex-charclass-subrule-union.t
@@ -5520,6 +5540,7 @@ t/routines/dispatch/multi-value-dependent-dispatch-plan.t
 t/routines/dispatch/multi-variadic-vs-smiley-narrowness.t
 t/routines/dispatch/multi-variadic-where-named-bind-check.t
 t/routines/dispatch/multi-where-copy-order.t
+t/routines/dispatch/multi-where-light-call.t
 t/routines/dispatch/multi-where-literal-compare.t
 t/routines/dispatch/multi-where-narrowest-first.t
 t/routines/dispatch/multi-where-otf-dispatch.t
@@ -6420,6 +6441,7 @@ t/types/numeric/numeric-func-on-allomorph.t
 t/types/numeric/numeric-functions.t
 t/types/numeric/numeric-real-target.t
 t/types/numeric/numeric-subclass-user-str-interpolation.t
+t/types/numeric/numeric-type-object-range-rows.t
 t/types/numeric/numeric-uninitialized-arith.t
 t/types/numeric/numeric-uninitialized-infix.t
 t/types/numeric/power-unicode-superscript.t
@@ -6543,6 +6565,7 @@ t/types/string/unicode-compound-assign.t
 t/types/string/unicode-identifiers.t
 t/types/string/unicode-infix-alias-by-name.t
 t/types/string/unicode-infix-op.t
+t/types/string/unicode-int-codepoint-bounds.t
 t/types/string/unicode-name-alias-spelling.t
 t/types/string/unicode-operators.t
 t/types/string/unicode-ops-hyper.t
@@ -6562,6 +6585,7 @@ t/types/string/uniprop-bidi-class-en.t
 t/types/string/uniprop-bidi-class-on.t
 t/types/string/uniprop-bidi-class-rtl-letters.t
 t/types/string/uniprop-bidi-class-separators.t
+t/types/string/uniprop-codepoint-bounds.t
 t/types/string/uniprop-emoji-modifier-segmentation.t
 t/types/string/uniprop-general-category.t
 t/types/string/uniprop-grapheme-cluster-break-uax29.t
