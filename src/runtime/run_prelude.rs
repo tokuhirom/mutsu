@@ -127,6 +127,11 @@ impl Interpreter {
         if !source.contains("trait_mod:<of>") && !source.contains("trait_mod:<returns>") {
             return;
         }
+        // A compunit declaring its own handler keeps it: a prelude candidate
+        // would collide with a plain `sub` of the same name.
+        if source.contains("sub trait_mod:<of>") || source.contains("sub trait_mod:<returns>") {
+            return;
+        }
         use std::sync::OnceLock;
         static TRAIT_MOD_OF_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = TRAIT_MOD_OF_STMTS.get_or_init(|| {
