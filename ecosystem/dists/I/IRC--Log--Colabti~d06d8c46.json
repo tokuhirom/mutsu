@@ -13,23 +13,22 @@
   "dist": "IRC::Log::Colabti",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "merge right number of entries",
-        "nok": 2,
-        "ok": 74,
+        "nok": 0,
+        "ok": 76,
         "plan": 76,
-        "secs": 1.68,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 76,
         "plan": 76,
-        "secs": 11.77,
+        "secs": 7.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +40,7 @@
         "nok": 0,
         "ok": 46,
         "plan": 46,
-        "secs": 0.88,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +50,7 @@
         "nok": 0,
         "ok": 46,
         "plan": 46,
-        "secs": 1.43,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,10 +62,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-11",
+    "date": "2026-10-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "406be350",
+    "mutsu_commit": "8e9f3690",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -77,13 +76,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/RC/IRC_LOG_COLABTI/1a69532335e2a7d39768942d7df3cbc810b142c5.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 122,
     "baseline_files": 2,
-    "mutsu_assertions": 120,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 122,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.53"
 }

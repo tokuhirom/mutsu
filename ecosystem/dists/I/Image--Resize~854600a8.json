@@ -15,11 +15,11 @@
       "cmp": "no_baseline",
       "path": "t/01-resize.rakutest",
       "raku": {
-        "first_failure": "Unable top open 'gdImagePtr<5603021464032>' for writing",
+        "first_failure": "Unable top open 'gdImagePtr<5780193059296>' for writing",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 12.72,
+        "secs": 7.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -29,11 +29,11 @@
       "cmp": "no_baseline",
       "path": "t/02-more.rakutest",
       "raku": {
-        "first_failure": "Unable top open 'gdImagePtr<2247541787016>' for writing",
+        "first_failure": "Unable top open 'gdImagePtr<6220154472840>' for writing",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.32,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -43,11 +43,11 @@
       "cmp": "no_baseline",
       "path": "t/03-convert.rakutest",
       "raku": {
-        "first_failure": "Unable top open 'gdImagePtr<4652962284000>' for writing",
+        "first_failure": "Unable top open 'gdImagePtr<3696293985240>' for writing",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.27,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,11 +57,11 @@
       "cmp": "no_baseline",
       "path": "t/04-scale.rakutest",
       "raku": {
-        "first_failure": "Unable top open 'gdImagePtr<4372765227912>' for writing",
+        "first_failure": "Unable top open 'gdImagePtr<2976081923776>' for writing",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.14,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,10 +73,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-11",
+    "date": "2026-10-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "406be350",
+    "mutsu_commit": "8e9f3690",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

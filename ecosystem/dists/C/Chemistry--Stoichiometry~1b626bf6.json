@@ -27,7 +27,7 @@
   "dist": "Chemistry::Stoichiometry",
   "files": [],
   "load": {
-    "Chemistry::Stoichiometry": "raku_also_fails",
+    "Chemistry::Stoichiometry": "A method 'is-zero' already exists, can't create lazy accessor $.is-zero'",
     "Chemistry::Stoichiometry::Actions::EquationBalance": "A method 'is-zero' already exists, can't create lazy accessor $.is-zero'",
     "Chemistry::Stoichiometry::Actions::EquationMatrix": "A method 'is-zero' already exists, can't create lazy accessor $.is-zero'",
     "Chemistry::Stoichiometry::Actions::MolecularMass": "ok",
@@ -39,10 +39,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-11",
+    "date": "2026-10-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "406be350",
+    "mutsu_commit": "8e9f3690",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
