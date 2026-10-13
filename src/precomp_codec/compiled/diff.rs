@@ -85,7 +85,6 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         token_decl_plans,
         decl_plans,
         trir_call_sites,
-        closure_trir,
         reduction_specs,
         locals,
         locals_sym,

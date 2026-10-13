@@ -6494,10 +6494,6 @@ pub(crate) struct CompiledCode {
     /// ADR-0110 §3.3: the compile-time-resolved TRIR call sites this chunk
     /// contains, indexed by [`OpCode::CallTrir`]'s operand.
     pub(crate) trir_call_sites: Vec<crate::trir::TrCallSite>,
-    /// A closure literal's body compiled to TRIR (#8335,
-    /// `trir::compile::compile_block`), run by a value call of the closure
-    /// instead of the untyped closure entry when the call's shape allows.
-    pub(crate) closure_trir: Option<std::sync::Arc<crate::trir::TrChunk>>,
     /// The typed reduction operators this chunk contains, indexed by
     /// [`OpCode::Reduction`]'s operand. A reduction's operator shape is fixed
     /// by the source text, so it is decoded once here instead of being
@@ -8048,7 +8044,6 @@ impl CompiledCode {
             proto_token_plans: Vec::new(),
             decl_plans: Vec::new(),
             trir_call_sites: Vec::new(),
-            closure_trir: None,
             reduction_specs: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),

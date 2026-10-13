@@ -1,10 +1,11 @@
 use Test;
 
-# A `-> $x { ... }` whose body TRIR proves runs as TRIR from a value call
-# (#8335). These pin that the TRIR entry answers what the untyped closure
-# entry answers, for each thing the entry has to get right.
+# A pointy block whose body is made of pure value ops runs through the light
+# closure call (#8335, `vm_closure_light_call.rs`). These pin that it answers
+# what the full closure entry answers, for each thing the entry has to get
+# right, and that the shapes it declines still work.
 
-plan 27;
+plan 33;
 
 # Plain results through a value call, a `.map` and a `.sort`.
 {
@@ -65,7 +66,7 @@ plan 27;
     is $two(), 2, '.assuming';
 }
 
-# A body TRIR declines keeps the untyped entry.
+# A body the light call declines keeps the full entry.
 {
     sub outer-ret() { my $b = -> $x { return $x * 3 }; $b(2); 'not reached' }
     is outer-ret(), 6, 'a return in a pointy block leaves the enclosing routine';
@@ -80,7 +81,7 @@ plan 27;
     throws-like { $div(0) }, X::Numeric::DivideByZero, 'div by zero dies';
 }
 
-# `&?ROUTINE` inside a block called through the TRIR door is the enclosing routine.
+# `&?ROUTINE` inside a block is the enclosing routine.
 {
     sub named-outer() { my $b = -> $x { &?ROUTINE.name }; $b(1) }
     is named-outer(), 'named-outer', '&?ROUTINE looks past the block';
@@ -95,4 +96,25 @@ plan 27;
     is $typed(1, 2), 3, 'a typed parameter';
     throws-like { $typed('a', 2) }, X::TypeCheck::Binding, 'a failed type check is the binder\'s error';
     is (-> { 42 })(), 42, 'a block with no parameters';
+}
+
+# Arguments the light call declines, and bodies that reach outside.
+{
+    my $id = -> $a { $a };
+    is $id(Nil).raku, 'Nil', 'a Nil argument';
+    my $x = 5;
+    my $cell = -> $v { $v };
+    is $cell($x), 5, 'a variable argument';
+    my class Pt { has $.v; method Str { "pt{$!v}" } }
+    multi infix:<+>(Pt $a, Pt $b) { Pt.new(v => $a.v + $b.v) }
+    is (-> $p, $q { $p + $q })(Pt.new(v => 1), Pt.new(v => 2)).v, 3, 'a user infix reached from the body';
+    is (-> $p { $p ~ '!' })(Pt.new(v => 7)), 'pt7!', 'a user .Str reached from the body';
+    my @log;
+    my $push = -> $v { @log.push($v) };
+    $push(1); $push(2);
+    is @log.join(','), '1,2', 'a body that calls a method still runs';
+    my $count = 0;
+    my $bump = -> $n { $count += $n };
+    $bump(3); $bump(4);
+    is $count, 7, 'a body that writes a free variable still writes it back';
 }

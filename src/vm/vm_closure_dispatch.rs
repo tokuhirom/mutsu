@@ -207,10 +207,6 @@ impl Interpreter {
         // `.map`/`.grep` argument before binding. A `MapGrep` source is always
         // finite, so this cannot hang.
         self.reify_map_grep_seq_args(&args)?;
-        // A closure literal whose body TRIR proves runs as TRIR (#8335).
-        if let Some(out) = self.try_call_closure_trir(data, cc, &args, compiled_fns) {
-            return out;
-        }
         // RAII (`PragmaGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores pragma state on drop -- including on a Rust panic unwind
         // through `call_compiled_closure_with_topic` below -- rather than a

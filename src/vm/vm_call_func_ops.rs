@@ -1708,10 +1708,10 @@ impl Interpreter {
             ));
         }
         let start = self.stack.len() - arity;
-        // A closure literal whose body TRIR proves runs as TRIR, straight off
-        // the stack (#8335).
+        // A closure body made of pure value ops runs light, straight off the
+        // stack (#8335).
         if let Some(result) =
-            self.try_value_call_closure_trir(code, start, arg_sources_idx, compiled_fns)
+            self.try_value_call_closure_light(code, start, arg_sources_idx, compiled_fns)
         {
             let result = result?;
             self.apply_pending_rw_writeback(code);

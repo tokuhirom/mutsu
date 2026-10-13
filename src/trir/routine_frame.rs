@@ -46,25 +46,13 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
         let def_file = chunk.def_file.get().copied();
-        if chunk.block {
-            // A closure literal is not a routine boundary: the same marker
-            // frame its untyped entry pushes, which `&?ROUTINE` skips.
-            self.push_block_routine_with_location(
-                self.current_package_sym(),
-                chunk.name,
-                self.current_source_line(),
-                self.executing_source_file_sym(),
-                def_file,
-            );
-        } else {
-            self.push_routine_with_location(
-                self.current_package_sym(),
-                chunk.name,
-                self.current_source_line(),
-                self.executing_source_file_sym(),
-                def_file,
-            );
-        }
+        self.push_routine_with_location(
+            self.current_package_sym(),
+            chunk.name,
+            self.current_source_line(),
+            self.executing_source_file_sym(),
+            def_file,
+        );
         let saved_unit = def_file.map(|file| {
             let unit = self.unit_of_source_sym(Some(file));
             std::mem::replace(&mut self.current_unit, unit)

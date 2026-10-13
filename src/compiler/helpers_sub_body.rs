@@ -725,7 +725,6 @@ impl Compiler {
                     fns: Some(&self.compiled_functions),
                     frame_lexicals: &frame_lexicals,
                     captured_fatal_mode: cf.captured_fatal_mode,
-                    block: false,
                 },
             );
         }

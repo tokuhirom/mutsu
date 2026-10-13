@@ -17,9 +17,10 @@
 //! declaration, no control exception, no `$_`. Such a body cannot reach the
 //! env overlay, the call frames or the caller's variables, so there is nothing
 //! to install, snapshot or write back. What remains is what any value op can
-//! still reach indirectly (a user `infix:<+>`, a `.Str` on an object): those
-//! run under an env whose parent is the caller's and whose fallback tier is
-//! the closure's capture, exactly as on the untyped entry.
+//! still reach indirectly (a user `infix:<+>`, a `.Str` on an object): such a
+//! callee runs on its own capture over the caller's env, as a callee of a
+//! positional light call does — no frame of the closure's sits between them,
+//! since the body has nothing of its own to put in one.
 //!
 //! The call itself is checked too ([`Interpreter::try_call_closure_light`]):
 //! the arguments must bind as the light binds (`closure_light_bind`,
@@ -141,6 +142,15 @@ impl LightClosureShape {
     }
 }
 
+/// How a qualifying call's arguments bind (`try_call_closure_light`).
+#[derive(Clone, Copy)]
+enum LightBind<'a> {
+    /// A bare-identifier signature: `closure_light_bind`'s item binding.
+    Legacy,
+    /// A plain `ParamDef` signature: `closure_light_def_bind`'s.
+    Def(&'a [crate::vm::LightDefParam]),
+}
+
 impl Interpreter {
     /// Run the closure `data` light (see the module doc), or answer `None`
     /// with nothing changed when the body or the call does not qualify.
@@ -155,6 +165,102 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let shape = cc.light_closure_shape.get_or_init(|| LightClosureShape::of(cc));
         let shape = shape.as_ref()?;
+        let param_syms = data.param_name_syms();
+        let sources_any = self.pending_call_arg_sources().is_some_and(|sources| {
+            sources.len() == args.len() && sources.iter().any(Option::is_some)
+        });
+        let bind = self.closure_light_admits(data, cc, shape, param_syms, args, sources_any)?;
+        let base = self.bind_closure_light(bind, args.len(), |_, i| args[i].clone())?;
+        Some(self.run_closure_light(data, cc, shape, base, compiled_fns))
+    }
+
+    /// The `CallOnValue` door: the target is `stack[start - 1]` and the
+    /// arguments `stack[start..]`. On `Some`, both are consumed; `None` leaves
+    /// the stack as it was, for the ordinary value call. Running here, before
+    /// the call site decodes its argument sources, is what spares a light call
+    /// that decode: such a body binds no `is rw` parameter, so nothing reads
+    /// them.
+    // Cost: O(p + u + a), as `try_call_closure_light`, a = the call site's
+    // argument descriptors.
+    pub(super) fn try_value_call_closure_light(
+        &mut self,
+        code: &CompiledCode,
+        start: usize,
+        arg_sources_idx: Option<u32>,
+        compiled_fns: &CompiledFns,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Sub(data) = self.stack.get(start.checked_sub(1)?)?.view() else {
+            return None;
+        };
+        let cc = data.compiled_code.as_ref()?;
+        let shape = cc.light_closure_shape.get_or_init(|| LightClosureShape::of(cc));
+        shape.as_ref()?;
+        let (data, cc) = (data.clone(), cc.clone());
+        let shape = cc.light_closure_shape.get()?.as_ref()?;
+        // The checks the value call makes on the way to the compiled closure
+        // entry: a wrapped closure runs its wrappers, a multi's dispatcher
+        // value dispatches, and an assignment through the call wants the
+        // container the untyped entry hands back.
+        let arity = self.stack.len() - start;
+        if self.in_lvalue_assignment
+            || data.is_decl_expr_thunk
+            || self.has_wrap_chain(data.id)
+            || data
+                .env
+                .contains_key_sym(crate::symbol::well_known::multi_dispatch_candidates())
+            || (arity > 0 && Self::sub_multi_method_dispatcher_name(&data).is_some())
+        {
+            return None;
+        }
+        let kinds = Self::stack_arg_kinds(code, arg_sources_idx);
+        if kinds.named || kinds.slip {
+            return None;
+        }
+        let sources_any = Self::arg_sources_name_any(code, arg_sources_idx);
+        let param_syms = data.param_name_syms();
+        let bind = self.closure_light_admits(
+            &data,
+            &cc,
+            shape,
+            param_syms,
+            &self.stack[start..],
+            sources_any,
+        )?;
+        let base = self.bind_closure_light(bind, arity, |me, i| {
+            me.stack[start + i].clone()
+        })?;
+        self.stack.truncate(start - 1);
+        // The closure entry's own unit switch (`call_compiled_closure_with_topic`)
+        // and `use fatal` scope (`call_compiled_closure_at`).
+        let unit = self.unit_of_source_sym(data.source_file_sym());
+        let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        let mut guard = crate::vm::vm_call_state_guard::PragmaGuard::new(self);
+        guard.module.fatal_mode = data.captured_fatal_mode;
+        guard.module.lexical_fatal_mode = data.captured_fatal_mode;
+        let result = guard.run_closure_light(&data, &cc, shape, base, compiled_fns);
+        let result = if guard.module.fatal_mode {
+            result.and_then(|val| match guard.failure_to_runtime_error_if_unhandled(&val) {
+                Some(err) => Err(err),
+                None => Ok(val),
+            })
+        } else {
+            result
+        };
+        drop(guard);
+        self.current_unit = saved_unit;
+        Some(result)
+    }
+
+    /// Whether the call qualifies, and how its arguments bind. Reads only.
+    fn closure_light_admits<'p>(
+        &self,
+        data: &crate::value::SubData,
+        cc: &CompiledCode,
+        shape: &LightClosureShape,
+        param_syms: &'p crate::value::ParamNameSyms,
+        args: &[Value],
+        sources_any: bool,
+    ) -> Option<LightBind<'p>> {
         // Per-process latches the slot read and the upvalue read consult by
         // name once set, and the lvalue context a `GetLocal` serves a
         // container for.
@@ -181,54 +287,58 @@ impl Interpreter {
         {
             return None;
         }
-        let param_syms = data.param_name_syms();
-        let def_params = param_syms.light_def_params.as_deref();
-        let arity = if param_syms.light_bindable {
-            param_syms.params.len()
+        let bind = if param_syms.light_bindable {
+            LightBind::Legacy
         } else {
-            def_params?.len()
+            LightBind::Def(param_syms.light_def_params.as_deref()?)
+        };
+        // The parameters are the frame, in order.
+        let arity = match bind {
+            LightBind::Legacy => param_syms.params.len(),
+            LightBind::Def(params) => params.len(),
         };
         if arity != args.len() {
             return None;
         }
-        // The parameters are the frame, in order.
         for i in 0..arity {
-            let sym = match def_params {
-                Some(params) if !param_syms.light_bindable => params[i].sym(),
-                _ => param_syms.params[i],
+            let sym = match bind {
+                LightBind::Legacy => param_syms.params[i],
+                LightBind::Def(params) => params[i].sym(),
             };
             if cc.local_sym(i) != Some(sym) {
                 return None;
             }
         }
-        if !param_syms.light_bindable {
+        let admitted = match bind {
             // `closure_light_def_bind`'s argument gate.
-            if !args.iter().all(light_def_arg_is_plain_value)
-                || self.pending_call_arg_sources().is_some_and(|sources| {
-                    sources.len() == args.len() && sources.iter().any(Option::is_some)
-                })
-            {
-                return None;
-            }
-        } else if args.iter().any(|a| {
-            matches!(
-                a.unwrap_varref().view(),
-                ValueView::Pair(..) | ValueView::ValuePair(..)
-            )
-        }) {
-            return None;
-        }
-        // Bind into a frame of their own; a value `GetLocal` would not read
-        // straight out of the slot declines before anything is installed.
+            LightBind::Def(_) => args.iter().all(light_def_arg_is_plain_value) && !sources_any,
+            // `closure_light_bind`'s.
+            LightBind::Legacy => !args.iter().any(|a| {
+                matches!(
+                    a.unwrap_varref().view(),
+                    ValueView::Pair(..) | ValueView::ValuePair(..)
+                )
+            }),
+        };
+        admitted.then_some(bind)
+    }
+
+    /// Open the closure's frame and bind the arguments into it. A value
+    /// `GetLocal` would not read straight out of its slot declines (the frame
+    /// is closed again), before anything else is touched.
+    fn bind_closure_light(
+        &mut self,
+        bind: LightBind<'_>,
+        arity: usize,
+        arg_at: impl Fn(&Self, usize) -> Value,
+    ) -> Option<crate::runtime::locals::CallerFrame> {
         let base = self.locals.push_frame(arity);
-        for (i, arg) in args.iter().enumerate() {
-            let val = match def_params {
-                Some(params) if !param_syms.light_bindable => {
-                    Self::apply_scalar_param_bind(params[i].bind(), arg.clone())
-                }
-                _ => Self::itemize_scalar_store_value(
-                    crate::runtime::types::unwrap_varref_value(arg.clone())
-                        .hllize_vm_collection(),
+        for i in 0..arity {
+            let arg = arg_at(self, i);
+            let val = match bind {
+                LightBind::Def(params) => Self::apply_scalar_param_bind(params[i].bind(), arg),
+                LightBind::Legacy => Self::itemize_scalar_store_value(
+                    crate::runtime::types::unwrap_varref_value(arg).hllize_vm_collection(),
                 ),
             };
             if !val.is_plain_local_read() {
@@ -237,7 +347,7 @@ impl Interpreter {
             }
             self.locals[i] = val;
         }
-        Some(self.run_closure_light(data, cc, shape, base, compiled_fns))
+        Some(base)
     }
 
     fn run_closure_light(
@@ -261,11 +371,6 @@ impl Interpreter {
         let saved_stack_depth = self.stack.len();
         let saved_upvalues = (!shape.upvalues.is_empty())
             .then(|| std::mem::replace(&mut self.upvalues, data.upvalues.clone()));
-        // The env a value op's callee resolves names through: the caller's,
-        // with the closure's capture as the fallback tier.
-        let mut frame = crate::env::Env::scoped_child(self.env().clone());
-        frame.set_capture_fallback(data.env.capture_view());
-        let caller_env = std::mem::replace(self.env_mut(), frame);
         let routine_base = self.routine_stack_len();
         self.push_block_routine_with_location(
             data.package,
@@ -308,7 +413,6 @@ impl Interpreter {
                     routine_base,
                     saved_upvalues,
                     locals_base,
-                    caller_env,
                     saved_line,
                 );
                 std::panic::resume_unwind(payload);
@@ -319,7 +423,6 @@ impl Interpreter {
             routine_base,
             saved_upvalues,
             locals_base,
-            caller_env,
             saved_line,
         );
         result
@@ -331,7 +434,6 @@ impl Interpreter {
         routine_base: usize,
         saved_upvalues: Option<Vec<Option<Value>>>,
         locals_base: crate::runtime::locals::CallerFrame,
-        caller_env: crate::env::Env,
         saved_line: i64,
     ) {
         self.stack.truncate(saved_stack_depth.min(self.stack.len()));
@@ -340,7 +442,6 @@ impl Interpreter {
             self.upvalues = upvalues;
         }
         self.locals.pop_frame(locals_base);
-        *self.env_mut() = caller_env;
         self.cur_source_line = saved_line;
     }
 }

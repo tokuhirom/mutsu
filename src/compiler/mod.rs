@@ -1098,7 +1098,6 @@ mod expr_block;
 mod expr_block_decl_helpers;
 mod expr_call;
 mod expr_closure;
-mod expr_closure_trir;
 mod expr_data;
 mod expr_helpers;
 mod expr_incdec_nested;

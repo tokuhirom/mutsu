@@ -32,7 +32,6 @@ impl Encode for CompiledCode {
             proto_token_plans,
             decl_plans,
             trir_call_sites,
-            closure_trir,
             reduction_specs,
             locals,
             locals_sym,
@@ -183,7 +182,6 @@ impl Encode for CompiledCode {
         Compat(proto_token_plans).encode(encoder)?;
         decl_plans.encode(encoder)?;
         trir_call_sites.encode(encoder)?;
-        closure_trir.encode(encoder)?;
         reduction_specs.encode(encoder)?;
         locals.encode(encoder)?;
         locals_sym.encode(encoder)?;
@@ -327,7 +325,6 @@ impl Decode<DecodeCtx> for CompiledCode {
             proto_token_plans: decode_serde(decoder)?,
             decl_plans: Decode::decode(decoder)?,
             trir_call_sites: Decode::decode(decoder)?,
-            closure_trir: Decode::decode(decoder)?,
             reduction_specs: Decode::decode(decoder)?,
             locals: Decode::decode(decoder)?,
             locals_sym: Decode::decode(decoder)?,

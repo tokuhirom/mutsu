@@ -269,12 +269,6 @@ impl TrirCompiler<'_> {
             && !bare.is_empty()
             && bare.starts_with(|c: char| c.is_alphabetic() || c == '_')
         {
-            // A closure's dynamic read falls back to its capture when no
-            // live frame binds the name, which a TRIR read cannot do.
-            if self.block {
-                self.note_decline(|| format!("the dynamic ${name} in a closure body"));
-                return None;
-            }
             let idx = self.add_const(Value::str(name.to_string()));
             self.ops.push(TrOp::LoadDynamic(idx));
             return Some(TrKind::Obj);
