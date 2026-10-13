@@ -557,10 +557,10 @@ const COOL_TEXT_FOR_MATCH: [&str; 12] = [
 /// A shape whose own type declares one of them (`Seq.reverse`, `Range.flat`)
 /// answers its own row first. `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
-/// (`method_table::collections::join`).
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 14] = [
+/// (`method_table::collections::join`). `serial` is the receiver itself.
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 15] = [
     "flat", "sort", "unique", "repeated", "reverse", "end", "join", "pick", "roll", "minmax",
-    "head", "tail", "min", "max",
+    "head", "tail", "min", "max", "serial",
 ];
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])
