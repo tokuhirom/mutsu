@@ -262,9 +262,23 @@ impl Interpreter {
                     .unwrap_or_else(|| ".".to_string())
             });
         let path_buf = self.resolve_path(&path);
-        self.mkdir_op(&path_buf, native_io::fs_ops::mkdir_mode(args.get(1)))
-            .map_err(native_io::fs_errors::error_of)?;
-        Ok(Value::TRUE)
+        // The sub is `IO::Path.new($path).mkdir($mode)`: it answers the
+        // directory's IO::Path, or the Failure the method answers.
+        Ok(
+            match self.mkdir_op(&path_buf, native_io::fs_ops::mkdir_mode(args.get(1))) {
+                Ok(()) => match args.first() {
+                    Some(given)
+                        if matches!(given.view(), ValueView::Instance { class_name, .. }
+                            if class_name == "IO::Path"
+                                || class_name.as_str().starts_with("IO::Path::")) =>
+                    {
+                        given.clone()
+                    }
+                    _ => self.make_io_path_instance(&path),
+                },
+                Err(exception) => native_io::fs_errors::failure_of(exception),
+            },
+        )
     }
 
     pub(super) fn builtin_rmdir(&self, args: &[Value]) -> Result<Value, RuntimeError> {
