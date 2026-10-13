@@ -2543,7 +2543,10 @@ receiver no row took: a user class composing a buffer role over a `VMArray` body
 each method's argument edge cases, on `raku`, the binary before the slice and the new one. Decisions:
 
 1. **`Receiver::of_settled` answers such an instance with the shape of the buffer type it composes**
-   (`blob::user_buffer_receiver`: the buffer-class registry names `Blob[..]` or `Buf[..]`). The instance stays the invocant;
+   (`blob::user_buffer_receiver`: the buffer-class registry names `Blob[..]` or `Buf[..]`), and so does a built-in buffer under
+   an alias class name, which has no shape either (`blob8.allocate(20)` is a `blob8`: OpenSSL's `sha1` digests, which lost
+   `.raku`/`.bytes` when the cascade's buffer branches went; the names are matched exactly, not by the `buf`/`blob` prefix
+   predicates, so a user `class buffer` is not a buffer). The instance stays the invocant;
    every handler keeps its class (`B.new(1, 2).subbuf(1)` is a `B`). The entries that read `of_settled` run after the user's own
    methods were looked up, so a method the class declares still answers first; the call-site lane reads `Receiver::of` and does
    not see it. Every `Blob`/`Buf` row now answers it: `Str` raises `X::Buf::AsStr` (it rendered the gist), `of`, `Blob`/`Buf`
