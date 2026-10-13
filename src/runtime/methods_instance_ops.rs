@@ -2169,6 +2169,17 @@ impl Interpreter {
                 // X::Method::NotFound (Rakudo: `class C {}; C.new(x=>3).x` dies). A
                 // *built-in* class (exception types, ...) keeps its attributes only
                 // in the stored map (not collected), so still read them.
+                // `IO::Path.path` is the stored path text; a user subclass of
+                // `IO::Path` inherits it even though its own declared
+                // attributes (or none) are all the collected list holds.
+                if method == "path"
+                    && args.is_empty()
+                    && !class_attrs.iter().any(|attr| attr.name == method)
+                    && let Some(val) = attributes.as_map().get(method)
+                    && self.mro_readonly(&cn).iter().any(|c| c == "IO::Path")
+                {
+                    return Ok(val.clone());
+                }
                 if class_attrs.is_empty() {
                     if !self.types.user_declared_classes.contains(&cn)
                         && let Some(val) = attributes.as_map().get(method)
