@@ -22,6 +22,10 @@
 //! positional light call does — no frame of the closure's sits between them,
 //! since the body has nothing of its own to put in one.
 //!
+//! The bodies are those of pointy blocks, of WhateverCodes (`* + 1`, whose
+//! single `*` is the topic parameter `_`) and of placeholder blocks
+//! (`{ $^a + $^b }`) (#13286).
+//!
 //! The call itself is checked too ([`Interpreter::try_call_closure_light`]):
 //! the arguments must bind as the light binds (`closure_light_bind`,
 //! `closure_light_def_bind`) would bind them, and each bound value must be one
@@ -110,7 +114,11 @@ impl Interpreter {
             || data
                 .env
                 .contains_key_sym(crate::symbol::well_known::multi_dispatch_candidates())
-            || (arity > 0 && Self::sub_multi_method_dispatcher_name(&data).is_some())
+            // A WhateverCode's callable type is `WhateverCode`, never the
+            // `Method` a multi-method dispatcher value carries.
+            || (arity > 0
+                && !cc.is_whatever_code
+                && Self::sub_multi_method_dispatcher_name(&data).is_some())
         {
             return None;
         }
