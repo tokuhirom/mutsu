@@ -44,7 +44,12 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         }
         // Iterating an array reads each slot the way `@a[$i]` does, so a hole
         // yields the container's `is default(...)` value (`items_with_default`).
-        ValueView::Array(items, ..) => items.items_with_default().into_owned(),
+        // The copy holds the node's stripe: another thread may be
+        // restructuring a shared node (ADR-0068 §20).
+        ValueView::Array(items, ..) => {
+            let _read = crate::value::container_lock::ContainerStructGuard::acquire_for(None, val);
+            items.items_with_default().into_owned()
+        }
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             items.to_vec()
         }
@@ -57,10 +62,13 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         ValueView::Hash(_) if val.hash_is_itemized() => vec![val.clone()],
         // `typed_pair` decontainerizes element cells so the pair value matches a
         // `%h<k>` read / `.values` (see t/bind-hash-value-pairs.t).
-        ValueView::Hash(items) => items
-            .iter()
-            .map(|(k, v)| items.typed_pair(k, v.clone()))
-            .collect(),
+        ValueView::Hash(items) => {
+            let _read = crate::value::container_lock::ContainerStructGuard::acquire_for(None, val);
+            items
+                .iter()
+                .map(|(k, v)| items.typed_pair(k, v.clone()))
+                .collect()
+        }
         ValueView::Range(a, b) => {
             let end = b.min(a + MAX_RANGE_EXPAND);
             (a..=end).map(Value::int).collect()

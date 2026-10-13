@@ -551,6 +551,7 @@ pub(crate) mod buf_class_names;
 pub(crate) mod capture_text;
 pub(crate) mod compare;
 pub(crate) mod container_lock;
+pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) mod render_guard;
 pub(crate) use dispatch_shape::{

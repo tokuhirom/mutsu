@@ -1495,6 +1495,24 @@ impl Interpreter {
         if is_positional && matches!(target.view(), ValueView::Array(..)) {
             Self::reject_pair_positional_index(&index)?;
         }
+        // ADR-0068 §20: the Array arms below walk the target's node, which
+        // another thread may be restructuring. They run no user code, so they
+        // hold the node's stripe -- except a `WhateverCode` index (`@a[*-1]`,
+        // `@a[0, *-2]`), whose closure runs in the arm: that reads a snapshot.
+        let _read = if crate::value::container_lock::multi_mutator_threads_live()
+            && matches!(target.view(), ValueView::Array(..))
+        {
+            if Self::index_needs_target_elems(&index) {
+                if let Some(copy) = crate::value::container_read::shared_snapshot(&target) {
+                    target = copy;
+                }
+                None
+            } else {
+                ContainerStructGuard::acquire_for(None, &target)
+            }
+        } else {
+            None
+        };
         let result = match (target.view(), index.view()) {
             // Any subscript (positional or associative) on Nil yields Nil again,
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps

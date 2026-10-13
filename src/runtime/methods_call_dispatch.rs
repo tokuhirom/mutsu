@@ -101,29 +101,6 @@ impl Interpreter {
     ///
     /// Named-ness is a call-site property (ADR-0021): only the `Pair` flavour is a
     /// named argument, so a positional `Pair` (`%h.push((a => 1))`) is untouched.
-    /// Whether `method` structurally mutates its container receiver, i.e.
-    /// whether two threads running it on one container race on the backing
-    /// `Vec`/`HashMap`. Deliberately a small allowlist of the mutators, not a
-    /// blanket guard: every other method is a read and pays only the relaxed
-    /// load in the caller's gate.
-    fn method_mutates_container(method: &str) -> bool {
-        matches!(
-            method,
-            "push"
-                | "append"
-                | "prepend"
-                | "unshift"
-                | "pop"
-                | "shift"
-                | "splice"
-                | "STORE"
-                | "ASSIGN-POS"
-                | "ASSIGN-KEY"
-                | "DELETE-POS"
-                | "DELETE-KEY"
-        )
-    }
-
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -286,8 +263,8 @@ impl Interpreter {
         // the same attribute container share. A no-op (one relaxed load) until
         // a VM mutator thread is spawned.
         let _mutating_guard = if crate::value::container_lock::multi_mutator_threads_live()
-            && (Self::method_mutates_container(method)
-                || crate::value::container_lock::is_leaf_structure_read(method))
+            && (crate::value::container_read::is_container_mutator(method)
+                || crate::value::container_read::is_leaf_structure_read(method))
         {
             crate::value::container_lock::ContainerStructGuard::acquire_for(None, &target)
         } else {
@@ -296,7 +273,7 @@ impl Interpreter {
         // #12456: a method that runs user code over the elements cannot hold the
         // stripe, so it runs on a snapshot taken under it (ADR-0068 §16).
         let target =
-            crate::value::container_lock::snapshot_read_receiver(method, &target).unwrap_or(target);
+            crate::value::container_read::snapshot_read_receiver(method, &target).unwrap_or(target);
         if !args.iter().any(|a| a.is_string_pair_value()) {
             return self.call_method_with_values_inner(target, method, args, true);
         }
