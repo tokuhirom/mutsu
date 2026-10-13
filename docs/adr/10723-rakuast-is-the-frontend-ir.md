@@ -1027,6 +1027,19 @@ attribute form uses. A clause whose spelling the parser does not rebuild specs
 from (`parser::handles_clause_term` answers `None`) records an `Unsupported`
 trait, so it stays the boundary.
 
+### 6.45 S10: constant colonpair statements and numeric colonpairs (2026-10-13)
+
+A colonpair written as a statement (`:a(7);`, the body of `"{:a}"`, the
+pairs of `@{:a, :b}`) is folded by the parser to `LiteralSrc(Pair, ":a(7)")`,
+so a sink warning can echo the written form. Rakudo 2026.09 shows the written
+`ColonPair::Value` / `True` / `False` / `Number`. The source text is exactly
+the colonpair, so the converter parses it again with the parser's own
+colonpair routine (`parser::colonpair_source_expr`) and renders that; lowering
+gives the ordinary colonpair `Binary`, so a round-tripped bare colonpair
+statement words its sink warning like a fatarrow. `:7a` had no form of its
+own and rendered as `FatArrow`; it is now `BinaryForm::ColonPairNumber`,
+rendered as `ColonPair::Number(key, value)` and lowered back to the same form.
+
 ### 6.46 S10: adverbs on a user-declared infix (2026-10-13)
 
 `1 foo 3 :round` passes `:round` to `infix:<foo>`. The parser appends the

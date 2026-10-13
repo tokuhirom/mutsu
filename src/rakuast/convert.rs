@@ -3032,6 +3032,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Literal(v) if math_constant_spelling(v, None).is_some() => Ok(term_name_node(
             math_constant_spelling(v, None).unwrap_or_default(),
         )),
+        // A constant colonpair statement keeps its source for the sink warning
+        // (`:a(7)` folded to a `Pair`); its node is the written colonpair.
+        Expr::LiteralSrc(v, src)
+            if matches!(v.view(), ValueView::Pair(..))
+                && let Some(pair) = crate::parser::colonpair_source_expr(src) =>
+        {
+            convert_expr(&pair)
+        }
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         // A CORE term keyword the parser left shadowable (#9047) is the same
         // node as the plain keyword; lowering decides again whether it is.
@@ -6732,9 +6740,36 @@ fn colonpair_spelling(expr: &Expr, form: crate::ast::BinaryForm) -> Option<RakuA
         BinaryForm::ColonPairVariable => colonpair_variable_expr(expr),
         BinaryForm::ColonPairValue => colonpair_value_expr(expr),
         BinaryForm::ColonPairBracketed => colonpair_bracketed_expr(expr),
+        BinaryForm::ColonPairNumber => colonpair_number_expr(expr),
         BinaryForm::Infix | BinaryForm::CaretPrefix => return None,
     }
     .ok()
+}
+
+/// `:7a` -> `ColonPair::Number(key => "a", value => IntLiteral(7))`.
+fn colonpair_number_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::Binary {
+        left,
+        op: crate::token_kind::TokenKind::FatArrow,
+        right,
+        ..
+    } = expr
+    else {
+        return Err(unsupported("colonpair number provenance"));
+    };
+    let (Expr::Literal(key), Expr::Literal(value)) = (left.as_ref(), right.as_ref()) else {
+        return Err(unsupported("colonpair number parts"));
+    };
+    let ValueView::Str(key) = key.view() else {
+        return Err(unsupported("colonpair number key"));
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::ColonPairNumber,
+        fields: vec![
+            leaf_field(Some("key"), Value::str(key.to_string())),
+            node_field(Some("value"), convert_literal(value)?),
+        ],
+    })
 }
 
 fn colonpair_true_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {

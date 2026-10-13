@@ -411,7 +411,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(Expr::Literal(val)),
-                        form: Default::default(),
+                        form: crate::ast::BinaryForm::ColonPairNumber,
                     },
                 ));
             }
