@@ -28,6 +28,7 @@ pub(crate) mod native_stack;
 pub(crate) mod native_types;
 pub(crate) mod nqp_op_ids;
 mod op_prec;
+mod light_closure_shape;
 mod op_scan_index;
 mod op_scan_routine_state;
 mod opcode;

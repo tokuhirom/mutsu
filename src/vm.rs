@@ -399,7 +399,6 @@ mod vm_var_index_ops;
 mod vm_var_index_tracking;
 mod vm_var_multidim_helpers;
 mod vm_var_multidim_ops;
-pub(crate) use vm_closure_light_call::LightClosureShape;
 pub(crate) use vm_closure_light_def_bind::{LightDefParam, light_def_params};
 pub(crate) use vm_scalar_incdec::IncDec;
 pub(crate) use vm_scalar_param_bind::ScalarParamBind;
