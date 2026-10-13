@@ -157,6 +157,10 @@ impl Interpreter {
                 // matching the top-level pipeline. The EVAL-specific variant also
                 // lifts BEGIN from closure bodies in the EVAL'd code.
                 crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
+                // An `our` routine is installed in its package when the unit is
+                // compiled, wherever it is declared -- inside an uncalled routine
+                // of the snippet too (#13137), as for the mainline (#13091).
+                self.preregister_inline_package_subs(&stmts)?;
                 // A `my` declared inside EVAL is lexically scoped to that EVAL and
                 // must NOT leak into the caller's pad (raku: `EVAL 'my $y'; $y` is
                 // X::Undeclared). Snapshot the set of *plain user lexical* keys
