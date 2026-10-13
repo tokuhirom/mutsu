@@ -30,16 +30,17 @@
 //!   the change.
 //!
 //! Names reached dynamically (`EVAL`, `::($name)`, a pseudo-package) are not
-//! visible to the scan. A body that uses one, or that calls a routine it does
-//! not know (which may evaluate a string where it is called from), is not
-//! lifted from a scope that declares a type, as for a scope that declares a
-//! routine ([`super::routines`]).
+//! visible to the scan, so a body that uses one names every type. An `EVAL` may
+//! also change a type through its metaobject, so a body that uses one is not
+//! lifted from a scope that declares a type. Nor is a body that calls a routine
+//! it does not know (which may evaluate a string where it is called from), as
+//! for a scope that declares a routine ([`super::routines`]).
 
 use super::pragmas::{Guard, Repeat};
 use super::routines::{Access, Dependencies, FrameBlock};
+pub(super) use super::mentions::Mentions;
 use super::{BindingKind, Walker};
-use crate::ast::{Expr, PhaserKind, Stmt};
-use crate::ast_visit::{NameKind, Visit, contains_word, walk_expr, walk_stmt};
+use crate::ast::{Expr, Stmt};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A type or package declared in an inner scope.
@@ -50,117 +51,6 @@ pub(super) struct TypeDecl {
     /// The declaration, repeated in a lifted body's block when the body names
     /// it. `None` when repeating it would be observable.
     copy: Option<Stmt>,
-}
-
-/// Every name some code mentions, and whether it can reach a name the scan
-/// cannot list.
-#[derive(Default)]
-pub(super) struct Mentions {
-    names: Vec<(String, NameKind)>,
-    /// A symbolic lookup or a pseudo-package (`::($name)`, `MY::{...}`).
-    symbolic: bool,
-    /// A `BEGIN` of its own.
-    pub(super) has_begin: bool,
-    /// It may change a type through its metaobject (`K.^add_method(...)`,
-    /// `K.HOW`, `augment`).
-    changes_type: bool,
-}
-
-/// The metamethods that only read a type. Any other may change it.
-const READ_ONLY_METAMETHODS: &[&str] = &[
-    "name",
-    "shortname",
-    "mro",
-    "can",
-    "isa",
-    "does",
-    "lookup",
-    "find_method",
-    "methods",
-    "attributes",
-    "roles",
-    "parents",
-    "ver",
-    "auth",
-    "api",
-    "archetypes",
-    "is_composed",
-    "enum_values",
-    "enum_value_list",
-];
-
-impl<'ast> Visit<'ast> for Mentions {
-    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        self.has_begin |= matches!(
-            stmt,
-            Stmt::Phaser {
-                kind: PhaserKind::Begin,
-                ..
-            }
-        );
-        self.changes_type |= matches!(stmt, Stmt::AugmentClass { .. });
-        walk_stmt(self, stmt);
-    }
-
-    fn visit_expr(&mut self, expr: &'ast Expr) {
-        self.has_begin |= matches!(
-            expr,
-            Expr::PhaserExpr {
-                kind: PhaserKind::Begin,
-                ..
-            }
-        );
-        if let Expr::MethodCall { name, modifier, .. } = expr {
-            let name = name.resolve();
-            self.changes_type |= name == "HOW"
-                || (*modifier == Some('^') && !READ_ONLY_METAMETHODS.contains(&name.as_str()));
-        }
-        walk_expr(self, expr);
-    }
-
-    fn visit_name(&mut self, name: &str, kind: NameKind) {
-        self.symbolic |= kind == NameKind::Symbolic;
-        self.names.push((name.to_string(), kind));
-    }
-}
-
-impl Mentions {
-    pub(super) fn of<'a>(stmts: impl IntoIterator<Item = &'a Stmt>) -> Mentions {
-        let mut mentions = Mentions::default();
-        for stmt in stmts {
-            mentions.visit_stmt(stmt);
-        }
-        mentions
-    }
-
-    /// The code variables the code assigns to (`&g = ...`) without declaring
-    /// them itself.
-    pub(super) fn code_var_writes(&self) -> Vec<String> {
-        let declared = |name: &str| {
-            self.names
-                .iter()
-                .any(|(n, kind)| *kind == NameKind::VarDecl && n == name)
-        };
-        self.names
-            .iter()
-            .filter(|(name, kind)| {
-                *kind == NameKind::AssignTarget && name.starts_with('&') && !declared(name)
-            })
-            .map(|(name, _)| name.clone())
-            .collect()
-    }
-
-    /// Whether some mentioned name is `declared`, or a name qualified by it
-    /// (`K::x`, `$P::v`) or qualifying it. A name counts wherever it occurs as
-    /// a whole word, which errs toward naming it: that only costs a repeat.
-    // Cost: O(n * m), n = total length of the mentioned names, m = `declared.len()`.
-    fn names(&self, declared: &str) -> bool {
-        self.symbolic
-            || self
-                .names
-                .iter()
-                .any(|(name, _)| contains_word(name, declared))
-    }
 }
 
 /// The names a type or package declaration installs, or `None` when they are

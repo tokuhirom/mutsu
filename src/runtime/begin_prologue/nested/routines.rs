@@ -14,21 +14,28 @@
 //!
 //! The routines to copy are found by scanning the compiled body, then every
 //! routine that scan selects, for the names they call and the variables they
-//! read. A body that can reach a name dynamically cannot be scanned, so it is
-//! not lifted from a scope that declares routines. Nor is one that calls a
-//! routine it does not know, since that routine may evaluate a string where it
-//! was called from.
+//! read. A call to a multi brings every candidate and proto it can reach. An
+//! operator or other category routine is used through its syntax, which the
+//! scan need not see, so every one of the scopes is copied. A body that can
+//! reach a name dynamically (`EVAL`, a symbolic lookup) gets every variable and
+//! routine of the scopes it sees. One that calls a routine it does not know is
+//! not lifted from a scope that declares routines, since that routine may
+//! evaluate a string where it was called from.
 
+use super::routine_copy::copyable_routine;
+use super::scan::{Scan, is_core_routine};
 use super::{BindingKind, Walker};
 use crate::ast::Stmt;
 use crate::opcode::CompiledCode;
-use crate::value::{Value, ValueView};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A routine declared in an inner scope, as a lifted BEGIN re-declares it.
 pub(super) struct Routine {
     /// The name a call spells.
     pub(super) name: String,
+    /// A candidate of a multi, or its proto: a call reaches every one of them
+    /// in scope, not just the innermost.
+    pub(super) multi: bool,
     /// The declaration, as it reads once the nested BEGINs inside it are lifted.
     pub(super) decl: Stmt,
     /// How many bindings the scope held when the routine was declared. The
@@ -89,154 +96,6 @@ pub(super) struct Scope {
     bindings: usize,
 }
 
-/// The names a piece of code reads, as the compiler resolves them.
-pub(super) struct Scan {
-    /// The free variables, read or written.
-    free: Vec<crate::symbol::Symbol>,
-    /// The routines called, qualified or not, or read as `&name`.
-    callees: HashSet<crate::symbol::Symbol>,
-    /// The code can reach a name dynamically (`EVAL`, `CALLER::`, symbolic
-    /// lookup), which neither of the sets above can bound.
-    reflective: bool,
-}
-
-impl Scan {
-    pub(super) fn of(stmts: &[Stmt]) -> Scan {
-        let (code, fns) = crate::compiler::Compiler::new().compile(stmts);
-        let mut free = code.free_var_syms.clone();
-        // Compiled on its own, an assignment to a code variable the code does
-        // not declare (`&g = { ... }`) is an assignment to a routine name,
-        // which names no variable at all.
-        for name in super::decls::Mentions::of(stmts).code_var_writes() {
-            let sym = crate::symbol::Symbol::intern(&name);
-            if !free.contains(&sym) {
-                free.push(sym);
-            }
-        }
-        let mut scan = Scan {
-            free,
-            callees: HashSet::new(),
-            reflective: false,
-        };
-        scan.absorb_code(&code);
-        scan.absorb(&fns);
-        scan
-    }
-
-    /// The free variables the scanned code reads or writes.
-    pub(super) fn free(&self) -> &[crate::symbol::Symbol] {
-        &self.free
-    }
-
-    /// Fold in the routines declared inside the scanned code. Their bodies are
-    /// compiled on their own, so the code's own ops do not hold their calls.
-    fn absorb(&mut self, fns: &crate::opcode::CompiledFns) {
-        for function in fns.values() {
-            self.absorb_code(&function.code);
-            if let Some(nested) = &function.compiled_fns {
-                self.absorb(nested);
-            }
-        }
-    }
-
-    /// The routine names one chunk refers to: a call (`f(...)`) and a
-    /// code-variable read (`&f`, `&f(...)`, `&f.()`). The compiler lists the
-    /// latter among the free variables only when an enclosing scope declares
-    /// `&f` as a variable, which a routine is not.
-    fn absorb_code(&mut self, code: &CompiledCode) {
-        self.reflective |= code.needs_reflective_capture;
-        self.absorb_ops(code);
-    }
-
-    fn absorb_ops(&mut self, code: &CompiledCode) {
-        let const_str = |idx: u32| match code.constants.get(idx as usize).map(Value::view) {
-            Some(ValueView::Str(s)) => Some(s),
-            _ => None,
-        };
-        for op in &code.ops {
-            let read = CompiledCode::op_code_var_read_const_idx(op);
-            let called = CompiledCode::op_callee_name_const_idx(op);
-            for name in read.into_iter().chain(called).filter_map(const_str) {
-                let name = crate::symbol::Symbol::intern(&name);
-                // A call qualified by a pseudo-package (`MY::helper()`) names a
-                // routine in a scope the called-name scan does not look at.
-                self.reflective |= is_pseudo_qualified(name);
-                self.callees.insert(name);
-            }
-            // `::($name)` finds a routine as readily as a type, which no scan
-            // of the names in the code can list.
-            self.reflective |= matches!(
-                op,
-                crate::opcode::OpCode::IndirectTypeLookup
-                    | crate::opcode::OpCode::IndirectTypeLookupStore
-            );
-        }
-        for nested in &code.closure_compiled_codes {
-            self.absorb_ops(nested);
-        }
-    }
-}
-
-/// Whether a called routine is one of the core routines, which run no code the
-/// program wrote and so cannot look a name up in the scope that calls them.
-/// Any other routine might: an imported one (`throws-like 'helper()'`) or a
-/// unit's own (`sub run-it($code) { EVAL $code }`) evaluates its argument where
-/// it was called from.
-fn is_core_routine(name: crate::symbol::Symbol) -> bool {
-    !crate::qualified::is_qualified(name)
-        && crate::runtime::Interpreter::is_builtin_function(name.as_str())
-}
-
-/// Whether a called name is qualified by a pseudo-package (`MY::helper`,
-/// `OUTER::helper`), which names a routine in a scope the bare-name scan does
-/// not look at.
-fn is_pseudo_qualified(name: crate::symbol::Symbol) -> bool {
-    crate::qualified::package_parent(name)
-        .and_then(|pkg| crate::qualified::package_ancestors(pkg).last())
-        .is_some_and(|head| crate::runtime::Interpreter::is_pseudo_package_name(head.as_str()))
-}
-
-/// The name a call spells for a routine a lifted BEGIN can declare again, or
-/// `None` for any other. A routine that installs into a package (`our sub`), a
-/// multi, an operator or other category routine (the parser has already
-/// registered its syntax, which a scan of the called names cannot see), an
-/// exported one and a redeclaring one keep their scope blocked.
-fn copyable_routine_name(decl: &Stmt) -> Option<String> {
-    let Stmt::SubDecl {
-        name,
-        name_expr: None,
-        multi: false,
-        is_export: false,
-        supersede: false,
-        custom_traits,
-        ..
-    } = decl
-    else {
-        return None;
-    };
-    let name = name.resolve();
-    let plain = !name.contains(':') && !custom_traits.iter().any(|(t, _)| t.starts_with("__"));
-    plain.then_some(name)
-}
-
-/// Whether `decl` is a routine with an ordinary name, which a body reaches only
-/// by calling that name: a `multi`, an `our` or exported `sub`. An operator or
-/// other category routine is also reached through syntax the parser
-/// registered, so it is not one.
-// Cost: O(t), t = traits on the declaration.
-fn named_by_call_only(decl: &Stmt) -> bool {
-    let Stmt::SubDecl {
-        name,
-        name_expr: None,
-        supersede: false,
-        ..
-    } = decl
-    else {
-        return false;
-    };
-    !name.resolve().contains(':')
-}
-
 impl Walker<'_> {
     /// Note a routine declared in the current scope. A plain one can be
     /// declared again in a lifted BEGIN's block; any other blocks the scope.
@@ -244,13 +103,13 @@ impl Walker<'_> {
         let Some(frame) = self.frames.last_mut() else {
             return;
         };
-        match copyable_routine_name(decl) {
-            Some(name) => frame.routines.push(Routine {
+        match copyable_routine(decl) {
+            Some((name, multi, decl)) => frame.routines.push(Routine {
                 name,
-                decl: decl.clone(),
+                multi,
+                decl,
                 bindings: frame.bindings.len(),
             }),
-            None if named_by_call_only(decl) => frame.uncopyable_routines = true,
             None => frame.blocked = true,
         }
     }
@@ -273,23 +132,25 @@ impl Walker<'_> {
     /// them cannot be supplied in the prologue.
     pub(super) fn resolve_dependencies(&self, body: &[Stmt]) -> Option<Dependencies> {
         let mut deps = Dependencies::default();
-        // A name reached by `EVAL` or a symbolic lookup could be any routine in
-        // scope, so a body that does that cannot say which ones it needs. Nor
-        // can one that calls a routine it does not know: that routine may
-        // evaluate a string it is given where it was called from.
+        // A name reached by `EVAL` or a symbolic lookup could be any name in
+        // scope, so a body that does that gets every one it can see. A body
+        // that calls a routine it does not know cannot say which ones it
+        // needs: that routine may evaluate a string it is given where it was
+        // called from.
         // A type an inner scope declares is only supplied when the body names it
         // ([`super::decls`]), so it is subject to the same rule.
         let routines_in_scope = self
             .frames
             .iter()
-            .any(|f| !f.routines.is_empty() || !f.types.is_empty() || f.uncopyable_routines);
+            .any(|f| !f.routines.is_empty() || !f.types.is_empty());
         // The body sees every scope; a routine sees the ones it was declared in,
         // up to its own position.
         let mut pending = vec![(Scan::of(body), None)];
         self.add_operator_code_vars(&mut deps)?;
+        self.add_category_routines(&mut deps, &mut pending);
         while let Some((scan, scope)) = pending.pop() {
-            if scan.reflective && routines_in_scope {
-                return None;
+            if scan.reflective {
+                self.add_whole_scope(scope, &mut deps, &mut pending)?;
             }
             for sym in &scan.free {
                 self.resolve_free_name(*sym, scope, &mut deps, &mut pending)?;
@@ -305,12 +166,51 @@ impl Walker<'_> {
                 }
                 let selected = self.resolve_callee(&name, scope, &mut deps, &mut pending)
                     || self.calls_into_inner_type(&name);
-                if !selected && routines_in_scope && !is_core_routine(*callee) {
+                // `EVAL` reaches the scope by name, which the whole scope
+                // supplied above covers.
+                let evaluates = scan.reflective && matches!(name.as_str(), "EVAL" | "EVALFILE");
+                if !selected && routines_in_scope && !is_core_routine(*callee) && !evaluates {
                     return None;
                 }
             }
         }
         Some(deps)
+    }
+
+    /// Supply every name `scope` sees (the whole of the enclosing inner scopes,
+    /// for the body itself): each variable and each routine, the innermost of
+    /// a name only, as a lookup by that name finds it. A body that reaches
+    /// names dynamically (`EVAL`, `::($name)`, `&::($name)`) may reach any of
+    /// them. `None` when one cannot be supplied in the prologue.
+    // Cost: O(b + r), b = the bindings and r = the routines of the enclosing
+    // inner scopes.
+    fn add_whole_scope(
+        &self,
+        scope: Option<Scope>,
+        deps: &mut Dependencies,
+        pending: &mut Vec<(Scan, Option<Scope>)>,
+    ) -> Option<()> {
+        let frames = scope.map_or(self.frames.len(), |s| s.frame + 1);
+        let mut variables = BTreeSet::new();
+        let mut routines = BTreeSet::new();
+        for (f, frame) in self.frames[..frames].iter().enumerate() {
+            let visible = match scope {
+                Some(s) if s.frame == f => &frame.bindings[..s.bindings],
+                _ => &frame.bindings[..],
+            };
+            variables.extend(visible.iter().map(|b| b.name.as_str()));
+            routines.extend(frame.routines.iter().map(|r| r.name.as_str()));
+        }
+        for name in variables {
+            let sym = crate::symbol::Symbol::intern(name);
+            self.resolve_free_name(sym, scope, deps, pending)?;
+        }
+        for name in routines {
+            if !self.code_var_shadows_routine(name, scope) {
+                self.resolve_callee(name, scope, deps, pending);
+            }
+        }
+        Some(())
     }
 
     fn resolve_free_name(
@@ -417,6 +317,28 @@ impl Walker<'_> {
         Some(())
     }
 
+    /// Supply every operator or other category routine (`sub infix:<plus>`)
+    /// of the scopes around the body, for the reason
+    /// [`Walker::add_operator_code_vars`] gives for an operator code variable.
+    // Cost: O(r), r = the routines of the enclosing inner scopes.
+    fn add_category_routines(
+        &self,
+        deps: &mut Dependencies,
+        pending: &mut Vec<(Scan, Option<Scope>)>,
+    ) {
+        for (frame, f) in self.frames.iter().enumerate() {
+            for (index, routine) in f.routines.iter().enumerate() {
+                if routine.name.contains(':') && deps.routines.insert((frame, index)) {
+                    let scope = Scope {
+                        frame,
+                        bindings: routine.bindings,
+                    };
+                    pending.push((Scan::of(std::slice::from_ref(&routine.decl)), Some(scope)));
+                }
+            }
+        }
+    }
+
     /// If `name` is a routine declared ahead, in the scopes `scope` sees,
     /// select it and queue what it reads. Returns whether it was one.
     fn resolve_callee(
@@ -426,18 +348,44 @@ impl Walker<'_> {
         deps: &mut Dependencies,
         pending: &mut Vec<(Scan, Option<Scope>)>,
     ) -> bool {
-        let Some((frame, index)) = self.find_routine(name, scope) else {
-            return false;
-        };
-        if deps.routines.insert((frame, index)) {
-            let routine = &self.frames[frame].routines[index];
-            let scope = Scope {
-                frame,
-                bindings: routine.bindings,
-            };
-            pending.push((Scan::of(std::slice::from_ref(&routine.decl)), Some(scope)));
+        let selected = self.find_dispatchees(name, scope);
+        for &(frame, index) in &selected {
+            if deps.routines.insert((frame, index)) {
+                let routine = &self.frames[frame].routines[index];
+                let scope = Scope {
+                    frame,
+                    bindings: routine.bindings,
+                };
+                pending.push((Scan::of(std::slice::from_ref(&routine.decl)), Some(scope)));
+            }
         }
-        true
+        !selected.is_empty()
+    }
+
+    /// The routines a call to `name` can reach, among the scopes `scope` sees:
+    /// the innermost one, or, when that is a multi candidate or proto, every
+    /// candidate and proto of the name out to the first scope whose own
+    /// declaration of it is not a multi (that one shadows everything further
+    /// out). Scopes outside every inner one are the unit's, which the prologue
+    /// declares on its own.
+    // Cost: O(r), r = the routines declared in the enclosing inner scopes.
+    fn find_dispatchees(&self, name: &str, scope: Option<Scope>) -> Vec<(usize, usize)> {
+        let frames = scope.map_or(self.frames.len(), |s| s.frame + 1);
+        let mut found = Vec::new();
+        for f in (0..frames).rev() {
+            let routines = &self.frames[f].routines;
+            let named = || routines.iter().enumerate().filter(|(_, r)| r.name == name);
+            if let Some((r, _)) = named().filter(|(_, r)| !r.multi).last() {
+                // A plain routine shadows everything further out; under inner
+                // candidates, it is shadowed in turn.
+                if found.is_empty() {
+                    found.push((f, r));
+                }
+                return found;
+            }
+            found.extend(named().map(|(r, _)| (f, r)));
+        }
+        found
     }
 
     /// The innermost binding of `name`. Given a `scope`, only what a routine

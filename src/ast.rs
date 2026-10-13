@@ -2883,12 +2883,15 @@ pub(crate) use tail::{
 };
 pub(crate) use virtual_call::first_virtual_call_in_expr;
 
+/// The routine name the onlystar term `{*}` calls ([`Expr::onlystar_dispatch`]).
+pub(crate) const ONLYSTAR_DISPATCH: &str = "__PROTO_DISPATCH__";
+
 impl Expr {
     /// What the onlystar term `{*}` parses to: the `{*}` dispatch, resolved
     /// from the callers at run time (`Interpreter::resolve_onlystar`, #10746).
     pub(crate) fn onlystar_dispatch() -> Expr {
         Expr::Call {
-            name: Symbol::intern("__PROTO_DISPATCH__"),
+            name: Symbol::intern(ONLYSTAR_DISPATCH),
             args: Vec::new(),
             listop: false,
         }
@@ -2897,7 +2900,7 @@ impl Expr {
     /// Whether this is the onlystar dispatch [`Expr::onlystar_dispatch`] builds.
     // Cost: O(1).
     pub(crate) fn is_onlystar_dispatch(&self) -> bool {
-        matches!(self, Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == "__PROTO_DISPATCH__")
+        matches!(self, Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == ONLYSTAR_DISPATCH)
     }
 
     /// Whether this expression is one of the syntactic empty import lists
