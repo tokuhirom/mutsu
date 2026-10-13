@@ -93,6 +93,27 @@ struct Slots<V> {
     older: Option<Tagged<V>>,
 }
 
+impl<V> Slots<V> {
+    /// The map generation moved: re-tag the slot computed under the family's
+    /// current generation, if any, and say which one it is (`true`: `older`).
+    /// Kept out of line so the map-generation hit stays small enough to inline.
+    // Cost: O(1), plus the `family` call.
+    #[cold]
+    #[inline(never)]
+    fn revalidate(&mut self, generation: u64, family: impl FnOnce() -> u64) -> Option<bool> {
+        let fam = family();
+        if self.recent.family == fam {
+            self.recent.generation = generation;
+            Some(false)
+        } else if let Some(older) = self.older.as_mut().filter(|o| o.family == fam) {
+            older.generation = generation;
+            Some(true)
+        } else {
+            None
+        }
+    }
+}
+
 /// A memo validated by the map generation first and the family generation
 /// second. See the module docs.
 pub(crate) struct FamilyGenCache<K, V> {
@@ -125,27 +146,24 @@ impl<K: Eq + Hash, V> FamilyGenCache<K, V> {
             crate::vm::vm_stats::record_gen_cache_probe(false, false);
             return None;
         };
-        let pick = if slots.recent.generation == generation {
-            Some(false)
-        } else if slots.older.as_ref().is_some_and(|o| o.generation == generation) {
-            Some(true)
+        let older = if slots.recent.generation == generation {
+            false
+        } else if matches!(&slots.older, Some(o) if o.generation == generation) {
+            true
         } else {
-            let fam = family();
-            if slots.recent.family == fam {
-                slots.recent.generation = generation;
-                Some(false)
-            } else if let Some(older) = slots.older.as_mut().filter(|o| o.family == fam) {
-                older.generation = generation;
-                Some(true)
-            } else {
-                None
+            match slots.revalidate(generation, family) {
+                Some(older) => older,
+                None => {
+                    crate::vm::vm_stats::record_gen_cache_probe(false, true);
+                    return None;
+                }
             }
         };
-        crate::vm::vm_stats::record_gen_cache_probe(pick.is_some(), true);
-        match pick {
-            Some(false) => Some(&slots.recent.value),
-            Some(true) => slots.older.as_ref().map(|o| &o.value),
-            None => None,
+        crate::vm::vm_stats::record_gen_cache_probe(true, true);
+        if older {
+            slots.older.as_ref().map(|o| &o.value)
+        } else {
+            Some(&slots.recent.value)
         }
     }
 
