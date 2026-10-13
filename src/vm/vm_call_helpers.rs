@@ -75,7 +75,9 @@ impl Interpreter {
         Self::decode_arg_slip_positions(code, arg_sources_idx).is_some()
     }
 
-    /// Does this call site contain a syntactically named argument?
+    /// Whether this call site contains a syntactically named argument, and
+    /// whether it contains a `|EXPR` one ([`Self::stack_args_have_slip`]), in
+    /// one pass over the call site's descriptor (#12526).
     ///
     /// ADR-0021 makes namedness a call-site property. `FALSE` is the compact
     /// descriptor for a named argument without an rw source; an array whose
@@ -83,15 +85,24 @@ impl Interpreter {
     /// its second element. This is deliberately separate from the runtime
     /// Pair flavour, which cannot distinguish `f(:x)` from a positional Pair
     /// by the time the positional-light binder sees the value.
+    // Cost: O(a), a = the call's compiled arguments.
     #[inline]
-    pub(super) fn stack_args_have_named(code: &CompiledCode, arg_sources_idx: Option<u32>) -> bool {
+    pub(super) fn stack_arg_kinds(
+        code: &CompiledCode,
+        arg_sources_idx: Option<u32>,
+    ) -> (bool, bool) {
         let Some(idx) = arg_sources_idx else {
-            return false;
+            return (false, false);
         };
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
-            return false;
+            return (false, false);
         };
-        items.iter().any(Self::arg_source_entry_is_named)
+        let (mut named, mut slip) = (false, false);
+        for item in items.iter() {
+            named |= Self::arg_source_entry_is_named(item);
+            slip |= matches!(item.view(), ValueView::Bool(true));
+        }
+        (named, slip)
     }
 
     #[inline]

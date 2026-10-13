@@ -488,7 +488,16 @@ impl Interpreter {
         // `_inner`, not the wrapper: this frame's mask is already published by
         // `exec_call_func_named_op`, and re-entering the wrapper would
         // overwrite it with a zero it was never given.
-        self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, true, compiled_fns)
+        let call_has_slip = Self::stack_args_have_slip(code, arg_sources_idx);
+        self.exec_call_func_op_inner(
+            code,
+            name_idx,
+            arity,
+            arg_sources_idx,
+            true,
+            call_has_slip,
+            compiled_fns,
+        )
     }
 
     /// Publish the call site's literal-argument mask (and its
@@ -511,13 +520,14 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
         let saved_static = std::mem::replace(&mut self.static_call_args, static_arg_types);
-        let call_has_named = Self::stack_args_have_named(code, arg_sources_idx);
+        let (call_has_named, call_has_slip) = Self::stack_arg_kinds(code, arg_sources_idx);
         let r = self.exec_call_func_op_inner(
             code,
             name_idx,
             arity,
             arg_sources_idx,
             call_has_named,
+            call_has_slip,
             compiled_fns,
         );
         self.literal_native_args = saved;
@@ -532,6 +542,7 @@ impl Interpreter {
         arity: u32,
         arg_sources_idx: Option<u32>,
         call_has_named: bool,
+        call_has_slip: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
@@ -718,8 +729,8 @@ impl Interpreter {
         // probing the stack for Slip-shaped values on every cache check
         // below. A plain argument that merely evaluates to a Slip
         // (`f(@a.Slip)`) does not set this, so such a call stays eligible
-        // for the light-call / OTF caches instead of forfeiting them.
-        let call_has_slip = Self::stack_args_have_slip(code, arg_sources_idx);
+        // for the light-call / OTF caches instead of forfeiting them. The
+        // caller decoded it (`stack_arg_kinds`).
         // Ultra-fast path: positional light-call cache for positional-only functions.
         if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
