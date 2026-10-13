@@ -69,13 +69,12 @@ impl Interpreter {
             return Ok(false);
         };
         let key = (self.current_package_sym(), name_sym, keys);
-        let Some(Some(hit)) = self
-            .caches
-            .multi_light_cache
-            .get(self.caches.fn_resolve_gen, &key, || {
-                self.dispatch.fn_family_gens.of_name(name_sym)
-            })
-            .cloned()
+        let Some(Some(hit)) =
+            self.caches
+                .multi_light_cache
+                .get(self.caches.fn_resolve_gen, &key, || {
+                    self.dispatch.fn_family_gens.of_name(name_sym)
+                })
         else {
             return Ok(false);
         };

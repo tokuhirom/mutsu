@@ -1120,7 +1120,7 @@ impl Interpreter {
             return false;
         }
         let generation = self.caches.fn_resolve_gen;
-        if let Some(&c) = self
+        if let Some(c) = self
             .caches
             .func_multi_type_cacheable
             .get(generation, &(pkg_sym, name_sym), || self.dispatch.fn_family_gens.of_name(name_sym))
@@ -1844,7 +1844,7 @@ mod func_multi_cache_generation_tests {
             i.caches
                 .func_multi_type_cacheable
                 .get(base, &(pkg, name), || fam),
-            Some(&true)
+            Some(true)
         );
 
         // Another family's registration moves the map generation only.

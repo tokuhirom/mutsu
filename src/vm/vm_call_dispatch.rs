@@ -72,7 +72,7 @@ impl Interpreter {
         }
         let generation = self.caches.fn_resolve_gen;
         let key = self.bare_name_ctx_key(sym);
-        if let Some(&cached) = self
+        if let Some(cached) = self
             .caches
             .multi_candidates_cache
             .get(generation, &key, || {

@@ -93,27 +93,6 @@ struct Slots<V> {
     older: Option<Tagged<V>>,
 }
 
-impl<V> Slots<V> {
-    /// The map generation moved: re-tag the slot computed under the family's
-    /// current generation, if any, and say which one it is (`true`: `older`).
-    /// Kept out of line so the map-generation hit stays small enough to inline.
-    // Cost: O(1), plus the `family` call.
-    #[cold]
-    #[inline(never)]
-    fn revalidate(&mut self, generation: u64, family: impl FnOnce() -> u64) -> Option<bool> {
-        let fam = family();
-        if self.recent.family == fam {
-            self.recent.generation = generation;
-            Some(false)
-        } else if let Some(older) = self.older.as_mut().filter(|o| o.family == fam) {
-            older.generation = generation;
-            Some(true)
-        } else {
-            None
-        }
-    }
-}
-
 /// A memo validated by the map generation first and the family generation
 /// second. See the module docs.
 pub(crate) struct FamilyGenCache<K, V> {
@@ -133,38 +112,56 @@ impl<K: Eq + Hash, V> FamilyGenCache<K, V> {
     /// generation mismatch, `family` names the current generation of the key's
     /// family, and an answer computed under that family generation is re-tagged
     /// and served.
+    ///
+    /// Returns a clone: the hit path is a shared-reference lookup, as cheap as
+    /// `GenCache::get`, and only a map-generation miss takes the mutable one.
     // Cost: O(1) expected, plus one `family` call when the map generation
     // moved since the key was last confirmed.
     #[inline]
-    pub(crate) fn get(
-        &mut self,
-        generation: u64,
-        key: &K,
-        family: impl FnOnce() -> u64,
-    ) -> Option<&V> {
-        let Some(slots) = self.entries.get_mut(key) else {
+    pub(crate) fn get(&mut self, generation: u64, key: &K, family: impl FnOnce() -> u64) -> Option<V>
+    where
+        V: Clone,
+    {
+        let Some(slots) = self.entries.get(key) else {
             crate::vm::vm_stats::record_gen_cache_probe(false, false);
             return None;
         };
-        let older = if slots.recent.generation == generation {
-            false
-        } else if matches!(&slots.older, Some(o) if o.generation == generation) {
-            true
-        } else {
-            match slots.revalidate(generation, family) {
-                Some(older) => older,
-                None => {
-                    crate::vm::vm_stats::record_gen_cache_probe(false, true);
-                    return None;
-                }
-            }
-        };
-        crate::vm::vm_stats::record_gen_cache_probe(true, true);
-        if older {
-            slots.older.as_ref().map(|o| &o.value)
-        } else {
-            Some(&slots.recent.value)
+        if slots.recent.generation == generation {
+            crate::vm::vm_stats::record_gen_cache_probe(true, true);
+            return Some(slots.recent.value.clone());
         }
+        if let Some(older) = &slots.older
+            && older.generation == generation
+        {
+            crate::vm::vm_stats::record_gen_cache_probe(true, true);
+            return Some(older.value.clone());
+        }
+        self.revalidate(generation, key, family)
+    }
+
+    /// [`Self::get`]'s map-generation miss: re-tag the slot computed under the
+    /// family's current generation, if any. Kept out of line so the hit path
+    /// stays small enough to inline.
+    // Cost: O(1) expected, plus the `family` call.
+    #[cold]
+    #[inline(never)]
+    fn revalidate(&mut self, generation: u64, key: &K, family: impl FnOnce() -> u64) -> Option<V>
+    where
+        V: Clone,
+    {
+        let slots = self.entries.get_mut(key)?;
+        let fam = family();
+        let hit = if slots.recent.family == fam {
+            slots.recent.generation = generation;
+            Some(slots.recent.value.clone())
+        } else if let Some(older) = slots.older.as_mut().filter(|o| o.family == fam) {
+            older.generation = generation;
+            Some(older.value.clone())
+        } else {
+            None
+        };
+        crate::vm::vm_stats::record_gen_cache_probe(hit.is_some(), true);
+        hit
     }
 
     /// Record `value` as the answer for `key`, computed under map generation
@@ -246,7 +243,7 @@ mod tests {
         cache.insert_tagged(7, 1, "f", 10);
         assert_eq!(
             cache.get(7, &"f", || panic!("family read on a hit")),
-            Some(&10)
+            Some(10)
         );
     }
 
@@ -256,9 +253,9 @@ mod tests {
     fn an_unchanged_family_survives_a_map_generation_move() {
         let mut cache: FamilyGenCache<&str, u32> = FamilyGenCache::default();
         cache.insert_tagged(7, 1, "f", 10);
-        assert_eq!(cache.get(8, &"f", || 1), Some(&10));
+        assert_eq!(cache.get(8, &"f", || 1), Some(10));
         // Re-tagged: the next probe under 8 is a fast-path hit.
-        assert_eq!(cache.get(8, &"f", || panic!("re-tag missed")), Some(&10));
+        assert_eq!(cache.get(8, &"f", || panic!("re-tag missed")), Some(10));
     }
 
     #[test]
@@ -275,11 +272,11 @@ mod tests {
         let mut cache: FamilyGenCache<&str, u32> = FamilyGenCache::default();
         cache.insert_tagged(7, 1, "f", 10);
         cache.insert_tagged(8, 2, "f", 20);
-        assert_eq!(cache.get(9, &"f", || 1), Some(&10));
-        assert_eq!(cache.get(10, &"f", || 2), Some(&20));
+        assert_eq!(cache.get(9, &"f", || 1), Some(10));
+        assert_eq!(cache.get(10, &"f", || 2), Some(20));
         cache.insert_tagged(11, 3, "f", 30);
-        assert_eq!(cache.get(12, &"f", || 3), Some(&30));
-        assert_eq!(cache.get(13, &"f", || 2), Some(&20));
+        assert_eq!(cache.get(12, &"f", || 3), Some(30));
+        assert_eq!(cache.get(13, &"f", || 2), Some(20));
         assert_eq!(cache.get(14, &"f", || 1), None);
     }
 
@@ -291,7 +288,7 @@ mod tests {
         cache.insert(7, 8, || panic!("family read for a dropped insert"), "f", 10);
         assert!(cache.is_empty());
         cache.insert(7, 7, || 1, "f", 10);
-        assert_eq!(cache.get(9, &"f", || 1), Some(&10));
+        assert_eq!(cache.get(9, &"f", || 1), Some(10));
     }
 
     #[test]
