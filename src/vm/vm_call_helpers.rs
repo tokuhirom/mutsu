@@ -356,6 +356,12 @@ impl Interpreter {
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
             return None;
         };
+        // A call site with an argument-source table but no `|` argument (any
+        // call passing a named variable) allocates nothing (#12526).
+        let is_slip = |item: &Value| matches!(item.view(), ValueView::Bool(true));
+        if !items.iter().any(is_slip) {
+            return None;
+        }
         let positions: Vec<usize> = items
             .iter()
             .enumerate()
