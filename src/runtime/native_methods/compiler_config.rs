@@ -19,9 +19,13 @@ impl Interpreter {
         match method {
             "rakudo-build-config" => {
                 let mut config: ValueMap = ValueMap::default();
+                // The Rakudo release the language level targets, as for
+                // `$*RAKU.compiler.version` (ADR-0104): Rakudo's own build
+                // config answers `2026.07` there, the string a module such as
+                // Rakudo::CORE::META reads as "the Rakudo version".
                 config.insert(
                     "version".to_string(),
-                    Value::str_from(env!("CARGO_PKG_VERSION")),
+                    Value::str_from(Self::RAKUDO_COMPAT_VERSION),
                 );
                 Ok(Value::hash_with_data(Value::hash_arc(config)))
             }
