@@ -307,6 +307,12 @@ impl MatchTarget {
         }
     }
 
+    /// The mark-stripped view when a `:m` use already built it, else `None`.
+    // Cost: O(1).
+    pub(crate) fn stripped_if_built(&self) -> Option<&StrippedMatchTarget> {
+        self.stripped.get()
+    }
+
     /// Return the subject with combining marks removed, building it only on
     /// the first `:ignoremark` use for this match target.
     pub(crate) fn stripped(&self) -> &StrippedMatchTarget {
