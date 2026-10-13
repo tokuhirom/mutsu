@@ -300,7 +300,11 @@ pub(crate) fn admits(id: RowId, args: &[Value]) -> bool {
 
 #[inline]
 fn admits_row(row: &MethodRow, args: &[Value]) -> bool {
-    if row.flags.contains(RowFlags::ANY_ARGS) {
+    if row.flags.contains(RowFlags::INDEX_ARG) {
+        // Any other index is bound through its `.Int` (`index_arg`).
+        args.iter()
+            .all(|arg| arg.dispatch_shape() == Some(DispatchShape::Int))
+    } else if row.flags.contains(RowFlags::ANY_ARGS) {
         args.iter().all(Value::is_plain_argument)
     } else {
         args.iter().all(is_plain_scalar)

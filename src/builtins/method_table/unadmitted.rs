@@ -63,6 +63,10 @@ pub(crate) fn invoke_unadmitted(
     if args.is_empty() || !names_a_row(method, args.len()) {
         return None;
     }
+    // A positional index is bound by its own rules, a user object included.
+    if let Some(answer) = super::index_arg::invoke(interp, target, method, args) {
+        return Some(answer);
+    }
     if !args
         .iter()
         .all(|arg| !arg.is_string_pair_value() && is_builtin_value_argument(arg))

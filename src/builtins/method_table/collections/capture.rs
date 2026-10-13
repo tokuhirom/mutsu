@@ -55,7 +55,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "AT-POS",
         arity: 1,
         handler: Handler::Narrow(at_pos),
-        flags: RowFlags::NONE,
+        // `Capture:D: Int(Any) $pos`: every index is coerced (`index_arg`).
+        flags: RowFlags::INDEX_ARG.or(RowFlags::INDEX_COERCES),
         named: &[],
     },
     MethodRow {
@@ -63,7 +64,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "EXISTS-POS",
         arity: 1,
         handler: Handler::Narrow(exists_pos),
-        flags: RowFlags::NONE,
+        // `Capture:D: Int(Any) $pos`: every index is coerced (`index_arg`).
+        flags: RowFlags::INDEX_ARG.or(RowFlags::INDEX_COERCES),
         named: &[],
     },
     // `.Capture`: every collection turns itself into a Capture.

@@ -255,6 +255,15 @@ fn native_method_1arg_cascade(
     {
         return Some(result);
     }
+    // A positional index of a receiver whose row binds it (`Int:D`, and every
+    // other index as Rakudo's candidates do) is the row's alone, through
+    // `method_table::index_arg` (ADR-11276 §9.105).
+    // Cost: O(1), a bit test, a tag probe and one hash lookup.
+    if matches!(method, "AT-POS" | "EXISTS-POS")
+        && crate::builtins::method_table::index_arg::binds(target, method_sym)
+    {
+        return None;
+    }
     match method {
         // ACCEPTS for allomorphic types (IntStr, RatStr, NumStr, ComplexStr)
         "ACCEPTS" if matches!(target.view(), ValueView::Mixin(_, m) if m.contains_key("Str")) => {
@@ -293,23 +302,6 @@ fn native_method_1arg_cascade(
             target,
             std::slice::from_ref(arg),
         ),
-        // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
-        // A Capture's positional part: the `Capture` row's implementation
-        // (`method_table::capture`).
-        // A `Uni`'s positional subscript: the `Uni` rows' implementation
-        // (`method_table::uni`).
-        "AT-POS" if matches!(target.view(), ValueView::Uni(..)) => {
-            crate::builtins::method_table::uni::at_pos(target, std::slice::from_ref(arg))
-        }
-        "EXISTS-POS" if matches!(target.view(), ValueView::Uni(..)) => {
-            crate::builtins::method_table::uni::exists_pos(target, std::slice::from_ref(arg))
-        }
-        "AT-POS" if matches!(target.view(), ValueView::Capture { .. }) => {
-            crate::builtins::method_table::capture::at_pos(target, std::slice::from_ref(arg))
-        }
-        "EXISTS-POS" if matches!(target.view(), ValueView::Capture { .. }) => {
-            crate::builtins::method_table::capture::exists_pos(target, std::slice::from_ref(arg))
-        }
         "AT-POS" => {
             // The index a Str, Rat or Num stands for (the `AT-POS` rows'
             // implementation, `method_table::positional`).
