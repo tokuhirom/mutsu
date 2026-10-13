@@ -2310,6 +2310,22 @@ The two quoted-name arms of the block are gone; what is left of it is the `match
 `t/regex/match/match-any-list-methods.t`. The remaining differences from Rakudo are `List`'s own over a list of `Match`es
 (#13195): `minmax` and `sum` do not numify the elements, `chrs` does not refuse them, `minpairs`/`maxpairs` answer a `Seq`, and
 `iterator`/`batch()`/`rotor()` differ.
+### 9.99 Slice 5: the 1-arg `Rat`/`FatRat` arms are gone; `Cool.Rat` takes no epsilon (2026-10-13)
+
+`refactor/11276-rat-epsilon-arms`. `methods_narg/dispatch_1arg.rs` kept three arms for `.Rat($epsilon)` and `.FatRat($epsilon)`:
+one that re-asked an allomorph's numeric value, and one per name that answered a `Str` (parsed, then rationalized with the
+epsilon), an aggregate or any other receiver (`0`), and declined a `Complex`, `Instant` and `Duration`. Every receiver Rakudo
+answers already has a row: `Int`/`Num`/`Rat` (`numeric_coerce`'s `with_epsilon` rows, §9.70), `Complex` (`complex_real`),
+`Instant`/`Duration` (§9.18), and an allomorph through its numeric value. Rakudo's `Cool.Rat` and `Cool.FatRat` take no epsilon
+(`"1".Rat(0.1)` is "Too many positionals passed"), so the receivers only the arms answered were answering wrongly. Decisions:
+
+1. **The three arms are deleted**, with no new row. A `Str`, a `List`, a `Match` or a `Str` type object refuses the epsilon.
+   mutsu raises `X::Method::NotFound` where Rakudo raises the bind failure; that is general to every built-in method called
+   with too many positionals and is filed as #13203.
+2. **The recognition table follows**: `Str`, `Match` and `Cool`'s `Rat`/`FatRat` rows claim arity 0 only.
+
+`method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 29 to 27 arms (the allomorph arm was a guarded `|` arm the report
+counts once with the `Rat` arm). Pinned in `t/types/coercion/coerce-rat-epsilon-rows.t`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
