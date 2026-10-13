@@ -888,6 +888,9 @@ impl Interpreter {
             if base == cn_base {
                 return 0;
             }
+            if let Some(distance) = self.role_type_object_distance(cn_base, base) {
+                return distance;
+            }
             for lookup in [cn.as_str(), cn_base] {
                 // `mro_readonly` walks the parent chain live — the registry's
                 // `ClassDef.mro` field is not populated for every class, which

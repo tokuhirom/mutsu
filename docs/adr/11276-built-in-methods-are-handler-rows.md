@@ -2311,6 +2311,28 @@ The two quoted-name arms of the block are gone; what is left of it is the `match
 (#13195): `minmax` and `sum` do not numify the elements, `chrs` does not refuse them, `minpairs`/`maxpairs` answer a `Seq`, and
 `iterator`/`batch()`/`rotor()` differ.
 
+### 9.99 Slice 5: the 1-arg `Rat`/`FatRat` arms are gone; `Cool.Rat` takes no epsilon (2026-10-13)
+
+`refactor/11276-rat-epsilon-arms`. `methods_narg/dispatch_1arg.rs` kept three arms for `.Rat($epsilon)` and `.FatRat($epsilon)`:
+one that re-asked an allomorph's numeric value, and one per name that answered a `Str` (parsed, then rationalized with the
+epsilon), an aggregate or any other receiver (`0`), and declined a `Complex`, `Instant` and `Duration`. Every receiver Rakudo
+answers already has a row: `Int`/`Num`/`Rat` (`numeric_coerce`'s `with_epsilon` rows, §9.70), `Complex` (`complex_real`),
+`Instant`/`Duration` (§9.18), and an allomorph through its numeric value. Rakudo's `Cool.Rat` and `Cool.FatRat` take no epsilon
+(`"1".Rat(0.1)` is "Too many positionals passed"), so the receivers only the arms answered were answering wrongly. Decisions:
+
+1. **The three arms are deleted**, with no new row. A `Str`, a `List`, a `Match` or a `Str` type object refuses the epsilon.
+   mutsu raises `X::Method::NotFound` where Rakudo raises the bind failure; that is general to every built-in method called
+   with too many positionals and is filed as #13203.
+2. **The recognition table follows**: `Str`, `Match` and `Cool`'s `Rat`/`FatRat` rows claim arity 0 only.
+3. **A declined argument reaches an `ANY_ARGS` row** (`method_table::invoke_unadmitted`). The arms also answered a number whose
+   epsilon the guard step does not admit (an allomorph `<1>`, a `Duration`), which `t/types/numeric/rat-fatrat-epsilon-real-check.t`
+   pins. A row flagged `ANY_ARGS` binds its own arguments, so `call_method_with_values`, once the cascades have declined, asks the
+   row the receiver's shape resolves when every declined argument is a built-in value (an allomorph, a `Duration` or an `Instant`). A user object stays the slow path's (`"3".exp(NotComplex.new)` calls its `.Numeric`; `roast/S32-num/cool-num.t` caught a first version that admitted it), as do a named argument, a `Junction` and a `Failure`. It is
+   the shape counterpart of `invoke_owner`, and it serves every `ANY_ARGS` row, not only these two.
+
+`method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 29 to 27 arms (the allomorph arm was a guarded `|` arm the report
+counts once with the `Rat` arm). Pinned in `t/types/coercion/coerce-rat-epsilon-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

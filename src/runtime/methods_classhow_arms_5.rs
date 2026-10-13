@@ -322,6 +322,14 @@ impl Interpreter {
                     && self.registry().classes.contains_key(&name))
                 .then_some(name)
             }
+            // A method called on a role type object (`R.m`) runs on the role's
+            // pun, which mutsu passes as the role type object itself:
+            // `self.^is_pun` is True there and `self.^pun_source` is the role
+            // (PDF's `PDF::COS::Tie.induce`).
+            ValueView::Package(name) => {
+                let name = name.resolve();
+                self.registry().roles.contains_key(&name).then_some(name)
+            }
             ValueView::Mixin(_, overrides) => overrides.keys().find_map(|key| {
                 let role = key.strip_prefix("__mutsu_role__")?;
                 self.registry().roles.contains_key(role).then(|| role.to_string())

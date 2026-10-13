@@ -291,8 +291,14 @@ impl Interpreter {
                 let from = regs[start as usize];
                 let mut merged = merge_regex_captures(RegexCaptures::default(), levels.close());
                 for branch in &branches[1..] {
-                    let branch_program = super::rx_entry::program_for(branch)
-                        .expect("a compiled conjunction's branches compile");
+                    // A markless program's branches are markless too
+                    // (`compile_markless` checked that they compile).
+                    let branch_program = if program.markless {
+                        super::rx_entry::markless_program_for(branch)
+                    } else {
+                        super::rx_entry::program_for(branch)
+                    }
+                    .expect("a compiled conjunction's branches compile");
                     // Every other branch is part of the same regex too: its
                     // nested run starts from the enclosing level's view and the
                     // earlier branches' captures, as rakudo's one cursor has them.

@@ -94,9 +94,13 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
 /// Compile the mark-stripped body of a whole-`:m` rule (`strip_marks_pattern`)
 /// as a markless program ([`RxProgram::markless`]), or say why not. Only the
 /// ops whose every character test goes through a consuming atom are covered,
-/// and a look-around whose body compiles markless in turn; a construct that
-/// reads the subject another way (a backreference, `<.ws>`, an interpolation
-/// or a nested `:m` group) declines, and the call keeps the eager `:m` path.
+/// a look-around whose body compiles markless in turn, and a backreference or
+/// capture marker (`CapAtom`: rakudo compares a backreference exactly, marks
+/// included, which the subject's own positions give), and `<.ws>` (a call,
+/// which does not inherit `:m`: it runs over the subject's own text). A
+/// construct that reads the subject another way (an interpolation or a nested
+/// `:m` group) declines, and the call keeps the eager `:m` path. A
+/// conjunction is covered when its other branches compile markless too.
 // Cost: O(t), t = the number of tokens in the pattern tree.
 pub(in crate::runtime::regex) fn compile_markless(
     pattern: &RegexPattern,
@@ -109,14 +113,15 @@ pub(in crate::runtime::regex) fn compile_markless(
             RegexAtom::Lookaround { pattern, .. }
                 if super::rx_entry::markless_program_for(pattern).is_some()
         ),
-        op => !matches!(
-            op,
-            RxOp::Ws
-                | RxOp::CapAtom(_)
-                | RxOp::InterpEnds(_)
-                | RxOp::GroupEnds(_)
-                | RxOp::ConjTail { .. }
+        // The other branches run as markless nested runs (`ConjTail`).
+        RxOp::ConjTail { tok, .. } => matches!(
+            &program.toks[*tok as usize].atom,
+            RegexAtom::Conjunction(branches)
+                if branches[1..]
+                    .iter()
+                    .all(|b| super::rx_entry::markless_program_for(b).is_some())
         ),
+        op => !matches!(op, RxOp::InterpEnds(_) | RxOp::GroupEnds(_)),
     });
     if !covered {
         return Err("markless-uncovered");

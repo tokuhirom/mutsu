@@ -1,6 +1,6 @@
 use Test;
 
-plan 28;
+plan 48;
 
 # A `:m` (ignoremark) rule called as `<r>` runs as a frame, entering its ends
 # one at a time: a code block in the callee runs once per end entered, not once
@@ -85,3 +85,53 @@ grammar K5 { regex TOP { <r> .* }; regex r { :m .+ <?before 'é'> { @log.push: $
 @log = ();
 is ~K5.parse("abe\x[300]e")<r>, "abe\x[300]", 'a lookahead body compares bases';
 is @log.join(','), '3', '... entering one end';
+
+# A backreference in a markless callee compares the captured text exactly,
+# marks included, as rakudo does; a capture marker sets the subject's own
+# positions (#13176).
+grammar B1 { regex TOP { <r> 'x' }; regex r { :m (a+) $0 } }
+nok B1.parse("a\x[301]aa\x[300]ax"), 'a backreference does not ignore marks';
+grammar B2 { regex TOP { <r> 'x' }; regex r { :m $<k>=(<[ab]>) .* $<k> } }
+nok B2.parse("a\x[301]bba\x[302]x"), 'a named backreference does not either';
+grammar P1 { regex TOP { <r> 'x' }; regex r { :m (a+) { @log.push: $/.to } $0 } }
+@log = ();
+is ~P1.parse("a\x[301]a\x[301]x")<r>, "a\x[301]a\x[301]", 'a backreference with the same marks matches';
+is @log.join(','), '2,1', '... entering ends as it backtracks, as rakudo does';
+grammar P2 { regex TOP { <r> 'x' }; regex r { :m a <( b+ )> { @log.push: $/.to } } }
+@log = ();
+my $p2 = P2.parse("a\x[301]bb\x[300]x");
+is ~$p2<r>, "bb\x[300]", 'capture markers over marked graphemes';
+is $p2<r>.from, 1, '... from the grapheme after the marked one';
+is @log.join(','), '3', '... entering one end';
+
+# `<.ws>` in a markless callee (here from `:s`) is a call, which does not
+# inherit `:m`: it decides over the subject's own text (#13176).
+grammar S1 { regex TOP { <r> 'x' }; regex r { :m :s [a ]+ { @log.push: $/.to } } }
+@log = ();
+is ~S1.parse("a\x[301] a\x[300] x")<r>, "a\x[301] a\x[300] ", ':s whitespace between marked graphemes';
+is @log.join(','), '4', '... entering one end';
+grammar S2 { regex TOP { <r> 'a' }; regex r { :m :s [a ]+ { @log.push: $/.to } } }
+@log = ();
+is ~S2.parse("a\x[301] a\x[300] a")<r>, "a\x[301] a\x[300] ", '... backtracking one iteration';
+is @log.join(','), '5,4', '... entering the ends it backtracks through, as rakudo does';
+grammar S3 { regex TOP { <r> .* }; regex r { :m a <.ws> { @log.push: $/.to } } }
+@log = ();
+nok S3.parse("a\x[301]e\x[301]"), '<.ws> fails between two marked word graphemes';
+@log = ();
+is ~S3.parse("a\x[301]-")<r>, "a\x[301]", '... and matches before a non-word grapheme';
+
+# A conjunction in a markless callee runs its other branches as markless
+# nested runs over the same subject (#13176).
+grammar C1 { regex TOP { <r> 'x' }; regex r { :m [a+ && <[ab]>+] { @log.push: $/.to } } }
+@log = ();
+is ~C1.parse("a\x[301]a\x[300]x")<r>, "a\x[301]a\x[300]", '&& over marked graphemes';
+is @log.join(','), '2', '... entering one end';
+grammar C2 { regex TOP { <r> 'b' }; regex r { :m [.+ & a+] { @log.push: $/.to } } }
+@log = ();
+is ~C2.parse("a\x[301]aa\x[300]b")<r>, "a\x[301]aa\x[300]", '& over marked graphemes';
+is @log.join(','), '3', '... entering one end';
+grammar C3 { regex TOP { <r> .* }; regex r { :m [(a) . && . (b)] } }
+my $c3 = C3.parse("a\x[301]b\x[302]c");
+is ~$c3<r>, "a\x[301]b\x[302]", 'a conjunction with captures in both branches';
+is ~$c3<r>[0], "a\x[301]", '... the first branch captures';
+is ~$c3<r>[1], "b\x[302]", '... and so does the second';

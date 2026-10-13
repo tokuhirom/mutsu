@@ -196,9 +196,14 @@ impl Walker<'_> {
                 self.resolve_free_name(*sym, scope, &mut deps, &mut pending)?;
             }
             // A multi read as `&name` is its proto object, which the code may
-            // change (`&p.add_dispatchee(...)`); a change to the copy would be
-            // lost, as for a type ([`super::decls`]).
-            if scan.code_reads.iter().any(|name| self.reads_multi(&name.resolve(), scope)) {
+            // change (`&p.add_dispatchee(...)`, or `foo(&p)` handing it on); a
+            // change to the copy would be lost, as for a type
+            // ([`super::decls`]). Reading it through a read-only method
+            // (`&p.candidates`) or calling it (`&p(...)`) changes nothing.
+            if scan.code_reads.iter().any(|name| {
+                let name = name.resolve();
+                scan.code_uses.may_change(&name) && self.reads_multi(&name, scope)
+            }) {
                 return None;
             }
             for callee in &scan.callees {

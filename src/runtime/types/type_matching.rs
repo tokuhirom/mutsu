@@ -1101,7 +1101,11 @@ impl Interpreter {
         {
             let pkg_resolved = package_name.resolve();
             let target_ok = package_matches_type(&pkg_resolved, target);
-            let source_ok = source.is_some_and(|src| self.type_matches_value(src, value));
+            // A bare `T()` coerces from `Any`, so an `Any` type object (or any
+            // other type object below `Any`) is accepted and handed to the
+            // coercion, as rakudo does (`my PDF::COS::Null() $n = Any` calls
+            // `COERCE(Any:U)`).
+            let source_ok = self.type_matches_value(source.unwrap_or("Any"), value);
             return target_ok || source_ok;
         }
         // Raku's `Metamodel::TypePretense`: an un-composed role type object

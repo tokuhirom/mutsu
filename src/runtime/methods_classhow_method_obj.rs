@@ -655,12 +655,19 @@ impl Interpreter {
             }
             attrs.insert("signature".to_string(), signature);
         }
+        if let Some(signature) = attrs.get("signature")
+            && let Some(ty) = method_def.routine_cell.return_type()
+            && let ValueView::Instance { attributes, .. } = signature.view()
+        {
+            attributes.bind_attr_through("returns", ty);
+        }
 
         // Return type
         let rt = return_type.unwrap_or_else(|| "Mu".to_string());
-        let rt_value = self
-            .cached_meta_parameterized_type(&rt)
-            .unwrap_or_else(|| Value::package(Symbol::intern(&rt)));
+        let rt_value = method_def.routine_cell.return_type().unwrap_or_else(|| {
+            self.cached_meta_parameterized_type(&rt)
+                .unwrap_or_else(|| Value::package(Symbol::intern(&rt)))
+        });
         attrs.insert("returns".to_string(), rt_value.clone());
         attrs.insert("of".to_string(), rt_value);
 

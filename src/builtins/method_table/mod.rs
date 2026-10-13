@@ -57,6 +57,7 @@ mod row;
 pub(crate) mod scalars;
 mod table;
 mod table_const;
+mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
@@ -98,6 +99,7 @@ pub(crate) use table::names_a_mut_row;
 pub(crate) use table::{
     Receiver, RowId, base_row, names_a_row, owner_row, resolve, row, shape_has_row,
 };
+pub(crate) use unadmitted::invoke_unadmitted;
 
 #[cfg(test)]
 mod tests;
