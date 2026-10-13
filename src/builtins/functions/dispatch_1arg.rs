@@ -281,26 +281,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 _ => {
                     let s = arg.to_string_value();
                     let trimmed = s.trim();
-                    let i = if let Ok(v) = trimmed.parse::<i64>() {
-                        v
-                    } else if let Some(hex) = trimmed
-                        .strip_prefix("0x")
-                        .or_else(|| trimmed.strip_prefix("0X"))
-                    {
-                        i64::from_str_radix(hex, 16).unwrap_or(-1)
-                    } else if let Some(oct) = trimmed
-                        .strip_prefix("0o")
-                        .or_else(|| trimmed.strip_prefix("0O"))
-                    {
-                        i64::from_str_radix(oct, 8).unwrap_or(-1)
-                    } else if let Some(bin) = trimmed
-                        .strip_prefix("0b")
-                        .or_else(|| trimmed.strip_prefix("0B"))
-                    {
-                        i64::from_str_radix(bin, 2).unwrap_or(-1)
-                    } else {
-                        -1
-                    };
+                    // The same Str -> number parse `Str.chr` uses (`:16<41>`,
+                    // `0x41`, `65`); anything that is no integer is out of bounds.
+                    let i = crate::builtins::method_table::scalars::numify::numify_str(trimmed)
+                        .and_then(|n| n.as_int())
+                        .unwrap_or(-1);
                     (i, format!("{}", i))
                 }
             };

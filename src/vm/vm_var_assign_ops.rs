@@ -1038,6 +1038,15 @@ impl Interpreter {
         val: &Value,
     ) {
         let is_anon_container = crate::runtime::utils::has_anon_marker(name);
+        // A deferred element token only reaches a by-name store as a `:=` rebind
+        // (`$*p := $*p<k>`; a plain `=` reads it through first), so it replaces
+        // the cell's contents. Storing *through* a cell that still holds the
+        // previous token would materialize that earlier key instead of extending
+        // the walk.
+        if matches!(val.view(), ValueView::HashEntryRef { .. }) {
+            *arc.lock().unwrap() = val.clone();
+            return;
+        }
         let mut inner = arc.lock().unwrap();
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))

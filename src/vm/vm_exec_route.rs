@@ -17,6 +17,7 @@ impl Interpreter {
         match &code.ops[*ip] {
             OpCode::CallTrir { .. }
             | OpCode::GetGlobal(..)
+            | OpCode::GetGlobalDeferred(..)
             | OpCode::GetUpvalue { .. }
             | OpCode::LoadConst(..)
             | OpCode::LoadFalse

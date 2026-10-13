@@ -3625,7 +3625,19 @@ impl Interpreter {
         // (`%b := {...}`, which also carries the bind mark) is the same case:
         // after `my %b := %a` the entry is the cell `%a` shares (#9357).
         let rebind_detaches_env_cell = is_rebind
-            && (!is_bind || name.starts_with(['@', '%']))
+            && (!is_bind
+                // `my $*p := $h; $*p := $*p<k>`: a `my`-declared dynamic is this
+                // frame's own binding, so a rebind to a deferred element detaches
+                // it from the cell it shares with `$h` like a plain lexical
+                // (writing through would clobber `$h`). An undeclared `$*x := ...`
+                // in a callee rebinds the caller's dynamic, so it keeps writing
+                // through.
+                || (synthetic_index_source
+                    && code
+                        .locals_sym
+                        .get(idx)
+                        .is_some_and(|sym| code.dynamic_declared_sym.contains(sym)))
+                || name.starts_with(['@', '%']))
             && !val.is_container_ref()
             && !name.starts_with('&')
             && matches!(
