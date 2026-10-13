@@ -74,17 +74,17 @@ pub(crate) fn parts(stmt: &Stmt) -> Option<(&Stmt, &str, &Expr)> {
 /// Split an expansion [`expand`] built with its record for a postfix `for`:
 /// the record and the declaration run once, before the loop, and the
 /// assignment is the loop body (`my $product *= $_ for @values`). Any other
-/// statement comes back unchanged as the error.
+/// statement comes back unchanged, with nothing hoisted.
 // Cost: O(1).
-pub(crate) fn split_for_modifier(stmt: Stmt) -> Result<(Vec<Stmt>, Stmt), Stmt> {
+pub(crate) fn split_for_modifier(stmt: Stmt) -> (Option<Vec<Stmt>>, Stmt) {
     if parts(&stmt).is_none() {
-        return Err(stmt);
+        return (None, stmt);
     }
     let Stmt::SyntheticBlock(mut stmts) = stmt else {
         unreachable!("parts matched a synthetic block");
     };
     let assign = stmts.pop().expect("parts matched three statements");
-    Ok((stmts, assign))
+    (Some(stmts), assign)
 }
 
 /// The declaration and the loop of a postfix `for` over a split expansion

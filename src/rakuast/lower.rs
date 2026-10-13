@@ -249,10 +249,7 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     // `my $x OP= … for LIST` declares once, before the loop, as
                     // the parser's expansion does.
                     let (hoisted, statement) =
-                        match crate::ast::decl_compound_assign::split_for_modifier(statement) {
-                            Ok((hoisted, assign)) => (Some(hoisted), assign),
-                            Err(statement) => (None, statement),
-                        };
+                        crate::ast::decl_compound_assign::split_for_modifier(statement);
                     let (param, params) = crate::parser::for_modifier_loop_params(&statement);
                     let uses_block_magic =
                         super::callable_context::uses_block(std::slice::from_ref(&statement));

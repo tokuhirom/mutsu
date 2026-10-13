@@ -126,8 +126,8 @@ fn check_two_terms_across_lines(cond_input: &str, r: &str) -> Result<(), PError>
 /// declaration, as a synthetic block the caller flattens.
 pub(crate) fn split_compound_decl_for_modifier(stmt: Stmt) -> (Option<Stmt>, Stmt) {
     let stmt = match crate::ast::decl_compound_assign::split_for_modifier(stmt) {
-        Ok((hoisted, assign)) => return (Some(Stmt::SyntheticBlock(hoisted)), assign),
-        Err(stmt) => stmt,
+        (Some(hoisted), assign) => return (Some(Stmt::SyntheticBlock(hoisted)), assign),
+        (None, stmt) => stmt,
     };
     let Stmt::SyntheticBlock(mut stmts) = stmt else {
         return (None, stmt);
