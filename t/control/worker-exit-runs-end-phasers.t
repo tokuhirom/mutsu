@@ -6,7 +6,7 @@ use Test;
 # `exit`: it stops its mainline wherever it is (sleeping, awaiting, receiving,
 # looping), runs END, and exits with the worker's status.
 
-plan 30;
+plan 36;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -129,4 +129,38 @@ sub run-code(Str $code) {
         'my $p = run "sh", "-c", "sleep 0.1; exit 7"; say $p.exitcode');
     is $out, "7\n", 'a run still reports its child\'s status';
     is $code, 0, '... and the program runs on';
+}
+
+# ... and so do blocking reads (#13100): slurping a `run :out` pipe whose
+# child is still running, and a `$*IN.get` with nothing to read yet.
+{
+    my ($out, $, $code) = run-code(
+        'END { say "end ran" }; start { sleep 0.2; exit 4 }; my $p = run "sleep", "3", :out; '
+        ~ 'say $p.out.slurp; say "alive"');
+    is $out, "end ran\n", 'reading a run :out pipe is interrupted';
+    is $code, 4, '... with the worker\'s status';
+}
+
+{
+    my $p = run $*EXECUTABLE, '-e',
+        'END { say "end ran" }; start { sleep 0.2; exit 5 }; my $l = $*IN.get; say "got $l"',
+        :in, :out, :err;
+    my $out = $p.out.slurp(:close);
+    my $ = $p.in.close;
+    is $out, "end ran\n", 'a $*IN.get waiting for input is interrupted';
+    is $p.exitcode, 5, '... with the worker\'s status';
+}
+
+{
+    # Both lines arrive in one read and sit in the stdin buffer while the pipe
+    # stays open: the second `get` must not wait on the empty fd.
+    my $p = run $*EXECUTABLE, '-e',
+        'start { sleep 5; exit 9 }; say $*IN.get; say $*IN.get; exit 0',
+        :in, :out, :err;
+    $p.in.print("a\nb\n");
+    $p.in.flush;
+    my $out = $p.out.slurp(:close);
+    my $ = $p.in.close;
+    is $out, "a\nb\n", 'a line already buffered from stdin is read without waiting';
+    is $p.exitcode, 0, '... and the program runs on';
 }
