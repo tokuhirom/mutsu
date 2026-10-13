@@ -111,7 +111,9 @@ pub(crate) struct LexicalState {
     /// lane, which belongs to the calling scope: the body's own
     /// `__mutsu_type::` entry is restored with its binding when the body is
     /// left, so a second class with a same-named static no longer imposes its
-    /// type on the first class's methods (#10524).
+    /// type on the first class's methods (#10524). An `@`/`%` static's lanes
+    /// are kept here under their own `__mutsu_type::` /
+    /// `__mutsu_hash_key_type::` keys, which method entry re-injects (#12903).
     pub(crate) class_body_static_types: std::sync::Arc<HashMap<String, HashMap<String, String>>>,
     /// File-scope `my` lexicals of a loaded `unit` compunit, keyed by the unit
     /// package name then env var name, each holding a shared `ContainerRef` cell.
