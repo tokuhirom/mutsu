@@ -79,6 +79,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "subst-mutate", 8, 26),
     ("Str", "substr-rw", 8, 28),
     ("Str", "substr-eq", 4, 24),
+    ("Cool", "substr-eq", 4, 24),
     ("Str", "trans", 8, 28),
     ("Str", "IO", 8, 28),
     ("Str", "Numeric", 1, 24),
