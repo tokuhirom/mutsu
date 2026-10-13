@@ -70,8 +70,47 @@ pub(crate) fn light_def_params(param_defs: &[ParamDef]) -> Option<Box<[LightDefP
 
 // Cost: O(t + n), t = the parameter's trait count, n = its name length.
 fn light_def_param(pd: &ParamDef) -> Option<LightDefParam> {
+    if !def_is_plain_positional(pd) || !is_plain_scalar_param_name(&pd.name) {
+        return None;
+    }
+    let is_raw = !pd.traits.is_empty();
+    Some(LightDefParam {
+        sym: Symbol::intern(&pd.name),
+        bind: Interpreter::scalar_param_bind(pd),
+        readonly: if is_raw {
+            ReadonlyKind::Immutable
+        } else {
+            ReadonlyKind::Alias
+        },
+    })
+}
+
+/// Whether every `ParamDef` is a `$^name` placeholder with nothing else on it
+/// (`{ $^a + $^b }`), a signature the light closure *call* binds as the
+/// general binder does: each argument itemized, in order (#13286). The light
+/// closure bind does not serve it: the binder also publishes the twigil-less
+/// alias and the call marks both names readonly, which only a body that
+/// reaches names can observe.
+// Cost: O(p + t), p = parameter count, t = the parameters' total trait count.
+pub(crate) fn placeholder_defs_are_plain(param_defs: &[ParamDef]) -> bool {
+    !param_defs.is_empty()
+        && param_defs.iter().all(|pd| {
+            def_is_plain_positional(pd)
+                && pd.traits.is_empty()
+                && pd
+                    .name
+                    .strip_prefix('^')
+                    .is_some_and(|bare| is_plain_scalar_param_name(bare) && !bare.starts_with('_'))
+        })
+}
+
+/// Whether `pd`, whatever its name, is a positional parameter with no
+/// default, type, type capture, literal, `where`, sub-signature, code
+/// signature or shape, and with no trait but `is raw`.
+// Cost: O(t), t = the parameter's trait count.
+fn def_is_plain_positional(pd: &ParamDef) -> bool {
     let ParamDef {
-        name,
+        name: _,
         default,
         multi_invocant: _,
         required: _,
@@ -100,7 +139,7 @@ fn light_def_param(pd: &ParamDef) -> Option<LightDefParam> {
         // expressions are refused below.
         code: _,
     } = pd;
-    let plain = !named
+    !named
         && !named_alias
         && !slurpy
         && !double_slurpy
@@ -119,20 +158,6 @@ fn light_def_param(pd: &ParamDef) -> Option<LightDefParam> {
         && shape_constraints.is_none()
         && trait_args.is_empty()
         && traits.iter().all(|t| t == "raw")
-        && is_plain_scalar_param_name(name);
-    if !plain {
-        return None;
-    }
-    let is_raw = !traits.is_empty();
-    Some(LightDefParam {
-        sym: Symbol::intern(name),
-        bind: Interpreter::scalar_param_bind(pd),
-        readonly: if is_raw {
-            ReadonlyKind::Immutable
-        } else {
-            ReadonlyKind::Alias
-        },
-    })
 }
 
 /// Whether a `ParamDef::name` is a plain `$` scalar's sigil-less name.

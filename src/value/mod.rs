@@ -1872,15 +1872,19 @@ impl SubData {
                 && self.param_defs.is_empty()
                 && self.params.iter().all(|p| is_light_bindable_param_name(p));
             let light_def_params = crate::vm::light_def_params(&self.param_defs);
-            let light_call_legacy = if light_bindable || !self.param_defs.is_empty() {
+            let light_call_legacy = if light_bindable {
                 None
-            } else if matches!(self.params.as_slice(), [p] if p == "_") {
+            } else if self.param_defs.is_empty()
+                && matches!(self.params.as_slice(), [p] if p == "_")
+            {
                 Some(LightCallLegacy::Topic)
-            } else if !self.params.is_empty()
-                && self.params.iter().all(|p| {
-                    p.strip_prefix('^')
-                        .is_some_and(is_light_bindable_param_name)
-                })
+            } else if self.param_defs.len() == self.params.len()
+                && self
+                    .param_defs
+                    .iter()
+                    .zip(self.params.iter())
+                    .all(|(pd, p)| pd.name == *p)
+                && crate::vm::placeholder_defs_are_plain(&self.param_defs)
             {
                 Some(LightCallLegacy::Placeholders)
             } else {
