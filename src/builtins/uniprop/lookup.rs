@@ -306,13 +306,7 @@ pub(crate) fn unicode_property_value_for_codepoint(cp: u32, prop: Option<&str>) 
     if (0xD800..=0xDFFF).contains(&cp) {
         return match prop {
             Some("General_Category") | Some("gc") | None => Value::str_from("Cs"),
-            Some("Block") | Some("blk") => Value::str_from(if cp <= 0xDB7F {
-                "High Surrogates"
-            } else if cp <= 0xDBFF {
-                "High Private Use Surrogates"
-            } else {
-                "Low Surrogates"
-            }),
+            Some("Block") | Some("blk") => Value::str_from(surrogate_block(cp)),
             _ => Value::str_from(""),
         };
     }
@@ -449,10 +443,51 @@ fn block_matches(block: &str, target: &str) -> bool {
     normalize(block) == normalize(target)
 }
 
-/// unimatch for a codepoint (u32), handling invalid chars.
-pub(crate) fn unimatch_for_codepoint(cp: u32, prop_value: &str, prop_name: Option<&str>) -> Value {
-    match char::from_u32(cp) {
-        Some(ch) => Value::truth(unimatch(ch, prop_value, prop_name)),
-        None => Value::truth(false),
+/// The block of a surrogate codepoint (`0xD800..=0xDFFF`).
+// Cost: O(1).
+fn surrogate_block(cp: u32) -> &'static str {
+    if cp <= 0xDB7F {
+        "High Surrogates"
+    } else if cp <= 0xDBFF {
+        "High Private Use Surrogates"
+    } else {
+        "Low Surrogates"
     }
+}
+
+/// An unassigned codepoint (`Cn`, script `Unknown`): `unimatch` reads the
+/// properties of a codepoint no `char` can hold (a surrogate, or one past
+/// `0x10FFFF`) from it, since MoarVM gives such a codepoint the same
+/// defaults. Only its general category and block differ, and those are
+/// matched separately.
+const UNASSIGNED: char = '\u{0378}';
+
+/// `unimatch` for an integer codepoint below `2**31`: a surrogate is `Cs` in
+/// its surrogate block, a codepoint past `0x10FFFF` is `Cn` in `No_Block`, and
+/// both take an unassigned codepoint's other property values.
+// Cost: O(1) (a table lookup) plus the value name's parse.
+pub(crate) fn unimatch_for_codepoint(cp: u32, prop_value: &str, prop_name: Option<&str>) -> Value {
+    if let Some(ch) = char::from_u32(cp) {
+        return Value::truth(unimatch(ch, prop_value, prop_name));
+    }
+    let (gc, block) = if (0xD800..=0xDFFF).contains(&cp) {
+        ("Cs", surrogate_block(cp))
+    } else {
+        ("Cn", "No_Block")
+    };
+    // An exact category, or its major class ("C").
+    let gc_matches = || prop_value == gc || (prop_value.len() == 1 && gc.starts_with(prop_value));
+    Value::truth(match prop_name {
+        Some("gc") | Some("General_Category") => gc_matches(),
+        Some("blk") | Some("Block") => block_matches(block, prop_value),
+        Some(name) => unimatch_property(UNASSIGNED, prop_value, name),
+        // The order `unimatch` tries for a char.
+        None => {
+            gc_matches()
+                || super::binary_props::try_binary_property(UNASSIGNED, prop_value).unwrap_or(false)
+                || crate::builtins::unicode::unicode_script_name(UNASSIGNED)
+                    .eq_ignore_ascii_case(prop_value)
+                || block_matches(block, prop_value)
+        }
+    })
 }

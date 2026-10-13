@@ -8,33 +8,13 @@ pub(crate) fn native_function_3arg(
 ) -> Option<Result<Value, RuntimeError>> {
     match name {
         "expmod" => Some(crate::builtins::expmod(arg1, arg2, arg3)),
-        "unimatch" => {
-            // unimatch(target, property_value, property_name)
-            let prop_value = arg2.to_string_value();
-            let prop_name = arg3.to_string_value();
-            match arg1.view() {
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
-                        cp,
-                        &prop_value,
-                        Some(&prop_name),
-                    )))
-                }
-                _ => {
-                    let s = arg1.to_string_value();
-                    if s.is_empty() {
-                        return Some(Ok(Value::NIL));
-                    }
-                    let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
-                        ch,
-                        &prop_value,
-                        Some(&prop_name),
-                    ))))
-                }
-            }
-        }
+        // `unimatch($x, $value, $prop)` is `$x.unimatch($value, $prop)` -- one
+        // implementation.
+        // Cost: O(1) (a table lookup) plus the value name's parse.
+        "unimatch" => crate::builtins::method_table::scalars::unicode::unimatch_in(
+            arg1,
+            &[arg2.clone(), arg3.clone()],
+        ),
         // Cost: O(k) amortized, k = chars returned (see `native_substr_slice`).
         "substr" => {
             if matches!(arg1.view(), ValueView::Junction { .. })
