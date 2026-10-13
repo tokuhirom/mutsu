@@ -37,7 +37,7 @@ fn combine(
 /// `a + b` -- the weight combination behind `(+)`/`⊎` and duplicate-key
 /// accumulation while a Mix is being built.
 pub(crate) fn add(a: MixWeight, b: MixWeight) -> MixWeight {
-    combine(a, b, crate::builtins::arith::arith_add, |x, y| x + y)
+    a.add(b)
 }
 
 /// `a - b` -- the weight combination behind `(-)`/`∖` and `(^)`/`⊖`.
@@ -64,5 +64,5 @@ pub(crate) fn mul(a: MixWeight, b: MixWeight) -> MixWeight {
 /// the weights first so a `Num` operand (whose addition is not associative)
 /// cannot make the result depend on hash iteration order.
 pub(crate) fn sum(weights: impl IntoIterator<Item = MixWeight>) -> MixWeight {
-    weights.into_iter().fold(MixWeight::Int(0), add)
+    MixWeight::sum(weights)
 }
