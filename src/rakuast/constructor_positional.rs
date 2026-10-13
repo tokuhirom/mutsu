@@ -65,6 +65,7 @@ pub(super) fn single_positional_class(class_name: &str, method: &str) -> Option<
         ("RakuAST::MetaInfix::Reverse", "new") => RakuAstClass::MetaInfixReverse,
         ("RakuAST::MetaInfix::Cross", "new") => RakuAstClass::MetaInfixCross,
         ("RakuAST::MetaInfix::Zip", "new") => RakuAstClass::MetaInfixZip,
+        ("RakuAST::MetaPrefix::Hyper", "new") => RakuAstClass::MetaPrefixHyper,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
         ("RakuAST::Var::Dynamic", "new") => RakuAstClass::VarDynamic,
