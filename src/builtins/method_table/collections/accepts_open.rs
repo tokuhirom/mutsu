@@ -61,7 +61,23 @@ fn smartmatch(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    Some(Ok(Value::truth(interp.smart_match(&args[0], target))))
+    Some(Ok(Value::truth(accepts_by_smartmatch(
+        interp, &args[0], target,
+    ))))
+}
+
+/// `$topic ~~ $matcher` as the operator decides it for a matcher with no
+/// user `ACCEPTS`: the pure comparison first (which reads an enum value as
+/// its underlying value, as `Enumeration.ACCEPTS` does), then the
+/// interpreter's smartmatch.
+// Cost: the smartmatch's.
+pub(crate) fn accepts_by_smartmatch(
+    interp: &mut Interpreter,
+    topic: &Value,
+    matcher: &Value,
+) -> bool {
+    crate::vm::vm_smart_match::pure_smart_match(topic, matcher)
+        .unwrap_or_else(|| interp.smart_match(topic, matcher))
 }
 
 /// `Bool.ACCEPTS(Mu \topic)`: the receiver, whatever the topic
