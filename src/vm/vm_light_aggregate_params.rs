@@ -33,24 +33,38 @@ impl Interpreter {
     /// [`Self::positional_light_rw_args_admitted`] it is re-derived per call,
     /// because one routine is called with every shape; the flag check keeps a
     /// routine with no such parameter free of it.
-    // Cost: O(p), p = positional parameters.
+    // Cost: O(k), k = plain `@`/`%` positional parameters.
     #[inline]
     pub(super) fn positional_light_aggregate_args_admitted(
         cf: &CompiledFunction,
         args: &[Value],
     ) -> bool {
-        if !cf.has_aggregate_positional_param {
-            return true;
-        }
-        cf.param_defs.iter().enumerate().all(|(i, pd)| {
-            let Some(sigil) = crate::opcode::FastParamCheck::light_aggregate_sigil(pd) else {
-                return true;
-            };
+        // Inlined down to this test, so a routine with no such parameter (the
+        // `fib` hot path) pays one branch and no call.
+        cf.aggregate_positional_params == 0 || Self::aggregate_args_admitted_masked(cf, args)
+    }
+
+    /// The argument walk of [`Self::positional_light_aggregate_args_admitted`].
+    // Cost: O(k), k = plain `@`/`%` positional parameters.
+    #[inline(never)]
+    fn aggregate_args_admitted_masked(cf: &CompiledFunction, args: &[Value]) -> bool {
+        let mut mask = cf.aggregate_positional_params;
+        while mask != 0 {
+            let i = mask.trailing_zeros() as usize;
+            mask &= mask - 1;
             let Some(arg) = args.get(i) else {
                 return false;
             };
-            Self::light_aggregate_arg_admitted(sigil, arg)
-        })
+            let sigil = if cf.param_defs[i].name.starts_with('@') {
+                '@'
+            } else {
+                '%'
+            };
+            if !Self::light_aggregate_arg_admitted(sigil, arg) {
+                return false;
+            }
+        }
+        true
     }
 
     /// One argument of [`Self::positional_light_aggregate_args_admitted`].
@@ -140,6 +154,12 @@ impl Interpreter {
                 Some(kt) => format!("{}{{{}}}", info.value_type, kt),
                 None => info.value_type,
             });
+        // No constraint to register, and no `__mutsu_type::` record under this
+        // name anywhere to shadow: the binder's own early return for that case,
+        // without resolving the name again (#12526).
+        if typed.is_none() && !Self::env_type_constraint_seen_for(sym) {
+            return;
+        }
         self.bind_param_type_constraint_sym(name, sym, typed.as_deref());
     }
 
