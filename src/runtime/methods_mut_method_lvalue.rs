@@ -865,7 +865,7 @@ impl Interpreter {
                 super::methods_qualified::split_method_qualifier_last(method)
         {
             // First try explicit method resolution
-            if let Some(method_def) = self.resolve_method(qualifier, actual_method, &method_args) {
+            if let Some(method_def) = self.resolve_method(qualifier, actual_method, &method_args, &target) {
                 if !Self::method_is_rw_capable(&method_def) {
                     return Err(RuntimeError::new(format!(
                         "X::Assignment::RO: method '{}' is not rw",
@@ -1211,7 +1211,7 @@ impl Interpreter {
         if method_args.is_empty()
             && !accessor_wins
             && self
-                .resolve_method(&class_name.resolve(), method, &method_args)
+                .resolve_method(&class_name.resolve(), method, &method_args, &target)
                 .is_none()
             && !self
                 .collect_class_attributes(&class_name.resolve())
@@ -1253,7 +1253,7 @@ impl Interpreter {
         if method_args.is_empty()
             && !accessor_wins
             && self
-                .resolve_method(&class_name.resolve(), method, &method_args)
+                .resolve_method(&class_name.resolve(), method, &method_args, &target)
                 .is_none()
             && !self
                 .collect_class_attributes(&class_name.resolve())
@@ -1263,6 +1263,7 @@ impl Interpreter {
                 &class_name.resolve(),
                 "FALLBACK",
                 &[Value::str(method.to_string())],
+                &target,
             )
             && Self::method_is_rw_capable(&fallback)
         {
@@ -1280,7 +1281,7 @@ impl Interpreter {
             return self.assign_through_rw_result(result?, value);
         }
         let method_def = if let Some(def) = (!accessor_wins)
-            .then(|| self.resolve_method(&class_name.resolve(), method, &method_args))
+            .then(|| self.resolve_method(&class_name.resolve(), method, &method_args, &target))
             .flatten()
         {
             def

@@ -164,7 +164,7 @@ impl Interpreter {
         let Some(class_name) = Self::lvalue_invocant_class_name(target) else {
             return false;
         };
-        let Some(def) = self.resolve_method(&class_name, method, method_args) else {
+        let Some(def) = self.resolve_method(&class_name, method, method_args, target) else {
             return false;
         };
         Self::method_is_rw_capable(&def) && Self::rw_method_attribute_target(&def.body).is_none()
@@ -428,7 +428,7 @@ impl Interpreter {
         let Some(class_name) = Self::lvalue_invocant_class_name(target) else {
             return Ok(None);
         };
-        let Some(def) = self.resolve_method(&class_name, method, method_args) else {
+        let Some(def) = self.resolve_method(&class_name, method, method_args, target) else {
             return Ok(None);
         };
         // rw-capable methods never reach here (the caller took the other

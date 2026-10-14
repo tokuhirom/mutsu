@@ -428,7 +428,7 @@ impl Interpreter {
             if let Some(accessor) =
                 self.object_subscript_accessor(&current, matches!(index.view(), ValueView::Int(_)))
                 && self
-                    .resolve_method(&cn, accessor, std::slice::from_ref(&idx_arg))
+                    .resolve_method(&cn, accessor, std::slice::from_ref(&idx_arg), &current)
                     .is_some_and(|def| Self::method_is_rw_capable(&def))
             {
                 let returned =
