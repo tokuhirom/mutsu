@@ -1558,8 +1558,7 @@ impl Interpreter {
             Self::ensure_hash(target);
             self.assign_chain_into_hash_key(
                 target,
-                Value::hash_key_encode(&key),
-                rest,
+                (Value::hash_key_encode(&key), rest),
                 dims,
                 value,
                 is_positional,
@@ -1602,8 +1601,7 @@ impl Interpreter {
             Self::ensure_hash(target);
             self.assign_chain_into_hash_key(
                 target,
-                k,
-                rest,
+                (k, rest),
                 dims,
                 value,
                 is_positional,
@@ -1621,13 +1619,13 @@ impl Interpreter {
     fn assign_chain_into_hash_key(
         &mut self,
         target: &mut Value,
-        key: String,
-        rest: &[(Value, bool)],
+        key_and_rest: (String, &[(Value, bool)]),
         dims: &[Value],
         value: Value,
         is_positional: bool,
         assigned_values: &mut Vec<Value>,
     ) -> Result<(), RuntimeError> {
+        let (key, rest) = key_and_rest;
         let r = target
             .with_hash_mut(|map| {
                 let map = crate::value::gc_data_mut(map);
