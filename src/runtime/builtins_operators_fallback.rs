@@ -1281,6 +1281,19 @@ impl Interpreter {
             if let Some(real) = self.enclosing_qualified_routine_name(name) {
                 return self.call_function(&real, args.to_vec());
             }
+            // An `our sub` declared in a package by an `EVAL` unit: the unit's
+            // routine table is rolled back, but the package stash it published
+            // to is shared with the caller (`EVAL q[package P { our sub f {} }];
+            // P::f()`), so the persistent our-scoped table answers.
+            let our_def = self
+                .registry()
+                .our_scoped_functions
+                .get(&Symbol::intern(name))
+                .cloned();
+            if let Some(def) = our_def {
+                let sub_val = self.sub_value_from_function_def((*def).clone());
+                return self.eval_call_on_value(sub_val, args.to_vec());
+            }
             return Err(self.no_such_qualified_symbol(package.as_str(), short_name.as_str()));
         }
 
