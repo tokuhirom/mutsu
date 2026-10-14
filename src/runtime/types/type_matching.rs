@@ -2239,9 +2239,12 @@ impl Interpreter {
     /// `Int`s (`enum E <a b>`), an `Int` subtype.
     // Cost: O(v), v = the enum's variants.
     pub(crate) fn is_int_enum_type_name(&self, name: &str) -> bool {
+        let Some(key) = self.resolve_enum_type_key(name) else {
+            return false;
+        };
         self.registry()
             .enum_types
-            .get(name)
+            .get(key.as_str())
             .is_some_and(|variants| {
                 !variants.is_empty()
                     && variants
