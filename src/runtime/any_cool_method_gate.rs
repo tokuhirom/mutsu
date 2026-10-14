@@ -159,23 +159,57 @@ fn undefined_owner(target: &Value) -> Option<&'static str> {
 /// `Cool`-only names, a `Buf` or `Blob` `.can` these two alone, 2026-10-13).
 const BLOB_DECLARED_COOL_NAMES: &[&str] = &["chars", "codes"];
 
-/// The type name to report a `Cool`-only method under when `target` is a
+/// The `Cool` text and search methods a `Pair`, `Capture`, `Version` or
+/// quanthash does not resolve (verified against rakudo v2026.07 on each of
+/// them, 2026-10-14): [`crate::value::COOL_TEXT_FOR_CLOSED_SHAPES`] and the
+/// argument-taking names of a `Match`, without `fmt` and `split`, which `Any`
+/// declares.
+const NON_COOL_TEXT: &[&str] = &[
+    "words", "codes", "lines", "trim", "trim-leading", "trim-trailing", "flip", "chomp", "chop",
+    "comb", "uc", "lc", "fc", "tc", "tclc", "wordcase", "encode", "NFC", "NFD", "NFKC", "NFKD",
+    "ord", "ords", "uniname", "uninames", "uniprop", "uniprops", "unival", "univals", "unimatch",
+    "samecase", "samemark", "indent", "contains", "starts-with", "ends-with", "index", "rindex",
+    "substr", "subst", "trans", "indices", "chars",
+];
+
+/// The type name to report a `Cool`-only method under when `target` is not a
+/// `Cool`, so it does not answer `contains`, `starts-with`, `substr`, ...: a
 /// buffer (a `Blob`/`Buf` instance or type object, an alias such as `utf8`, a
-/// user class composing a buffer role), which is not `Cool` and so does not
-/// answer `contains`, `starts-with`, `substr`, ... (#13313). `None` for any
-/// other receiver or method. The caller still lets a method the receiver's
-/// own class declares (or its `FALLBACK`) answer first.
+/// user class composing a buffer role; #13313), or a `Pair`, `Capture`,
+/// `Version` or one of the quanthashes (#13035). `None` for any other receiver
+/// or method. The caller still lets a method the receiver's own class declares
+/// (or its `FALLBACK`) answer first.
 // Cost: O(|method|) for the name lookups, O(1) for the shape probe.
 pub(crate) fn buffer_refuses_cool_method(target: &Value, method: &str) -> Option<String> {
-    if !is_cool_only_method(method) || BLOB_DECLARED_COOL_NAMES.contains(&method) {
+    use crate::value::DispatchShape as Shape;
+    if !is_cool_only_method(method) {
         return None;
     }
+    // A code object (`Sub`, `Block`, ...) is no `Cool` either (#13035).
+    if matches!(target.view(), ValueView::Sub(..) | ValueView::Routine { .. }) {
+        return NON_COOL_TEXT
+            .contains(&method)
+            .then(|| crate::value::types::what_type_name(target));
+    }
     let receiver = crate::builtins::method_table::Receiver::of_settled(target)?;
-    matches!(
-        receiver.shape,
-        crate::value::DispatchShape::Blob | crate::value::DispatchShape::Buf
-    )
-    .then(|| crate::value::types::what_type_name(target))
+    let refused = match receiver.shape {
+        Shape::Blob | Shape::Buf => !BLOB_DECLARED_COOL_NAMES.contains(&method),
+        // Only the text and search methods: `fmt` and `split` exist on `Any`,
+        // and the other `Cool` names (`reverse`, `invert`, `Int`, ...) are
+        // also answered by an ancestor these shapes have, which the catalog
+        // `is_cool_only_method` reads does not list.
+        Shape::Pair
+        | Shape::Capture
+        | Shape::Version
+        | Shape::Set
+        | Shape::SetHash
+        | Shape::Bag
+        | Shape::BagHash
+        | Shape::Mix
+        | Shape::MixHash => NON_COOL_TEXT.contains(&method),
+        _ => false,
+    };
+    refused.then(|| crate::value::types::what_type_name(target))
 }
 
 #[cfg(test)]

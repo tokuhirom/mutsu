@@ -192,6 +192,9 @@ impl Interpreter {
                 method, &type_name, false,
             ));
         }
+        if let Some(result) = self.cool_instance_text_via_str(&target, method, &args) {
+            return result;
+        }
         // The `Cool`-subtype sibling: `Str.comb` / `Int.uc` refuse the
         // undefined invocant, `Str.uc` answers `""` with a warning (#9772).
         if let Some(result) = self.cool_type_object_default_fmt(&target, method, &args) {

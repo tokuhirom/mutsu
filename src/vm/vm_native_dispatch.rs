@@ -122,6 +122,9 @@ impl Interpreter {
         {
             return Some(Err(err));
         }
+        if let Some(result) = self.cool_instance_text_via_str(target, method_sym.as_str(), args) {
+            return Some(result);
+        }
         // The `Cool`-subtype sibling (#9772): `Str.comb` / `Int.uc` on the type
         // object refuse it instead of answering out of its gist.
         if let Some(result) = self.cool_type_object_default_fmt(target, method_sym.as_str(), args) {
