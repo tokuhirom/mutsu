@@ -67,6 +67,7 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("Cool", mro: ["Cool", "Any", "Mu"], roles: [], owner: ""),
     // ---- Core Cool-derived scalars ----
     row!("Int", mro: ["Int", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Int"),
+    row!("UInt", mro: ["UInt", "Int", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Int"),
     row!("Num", mro: ["Num", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Num"),
     row!("Str", mro: ["Str", "Cool", "Any", "Mu"], roles: ["Stringy"], owner: "Str"),
     // ---- Native types (NativeHOW): each is a subtype of its boxed type, so
