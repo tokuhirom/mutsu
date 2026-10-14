@@ -1817,6 +1817,52 @@ impl Interpreter {
                     false
                 }
             }
+            // `Numeric.ACCEPTS(Any:D \a)` is `a == self`, and a `Duration` is
+            // a `Real`: on either side it compares by its numeric value.
+            (
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::Complex(..),
+            ) if class_name == "Duration" => {
+                let n = attributes
+                    .as_map()
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(Value::num(0.0));
+                self.smart_match_inner(&n, right, err)
+            }
+            (
+                ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::Complex(..),
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+            ) if class_name == "Duration" => {
+                let n = attributes
+                    .as_map()
+                    .get("value")
+                    .cloned()
+                    .unwrap_or(Value::num(0.0));
+                self.smart_match_inner(left, &n, err)
+            }
+            // `Str ~~ Complex`: the numeric string is compared as a number.
+            (ValueView::Str(a), ValueView::Complex(br, bi)) => {
+                bi == 0.0 && a.trim().parse::<f64>().is_ok_and(|v| v == br)
+            }
             // `Numeric.ACCEPTS` compares numerically, so an object topic
             // matches a number (or an enum value) through its own `.Numeric`
             // (`$message ~~ Error` with `method Numeric { $!level }`,
@@ -2027,6 +2073,14 @@ impl Interpreter {
                 } else {
                     false
                 }
+            }
+            // `Str.ACCEPTS(Blob)` stringifies the buffer, which dies
+            // (`X::Buf::AsStr`).
+            (ValueView::Instance { class_name, .. }, ValueView::Str(_))
+                if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
+            {
+                err.get_or_insert(Self::buf_as_str_error(left, "Stringy"));
+                false
             }
             // IO::Path ~~ Str: compare path string representation with string.
             // In Raku, Str.ACCEPTS(IO::Path) stringifies the IO::Path and compares.
