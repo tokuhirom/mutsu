@@ -3484,6 +3484,23 @@ impl Interpreter {
             return Ok(Value::package(Symbol::intern(&value_type)));
         }
 
+        // `keyof` of a class composing `Associative[V,K]`, from the same
+        // composition (#12989).
+        if method == "keyof" && args.is_empty() {
+            let class_name = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) if !name.as_str().contains('[') => {
+                    Some(name.as_str().to_string())
+                }
+                _ => None,
+            };
+            if let Some(class_name) = class_name
+                && let Some(key_type) = self.composed_container_role_key_type(&class_name)
+            {
+                return Ok(Value::package(Symbol::intern(&key_type)));
+            }
+        }
+
         // Complex -> Real type conversion (`$*TOLERANCE` decides whether the
         // imaginary part is negligible)
         if matches!(method, "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Real")
