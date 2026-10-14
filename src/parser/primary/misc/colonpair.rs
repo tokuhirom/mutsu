@@ -183,7 +183,6 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             let mut attrs = HashMap::new();
             attrs.insert("raku".to_string(), Value::str_from(":()"));
             attrs.insert("perl".to_string(), Value::str_from(":()"));
-            attrs.insert("Str".to_string(), Value::str_from(":()"));
             attrs.insert("gist".to_string(), Value::str_from(":()"));
             return Ok((
                 r,
@@ -266,7 +265,6 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             let mut attrs = HashMap::new();
             attrs.insert("raku".to_string(), Value::str(sig.clone()));
             attrs.insert("perl".to_string(), Value::str(sig.clone()));
-            attrs.insert("Str".to_string(), Value::str(sig.clone()));
             attrs.insert("gist".to_string(), Value::str(sig));
             return Ok((
                 r_end,
