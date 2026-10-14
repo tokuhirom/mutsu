@@ -1567,6 +1567,25 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             out.push('"');
             Some(out)
         }
+        crate::ast::Expr::AssignExpr {
+            name,
+            expr,
+            is_bind: false,
+        } if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')) => {
+            Some(format!("${name} = {}", expression_source(expr)?))
+        }
+        crate::ast::Expr::AnonSub {
+            body,
+            is_rw: false,
+            is_raw: false,
+            is_block: true,
+            ..
+        } => closure_body_source(body),
+        crate::ast::Expr::PostfixOp { op, expr } => Some(format!(
+            "{}{}",
+            expression_source(expr)?,
+            crate::compiler::helpers_ops::token_kind_to_op_name(op)
+        )),
         crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
         crate::ast::Expr::CaptureVar(name) => Some(format!("${name}")),
         crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_) => {
@@ -1705,6 +1724,22 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             expression_source(index)?,
             if *is_positional { ']' } else { '}' },
         )),
+        // A list of plain words is the `<a b c>` word list (a List); any other
+        // list keeps the array spelling.
+        crate::ast::Expr::ArrayLiteral(items)
+            if !items.is_empty()
+                && items.iter().all(|item| {
+                    matches!(item, crate::ast::Expr::Literal(v)
+                        if matches!(v.view(), crate::value::ValueView::Str(w)
+                            if !w.is_empty() && !w.contains(|c: char| c.is_whitespace() || matches!(c, '<' | '>'))))
+                }) =>
+        {
+            let words = items.iter().map(|item| match item {
+                crate::ast::Expr::Literal(v) => v.to_string_value(),
+                _ => String::new(),
+            });
+            Some(format!("<{}>", words.collect::<Vec<_>>().join(" ")))
+        }
         crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
@@ -1721,6 +1756,16 @@ fn closure_body_source(body: &[crate::ast::Stmt]) -> Option<String> {
         match stmt {
             crate::ast::Stmt::SetLine(_) => {}
             crate::ast::Stmt::Expr(expr) => expressions.push(expression_source(expr)?),
+            crate::ast::Stmt::Assign {
+                name,
+                expr,
+                op: crate::ast::AssignOp::Assign,
+                target_is_sigilless: false,
+            } if !name.is_empty()
+                && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')) =>
+            {
+                expressions.push(format!("${name} = {}", expression_source(expr)?))
+            }
             _ => return None,
         }
     }
