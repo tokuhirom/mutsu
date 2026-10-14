@@ -2653,6 +2653,14 @@ impl Compiler {
             .extend(self.shadowed_sigilless_terms.iter().cloned());
         sub.enclosing_local_names
             .extend(self.local_map.keys().cloned());
+        // A routine hoisted to its scope's entry is compiled before the
+        // scope's own `my`s are, so the names the enclosing scopes declare
+        // later count too (#13377): a nested block's same-named `my` in the
+        // routine shadows them only for that block.
+        for frame in self.enclosing_scopes.iter().chain(self.local_scopes.iter()) {
+            sub.enclosing_local_names
+                .extend(frame.all_declared_names().cloned());
+        }
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
         sub.class_body_static_code_vars
