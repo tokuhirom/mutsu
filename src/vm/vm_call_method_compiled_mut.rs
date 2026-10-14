@@ -110,7 +110,9 @@ impl Interpreter {
                     self.withdraw_role_pun(pkg);
                     return result;
                 }
-                self.run_pun_role_bodies(pkg)?;
+                if !crate::runtime::role_type_object_identity_method(method) {
+                    self.run_pun_role_bodies(pkg)?;
+                }
             }
         }
         // Native default construction (see `try_compiled_method_or_interpret`).

@@ -60,6 +60,14 @@ pub(crate) fn role_type_object_keeps_mu_method(method: &str) -> bool {
     matches!(method, "Str" | "gist" | "raku" | "perl")
 }
 
+/// Reading a role type object's identity (`R.WHAT`, `R.HOW`, `R.^name`, ...)
+/// answers for the role itself and never puns it: the role body runs only when
+/// the role is composed or punned, not when it is merely named (#13103).
+// Cost: O(1), a prefix test and a comparison against a few constants.
+pub(crate) fn role_type_object_identity_method(method: &str) -> bool {
+    method.starts_with('^') || matches!(method, "WHAT" | "HOW" | "WHO" | "WHERE" | "VAR")
+}
+
 /// A role's `role_id` is drawn from the SAME process-global counter as the
 /// parse-time declaration-site ids (`crate::ast::next_global_decl_id`). Both
 /// end up after a `\u{0}` in a type name -- `R\u{0}<role_id>` is one parametric
