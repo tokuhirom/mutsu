@@ -134,6 +134,15 @@ impl Interpreter {
                     self.collect_builtin_type_methods("Mu", &mut result);
                 }
             }
+            // A class's own method table is more than the introspectable
+            // subset: `Map` and `Pair` list almost nothing without it (#13494).
+            for cn in mro.iter().map(|s| s.as_str()) {
+                if !all && matches!(cn, "Any" | "Mu" | "Cool") {
+                    continue;
+                }
+                let names = crate::builtins::native_method_row::declared_names_for_owner(cn);
+                self.push_native_method_objects(&names, cn, &mut result);
+            }
             let mro_names: Vec<String> = mro.iter().map(|s| s.to_string()).collect();
             self.collect_composed_role_methods(&mro_names, &mut result);
         }
