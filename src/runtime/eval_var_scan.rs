@@ -38,7 +38,7 @@ pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Opti
         scopes: vec![HashSet::new()],
         strict: true,
         judged_stmt: true,
-        mode: Mode::Off,
+        mode: Mode::Ordered,
         found: None,
     };
     walk_stmts(&mut scan, stmts);
@@ -246,7 +246,7 @@ impl UndeclaredVars<'_> {
             self.found = Some(r);
             return;
         }
-        self.in_scope(|v| v.judging(judged, Mode::Off, |v| walk_stmt(v, stmt)));
+        self.in_scope(|v| v.judging(true, Mode::Ordered, |v| walk_stmt(v, stmt)));
     }
 
     /// A class or role body's scope: its attributes (`has $.x` makes `$!x`
@@ -270,7 +270,7 @@ impl UndeclaredVars<'_> {
                     _ => {}
                 }
             }
-            v.judging(judged, Mode::Off, |v| walk_stmt(v, stmt));
+            v.judging(true, Mode::Ordered, |v| walk_stmt(v, stmt));
         });
     }
 }
@@ -290,11 +290,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             // judged.
             Stmt::VarDecl { name, .. } => {
                 self.declare(name);
-                let mode = if self.mode == Mode::Ordered {
-                    Mode::Ordered
-                } else {
-                    Mode::Off
-                };
+                let mode = Mode::Ordered;
                 self.judging(false, mode, |v| walk_stmt(v, stmt));
             }
             Stmt::Assign {
@@ -304,11 +300,11 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                 ..
             } => {
                 self.assign_target(name, *target_is_sigilless);
-                let mode = if judged { Mode::Ordered } else { Mode::Off };
+                let mode = Mode::Ordered;
                 self.judging(false, mode, |v| v.visit_expr(expr));
             }
             Stmt::Expr(_) | Stmt::Say(_) | Stmt::Print(_) | Stmt::Put(_) | Stmt::Note(_) => {
-                let mode = if judged { Mode::Plain } else { Mode::Off };
+                let mode = Mode::Ordered;
                 self.judging(false, mode, |v| walk_stmt(v, stmt));
             }
             // A condition or loop header declares into the enclosing scope;
@@ -329,14 +325,14 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Stmt::Given {
                 is_statement_modifier: true,
                 ..
-            } => self.judging(false, Mode::Off, |v| walk_stmt(v, stmt)),
+            } => self.judging(true, Mode::Ordered, |v| walk_stmt(v, stmt)),
             Stmt::If {
                 cond,
                 then_branch,
                 else_branch,
                 binding_var,
                 ..
-            } => self.judging(false, Mode::Off, |v| {
+            } => self.judging(true, Mode::Ordered, |v| {
                 v.visit_expr(cond);
                 for branch in [then_branch, else_branch] {
                     v.in_scope(|v| {
@@ -347,7 +343,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                     });
                 }
             }),
-            Stmt::While { cond, body, .. } => self.judging(false, Mode::Off, |v| {
+            Stmt::While { cond, body, .. } => self.judging(true, Mode::Ordered, |v| {
                 v.visit_expr(cond);
                 v.in_scope(|v| walk_stmts(v, body));
             }),
@@ -357,7 +353,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                 step,
                 body,
                 ..
-            } => self.judging(false, Mode::Off, |v| {
+            } => self.judging(true, Mode::Ordered, |v| {
                 if let Some(init) = init {
                     walk_stmts(v, std::slice::from_ref(init));
                 }
@@ -374,9 +370,9 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             }
             // A block's statements are judged as the snippet's are.
             Stmt::Block(_) => {
-                self.in_scope(|v| v.judging(judged, Mode::Off, |v| walk_stmt(v, stmt)))
+                self.in_scope(|v| v.judging(true, Mode::Ordered, |v| walk_stmt(v, stmt)))
             }
-            Stmt::SyntheticBlock(_) => self.judging(judged, Mode::Off, |v| walk_stmt(v, stmt)),
+            Stmt::SyntheticBlock(_) => self.judging(true, Mode::Ordered, |v| walk_stmt(v, stmt)),
             // Every other statement with a body opens a scope for it (its
             // parameters, reported as names, are declared there).
             Stmt::For { .. }
@@ -393,9 +389,9 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Stmt::ProtoDecl { .. }
             | Stmt::Package { .. }
             | Stmt::AugmentClass { .. } => {
-                self.in_scope(|v| v.judging(false, Mode::Off, |v| walk_stmt(v, stmt)))
+                self.in_scope(|v| v.judging(true, Mode::Ordered, |v| walk_stmt(v, stmt)))
             }
-            _ => self.judging(false, Mode::Off, |v| walk_stmt(v, stmt)),
+            _ => self.judging(true, Mode::Ordered, |v| walk_stmt(v, stmt)),
         }
     }
 
@@ -427,14 +423,10 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Expr::Try { .. }
             | Expr::PhaserExpr { .. }
             | Expr::Once { .. } => {
-                self.in_scope(|v| v.judging(false, Mode::Off, |v| walk_expr(v, expr)))
+                self.in_scope(|v| v.judging(true, Mode::Ordered, |v| walk_expr(v, expr)))
             }
             Expr::StringInterpolation(_) | Expr::Index { .. } | Expr::MethodCall { .. } => {
-                let inner = if mode == Mode::Off {
-                    Mode::Off
-                } else {
-                    Mode::Plain
-                };
+                let inner = Mode::Ordered;
                 self.judging(false, inner, |v| walk_expr(v, expr));
             }
             Expr::Binary { .. }
@@ -443,14 +435,10 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Expr::Unary { .. }
             | Expr::PostfixOp { .. }
             | Expr::Itemize(_) => {
-                let inner = if mode == Mode::Ordered {
-                    Mode::Ordered
-                } else {
-                    Mode::Off
-                };
+                let inner = Mode::Ordered;
                 self.judging(false, inner, |v| walk_expr(v, expr));
             }
-            _ => self.judging(false, Mode::Off, |v| walk_expr(v, expr)),
+            _ => self.judging(true, Mode::Ordered, |v| walk_expr(v, expr)),
         }
     }
 
