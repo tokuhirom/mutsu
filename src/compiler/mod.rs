@@ -3141,28 +3141,18 @@ impl Compiler {
             && !self.enclosing_sigilless.contains(name)
     }
 
-    /// Retain the enclosing scalar binding when a sigilless parameter reuses
-    /// its canonical name. The two source namespaces are distinct even though
-    /// both runtime env entries use the bare scalar key.
     /// An enclosing frame's lexical reached by name where this chunk has a
     /// same-named local only in a nested block (`my $b = 99; sub f { say $b;
     /// { my $b = 3 }; $b = 1 }`): the local hides the name from
-    /// `compute_free_vars`, so the capture is forced (#13391). Only an actual
+    /// `compute_free_vars`, so the capture is forced (#13391), in a routine
+    /// and a closure body alike; a closure's exit writeback leaves the
+    /// block-local slot of a forced name alone (#13396). Only an actual
     /// by-name read or write forces it, so a chunk that merely declares the
     /// name never shares the outer cell; a by-name `for` parameter of the name
     /// would write through the captured cell, so it is left alone.
     // Cost: O(|name|).
     pub(super) fn note_shadowed_outer_capture(&mut self, name: &str, writes: bool) {
-        // TODO: a closure's exit writes a captured name back to its caller from
-        // the chunk's local slot of that name, which here is the nested block's
-        // own `my`; forcing the capture in a closure therefore clobbered the
-        // outer variable with the block local's value. Until that writeback
-        // tells a block-local slot from the captured binding, the capture is
-        // forced only in a named routine body (#13391).
-        if !self.in_closure_body
-            && self.enclosing_local_names.contains(name)
-            && !self.by_name_param_names.contains(name)
-        {
+        if self.enclosing_local_names.contains(name) && !self.by_name_param_names.contains(name) {
             self.note_forced_outer_scalar_capture(name, writes);
         }
     }

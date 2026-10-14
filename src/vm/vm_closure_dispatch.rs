@@ -1527,6 +1527,11 @@ impl Interpreter {
         // writeback to captured locals avoids an O(env) copy-on-write deep copy
         // per call for the common read-only closure (which has no captured
         // locals to flush at all).
+        //
+        // A forced outer capture (`forced_free_var_syms`) never owns a slot of
+        // its name: the slot is a sigilless parameter or a nested block's own
+        // `my` that merely shares the name (`{ { my $b = 3 }; $b }`), and the
+        // captured binding is the env entry itself, written by name (#13396).
         for (i, local_name) in cc.locals.iter().enumerate() {
             // Pre-interned on both halves (#8302): the by-name form re-interned
             // the local's name for the probe AND allocated a fresh `String` for
@@ -1534,7 +1539,7 @@ impl Interpreter {
             let local_sym = cc.local_sym(i);
             if !local_name.is_empty()
                 && data.env.contains_key_for(local_name, local_sym)
-                && !local_sym.is_some_and(|sym| Self::is_forced_outer_scalar_param(cc, sym))
+                && !local_sym.is_some_and(|sym| cc.forced_free_var_syms.contains(&sym))
             {
                 let __v = self.locals[i].clone();
                 self.env_mut().insert_for(local_name, local_sym, __v);
