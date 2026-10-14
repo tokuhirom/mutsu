@@ -1980,6 +1980,30 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         trir_args: Option<&[Value]>,
     ) -> Result<Value, RuntimeError> {
+        let qualified_def =
+            if call_me_override.is_none() && crate::qualified::is_qualified(name_sym) {
+                self.registry().function_def(name_sym)
+            } else {
+                None
+            };
+        // A package-qualified call names a routine definition directly, so it
+        // normally skips the routine value's CALL-ME dispatch. A trait may have
+        // composed a role with CALL-ME onto that routine; consult the def-owned
+        // identity cell before taking the ordinary compiled-function path.
+        // This is deliberately limited to qualified names: bare-name calls
+        // retain their existing lexical and multi-dispatch resolution.
+        if let Some(def) = qualified_def
+            && let Some(current) =
+                Self::routine_current_view(&self.sub_value_from_function_def((*def).clone()))
+            && let ValueView::Mixin(_, mixins) = current.view()
+            && mixins.keys().any(|key| {
+                key.strip_prefix("__mutsu_role__")
+                    .is_some_and(|role| self.role_has_method(role, "CALL-ME"))
+            })
+        {
+            return self.vm_call_on_value(current, args, Some(compiled_fns));
+        }
+
         // `f(...) = v` where `f` is a LEXICAL code variable rather than a
         // declared sub (`my &nextone := nextcallee; nextone(self,$key) = $v`).
         // The parser rewrites the assignment into
