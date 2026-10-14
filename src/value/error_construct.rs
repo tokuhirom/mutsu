@@ -654,6 +654,32 @@ impl RuntimeError {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// Create a Failure wrapping an `X::TypeCheck` for `operation` (`"converting
+    /// element #0 to .chr"`): `got` is not an `expected`.
+    pub(crate) fn type_check_operation_failure(
+        operation: &str,
+        got: Value,
+        expected: &str,
+    ) -> Value {
+        let message = format!(
+            "Type check failed in {operation}; expected {expected} but got {} ({})",
+            crate::value::types::what_type_name(&got),
+            crate::value::gist::gist_value(&got)
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("operation".to_string(), Value::str(operation.to_string()));
+        attrs.insert(
+            "expected".to_string(),
+            Value::package(Symbol::intern(expected)),
+        );
+        attrs.insert("got".to_string(), got);
+        attrs.insert("message".to_string(), Value::str(message));
+        let ex = Value::make_instance(Symbol::intern("X::TypeCheck"), attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     /// Create a Failure wrapping an X::Numeric::Underflow exception.
     pub(crate) fn numeric_underflow_failure() -> Value {
         let mut attrs = HashMap::new();
