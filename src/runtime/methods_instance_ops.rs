@@ -3469,7 +3469,13 @@ impl Interpreter {
                             && matches!(
                                 am.get("__mutsu_lookup_class").map(Value::view),
                                 Some(ValueView::Str(owner))
-                                    if args.first().is_some_and(|inv| matches!(inv.view(), ValueView::Instance { .. } | ValueView::Package(_))
+                                    if args.first().is_some_and(|inv| (matches!(inv.view(), ValueView::Instance { .. })
+                                        // A type object of a user class binds the
+                                        // same way; a core owner's type object
+                                        // (`Map.^lookup('new')(MyMap)`) re-enters
+                                        // the subclass's own `new` by name.
+                                        || (matches!(inv.view(), ValueView::Package(_))
+                                            && (self.has_class(owner.as_str()) || self.is_role(owner.as_str()))))
                                         && self.type_matches_value(owner.as_str(), inv))
                             )))
                         && !is_multi_candidate
