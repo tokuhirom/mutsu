@@ -4804,6 +4804,7 @@ t/rakuast/rakuast-ternary.t
 t/rakuast/rakuast-topic-call.t
 t/rakuast/rakuast-trait-does-new-name-parts.t
 t/rakuast/rakuast-trait-is-new.t
+t/rakuast/rakuast-trait-will-trusts-new.t
 t/rakuast/rakuast-type-attributes.t
 t/rakuast/rakuast-type-can.t
 t/rakuast/rakuast-type-capture.t
