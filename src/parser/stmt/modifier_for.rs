@@ -146,19 +146,16 @@ pub(super) fn parse_for_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str,
                     let (param, params) = for_modifier_loop_params(&stmt);
                     (param, Box::new(None), params, Vec::new(), false, false, vec![stmt])
                 }
-                // ADR-0033 Phase 1: a bare Whatever-curried statement (`* + 1 for
-                // @a`) is now `WhateverCurry` rather than a built `Lambda`/
-                // `AnonSubParams`, but still needs the same "call it with $_"
-                // treatment as a single-param pointy block, to keep `* + 1 for
-                // @a` meaning `($_ + 1) for @a` rather than discarding an
-                // uncalled closure value. It is always arity-1 (one `*`
-                // placeholder threads through the whole expression), so it must
-                // NOT become the loop's own signature.
-                Stmt::Expr(expr @ Expr::WhateverCurry(_))
+                // A Whatever-curried statement (`* + 1 for @a`) is an ordinary
+                // expression evaluated once per iteration, so the loop yields one
+                // WhateverCode per element and calls nothing (#13308); it falls
+                // through to the generic arm below. A pointy block is the
+                // statement itself and is called per element.
+                //
                 // The single-param pointy block form (`-> $x { ... }`) is
                 // already exactly arity 1 under a plain call with the topic, so
                 // it keeps working unchanged.
-                | Stmt::Expr(expr @ Expr::Lambda { .. }) => {
+                Stmt::Expr(expr @ Expr::Lambda { is_whatever_code: false, .. }) => {
                     let target = Expr::CallOn {
                         target: Box::new(expr),
                         args: vec![Expr::Var("_".to_string())],
