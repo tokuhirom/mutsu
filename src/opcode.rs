@@ -10935,9 +10935,13 @@ impl CompiledCode {
         }
         // A plain-scalar for-loop parameter (`for @a -> $i {...}`) is this
         // code's OWN binding, never something to capture from an enclosing
-        // scope. See `for_loop_param_syms`.
+        // scope. See `for_loop_param_syms`. A read of the same name OUTSIDE
+        // the loop names the enclosing lexical, and the compiler forced its
+        // capture (`Compiler::note_shadowed_outer_capture`, #13377).
         if !self.for_loop_param_syms.is_empty() {
-            free.retain(|sym| !self.for_loop_param_syms.contains(sym));
+            free.retain(|sym| {
+                !self.for_loop_param_syms.contains(sym) || self.forced_free_var_syms.contains(sym)
+            });
         }
         // ADR-0032 D1 populates `container_ref_capture_syms` at EMISSION time
         // inside `Compiler::emit_wrap_var_ref`, purely from "does `local_map`
