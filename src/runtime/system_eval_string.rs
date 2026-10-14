@@ -90,7 +90,6 @@ impl Interpreter {
             self.registry().class_direct_composed_roles.clone();
         let class_role_param_bindings_snapshot = self.registry().class_role_param_bindings.clone();
         let env_snapshot = self.env.clone();
-        let saved_topic = self.env.get("_").cloned();
         let saved_package = self.current_package();
         let previous_pod = self.env.get("=pod").cloned();
         let previous_doc_comments = self.declarator_docs.doc_comments.clone();
@@ -380,12 +379,9 @@ impl Interpreter {
         }
         self.env
             .retain(|key, _| !key.starts_with("__mutsu_eval_role::"));
-        // Restore $_ so EVAL does not clobber the caller's topic variable
-        if let Some(topic) = saved_topic {
-            self.env.insert("_".to_string(), topic);
-        } else {
-            self.env.remove("_");
-        }
+        // The caller's `$_` is deliberately not restored: the unit's tail value
+        // travels on the VM stack (`Compiler::unit_tail_on_stack`), so whatever
+        // `$_` holds now was written by the snippet itself (`EVAL '$_ = 1'`).
         crate::runtime::registration_sub::pop_eval_outer_amp_names();
         crate::runtime::registration_sub::pop_eval_outer_routine_keys();
         crate::runtime::registration_sub::pop_eval_routine_depth();
