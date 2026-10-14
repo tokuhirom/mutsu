@@ -12,6 +12,24 @@ pub(super) struct LockState {
     /// (Lock::Async.lock() returns a Promise that becomes Kept when the
     /// waiter becomes the lock owner).
     pub(super) async_waiters: std::collections::VecDeque<crate::value::SharedPromise>,
+    /// How many times each condition variable of this lock has been signalled
+    /// (`cond-id` -> count). A waiter that polls with `wait_timeout` compares
+    /// it before and after: std's `Condvar` reports a notification that lands
+    /// as the timeout expires as `timed_out()`, so the count is the only
+    /// reliable record that the signal happened (#13184).
+    pub(super) signals: HashMap<u64, u64>,
+}
+
+impl LockState {
+    // Cost: O(1).
+    pub(super) fn signal_count(&self, cond_id: u64) -> u64 {
+        self.signals.get(&cond_id).copied().unwrap_or(0)
+    }
+
+    // Cost: O(1).
+    pub(super) fn note_signal(&mut self, cond_id: u64) {
+        *self.signals.entry(cond_id).or_insert(0) += 1;
+    }
 }
 
 #[derive(Debug, Default)]
@@ -415,4 +433,23 @@ pub(crate) fn semaphore_release(rt: &SemaphoreRuntime) -> Result<(), RuntimeErro
     drop(state);
     rt.cv.notify_one();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A waiter that polls with `wait_timeout` decides whether it was
+    /// signalled from this count, per condition (#13184).
+    #[test]
+    fn signal_count_is_per_condition() {
+        let mut state = LockState::default();
+        assert_eq!(state.signal_count(1), 0);
+        state.note_signal(1);
+        state.note_signal(1);
+        state.note_signal(2);
+        assert_eq!(state.signal_count(1), 2);
+        assert_eq!(state.signal_count(2), 1);
+        assert_eq!(state.signal_count(3), 0);
+    }
 }
