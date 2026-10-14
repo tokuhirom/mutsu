@@ -25,7 +25,22 @@ pub(super) fn return_constraint_node(t: &str) -> Result<RakuAstNode, RuntimeErro
     if let Some(value) = crate::parser::numeric_literal_value(t) {
         return super::convert::convert_literal(&value);
     }
+    if let Some(text) = plain_string_literal(t) {
+        return Ok(super::convert::quoted_string(Value::str(text.to_string())));
+    }
     build_type_node(t)
+}
+
+/// The text of a `'…'` / `"…"` return-value literal that needs no
+/// interpolation or escape processing, or `None`.
+// Cost: O(n), n = constraint spelling length.
+pub(super) fn plain_string_literal(t: &str) -> Option<&str> {
+    let quote = t.chars().next().filter(|c| matches!(c, '\'' | '"'))?;
+    let inner = t.strip_prefix(quote)?.strip_suffix(quote)?;
+    if inner.contains(|c| matches!(c, '\'' | '"' | '\\' | '$' | '@' | '%' | '&' | '{')) {
+        return None;
+    }
+    Some(inner)
 }
 
 pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, RuntimeError> {
