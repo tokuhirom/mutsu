@@ -790,6 +790,10 @@ pub(crate) mod wk {
         compose_left_marker => "__mutsu_compose_left";
         identity_callable_marker => "__mutsu_identity_callable";
         multi_dispatch_candidates => "__mutsu_multi_dispatch_candidates";
+        /// The `Method` object a `.assuming`-primed method callable invokes
+        /// (`$type.^lookup('m').assuming($obj)`), so the call binds its
+        /// invocant the way the object's own `CALL-ME` does.
+        assuming_callee_marker => "__mutsu_assuming_callee";
         /// A callable's kind tag (`"WhateverCode"`, ...), probed by the map
         /// loops' routine-callback gate.
         callable_type => "__mutsu_callable_type";

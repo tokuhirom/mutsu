@@ -87,7 +87,7 @@ pub(crate) fn sub_reads_block_var(data: &SubData) -> bool {
 /// fast path that compiles the body inline would silently evaluate to the
 /// topic; such Subs must always go through `call_sub_value`, which resolves
 /// the markers.
-// Cost: O(1), four env probes by pre-interned key.
+// Cost: O(1), five env probes by pre-interned key.
 pub(crate) fn sub_is_call_carrier(data: &SubData) -> bool {
     use crate::symbol::wk;
     debug_assert_eq!(
@@ -98,6 +98,7 @@ pub(crate) fn sub_is_call_carrier(data: &SubData) -> bool {
         || data.env.contains_key_sym(wk::compose_left_marker())
         || data.env.contains_key_sym(wk::identity_callable_marker())
         || data.env.contains_key_sym(wk::multi_dispatch_candidates())
+        || data.env.contains_key_sym(wk::assuming_callee_marker())
 }
 
 /// Whether `data` is tagged as a WhateverCode (`__mutsu_callable_type`).
