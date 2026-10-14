@@ -92,6 +92,10 @@ fn is_term_declaration(class: RakuAstClass) -> bool {
 fn visit(node: &RakuAstNode, in_decl: bool, found: &mut HashSet<String>) {
     let in_decl = in_decl || is_term_declaration(node.class);
     for field in &node.fields {
+        // The initializer of `constant p = pi` reads terms, it declares none.
+        let in_decl = in_decl
+            && !(node.class == RakuAstClass::VarDeclarationConstant
+                && field.name == Some("initializer"));
         match &field.value {
             RakuAstFieldValue::Node(v) => visit_value(v, in_decl, found),
             RakuAstFieldValue::List(items) => {
