@@ -1092,11 +1092,12 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         _ if written.starts_with("term:<") && written.ends_with('>') => {
             let term = &written["term:<".len()..written.len() - 1];
             if !term.starts_with(['$', '@', '%', '&']) {
-                // A sigilless term is the plain constant name the parser
-                // records; the converter never renders `term:<foo>`.
-                return Err(unsupported(node));
+                // A sigilless term constant keeps its `term:<...>` spelling,
+                // the name the parser records for it.
+                (written, "")
+            } else {
+                (term.to_string(), "")
             }
-            (term.to_string(), "")
         }
         Some('$') => (written[1..].to_string(), "$"),
         Some('@') => (written.clone(), "@"),
@@ -3388,6 +3389,10 @@ pub(super) fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String
         return Ok(format!(":{value}"));
     }
     let expr = lower_expr(node)?;
+    // A block-literal argument (`<demo: { key => 1 }>`) is a hash composer.
+    if let Expr::Hash(pairs, crate::ast::HashSpelling::Composer) = &expr {
+        return hash_composer_source(pairs).ok_or_else(|| unsupported(node));
+    }
     crate::regex_tree::expression_source(&expr).ok_or_else(|| unsupported(node))
 }
 

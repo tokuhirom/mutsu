@@ -507,6 +507,15 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         Some(DeclaredKind::Routine) => return Some(call_name(name)),
         None => {}
     }
+    // A user term (`constant \term:<ℵ₀>`) is declared under its `term:<...>`
+    // name and referenced by the bare symbol; rakudo renders the reference as
+    // `Term::Name` of the declared name.
+    let term = format!("term:<{name}>");
+    if scoped_kind(&term) == Some(DeclaredKind::Term)
+        || declared_kind(&term) == Some(DeclaredKind::Term)
+    {
+        return Some(term_name(&term));
+    }
     // `Str:D` / `Int:U` / `Int:_` used as a term: a definedness type over the type. A base
     // that resolves as a term (`constant X = Int; X:D`, or NativeCall's
     // `my constant CArray is export`) takes the smiley the same way: rakudo
