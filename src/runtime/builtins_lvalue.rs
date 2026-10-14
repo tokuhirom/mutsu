@@ -908,22 +908,47 @@ impl Interpreter {
         Ok(v.clone())
     }
 
-    /// `:(Int $a) := \(...)`: check the value bound to a typed `$` parameter of
-    /// a signature literal and pass it through. A mismatch is
-    /// `X::TypeCheck::Binding::Parameter`, as the signature binder raises it.
-    /// A missing argument (`Nil`) is left for the binding itself.
-    // Cost: O(1) for a built-in type; one type check (an MRO walk) for an object.
-    pub(super) fn builtin_sig_bind_check(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let [value, ty, param] = args else {
+    /// `:(...) := RHS`: bind `RHS` (a `Capture`, or anything a signature
+    /// smartmatch takes apart the same way: a list of positionals and pairs, a
+    /// pair, a hash) to the signature literal with the signature binder, in a
+    /// scratch scope, and answer what each of the signature's variables (the
+    /// third argument, by binder name: `a` for `$a`, `@a`, `&c`, and the inner
+    /// variable of a renamed named parameter, `t` in `:type($t)`) bound to, as
+    /// a hash. The binder
+    /// raises what a call would: a type, `where` or definiteness failure, or
+    /// an arity mismatch. The caller then binds each variable to its entry.
+    // Cost: O(p + a + v) plus the binder's checks, p = parameters, a =
+    // arguments, v = variables read back.
+    pub(super) fn builtin_sig_bind(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let [sig, rhs, vars] = args else {
             return Err(RuntimeError::new(
-                "__mutsu_sig_bind_check expects value, type and parameter name",
+                "__mutsu_sig_bind expects a signature, a right-hand side and variable names",
             ));
         };
-        let (ty, param) = (ty.to_string_value(), param.to_string_value());
-        if !value.is_nil() && !self.type_matches_value(&ty, value) {
-            return Err(self.typecheck_binding_parameter_failure(&param, &ty, value));
+        let defs = crate::value::signature::extract_sig_info(sig)
+            .and_then(|info| info.param_defs)
+            .ok_or_else(|| RuntimeError::new("__mutsu_sig_bind expects a Signature"))?;
+        let names: Vec<String> = defs.iter().map(|p| p.name.clone()).collect();
+        let (positional, named) = Self::signature_capture_like(rhs)
+            .unwrap_or_else(|| (vec![rhs.clone()], Default::default()));
+        let mut call_args = positional;
+        call_args.extend(named.iter().map(|(k, v)| Value::pair(k.clone(), v.clone())));
+        // The binder declares into the current env: bind in a scratch copy
+        // (copy-on-write, so cheap) and read the bound values back out of it.
+        let saved = self.env.clone();
+        let bound = self.bind_function_args_values(&defs, &names, &call_args);
+        let mut out = crate::value::ValueMap::default();
+        if bound.is_ok() {
+            for name in crate::runtime::value_to_list(vars) {
+                let name = name.to_string_value();
+                if let Some(v) = self.env.get(&name) {
+                    out.insert(name, v.clone());
+                }
+            }
         }
-        Ok(value.clone())
+        self.env = saved;
+        bound?;
+        Ok(Value::hash(out))
     }
 
     pub(super) fn builtin_star_lvalue_rhs(

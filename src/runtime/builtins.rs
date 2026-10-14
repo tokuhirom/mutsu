@@ -680,7 +680,7 @@ impl Interpreter {
             "__mutsu_assignment_ro" => self.builtin_assignment_ro(&args),
             "__mutsu_var_is_writable" => self.builtin_var_is_writable(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
-            "__mutsu_sig_bind_check" => self.builtin_sig_bind_check(&args),
+            "__mutsu_sig_bind" => self.builtin_sig_bind(&args),
             "__mutsu_list_assign_rhs" => self.builtin_list_assign_rhs(&args),
             "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
             "__mutsu_record_shaped_array_dims" => self.builtin_record_shaped_array_dims(&args),
