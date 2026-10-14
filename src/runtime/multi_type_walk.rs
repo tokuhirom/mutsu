@@ -162,6 +162,9 @@ impl Interpreter {
         // walked; recorded once the next slot (or the end) fixes its distance.
         let mut slot_refined = false;
         let mut slot_nominal: Option<Symbol> = None;
+        // The slot's declared type, independent of the argument
+        // ([`RankProfile::declared_wins`]).
+        let mut slot_declared: Option<Symbol> = None;
         // The slot is an optional positional this call does not reach; its
         // `slot_nominal` is then the declared type.
         let mut slot_unreached = false;
@@ -198,13 +201,14 @@ impl Interpreter {
                 continue;
             }
             if slot > 0 {
-                profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal);
+                profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal, slot_declared);
                 if slot_unreached && let Some(declared) = slot_nominal {
                     profile.mark_unreached(slot - 1, declared);
                 }
             }
             prev_total = total;
             slot_nominal = None;
+            slot_declared = None;
             slot_unreached = false;
             if slot < PROFILE_LEN {
                 slot_refined = (pd.where_constraint.is_some() && !pd.is_variadic())
@@ -251,6 +255,7 @@ impl Interpreter {
                     // `RankProfile::unreached_wins`.
                     slot_unreached = true;
                     slot_nominal = Some(self.declared_positional_nominal(pd, owner.package));
+                    slot_declared = slot_nominal;
                 } else if !pd.name.starts_with('&') {
                     total += 1000;
                 }
@@ -262,6 +267,7 @@ impl Interpreter {
                 let base = self.resolve_signature_type_name(nominal.as_ref(), owner.package);
                 if slot <= PROFILE_LEN {
                     slot_nominal = Some(Symbol::intern(&base));
+                    slot_declared = slot_nominal;
                 }
                 let distance = self.typed_param_distance(pd, &base, &arg, var_type.as_deref());
                 if distance >= UNRELATED_DISTANCE {
@@ -281,6 +287,7 @@ impl Interpreter {
                 } else {
                     "Associative"
                 };
+                slot_declared = Some(Symbol::intern(implicit));
                 // A `Seq` binds to `@` through `PositionalBindFailover` (it is
                 // cached into a `List`), so it ranks as that List: `multi
                 // h(@raw)` stays narrower than `multi h(Any:D $x)` for
@@ -307,6 +314,11 @@ impl Interpreter {
             if pd.literal_value.is_some() {
                 continue;
             }
+            slot_declared = Some(Symbol::intern(if pd.name.starts_with('&') {
+                "Callable"
+            } else {
+                "Any"
+            }));
             // An untyped `&` parameter has no ranked type.
             if pd.name.starts_with('&') {
                 total += 1000;
@@ -321,7 +333,7 @@ impl Interpreter {
             total += self.arg_type_distance("Any", &arg, var_type.as_deref());
         }
         if slot > 0 {
-            profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal);
+            profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal, slot_declared);
             if slot_unreached && let Some(declared) = slot_nominal {
                 profile.mark_unreached(slot - 1, declared);
             }

@@ -88,6 +88,7 @@ impl Interpreter {
         def: &MethodDef,
         shared_positions: usize,
         decl_order: u64,
+        owner: Symbol,
     ) -> MultiRank {
         let params = Self::method_rank_params(def);
         // A literal is nominally as narrow as the argument it equals, so
@@ -107,6 +108,7 @@ impl Interpreter {
             optional: multi_rank::has_optional_positional(&params),
             decl_order,
             profile,
+            invocant: Some(owner),
             tier: 0,
             tiered: false,
         }
@@ -223,7 +225,7 @@ impl Interpreter {
             .enumerate()
             .map(|(i, (owner, def))| {
                 let order = Self::method_decl_order(mro, *owner, i);
-                self.method_rank_key(arg_values, def, usize::MAX, order)
+                self.method_rank_key(arg_values, def, usize::MAX, order, *owner)
             })
             .collect();
         // The candidates tied on the leading tiers (literal count, type
@@ -255,7 +257,7 @@ impl Interpreter {
         let mut tiered: Vec<MultiRank> = ranks.clone();
         tiered.extend(rivals.iter().enumerate().map(|(j, (owner, def))| {
             let order = Self::method_decl_order(mro, *owner, matched + j);
-            self.method_rank_key(arg_values, def, usize::MAX, order)
+            self.method_rank_key(arg_values, def, usize::MAX, order, *owner)
         }));
         multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
             self.nominal_type_conforms(x, y)
