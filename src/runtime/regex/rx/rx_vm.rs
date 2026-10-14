@@ -395,8 +395,7 @@ impl Interpreter {
                                 levels.top().caps(),
                                 chars,
                                 pos,
-                                program.atom_ic[i as usize],
-                                program.markless,
+                                (program.atom_ic[i as usize], program.markless),
                             ) {
                                 VarInterpTarget::End(end) => {
                                     pc += 1;

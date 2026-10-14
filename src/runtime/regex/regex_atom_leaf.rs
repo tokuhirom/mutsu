@@ -60,7 +60,7 @@ impl Interpreter {
             }
             RegexAtom::VarInterp(name) | RegexAtom::VarAssertion(name) => {
                 let assertion = matches!(atom, RegexAtom::VarAssertion(_));
-                match self.var_interp_target(name, assertion, caps, chars, pos, ignore_case, false) {
+                match self.var_interp_target(name, assertion, caps, chars, pos, (ignore_case, false)) {
                     VarInterpTarget::End(end) => end,
                     // The walk takes the interpolated pattern's
                     // highest-priority end, as for a `$( … )` atom.
@@ -116,8 +116,7 @@ impl Interpreter {
         caps: &RegexCaptures,
         chars: &[char],
         pos: usize,
-        ignore_case: bool,
-        markless: bool,
+        (ignore_case, markless): (bool, bool),
     ) -> VarInterpTarget {
         let val = caps
             .regex_vars()
