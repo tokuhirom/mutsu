@@ -470,12 +470,6 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     // ---- Misc value types reachable via value_type_name ----
     row!("Version", mro: ["Version", "Any", "Mu"], roles: [], owner: ""),
     row!("Capture", mro: ["Capture", "Any", "Mu"], roles: [], owner: ""),
-    // raku: `Signature` and `Parameter` are plain `Any` subclasses. Without a row a
-    // `Parameter` value had no ancestors, so `multi f(Parameter $p)` vs
-    // `multi f(Mu $x)` ranked the `Mu` candidate as unrelated (distance 500)
-    // instead of two steps away.
-    row!("Signature", mro: ["Signature", "Any", "Mu"], roles: [], owner: ""),
-    row!("Parameter", mro: ["Parameter", "Any", "Mu"], roles: [], owner: ""),
     row!("Promise", mro: ["Promise", "Any", "Mu"], roles: ["Awaitable"], owner: ""),
     row!("Channel", mro: ["Channel", "Any", "Mu"], roles: ["Awaitable"], owner: ""),
     row!("Date", mro: ["Date", "Any", "Mu"], roles: ["Dateish"], owner: ""),
