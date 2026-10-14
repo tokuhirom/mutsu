@@ -116,8 +116,14 @@ impl Interpreter {
         let saved_readonly = self.enter_readonly_frame();
         // A `{*}`-only proto never binds its own signature: Rakudo hands the
         // arguments straight to the candidates (#13250).
-        let only_star = def.body.is_empty()
-            || super::dispatch_proto_rewrite::is_only_star_block(&def.body);
+        // Rakudo still rejects a call whose arguments are ALL literals at
+        // compile time (`proto f(Int $x) {*}; multi f($) {...}; f 'foo'`);
+        // mutsu has no compile-time check, so it gates those calls here.
+        let all_literal = self.literal_native_args != 0
+            && self.literal_native_args.count_ones() as usize == args.len();
+        let only_star = !all_literal
+            && (def.body.is_empty()
+                || super::dispatch_proto_rewrite::is_only_star_block(&def.body));
         let (bind_defs, bind_params): (&[ParamDef], &[String]) = if only_star {
             (&[], &[])
         } else {
