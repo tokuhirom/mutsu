@@ -1060,13 +1060,15 @@ impl Interpreter {
         classes.insert(
             "IO::Pipe".to_string(),
             ClassDef {
-                parents: Vec::new(),
+                // `IO::Pipe is IO::Handle`: a pipe satisfies `IO::Handle` constraints and
+                // `slurp($proc.err)` reads it instead of opening a path.
+                parents: vec!["IO::Handle".to_string()],
                 attributes: Vec::new(),
                 native_methods: ["slurp", "slurp-rest", "Str", "gist", "print", "close"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: sym_mro(&["IO::Pipe"]),
+                mro: sym_mro(&["IO::Pipe", "IO::Handle"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
