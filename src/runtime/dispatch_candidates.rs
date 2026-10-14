@@ -14,6 +14,18 @@ pub(super) const UNRELATED_DISTANCE: usize = 500;
 /// the type. Read from the builtin type catalog, so a type the catalog knows
 /// ranks its roles as Rakudo does (`Real` before `Numeric` for an `Int`) and
 /// carries no ancestor Rakudo denies (`Pair` is not `Cool`).
+/// The ancestors of `Parameter` and `Signature`, which have no catalog row (a
+/// row changes how their `ACCEPTS` and method dispatch resolve) but are plain
+/// `Any` subclasses. Without them a `Mu`/`Any` candidate scored "unrelated"
+/// for such a value and outranked a nominally exact candidate.
+fn implicit_builtin_mro(type_name: &str) -> &'static [&'static str] {
+    match type_name {
+        "Parameter" => &["Parameter", "Any", "Mu"],
+        "Signature" => &["Signature", "Any", "Mu"],
+        _ => &[],
+    }
+}
+
 fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
     crate::builtin_types::ancestry::builtin_type_narrowness_chain(type_name).unwrap_or(&[])
 }
@@ -868,6 +880,12 @@ impl Interpreter {
                 if ancestor == base {
                     return i;
                 }
+            }
+            if let Some(i) = implicit_builtin_mro(cn.as_str())
+                .iter()
+                .position(|&ancestor| ancestor == catalog_base)
+            {
+                return i;
             }
             // Check composed roles
             if let Some(roles) = self.registry().class_composed_roles.get(cn.as_str())
