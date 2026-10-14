@@ -866,10 +866,16 @@ impl Interpreter {
         method_def: &std::sync::Arc<crate::runtime::MethodDef>,
         cc: &std::sync::Arc<CompiledCode>,
     ) {
+        // An `is rw` or explicit `is raw` parameter binds the argument's own
+        // container, which only the full binder realizes (the shared-cell
+        // lookup in `bind_function_args_values`); the fast path binds a copy,
+        // so every cached call after the first dropped the callee's writes
+        // (#13207: `self!coercer.coerce($a)` relaying an `is raw` `$a`). The
+        // implicit-raw sigilless form is excluded below for the same reason.
         let has_rw_params = method_def
             .param_defs
             .iter()
-            .any(|pd| pd.traits.iter().any(|t| t == "rw"));
+            .any(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
         if has_rw_params {
             return;
         }

@@ -644,9 +644,25 @@ impl Interpreter {
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.env().get(&var_name).cloned())
             .map(|t| t.deref_container())
-            && let ValueView::Instance { class_name, .. } = target.view()
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
         {
             let cls = class_name.resolve();
+            // A subclass of a builtin container (`is Hash`, `is Array`,
+            // `is BagHash`, ...) inherits that container's native
+            // ASSIGN-KEY/ASSIGN-POS, which stores into the backing directly
+            // and never calls AT-KEY/AT-POS (#13207): only `Any`'s default
+            // ASSIGN-* assigns through the accessor.
+            let has_native_assign = [
+                crate::runtime::instance_backing::InstanceBacking::Array,
+                crate::runtime::instance_backing::InstanceBacking::Hash,
+                crate::runtime::instance_backing::InstanceBacking::Baggy,
+            ]
+            .iter()
+            .any(|b| b.is_in(&attributes));
             // A user-defined `is rw` AT-POS/AT-KEY owns the element container
             // it returns.  In particular it may be a Proxy: evaluating the
             // accessor as a normal rvalue FETCHes the Proxy before this store
@@ -668,9 +684,10 @@ impl Interpreter {
             } else {
                 "ASSIGN-KEY"
             };
-            if self
-                .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
-                .is_some_and(|(_, def)| def.is_rw)
+            if !has_native_assign
+                && self
+                    .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
+                    .is_some_and(|(_, def)| def.is_rw)
                 && !self.has_user_method_including_role(&cls, assign_method)
                 && !matches!(
                     self.stack.last().map(Value::view),

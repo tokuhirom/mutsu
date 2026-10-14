@@ -3609,7 +3609,13 @@ impl Interpreter {
         // "authoritative" would leave that read seeing the stale pre-bind
         // value — a `my $s;` declaration's `Any` — instead of the type this
         // bind just installed.
+        // A scalar `:=` of a container (`my $v := %h.AT-KEY($k)`, `my $v :=
+        // callsame`) binds the name to that cell: the env mirror must name it
+        // too, because an `is rw` callee binds the caller's container by name
+        // (`bind_function_args_values`' shared-cell lookup) and would mint a
+        // detached cell from a stale entry (#13207).
         let skip_env_write = !is_bind
+            && !(scalar_bind && val.is_container_ref())
             && !is_constant
             && !bind_marks_type_object
             && !code.needs_env_sync.get(idx).copied().unwrap_or(true)

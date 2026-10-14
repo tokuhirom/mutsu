@@ -57,6 +57,9 @@ pub(crate) fn at_key(target: &Value, args: &[Value]) -> Option<Result<Value, Run
     let arg = &args[0];
     match target.view() {
         ValueView::Hash(map) => {
+            if let Some(slot) = hash_element_container(target, arg) {
+                return Some(Ok(slot));
+            }
             // An object hash stores `.WHICH` keys (fall back to the plain
             // string key for the ordinary Str-keyed hash).
             let v = if map.key_type.is_some() {
@@ -102,6 +105,39 @@ pub(crate) fn at_key(target: &Value, args: &[Value]) -> Option<Result<Value, Run
             .unwrap_or(Value::NIL))),
         _ => None,
     }
+}
+
+/// The element container `Hash.AT-KEY` answers: rakudo's `Hash.AT-KEY` is
+/// `is raw`, so `my $c := %h.AT-KEY($k)` and a `callsame` from a user
+/// `AT-KEY` stay assignable. The stored leaf is promoted to a shared cell in
+/// place (`hash_slot_ref`); a missing key gets the lazy vivification token,
+/// which creates the entry only on the first write and reads as the hash's
+/// default until then. `None` when `target` is not a hash whose elements are
+/// containers: a `Map` (its elements are values), a hash bound to bare values,
+/// and an object hash's missing key (no string path to vivify through).
+// Cost: O(k) expected, k = the key's string length (one or two probes).
+pub(crate) fn hash_element_container(target: &Value, arg: &Value) -> Option<Value> {
+    let ValueView::Hash(map) = target.view() else {
+        return None;
+    };
+    if map.declared_type.as_deref() == Some("Map") || map.bare_values {
+        return None;
+    }
+    let key = if map.key_type.is_some() {
+        let which = crate::runtime::utils::value_which_key(arg);
+        if map.contains_key(&which) {
+            which
+        } else {
+            let plain = arg.to_string_value();
+            if !map.contains_key(&plain) {
+                return None;
+            }
+            plain
+        }
+    } else {
+        arg.to_string_value()
+    };
+    target.hash_slot_ref(&key, true)
 }
 
 /// `.EXISTS-KEY($key)`: whether `key` is stored.
