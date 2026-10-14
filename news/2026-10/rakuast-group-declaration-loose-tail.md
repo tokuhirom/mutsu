@@ -1,0 +1,1 @@
+RakuAST round-tripping now preserves a bare grouped declaration followed by a loose word-logical operator. The declaration stays one `VarDeclaration::Signature` operand, while lowering reconstructs the parser's existing declaration expansion and tail.
