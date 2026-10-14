@@ -106,7 +106,7 @@ pub(super) enum CallTarget {
 /// slice of it, is treated as having marks.
 // Cost: O(1) once the target's stripped view exists; O(n) to build it on the
 // first `:m` use of a match, n = subject chars.
-fn subject_has_no_marks(chars: &[char]) -> bool {
+pub(super) fn subject_has_no_marks(chars: &[char]) -> bool {
     crate::runtime::regex::regex_helpers::current_match_target().is_some_and(|target| {
         target.chars().len() == chars.len() && target.stripped().is_unchanged()
     })
