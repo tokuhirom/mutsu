@@ -1931,6 +1931,22 @@ impl Interpreter {
                 } else if tokens.is_empty() {
                     anchor_start = true;
                     continue;
+                } else {
+                    // `^` after another atom: start-of-string assertion.
+                    tokens.push(RegexToken {
+                        atom: RegexAtom::StartOfString,
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        hash_capture: None,
+                        secondary_named_capture: None,
+                        force_list_capture: false,
+                        ratchet,
+                        frugal: false,
+                        separator: None,
+                        from_runtime_interpolation: false,
+                        subrule_call_capture: false,
+                    });
+                    continue;
                 }
             }
             if c == '$' && chars.peek() == Some(&'$') {
@@ -2485,7 +2501,8 @@ impl Interpreter {
                         Some((
                             RegexAtom::StartOfLine
                                 | RegexAtom::EndOfLine
-                                | RegexAtom::EndOfString,
+                                | RegexAtom::EndOfString
+                                | RegexAtom::StartOfString,
                             RegexQuant::One
                         ))
                     )
