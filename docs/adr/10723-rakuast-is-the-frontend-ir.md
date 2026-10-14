@@ -1146,3 +1146,14 @@ no longer mistakes the leading empty edge of such a name for a `class ::Foo`
 stash. A grammar with a computed name stays the boundary. A name that only a
 constant fold resolves (`my constant cname = 'X'; class ::(cname) { }; X.m`)
 is still an unknown bareword to the converter.
+
+### 6.54 S10: zen slices with `:exists` (2026-10-14)
+
+The parser models `@a[]:adverb` as an `Index` with a Whatever index, except
+when `:exists` / `:!exists` follows the brackets directly: then it keeps
+`ZenSlice` under the `Exists` expansion. `ast::subscript_adverb::expand`
+accepts `ZenSlice` when an `exists` adverb is present, the converter reads it
+back as a subscript with no dimension, and lowering produces `ZenSlice` when
+the first colonpair is `exists` (an `Index` otherwise, as before). An explicit
+`:exists(True)` and the multi-dimensional `:exists:delete` error builtin stay
+the boundary.
