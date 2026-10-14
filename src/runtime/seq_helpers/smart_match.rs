@@ -1441,9 +1441,18 @@ impl Interpreter {
             // stopping at the first mismatch (no length short-circuit, same as Rakudo);
             // each `**` in the pattern adds a backtracking factor of up to e_l.
             (_, _) if Self::is_list_like(right) => {
-                // Non-iterable LHS: return False (don't treat scalars as a list)
+                // Non-iterable LHS: `List.ACCEPTS(List:D: $topic)` answers
+                // its own truthiness when the first element is a Match (the
+                // `m:g` smartmatch, so `$m ~~ $m<quantified>` holds) and
+                // False otherwise, whatever the topic is (#13251).
                 if !Self::is_iterable(left) {
-                    return false;
+                    if !matches!(right.view(), ValueView::Array(..)) {
+                        return false;
+                    }
+                    let first = Self::extract_list_items(right).into_iter().next();
+                    return first.is_some_and(|v| {
+                        v.is_match_instance() || self.type_matches_value("Match", &v)
+                    });
                 }
                 // Same object identity check (short-circuit before expensive comparison)
                 if Self::same_object(left, right) {
