@@ -477,15 +477,15 @@ impl Compiler {
     pub(super) fn unit_package_split(&mut self, stmts: &[Stmt]) -> Option<(usize, u32)> {
         // `unit module M is export;` parses to a header wrapper around the
         // declaration, so look through it.
-        let (pos, name) = stmts.iter().enumerate().find_map(|(i, s)| match
-            crate::ast::package_header::declaration(s)
-        {
-            Some(Stmt::Package {
-                name,
-                is_unit: true,
-                ..
-            }) => Some((i, name.resolve())),
-            _ => None,
+        let (pos, name) = stmts.iter().enumerate().find_map(|(i, s)| {
+            match crate::ast::package_header::declaration(s) {
+                Some(Stmt::Package {
+                    name,
+                    is_unit: true,
+                    ..
+                }) => Some((i, name.resolve())),
+                _ => None,
+            }
         })?;
         let qualified = self.qualify_package_name(&name);
         Some((pos, self.code.add_constant(Value::str(qualified))))
