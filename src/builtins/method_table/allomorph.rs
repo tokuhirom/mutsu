@@ -38,9 +38,8 @@ const ALLOMORPH_NUMERIC: [&str; 12] = [
 /// copy, `wordcase`, whose result Rakudo re-allomorphs, and `ACCEPTS`, which
 /// compares a `Str` argument with the string and anything else with the number
 /// (`methods_narg::allomorph`).
-const ALLOMORPH_OWN: [&str; 11] = [
-    "raku", "perl", "gist", "Str", "Stringy", "WHICH", "clone", "Capture", "wordcase", "VAR",
-    "ACCEPTS",
+const ALLOMORPH_OWN: [&str; 10] = [
+    "raku", "perl", "gist", "Str", "WHICH", "clone", "Capture", "wordcase", "VAR", "ACCEPTS",
 ];
 
 /// The string and the number of a plain allomorph: an `IntStr`, `RatStr`,
@@ -81,6 +80,11 @@ pub(super) fn redirect(target: &Value, method: Symbol, arity: usize) -> Option<(
     let name = method.as_str();
     if ALLOMORPH_OWN.contains(&name) {
         return None;
+    }
+    // `Str.Stringy` is `self`, and an allomorph is a `Str`: the allomorph itself.
+    if name == "Stringy" {
+        let id = resolve(Receiver::instance(DispatchShape::Str), method, arity)?;
+        return Some((target.clone(), id));
     }
     let numeric = ALLOMORPH_NUMERIC.contains(&name);
     if !numeric
