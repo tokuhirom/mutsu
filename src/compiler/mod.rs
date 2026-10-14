@@ -3153,7 +3153,16 @@ impl Compiler {
     /// would write through the captured cell, so it is left alone.
     // Cost: O(|name|).
     pub(super) fn note_shadowed_outer_capture(&mut self, name: &str, writes: bool) {
-        if self.enclosing_local_names.contains(name) && !self.by_name_param_names.contains(name) {
+        // TODO: a closure's exit writes a captured name back to its caller from
+        // the chunk's local slot of that name, which here is the nested block's
+        // own `my`; forcing the capture in a closure therefore clobbered the
+        // outer variable with the block local's value. Until that writeback
+        // tells a block-local slot from the captured binding, the capture is
+        // forced only in a named routine body (#13391).
+        if !self.in_closure_body
+            && self.enclosing_local_names.contains(name)
+            && !self.by_name_param_names.contains(name)
+        {
             self.note_forced_outer_scalar_capture(name, writes);
         }
     }
