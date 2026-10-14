@@ -369,7 +369,7 @@ fn dispatch(
             return None;
         }
         let answer = call(row, interp, target, args, Named::NONE);
-        return super::allomorph::keep_allomorph(allomorph, target, method, answer);
+        return super::allomorph::keep_allomorph(allomorph, target, method, args.len(), answer);
     }
     let (named, positional): (Vec<Value>, Vec<Value>) = args
         .iter()

@@ -122,11 +122,16 @@ pub(super) fn keep_allomorph<F>(
     allomorph: &Value,
     part: &Value,
     method: Symbol,
+    arity: usize,
     answer: Option<(Result<Value, crate::value::RuntimeError>, F)>,
 ) -> Option<(Result<Value, crate::value::RuntimeError>, F)> {
     match answer {
         Some((Ok(value), flag))
             if !std::ptr::eq(allomorph, part)
+                // `round($scale)` and `Int.abs` build a new number even when equal.
+                && arity == 0
+                && !(method.as_str() == "abs"
+                    && matches!(part.dispatch_shape(), Some(DispatchShape::Int)))
                 && ALLOMORPH_RETURNS_SELF.contains(&method.as_str())
                 && value.dispatch_shape() == part.dispatch_shape()
                 && value == *part =>
