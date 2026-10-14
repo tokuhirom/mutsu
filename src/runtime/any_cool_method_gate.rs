@@ -95,6 +95,10 @@ const ANY_COERCIONS: &[&str] = &[
     "Slip", "Supply",
 ];
 
+/// Names the `Any` catalog lists that `Mu` answers all the same
+/// (`Mu.iterator` is the empty iterator, `Mu.ACCEPTS` is identity).
+const ALSO_ON_MU: &[&str] = &["ACCEPTS", "iterator"];
+
 fn any_only_names() -> &'static FxHashSet<&'static str> {
     static NAMES: OnceLock<FxHashSet<&'static str>> = OnceLock::new();
     NAMES.get_or_init(|| {
@@ -103,7 +107,7 @@ fn any_only_names() -> &'static FxHashSet<&'static str> {
         builtin_type_method_names("Any")
             .into_iter()
             .chain(ANY_COERCIONS.iter().copied())
-            .filter(|name| !mu.contains(name))
+            .filter(|name| !mu.contains(name) && !ALSO_ON_MU.contains(name))
             .collect()
     })
 }
