@@ -475,12 +475,16 @@ impl Compiler {
     /// the package) from the ones that follow it; see the call site in
     /// `compile_unit()`.
     pub(super) fn unit_package_split(&mut self, stmts: &[Stmt]) -> Option<(usize, u32)> {
-        let (pos, name) = stmts.iter().enumerate().find_map(|(i, s)| match s {
-            Stmt::Package {
+        // `unit module M is export;` parses to a header wrapper around the
+        // declaration, so look through it.
+        let (pos, name) = stmts.iter().enumerate().find_map(|(i, s)| match
+            crate::ast::package_header::declaration(s)
+        {
+            Some(Stmt::Package {
                 name,
                 is_unit: true,
                 ..
-            } => Some((i, name.resolve())),
+            }) => Some((i, name.resolve())),
             _ => None,
         })?;
         let qualified = self.qualify_package_name(&name);
@@ -873,11 +877,11 @@ impl Compiler {
         let original_in_unit_package = self.in_unit_package;
         let mut seen_runtime_stmt = false;
         for stmt in stmts {
-            if let Stmt::Package {
+            if let Some(Stmt::Package {
                 name,
                 is_unit: true,
                 ..
-            } = stmt
+            }) = crate::ast::package_header::declaration(stmt)
             {
                 // Shells are emitted before source-order statements, but a
                 // preceding unit declarator changes their lexical package.
