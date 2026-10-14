@@ -4051,6 +4051,7 @@ impl Interpreter {
                     // ranks after the built-in method, so it does not shadow it
                     // (#13509).
                     (self.class_has_user_method(&class_name, method)
+                        && !self.native_base_bypass_hit(&target, Symbol::intern(method))
                         && !self.user_candidates_all_outranked_by_builtin(&class_name, method))
                         || self.class_scoped_accessor_shadows(&class_name, method, &args)
                         // A Cool-only builtin (`.subst`, `.trans`, ...) is not
