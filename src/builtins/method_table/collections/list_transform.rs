@@ -391,9 +391,18 @@ pub(crate) fn unique(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
         ValueView::Bool(_) => Some(Ok(Value::seq(vec![target.clone()]))),
         ValueView::LazyList(_) => None,
         ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => {
+            let items = crate::runtime::utils::value_to_list_for_receiver(target);
+            Some(Ok(unique_seq(items.iter())))
+        }
         // A scalar (Int, Str, an allomorph, ...) reads as its one-element
-        // list: `Any.unique` is `self.list.unique`. `dispatch_unique` does that.
-        _ => None,
+        // list: `Any.unique` is `self.list.unique`.
+        // One element is distinct from nothing, so no identity is compared.
+        _ => Some(Ok(Value::seq(vec![target.clone()]))),
     }
 }
 
