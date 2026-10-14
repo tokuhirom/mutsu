@@ -3885,6 +3885,7 @@ impl Compiler {
                         body_end: 0,
                         lexicals_idx: crate::opcode::NO_PACKAGE_LEXICALS,
                         decls_idx: u32::MAX,
+                        slots_idx: u32::MAX,
                     });
                     let saved_package = self.current_package.clone();
                     let saved_in_unit = self.in_unit_package;
