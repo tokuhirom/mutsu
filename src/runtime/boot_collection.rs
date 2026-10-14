@@ -283,5 +283,36 @@ impl Interpreter {
             _ => None,
         }
     }
+
+    /// `nqp::p6bindattrinvres($capture, Capture, '@!list' | '%!hash', $raw)`:
+    /// the Capture handed back has `$raw`'s elements as its positionals (or
+    /// its pairs as its nameds), the other half kept -- the read side is
+    /// `nqp_attr_value`'s Capture arm. A Capture is an immutable value in
+    /// mutsu, so the bind builds the new one rather than writing into
+    /// `$capture` (which is why a plain `nqp::bindattr` is not handled):
+    /// `nqp::p6bindattrinvres(nqp::create(Capture), Capture, '@!list', self)`
+    /// is how a List-like class makes its `.Capture` (ValueList).
+    ///
+    /// `None` when `obj` is not a Capture, `attr` is neither attribute, or
+    /// `raw` is not a list (hash) nqp can read.
+    // Cost: O(n), n = elements (pairs) of `raw`.
+    pub(crate) fn capture_with_storage(obj: &Value, attr: &str, raw: &Value) -> Option<Value> {
+        let ValueView::Capture { positional, named } = obj.view() else {
+            return None;
+        };
+        match Self::nqp_attr_bare(attr) {
+            "list" => Some(Value::capture(
+                Self::nqp_elems_of(raw)?,
+                (*named).clone(),
+            )),
+            "hash" => match raw.view() {
+                ValueView::Hash(map) => {
+                    Some(Value::capture(positional.to_vec(), map.map.clone()))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 

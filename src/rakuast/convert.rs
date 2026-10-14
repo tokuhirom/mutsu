@@ -670,6 +670,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     return Err(unsupported("multi-statement if/unless modifier body"));
                 };
                 if !else_branch.is_empty() {
+                    // `proceed |c` / `succeed |c` is parsed into a guarded
+                    // control transfer (`slipped_control_stmt`); rakudo has the
+                    // plain call over the slipped argument.
+                    if let Some(call) = slipped_control_call(cond, then_branch, else_branch)? {
+                        return Ok(Some(statement_expression(call)));
+                    }
                     return Err(unsupported("if/unless modifier with an else branch"));
                 }
                 let mut statement = convert_stmt(modified)?
@@ -3992,12 +3998,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             target,
             name_expr,
             args,
-            modifier: None,
+            modifier,
             quoted: true,
-        } => super::postfix_grouping::convert(
-            target,
-            call_quoted_method_expr(convert_expr(name_expr)?, args)?,
-        ),
+        } if matches!(modifier, None | Some('?' | '+' | '*' | '!')) => {
+            super::postfix_grouping::convert(
+                target,
+                call_quoted_method_expr(convert_expr(name_expr)?, args, *modifier)?,
+            )
+        }
         // `$o.$name(1)` / `$o.&f(1)` -> `Call::TermAsMethod` / `Call::NameAsMethod`.
         Expr::DynamicMethodCall {
             target,
@@ -6114,10 +6122,10 @@ fn method_call_postfix(
     quoted: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     if quoted {
-        if modifier.is_some() {
+        if !matches!(modifier, None | Some('?' | '+' | '*' | '!')) {
             return Err(unsupported("quoted method name with a modifier"));
         }
-        return call_quoted_method(name, args);
+        return call_quoted_method(name, args, modifier);
     }
     // `.^name` is a *metamethod* call, not an ordinary call with a dispatch
     // modifier: raku gives it its own `Call::MetaMethod` class whose `name` is a
@@ -6138,8 +6146,12 @@ fn method_call_postfix(
 /// `."foo"` / `."foo"(args)` -> `Call::QuotedMethod(name => QuotedString,
 /// [args => ArgList])`. Unlike `Call::Method`, the name is a QuotedString
 /// (a string literal) rather than a `Name.from-identifier`.
-fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
-    call_quoted_method_expr(quoted_string(Value::str(name.to_string())), args)
+fn call_quoted_method(
+    name: &str,
+    args: &[Expr],
+    modifier: Option<char>,
+) -> Result<RakuAstNode, RuntimeError> {
+    call_quoted_method_expr(quoted_string(Value::str(name.to_string())), args, modifier)
 }
 
 /// Construct `Call::QuotedMethod` from the quoted-string expression that names
@@ -6148,10 +6160,21 @@ fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeE
 pub(super) fn call_quoted_method_expr(
     name: RakuAstNode,
     args: &[Expr],
+    modifier: Option<char>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = vec![node_field(Some("name"), name)];
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));
+    }
+    // `.?"name"` / `.+"name"` / `.*"name"` keep the dispatch string; the
+    // private call `self!"name"` has the bare `!`.
+    if let Some(m) = modifier {
+        let dispatch = if m == '!' {
+            "!".to_string()
+        } else {
+            format!(".{m}")
+        };
+        fields.push(leaf_field(Some("dispatch"), Value::str(dispatch)));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::CallQuotedMethod,
@@ -6648,6 +6671,37 @@ fn call_name(
 /// WithoutParentheses form. Unlike [`listop_call`], the `args` field is omitted
 /// entirely when there are no arguments (matching raku's gist for a bare
 /// `return`/`last`/`next`).
+/// The call a `proceed |c` / `succeed |c` guard stands for, or `None` when the
+/// `if` is not that parser expansion.
+// Cost: O(|slip|).
+fn slipped_control_call(
+    cond: &Expr,
+    then_branch: &[Stmt],
+    else_branch: &[Stmt],
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let name = match else_branch {
+        [Stmt::Proceed] => "proceed",
+        [Stmt::Succeed] => "succeed",
+        _ => return Ok(None),
+    };
+    let Expr::MethodCall {
+        target, name: m, ..
+    } = cond
+    else {
+        return Ok(None);
+    };
+    let (Expr::ArrayLiteral(items), "elems") = (&**target, m.as_str()) else {
+        return Ok(None);
+    };
+    let [slip @ Expr::Unary { .. }] = items.as_slice() else {
+        return Ok(None);
+    };
+    if !matches!(then_branch, [Stmt::Die(_)]) {
+        return Ok(None);
+    }
+    control_call(name, std::slice::from_ref(slip)).map(Some)
+}
+
 fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let name_node = RakuAstNode {
         class: RakuAstClass::Name,

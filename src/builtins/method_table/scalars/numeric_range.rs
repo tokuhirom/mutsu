@@ -100,6 +100,15 @@ fn int_range(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErr
     let ValueView::Package(name) = target.view() else {
         return instance_error("Int", target);
     };
+    // `UInt` is `subset UInt of Int where * >= 0`: `0..^Inf`.
+    if name.as_str() == "UInt" {
+        return Some(Ok(Value::generic_range(
+            Value::int(0),
+            Value::num(f64::INFINITY),
+            false,
+            true,
+        )));
+    }
     Some(Ok(
         native_int_range(name.as_str()).unwrap_or_else(|| infinite_range(true))
     ))

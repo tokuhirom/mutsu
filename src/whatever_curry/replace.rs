@@ -93,13 +93,22 @@ impl VisitMut for Replacer<'_> {
                 target, op, rhs, ..
             } => {
                 let original = (**rhs).clone();
+                let original_target = (**target).clone();
+                // The target's `*` is the first parameter (left to right), but
+                // only when the RHS primes as well; see `count_whatever`.
+                if is_whatever(target) && crate::parser::contains_whatever(rhs) {
+                    self.visit_expr_mut(target);
+                }
                 self.visit_expr_mut(rhs);
                 let expanded = op.strip_suffix('=').and_then(|op| {
                     expand_compound_assign_expr((**target).clone(), op, (**rhs).clone()).ok()
                 });
                 match expanded {
                     Some(expanded) => *e = expanded,
-                    None => **rhs = original,
+                    None => {
+                        **rhs = original;
+                        **target = original_target;
+                    }
                 }
             }
             Expr::AssignExpr { expr, .. } => self.visit_expr_mut(expr),

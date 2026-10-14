@@ -83,6 +83,35 @@ fn cool_only_names() -> &'static FxHashSet<&'static str> {
     })
 }
 
+/// The builtin method names `Any` declares and `Mu` does not: the `Mu` type
+/// object is no `Any`, so it does not resolve them (`Mu.elems`, `Mu.List`,
+/// `Mu.first` are `X::Method::NotFound` in Rakudo, #12976).
+///
+/// The coercions `Any` declares for the container types (`Any.List`, `Any.Hash`)
+/// are not in the catalog `.^can` reads (`Any.^can('List')` is empty), so they
+/// are listed here.
+const ANY_COERCIONS: &[&str] = &[
+    "Array", "Bag", "BagHash", "Hash", "List", "Map", "Mix", "MixHash", "Seq", "Set", "SetHash",
+    "Slip", "Supply",
+];
+
+/// Names the `Any` catalog lists that `Mu` answers all the same
+/// (`Mu.iterator` is the empty iterator, `Mu.ACCEPTS` is identity).
+const ALSO_ON_MU: &[&str] = &["ACCEPTS", "iterator"];
+
+fn any_only_names() -> &'static FxHashSet<&'static str> {
+    static NAMES: OnceLock<FxHashSet<&'static str>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        use crate::builtins::builtin_type_methods::builtin_type_method_names;
+        let mu: FxHashSet<&'static str> = builtin_type_method_names("Mu").into_iter().collect();
+        builtin_type_method_names("Any")
+            .into_iter()
+            .chain(ANY_COERCIONS.iter().copied())
+            .filter(|name| !mu.contains(name) && !ALSO_ON_MU.contains(name))
+            .collect()
+    })
+}
+
 /// Whether `method` is resolvable only through `Cool` or one of its subtypes
 /// (see [`cool_only_names`]).
 // Cost: O(|method|), hash lookup in a set built once per process.
@@ -112,7 +141,7 @@ pub(crate) fn cool_method_not_found(
     method: &str,
 ) -> Option<crate::value::RuntimeError> {
     let owner = undefined_owner(target)?;
-    is_cool_only_method(method)
+    (is_cool_only_method(method) || (owner == "Mu" && any_only_names().contains(method)))
         .then(|| super::methods_signature_errors::make_method_not_found_error(method, owner, false))
 }
 

@@ -11,7 +11,7 @@ mod term_literals;
 
 pub(super) use circumfix::declared_circumfix_op;
 pub(super) use identifier_call::identifier_or_call;
-pub(in crate::parser) use identifier_call::slipped_control_stmt;
+pub(crate) use identifier_call::slipped_control_stmt;
 pub(crate) use listop::{TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers};
 pub(in crate::parser) use listop::{
     colon_starts_colonpair, export_term_or_call, expr_is_colonpair, make_call_expr,

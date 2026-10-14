@@ -335,7 +335,7 @@ impl Interpreter {
         &mut self,
         target: Value,
         method: &str,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
         reify_seq: bool,
     ) -> Result<Value, RuntimeError> {
         let target_was_seq = target.is_seq_value();
@@ -1136,7 +1136,7 @@ impl Interpreter {
             // consumed. `reify_seq` is false only when the implicit-`*%_`
             // wrapper above already performed that single touch on our
             // behalf (it must, because it may call us twice).
-            self.reify_or_consume_seq_target_authoritative(target, method)?
+            self.consume_seq_for_call(target, method, &mut args, true)?
         } else {
             target
         };

@@ -89,6 +89,8 @@ impl<'ast> Visit<'ast> for PlaceholderMutationScan<'_> {
                 modifier: Some('='),
                 ..
             } => self.refs_placeholder(target),
+            // `* += *` / `* += 1` — a compound assignment through a placeholder.
+            Expr::AssignExpr { name, .. } => name == self.name,
             _ => false,
         };
         if !self.found {

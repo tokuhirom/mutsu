@@ -7,7 +7,7 @@
 //! already distinguishes the two with `ParamDef::sub_signature`.
 
 use super::convert::{node_field, signature};
-use super::lower::{lower_signature_parameters, named_child, simple_type_name};
+use super::lower::{lower_signature_parameters, named_child};
 use super::{RakuAstField, RakuAstNode};
 use crate::ast::ParamDef;
 use crate::value::RuntimeError;
@@ -45,7 +45,10 @@ pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, Runti
                 .iter()
                 .any(|field| field.name == Some("returns")) =>
         {
-            Some(simple_type_name(node, named_child(signature, "returns")?)?)
+            Some(super::type_lower::return_constraint(
+                node,
+                named_child(signature, "returns")?,
+            )?)
         }
         _ => None,
     };
@@ -131,7 +134,10 @@ pub(super) fn lower_constraint(node: &RakuAstNode, def: &mut ParamDef) -> Result
             .iter()
             .any(|field| field.name == Some("returns"))
         {
-            Some(simple_type_name(node, named_child(signature, "returns")?)?)
+            Some(super::type_lower::return_constraint(
+                node,
+                named_child(signature, "returns")?,
+            )?)
         } else {
             None
         };

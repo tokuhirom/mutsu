@@ -25,6 +25,7 @@ mod compound_stmt;
 mod constructor_positional;
 mod contextualizer;
 mod control_signature;
+mod trait_is_constructor;
 use constructor_positional::single_positional_class;
 mod convert;
 mod core_term_names;
@@ -2292,6 +2293,9 @@ pub fn construct(
     }
     if class_name == "RakuAST::Class" && method == "new" {
         return class_constructor::construct(args).map(Some);
+    }
+    if class_name == "RakuAST::Trait::Is" && method == "new" {
+        return trait_is_constructor::construct(args).map(Some);
     }
     if matches!(
         class_name,

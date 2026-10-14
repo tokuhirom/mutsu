@@ -121,6 +121,9 @@ pub(crate) fn type_object_row(
         return row_of("Int");
     }
     let base = name.split_once('[').map_or(name.as_ref(), |(base, _)| base);
+    // `UInt` is `subset UInt of Int where * >= 0`: its type object dispatches
+    // `Int`'s methods.
+    let base = if base == "UInt" { "Int" } else { base };
     if crate::value::ROLES_WITH_ROWS.contains(&base) {
         let parents = ROLE_PARENTS
             .iter()

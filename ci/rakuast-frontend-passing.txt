@@ -1442,6 +1442,7 @@ t/control/label-first-class.t
 t/control/labeled-c-style-loop.t
 t/control/labeled-loop.t
 t/control/labeled-repeat-loop-control.t
+t/control/last-next-slipped-args.t
 t/control/leave-in-if-branch.t
 t/control/leave-keep-undo-in-map-block.t
 t/control/leave-phaser-if-given-fires.t
@@ -3340,6 +3341,7 @@ t/oo/attribute/attribute-lowercase-subset-checked-at-construction.t
 t/oo/attribute/attribute-meta-object-identity.t
 t/oo/attribute/attribute-nil-argument-default.t
 t/oo/attribute/attribute-of-trait-order.t
+t/oo/attribute/attribute-own-compose-hook.t
 t/oo/attribute/attribute-required-reason.t
 t/oo/attribute/attribute-required.t
 t/oo/attribute/attribute-seed-default-memo.t
@@ -3352,6 +3354,7 @@ t/oo/attribute/attribute-trait-arg-declared-later-in-composing-class.t
 t/oo/attribute/attribute-trait-compose-sees-later-methods.t
 t/oo/attribute/attribute-trait-core-candidate-redispatch.t
 t/oo/attribute/attribute-trait-mixin-visible-to-compose-hook.t
+t/oo/attribute/attribute-trait-mod-will-block.t
 t/oo/attribute/attribute-trait-mod.t
 t/oo/attribute/attribute-type-check-in-method.t
 t/oo/attribute/attribute-type-lexical-class-introspection.t
@@ -3720,6 +3723,7 @@ t/oo/method/definite-type-method-assign-v6d.t
 t/oo/method/destroy-plain-method.t
 t/oo/method/dot-assign-decl-indirect-method.t
 t/oo/method/dot-method-subrule-with-args.t
+t/oo/method/dynamic-method-name-matches-static.t
 t/oo/method/dynamic-method-object-call.t
 t/oo/method/dynamic-method-type-object.t
 t/oo/method/dynamic-method.t
@@ -4003,6 +4007,7 @@ t/oo/method/temporal-shift-edit-method-rows.t
 t/oo/method/topic-dynamic-method-call.t
 t/oo/method/topic-method-colon-args-trailing-comma-modifier.t
 t/oo/method/topic-quoted-method-call.t
+t/oo/method/topic-quoted-method-name-modifier.t
 t/oo/method/tree-method.t
 t/oo/method/trig-method-name-on-user-class.t
 t/oo/method/type-object-method-aggregate-assign.t
@@ -4069,6 +4074,7 @@ t/oo/mop/metamodel-is-pun.t
 t/oo/mop/metamodel-naming-stashing.t
 t/oo/mop/metamodel-nqp-parameterizer-ops.t
 t/oo/mop/metamodel-primitives-method-cache.t
+t/oo/mop/metamodel-private-methods.t
 t/oo/mop/metamodel-set-name.t
 t/oo/mop/metamodel-shortname-ver-auth.t
 t/oo/mop/mop-method-rows.t
@@ -4509,6 +4515,7 @@ t/rakuast/rakuast-attribute-handles.t
 t/rakuast/rakuast-attribute-smiley-default-built.t
 t/rakuast/rakuast-attribute-statement-modifier.t
 t/rakuast/rakuast-attribute-traits.t
+t/rakuast/rakuast-attribute-will-trait.t
 t/rakuast/rakuast-attribute.t
 t/rakuast/rakuast-bare-loop-term.t
 t/rakuast/rakuast-bare-prefix.t
@@ -4697,10 +4704,12 @@ t/rakuast/rakuast-postfix-frozen-whatever.t
 t/rakuast/rakuast-postfix-grouping.t
 t/rakuast/rakuast-pre-post-phasers.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
+t/rakuast/rakuast-private-quoted-method.t
 t/rakuast/rakuast-proto-onlystar-coercion.t
 t/rakuast/rakuast-qualified-decl-name.t
 t/rakuast/rakuast-qualified-module-constants.t
 t/rakuast/rakuast-qualified-variable-declaration.t
+t/rakuast/rakuast-quoted-method-dispatch.t
 t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-react-whenever-done.t
 t/rakuast/rakuast-reduction.t
@@ -4744,6 +4753,7 @@ t/rakuast/rakuast-signature-decl.t
 t/rakuast/rakuast-signature-literal.t
 t/rakuast/rakuast-signature-members.t
 t/rakuast/rakuast-signature-type-cohort.t
+t/rakuast/rakuast-slipped-control-call.t
 t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
 t/rakuast/rakuast-smiley-pragma.t
@@ -4752,6 +4762,7 @@ t/rakuast/rakuast-statement-origin.t
 t/rakuast/rakuast-statement-prefix-binding.t
 t/rakuast/rakuast-statement-prefix-blorst.t
 t/rakuast/rakuast-string-item-segment.t
+t/rakuast/rakuast-string-return-literal.t
 t/rakuast/rakuast-sub-custom-traits.t
 t/rakuast/rakuast-sub-traits.t
 t/rakuast/rakuast-sub.t
@@ -4771,6 +4782,7 @@ t/rakuast/rakuast-term-name-math-constants.t
 t/rakuast/rakuast-ternary.t
 t/rakuast/rakuast-topic-call.t
 t/rakuast/rakuast-trait-does-new-name-parts.t
+t/rakuast/rakuast-trait-is-new.t
 t/rakuast/rakuast-type-attributes.t
 t/rakuast/rakuast-type-can.t
 t/rakuast/rakuast-type-capture.t
@@ -5408,6 +5420,7 @@ t/routines/call/return-trailing-comma.t
 t/routines/call/return-type-code-object-call.t
 t/routines/call/return-type-hyphenated-qualified.t
 t/routines/call/return-type-undeclared-invalidtype.t
+t/routines/call/return-value-spec-comp.t
 t/routines/call/return-value-spec-nested-block.t
 t/routines/call/returns-coercion-type.t
 t/routines/call/returns-declaring-scope-type.t
@@ -6036,6 +6049,7 @@ t/routines/signature/nonconst-param-default-full-arity-light.t
 t/routines/signature/not-parametric.t
 t/routines/signature/object-hash-param-binding.t
 t/routines/signature/omitted-named-unpack-param-inner-defaults.t
+t/routines/signature/optional-callable-param-multi-narrowness.t
 t/routines/signature/optional-named-empty-list-comparison.t
 t/routines/signature/optional-param-seed.t
 t/routines/signature/optional-param-where-runs-when-omitted.t
@@ -6449,6 +6463,7 @@ t/types/ecosystem-rational-complex-numeric.t
 t/types/enum-subset/bool-enumeration-collection-methods.t
 t/types/enum-subset/builtin-enum-base-tier.t
 t/types/enum-subset/definite-return-core-term-not-imported-type.t
+t/types/enum-subset/definite-return.t
 t/types/enum-subset/definite-scalar-nil-reassignment.t
 t/types/enum-subset/definite-type-object.t
 t/types/enum-subset/enum-bare-key-sub-scope.t

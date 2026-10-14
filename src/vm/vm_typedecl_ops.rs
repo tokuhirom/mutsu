@@ -1477,6 +1477,9 @@ impl Interpreter {
                 type_param_defs,
             );
             self.record_role_body_bind_cells(code, &qualified_name, body_bind_source_slots);
+            // A class composed before this registration ran (a hoisted shell)
+            // copied the role's methods and attributes without these captures.
+            self.give_role_captures_to_composed_classes(&qualified_name);
 
             self.record_module_owned_type(&qualified_name);
             self.types.last_registered_role_key = Some(qualified_name.clone());

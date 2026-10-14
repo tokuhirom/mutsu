@@ -1157,3 +1157,11 @@ back as a subscript with no dimension, and lowering produces `ZenSlice` when
 the first colonpair is `exists` (an `Index` otherwise, as before). An explicit
 `:exists(True)` and the multi-dimensional `:exists:delete` error builtin stay
 the boundary.
+
+### 6.55 S10: attribute `will PHASE BLOCK` traits (2026-10-14)
+
+An attribute's `will lazy { ... }` is kept by the parser as an unknown trait
+`("will", phase, Some(AnonSub))`. The converter renders it as
+`Trait::Will(phase, block)` in the attribute's `traits`, and lowering turns it
+back into the same unknown-trait tuple, so `trait_mod:<will>` receives the block
+as its positional Callable. A `will` trait without a block stays the boundary.

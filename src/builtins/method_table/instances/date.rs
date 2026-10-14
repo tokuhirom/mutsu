@@ -5,7 +5,7 @@
 //! attributes, so an instance of a subclass (no shape) is answered by the same
 //! rows through their owner (ADR-11276 §9.87).
 
-use super::temporal::with_attrs;
+use super::temporal::{reclass, with_attrs, with_attrs_class};
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::methods_0arg::temporal;
 use crate::symbol::Symbol;
@@ -38,14 +38,14 @@ fn shifted(attributes: &AttrMap, offset: i64) -> Value {
 
 /// `Date.succ`: the next day.
 // Cost: O(a), a = attributes of the instance.
-pub(crate) fn succ(attributes: &AttrMap) -> Value {
-    shifted(attributes, 1)
+pub(crate) fn succ(attributes: &AttrMap, class: &str) -> Value {
+    reclass(shifted(attributes, 1), class)
 }
 
 /// `Date.pred`: the previous day.
 // Cost: O(a), a = attributes of the instance.
-pub(crate) fn pred(attributes: &AttrMap) -> Value {
-    shifted(attributes, -1)
+pub(crate) fn pred(attributes: &AttrMap, class: &str) -> Value {
+    reclass(shifted(attributes, -1), class)
 }
 
 /// `Date.first-date-in-month`.
@@ -91,21 +91,21 @@ pub(crate) fn int(attributes: &AttrMap) -> Value {
 
 /// `Date.WHICH`: a `ValueObjAt` naming the date by its day count.
 // Cost: O(a), a = attributes of the instance.
-pub(crate) fn which(attributes: &AttrMap) -> Value {
+pub(crate) fn which(attributes: &AttrMap, class: &str) -> Value {
     let (year, month, day) = date_attrs(attributes);
     let mut attrs = std::collections::HashMap::new();
     attrs.insert(
         "WHICH".to_string(),
-        Value::str(format!("Date|{}", temporal::daycount(year, month, day))),
+        Value::str(format!("{class}|{}", temporal::daycount(year, month, day))),
     );
     Value::make_instance(Symbol::intern("ValueObjAt"), attrs)
 }
 
 /// `Date.raku`: the constructor call that rebuilds the date.
 // Cost: O(a), a = attributes of the instance.
-pub(crate) fn raku(attributes: &AttrMap) -> Value {
+pub(crate) fn raku(attributes: &AttrMap, class: &str) -> Value {
     let (year, month, day) = date_attrs(attributes);
-    Value::str(format!("Date.new({year},{month},{day})"))
+    Value::str(format!("{class}.new({year},{month},{day})"))
 }
 
 /// `Date.Str` (and `gist`): the ISO 8601 date. A date made with a `:formatter`
@@ -120,6 +120,23 @@ pub(crate) fn str_of(attributes: &AttrMap) -> Option<Value> {
     Some(Value::str(temporal::format_date(year, month, day)))
 }
 
+macro_rules! class_row_fns {
+    ($($row:ident => $handler:ident),* $(,)?) => {
+        $(
+            fn $row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+                with_attrs_class(target, $handler)
+            }
+        )*
+    };
+}
+
+class_row_fns! {
+    succ_row => succ,
+    pred_row => pred,
+    which_row => which,
+    raku_row => raku,
+}
+
 macro_rules! attr_row_fns {
     ($($row:ident => $handler:ident),* $(,)?) => {
         $(
@@ -131,15 +148,11 @@ macro_rules! attr_row_fns {
 }
 
 attr_row_fns! {
-    succ_row => succ,
-    pred_row => pred,
     first_date_in_month_row => first_date_in_month,
     last_date_in_month_row => last_date_in_month,
     to_date_row => to_date,
     to_datetime_row => to_datetime,
     int_row => int,
-    which_row => which,
-    raku_row => raku,
 }
 
 fn str_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {

@@ -6,8 +6,26 @@ impl Interpreter {
         target: Value,
         what: &str,
     ) -> Result<Value, RuntimeError> {
+        let target = self.iterable_instance_elements(target)?;
         self.warm_which_identity(&target);
         crate::builtins::quanthash_coerce::to_set(target, what)
+    }
+
+    /// A user instance that composes `Iterable` coerces to a QuantHash (and
+    /// takes part in a set operator) through its elements, as rakudo's
+    /// `Any.Set`/`.Bag`/`.Mix` and the set operators read `self.iterator`;
+    /// any other value is returned unchanged. A class with only an `iterator`
+    /// method and no `Iterable` stays one element, as in rakudo.
+    // Cost: O(1) for a non-instance; O(n) iterator pulls for an Iterable
+    // instance, n = its elements.
+    pub(crate) fn iterable_instance_elements(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        if !matches!(value.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
+            return Ok(value);
+        }
+        Ok(match self.try_iterable_instance_items(&value)? {
+            Some(items) => Value::array(items),
+            None => value,
+        })
     }
 
     /// Check if a value is lazy/infinite and cannot be coerced to a QuantHash.
@@ -163,6 +181,7 @@ impl Interpreter {
         target: Value,
         what: &str,
     ) -> Result<Value, RuntimeError> {
+        let target = self.iterable_instance_elements(target)?;
         self.warm_which_identity(&target);
         crate::builtins::quanthash_coerce::to_bag(target, what)
     }
@@ -191,6 +210,7 @@ impl Interpreter {
         target: Value,
         what: &str,
     ) -> Result<Value, RuntimeError> {
+        let target = self.iterable_instance_elements(target)?;
         self.warm_which_identity(&target);
         crate::builtins::quanthash_coerce::to_mix(target, what)
     }
