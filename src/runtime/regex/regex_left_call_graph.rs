@@ -267,6 +267,7 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut CallSink) -> Opti
         | RegexAtom::StartOfLine
         | RegexAtom::EndOfLine
         | RegexAtom::EndOfString
+        | RegexAtom::StartOfString
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         | RegexAtom::VarInterp(_)

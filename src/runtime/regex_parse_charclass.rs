@@ -923,6 +923,7 @@ impl Interpreter {
             | RegexAtom::StartOfLine
             | RegexAtom::EndOfLine
             | RegexAtom::EndOfString
+            | RegexAtom::StartOfString
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
             | RegexAtom::WordBoundary { .. }

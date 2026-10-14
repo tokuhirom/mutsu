@@ -413,6 +413,10 @@ pub(crate) enum RegexAtom {
     /// pattern's `anchor_end` instead; this atom covers a `$` that is followed by
     /// something else (`^ .* $ { make … }`).
     EndOfString,
+    /// A mid-pattern `^` — start-of-string assertion (zero-width). A leading `^`
+    /// sets `anchor_start` instead; this atom covers a `^` after another atom
+    /// (`z ^ abc`), which can only match at position 0.
+    StartOfString,
     /// `$0`, `$1`, etc. — backreference to positional capture group
     Backref(usize),
     /// `$<name>` — backreference to named capture group

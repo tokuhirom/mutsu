@@ -88,6 +88,7 @@ fn atom_is_rule_call_free(atom: &RegexAtom) -> bool {
         | RegexAtom::StartOfLine
         | RegexAtom::EndOfLine
         | RegexAtom::EndOfString
+        | RegexAtom::StartOfString
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         // Interpolates a variable's STRING value as a literal, not as a rule.
