@@ -2,8 +2,8 @@ use crate::value::{RuntimeError, Value, ValueMap};
 
 /// Levenshtein edit distance between two strings.
 pub(crate) fn levenshtein_distance(a: &str, b: &str) -> usize {
-    let a_len = a.len();
-    let b_len = b.len();
+    let a_len = a.chars().count();
+    let b_len = b.chars().count();
     if a_len == 0 {
         return b_len;
     }
@@ -28,352 +28,187 @@ pub(crate) fn levenshtein_distance(a: &str, b: &str) -> usize {
     prev_row[b_len]
 }
 
-/// Find the closest match to `name` from `candidates`.
-/// Returns `Some(suggestion)` if a close enough match exists.
-pub(crate) fn suggest_method(name: &str, candidates: &[&str]) -> Option<String> {
-    let max_distance = if name.len() <= 3 {
-        1
-    } else if name.len() <= 6 {
-        2
-    } else {
-        3
-    };
-
-    let mut best: Option<(&str, usize)> = None;
-    for &candidate in candidates {
-        let dist = levenshtein_distance(name, candidate);
-        if dist > 0 && dist <= max_distance {
-            if let Some((_, best_dist)) = best {
-                if dist < best_dist {
-                    best = Some((candidate, dist));
-                }
-            } else {
-                best = Some((candidate, dist));
-            }
-        }
-    }
-    best.map(|(s, _)| s.to_string())
+/// `owner -> names` of the methods Rakudo declares directly on each built-in
+/// owner (the `declared` lines of the committed Rakudo oracle snapshot).
+fn declared_by_owner() -> &'static std::collections::HashMap<&'static str, Vec<&'static str>> {
+    static TABLE: std::sync::OnceLock<std::collections::HashMap<&'static str, Vec<&'static str>>> =
+        std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        include_str!("../builtins/rakudo_method_tables.txt")
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split('\t');
+                (fields.next() == Some("declared")).then_some(())?;
+                let owner = fields.next()?;
+                Some((owner, fields.collect()))
+            })
+            .collect()
+    })
 }
 
-/// Return a list of commonly available methods for a given type name.
-pub(crate) fn known_methods_for_type(type_name: &str) -> &'static [&'static str] {
-    match type_name {
-        "Str" => &[
-            "chars",
-            "chomp",
-            "chop",
-            "comb",
-            "contains",
-            "encode",
-            "ends-with",
-            "fc",
-            "flip",
-            "gist",
-            "index",
-            "indices",
-            "lc",
-            "lines",
-            "match",
-            "ord",
-            "perl",
-            "raku",
-            "pred",
-            "rindex",
-            "samemark",
-            "split",
-            "starts-with",
-            "substr",
-            "succ",
-            "tc",
-            "tclc",
-            "trim",
-            "trim-leading",
-            "trim-trailing",
-            "uc",
-            "uniname",
-            "uninames",
-            "unival",
-            "uppercase",
-            "lowercase",
-            "wordcase",
-            "words",
-            "IO",
-            "Int",
-            "Num",
-            "Numeric",
-            "Rat",
-            "Bool",
-            "Str",
-            "codes",
-            "elems",
-            "fmt",
-            "substr-eq",
-            "substr-rw",
-            "chrs",
-            "parse-base",
-            "base",
-            "NFC",
-            "NFD",
-            "NFKC",
-            "NFKD",
-            "WHICH",
-            "WHY",
-            "say",
-            "put",
-            "print",
-            "note",
-            "defined",
-            "so",
-            "not",
-            "self",
-            "clone",
-            "new",
-            "WHAT",
-            "WHO",
-            "HOW",
-        ],
-        "Int" | "Num" | "Rat" | "FatRat" | "Complex" => &[
-            "abs",
-            "base",
-            "ceiling",
-            "chr",
-            "denominator",
-            "exp",
-            "floor",
-            "gist",
-            "is-prime",
-            "log",
-            "log2",
-            "log10",
-            "msb",
-            "lsb",
-            "narrow",
-            "nude",
-            "numerator",
-            "perl",
-            "raku",
-            "polymod",
-            "pred",
-            "rand",
-            "round",
-            "sign",
-            "sqrt",
-            "succ",
-            "truncate",
-            "Bool",
-            "Int",
-            "Num",
-            "Numeric",
-            "Rat",
-            "Str",
-            "defined",
-            "so",
-            "not",
-            "WHAT",
-            "WHICH",
-            "new",
-            "clone",
-            "gcd",
-            "lcm",
-            "is-int",
-        ],
-        "Array" | "List" => &[
-            "append",
-            "antipairs",
-            "AT-POS",
-            "Bool",
-            "classify",
-            "combinations",
-            "duckmap",
-            "deepmap",
-            "elems",
-            "end",
-            "first",
-            "flat",
-            "fmt",
-            "gist",
-            "grep",
-            "head",
-            "join",
-            "keys",
-            "kv",
-            "map",
-            "max",
-            "maxpairs",
-            "min",
-            "minpairs",
-            "minmax",
-            "mix",
-            "new",
-            "pairs",
-            "perl",
-            "permutations",
-            "pick",
-            "pop",
-            "prepend",
-            "produce",
-            "push",
-            "raku",
-            "race",
-            "reduce",
-            "repeated",
-            "reverse",
-            "roll",
-            "rotate",
-            "shift",
-            "shuffle",
-            "skip",
-            "slice",
-            "sort",
-            "splice",
-            "squish",
-            "supply",
-            "tail",
-            "unique",
-            "unshift",
-            "values",
-            "Str",
-            "defined",
-            "so",
-            "not",
-            "WHAT",
-            "WHICH",
-            "clone",
-            "categorize",
-            "batch",
-            "rotor",
-        ],
-        "Hash" | "Map" => &[
-            "antipairs",
-            "AT-KEY",
-            "Bool",
-            "classify-list",
-            "defined",
-            "elems",
-            "EXISTS-KEY",
-            "DELETE-KEY",
-            "first",
-            "flat",
-            "fmt",
-            "gist",
-            "grep",
-            "invert",
-            "keys",
-            "kv",
-            "map",
-            "new",
-            "pairs",
-            "perl",
-            "push",
-            "raku",
-            "sort",
-            "values",
-            "Str",
-            "so",
-            "not",
-            "WHAT",
-            "WHICH",
-            "clone",
-        ],
-        "Bool" => &[
-            "defined", "gist", "perl", "raku", "so", "not", "Bool", "Int", "Num", "Numeric", "Str",
-            "succ", "pred", "pick", "roll", "WHAT", "WHICH",
-        ],
-        "Range" => &[
-            "AT-POS",
-            "EXISTS-POS",
-            "bounds",
-            "elems",
-            "excludes-max",
-            "excludes-min",
-            "first",
-            "flat",
-            "fmt",
-            "gist",
-            "grep",
-            "head",
-            "in-range",
-            "infinite",
-            "int-bounds",
-            "is-int",
-            "keys",
-            "kv",
-            "list",
-            "map",
-            "max",
-            "min",
-            "minmax",
-            "new",
-            "pairs",
-            "perl",
-            "pick",
-            "raku",
-            "rand",
-            "reverse",
-            "roll",
-            "tail",
-            "values",
-            "Bool",
-            "defined",
-            "so",
-            "not",
-            "Str",
-            "WHAT",
-            "WHICH",
-        ],
-        "Match" => &[
-            "ast",
-            "Bool",
-            "caps",
-            "chunks",
-            "defined",
-            "elems",
-            "from",
-            "gist",
-            "hash",
-            "keys",
-            "kv",
-            "list",
-            "made",
-            "make",
-            "orig",
-            "pairs",
-            "perl",
-            "pos",
-            "postmatch",
-            "prematch",
-            "raku",
-            "Str",
-            "target",
-            "to",
-            "values",
-            "WHAT",
-            "WHICH",
-        ],
-        "Regex" => &[
-            "Bool", "defined", "gist", "ACCEPTS", "perl", "raku", "Str", "WHAT", "WHICH",
-        ],
-        _ => &[
-            // Universal methods available on all types
-            "defined", "gist", "perl", "raku", "Str", "Bool", "Int", "Num", "Numeric", "WHAT",
-            "WHICH", "WHO", "HOW", "WHY", "so", "not", "clone", "new", "say", "put", "print",
-            "note", "self", "elems", "keys", "values", "kv", "pairs", "map", "grep", "first",
-            "sort", "flat", "head", "tail",
-        ],
+/// Every public method name a built-in `type_name` answers to: what Rakudo
+/// declares on each class of its MRO and on the roles those classes compose
+/// (its `.^methods(:all)`). A type the catalog does not list (a user class)
+/// is offered the `Any`/`Mu` names.
+// Cost: O(m + n), m = MRO levels and composed roles, n = names collected (a dedup scan per name; error path only).
+fn candidate_names(type_name: &str) -> Vec<&'static str> {
+    use crate::builtin_types::catalog::{builtin_type_mro_strs, builtin_type_roles_strs};
+    let mro = builtin_type_mro_strs(type_name)
+        .or_else(|| builtin_type_mro_strs("Any"))
+        .unwrap_or(&[]);
+    let table = declared_by_owner();
+    let mut names: Vec<&'static str> = Vec::new();
+    let mut push_owner = |owner: &str| {
+        for &name in table.get(owner).into_iter().flatten() {
+            if !name.starts_with('!') && !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    };
+    for class in mro {
+        push_owner(class);
+        for role in builtin_type_roles_strs(class) {
+            push_owner(role.split_once('[').map_or(*role, |(base, _)| base));
+        }
     }
+    names
+}
+
+/// Rakudo's `X::Method::NotFound` suggestions: every candidate within
+/// `max_length` edits of `method` (a long name also matches any candidate
+/// that contains it), ordered by distance then name, cut at the distance of
+/// the fourth entry.
+// Cost: O(c * l^2 + c log c), c = candidates, l = longest name.
+fn suggestions(method: &str, type_name: &str) -> Vec<String> {
+    let max_length = match method.chars().count() {
+        0..=3 => 1,
+        4..=8 => 2,
+        _ => 3,
+    };
+    let mut found: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    match method {
+        "length" => {
+            let mro = crate::builtin_types::catalog::builtin_type_mro_strs(type_name).unwrap_or(&[]);
+            let names: &[&str] = if mro.contains(&"List") {
+                &["elems"]
+            } else if mro.contains(&"Cool") {
+                &["chars", "codes"]
+            } else {
+                &["elems", "chars", "codes"]
+            };
+            found.extend(names.iter().map(|n| (*n, 0)));
+        }
+        "bytes" => {
+            found.insert("encode($encoding).bytes", 0);
+        }
+        "ceil" => {
+            found.insert("ceiling", 0);
+        }
+        "last" => {
+            found.insert("tail", 0);
+        }
+        "Uni" if type_name == "Str" => {
+            found.extend(["NFC", "NFD", "NFKC", "NFKD"].iter().map(|n| (*n, 0)));
+        }
+        _ => {}
+    }
+    let folded = method.to_lowercase();
+    let long = method.chars().count() > 5;
+    let candidates = candidate_names(type_name);
+    for name in candidates
+        .iter()
+        .copied()
+        .chain(["HOW", "WHAT", "WHO"])
+    {
+        if name == method {
+            continue;
+        }
+        let name_folded = name.to_lowercase();
+        if long && name_folded.contains(&folded) {
+            found.insert(name, 0);
+            continue;
+        }
+        let dist = levenshtein_distance(&folded, &name_folded);
+        if dist <= max_length {
+            found.insert(name, dist);
+        }
+    }
+    let mut sorted: Vec<(&str, usize)> = found.into_iter().collect();
+    sorted.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(b.0)));
+    if sorted.is_empty() {
+        return Vec::new();
+    }
+    let boundary = sorted[(sorted.len() - 1).min(3)].1;
+    sorted
+        .into_iter()
+        .filter(|(_, d)| *d <= boundary)
+        .map(|(n, _)| n.to_string())
+        .collect()
+}
+
+/// Rakudo's `Str.naive-word-wrapper`: words are joined with single spaces and
+/// a line is broken once adding a word would reach `max` columns; a word too
+/// long for a line sits on a line of its own.
+// Cost: O(n), n = chars in `text`.
+pub(crate) fn naive_word_wrap(text: &str, max: usize) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    let mut line: Vec<&str> = Vec::new();
+    let mut width = 0usize;
+    for word in text.split_whitespace() {
+        let visible = word.chars().count();
+        if width + visible >= max {
+            if line.is_empty() {
+                lines.push(word.to_string());
+                width = 0;
+            } else {
+                lines.push(line.join(" "));
+                line = vec![word];
+                width = visible;
+            }
+        } else {
+            line.push(word);
+            width += 1 + visible;
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line.join(" "));
+    }
+    lines.join("\n")
+}
+
+/// The text of Rakudo's `X::Method::NotFound.message`: the sentence naming
+/// the invocant, the "Did you mean" tip appended to it, wrapped at 72 columns.
+/// `string_invocant` is the stringified invocant when it is a `Str` (Rakudo
+/// then says `for string 'abc'`).
+// Cost: see `suggestions`.
+pub(crate) fn method_not_found_message(
+    method: &str,
+    type_name: &str,
+    display_type: &str,
+    string_invocant: Option<&str>,
+) -> String {
+    let mut msg = match string_invocant {
+        Some(text) => format!("No such method '{method}' for string '{text}'"),
+        None => format!("No such method '{method}' for invocant of type '{display_type}'"),
+    };
+    let found = suggestions(method, type_name);
+    match found.as_slice() {
+        [] => {}
+        [one] => msg.push_str(&format!(". Did you mean '{one}'?")),
+        many => {
+            let quoted: Vec<String> = many.iter().map(|n| format!("'{n}'")).collect();
+            msg.push_str(&format!(
+                ". Did you mean any of these: {}?",
+                quoted.join(", ")
+            ));
+        }
+    }
+    naive_word_wrap(&msg, 72)
 }
 
 /// X::Method::NotFound - No such method
 pub(crate) fn method_not_found(method: &str, typename: &str) -> RuntimeError {
-    let mut msg = format!(
-        "No such method '{}' for invocant of type '{}'",
-        method, typename
-    );
-
-    let candidates = known_methods_for_type(typename);
-    if let Some(suggestion) = suggest_method(method, candidates) {
-        msg.push_str(&format!("\nDid you mean '{}'?", suggestion));
-    }
+    let msg = method_not_found_message(method, typename, typename, None);
 
     let mut attrs = ValueMap::default();
     attrs.insert("method".to_string(), Value::str(method.to_string()));
@@ -398,25 +233,21 @@ mod tests {
     }
 
     #[test]
-    fn test_suggest_method() {
-        let candidates = &["uppercase", "lowercase", "trim", "split"];
-        assert_eq!(
-            suggest_method("upercase", candidates),
-            Some("uppercase".to_string())
-        );
-        assert_eq!(
-            suggest_method("uupercase", candidates),
-            Some("uppercase".to_string())
-        );
-        assert_eq!(suggest_method("xyz", candidates), None);
+    fn test_suggestions_follow_rakudo() {
+        assert_eq!(suggestions("lazy", "Int"), vec!["any", "say"]);
+        assert_eq!(suggestions("elemz", "Int"), vec!["elems"]);
+        assert!(suggestions("sya", "Int").is_empty());
+        assert!(suggestions("xyz", "Str").is_empty());
     }
 
     #[test]
-    fn test_suggest_method_for_type() {
-        let methods = known_methods_for_type("Str");
+    fn test_naive_word_wrap() {
         assert_eq!(
-            suggest_method("upercase", methods),
-            Some("uppercase".to_string())
+            naive_word_wrap(
+                "No such method 'lazy' for invocant of type 'Int'. Did you mean any of these: 'any', 'say'?",
+                72
+            ),
+            "No such method 'lazy' for invocant of type 'Int'. Did you mean any of\nthese: 'any', 'say'?"
         );
     }
 }

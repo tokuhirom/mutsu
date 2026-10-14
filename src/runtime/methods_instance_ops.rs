@@ -3851,7 +3851,18 @@ impl Interpreter {
                     }
                     _ => {}
                 }
-                Err(make_method_not_found_error(method, &type_name, false))
+                // Rakudo words a `Str` invocant's miss `for string 'abc'`.
+                let text = match target.view() {
+                    ValueView::Str(s) => Some(s.to_string()),
+                    ValueView::Package(name) if name.resolve() == "Str" => Some(String::new()),
+                    _ => None,
+                };
+                Err(super::methods_signature_errors::make_method_not_found_error_for(
+                    method,
+                    &type_name,
+                    false,
+                    text.as_deref(),
+                ))
             }
         }
     }
