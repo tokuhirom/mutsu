@@ -55,11 +55,17 @@ pub(super) fn make_private_unqualified_error(method_name: &str) -> RuntimeError 
 }
 
 /// `X::Method::NotFound` for `method` called on `target`, naming a type
-/// object by its own name (`Int.name` is "for invocant of type 'Int'").
+/// object by its own name (`Int.name` is "for invocant of type 'Int'"). A
+/// `Str` invocant reads `for string 'abc'`, as in Rakudo.
 pub(super) fn method_not_found_for_value(method: &str, target: &Value) -> RuntimeError {
     match target.view() {
         crate::value::ValueView::Package(name) => {
-            make_method_not_found_error(method, &name.resolve(), false)
+            let name = name.resolve();
+            let text = (name == "Str").then_some("");
+            make_method_not_found_error_for(method, &name, false, text)
+        }
+        crate::value::ValueView::Str(s) => {
+            make_method_not_found_error_for(method, "Str", false, Some(&s))
         }
         _ => make_method_not_found_error(method, crate::runtime::value_type_name(target), false),
     }
@@ -71,30 +77,34 @@ pub(super) fn make_method_not_found_error(
     type_name: &str,
     private: bool,
 ) -> RuntimeError {
-    use super::did_you_mean::{known_methods_for_type, suggest_method};
+    make_method_not_found_error_for(method_name, type_name, private, None)
+}
 
+/// [`make_method_not_found_error`] for an invocant whose stringification is
+/// known to be a `Str` (`string_invocant`): Rakudo words that case
+/// `for string 'abc'`.
+pub(super) fn make_method_not_found_error_for(
+    method_name: &str,
+    type_name: &str,
+    private: bool,
+    string_invocant: Option<&str>,
+) -> RuntimeError {
     // Display the user-facing type name (`<anon|N>` for anonymous
     // class/grammar/role); registry lookups below keep the raw name.
     let display_type = crate::value::user_facing_type_name(type_name);
-    let mut msg = if private {
+    let msg = if private {
         format!(
             "No such private method '{}' for invocant of type '{}'",
             method_name, display_type
         )
     } else {
-        format!(
-            "No such method '{}' for invocant of type '{}'",
-            method_name, display_type
+        super::did_you_mean::method_not_found_message(
+            method_name,
+            type_name,
+            &display_type,
+            string_invocant,
         )
     };
-
-    // Append "Did you mean ...?" suggestion if a close match exists
-    if !private {
-        let candidates = known_methods_for_type(type_name);
-        if let Some(suggestion) = suggest_method(method_name, candidates) {
-            msg.push_str(&format!("\nDid you mean '{}'?", suggestion));
-        }
-    }
 
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("method".to_string(), Value::str(method_name.to_string()));
