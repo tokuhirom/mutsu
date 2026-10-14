@@ -668,7 +668,10 @@ impl RuntimeError {
         );
         let mut attrs = HashMap::new();
         attrs.insert("operation".to_string(), Value::str(operation.to_string()));
-        attrs.insert("expected".to_string(), Value::package(Symbol::intern(expected)));
+        attrs.insert(
+            "expected".to_string(),
+            Value::package(Symbol::intern(expected)),
+        );
         attrs.insert("got".to_string(), got);
         attrs.insert("message".to_string(), Value::str(message));
         let ex = Value::make_instance(Symbol::intern("X::TypeCheck"), attrs);

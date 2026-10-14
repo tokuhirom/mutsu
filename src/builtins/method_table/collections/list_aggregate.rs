@@ -278,9 +278,8 @@ pub(crate) fn minmax(target: &Value, args: &[Value]) -> Option<Result<Value, Run
             }
         };
         Some(endpoint(min).and_then(|lo| {
-            endpoint(max).map(|hi| {
-                crate::runtime::builtins_collection::make_inclusive_range_pub(lo, hi)
-            })
+            endpoint(max)
+                .map(|hi| crate::runtime::builtins_collection::make_inclusive_range_pub(lo, hi))
         }))
     }
 }
