@@ -5,7 +5,7 @@
 //! (no shape) is answered by the same rows through their owner (ADR-11276
 //! §9.87).
 
-use super::temporal::with_attrs;
+use super::temporal::{reclass, with_attrs, with_attrs_class};
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::methods_0arg::temporal;
 use crate::builtins::methods_0arg::temporal_dispatch::{f64_to_decimal_rat, gcd_i64};
@@ -109,15 +109,18 @@ pub(crate) fn posix(attributes: &AttrMap) -> Value {
 /// the formatter. Leap-second aware: `19:59:60-04:00` is `23:59:60Z`.
 // Cost: O(a + l), a = attributes of the instance, l = leap seconds (a table of
 // 28).
-pub(crate) fn utc(attributes: &AttrMap) -> Value {
+pub(crate) fn utc(attributes: &AttrMap, class: &str) -> Value {
     let (year, month, day, hour, minute, second, timezone) = datetime_attrs(attributes);
     let (int_part, frac) =
         temporal::datetime_to_instant_parts(year, month, day, hour, minute, second, timezone);
     let (year, month, day, hour, minute, second) =
         temporal::instant_to_datetime_leap_aware_parts(int_part, frac, 0);
-    temporal::with_formatter(
-        temporal::make_datetime(year, month, day, hour, minute, second, 0),
-        attributes.get("formatter").cloned(),
+    reclass(
+        temporal::with_formatter(
+            temporal::make_datetime(year, month, day, hour, minute, second, 0),
+            attributes.get("formatter").cloned(),
+        ),
+        class,
     )
 }
 
@@ -196,13 +199,13 @@ pub(crate) fn instant(attributes: &AttrMap) -> Value {
 
 /// `DateTime.WHICH`: a `ValueObjAt` naming the value by its ISO 8601 form.
 // Cost: O(a), a = attributes of the instance.
-pub(crate) fn which(attributes: &AttrMap) -> Value {
+pub(crate) fn which(attributes: &AttrMap, class: &str) -> Value {
     let (year, month, day, hour, minute, second, timezone) = datetime_attrs(attributes);
     let mut attrs = HashMap::new();
     attrs.insert(
         "WHICH".to_string(),
         Value::str(format!(
-            "DateTime|{}",
+            "{class}|{}",
             temporal::format_datetime(year, month, day, hour, minute, second, timezone)
         )),
     );
@@ -212,14 +215,14 @@ pub(crate) fn which(attributes: &AttrMap) -> Value {
 /// `DateTime.raku`: the numeric-argument constructor call, a fractional second
 /// as a decimal and a non-UTC offset as a trailing `:timezone(N)`.
 // Cost: O(a), a = attributes of the instance.
-pub(crate) fn raku(attributes: &AttrMap) -> Value {
+pub(crate) fn raku(attributes: &AttrMap, class: &str) -> Value {
     let (year, month, day, hour, minute, second, timezone) = datetime_attrs(attributes);
     let second = if second == second.floor() {
         format!("{}", second as i64)
     } else {
         format!("{second}")
     };
-    let mut text = format!("DateTime.new({year},{month},{day},{hour},{minute},{second}");
+    let mut text = format!("{class}.new({year},{month},{day},{hour},{minute},{second}");
     if timezone != 0 {
         text.push_str(&format!(",:timezone({timezone})"));
     }
@@ -241,6 +244,22 @@ pub(crate) fn str_of(attributes: &AttrMap) -> Option<Value> {
     )))
 }
 
+macro_rules! class_row_fns {
+    ($($row:ident => $handler:ident),* $(,)?) => {
+        $(
+            fn $row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+                with_attrs_class(target, $handler)
+            }
+        )*
+    };
+}
+
+class_row_fns! {
+    utc_row => utc,
+    which_row => which,
+    raku_row => raku,
+}
+
 macro_rules! attr_row_fns {
     ($($row:ident => $handler:ident),* $(,)?) => {
         $(
@@ -259,13 +278,10 @@ attr_row_fns! {
     whole_second_row => whole_second,
     hh_mm_ss_row => hh_mm_ss,
     posix_row => posix,
-    utc_row => utc,
     day_fraction_row => day_fraction,
     to_date_row => to_date,
     to_datetime_row => to_datetime,
     instant_row => instant,
-    which_row => which,
-    raku_row => raku,
 }
 
 /// A row for a handler that can fail.
