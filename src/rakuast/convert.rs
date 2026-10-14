@@ -4321,7 +4321,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_rw,
             is_raw,
             is_block,
-            ..
+            doc,
         } => {
             if *is_block {
                 if *is_rw {
@@ -4331,7 +4331,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     return Err(unsupported("`is raw` block"));
                 }
                 // A bare `{ ... }` block.
-                signature_block_node(body)
+                let mut node = signature_block_node(body)?;
+                super::declarator_docs::attach(&mut node, doc.get());
+                Ok(node)
             } else {
                 // An anonymous, parameter-less `sub { ... }`, with the `is rw`
                 // / `is raw` it was written with.
@@ -4339,6 +4341,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     class: RakuAstClass::Sub,
                     fields: vec![node_field(Some("body"), blockoid(body)?)],
                 };
+                super::declarator_docs::attach(&mut node, doc.get());
                 if super::routine_source::apply(&mut node, body)? {
                     return Ok(node);
                 }
@@ -4379,6 +4382,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_whatever_code,
             return_type,
             declarator,
+            custom_traits,
             ..
         } => {
             if *is_whatever_code {
@@ -4412,6 +4416,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     }
                     None => anon_routine_node(param_defs, body, return_type.as_deref())?,
                 };
+                super::declarator_docs::attach(&mut node, custom_traits.doc());
                 if super::routine_source::apply(&mut node, body)? {
                     return Ok(node);
                 }

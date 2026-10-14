@@ -2407,7 +2407,9 @@ t/lang/pod-block-gist.t
 t/lang/pod-block-named-and-empty-config.t
 t/lang/pod-comment.t
 t/lang/pod-declarator-concrete-wherefore.t
+t/lang/pod-declarator-leading-in-initializer.t
 t/lang/pod-declarator-nested-declarants.t
+t/lang/pod-declarator-parser-attachment.t
 t/lang/pod-delimited-literal-equals.t
 t/lang/pod-eval-return.t
 t/lang/pod-implicit-code-vmargin.t
@@ -4577,6 +4579,7 @@ t/rakuast/rakuast-absent-field-accessors.t
 t/rakuast/rakuast-accessors.t
 t/rakuast/rakuast-allomorph-word-quote.t
 t/rakuast/rakuast-also-is-roundtrip.t
+t/rakuast/rakuast-anon-declarator-docs.t
 t/rakuast/rakuast-anon-regex-declarator.t
 t/rakuast/rakuast-anon-sub-signature.t
 t/rakuast/rakuast-anon-sub.t

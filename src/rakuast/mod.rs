@@ -33,6 +33,7 @@ mod core_type_names;
 mod decl_compound_assign;
 mod decl_tail;
 mod decl_traits;
+mod declarator_docs;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;

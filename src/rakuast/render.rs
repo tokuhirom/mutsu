@@ -12,6 +12,11 @@ use super::{Constructor, RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstN
 use crate::value::{Value, ValueView};
 
 pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
+    let docs = super::declarator_docs::suffix(node, indent);
+    format!("{}{docs}", render_node_body(node, indent))
+}
+
+fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
     // rakudo 2026.09 prints a priming `*` (its `WhateverCode::Argument`, still
     // the node's `.^name`) as `RakuAST::Term::Whatever.new`, exactly like a
     // `*` value.
@@ -253,6 +258,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::attribute_group::is_metadata(field)
                 || super::declared_routines::is_user_call_field(field)
                 || super::declared_routines::is_bareword_field(field)
+                || super::declarator_docs::is_field(field)
                 || super::postfix_grouping::is_source_field(field)
                 || super::compound_stmt::is_source_field(field)
                 || super::use_stmt::is_source_field(field)
@@ -392,6 +398,6 @@ fn render_leaf(v: &Value) -> String {
 /// Render a Raku double-quoted string literal. Rakudo renders a `StrLiteral`
 /// as its string's `.raku`, so this is `Str.raku`'s own escaping.
 // Cost: O(n), n = chars of `s`.
-fn render_str_literal(s: &str) -> String {
+pub(super) fn render_str_literal(s: &str) -> String {
     crate::value::raku_repr::escape_raku_str(s)
 }
