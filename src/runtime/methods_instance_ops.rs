@@ -3825,13 +3825,15 @@ impl Interpreter {
                         receiver,
                         Symbol::intern(method),
                     )
-                    && args.len() > max
+                    // Named arguments arrive as pairs and bind no positional.
+                    && args.iter().filter(|arg| !arg.is_string_pair_value()).count() > max
                 {
                     let expected = max + 1;
+                    let got = args.iter().filter(|arg| !arg.is_string_pair_value()).count();
                     return Err(RuntimeError::new(format!(
                         "Too many positionals passed; expected {expected} argument{} but got {}",
                         if expected == 1 { "" } else { "s" },
-                        args.len() + 1
+                        got + 1
                     )));
                 }
                 Err(make_method_not_found_error(method, &type_name, false))
