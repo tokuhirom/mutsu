@@ -1975,7 +1975,14 @@ impl Interpreter {
                                 if matches!(key.view(), ValueView::Str(_))
                                     && explicit_named_keys.contains(&key.to_string_value())
                         );
-                        if !val.is_string_pair_value() && !is_explicit_named_value_pair {
+                        if let ValueView::Slip(slipped) = val.view() {
+                            // A Slip slips into the list even here: `**@`
+                            // keeps each other argument whole, but a Slip is
+                            // exactly the value that asks to be flattened into
+                            // its surroundings (`f((1, 2).Slip, 3)` binds
+                            // `[1, 2, 3]`).
+                            items.extend(slipped.iter().cloned());
+                        } else if !val.is_string_pair_value() && !is_explicit_named_value_pair {
                             items.push(val);
                         }
                         positional_idx += 1;
