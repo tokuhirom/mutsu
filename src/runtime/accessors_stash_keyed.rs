@@ -119,10 +119,8 @@ impl Interpreter {
     // sigil-less env key of a named package's stash.
     fn is_enum_key_of_package(&self, package_name: &str, key: &str) -> bool {
         self.registry().enum_types.iter().any(|(enum_name, variants)| {
-            let owner = enum_name
-                .rsplit_once("::")
-                .map_or("GLOBAL", |(owner, _)| owner);
-            (enum_name == package_name || owner == package_name)
+            let owner = crate::qualified::package_parent(Symbol::intern(enum_name));
+            (enum_name == package_name || owner.is_some_and(|o| o.as_str() == package_name))
                 && variants.iter().any(|(name, _)| name == key)
         })
     }
