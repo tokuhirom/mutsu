@@ -200,9 +200,17 @@ impl Interpreter {
                 .any(|name| super::regex_helpers::grammar_dynvar_scope_active(name))
             {
                 for name in declared_dynamic_keys {
-                    if let Some(value) = self.env.get(&name).cloned() {
-                        new_caps.regex_vars_mut().insert(name, value);
-                    }
+                    // An uninitialized `:my $*x;` reads as the `Any` type
+                    // object but may have no env entry yet; it is still
+                    // recorded, so a later code block's write to it is
+                    // harvested (`eval_regex_inline_code`) and travels to the
+                    // sub-rules the rule calls (#13222).
+                    let value = self
+                        .env
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+                    new_caps.regex_vars_mut().insert(name, value);
                 }
                 return Some((pos, new_caps));
             }
