@@ -667,7 +667,10 @@ impl Compiler {
     /// default (`has $.n = ++$count`) has to reach the lexical, and a read has
     /// to see the declaring scope's later writes (#13340).
     // Cost: O(n), n = names the attribute expressions read or write.
-    fn bubble_attr_decl_captures(&mut self, attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)]) {
+    fn bubble_attr_decl_captures(
+        &mut self,
+        attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)],
+    ) {
         let reads = self.attr_decl_free_var_syms(attr_decls);
         let mut writes: Vec<Symbol> = Vec::new();
         for (_, decl) in attr_decls {
