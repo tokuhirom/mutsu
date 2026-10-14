@@ -1913,7 +1913,20 @@ impl Interpreter {
                 );
             let saved_rw_context = self.rw_return_context;
             self.rw_return_context |= rw_callable;
-            let result = self.vm_call_on_value_at(target, args, Some(compiled_fns), site);
+            let result = match self.activation_routine_of(&target) {
+                // A block-declared routine's code object (#13049): its
+                // compiled routine runs on the named-call path, linked to the
+                // activation it captured, as a `CallFunc` of it would.
+                Some((data, cf)) => self.call_compiled_function_named_in(
+                    &cf,
+                    args,
+                    cf.compiled_fns.as_deref().unwrap_or(compiled_fns),
+                    self.current_package_sym(),
+                    name_sym,
+                    Some(&data.env),
+                ),
+                None => self.vm_call_on_value_at(target, args, Some(compiled_fns), site),
+            };
             self.rw_return_context = saved_rw_context;
             self.set_pending_call_arg_sources(None);
             let result = result?;

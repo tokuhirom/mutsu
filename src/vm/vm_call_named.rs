@@ -9,6 +9,24 @@ impl Interpreter {
         fn_package: Symbol,
         fn_name: Symbol,
     ) -> Result<Value, RuntimeError> {
+        self.call_compiled_function_named_in(cf, args, compiled_fns, fn_package, fn_name, None)
+    }
+
+    /// [`Self::call_compiled_function_named`] for a routine whose code object
+    /// captured its declaring activation (`activation`, an env marked by
+    /// [`crate::env::Env::mark_activation_capture`]): the frame links to that
+    /// capture first, as `call_compiled_closure_with_topic` links a code
+    /// object's frame, so the routine's free variables resolve in the
+    /// activation that declared it (ADR-12529 phase 2, #13049).
+    pub(crate) fn call_compiled_function_named_in(
+        &mut self,
+        cf: &Arc<CompiledFunction>,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+        fn_package: Symbol,
+        fn_name: Symbol,
+        activation: Option<&crate::env::Env>,
+    ) -> Result<Value, RuntimeError> {
         let cache_key: Vec<Value> = if cf.is_cached {
             args.iter()
                 .map(|arg| match arg.view() {
@@ -44,7 +62,13 @@ impl Interpreter {
         // returned (then its registry entry must survive so it stays callable
         // by name). The snapshot is cheap relative to the rare case it guards.
         let result = if !cf.declares_inner_routines {
-            self.call_compiled_function_named_inner(cf, args, compiled_fns, fn_package, fn_name)
+            self.call_compiled_function_named_inner(
+                cf,
+                args,
+                compiled_fns,
+                (fn_package, fn_name),
+                activation,
+            )
         } else {
             let snapshot = self.snapshot_routine_registry();
             let closures_created_before = self.closures_created;
@@ -52,8 +76,8 @@ impl Interpreter {
                 cf,
                 args,
                 compiled_fns,
-                fn_package,
-                fn_name,
+                (fn_package, fn_name),
+                activation,
             );
             // A closure literal created during the call may have escaped via a
             // side channel (e.g. handed to `.tap`) rather than the return

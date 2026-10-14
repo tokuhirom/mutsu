@@ -237,4 +237,42 @@ impl Interpreter {
         self.env_mut().insert(name.to_string(), boxed.clone());
         Some(boxed)
     }
+
+    /// The activation capture and compiled routine of `target` when it is a
+    /// block-declared routine's code object (`capture_lexsub_activation`)
+    /// that a `CallOnCodeVar` may run on the named-call path
+    /// (`call_compiled_function_named_in`) instead of the closure entry: a
+    /// plain compiled routine, not wrapped, not a multi dispatcher or an
+    /// `.assuming` carrier, and not called for its container (#13049).
+    // Cost: O(1), a few field reads and one hashed probe of the wrap table.
+    pub(super) fn activation_routine_of(
+        &self,
+        target: &Value,
+    ) -> Option<(
+        crate::gc::Gc<crate::value::SubData>,
+        Arc<crate::opcode::CompiledFunction>,
+    )> {
+        let ValueView::Sub(data) = target.view() else {
+            return None;
+        };
+        let cf = data.compiled_routine.as_ref()?;
+        if !data.env.is_activation_capture()
+            || self.in_lvalue_assignment
+            || data.is_decl_expr_thunk
+            || !data.assumed_positional.is_empty()
+            || !data.assumed_named.is_empty()
+            || data
+                .compiled_code
+                .as_ref()
+                .is_some_and(|cc| !Arc::ptr_eq(cc, &cf.code))
+            || data
+                .env
+                .contains_key_sym(crate::symbol::well_known::multi_dispatch_candidates())
+            || self.has_wrap_chain(data.id)
+            || Self::sub_multi_method_dispatcher_name(&data).is_some()
+        {
+            return None;
+        }
+        Some((data.clone(), Arc::clone(cf)))
+    }
 }
