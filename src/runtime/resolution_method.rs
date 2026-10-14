@@ -409,7 +409,6 @@ impl Interpreter {
     ) -> (usize, RankProfile) {
         let owner = super::multi_type_walk::WalkOwner {
             package: def.lexical_package,
-            literal_mask: 0,
         };
         self.params_type_distance_profile(args, &Self::method_rank_params(def), owner)
     }
