@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::native_infix_dispatch::CoreInfixVerdict;
 use crate::token_kind::MetaAssignIdentity;
 use num_traits::ToPrimitive;
 
@@ -500,8 +501,12 @@ impl Interpreter {
             // candidate set and only takes the call when it out-narrows the
             // core set. Reporting "no user candidate" here leaves the native
             // path to run, which is exactly what rakudo's core candidate does.
-            if self.core_infix_candidate_wins(op_name, &def, left, right) {
-                return Ok(None);
+            match self.core_infix_candidate_wins(op_name, &def, left, right) {
+                CoreInfixVerdict::Core => return Ok(None),
+                CoreInfixVerdict::Tie(core) => {
+                    return Err(self.core_infix_tie_error(op_name, &def, core, left, right));
+                }
+                CoreInfixVerdict::User => {}
             }
             let empty_fns = CompiledFns::default();
             let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;

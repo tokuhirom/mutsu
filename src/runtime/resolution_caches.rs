@@ -422,7 +422,13 @@ pub(crate) struct ResolutionCaches {
     /// `native_infix_dispatch.rs`). The candidate's `Arc` is held so a hit can
     /// be confirmed by identity.
     pub(crate) core_infix_wins_cache:
-        GenCache<crate::runtime::native_infix_dispatch::CoreInfixWinsKey, (Arc<FunctionDef>, bool)>,
+        GenCache<
+            crate::runtime::native_infix_dispatch::CoreInfixWinsKey,
+            (
+                Arc<FunctionDef>,
+                crate::runtime::native_infix_dispatch::CoreInfixVerdict,
+            ),
+        >,
     /// Name-keyed cache of OTF-compiled routine bodies. The cached entry records
     /// the package the resolution was made *under* (the callsite's
     /// `current_package`), because the same bare name resolves to different
