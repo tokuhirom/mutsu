@@ -113,14 +113,17 @@ pub(crate) fn at_key(target: &Value, args: &[Value]) -> Option<Result<Value, Run
 /// place (`hash_slot_ref`); a missing key gets the lazy vivification token,
 /// which creates the entry only on the first write and reads as the hash's
 /// default until then. `None` when `target` is not a hash whose elements are
-/// containers: a `Map` (its elements are values), a hash bound to bare values,
+/// containers: a `Map` (its elements are values), a `PseudoStash`, a hash
+/// bound to bare values,
 /// and an object hash's missing key (no string path to vivify through).
 // Cost: O(k) expected, k = the key's string length (one or two probes).
 pub(crate) fn hash_element_container(target: &Value, arg: &Value) -> Option<Value> {
     let ValueView::Hash(map) = target.view() else {
         return None;
     };
-    if map.declared_type.as_deref() == Some("Map") || map.bare_values {
+    // A `PseudoStash` (`MY::`, `CALLER::`) is a lexical lookup, not a store:
+    // its `AT-KEY` answers the symbol, or `Nil` for a missing one.
+    if matches!(map.declared_type.as_deref(), Some("Map" | "PseudoStash")) || map.bare_values {
         return None;
     }
     let key = if map.key_type.is_some() {
