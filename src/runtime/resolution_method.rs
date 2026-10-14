@@ -35,6 +35,11 @@ impl Interpreter {
         // and it is the single biggest source of env deep copies on that path.
         // The overlay starts empty, so the same writes are O(1) and the
         // rollback is dropping a tier.
+        // A candidate of plain nominal positionals reads none of the window
+        // below: match it on the argument types alone (#12942).
+        if let Some(verdict) = self.match_candidate_by_type_alone(def, role_bindings, arg_values) {
+            return verdict;
+        }
         let saved_env = self.env.clone();
         self.env = crate::env::Env::scoped_child(std::mem::take(&mut self.env));
         // A `where` constraint (or the type check just below) can run user

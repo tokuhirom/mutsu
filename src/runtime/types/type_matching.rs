@@ -661,6 +661,21 @@ impl Interpreter {
         }
     }
 
+    /// Whether `value` is a plain `Int`, `Num`, `Str` or `Rat` and `constraint`
+    /// names a different one of those four classes. They are unrelated classes
+    /// in Raku, so no coercion, mixin or role can make one accept the other.
+    // Cost: O(1).
+    fn core_scalar_classes_are_disjoint(value: &Value, constraint: &str) -> bool {
+        let own = match value.view() {
+            ValueView::Int(_) => "Int",
+            ValueView::Num(_) => "Num",
+            ValueView::Str(_) => "Str",
+            ValueView::Rat(..) => "Rat",
+            _ => return false,
+        };
+        own != constraint && matches!(constraint, "Int" | "Num" | "Str" | "Rat")
+    }
+
     pub(crate) fn type_matches_value_resolved(&mut self, constraint: &str, value: &Value) -> bool {
         self.type_matches_value_resolved_why(constraint, value, &mut None)
     }
@@ -805,6 +820,15 @@ impl Interpreter {
         };
         if tag_match && !self.is_subset_type_name(constraint) {
             return true;
+        }
+        // A plain `Int`/`Num`/`Str`/`Rat` value against a different one of those
+        // core classes is a miss, and the general checker below reaches it only
+        // after its whole gauntlet (~6k instructions): the common outcome of
+        // every non-matching candidate of a multi (#12942).
+        if Self::core_scalar_classes_are_disjoint(value_for_tag, constraint)
+            && !self.is_subset_type_name(constraint)
+        {
+            return false;
         }
         // `Mu` is the root of the type hierarchy: every value, container, type
         // object, junction and failure is a `Mu`. The general checker below
