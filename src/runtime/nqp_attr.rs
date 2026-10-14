@@ -205,6 +205,11 @@ impl NqpAttrSite {
                 {
                     return Ok(adopted);
                 }
+                if let Some(capture) =
+                    Interpreter::capture_with_storage(&obj, self.name.name.as_str(), &val)
+                {
+                    return Ok(capture);
+                }
                 Interpreter::nqp_bindattr_named(self.op_name(), &obj, self.name, val)?;
                 Ok(obj)
             }

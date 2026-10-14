@@ -296,6 +296,9 @@ impl Interpreter {
                 self.reify_seq_body(&body)?;
             }
         }
+        // A user `Iterable` instance is a set operand through its elements.
+        let left = self.iterable_instance_elements(left)?;
+        let right = self.iterable_instance_elements(right)?;
         // Every set operator walks its operands, and may run user code over
         // them (an element's `.WHICH`), so a shared Array/Hash operand is read
         // as a snapshot (ADR-0068 §20).
