@@ -82,17 +82,17 @@ impl Interpreter {
         self.push_import_scope_scoping_classes(false);
     }
 
-    // Cost: O(F + C), F/C = registered routines/classes (their key sets are
-    // collected), paid on every `ImportScope` execution -- per call
-    // of a routine whose body has a `use`. Rakudo: O(1) at run time -- see #9170.
+    // Cost: O(1): each registry table is copy-on-write, so the snapshot holds
+    // the table itself (#9170). The table's first write in the scope then
+    // copies it, once.
     fn push_import_scope_scoping_classes(&mut self, scope_classes: bool) {
         let snapshot = {
             let reg = self.registry();
             crate::runtime::ImportScopeSnapshot {
-                functions: reg.functions.keys().copied().collect(),
-                classes: reg.classes.keys().cloned().collect(),
-                proto_subs: reg.proto_subs_snapshot().iter().cloned().collect(),
-                proto_functions: reg.proto_functions.keys().copied().collect(),
+                functions: std::sync::Arc::clone(&reg.functions),
+                classes: reg.classes.clone(),
+                proto_subs: reg.proto_subs_snapshot(),
+                proto_functions: std::sync::Arc::clone(&reg.proto_functions),
                 shadowed_functions: HashMap::new(),
                 shadowed_proto_functions: HashMap::new(),
                 shadowed_proto_names: HashSet::new(),
@@ -307,13 +307,16 @@ impl Interpreter {
     /// working after `f` returns: the imported *name* `Base` is lexical to
     /// `f`, but the class object is still the escaping type's parent (#9532).
     // Cost: O(C + P), C = registered classes, P = parent edges walked.
-    fn classes_outliving_import_scope(&self, class_snapshot: &HashSet<String>) -> HashSet<String> {
+    fn classes_outliving_import_scope(
+        &self,
+        class_snapshot: &crate::runtime::registry::ClassTable,
+    ) -> HashSet<String> {
         let reg = self.registry();
         let mut keep: HashSet<String> = reg
             .classes
             .keys()
             .filter(|key| {
-                class_snapshot.contains(*key)
+                class_snapshot.contains_key(*key)
                     || self.types.persistent_classes.contains(*key)
                     || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
                     // A lexical `my class` is stored under its mangled,
@@ -352,6 +355,35 @@ impl Interpreter {
     fn is_global_main_key(key: &str) -> bool {
         key.strip_prefix("GLOBAL::MAIN")
             .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    }
+
+    /// Remove the `GLOBAL::MAIN` candidates a module (not the program)
+    /// declared: lexical to the import scope that loaded the module, even when
+    /// they were registered before it opened (see `pop_import_scope`).
+    // Cost: O(k + m), k = interned `GLOBAL::MAIN/…` names, m = symbols interned
+    // since the family index last caught up.
+    fn drop_foreign_global_main_candidates(&mut self, program_path: Option<Symbol>) {
+        let main = Symbol::intern("GLOBAL::MAIN");
+        let mut keys = crate::qualified_tail_index::names_in_family("GLOBAL::MAIN");
+        keys.push(main);
+        let foreign: Vec<Symbol> = {
+            let reg = self.registry();
+            keys.into_iter()
+                .filter(|key| {
+                    reg.functions.get(key).is_some_and(|def| {
+                        def.source_file.as_deref().map(Symbol::intern).is_some_and(|f| Some(f) != program_path)
+                    })
+                })
+                .collect()
+        };
+        if foreign.is_empty() {
+            return;
+        }
+        let mut reg = self.registry_mut();
+        let functions = reg.functions_mut();
+        for key in foreign {
+            functions.remove(&key);
+        }
     }
 
     pub(crate) fn pop_import_scope(&mut self) {
@@ -418,6 +450,14 @@ impl Interpreter {
                 .collect();
             let module_keys = std::mem::take(&mut self.module.module_registered_functions);
             let program_path = self.io.program_path_sym;
+            // A table the scope never wrote added nothing to roll back; only a
+            // module-declared `GLOBAL::MAIN` candidate registered before the
+            // scope opened still goes (the first rule below).
+            let functions_unchanged =
+                std::sync::Arc::ptr_eq(&func_snapshot, &self.registry().functions);
+            if functions_unchanged {
+                self.drop_foreign_global_main_candidates(program_path);
+            } else {
             self.registry_mut().functions_mut().retain(|key, def| {
                 // A `GLOBAL::MAIN` candidate a module declared is lexical to the
                 // block that imported it even when a parse-time `use` already
@@ -429,7 +469,7 @@ impl Interpreter {
                 {
                     return false;
                 }
-                if func_snapshot.contains(key) {
+                if func_snapshot.contains_key(key) {
                     return true;
                 }
                 let ks = key.resolve();
@@ -454,6 +494,7 @@ impl Interpreter {
                 }
                 crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
             });
+            }
             // An imported proto/multi family has lexical shadowing semantics,
             // but its candidates share the importing package's flat registry
             // keys. Restore any enclosing definitions that the first import in
@@ -479,7 +520,7 @@ impl Interpreter {
             // dying with X::Method::NotFound in the second block
             // (t/module-reuse-class-in-block.t). Bare imported aliases are
             // still removed with the import scope.
-            if scope_classes {
+            if scope_classes && !class_snapshot.shares_with(&self.registry().classes) {
                 let keep = self.classes_outliving_import_scope(&class_snapshot);
                 self.registry_mut()
                     .classes
@@ -494,17 +535,23 @@ impl Interpreter {
             // the flattened list the core routine expects. Same keep-rule as
             // functions: the module's own `Test::skip` stays for a later
             // re-import, only the `GLOBAL::` alias goes.
-            self.registry_mut().proto_subs_retain(|key| {
-                proto_sub_snapshot.contains(key)
-                    || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
-            });
-            self.registry_mut().proto_functions_mut().retain(|key, _| {
-                if proto_fn_snapshot.contains(key) {
-                    return true;
-                }
-                let ks = key.resolve();
-                crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
-            });
+            if !std::sync::Arc::ptr_eq(&proto_sub_snapshot, &self.registry().proto_subs_snapshot())
+            {
+                self.registry_mut().proto_subs_retain(|key| {
+                    proto_sub_snapshot.contains(key)
+                        || (crate::qualified::is_qualified_str(key)
+                            && !key.starts_with("GLOBAL::"))
+                });
+            }
+            if !std::sync::Arc::ptr_eq(&proto_fn_snapshot, &self.registry().proto_functions) {
+                self.registry_mut().proto_functions_mut().retain(|key, _| {
+                    if proto_fn_snapshot.contains_key(key) {
+                        return true;
+                    }
+                    let ks = key.resolve();
+                    crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
+                });
+            }
             self.registry_mut()
                 .proto_functions_mut()
                 .extend(shadowed_proto_functions);

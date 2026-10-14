@@ -502,7 +502,7 @@ impl Interpreter {
             .map(|snapshot| {
                 snapshot
                     .functions
-                    .iter()
+                    .keys()
                     .filter(|key| **key == *target_single || key.as_str().starts_with(&prefix))
                     .copied()
                     .collect()
@@ -533,7 +533,7 @@ impl Interpreter {
             .module
             .import_scope_stack
             .last()
-            .is_some_and(|snapshot| snapshot.proto_functions.contains(&proto_key));
+            .is_some_and(|snapshot| snapshot.proto_functions.contains_key(&proto_key));
         let shadowed_proto = self
             .registry_mut()
             .proto_functions_mut()
