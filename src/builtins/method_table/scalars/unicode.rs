@@ -42,17 +42,17 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
     row!("Str", "uninames", 0, uninames, NONE),
     row!("Str", "uniprop", 0, uniprop, TOK),
     row!("Str", "uniprop", 1, uniprop_of, ARG_TOK),
-    row!("Str", "uniprops", 0, uniprops, TOK),
+    row!("Str", "uniprops", 0, uniprops, NONE),
     row!("Str", "uniprops", 1, uniprops_of, ARG_TOK),
     row!("Str", "unival", 0, unival, TOK),
     row!("Str", "univals", 0, univals, TOK),
     row!("Str", "unimatch", 1, unimatch, ARG_TOK),
     row!("Str", "unimatch", 2, unimatch_in, ARG_TOK),
     row!("Str", "uniparse", 0, uniparse, TOK),
-    row!("Str", "NFC", 0, nfc, TOK),
-    row!("Str", "NFD", 0, nfd, TOK),
-    row!("Str", "NFKC", 0, nfkc, TOK),
-    row!("Str", "NFKD", 0, nfkd, TOK),
+    row!("Str", "NFC", 0, nfc, NONE),
+    row!("Str", "NFD", 0, nfd, NONE),
+    row!("Str", "NFKC", 0, nfkc, NONE),
+    row!("Str", "NFKD", 0, nfkd, NONE),
 ];
 
 pub(super) static COOL_ROWS: &[MethodRow] = &[
