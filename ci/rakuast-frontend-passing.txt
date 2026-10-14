@@ -2402,6 +2402,7 @@ t/lang/quoting/heredoc-trailing-code-consumed-span.t
 t/lang/quoting/heredoc-trailing-code-nested-blocks-perf.t
 t/lang/quoting/heredoc-unicode-statement-panic.t
 t/lang/quoting/heredoc.t
+t/lang/quoting/interp-brace-contextualizer.t
 t/lang/quoting/interp-brace-in-quote.t
 t/lang/quoting/interp-call-as-sub.t
 t/lang/quoting/interp-unicode-var-name.t
@@ -4702,6 +4703,7 @@ t/rakuast/rakuast-names-and-literals.t
 t/rakuast/rakuast-nonlvalue-assignment.t
 t/rakuast/rakuast-nqp-terms.t
 t/rakuast/rakuast-object-hash.t
+t/rakuast/rakuast-obsolete-interpolation.t
 t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operators.t
 t/rakuast/rakuast-package-indirect-lookup.t
@@ -4763,6 +4765,7 @@ t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
 t/rakuast/rakuast-routine-trait-order.t
 t/rakuast/rakuast-semantic-hierarchy.t
+t/rakuast/rakuast-sequential-interpolation.t
 t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-sigilless-declarator-init.t
 t/rakuast/rakuast-signature-decl.t
@@ -5354,6 +5357,7 @@ t/regex/syntax/regex-subrule-lookahead-assertion.t
 t/regex/syntax/regex-tree-anchors.t
 t/regex/syntax/regex-zero-width-counted-quantifier.t
 t/regex/syntax/separator-backtracking.t
+t/regex/syntax/sequential-alternation.t
 t/regex/throws-like-regex-matcher.t
 t/regex/toggle-regex-block-condition.t
 t/regex/unterminated-regex.t

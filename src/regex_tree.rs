@@ -375,6 +375,24 @@ impl RegexTree {
 
     pub(crate) fn to_source(&self) -> String {
         let mut source = self.body.to_source();
+        // A lone sequential interpolation (`/ ||@list /`) keeps its leading
+        // `||` only as that flag; the alternation printers add their own.
+        let mut lone = &self.body;
+        while let RegexNode::WithWhitespace(inner) = lone {
+            lone = inner;
+        }
+        if matches!(
+            lone,
+            RegexNode::Interpolation {
+                sequential: true,
+                ..
+            } | RegexNode::ArrayInterpolation {
+                sequential: true,
+                ..
+            }
+        ) {
+            source.insert_str(0, "||");
+        }
         // Whitespace written at the end is significant to a rule (or a `:s`
         // regex), which then matches it after its last atom.
         if ends_with_whitespace(&self.body) {

@@ -74,12 +74,21 @@ pub(crate) fn round_trip_if_enabled(
     if !covers(unit) {
         return Ok(stmts);
     }
-    round_trip(&stmts).map_err(|err| {
-        RuntimeError::new(format!(
-            "MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: {}",
-            err.message
-        ))
-    })
+    round_trip(&stmts).map_err(refusal)
+}
+
+/// A refusal of the round trip as the mode reports it. An error that already
+/// carries an exception is the unit's own compile-time failure (a deferred
+/// `X::Obsolete`, which rakudo throws while compiling), not a gap in the
+/// conversion, and passes through unchanged.
+fn refusal(err: RuntimeError) -> RuntimeError {
+    if err.exception.is_some() {
+        return err;
+    }
+    RuntimeError::new(format!(
+        "MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: {}",
+        err.message
+    ))
 }
 
 /// `parse → RakuAST → lower`, the pipeline the RakuAST frontend replaces the
@@ -96,12 +105,7 @@ pub(crate) fn round_trip_eval(
     types: impl FnOnce() -> Vec<String>,
     terms: impl FnOnce() -> Vec<String>,
 ) -> Result<Vec<Stmt>, RuntimeError> {
-    with_caller_names(types(), terms(), || round_trip(stmts)).map_err(|err| {
-        RuntimeError::new(format!(
-            "MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: {}",
-            err.message
-        ))
-    })
+    with_caller_names(types(), terms(), || round_trip(stmts)).map_err(refusal)
 }
 
 /// Run `convert` with `types` and `terms` installed as the names the calling
