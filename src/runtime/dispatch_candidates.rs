@@ -462,7 +462,7 @@ impl Interpreter {
             // A refined candidate (`where`, `subset`) is trial-bound the same
             // way: `multi g(UInt $x)` twice is not ambiguous either.
             if multi_rank::needs_named_bind_check(&Self::dispatch_visible_params(&matches[0]))
-                || self.candidate_rank_key(&matches[0], args).bind_check
+                || self.candidate_rank_key(&matches[0], args).refinement[0] > 0
             {
                 return Ok(Some(matches.remove(0)));
             }
