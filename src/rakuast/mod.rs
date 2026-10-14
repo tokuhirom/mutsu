@@ -89,6 +89,7 @@ mod thunk;
 mod type_args;
 mod type_build;
 mod type_call;
+mod type_capture_indirect;
 mod type_ctor;
 mod type_lower;
 mod use_stmt;
