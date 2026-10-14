@@ -889,6 +889,13 @@ impl Compiler {
                 self.code.emit(OpCode::GetLocal(slot));
             }
         } else {
+            // An enclosing frame's lexical read where this chunk has a
+            // same-named local only in a nested block (`my $b = 99; sub f {
+            // say $b; { my $b = 3 }; say $b }`): the local hides the name from
+            // `compute_free_vars`, so the capture is forced (#13377).
+            if self.enclosing_local_names.contains(name) {
+                self.note_forced_outer_scalar_capture(name, false);
+            }
             let name_idx = self
                 .code
                 .add_constant(Value::str(self.qualify_variable_name(name)));
