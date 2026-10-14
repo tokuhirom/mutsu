@@ -166,16 +166,16 @@ impl Interpreter {
         code: &CompiledCode,
         raw_args: Vec<Value>,
         arg_sources_idx: Option<u32>,
-        decoded_sources: Option<std::sync::Arc<Vec<Option<String>>>>,
+        decoded_sources: Option<(std::sync::Arc<Vec<Option<String>>>, bool)>,
     ) -> (Vec<Value>, Option<std::sync::Arc<Vec<Option<String>>>>) {
-        if Self::decode_arg_slip_positions(code, arg_sources_idx).is_none() {
-            return (raw_args, decoded_sources);
-        }
+        let Some((names, true)) = decoded_sources else {
+            return (raw_args, decoded_sources.map(|(names, _)| names));
+        };
         let (args, sources) = Self::spread_call_args_by_syntax(
             code,
             raw_args,
             arg_sources_idx,
-            decoded_sources.map(|names| (*names).clone()),
+            Some((*names).clone()),
         );
         (args, sources.map(std::sync::Arc::new))
     }
@@ -323,7 +323,7 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Option<Vec<Option<String>>> {
         self.decode_arg_sources_shared(code, arg_sources_idx)
-            .map(|names| (*names).clone())
+            .map(|(names, _)| (*names).clone())
     }
 
     /// [`Self::decode_arg_sources`] sharing the call site's names: they are
@@ -335,7 +335,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         arg_sources_idx: Option<u32>,
-    ) -> Option<std::sync::Arc<Vec<Option<String>>>> {
+    ) -> Option<(std::sync::Arc<Vec<Option<String>>>, bool)> {
         // §1.4/§1.5: repopulate the companion `name -> slot` map for this call from
         // the `Pair(name, Int(slot))` arg-source entries. Cleared first so a call
         // with no slotted sources leaves it empty (no stale slot from a prior call).
@@ -345,13 +345,13 @@ impl Interpreter {
             let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
                 return None;
             };
-            let mut slots: Vec<(String, u32)> = Vec::new();
+            let mut slots: Vec<(crate::symbol::Symbol, u32)> = Vec::new();
             let names: Vec<Option<String>> = items
                 .iter()
                 .map(|item| {
                     Self::decode_arg_source_entry(item).map(|(name, slot)| {
                         if let Some(slot) = slot {
-                            slots.push((name.clone(), slot));
+                            slots.push((crate::symbol::Symbol::intern(&name), slot));
                         }
                         name
                     })
@@ -360,12 +360,13 @@ impl Interpreter {
             Some(crate::opcode::ArgSourceDecode {
                 names: std::sync::Arc::new(names),
                 slots,
+                has_slip: Self::decode_arg_slip_positions_at(code, idx).is_some(),
             })
         })?;
-        for (name, slot) in &decode.slots {
-            self.pending_call_arg_source_slots.insert(name.clone(), *slot);
+        for &(name, slot) in &decode.slots {
+            self.pending_call_arg_source_slots.insert(name, slot);
         }
-        Some(decode.names.clone())
+        Some((decode.names.clone(), decode.has_slip))
     }
 
     /// Decode the source half of an argument descriptor. Named arguments use

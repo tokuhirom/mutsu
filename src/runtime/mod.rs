@@ -1925,7 +1925,7 @@ pub struct Interpreter {
     /// `arg-source name -> caller local slot` for the current call, decoded from the
     /// `Pair(name, Int(slot))` arg-source entries. Set alongside the names by
     /// `decode_arg_sources`, taken with them by `bind_function_args_values`.
-    pub(crate) pending_call_arg_source_slots: rustc_hash::FxHashMap<String, u32>,
+    pub(crate) pending_call_arg_source_slots: rustc_hash::FxHashMap<crate::symbol::Symbol, u32>,
     /// Bitmask of the CURRENT call's argument positions that were written as a
     /// literal, published by `exec_call_func_op` from the call opcode's
     /// `literal_native_args` and restored when that call returns. Multi

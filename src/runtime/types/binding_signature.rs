@@ -514,13 +514,13 @@ impl Interpreter {
     fn fold_rw_writeback_slots(
         &mut self,
         rw_bindings: &[(String, String)],
-        arg_source_slots: &rustc_hash::FxHashMap<String, u32>,
+        arg_source_slots: &rustc_hash::FxHashMap<crate::symbol::Symbol, u32>,
     ) {
         if arg_source_slots.is_empty() {
             return;
         }
         for (_, source) in rw_bindings {
-            if let Some(&slot) = arg_source_slots.get(source) {
+            if let Some(&slot) = arg_source_slots.get(&crate::symbol::Symbol::intern(source)) {
                 let owner_depth = self.call_frames.len().saturating_sub(1);
                 self.pending_rw_writeback_slots
                     .insert(source.clone(), slot, owner_depth);

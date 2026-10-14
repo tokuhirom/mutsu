@@ -7793,7 +7793,9 @@ pub(crate) struct ClosureSignature {
 #[derive(Debug, Clone)]
 pub(crate) struct ArgSourceDecode {
     pub(crate) names: std::sync::Arc<Vec<Option<String>>>,
-    pub(crate) slots: Vec<(String, u32)>,
+    pub(crate) slots: Vec<(Symbol, u32)>,
+    /// Whether any argument is written `|EXPR` (then the arguments spread).
+    pub(crate) has_slip: bool,
 }
 
 /// [`CompiledCode::arg_source_decodes`]: one lazily-filled slot per constant.
