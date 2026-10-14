@@ -514,7 +514,9 @@ impl Interpreter {
                 if let Some(done) = self.nqp_code_do_attr(&obj, &attr, Some(&val)) {
                     return Some(done.map(|_| obj));
                 }
-                if let Some(adopted) = Self::adopt_raw_storage(&obj, &attr, &val) {
+                if let Some(adopted) = Self::adopt_raw_storage(&obj, &attr, &val)
+                    .or_else(|| Self::capture_with_storage(&obj, &attr, &val))
+                {
                     return Some(Ok(adopted));
                 }
                 match Self::nqp_bindattr_value(op, &obj, &attr, val) {
