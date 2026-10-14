@@ -93,11 +93,12 @@ impl Interpreter {
         let ValueView::Instance { class_name, .. } = target.view() else {
             return None;
         };
-        let arg_keys = if args.is_empty() {
-            Vec::new()
-        } else {
-            self.multi_arg_type_keys(args)?
-        };
+        let mut arg_keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
+        if !args.is_empty() && !self.multi_arg_type_keys_into(args, &mut arg_keys) {
+            arg_keys.clear();
+            self.caches.plain_method_lane_scratch = arg_keys;
+            return None;
+        }
         Some((class_name, method_sym, arg_keys))
     }
 

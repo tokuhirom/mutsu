@@ -52,6 +52,28 @@ pub(crate) struct StageProgram {
     steps: Vec<ProgramStep>,
 }
 
+impl StageProgram {
+    /// The candidates the program can pick, in narrowness order.
+    // Cost: O(1) to start, O(s) to drain, s = steps.
+    pub(crate) fn candidates(&self) -> impl Iterator<Item = &Arc<FunctionDef>> {
+        self.steps.iter().map(|step| &step.def)
+    }
+
+    /// Whether every value check is an inline WhateverCode `where` (no
+    /// `subset` predicate, which may be any user block). The multi light
+    /// call (`vm_multi_plan_light_call`) runs such a program and may still
+    /// fall back to the generic path, which runs the checks again; it takes
+    /// only a program whose checks are inline expressions of the argument.
+    // Cost: O(s·k), s = steps, k = checks per step.
+    pub(crate) fn checks_are_inline_wheres(&self) -> bool {
+        self.steps.iter().all(|step| {
+            step.checks
+                .iter()
+                .all(|check| matches!(check, ValueCheck::Where { .. }))
+        })
+    }
+}
+
 impl Interpreter {
     /// Build the program for `stage` from a call whose arguments carry the
     /// stage's type key, or `None` when some candidate needs the general walk.
@@ -172,7 +194,7 @@ impl Interpreter {
     /// Run `program` against this call's arguments: the per-call half of a
     /// stage, equivalent to `choose_from_plan_stage`.
     // Cost: O(c) plus the value checks, c = candidates up to the best rank.
-    pub(super) fn run_stage_program(
+    pub(crate) fn run_stage_program(
         &mut self,
         name: &str,
         args: &[Value],

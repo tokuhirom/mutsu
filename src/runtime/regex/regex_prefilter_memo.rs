@@ -168,6 +168,7 @@ fn atom_mentions_subrule(atom: &RegexAtom, depth: u32) -> bool {
         | RegexAtom::StartOfLine
         | RegexAtom::EndOfLine
         | RegexAtom::EndOfString
+        | RegexAtom::StartOfString
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_)
         | RegexAtom::CodeAssertion { .. }

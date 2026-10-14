@@ -328,6 +328,12 @@ fn operator_symbol(node: &RakuAstNode) -> Option<String> {
     let ValueView::RakuAst(quoted) = pair.view() else {
         return None;
     };
+    quoted_text(quoted)
+}
+
+/// The text of a `QuotedString` of one plain segment.
+// Cost: O(1).
+pub(super) fn quoted_text(quoted: &RakuAstNode) -> Option<String> {
     if quoted.class != RakuAstClass::QuotedString {
         return None;
     }
@@ -352,6 +358,37 @@ fn operator_symbol(node: &RakuAstNode) -> Option<String> {
         ValueView::Str(s) => Some(s.to_string()),
         _ => None,
     }
+}
+
+/// A `Name` of static parts followed by one `Part::Expression`
+/// (`MY::(EXPR)`): the `::`-joined package and the key node.
+// Cost: O(p), p = parts of the name.
+pub(super) fn package_and_expression(node: &RakuAstNode) -> Option<(String, &RakuAstNode)> {
+    if node.class != RakuAstClass::Name {
+        return None;
+    }
+    let field = node.fields.first()?;
+    let (Some("parts"), RakuAstFieldValue::List(parts)) = (&field.name, &field.value) else {
+        return None;
+    };
+    let (last, package) = parts.split_last()?;
+    let ValueView::RakuAst(last) = last.view() else {
+        return None;
+    };
+    if last.class != RakuAstClass::NamePartExpression || package.is_empty() {
+        return None;
+    }
+    let RakuAstFieldValue::Node(key) = &last.fields.first()?.value else {
+        return None;
+    };
+    let ValueView::RakuAst(key) = key.view() else {
+        return None;
+    };
+    let package = package
+        .iter()
+        .map(simple_part_name)
+        .collect::<Option<Vec<_>>>()?;
+    Some((package.join("::"), key))
 }
 
 /// Classify a `RakuAST::Name` node, or `None` for a shape mutsu cannot lower.

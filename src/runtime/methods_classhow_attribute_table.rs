@@ -21,6 +21,25 @@ impl Interpreter {
                 table.insert(name, value);
             }
         }
+        // A role mixed into the object at run time (`$attr does R`, `$o but R`)
+        // contributes its attributes to the object's own: Rakudo lists them
+        // (`$o.^attributes`) and `.^get_attribute_for_usage` finds them
+        // (AttrX::Mooish reads its role's `$!lazy` that way).
+        if let ValueView::Mixin(_, mixins) = receiver.view() {
+            for role in crate::value::types::mixin_roles_applied_last_first(mixins, &owner_class) {
+                for attr in self.role_mixin_attribute_objects(&role) {
+                    let name = match attr.view() {
+                        ValueView::Instance { attributes, .. } => {
+                            attributes.as_map().get("name").map(Value::to_string_value)
+                        }
+                        _ => None,
+                    };
+                    if let Some(name) = name {
+                        table.entry(name).or_insert(attr);
+                    }
+                }
+            }
+        }
         table
     }
 

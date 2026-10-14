@@ -1,7 +1,7 @@
 //! The shared variable/attribute declaration constructor retains source fields.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use super::{named_arg, require_any_rakuast, require_rakuast_class};
+use super::{named_arg, rakuast_node_list, require_any_rakuast, require_rakuast_class};
 use crate::value::{RuntimeError, Value, ValueView};
 
 const CONSTRUCTOR: &str = "RakuAST::VarDeclaration::Simple.new";
@@ -50,15 +50,9 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
     if let Some(traits) = named_arg(args, "traits")
         && !traits.is_nil()
     {
-        let traits = traits.as_list_items().ok_or_else(|| {
-            RuntimeError::new(format!("{CONSTRUCTOR} expects `traits` to be a list"))
-        })?;
-        for node in traits {
-            require_any_rakuast(node, CONSTRUCTOR, "traits")?;
-        }
         fields.push(RakuAstField {
             name: Some("traits"),
-            value: RakuAstFieldValue::List(traits.to_vec()),
+            value: RakuAstFieldValue::List(rakuast_node_list(&traits, CONSTRUCTOR, "traits")?),
         });
     }
     if let Some(initializer) = named_arg(args, "initializer") {

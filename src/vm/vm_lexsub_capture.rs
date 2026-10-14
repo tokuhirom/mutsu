@@ -63,8 +63,11 @@ impl Interpreter {
             let Some(entry) = upvalues.get_mut(i) else {
                 continue;
             };
-            if code.sub_decl_plans.iter().any(|p| p.name == name) {
-                let val = self.resolve_code_var_unshadowed(name.as_str());
+            if let Some(plan) = code.sub_decl_plans.iter().find(|p| p.name == name) {
+                let val = match self.activation_routine_value(plan) {
+                    Some(val) => val,
+                    None => self.resolve_code_var_unshadowed(name.as_str()),
+                };
                 if !matches!(val.view(), ValueView::Sub(_)) {
                     continue;
                 }
@@ -84,6 +87,27 @@ impl Interpreter {
             }
         }
         bound
+    }
+
+    /// The code object of the plain `sub` that `plan` registered in the
+    /// current package just now, read straight from the registry key the
+    /// registration installed, without the generic `&name` resolver's
+    /// pseudo-package, alias, multi and proto probes (#13049). `None` when the
+    /// routine is not a plain registry entry of this package (a `multi`, a
+    /// frame-lexical `my sub`, a qualified or computed name, or one nothing
+    /// installed); the caller then resolves by name.
+    // Cost: O(d), d = the size of the routine's signature (the code object copies it).
+    fn activation_routine_value(&self, plan: &crate::opcode::CompiledSubDeclPlan) -> Option<Value> {
+        if plan.multi
+            || plan.frame_lexical.is_some()
+            || plan.name_chunk.is_some()
+            || plan.name.with_str(|n| n.contains(':'))
+        {
+            return None;
+        }
+        let key = crate::qualified::qualified(self.current_package_sym(), plan.name);
+        let def = self.registry().functions.get(&key)?.clone();
+        Some(self.sub_value_from_function_def((*def).clone()))
     }
 
     /// `val`, the code object the declaring `code` just resolved for its own
@@ -120,8 +144,9 @@ impl Interpreter {
         val: Value,
         building: &mut Vec<(Symbol, Option<Value>)>,
     ) -> Value {
-        let ValueView::Sub(data) = val.view() else {
-            return val;
+        let mut data = match val.view() {
+            ValueView::Sub(data) => data.clone(),
+            _ => return val,
         };
         let Some(cf) = data.compiled_routine.clone() else {
             return val;
@@ -180,7 +205,11 @@ impl Interpreter {
             }
             return val;
         }
-        let mut new_data = (**data).clone();
+        // The code object is almost always one this activation just built, so
+        // its data is rewritten in place; a shared one is copied first
+        // (`make_mut`).
+        drop(val);
+        let new_data = data.make_mut();
         for (sym, cell) in cells {
             new_data.env.insert_sym(sym, cell);
         }
@@ -188,7 +217,7 @@ impl Interpreter {
             new_data.env.insert(format!("&{name}"), sibling);
         }
         new_data.env.mark_activation_capture();
-        let captured = Value::sub_value(crate::gc::Gc::new(new_data));
+        let captured = Value::sub_value(data);
         if let Some(cell) = back_edge {
             cell.assign_into_container(captured.clone());
         }
@@ -236,5 +265,43 @@ impl Interpreter {
         self.locals[slot] = boxed.clone();
         self.env_mut().insert(name.to_string(), boxed.clone());
         Some(boxed)
+    }
+
+    /// The activation capture and compiled routine of `target` when it is a
+    /// block-declared routine's code object (`capture_lexsub_activation`)
+    /// that a `CallOnCodeVar` may run on the named-call path
+    /// (`call_compiled_function_named_in`) instead of the closure entry: a
+    /// plain compiled routine, not wrapped, not a multi dispatcher or an
+    /// `.assuming` carrier, and not called for its container (#13049).
+    // Cost: O(1), a few field reads and one hashed probe of the wrap table.
+    pub(super) fn activation_routine_of(
+        &self,
+        target: &Value,
+    ) -> Option<(
+        crate::gc::Gc<crate::value::SubData>,
+        Arc<crate::opcode::CompiledFunction>,
+    )> {
+        let ValueView::Sub(data) = target.view() else {
+            return None;
+        };
+        let cf = data.compiled_routine.as_ref()?;
+        if !data.env.is_activation_capture()
+            || self.in_lvalue_assignment
+            || data.is_decl_expr_thunk
+            || !data.assumed_positional.is_empty()
+            || !data.assumed_named.is_empty()
+            || data
+                .compiled_code
+                .as_ref()
+                .is_some_and(|cc| !Arc::ptr_eq(cc, &cf.code))
+            || data
+                .env
+                .contains_key_sym(crate::symbol::well_known::multi_dispatch_candidates())
+            || self.has_wrap_chain(data.id)
+            || Self::sub_multi_method_dispatcher_name(&data).is_some()
+        {
+            return None;
+        }
+        Some((data.clone(), Arc::clone(cf)))
     }
 }

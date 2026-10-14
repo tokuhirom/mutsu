@@ -11,6 +11,15 @@ use super::*;
 use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
 use crate::meta_ns::MetaNs;
 
+/// Whether any `InlinePackageSub` pre-registration marker was ever written in
+/// this process. The marker lookup of every `RegisterDecl` builds its key from
+/// the package, name and site fingerprint; while no marker exists anywhere
+/// (the usual script) that lookup can only miss, so it is skipped. Set before
+/// the first marker is inserted and never cleared; a thread's reads need no
+/// ordering beyond the env it reads the marker from.
+pub(crate) static INLINE_PACKAGE_SUB_MARKERS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 impl Interpreter {
     /// Register the routines declared by an inline package before CHECK
     /// phasers run.  Raku makes an inline package's interface available during
@@ -23,16 +32,28 @@ impl Interpreter {
     /// body here would change observable ordering (for example, a `say` in the
     /// module must still happen after CHECK), while the routine registry and
     /// export table are the compile-time interface needed by `import`.
+    ///
+    /// With `only_nested`, only the routines below a package body's (or the
+    /// unit's) own statement list are taken: an `EVAL` leaves a package
+    /// body's own routines to the body, whose registration is what notices a
+    /// redeclaration across re-opened package bodies (#13137).
     pub(crate) fn preregister_inline_package_subs(
         &mut self,
         stmts: &[Stmt],
+        only_nested: bool,
     ) -> Result<(), RuntimeError> {
         let mut collector = InlinePackageSubCollector::default();
         crate::ast_visit::walk_stmts(&mut collector, stmts);
-        let declarations = collector.out;
+        let unit_package = self.current_package();
+        let declarations: Vec<_> = collector
+            .out
+            .into_iter()
+            .filter(|decl| !only_nested || decl.nested)
+            .map(|decl| (decl.package.clone().unwrap_or_else(|| unit_package.clone()), decl))
+            .collect();
 
         // Protos first: a candidate's `our`-scope check reads `proto_subs`.
-        for InlinePackageDecl { package, stmt, .. } in &declarations {
+        for (package, InlinePackageDecl { stmt, .. }) in &declarations {
             let Stmt::ProtoDecl {
                 name,
                 params,
@@ -83,12 +104,15 @@ impl Interpreter {
             drop(result);
         }
 
-        for InlinePackageDecl {
+        for (
             package,
-            stmt,
-            nested,
-            outer_packages,
-        } in declarations
+            InlinePackageDecl {
+                stmt,
+                nested,
+                outer_packages,
+                ..
+            },
+        ) in declarations
         {
             let Stmt::SubDecl {
                 name,
@@ -261,11 +285,24 @@ impl Interpreter {
             // in-sequence `RegisterDecl` must still install it, with the
             // declaring activation's bindings: no "already installed" marker.
             if installed && !nested {
+                INLINE_PACKAGE_SUB_MARKERS.store(true, std::sync::atomic::Ordering::Relaxed);
                 self.env_mut().insert(
                     MetaNs::InlinePackageSub.owned_key_from_parts(&[
                         &package,
                         &name.resolve(),
                         &site_fingerprint.to_string(),
+                    ]),
+                    Value::TRUE,
+                );
+                // The same marker with an empty site says "some candidate of
+                // this name was pre-registered", so the proto's registration
+                // can ask by lookup instead of scanning every env key
+                // (`register_proto_decl`).
+                self.env_mut().insert(
+                    MetaNs::InlinePackageSub.owned_key_from_parts(&[
+                        &package,
+                        &name.resolve(),
+                        "",
                     ]),
                     Value::TRUE,
                 );
@@ -339,8 +376,9 @@ impl Interpreter {
 
 /// One routine declaration the prepass registers.
 struct InlinePackageDecl {
-    /// The fully-qualified package the routine is installed in.
-    package: String,
+    /// The fully-qualified package the routine is installed in; `None` for
+    /// the package the unit is compiled in.
+    package: Option<String>,
     /// The `Stmt::SubDecl` / `Stmt::ProtoDecl`.
     stmt: Stmt,
     /// Declared below the package body's own statement list -- in a nested
@@ -375,6 +413,8 @@ struct InlinePackageSubCollector {
     nested: bool,
     /// Inside a class body: only exported routines are collected.
     exports_only: bool,
+    /// Inside the body of a `sub` or `proto`.
+    in_routine: bool,
     out: Vec<InlinePackageDecl>,
 }
 
@@ -402,6 +442,22 @@ impl InlinePackageSubCollector {
 
     fn collect(&mut self, stmt: &Stmt, is_our: bool, is_export: bool) {
         let Some((package, outer)) = self.packages.split_last() else {
+            // Outside every package, an `our` routine nested in a routine
+            // body installs into the unit's own package (`GLOBAL`, or an
+            // EVAL's caller's package) (#13091). One directly in the unit's
+            // statement list is registered by the unit itself, and one in a
+            // bare block when the block runs, which binds the block's escaping
+            // lexicals (`escaped_our_lexical_cells`). An `our multi` needs its
+            // `our proto` registered first, which is left to the routine.
+            let multi = matches!(stmt, Stmt::SubDecl { multi: true, .. });
+            if self.in_routine && is_our && !multi {
+                self.out.push(InlinePackageDecl {
+                    package: None,
+                    stmt: stmt.clone(),
+                    nested: true,
+                    outer_packages: Vec::new(),
+                });
+            }
             return;
         };
         if self.exports_only && !is_export {
@@ -411,7 +467,7 @@ impl InlinePackageSubCollector {
             return;
         }
         self.out.push(InlinePackageDecl {
-            package: package.clone(),
+            package: Some(package.clone()),
             stmt: stmt.clone(),
             // A class body's routine is registered by the class itself.
             nested: self.nested || self.exports_only,
@@ -496,7 +552,9 @@ impl<'ast> Visit<'ast> for InlinePackageSubCollector {
             } => {
                 let is_our = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
                 self.collect(stmt, is_our, *is_export);
+                let saved = std::mem::replace(&mut self.in_routine, true);
                 self.walk_nested(stmt);
+                self.in_routine = saved;
             }
             Stmt::ProtoDecl {
                 is_our, is_export, ..

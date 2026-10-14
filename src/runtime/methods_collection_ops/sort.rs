@@ -810,7 +810,7 @@ pub(crate) fn sort_value_generic(
             let items: Vec<Value> = m
                 .iter()
                 .map(|(k, v)| {
-                    setty_typed_pair(m.typed_key(k), k, crate::value::mix_weight_to_value(*v))
+                    setty_typed_pair(m.typed_key(k), k, crate::value::mix_weight_to_value(v.clone()))
                 })
                 .collect();
             sort_value_generic(caller, Value::array(items), args)

@@ -183,7 +183,6 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             let mut attrs = HashMap::new();
             attrs.insert("raku".to_string(), Value::str_from(":()"));
             attrs.insert("perl".to_string(), Value::str_from(":()"));
-            attrs.insert("Str".to_string(), Value::str_from(":()"));
             attrs.insert("gist".to_string(), Value::str_from(":()"));
             return Ok((
                 r,
@@ -266,7 +265,6 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             let mut attrs = HashMap::new();
             attrs.insert("raku".to_string(), Value::str(sig.clone()));
             attrs.insert("perl".to_string(), Value::str(sig.clone()));
-            attrs.insert("Str".to_string(), Value::str(sig.clone()));
             attrs.insert("gist".to_string(), Value::str(sig));
             return Ok((
                 r_end,
@@ -411,7 +409,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(Expr::Literal(val)),
-                        form: Default::default(),
+                        form: crate::ast::BinaryForm::ColonPairNumber,
                     },
                 ));
             }
@@ -602,7 +600,12 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         let mut trailing_comma = false;
         let mut r = r;
         while !r.starts_with(']') {
-            let (r2, item) = expression(r)?;
+            // A run of adjacent colonpairs (`:name[:a :b]`) holds every pair, as
+            // in a plain `[:a :b]`; `expression` would read `:b` as an adverb.
+            let (r2, item) = match crate::parser::primary::container::colonpair_run_item(r, ']') {
+                Some(parsed) => parsed,
+                None => expression(r)?,
+            };
             items.push(item);
             let (r2, _) = ws(r2)?;
             if r2.starts_with(',') {
@@ -704,7 +707,9 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     }
     // :name«words» (French-quote colonpair, equivalent to :name(«words»))
     if rest.starts_with('\u{00AB}') {
-        let (r, val_expr) = crate::parser::primary::container::french_quote_list(rest)?;
+        // The term form keeps the raw text for the RakuAST boundary
+        // (`ColonPair::Value(value => QuotedString(<quotewords val>))`).
+        let (r, val_expr) = crate::parser::primary::container::french_quote_term(rest)?;
         return Ok((
             r,
             Expr::Binary {
@@ -717,7 +722,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     }
     // :name<<words>> (double-angle colonpair, equivalent to :name(<<words>>))
     if rest.starts_with("<<") {
-        let (r, val_expr) = crate::parser::primary::container::double_angle_list(rest)?;
+        let (r, val_expr) = crate::parser::primary::container::double_angle_term(rest)?;
         return Ok((
             r,
             Expr::Binary {

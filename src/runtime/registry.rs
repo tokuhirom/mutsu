@@ -41,6 +41,14 @@ use super::dispatch_key;
 use super::function_table::{FunctionTable, FunctionTableTransitions};
 use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
+/// [`Registry::classes`]'s type: a copy-on-write table, so a snapshot of it
+/// (an import scope's, `ImportScopeSnapshot`) is a reference bump.
+pub(crate) type ClassTable = CowTable<HashMap<String, CowTable<ClassDef>>>;
+/// [`Registry::proto_functions`]'s map.
+pub(crate) type ProtoFunctionMap = HashMap<Symbol, Arc<FunctionDef>>;
+/// The `proto sub` marker set behind [`Registry::proto_subs_snapshot`].
+pub(crate) type ProtoSubSet = HashSet<String>;
+
 /// Canonical method-table key. Both built-in handlers and user candidates will
 /// occupy this namespace; the latter still live in `ClassDef::methods` during
 /// the next migration step.
@@ -67,6 +75,9 @@ pub(crate) struct MethodEntry {
     /// `Registry::proto_methods` table in E8b/E8c). Written by
     /// [`Registry::set_proto_method`]; read by `Interpreter::
     /// lookup_proto_method`'s MRO walk via [`Registry::method_entry_proto`].
+    /// The proto declared `is hidden-from-backtrace`: its dispatch frame is
+    /// left out of a `Backtrace` like any other hidden routine's.
+    pub(crate) proto_hidden_from_backtrace: bool,
     pub(crate) proto: Option<FunctionDef>,
 }
 
@@ -217,7 +228,7 @@ pub(crate) struct Registry {
     /// short-lived `registry()` guards and clone the minimal projection they need
     /// (e.g. `mro.clone()`, `methods.get(name).cloned()`) rather than the whole
     /// `ClassDef`.
-    pub(crate) classes: CowTable<HashMap<String, CowTable<ClassDef>>>,
+    pub(crate) classes: ClassTable,
 
     // ----- class metadata (PR-A slice 2) -----
     /// Classes declared as a C `union` (native interop helper set).
@@ -922,6 +933,32 @@ impl Registry {
             .and_then(|entry| entry.proto.clone())
     }
 
+    /// Whether the proto of `(class_name, method_name)` carries
+    /// `is hidden-from-backtrace` (see `MethodEntry::proto_hidden_from_backtrace`).
+    // Cost: O(1).
+    pub(crate) fn method_entry_proto_hidden(&self, class_name: &str, method_name: &str) -> bool {
+        self.method_entries
+            .get(&MethodEntryKey {
+                owner: Symbol::intern(class_name),
+                name: Symbol::intern(method_name),
+            })
+            .is_some_and(|entry| entry.proto_hidden_from_backtrace)
+    }
+
+    /// Record that the proto of `(class_name, method_name)` is hidden from
+    /// backtraces. Call after [`Self::set_proto_method`].
+    // Cost: O(1).
+    pub(crate) fn mark_proto_method_hidden(&mut self, class_name: &str, method_name: &str) {
+        let key = MethodEntryKey {
+            owner: Symbol::intern(class_name),
+            name: Symbol::intern(method_name),
+        };
+        self.method_entries
+            .entry(key)
+            .or_default()
+            .proto_hidden_from_backtrace = true;
+    }
+
     pub(crate) fn bump_method_generation(&mut self) {
         self.method_generation = self.method_generation.wrapping_add(1);
         if self.method_generation == 0 {
@@ -938,6 +975,26 @@ impl Registry {
     /// prefilter is still a correct, cheap win and stays.
     pub(crate) fn has_any_method_wrap_chains(&self) -> bool {
         !self.method_wrap_chains.is_empty()
+    }
+
+    /// The wrap chain of `method` on the built-in class `class_name` or, when it
+    /// has none, on the first class of the catalog MRO that does (`NFD.list` is
+    /// wrapped by a `.wrap` of `Uni.list`).
+    // Cost: O(1) while nothing is wrapped; otherwise O(c + d), c = catalog rows
+    // (the MRO scan), d = MRO depth.
+    pub(crate) fn builtin_method_wrap_chain_along_mro(
+        &self,
+        class_name: &str,
+        method: &str,
+    ) -> Option<&Vec<(u64, Value)>> {
+        if self.method_wrap_chains.is_empty() {
+            return None;
+        }
+        self.method_wrap_chain(class_name, method, 0).or_else(|| {
+            crate::builtin_types::catalog::builtin_type_mro_strs(class_name)?
+                .iter()
+                .find_map(|class| self.method_wrap_chain(class, method, 0))
+        })
     }
 
     /// The wrap chain for one method candidate, if non-empty.
@@ -1733,6 +1790,12 @@ impl Registry {
         // borrow is what lets the memo drive the table (and its stamp).
         let transitions = &mut self.fn_transitions;
         transitions.install(&mut self.functions, key, def);
+    }
+
+    /// Return the exact function declaration installed under `key`.
+    #[inline]
+    pub(crate) fn function_def(&self, key: Symbol) -> Option<std::sync::Arc<FunctionDef>> {
+        self.functions.get(&key).cloned()
     }
 
     /// Give [`Registry::functions`] a version it has never had before, without

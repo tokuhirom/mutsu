@@ -267,9 +267,14 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut CallSink) -> Opti
         | RegexAtom::StartOfLine
         | RegexAtom::EndOfLine
         | RegexAtom::EndOfString
+        | RegexAtom::StartOfString
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         | RegexAtom::VarInterp(_)
+        // `$( … )` / `@( … )` yield a pattern the same way `$x` does, and are
+        // treated as `$x` is: a value that names a rule which re-enters this
+        // one at the same position is not modelled (#13461).
+        | RegexAtom::CodeInterp { .. }
         | RegexAtom::QqInterp { .. }
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_)
@@ -337,7 +342,6 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut CallSink) -> Opti
         }
         RegexAtom::ClosureInterpolation { .. }
         | RegexAtom::VarAssertion(_)
-        | RegexAtom::CodeInterp { .. }
         | RegexAtom::RecurseSelf(_) => None,
     }
 }

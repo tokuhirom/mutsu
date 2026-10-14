@@ -230,7 +230,19 @@ impl Interpreter {
             {
                 // Pass the distribution prefix (dir containing META6.json) so
                 // %?RESOURCES can resolve absolute paths.
-                let dist_prefix = dir.to_string_lossy().to_string();
+                // Absolute, fixed at load time: a relative `-I lib` / `use lib
+                // 'lib'` source path would otherwise resolve against whatever
+                // the cwd is when `%?RESOURCES<x>` is read (`indir`, a test
+                // that `chdir`s), and the resource would vanish.
+                let dist_dir = if dir.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    dir
+                };
+                let dist_prefix = std::path::absolute(dist_dir)
+                    .unwrap_or_else(|_| dist_dir.to_path_buf())
+                    .to_string_lossy()
+                    .to_string();
                 return Self::build_distribution_from_meta(&content, &dist_prefix);
             }
             dir = dir.parent()?;

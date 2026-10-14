@@ -64,13 +64,8 @@ pub(crate) struct TopicState {
     pub(crate) element_source: Option<(String, Vec<(Value, bool)>)>,
     pub(crate) quanthash_bind_params: Vec<String>,
     /// Deferred restore of a single named for-loop param's prior binding, applied
-    /// by `RestoreForParam` after the loop's LAST/post phasers. Tuple is
-    /// `(name, saved_env_value, colliding_local_slot)`: the slot is `Some` when
-    /// the loop param shares a compile-time local slot with an enclosing binding
-    /// of the same bare name (`my \x = 10; for ... -> \x { }`), so the restore
-    /// must write the saved value back through that slot too — otherwise a later
-    /// `GetLocal` read of the outer name sees the loop's last iteration value.
-    pub(crate) for_param_restore_stack: Vec<(String, Option<Value>, Option<u32>)>,
+    /// by `RestoreForParam` after the loop's LAST/post phasers.
+    pub(crate) for_param_restore_stack: Vec<ForParamRestore>,
     /// Local-frame slot indices of `given`/`with` pointy-topic parameters
     /// (`given EXPR -> $v {...}`) currently mid-writeback: the enclosing
     /// `Given`/`With` op still needs the slot's final value after its body
@@ -150,5 +145,46 @@ impl TopicState {
     // Cost: O(1).
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self::default()
+    }
+
+    /// Whether a `for` loop of the running call binds `name` as its parameter
+    /// right now. A callee does not see its caller's loops (`ScopeStack`
+    /// hides them).
+    // Cost: O(l), l = loops of the running call that are executing.
+    pub(crate) fn name_bound_by_loop_param(&self, name: &str) -> bool {
+        self.active_loop_param_names
+            .iter()
+            .any(|names| names.contains(name))
+    }
+}
+
+/// A named for-loop parameter's prior binding, saved when the loop starts and
+/// restored once it is done (`RestoreForParam`, or at once on an abnormal
+/// exit).
+#[derive(Debug)]
+pub(crate) struct ForParamRestore {
+    pub(crate) name: String,
+    pub(crate) saved: Option<Value>,
+    /// `Some` when the loop param shares a compile-time local slot with an
+    /// enclosing binding of the same bare name (`my \x = 10; for ... -> \x
+    /// { }`), so the restore must write the saved value back through that slot
+    /// too — otherwise a later `GetLocal` read of the outer name sees the
+    /// loop's last iteration value.
+    pub(crate) colliding_slot: Option<u32>,
+    /// A placeholder parameter (`$^b`) also binds its bare alias (`$b`) for
+    /// the body: the alias's prior binding, restored with the parameter's.
+    /// Left bound, it replaced a captured outer `$b` for the rest of the
+    /// enclosing closure, and a frame merge carried it into the caller (#13377).
+    pub(crate) alias: Option<(String, Option<Value>)>,
+}
+
+/// The bare alias a placeholder loop parameter binds next to itself (`^b` →
+/// `b`, `&^f` → `&f`), if `name` is one.
+// Cost: O(|name|).
+pub(crate) fn placeholder_alias(name: &str) -> Option<String> {
+    if let Some(bare) = name.strip_prefix("&^") {
+        Some(format!("&{bare}"))
+    } else {
+        name.strip_prefix('^').map(str::to_string)
     }
 }

@@ -475,18 +475,27 @@ impl Interpreter {
         if message.is_empty() {
             message = "Warning: something's wrong".to_string();
         }
-        // Append a Raku-style source location annotation so that the
-        // stderr output includes a file/line reference. The callsite line
-        // was set by the VM right before dispatching this builtin.
-        let file = self
-            .io
-            .program_path
-            .clone()
-            .unwrap_or_else(|| "-e".to_string());
-        let line = self
-            .test_pending_callsite_line
-            .unwrap_or(self.cur_source_line);
-        message.push_str(&format!("\n  in block <unit> at {} line {}", file, line));
+        // Append the innermost backtrace frame (`  in sub f at FILE line N`) so
+        // the stderr output names the routine and file the `warn` ran in
+        // (#13379); Rakudo prints that one frame only, not the callers. The
+        // callsite line was set by the VM right before dispatching this
+        // builtin; a warn with no live frame falls back to the unit.
+        let backtrace = self.build_backtrace_string();
+        let innermost = backtrace.lines().next().unwrap_or("");
+        if innermost.is_empty() {
+            let file = self
+                .io
+                .program_path
+                .clone()
+                .unwrap_or_else(|| "-e".to_string());
+            let line = self
+                .test_pending_callsite_line
+                .unwrap_or(self.cur_source_line);
+            message.push_str(&format!("\n  in block <unit> at {} line {}", file, line));
+        } else {
+            message.push('\n');
+            message.push_str(innermost);
+        }
         // When no CONTROL handler is active (`control_handler_depth == 0`), this
         // warn's only possible fate is the default handler: print to stderr and
         // resume. Handle it inline here, at the raise site, rather than returning

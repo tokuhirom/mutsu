@@ -11,31 +11,34 @@ pub(crate) use expr::{
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
-pub(crate) use primary::ident::loop_control_expr;
+pub(crate) use primary::ident::slipped_control_stmt;
 pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
 pub(crate) use primary::ident::{anon_method_expr, anon_method_expr_declared, folded_invocant};
+pub(crate) use primary::ident::{is_loop_control_label, loop_control_expr};
 pub(crate) use primary::regex::{
-    SubstFlags, parse_adverb_argument, regex_execution_value, subst_pattern_source,
+    SubstFlags, parse_adverb_argument, regex_execution_value, subst_compound_rhs,
+    subst_compound_thunk, subst_pattern_source,
 };
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
 pub(crate) use primary::var::{fresh_anon_array_name, fresh_anon_state_name, is_pseudo_package};
 pub(crate) use primary::{
-    ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
-    prepend_does_header,
+    ANON_COLONS_TRAIT, ANON_DECL_TRAIT, mark_anon_package_stmt, next_anon_class_name,
+    next_anon_grammar_name, next_anon_role_name, prepend_does_header,
 };
 pub(crate) use primary::{decimal_literal_value, numeric_literal_value};
 pub(crate) use stmt::class::{
-    EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, export_type_marker, push_also_is_parent,
+    DECLARE_HOW_TRAIT, EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, declare_how_keyword,
+    declare_how_marker, export_type_marker, push_also_is_parent,
 };
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::modifier::for_modifier_loop_params;
 pub(crate) use stmt::modifier::rewrite_placeholder_block_modifier_stmt;
-pub(crate) use stmt::sub::op_prec_trait;
+pub(crate) use stmt::sub::{INDIRECT_DECL_NAME, op_prec_trait};
 pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;
@@ -63,8 +66,10 @@ pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::attribute_type_seed;
-pub(crate) use stmt::decl::build_sigilless_bind_stmt;
 pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
+pub(crate) use stmt::decl::wrap_with_will_phasers;
+pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
+pub(crate) use stmt::decl::{build_sigilless_bind_stmt, is_anon_sigilless_source};
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
 pub(crate) use stmt::simple_expr_stmt::topic_dot_assign;
 pub(crate) use stmt::{conditional_declaration, topical_declaration};
@@ -111,6 +116,44 @@ pub(crate) mod term_boundary;
 mod whenever_scope;
 use std::sync::OnceLock;
 
+thread_local! {
+    static PARSER_NESTING: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Bound parser recursion on threads without an armed native stack floor, and
+/// use the real stack boundary where one is available.
+pub(in crate::parser) struct NestingGuard;
+
+impl NestingGuard {
+    pub(in crate::parser) fn enter(
+        input: &str,
+    ) -> Result<Self, crate::parser::parse_result::PError> {
+        const UNGUARDED_LIMIT: usize = 32;
+        let too_deep = if crate::native_stack::stack_floor_armed() {
+            crate::native_stack::headroom_exhausted()
+        } else {
+            PARSER_NESTING.with(|depth| depth.get() >= UNGUARDED_LIMIT)
+        };
+        if too_deep {
+            return Err(crate::parser::parse_result::PError::raw(
+                format!(
+                    "FATAL:X::AdHoc: {}",
+                    crate::native_stack::DEEP_RECURSION_MESSAGE
+                ),
+                Some(input.len()),
+            ));
+        }
+        PARSER_NESTING.with(|depth| depth.set(depth.get() + 1));
+        Ok(Self)
+    }
+}
+
+impl Drop for NestingGuard {
+    fn drop(&mut self) {
+        PARSER_NESTING.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
 /// Prefix of the emitter parameter `supply { … }` lowers to (see
 /// `primary::ident::supply::supply_method_call`). It is what identifies a
 /// supply-block body after parsing — both for the out-of-scope `whenever` check
@@ -125,6 +168,11 @@ pub(crate) use primary::var::is_known_word_infix;
 
 pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
+}
+
+/// See `stmt::simple::scanned_module_value_terms`.
+pub(crate) fn scanned_module_value_terms(path: &std::path::Path) -> Option<Vec<String>> {
+    stmt::simple::scanned_module_value_terms(path)
 }
 
 /// See `stmt::simple::source_declares_export_hook`.
@@ -155,6 +203,19 @@ pub(crate) fn interpolate_qq_content(content: &str) -> crate::ast::Expr {
 /// Used by the compiler to defer heredoc interpolation to compile time.
 pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
     interpolate_qq_content(content)
+}
+
+/// The colonpair a statement-level constant pair was written as (`:a(7)`,
+/// `:a`, `:!a`, `:7a`), parsed again from the source text
+/// `wrap_colonpair_sink_source` kept for its sink warning: the RakuAST
+/// boundary shows the written `ColonPair` form, not the folded `Pair`.
+/// `None` when `source` is not exactly one colonpair.
+// Cost: O(n), n = length of `source`.
+pub(crate) fn colonpair_source_expr(source: &str) -> Option<crate::ast::Expr> {
+    match primary::colonpair_expr(source) {
+        Ok((rest, expr)) if rest.trim().is_empty() => Some(expr),
+        _ => None,
+    }
 }
 
 /// Slang activation surface for the runtime (ADR-0026): the runtime's
@@ -244,6 +305,8 @@ pub(crate) use stmt::sub::is_builtin_param_trait;
 /// Descend a feed chain to its textually-leftmost operand slot — for splitting a
 /// declaration/assignment that binds tighter than the feed.
 pub(crate) use expr::precedence::{feed_leftmost_operand_mut, lift_feed_in_list};
+
+pub(crate) use stmt::decl::{enum_value_names, enum_variants_from_body};
 
 pub(crate) fn current_language_version() -> String {
     stmt::simple::current_language_version()
@@ -1094,6 +1157,18 @@ mod tests {
         assert!(matches!(err.code(), Some(RuntimeErrorCode::ParseUnparsed)));
         assert_eq!(err.line(), Some(1));
         assert_eq!(err.column(), Some(1));
+    }
+
+    #[test]
+    fn unguarded_parser_thread_returns_a_catchable_nesting_error() {
+        let source = format!("{}1{}", "(".repeat(64), ")".repeat(64));
+        let err = std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(move || parse_program(&source).unwrap_err())
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(err.message.contains("Too deep recursion"), "{err:?}");
     }
 
     #[test]

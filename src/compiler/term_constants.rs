@@ -62,7 +62,7 @@ impl Compiler {
         // compiler-synthesized `VarDecl`s and register in `sigilless_locals`
         // too, but are rebinding, not shadowing.
         let own = self.sigilless_locals.contains(name);
-        if own && (slot.is_none() || !self.sigilless_declared.contains(name))
+        if own && !self.sigilless_declared.contains(name)
             || !own && !self.enclosing_sigilless.contains(name)
         {
             return;

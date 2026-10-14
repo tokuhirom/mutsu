@@ -85,7 +85,7 @@ mod tests {
         .unwrap();
         let gen1 = body.live_generation();
         assert_eq!(gen1.len(), 1);
-        let gen1_ptr = gen1 as *const Vec<Value>;
+        let gen1_ptr = std::ptr::from_ref::<[Value]>(gen1);
 
         body.pull_prefix(3, |_handle, _words, n| {
             Ok(((100..100 + n as i64).map(Value::int).collect(), false))
@@ -145,7 +145,7 @@ mod tests {
         let handle = std::thread::spawn(move || {
             clone
                 .reify(|_source| Ok(vec![Value::int(1), Value::int(2)]))
-                .cloned()
+                .map(<[Value]>::to_vec)
         });
         let pulled = handle.join().unwrap().unwrap();
         assert_eq!(pulled, vec![Value::int(1), Value::int(2)]);

@@ -475,13 +475,17 @@ impl Compiler {
     /// the package) from the ones that follow it; see the call site in
     /// `compile_unit()`.
     pub(super) fn unit_package_split(&mut self, stmts: &[Stmt]) -> Option<(usize, u32)> {
-        let (pos, name) = stmts.iter().enumerate().find_map(|(i, s)| match s {
-            Stmt::Package {
-                name,
-                is_unit: true,
-                ..
-            } => Some((i, name.resolve())),
-            _ => None,
+        // `unit module M is export;` parses to a header wrapper around the
+        // declaration, so look through it.
+        let (pos, name) = stmts.iter().enumerate().find_map(|(i, s)| {
+            match crate::ast::package_header::declaration(s) {
+                Some(Stmt::Package {
+                    name,
+                    is_unit: true,
+                    ..
+                }) => Some((i, name.resolve())),
+                _ => None,
+            }
         })?;
         let qualified = self.qualify_package_name(&name);
         Some((pos, self.code.add_constant(Value::str(qualified))))
@@ -545,11 +549,47 @@ impl Compiler {
         // placeholders of its statically named `require`s (see
         // `require_stubs`): both are compile-time declarations of the scope.
         self.hoist_require_stubs(stmts);
+        self.note_predeclared_vars(stmts);
         for stmt in stmts {
             if let Stmt::SubDecl { .. } = stmt {
                 self.hoist_one_sub_decl(stmt, lexical_hoist);
             }
         }
+    }
+
+    /// Note, at a scope's entry, every variable its statement list declares:
+    /// the scope's pad holds them from its entry (#10511). Each scope-entry
+    /// hoist (`hoist_sub_decls`, `hoist_typed_var_decls`) calls it; the notes
+    /// are a set, so a scope reached by both is noted once.
+    // Cost: O(s), s = statements in `stmts`.
+    pub(super) fn note_predeclared_vars(&mut self, stmts: &[Stmt]) {
+        // A `for` body parks its own frame in `pending_scope_frame` while its
+        // routines are hoisted: the innermost `local_scopes` entry is then the
+        // ENCLOSING scope, which must not learn the body's declarations (#13531).
+        let scope = self.local_scopes.len() - 1;
+        for stmt in stmts {
+            if let Stmt::VarDecl { name, .. } = stmt {
+                match self.pending_scope_frame.as_mut() {
+                    Some(frame) => frame.note_predeclared(name),
+                    None => self.local_scopes[scope].note_predeclared(name),
+                }
+            }
+        }
+    }
+
+    /// Record, for this chunk's `EVAL` undeclared-variable check, every
+    /// lexical the static scopes around this call site declare -- including
+    /// those declared later in the source (`CompiledCode::eval_scope_names`).
+    // Cost: O(n), n = names declared in the enclosing scope chain.
+    pub(super) fn note_eval_scope_names(&mut self) {
+        let names: Vec<String> = self
+            .enclosing_scopes
+            .iter()
+            .chain(self.local_scopes.iter())
+            .flat_map(|frame| frame.all_declared_names())
+            .cloned()
+            .collect();
+        self.code.eval_scope_names.extend(names);
     }
 
     /// Emit the hoist-pass registration of one `Stmt::SubDecl`: a plan-only
@@ -620,6 +660,7 @@ impl Compiler {
     /// real `VarDecl` later in sequence is an idempotent no-op for the type and
     /// still performs the actual (re-)initialization.
     pub(super) fn hoist_typed_var_decls(&mut self, stmts: &[Stmt]) {
+        self.note_predeclared_vars(stmts);
         // Pre-register each declaration with the constraint its own compile
         // will persist, `use variables :D/:U`'s implicit smiley included: the
         // pragma statements of this block are tracked in order, then the
@@ -842,11 +883,11 @@ impl Compiler {
         let original_in_unit_package = self.in_unit_package;
         let mut seen_runtime_stmt = false;
         for stmt in stmts {
-            if let Stmt::Package {
+            if let Some(Stmt::Package {
                 name,
                 is_unit: true,
                 ..
-            } = stmt
+            }) = crate::ast::package_header::declaration(stmt)
             {
                 // Shells are emitted before source-order statements, but a
                 // preceding unit declarator changes their lexical package.

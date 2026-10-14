@@ -209,7 +209,8 @@ impl Interpreter {
     /// Indexed-read special case (ADR-0034, `vm_var_index_ops.rs`): reify
     /// only enough of `body` to serve a subscript up to `needed` — a full
     /// [`Self::reify_seq_body`] for every source EXCEPT one that can be
-    /// pulled a prefix at a time: a not-yet-exhausted `IoLines` read, which
+    /// pulled a prefix at a time: a deferred `.map`/`.grep` (its callback runs
+    /// only up to the element read), a not-yet-exhausted `IoLines` read, which
     /// reads just the missing prefix so `:close`'s close-on-exhaust only
     /// fires when the read genuinely reaches EOF, or a `Str.comb` / `.lines`
     /// / `.words` cursor, which cuts just the missing prefix.
@@ -227,6 +228,17 @@ impl Interpreter {
         // bounded prefix here too.
         if body.is_gather_source() {
             return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
+        }
+        // A deferred `.map`/`.grep` runs its callback over only as much of
+        // its source as the subscript reaches (`$s[5]` runs it six times).
+        if body.is_map_grep_source() {
+            let have = body.len();
+            if have < needed {
+                body.extend_map_grep_prefix(|source| {
+                    self.pull_map_grep_prefix(source, needed - have)
+                })?;
+            }
+            return Ok(());
         }
         let private_io = body
             .peek_io_lines_parts()
@@ -251,7 +263,7 @@ impl Interpreter {
         &mut self,
         body: &Arc<SeqBody>,
     ) -> Result<Vec<Value>, RuntimeError> {
-        Ok(body.reify(|source| self.pull_seq_source(source))?.clone())
+        Ok(body.reify(|source| self.pull_seq_source(source))?.to_vec())
     }
 
     /// rakudo's `.iterator`/`.list`/...: produce the elements, consuming the
@@ -477,6 +489,41 @@ impl Interpreter {
             self.reify_nested_map_grep_for_read(&target)?;
         }
         Ok(target)
+    }
+
+    /// [`Self::reify_or_consume_seq_target`] (or its `authoritative` twin) for
+    /// a whole call. `Seq.ACCEPTS` against a list-like topic walks both sides,
+    /// so it consumes the receiver and a `Seq` topic like `.List`; against any
+    /// other topic it is an identity test and touches nothing (measured
+    /// against raku: `$s.ACCEPTS(5)` twice answers `False` twice, while
+    /// `$s.ACCEPTS((1,2,3))` leaves `$s` consumed).
+    // Cost: O(1) unless the call consumes the Seq, then O(n), n = its length.
+    pub(crate) fn consume_seq_for_call(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: &mut [Value],
+        authoritative: bool,
+    ) -> Result<Value, RuntimeError> {
+        let mut consume_as = method;
+        if method == "ACCEPTS"
+            && matches!(target.view(), ValueView::Seq(_))
+            && let [topic] = args
+            && matches!(
+                topic.view(),
+                ValueView::Seq(_) | ValueView::Array(..) | ValueView::LazyList(_)
+            )
+        {
+            if matches!(topic.view(), ValueView::Seq(_)) {
+                *topic = self.reify_or_consume_seq_target_inner(topic.clone(), "List", false)?;
+            }
+            consume_as = "List";
+        }
+        if authoritative {
+            self.reify_or_consume_seq_target_authoritative(target, consume_as)
+        } else {
+            self.reify_or_consume_seq_target(target, consume_as)
+        }
     }
 
     /// The ONE call site allowed to actually consume `.iterator` — see
@@ -1162,6 +1209,14 @@ impl Interpreter {
             }
             // A plain gather runs its body only to the `n`-th `take`.
             Some(crate::value::PrefixSource::Gather(list)) => self.pull_gather_prefix(&list, n)?,
+            // A cached gather (`.cache`, a subscript read) is re-readable:
+            // pull only the prefix into its body and leave it in place, so
+            // `$g.cache.head(3)` answers on an infinite gather.
+            None if body.is_gather_source() => {
+                let body = Arc::clone(&body);
+                self.reify_seq_body_prefix(&body, n)?;
+                body.iter().take(n).cloned().collect()
+            }
             None => return Ok(None),
         };
         Ok(Some(Value::seq(items)))

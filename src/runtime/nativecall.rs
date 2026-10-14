@@ -588,7 +588,12 @@ pub fn call_native_with_out_args(
                                 // The caller boxes the address as `$rettype`.
                                 Value::int(addr as i64)
                             } else {
-                                make_struct_value(class, addr)
+                                let handle = make_struct_value(class, addr);
+                                let resolved: Vec<Value> = args.iter().map(resolve_arg).collect();
+                                crate::runtime::cstruct_body::share_arg_body(
+                                    &handle, &resolved, addr,
+                                );
+                                handle
                             }
                         }
                         None => Value::int(addr as i64),

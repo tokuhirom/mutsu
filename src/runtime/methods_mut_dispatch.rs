@@ -482,27 +482,6 @@ impl Interpreter {
         {
             let bytes = buf_raw_bytes_or_empty(&attributes);
 
-            if (method == "read-ubits" || method == "read-bits") && args.len() == 2 {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethodmutwithvalues",
-                    "buf-read-bits",
-                );
-                let Some(from) = Self::value_to_non_negative_i64(&args[0]) else {
-                    return Err(RuntimeError::new("read-ubits/read-bits expects Int offset"));
-                };
-                let Some(bits) = Self::value_to_non_negative_i64(&args[1]) else {
-                    return Err(RuntimeError::new(
-                        "read-ubits/read-bits expects Int bit count",
-                    ));
-                };
-                return crate::builtins::buf_bits::read_bits(
-                    &bytes,
-                    from,
-                    bits,
-                    method == "read-bits",
-                );
-            }
-
             if (method == "write-ubits" || method == "write-bits") && args.len() == 3 {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethodmutwithvalues",
@@ -1214,7 +1193,7 @@ impl Interpreter {
             }
 
             // Handle delegation methods: forward the call to the delegate
-            if let Some(method_def) = self.resolve_method(&class_name.resolve(), method, &args)
+            if let Some(method_def) = self.resolve_method(&class_name.resolve(), method, &args, &target)
                 && method_def.delegation.is_some()
             {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
@@ -1300,7 +1279,7 @@ impl Interpreter {
                 if is_public_rw_accessor {
                     // User-defined rw method takes priority over simple accessor
                     let has_rw_method = self
-                        .resolve_method(&class_name.resolve(), method, &[])
+                        .resolve_method(&class_name.resolve(), method, &[], &target)
                         .is_some_and(|m| m.is_rw);
                     if !has_rw_method {
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
@@ -1365,7 +1344,7 @@ impl Interpreter {
                 } else {
                     // Check if there's a user-defined method with is_rw
                     let has_rw_method = self
-                        .resolve_method(&class_name.resolve(), method, &[])
+                        .resolve_method(&class_name.resolve(), method, &[], &target)
                         .is_some_and(|m| m.is_rw);
                     if has_rw_method {
                         // Signal to assign_method_lvalue to handle via Proxy

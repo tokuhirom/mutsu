@@ -17,7 +17,7 @@ impl Interpreter {
         loop {
             let n = reader
                 .read(&mut byte)
-                .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
             if n == 0 {
                 break;
             }
@@ -77,7 +77,7 @@ impl Interpreter {
             state.read_attempted = true;
             let mut items: Vec<Value> = state.pending_words.drain(..).map(Value::str).collect();
             let read_err =
-                |err: std::io::Error| RuntimeError::new(format!("Failed to read: {}", err));
+                |err: std::io::Error| super::exit_aware_read::read_error(err, "Failed to read");
             if words {
                 // Words do not depend on where the lines end, so the rest of
                 // the file is decoded once and split, not line by line.
@@ -187,7 +187,7 @@ impl Interpreter {
                     let seps = state.line_separators.clone();
                     let chomp = state.line_chomp;
                     let line = {
-                        let mut stdin = std::io::stdin().lock();
+                        let mut stdin = super::exit_aware_read::StdinReader::lock();
                         Self::read_record_with_separators(&mut stdin, &seps, chomp)?
                     };
                     if line.is_none() {
@@ -208,7 +208,7 @@ impl Interpreter {
                         // No file args — read from stdin, using $*IN's nl-in.
                         let (effective_seps, effective_chomp) = stdin_seps.unwrap_or((seps, chomp));
                         let line = {
-                            let mut stdin = std::io::stdin().lock();
+                            let mut stdin = super::exit_aware_read::StdinReader::lock();
                             Self::read_record_with_separators(
                                 &mut stdin,
                                 &effective_seps,
@@ -231,7 +231,7 @@ impl Interpreter {
                             if path == "-" {
                                 // `-` means read from stdin
                                 let line = {
-                                    let mut stdin = std::io::stdin().lock();
+                                    let mut stdin = super::exit_aware_read::StdinReader::lock();
                                     Self::read_record_with_separators(&mut stdin, &seps, chomp)?
                                 };
                                 match line {
@@ -268,7 +268,7 @@ impl Interpreter {
                     {
                         let record = reader
                             .read_record(&state.line_separators, state.line_chomp)
-                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                            .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                         return match record {
                             None => Ok(LineOutcome::Done(None)),
                             Some(bytes) if needs_decode => {
@@ -402,9 +402,9 @@ impl Interpreter {
                 use std::io::Read;
                 let mut buffer = vec![0u8; count];
                 let bytes_read = {
-                    let mut stdin = std::io::stdin().lock();
+                    let mut stdin = super::exit_aware_read::StdinReader::lock();
                     stdin.read(&mut buffer).map_err(|err| {
-                        RuntimeError::new(format!("Failed to read from stdin: {}", err))
+                        super::exit_aware_read::read_error(err, "Failed to read from stdin")
                     })?
                 };
                 buffer.truncate(bytes_read);
@@ -433,7 +433,7 @@ impl Interpreter {
                     let mut buffer = vec![0u8; count.min(8192)];
                     let bytes_read = reader
                         .read(&mut buffer)
-                        .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                        .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                     if bytes_read == 0 {
                         state.argfiles_reader = None;
                         state.argfiles_index += 1;
@@ -458,9 +458,9 @@ impl Interpreter {
                 use std::io::Read;
                 let mut buffer = vec![0u8; count];
                 let bytes_read = {
-                    let mut stdin = std::io::stdin().lock();
+                    let mut stdin = super::exit_aware_read::StdinReader::lock();
                     stdin.read(&mut buffer).map_err(|err| {
-                        RuntimeError::new(format!("Failed to read from stdin: {}", err))
+                        super::exit_aware_read::read_error(err, "Failed to read from stdin")
                     })?
                 };
                 buffer.truncate(bytes_read);
@@ -477,7 +477,7 @@ impl Interpreter {
                 let mut buffer = vec![0u8; count];
                 let bytes = file
                     .read(&mut buffer)
-                    .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                 buffer.truncate(bytes);
                 Ok(buffer)
             }
@@ -489,7 +489,7 @@ impl Interpreter {
                 let mut buffer = vec![0u8; count];
                 let bytes = sock
                     .read(&mut buffer)
-                    .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                 buffer.truncate(bytes);
                 Ok(buffer)
             }

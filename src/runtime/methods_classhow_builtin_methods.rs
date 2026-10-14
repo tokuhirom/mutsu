@@ -134,6 +134,17 @@ impl Interpreter {
                     self.collect_builtin_type_methods("Mu", &mut result);
                 }
             }
+            // A class's own method table is more than the introspectable
+            // subset: `Map` and `Pair` list almost nothing without it (#13494).
+            for cn in mro.iter().map(|s| s.as_str()) {
+                if !all && matches!(cn, "Any" | "Mu" | "Cool") {
+                    continue;
+                }
+                let names = crate::builtins::native_method_row::declared_names_for_owner(cn);
+                self.push_native_method_objects(&names, cn, &mut result);
+            }
+            let mro_names: Vec<String> = mro.iter().map(|s| s.to_string()).collect();
+            self.collect_composed_role_methods(&mro_names, &mut result);
         }
 
         Ok(Value::array(result))
@@ -145,6 +156,33 @@ impl Interpreter {
         // a parallel entry set on every query.
         let methods = self.registry().builtin_method_names(type_name);
         self.push_native_method_objects(&methods, type_name, result);
+    }
+
+    /// Rakudo flattens the methods of the roles a built-in class composes into
+    /// its method table, so `.^methods` lists them with the role as `.package`
+    /// (`List.^methods` has `Positional.of`, `Map` has `Associative.of`/`keyof`,
+    /// `Hash` lists both its own and `Associative`'s). Each composed role counts
+    /// once however many levels of the MRO compose it (#12990).
+    // Cost: O(m * r * n), m = MRO levels, r = roles per level, n = catalog rows
+    // scanned per role.
+    fn collect_composed_role_methods(&self, mro: &[String], result: &mut Vec<Value>) {
+        let mro_strs: Vec<&str> = mro.iter().map(String::as_str).collect();
+        let mut seen: Vec<&str> = Vec::new();
+        for (level, class) in mro_strs.iter().enumerate() {
+            for role in crate::builtin_types::catalog::builtin_type_roles_strs(class) {
+                let base = role.split_once('[').map_or(*role, |(base, _)| base);
+                if seen.contains(&base)
+                    || !crate::builtin_types::catalog::composes_role_at(&mro_strs, level, role)
+                {
+                    continue;
+                }
+                seen.push(base);
+                for name in crate::builtins::native_method_row::introspectable_names_for_owner(base)
+                {
+                    result.push(self.make_native_method_object(name, base));
+                }
+            }
+        }
     }
 
     /// Append a native Method object for each name not already present in

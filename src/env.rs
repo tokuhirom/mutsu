@@ -22,6 +22,7 @@ use crate::value::ValueMap;
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 mod activation_capture;
+mod frame_scope;
 mod outer_scope;
 mod rebind;
 mod routine_owned;
@@ -1268,6 +1269,18 @@ impl Env {
         self.parent.is_some()
     }
 
+    /// The flat env this chain bottoms out at: the scope every frame chained
+    /// over it shares (the program scope, or the module scope a module's
+    /// `sub EXPORT` runs over). `self` when this env is already flat.
+    // Cost: O(d), d = chain depth (bounded by `MAX_OVERLAY_DEPTH`).
+    pub(crate) fn chain_tail(&self) -> &Env {
+        let mut cur = self;
+        while let Some(parent) = &cur.parent {
+            cur = parent;
+        }
+        cur
+    }
+
     /// True when this scoped env's overlay is *exactly* the process-shared
     /// empty singleton (see [`empty_overlay`]) with no tombstones: the state a
     /// fresh `scoped_child` starts in and leaves only on the first by-name
@@ -1778,6 +1791,20 @@ impl Env {
         if self.file_sym.is_none() {
             self.refresh_file_sym();
         }
+    }
+
+    /// Remove a fallback [`Self::set_capture_fallback`] installed on a block
+    /// tier, so the tier can be closed ([`Self::close_block_tier`] refuses one
+    /// that still has a fallback) and its overlay read back as the block's own
+    /// writes.
+    // Cost: O(1).
+    pub(crate) fn clear_capture_fallback(&mut self) {
+        if self.fallback.take().is_none() {
+            return;
+        }
+        self.chain_has_fallback = self.parent.as_ref().is_some_and(|p| p.chain_has_fallback);
+        self.capture_merged = OnceLock::new();
+        self.refresh_file_sym();
     }
 
     /// This env viewed as a closure capture, for installing it as a closure
@@ -2904,6 +2931,15 @@ impl Env {
 
     pub fn keys(&self) -> std::collections::hash_map::Keys<'_, Symbol, Value> {
         self.iter_tier().keys()
+    }
+
+    /// The value [`Self::iter`] yields for `key`, if it yields one: a probe of
+    /// the same tier, for a caller that visits a few known keys instead of
+    /// iterating all of them.
+    // Cost: O(1) expected (the folded capture view is built once, as `iter`
+    // builds it).
+    pub(crate) fn iter_get_sym(&self, key: Symbol) -> Option<&Value> {
+        self.iter_tier().get(&key)
     }
 
     pub fn values(&self) -> std::collections::hash_map::Values<'_, Symbol, Value> {

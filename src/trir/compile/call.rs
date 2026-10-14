@@ -44,6 +44,14 @@ impl TrirCompiler<'_> {
             self.note_decline(|| format!("the atomic {name} addresses its target by name"));
             return None;
         }
+        // `EVAL` compiles its snippet against the calling frame: its
+        // undeclared-variable check reads the frame's `CompiledCode`
+        // (`eval_scope_names`, #10511), which a TRIR frame does not install.
+        // Leave the routine to the VM.
+        if matches!(name, "EVAL" | "EVALFILE") {
+            self.note_decline(|| format!("{name} compiles against the calling frame"));
+            return None;
+        }
         // `$p.m(...) = v` on a read-only parameter: whether that is legal
         // depends on the method (`.substr-rw` needs the parameter's own
         // container and must die; an `is rw` accessor writes the object and

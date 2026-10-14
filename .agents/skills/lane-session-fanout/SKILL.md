@@ -51,10 +51,19 @@ environment, `AGENTS.md` and the skills, so the prompt only needs the lane-speci
    test and a `news/` entry, `scripts/dev gate`, PR, auto-merge (merge), `subscribe_pr_activity`.
 3. `Releasing: <branch>` when merged, stopped or blocked.
 4. **Keep going**: after the PR merges, take the lane's next issue, **up to 5 tickets** (the
-   `mutsu-ticket-flow` run cap) - but once context use passes **60%**, stop instead of
-   starting another, post the next-session prompt on the issue and repeat it in the final report
-   (`mutsu-ticket-flow`, "Stopping mid-campaign").
+   `mutsu-ticket-flow` run cap), then post a short status note on the issue and stop; the child
+   never starts its own successor (`mutsu-ticket-flow`, "Stopping mid-campaign"). **Do not stop
+   on a context estimate**: a session cannot see its own token use, and children that tried
+   stopped at 16-35% (2026-10-14). Say in the prompt that the window is 1,000,000 tokens and
+   that the parent watches `context_usage`; the parent sends "wrap up" (`send_message`) when a
+   child passes **60%** (600k), and only then does the child finish its current PR and stop.
 5. Replies to the user in Japanese; repository artifacts in English.
+6. **Builds are slow here and that is normal; never give up on one.** A remote container has ~4
+   cores and an empty `target/`: the cold debug build takes 5-10 minutes and `scripts/dev gate`
+   far longer (`docs/agent-environments.md`). The session-start hook already started a warm build
+   (`scripts/dev status`), so start with `scripts/dev wait <id>` (`run_in_background: true`) and
+   end the turn until it finishes. Do not abandon the ticket, skip the gate, kill the build or
+   conclude the environment is broken because five minutes have passed.
 
 Why several tickets per session and not one: a fresh container has an empty `target/`, so every
 new session pays a full build plus the `AGENTS.md`/skill read-in, and a lane's tickets touch
@@ -100,8 +109,8 @@ relaunching a `completed` child:
 2. Skip issues whose PR is still waiting on CI: the previous session's `Claiming:` stays live
    until its `Releasing:`, so name those issues in the new prompt ("do not touch #N").
 3. Launch on the same lane with the same prompt, plus the previous session's leftovers (its final
-   report, and the next-session prompt it posted on the carrier or issue). Tell the child which
-   comment to read first.
+   report, and the status note it posted on the carrier or issue). Tell the child which
+   comment to read first; if there is none, the carrier issue and its ADR are enough.
 4. **Model.** Same model as before, except: if the previous session stopped because the next
    item needs a design (not because of the cap or the 60% rule), a sonnet child tends to stop
    at the same place (method-table reverted a slice and stopped; nqp stopped at the `p6*` ops

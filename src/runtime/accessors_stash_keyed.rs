@@ -103,9 +103,26 @@ impl Interpreter {
         if Symbol::lookup(key_s).is_some_and(|sym| self.lexicals.our_term_keys.contains(&sym)) {
             return Some(EnvStashMember::Value(rest.to_string()));
         }
+        // An enum's key is a term too: `M::ea` of `module M { enum E <ea> }`
+        // is stored like a scalar but published as `ea` (#13448).
+        if !is_global && self.is_enum_key_of_package(package_name, rest) {
+            return Some(EnvStashMember::Value(rest.to_string()));
+        }
         Some(EnvStashMember::Value(Self::stash_symbol_key_from_env_tail(
             rest,
         )))
+    }
+
+    /// Whether `key` is a key of the enum `package_name` itself, or of an enum
+    /// declared directly in the package `package_name`.
+    // Cost: O(e * v), e = declared enums, v = their keys; only for a
+    // sigil-less env key of a named package's stash.
+    fn is_enum_key_of_package(&self, package_name: &str, key: &str) -> bool {
+        self.registry().enum_types.iter().any(|(enum_name, variants)| {
+            let owner = crate::qualified::package_parent(Symbol::intern(enum_name));
+            (enum_name == package_name || owner.is_some_and(|o| o.as_str() == package_name))
+                && variants.iter().any(|(name, _)| name == key)
+        })
     }
 
     /// The stash key a named (non-GLOBAL) package's `our`-store key `key`

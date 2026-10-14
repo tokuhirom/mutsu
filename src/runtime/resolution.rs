@@ -453,6 +453,12 @@ impl Interpreter {
         &self,
         name: &str,
     ) -> Option<Vec<std::sync::Arc<FunctionDef>>> {
+        // Every lookup below reads `token_defs`: a program that declared no
+        // token has none to find, so skip the MRO walks and key builds (the
+        // `&name` resolution of every plain sub asks, #13049).
+        if self.registry().token_defs.is_empty() {
+            return None;
+        }
         if crate::qualified::is_qualified_str(name) {
             let mut defs = Vec::new();
             if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(name)) {
@@ -516,6 +522,10 @@ impl Interpreter {
     }
 
     pub(crate) fn has_proto_token(&self, name: &str) -> bool {
+        // Every probe below is into `proto_tokens`.
+        if self.registry().proto_tokens.is_empty() {
+            return false;
+        }
         if crate::qualified::is_qualified_str(name) {
             if self.registry().proto_tokens.contains(name) {
                 return true;

@@ -12,16 +12,17 @@ use Test;
 #
 # mutsu's parser spells the adverbs as meta setters and the export as a
 # registration around the declaration; the lowering rebuilds those, so the
-# round trip is the parsed program. The tree part also passes under `raku`; the
-# round trip part declares each name twice in one process, which raku refuses.
+# round trip is the parsed program. The tree part also passes under `raku`.
 
 plan 64;
 
 sub exprs($src) { $src.AST.statements.map(*.expression) }
-sub run($src) { my $parsed = EVAL($src); my $round = EVAL($src.AST); ($parsed, $round) }
 sub same($src, $expected, $desc) {
-    my ($parsed, $round) = run($src);
-    is "$parsed|$round", "$expected|$expected", $desc;
+    # The round trip alone: a second EVAL of the same declarations in one
+    # process is a redeclaration, in rakudo and in the round trip's CHECK-time
+    # validation alike (#13295); `$expected` is what the parsed program gives.
+    my $round = EVAL($src.AST);
+    is "$round", "$expected", $desc;
 }
 
 # --- the tree
@@ -118,7 +119,8 @@ same Q[unit package P7; our $x = 7; $P7::x], 7, 'and of a `unit package`';
 same Q[my class L8 is export { method m { 8 } }; L8.new.m], 8, 'a lexical exported class';
 same Q[class W9 is rw is export { has $.a is rw }; my $w = W9.new(a => 1); $w.a = 9; $w.a], 9, 'rw and export together';
 same Q[class Hd1 is hidden { method m { 1 } }; Hd1.new.m], 1, 'a hidden class';
-same Q[class Hd2 { method who { "base" } }; class Hd3 hides Hd2 { method who { callsame } }; Hd3.new.who], 'base', 'a class that hides its parent';
+same Q[class Hd2 { method who { "base" } }; class Hd3 hides Hd2 { method who { callsame() // "skipped" } }; Hd3.new.who ~ (Hd3 ~~ Hd2)], 'skippedTrue',
+    'a class that hides its parent: still its parent, but skipped by callsame';
 same Q[class Tr2 { trusts Tr1; has $!x2 = 7; method x2 { $!x2 } }; class Tr1 { method peek(Tr2 $o) { $o!Tr2::x2 } }; Tr1.new.peek(Tr2.new)], 7, 'a trusts declaration';
 same Q[use MONKEY-TYPING; augment class Int { method triple { self * 3 } }; 4.triple], 12, 'an augmented class';
 same Q[our proto sub opf($x) {*}; our multi sub opf(Int $x) { $x + 1 }; opf(2)], 3, 'an `our proto`';

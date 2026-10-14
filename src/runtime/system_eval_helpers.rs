@@ -197,6 +197,9 @@ impl Interpreter {
             matches!(value.view(), ValueView::Package(_))
                 .then(|| name.split('\u{0}').next().unwrap_or(&name).to_string())
         }));
+        // A loaded module's package is global, whatever frame the `EVAL` runs
+        // in (`require Test; ... eval-lives-ok 'Test'` from inside `Test`).
+        names.extend(self.module.loaded_modules.iter().cloned());
         names
     }
 
@@ -239,14 +242,21 @@ impl Interpreter {
             (!matches!(first, '$' | '@' | '%' | '&') && !bare.contains(':'))
                 .then(|| bare.to_string())
         }
+        // Every enclosing scope's markers count, not only the current frame's
+        // tier: a block whose frame does not flatten its outer scope still sees
+        // the outer `constant b` (`constant b = 1; { EVAL 'b' }`).
         let mut names: Vec<String> = self
             .env
-            .keys()
-            .filter_map(|key| {
-                let name = key.resolve();
+            .visible_keys_where(|name| name.starts_with(MARKER))
+            .into_iter()
+            .filter_map(|name| {
                 let stored = name.strip_prefix(MARKER)?;
                 // A `False` marker hides a table marker for this scope.
-                if !self.env.get_sym(*key).is_some_and(Value::truthy) {
+                if !self
+                    .env
+                    .get_sym(Symbol::intern(&name))
+                    .is_some_and(Value::truthy)
+                {
                     return None;
                 }
                 term_name(stored)
@@ -258,6 +268,18 @@ impl Interpreter {
                 .filter(|stored| self.constant_marker_visible(stored))
                 .filter_map(term_name),
         );
+        // A constant is `our`-scoped too: one declared in a block that has
+        // already ended (`{ constant c = 1 }; EVAL 'c'`) is still a GLOBAL
+        // member. `our_vars` keeps a GLOBAL sigilless symbol under its `\name`
+        // spelling; a named package's members carry no such mark, so only
+        // code running in GLOBAL gets them.
+        if crate::qualified::is_global_package(Symbol::intern(&self.current_package())) {
+            names.extend(
+                self.our_vars_iter()
+                    .filter_map(|(key, _)| key.strip_prefix('\\'))
+                    .filter_map(term_name),
+            );
+        }
         // The sigilless `_` term is stored under a private key because `_` is
         // also the environment spelling of the topical `$_`. Re-seed its
         // source spelling so the EVAL parser canonicalizes `_` to that key.

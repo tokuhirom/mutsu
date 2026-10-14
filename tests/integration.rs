@@ -14,6 +14,7 @@
 //! `tests/*.rs` file is declared by neither root, which would otherwise make
 //! a new test silently never run.
 
+mod my_enum_thread_registry_cow;
 mod profile_doc;
 
 mod adr0044_listop_fast_path;
@@ -33,6 +34,7 @@ mod lazy_match_truthiness_no_materialization;
 mod long_lived_parse;
 mod multi_call_resolves_once;
 mod multi_candidate_match_does_not_copy_the_frame_env;
+mod multi_family_generation;
 mod mzef_shim;
 mod name_resolution_stats;
 mod named_call_intern_budget;

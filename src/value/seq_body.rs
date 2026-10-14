@@ -14,8 +14,9 @@
 //! through) publishes each pull as a new, never-rewritten generation that
 //! outlives every borrow of the body — the graveyard technique of
 //! docs/adr/0030 §2.2. A full pull publishes once; every prefix pull
-//! (`pull_prefix`, `extend_from_iterator`, `extend_map_grep_prefix`) publishes
-//! another. See [`generations`] for how a reader on one thread stays sound
+//! (`pull_prefix`, `extend_from_iterator`, `extend_map_grep_prefix`) appends
+//! past the prefix readers can see, in place while the buffer has room and
+//! into a doubled new generation when it does not (#13023). See [`generations`] for how a reader on one thread stays sound
 //! while another thread publishes, and how concurrent pulls are serialized.
 
 use super::{RuntimeError, Value};
@@ -283,14 +284,14 @@ impl std::fmt::Debug for SeqBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Show only the live generation (via `Deref`), not the graveyard.
         f.debug_struct("SeqBody")
-            .field("elements", &**self)
+            .field("elements", &&**self)
             .field("view", &self.view)
             .finish_non_exhaustive()
     }
 }
 
 impl std::ops::Deref for SeqBody {
-    type Target = Vec<Value>;
+    type Target = [Value];
     /// A read that arrives before reification sees the empty seed, exactly
     /// as mutsu's plain `Arc<Vec<Value>>` Seq did — reification is triggered
     /// by the dispatch sites (`reify`/`take`), never by a read, so this
@@ -298,7 +299,7 @@ impl std::ops::Deref for SeqBody {
     /// which needs no VM: it is cut into its elements here, on first read.
     // Cost: O(1), except the first read of a `Pure` body, which pulls it whole
     // (for a `Str` cursor, O(n), n = bytes of its string).
-    fn deref(&self) -> &Vec<Value> {
+    fn deref(&self) -> &[Value] {
         self.settle_pure_source();
         self.live_generation()
     }
@@ -461,7 +462,7 @@ impl SeqBody {
     /// when the result is later cast to a raw pointer for the
     /// retired-generation probe — see that module for the full shape).
     // Cost: O(1).
-    pub(crate) fn live_generation(&self) -> &Vec<Value> {
+    pub(crate) fn live_generation(&self) -> &[Value] {
         self.core.gens.live()
     }
 
@@ -556,14 +557,14 @@ impl SeqBody {
     fn after_pulled_prefix(&self, source: &SeqSource, rest: Vec<Value>) -> Vec<Value> {
         match source {
             SeqSource::MapGrep { pos, .. } if *pos > 0 => {
-                let mut items = self.live_generation().clone();
+                let mut items = self.live_generation().to_vec();
                 items.extend(rest);
                 items
             }
             // An iterator already advanced by `extend_from_iterator` resumes
             // where that prefix ended.
             SeqSource::Iterator(_) if !self.live_generation().is_empty() => {
-                let mut items = self.live_generation().clone();
+                let mut items = self.live_generation().to_vec();
                 items.extend(rest);
                 items
             }
@@ -582,7 +583,7 @@ impl SeqBody {
     /// `.cache` was requested nothing changes about that: the elements are
     /// kept either way. A failed pull leaves the body `Taken`, as a failed
     /// full pull does.
-    // Cost: `pull`'s cost, plus a copy of the prefix already pulled.
+    // Cost: `pull`'s cost, plus O(1) amortized per element appended.
     pub(crate) fn extend_map_grep_prefix(
         &self,
         pull: impl FnOnce(&mut SeqSource) -> Result<(Vec<Value>, bool), RuntimeError>,
@@ -599,9 +600,7 @@ impl SeqBody {
             )
         };
         let (new_items, exhausted) = without_pull_progress(pull(&mut source))?;
-        let mut combined = self.live_generation().clone();
-        combined.extend(new_items);
-        self.core.gens.publish(combined);
+        self.core.gens.append(new_items);
         self.lock_state().source = if exhausted {
             SeqSource::Reified
         } else {
@@ -624,9 +623,9 @@ impl SeqBody {
         if let SeqSource::Pure(spec) = &mut state.source {
             // A subscript may already have cut a prefix
             // (`SeqBody::pull_prefix`); the rest goes after it.
-            let mut items = self.live_generation().clone();
-            spec.push_up_to(&mut items, usize::MAX);
-            self.core.gens.publish(items);
+            let mut rest = Vec::new();
+            spec.push_up_to(&mut rest, usize::MAX);
+            self.core.gens.append(rest);
             state.source = SeqSource::Reified;
         }
     }
@@ -685,7 +684,7 @@ impl SeqBody {
     pub(crate) fn reify(
         &self,
         pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
-    ) -> Result<&Vec<Value>, RuntimeError> {
+    ) -> Result<&[Value], RuntimeError> {
         self.settle_pure_source();
         {
             let mut state = self.lock_state();
@@ -735,13 +734,13 @@ impl SeqBody {
         };
         if servable {
             self.pull_and_store(pull)?;
-            return Ok((self.live_generation().clone(), SeqTaken::Served));
+            return Ok((self.live_generation().to_vec(), SeqTaken::Served));
         }
         if reified {
             let mut state = self.lock_state();
             state.source = SeqSource::Taken;
             drop(state);
-            return Ok((self.live_generation().clone(), SeqTaken::Taken));
+            return Ok((self.live_generation().to_vec(), SeqTaken::Taken));
         }
         let source = {
             let mut state = self.lock_state();
@@ -1057,7 +1056,7 @@ impl SeqBody {
     /// see `read_word_from_handle_value`), and `$str.comb[0]` cut only the
     /// first grapheme.
     // Cost: O(k), k = the elements still to pull (for a `Str` cursor, the bytes
-    // they span), plus a copy of the prefix already pulled.
+    // they span), plus O(1) amortized per element appended.
     pub(crate) fn pull_prefix(
         &self,
         needed: usize,
@@ -1077,12 +1076,10 @@ impl SeqBody {
             SeqSource::Pure(spec) => {
                 // Cut and publish under the lock, so two threads' prefixes
                 // cannot be published out of order.
-                let mut items = self.live_generation().clone();
-                spec.push_up_to(&mut items, needed - have);
-                let exhausted = items.len() < needed;
-                if items.len() > have {
-                    self.core.gens.publish(items);
-                }
+                let mut new_items = Vec::new();
+                spec.push_up_to(&mut new_items, needed - have);
+                let exhausted = have + new_items.len() < needed;
+                self.core.gens.append(new_items);
                 if exhausted {
                     state.source = SeqSource::Reified;
                 }
@@ -1102,11 +1099,7 @@ impl SeqBody {
         let _claim = generations::claim_pull(&self.core, &mut state);
         drop(state);
         let (new_items, exhausted) = pull_n(&handle, words, needed - have)?;
-        if !new_items.is_empty() {
-            let mut combined = self.live_generation().clone();
-            combined.extend(new_items);
-            self.core.gens.publish(combined);
-        }
+        self.core.gens.append(new_items);
         if exhausted {
             self.lock_state().source = SeqSource::Reified;
         }
@@ -1120,7 +1113,7 @@ impl SeqBody {
     /// ran out. What a lazy `.map`/`.grep` stage over such a Seq reads its
     /// source with, so an infinite iterator is never drained (#10891). A no-op
     /// for any other source.
-    // Cost: `pull`'s cost, plus a copy of the prefix already pulled.
+    // Cost: `pull`'s cost, plus O(1) amortized per element appended.
     pub(crate) fn extend_from_iterator(
         &self,
         needed: usize,
@@ -1144,11 +1137,7 @@ impl SeqBody {
         drop(state);
         let new_items = without_pull_progress(pull(&iterator, needed - have))?;
         let exhausted = new_items.len() < needed - have;
-        if !new_items.is_empty() {
-            let mut combined = self.live_generation().clone();
-            combined.extend(new_items);
-            self.core.gens.publish(combined);
-        }
+        self.core.gens.append(new_items);
         if exhausted {
             self.lock_state().source = SeqSource::Reified;
         }

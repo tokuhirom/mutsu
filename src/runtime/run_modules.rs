@@ -649,6 +649,7 @@ impl Interpreter {
         let code = crate::runtime::source_code_text::CodeText::from_source(&preprocessed);
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
+        Self::inject_trait_mod_of_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_export_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
@@ -1050,6 +1051,7 @@ impl Interpreter {
         // `use` and `require` of an installed/on-path module name. A verdict
         // that depends on a conditional `use` runs right after the prologue.
         let guards = self.guards_for_recorded_calls(facts.recorded_calls.as_ref())?;
+        self.preregister_routine_enums(&facts.routine_enums);
         let code_slot =
             super::module_bytecode::ModuleCodeSlot::new(super::module_bytecode::MainlineParts {
                 unit: module_unit,
@@ -1187,6 +1189,9 @@ impl Interpreter {
                 .iter()
                 .map(|n| (n.clone(), self.env.get(n).cloned()))
                 .collect();
+            // Their `@`/`%` type lanes too: the body's declarations overwrite
+            // the importer's (#13086, `vm_unit_lexical_meta_lanes`).
+            let saved_unit_lex_lanes = self.snapshot_unit_lexical_meta_lanes(&unit_lex_names);
             // The bindings a unit drops below take their type markers with them.
             let saved_type_markers = if unit_name.is_some() {
                 let dropped = facts
@@ -1569,6 +1574,7 @@ impl Interpreter {
                         }
                     }
                 }
+                self.leave_unit_lexical_meta_lanes(unit, saved_unit_lex_lanes);
             }
             // The module's own `$=pod` document is a compunit lexical too: its
             // routines read it after the load, when the restore below has put

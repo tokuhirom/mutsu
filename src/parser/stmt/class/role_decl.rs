@@ -515,10 +515,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     super::reject_trailing_postfix(rest)?;
 
     if kw != "role" {
-        custom_traits.push((
-            "__mutsu_declare_how".to_string(),
-            Some(Expr::Literal(Value::str(kw.to_string()))),
-        ));
+        custom_traits.push(crate::parser::declare_how_marker(kw.to_string()));
     }
     let role_stmt = Stmt::RoleDecl {
         name: Symbol::intern(&name),

@@ -3,25 +3,62 @@ use super::super::*;
 /// Unicode case-fold a single character. Returns the folded chars.
 /// Uses the "uppercase then lowercase" approximation of full Unicode case folding.
 /// Examples: 'ß' -> ['s','s'], 'ﬁ' -> ['f','i'], 'A' -> ['a']
+// Cost: O(1); an ASCII character allocates one `Vec` and nothing else.
 pub(super) fn casefold_char(c: char) -> Vec<char> {
-    c.to_uppercase()
-        .collect::<String>()
-        .to_lowercase()
-        .chars()
-        .collect()
+    casefold_iter(c).collect()
+}
+
+/// [`casefold_char`] as an iterator, which allocates nothing for an ASCII
+/// character: its fold is its ASCII lowercase (upper- then lower-casing an
+/// ASCII character never leaves ASCII or changes length). Every other
+/// character takes the general upper-then-lower conversion.
+// Cost: O(1).
+pub(super) fn casefold_iter(c: char) -> CaseFolded {
+    if c.is_ascii() {
+        CaseFolded::Ascii(Some(c.to_ascii_lowercase()))
+    } else {
+        CaseFolded::Other(
+            c.to_uppercase()
+                .collect::<String>()
+                .to_lowercase()
+                .chars()
+                .collect::<Vec<char>>()
+                .into_iter(),
+        )
+    }
+}
+
+/// The characters one character case-folds to; see [`casefold_iter`].
+pub(super) enum CaseFolded {
+    Ascii(Option<char>),
+    Other(std::vec::IntoIter<char>),
+}
+
+impl Iterator for CaseFolded {
+    type Item = char;
+
+    fn next(&mut self) -> Option<char> {
+        match self {
+            CaseFolded::Ascii(c) => c.take(),
+            CaseFolded::Other(chars) => chars.next(),
+        }
+    }
 }
 
 /// Whether two character sequences have the same case-folded spelling.
 ///
 /// Keep the comparison alongside [`casefold_char`]: regex atoms, graphemes,
 /// and named literal fallbacks must not each grow their own notion of `:i`.
+/// It runs once per `:i` literal attempt, so it folds through
+/// [`casefold_iter`]: an ASCII comparison allocates nothing.
+// Cost: O(n), n = the longer sequence's length.
 pub(super) fn casefold_eq(
     left: impl IntoIterator<Item = char>,
     right: impl IntoIterator<Item = char>,
 ) -> bool {
     left.into_iter()
-        .flat_map(casefold_char)
-        .eq(right.into_iter().flat_map(casefold_char))
+        .flat_map(casefold_iter)
+        .eq(right.into_iter().flat_map(casefold_iter))
 }
 
 /// Returns true if a character case-folds to more than one character.
@@ -46,8 +83,7 @@ pub(super) fn casefold_text(orig_chars: &[char]) -> (Vec<char>, Vec<usize>) {
     let mut pos_map: Vec<usize> = Vec::new();
 
     for (idx, &c) in orig_chars.iter().enumerate() {
-        let folded = casefold_char(c);
-        for fc in folded {
+        for fc in casefold_iter(c) {
             folded_chars.push(fc);
             pos_map.push(idx);
         }
@@ -364,3 +400,7 @@ pub(super) fn one_atom_pattern(atom: RegexAtom, ignore_case: bool) -> RegexPatte
         derived: Default::default(),
     }
 }
+
+#[cfg(test)]
+#[path = "regex_casefold_tests.rs"]
+mod tests;

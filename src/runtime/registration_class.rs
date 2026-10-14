@@ -816,8 +816,35 @@ impl Interpreter {
         if self.is_self_named_builtin_role_parent(child_name, parent, does_parents) {
             parent.to_string()
         } else {
-            self.resolve_declared_type_name(parent)
+            let resolved = self.resolve_declared_type_name(parent);
+            if resolved == parent
+                && let Some(aliased) = self.child_package_type_alias(child_name, parent)
+            {
+                return aliased;
+            }
+            resolved
         }
+    }
+
+    /// A short parent name the declaring compunit imported for its own scope
+    /// (`use A::B::Base; unit class A::B::Kid is Base`): the `use` filed the
+    /// alias under the package that was current when it ran, which the class
+    /// header's own running package may not reach, so also walk up from the
+    /// child's own name. Only a name nothing registers directly is aliased.
+    // Cost: O(d), d = `::` segments of the child name.
+    pub(crate) fn child_package_type_alias(&self, child_name: &str, parent: &str) -> Option<String> {
+        let (base, suffix) = parent.split_once('[').map_or((parent, ""), |(b, _)| {
+            (b, &parent[b.len()..])
+        });
+        if base.is_empty() || crate::qualified::is_qualified_str(base) {
+            return None;
+        }
+        let child = crate::value::user_facing_type_name(child_name);
+        let target = Self::lookup_in_package_chain(&self.types.package_type_aliases, &child, base)?;
+        if self.has_type_direct(base) || !self.has_type_direct(target) {
+            return None;
+        }
+        Some(format!("{target}{suffix}"))
     }
 
     fn is_self_named_builtin_role_parent(

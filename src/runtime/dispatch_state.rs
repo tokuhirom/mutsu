@@ -151,6 +151,10 @@ pub(crate) struct DispatchState {
     /// Which base names `fn_keys_by_base` can answer without a scan: see
     /// `runtime::fn_keys_index`.
     pub(crate) fn_keys_index: fn_keys_index::FnKeysIndexState,
+    /// Each base name's own generation, bumped with its `fn_keys_by_base`
+    /// eviction: what the multi family memos are validated by when the whole
+    /// map's generation moved (`runtime::family_gen_cache`, ADR-12529 §2.4).
+    pub(crate) fn_family_gens: family_gen_cache::FamilyGens,
     /// Names declared with an empty-signature proto (`proto bar {*}`). Such a
     /// proto's signature gates the whole multi dispatch: any call with
     /// positional arguments "will never work with signature of the proto ()"

@@ -53,16 +53,18 @@ pub(super) static ROWS: &[MethodRow] = rows! {
     "gist" => gist,
     "raku" => raku,
     "Str" => str_of,
+    "Stringy" => stringy_of,
 };
 
-/// `Blob` declares `Buf` but not `Blob`; `Buf` declares both.
+/// `Blob` declares `Buf` but not `Blob`; `Buf` declares both. On a type
+/// object they are `Blob:D`'s refusal.
 pub(super) static COERCE_ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "Blob",
         name: "Buf",
         arity: 0,
         handler: Handler::Narrow(to_buf),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
     MethodRow {
@@ -70,7 +72,7 @@ pub(super) static COERCE_ROWS: &[MethodRow] = &[
         name: "Buf",
         arity: 0,
         handler: Handler::Narrow(to_buf),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
     MethodRow {
@@ -78,10 +80,48 @@ pub(super) static COERCE_ROWS: &[MethodRow] = &[
         name: "Blob",
         arity: 0,
         handler: Handler::Narrow(to_blob),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
 ];
+
+/// What an instance of a user class composing a buffer role over a `VMArray`
+/// body (`class B does Blob[uint8] is repr('VMArray')`, #9438) is to the
+/// table: the shape of the buffer type it composes. Its value is an ordinary
+/// storage-backed buffer carrying the user's class name, which every handler
+/// here keeps (`B.new(1, 2).subbuf(1)` is a `B`), so the instance itself is
+/// the invocant. The user's own methods never get here: the native entry is
+/// bypassed when the class declares the method. A built-in buffer under an
+/// alias class name (`blob8.allocate(4)` is a `blob8`) is answered the same
+/// way, and the type object of such a class, or of a buffer type with no
+/// shape of its own (`buf16`, `Blob[uint32]`), is the shape's type object. `None` for every other
+/// receiver. [`super::super::Receiver::of_settled`] asks it.
+// Cost: O(1): a compare against the alias names and two prefixes, then one
+// relaxed load (a hash lookup once any user buffer class exists).
+pub(crate) fn user_buffer_receiver(target: &Value) -> Option<super::super::Receiver> {
+    let (name, type_object) = match target.view() {
+        ValueView::Instance { class_name, .. } => (class_name.as_str(), false),
+        ValueView::Package(name) => (name.as_str(), true),
+        _ => return None,
+    };
+    let mutable = match name {
+        "buf8" | "buf16" | "buf32" | "buf64" => true,
+        "blob8" | "blob16" | "blob32" | "blob64" | "utf8" | "utf16" | "utf32" => false,
+        _ if name.starts_with("Buf[") => true,
+        _ if name.starts_with("Blob[") => false,
+        _ => crate::value::value_buf::buffer_class_type(name)?.starts_with("Buf"),
+    };
+    let shape = if mutable {
+        crate::value::DispatchShape::Buf
+    } else {
+        crate::value::DispatchShape::Blob
+    };
+    Some(if type_object {
+        super::super::Receiver::type_object(shape)
+    } else {
+        super::super::Receiver::instance(shape)
+    })
+}
 
 /// The class name of a buffer receiver, when it is a plain buffer instance.
 // Cost: O(1).
@@ -263,10 +303,16 @@ pub(crate) fn str_of(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
     str_or_stringy(target, "Str")
 }
 
+/// `.Stringy`: as `.Str`, naming `Stringy` in the exception.
+// Cost: O(e) for `utf8`, O(1) otherwise, e = elements.
+fn stringy_of(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    str_or_stringy(target, "Stringy")
+}
+
 /// `.Str` and `.Stringy` of a buffer; `method` names the one called, for the
 /// exception.
 // Cost: O(e) for `utf8`, O(1) otherwise, e = elements.
-pub(crate) fn str_or_stringy(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+fn str_or_stringy(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     let class = class_of(target)?;
     if class.resolve() == "utf8"
         && let Some(decoded) = crate::builtins::decode_buf_method(target, Some("utf-8"))
@@ -278,15 +324,38 @@ pub(crate) fn str_or_stringy(target: &Value, method: &str) -> Option<Result<Valu
     )))
 }
 
+/// The `X::Parameter::InvalidConcreteness` of a `Blob:D` method called on a
+/// buffer type object.
+// Cost: O(1).
+fn type_object_refusal(target: &Value, method: &str) -> Option<RuntimeError> {
+    let ValueView::Package(name) = target.view() else {
+        return None;
+    };
+    Some(RuntimeError::parameter_invalid_concreteness(
+        "Blob",
+        &name.resolve(),
+        method,
+        "self",
+        true,
+        true,
+    ))
+}
+
 /// `.Blob`: a `Blob` over the same bytes.
 // Cost: O(1), the storage is shared.
 pub(crate) fn to_blob(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let Some(refusal) = type_object_refusal(target, "Blob") {
+        return Some(Err(refusal));
+    }
     reinterpret(target, "Blob")
 }
 
 /// `.Buf`: a `Buf` over the same bytes.
 // Cost: O(1), the storage is shared.
 pub(crate) fn to_buf(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let Some(refusal) = type_object_refusal(target, "Buf") {
+        return Some(Err(refusal));
+    }
     reinterpret(target, "Buf")
 }
 
@@ -294,13 +363,25 @@ pub(crate) fn to_buf(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
 /// carrying the same storage, so `"\r\n".encode.Buf` is a `Buf[uint8]`.
 // Cost: O(1), the storage is shared.
 pub(crate) fn reinterpret(target: &Value, class: &str) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::Instance { attributes, .. } = target.view() else {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
         return None;
+    };
+    // The element type is kept: `buf16.new(1).Blob` is a `Blob[uint16]`.
+    let elem = buf_elem_type_name(&class_name.resolve());
+    let class = if elem == "uint8" {
+        class.to_string()
+    } else {
+        format!("{class}[{elem}]")
     };
     let mut attrs = crate::value::AttrMap::new();
     set_buf_storage(
         &mut attrs,
         buf_storage(&attributes.as_map()).unwrap_or_else(|| Value::array(Vec::new())),
     );
-    Some(Ok(Value::make_instance(Symbol::intern(class), attrs)))
+    Some(Ok(Value::make_instance(Symbol::intern(&class), attrs)))
 }

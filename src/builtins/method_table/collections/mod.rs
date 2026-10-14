@@ -7,10 +7,13 @@
 
 use super::{Handler, MethodRow, RowFlags};
 
+mod accepts;
+pub(crate) mod accepts_open;
 pub(crate) mod any_collection;
 mod any_interp;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
+pub(crate) mod any_subscript;
 pub(crate) mod capture;
 pub(crate) mod clone;
 mod descriptor;
@@ -65,12 +68,16 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::ANY_ROWS,
     list_transform::LIST_ROWS,
     list_transform::FLAT_ROWS,
+    list_transform::FLAT_LEVELS_ROWS,
     map::ROWS,
     positional::ROWS,
     rotate::ROWS,
     pair::ROWS,
     quanthash::ROWS,
     subscript::ROWS,
+    accepts::ROWS,
+    accepts_open::ROWS,
+    any_subscript::ROWS,
     range::ROWS,
     sampling::BOOL_ROWS,
     sampling::PICK_ROWS,

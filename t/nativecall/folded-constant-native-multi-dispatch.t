@@ -11,14 +11,14 @@ multi sub n(Num $x) { 'boxed-num' }
 
 my $rt = 0;
 
-# rakudo constant-folds before dispatch runs, so a folded expression ranks on
-# the native candidate exactly as the literal does.
-is d(5), 'native', 'an integer literal ranks native';
-is d(5 + 0), 'native', 'a folded integer expression ranks native';
-is d(2 * 3), 'native', 'a folded product ranks native';
-is d(-(2 + 1)), 'native', 'a folded negation ranks native';
-is s('a' ~ 'b'), 'native-str', 'a folded string concatenation ranks native';
-is n(1e0 + 1e0), 'native-num', 'a folded Num sum ranks native';
+# rakudo 2026.09 dispatches a literal, and so a folded expression, as a boxed
+# value: it ranks the boxed candidate (#13065).
+is d(5), 'boxed', 'an integer literal ranks boxed';
+is d(5 + 0), 'boxed', 'a folded integer expression ranks boxed';
+is d(2 * 3), 'boxed', 'a folded product ranks boxed';
+is d(-(2 + 1)), 'boxed', 'a folded negation ranks boxed';
+is s('a' ~ 'b'), 'boxed-str', 'a folded string concatenation ranks boxed';
+is n(1e0 + 1e0), 'boxed-num', 'a folded Num sum ranks boxed';
 
 # A runtime operand is not foldable and stays boxed.
 is d(5 + $rt), 'boxed', 'a runtime operand ranks boxed';

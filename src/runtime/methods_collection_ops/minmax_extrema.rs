@@ -8,6 +8,12 @@ impl Interpreter {
         target: Value,
         method: &str,
     ) -> Result<Value, RuntimeError> {
+        // `Any.minpairs` is `self.list.minpairs`: a `Match` reads its positional
+        // captures, compared as the `Match`es they are (#13195).
+        if target.is_match_instance() {
+            let items = self.call_method_with_values(target, "list", Vec::new())?;
+            return self.dispatch_minmaxpairs(items, method);
+        }
         if matches!(target.view(), ValueView::Instance { .. })
             && let Ok(pairs) = self.call_method_with_values(target.clone(), "pairs", Vec::new())
         {
@@ -63,13 +69,13 @@ impl Interpreter {
                     out.push(Value::value_pair(Value::int(idx as i64), item.clone()));
                 }
             }
-            Value::seq(out)
+            Value::array(out)
         };
         Ok(match target.view() {
             ValueView::Array(items, ..) => to_pairs(&items),
             ValueView::Set(set, ..) => {
                 if set.elements.is_empty() {
-                    Value::seq(Vec::new())
+                    Value::array(Vec::new())
                 } else {
                     // All Set weights are True, so min == max == all elements
                     let out: Vec<Value> = set
@@ -82,12 +88,12 @@ impl Interpreter {
                             )
                         })
                         .collect();
-                    Value::seq(out)
+                    Value::array(out)
                 }
             }
             ValueView::Bag(bag, ..) => {
                 if bag.is_empty() {
-                    Value::seq(Vec::new())
+                    Value::array(Vec::new())
                 } else {
                     let mut best_count: Option<num_bigint::BigInt> = None;
                     let mut out: Vec<Value> = Vec::new();
@@ -114,19 +120,19 @@ impl Interpreter {
                             ));
                         }
                     }
-                    Value::seq(out)
+                    Value::array(out)
                 }
             }
             ValueView::Mix(mix, ..) => {
                 if mix.is_empty() {
-                    Value::seq(Vec::new())
+                    Value::array(Vec::new())
                 } else {
                     let mut best_weight: Option<crate::value::MixWeight> = None;
                     let mut out: Vec<Value> = Vec::new();
                     for (key, weight) in mix.iter() {
-                        let ord = if let Some(current) = best_weight {
+                        let ord = if let Some(current) = &best_weight {
                             weight
-                                .partial_cmp(&current)
+                                .partial_cmp(current)
                                 .unwrap_or(std::cmp::Ordering::Equal)
                         } else {
                             std::cmp::Ordering::Equal
@@ -135,25 +141,25 @@ impl Interpreter {
                             || (want_max && ord == std::cmp::Ordering::Greater)
                             || (!want_max && ord == std::cmp::Ordering::Less);
                         if replace {
-                            best_weight = Some(*weight);
+                            best_weight = Some(weight.clone());
                             out.clear();
                             out.push(crate::runtime::utils::quanthash_typed_pair(
                                 mix.typed_key(key),
-                                crate::value::mix_weight_to_value(*weight),
+                                crate::value::mix_weight_to_value(weight.clone()),
                             ));
                         } else if ord == std::cmp::Ordering::Equal {
                             out.push(crate::runtime::utils::quanthash_typed_pair(
                                 mix.typed_key(key),
-                                crate::value::mix_weight_to_value(*weight),
+                                crate::value::mix_weight_to_value(weight.clone()),
                             ));
                         }
                     }
-                    Value::seq(out)
+                    Value::array(out)
                 }
             }
             ValueView::Hash(hash) => {
                 if hash.is_empty() {
-                    Value::seq(Vec::new())
+                    Value::array(Vec::new())
                 } else {
                     // For Hash, compare values
                     let mut best: Option<&Value> = None;
@@ -178,10 +184,10 @@ impl Interpreter {
                             out.push(hash.typed_pair(key, value.clone()));
                         }
                     }
-                    Value::seq(out)
+                    Value::array(out)
                 }
             }
-            _ => Value::seq(vec![Value::value_pair(Value::int(0), target.clone())]),
+            _ => Value::array(vec![Value::value_pair(Value::int(0), target.clone())]),
         })
     }
 

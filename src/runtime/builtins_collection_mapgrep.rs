@@ -513,9 +513,28 @@ impl Interpreter {
         // below, whose `_ => list_items.push(arg.clone())` catch-all pushed
         // the un-pulled `LazyList` as a single opaque item and matched the
         // predicate against the pipe itself instead of its elements.
-        if args.len() == 2 && Self::is_lazy_pipe_source(&args[1]) {
-            let method_args: Vec<Value> = func.into_iter().collect();
-            return self.call_method_with_values(args[1].clone(), "first", method_args);
+        if positional.len() == 2 && Self::is_lazy_pipe_source(&positional[1]) {
+            // The matcher, then the adverbs (`:k`, `:end`, ...), as the
+            // method form takes them.
+            let method_args: Vec<Value> = func
+                .into_iter()
+                .chain(
+                    args.iter()
+                        .filter(|a| matches!(a.view(), ValueView::Pair(..)))
+                        .cloned(),
+                )
+                .collect();
+            let target = &positional[1];
+            // A gather's coroutine list (or a pipe over one) is pulled one
+            // element per test, as the method form's VM dispatch does;
+            // `call_method_with_values` would force the whole list first.
+            if let ValueView::LazyList(ll) = target.view()
+                && ll.needs_vm_lazy_dispatch()
+                && let Some(result) = self.try_lazy_gather_first(&ll, &method_args)
+            {
+                return result;
+            }
+            return self.call_method_with_values(target.clone(), "first", method_args);
         }
         let mut list_items = Vec::new();
         // `first(&test, +values)` slurps under the single-argument rule, the

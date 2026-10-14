@@ -133,8 +133,11 @@ impl Interpreter {
     }
 
     pub(super) fn push_regex_interpolated_alternation(out: &mut String, alts: &[String]) {
+        // An empty list is an alternation with no branches: it never
+        // matches (an empty `[]` group would be a null regex). Grouped so a
+        // following quantifier applies to it.
         if alts.is_empty() {
-            out.push_str("[]");
+            out.push_str("[<!>]");
             return;
         }
         if alts.len() == 1 {

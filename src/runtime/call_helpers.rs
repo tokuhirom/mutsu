@@ -5,18 +5,30 @@ const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 
 impl Interpreter {
     pub(crate) fn set_pending_call_arg_sources(&mut self, sources: Option<Vec<Option<String>>>) {
+        self.pending_call_arg_sources = sources.map(std::sync::Arc::new);
+    }
+
+    /// [`Self::set_pending_call_arg_sources`] for a call site that keeps using
+    /// the names itself: sharing one allocation instead of cloning the vector
+    /// and every name in it.
+    pub(crate) fn set_pending_call_arg_sources_shared(
+        &mut self,
+        sources: Option<std::sync::Arc<Vec<Option<String>>>>,
+    ) {
         self.pending_call_arg_sources = sources;
     }
 
     pub(crate) fn take_pending_call_arg_sources(&mut self) -> Option<Vec<Option<String>>> {
-        self.pending_call_arg_sources.take()
+        self.pending_call_arg_sources
+            .take()
+            .map(|shared| std::sync::Arc::try_unwrap(shared).unwrap_or_else(|shared| (*shared).clone()))
     }
 
     /// Non-consuming peek at the pending call arg-source names, used by the
     /// method dispatch gate to decide whether a container argument shares the
     /// caller's container with a plain scalar `$` param (Slice 2d).
     pub(crate) fn pending_call_arg_sources(&self) -> Option<&Vec<Option<String>>> {
-        self.pending_call_arg_sources.as_ref()
+        self.pending_call_arg_sources.as_deref()
     }
 
     /// The caller's variable name a bare block's implicit `$_` may ALIAS for
@@ -44,7 +56,11 @@ impl Interpreter {
         if name.contains('=') {
             return None;
         }
-        name.as_bytes()
+        // A dynamic scalar (`*V`) is a plain scalar of the frame that declared
+        // it, so a block called with `$*V` binds its topic to that container.
+        let plain = name.strip_prefix('*').unwrap_or(name);
+        plain
+            .as_bytes()
             .first()
             .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
             .then(|| name.clone())
@@ -61,7 +77,7 @@ impl Interpreter {
     /// wrapper then read `$!MONITR-lock` off a Bool).
     pub(crate) fn shift_arg_sources_for_wrap_invocant(&mut self) {
         if let Some(sources) = self.pending_call_arg_sources.as_mut() {
-            sources.insert(0, None);
+            std::sync::Arc::make_mut(sources).insert(0, None);
         }
     }
 

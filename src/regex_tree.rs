@@ -14,6 +14,7 @@ mod parse_captures;
 mod parse_lookaround;
 mod parse_quotes;
 mod quantifier;
+mod symbolic;
 
 pub(crate) use char_class::{BackslashClass, CharClassAtom};
 pub(crate) use enumeration::{
@@ -227,6 +228,15 @@ pub(crate) enum RegexNode {
         #[serde(default)]
         arg_source: Option<String>,
     },
+    /// `<::(EXPR)>` / `<.::(EXPR)>` — call the rule whose name `EXPR`
+    /// computes when the cursor reaches the call. Execution stays on the
+    /// runtime parser path; the expression and its written source are
+    /// retained for RakuAST.
+    SymbolicSubrule {
+        expr: Box<crate::ast::Expr>,
+        source: String,
+        capturing: bool,
+    },
     /// `<?{ ... }>` / `<!{ ... }>` — a zero-width predicate whose body runs
     /// inline in the real interpreter. Keep both the source spelling and the
     /// parsed statements so RakuAST conversion and execution use one tree.
@@ -365,6 +375,24 @@ impl RegexTree {
 
     pub(crate) fn to_source(&self) -> String {
         let mut source = self.body.to_source();
+        // A lone sequential interpolation (`/ ||@list /`) keeps its leading
+        // `||` only as that flag; the alternation printers add their own.
+        let mut lone = &self.body;
+        while let RegexNode::WithWhitespace(inner) = lone {
+            lone = inner;
+        }
+        if matches!(
+            lone,
+            RegexNode::Interpolation {
+                sequential: true,
+                ..
+            } | RegexNode::ArrayInterpolation {
+                sequential: true,
+                ..
+            }
+        ) {
+            source.insert_str(0, "||");
+        }
         // Whitespace written at the end is significant to a rule (or a `:s`
         // regex), which then matches it after its last atom.
         if ends_with_whitespace(&self.body) {
@@ -885,7 +913,7 @@ impl RegexTree {
                 RegexNode::ArrayInterpolation { .. }
                 | RegexNode::ArrayLookaround { .. }
                 | RegexNode::RegexValueInterpolation { .. } => None,
-                RegexNode::Callable { .. } => None,
+                RegexNode::Callable { .. } | RegexNode::SymbolicSubrule { .. } => None,
                 RegexNode::CodeAssertion {
                     code,
                     negated,
@@ -1023,6 +1051,7 @@ impl RegexNode {
             | Self::ArrayLookaround { .. }
             | Self::RegexValueInterpolation { .. }
             | Self::Callable { .. }
+            | Self::SymbolicSubrule { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. } => {}
@@ -1051,7 +1080,7 @@ impl RegexNode {
             Self::Interpolation { .. } => false,
             Self::ArrayInterpolation { .. } | Self::ArrayLookaround { .. } => true,
             Self::RegexValueInterpolation { .. } => false,
-            Self::Callable { .. } => false,
+            Self::Callable { .. } | Self::SymbolicSubrule { .. } => false,
             Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. } => false,
@@ -1131,6 +1160,7 @@ impl RegexNode {
             | Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
             | Self::Callable { .. }
+            | Self::SymbolicSubrule { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. }
@@ -1190,6 +1220,7 @@ impl RegexNode {
             | Self::ArrayInterpolation { .. }
             | Self::ArrayLookaround { .. }
             | Self::Callable { .. }
+            | Self::SymbolicSubrule { .. }
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. }
@@ -1359,6 +1390,9 @@ impl RegexNode {
                     format!("<&{name}({})>", rendered.unwrap_or_default())
                 }
             }
+            Self::SymbolicSubrule {
+                source, capturing, ..
+            } => format!("<{}::({source})>", if *capturing { "" } else { "." }),
             Self::CodeAssertion { code, negated, .. } => {
                 let marker = if *negated { '!' } else { '?' };
                 format!("<{marker}{{{code}}}>")
@@ -1517,6 +1551,85 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             _ => None,
         },
         crate::ast::Expr::LiteralSrc(_, source) => Some(source.to_string()),
+        // `<v(/\d+/)>`: a regex argument, spelled from its tree. A `/` in the
+        // pattern would end the spelled literal early.
+        crate::ast::Expr::RegexLiteral { tree, .. }
+            if tree.adverbs.is_empty() && tree.declaration_kind.is_none() =>
+        {
+            let source = tree.to_source();
+            (!source.contains('/')).then(|| format!("/{source}/"))
+        }
+        // `"a$b"`: each computed part as an interpolated `{…}` block, which
+        // reads the same value as the variable spelling.
+        crate::ast::Expr::StringInterpolation(parts) => {
+            let mut out = String::from("\"");
+            for part in parts {
+                match part {
+                    crate::ast::Expr::Literal(value)
+                        if let crate::value::ValueView::Str(text) = value.view() =>
+                    {
+                        for ch in text.chars() {
+                            if matches!(ch, '\\' | '"' | '$' | '@' | '%' | '&' | '{' | '}') {
+                                out.push('\\');
+                            }
+                            out.push(ch);
+                        }
+                    }
+                    other => {
+                        out.push('{');
+                        out.push_str(&expression_source(other)?);
+                        out.push('}');
+                    }
+                }
+            }
+            out.push('"');
+            Some(out)
+        }
+        crate::ast::Expr::AssignExpr {
+            name,
+            expr,
+            is_bind: false,
+        } if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')) => {
+            Some(format!("${name} = {}", expression_source(expr)?))
+        }
+        crate::ast::Expr::AnonSub {
+            body,
+            is_rw: false,
+            is_raw: false,
+            is_block: true,
+            ..
+        } => closure_body_source(body),
+        crate::ast::Expr::PostfixOp { op, expr } => Some(format!(
+            "{}{}",
+            expression_source(expr)?,
+            crate::compiler::helpers_ops::token_kind_to_op_name(op)
+        )),
+        // `-> { ... }`: a pointy block with an empty signature.
+        crate::ast::Expr::AnonSubParams {
+            params,
+            param_defs,
+            body,
+            return_type: None,
+            is_rw: false,
+            is_raw: false,
+            is_whatever_code: false,
+            declarator: crate::ast::RoutineDeclarator::Block,
+            ..
+        } if params.is_empty() && param_defs.is_empty() => {
+            Some(format!("-> {}", closure_body_source(body)?))
+        }
+        // A placeholder block (`{ $^n * 2 }`, `{ @_ }`, `{ %_ }`): its source is
+        // the braces over the body, which declares the placeholders again.
+        crate::ast::Expr::AnonSubParams { body, .. }
+            if is_scalar_placeholder_block(expr)
+                || is_array_slurpy_placeholder_block(expr)
+                || is_hash_slurpy_placeholder_block(expr) =>
+        {
+            closure_body_source(body)
+        }
+        // A WhateverCode (`* + 1`) is spelled as the expression over its `*`s.
+        crate::ast::Expr::WhateverCurry(inner) => expression_source(inner),
+        crate::ast::Expr::WhateverArg => Some("*".to_string()),
         crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
         crate::ast::Expr::CaptureVar(name) => Some(format!("${name}")),
         crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_) => {
@@ -1655,6 +1768,22 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             expression_source(index)?,
             if *is_positional { ']' } else { '}' },
         )),
+        // A list of plain words is the `<a b c>` word list (a List); any other
+        // list keeps the array spelling.
+        crate::ast::Expr::ArrayLiteral(items)
+            if !items.is_empty()
+                && items.iter().all(|item| {
+                    matches!(item, crate::ast::Expr::Literal(v)
+                        if matches!(v.view(), crate::value::ValueView::Str(w)
+                            if !w.is_empty() && !w.contains(|c: char| c.is_whitespace() || matches!(c, '<' | '>'))))
+                }) =>
+        {
+            let words = items.iter().map(|item| match item {
+                crate::ast::Expr::Literal(v) => v.to_string_value(),
+                _ => String::new(),
+            });
+            Some(format!("<{}>", words.collect::<Vec<_>>().join(" ")))
+        }
         crate::ast::Expr::ArrayLiteral(items) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::BracketArray(items, _) => Some(format!("[{}]", join_args(items)?)),
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
@@ -1671,6 +1800,18 @@ fn closure_body_source(body: &[crate::ast::Stmt]) -> Option<String> {
         match stmt {
             crate::ast::Stmt::SetLine(_) => {}
             crate::ast::Stmt::Expr(expr) => expressions.push(expression_source(expr)?),
+            crate::ast::Stmt::Assign {
+                name,
+                expr,
+                op: crate::ast::AssignOp::Assign,
+                target_is_sigilless: false,
+            } if !name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')) =>
+            {
+                expressions.push(format!("${name} = {}", expression_source(expr)?))
+            }
             _ => return None,
         }
     }
@@ -2010,8 +2151,9 @@ impl Parser {
                 return None;
             }
         };
-        // An argument (`:i(0)`) is not modelled.
-        if matches!(self.chars.get(self.pos), Some('(' | '<' | '[')) {
+        // An argument (`:i(0)`) is not modelled. A `<` or `[` right after the
+        // adverb starts the next atom, as in rakudo (`:i<[ab]>`).
+        if self.chars.get(self.pos) == Some(&'(') {
             self.pos = start;
             return None;
         }
@@ -2054,10 +2196,14 @@ impl Parser {
 
     fn parse_callable(&mut self, start: usize) -> Option<RegexNode> {
         self.pos += 1; // '&'
+        // `<&$var(...)>` calls the Callable a scalar holds; the name keeps
+        // its `$`.
+        let scalar = self.consume_if('$');
         let Some(name) = self.parse_variable_name() else {
             self.pos = start;
             return None;
         };
+        let name = if scalar { format!("${name}") } else { name };
         self.skip_whitespace();
         let mut args = Vec::new();
         let mut arg_source = None;
@@ -2292,6 +2438,14 @@ impl Parser {
 
     fn parse_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
         self.pos += 1; // '$'
+        // `$^a`: a placeholder parameter of the enclosing block.
+        if self.consume_if('^') {
+            let name = self.parse_variable_name()?;
+            return Some(RegexNode::Extension(RegexExtension::Placeholder {
+                name,
+                sequential,
+            }));
+        }
         let name = if self.consume_if('{') {
             let name = self.parse_twigil_variable_name()?;
             if !self.consume_if('}') {
@@ -2305,6 +2459,22 @@ impl Parser {
     }
 
     fn parse_array_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
+        // `@$ref`: the array a scalar holds.
+        if self.chars.get(self.pos + 1) == Some(&'$') {
+            let start = self.pos;
+            self.pos += 2;
+            let Some(name) = self.parse_variable_name() else {
+                self.pos = start;
+                return None;
+            };
+            return Some(RegexNode::Extension(
+                RegexExtension::ContextualizedVariable {
+                    sigil: '@',
+                    name,
+                    sequential,
+                },
+            ));
+        }
         self.pos += 1; // '@'
         let name = self.parse_twigil_variable_name()?;
         Some(RegexNode::ArrayInterpolation { name, sequential })
@@ -2396,16 +2566,27 @@ impl Parser {
                     args,
                 });
             }
-            // `<rx=$r>` / `<foo=[bao]>`: an alias over an assertion that is
-            // no subrule call.
+            // `<q=::(EXPR)>`: an alias over a symbolic subrule call.
+            if is_simple_subrule_name(alias)
+                && let Some(call) = symbolic::parse(target, capturing)
+            {
+                return Some(RegexNode::Extension(RegexExtension::Alias {
+                    alias: alias.to_string(),
+                    assertion: Box::new(call),
+                }));
+            }
+            // `<rx=$r>` / `<foo=[bao]>` / `<rx={$r}>`: an alias over an
+            // assertion that is no subrule call.
             if is_simple_subrule_name(alias)
                 && capturing
-                && target.starts_with(['$', '@', '%', '[', '-', '+', ':'])
+                && target.starts_with(['$', '@', '%', '[', '-', '+', ':', '{'])
                 && let Some(tree) =
                     RegexTree::parse_lookaround_body(&format!("<{target}>"), self.in_unit_parse)
                 && matches!(
                     tree.body,
-                    RegexNode::RegexValueInterpolation { .. } | RegexNode::CharClassAssertion(_)
+                    RegexNode::RegexValueInterpolation { .. }
+                        | RegexNode::CharClassAssertion(_)
+                        | RegexNode::InterpolatedBlock { .. }
                 )
             {
                 return Some(RegexNode::Extension(RegexExtension::Alias {
@@ -2420,6 +2601,9 @@ impl Parser {
         } else {
             (true, contents.as_str())
         };
+        if let Some(node) = symbolic::parse(name, capturing) {
+            return Some(node);
+        }
         let (name, args) = parse_subrule_target(name)?;
         is_subrule_name(&name).then(|| RegexNode::Subrule {
             name,
@@ -2481,6 +2665,17 @@ impl Parser {
             } else {
                 match ch {
                     '\\' => end += 1,
+                    // A character class of a nested regex (`$( rx/<["']>/ )`):
+                    // its quote characters are members, not string quotes.
+                    '<' if self.chars.get(end + 1) == Some(&'[') => {
+                        end += 2;
+                        while let Some(&inner) = self.chars.get(end) {
+                            if inner == ']' {
+                                break;
+                            }
+                            end += if inner == '\\' { 2 } else { 1 };
+                        }
+                    }
                     '\'' | '"' => quote = Some(ch),
                     '(' | '[' | '{' => depth += 1,
                     ')' | ']' | '}' => {
@@ -2513,7 +2708,7 @@ impl Parser {
             .iter()
             .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(_)))
             .count();
-        if statements != 1 {
+        if statements == 0 {
             return None;
         }
         self.pos = end + 1;
@@ -2605,6 +2800,9 @@ impl Parser {
         let mut depth = 0usize;
         let mut quote = None;
         let mut end = start + 1;
+        // A declaration whose block ends its line (`:my token T { \d }`
+        // then a newline) needs no `;`, as a statement in code does not.
+        let mut block_end = false;
         while let Some(&ch) = self.chars.get(end) {
             if let Some(closer) = quote {
                 if ch == '\\' {
@@ -2617,6 +2815,16 @@ impl Parser {
                     '\\' => end += 1,
                     '\'' | '"' => quote = Some(ch),
                     '(' | '[' | '{' => depth += 1,
+                    '}' if depth == 1
+                        && self.chars[end + 1..]
+                            .iter()
+                            .find(|c| !matches!(c, ' ' | '\t'))
+                            .is_some_and(|c| *c == '\n') =>
+                    {
+                        end += 1;
+                        block_end = true;
+                        break;
+                    }
                     ')' | ']' | '}' => depth = depth.checked_sub(1)?,
                     ';' if depth == 0 => break,
                     _ => {}
@@ -2624,7 +2832,7 @@ impl Parser {
             }
             end += 1;
         }
-        if self.chars.get(end) != Some(&';') {
+        if !block_end && self.chars.get(end) != Some(&';') {
             return None;
         }
         let code: String = self.chars[start + 1..end].iter().collect();
@@ -2646,7 +2854,14 @@ impl Parser {
         if statements != 1 {
             return None;
         }
-        self.pos = end + 1;
+        self.pos = if block_end { end } else { end + 1 };
+        // The line break that ends such a declaration is its terminator,
+        // not whitespace after it (rakudo wraps no `WithWhitespace`).
+        if block_end {
+            while self.chars.get(self.pos).is_some_and(|c| c.is_whitespace()) {
+                self.pos += 1;
+            }
+        }
         Some(RegexNode::Extension(RegexExtension::Statement(Box::new(
             RegexCode { code, body },
         ))))
@@ -3311,6 +3526,9 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::MatchTo
         | RegexNode::AssertionPass
         | RegexNode::AssertionFail => true,
+        // A construct only the RakuAST boundary reads (`$<x>`, `<?alpha>`):
+        // execution keeps the text, which the lowerer's own check declines.
+        RegexNode::Extension(_) => true,
         other => is_executable_lookaround_body(other),
     }
 }
@@ -3349,7 +3567,9 @@ fn is_executable_lookaround_body(node: &RegexNode) -> bool {
         // A subrule has no execution plan of its own (the matcher keeps its
         // text), so a lookaround over one is a tree only the RakuAST boundary
         // reads, like the constructs of `RegexExtension`.
-        RegexNode::Subrule { .. } | RegexNode::SubruleAlias { .. } => true,
+        RegexNode::Subrule { .. }
+        | RegexNode::SubruleAlias { .. }
+        | RegexNode::SymbolicSubrule { .. } => true,
         RegexNode::CapturingGroup(_)
         | RegexNode::NamedCapture { .. }
         | RegexNode::ArrayLookaround { .. }

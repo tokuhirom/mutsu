@@ -3889,10 +3889,27 @@ pub(crate) enum OpCode {
     /// body's `my` lexicals, newline-joined: they are bound from the
     /// package's static store for the body, written back to it on exit, and
     /// a same-named outer binding is restored.
+    ///
+    /// `decls_idx` is the constant-pool index of the names the body's own
+    /// scope declares (an Array of Str), or `u32::MAX` when it declares none.
+    /// Those are bindings of the body, never writes to a same-named enclosing
+    /// lexical, so the exit does not carry them out (#13428).
+    ///
+    /// `own_slots_idx` is the constant-pool index of the local slots the body
+    /// binds itself (an Array of Int; `u32::MAX` for none): the slots first
+    /// allocated while it was compiled, and the slots of the names its own
+    /// scope declares. `slots_idx` indexes
+    /// [`EnvConsumerSlots::package_scope_lists`]: the frame's local slots the
+    /// exit saves and reconciles, filled in by `compute_needs_env_sync`.
+    /// `u32::MAX` (not yet finalized) makes the exit save and reconcile every
+    /// local slot.
     PackageScope {
         name_idx: u32,
         body_end: u32,
         lexicals_idx: u32,
+        decls_idx: u32,
+        own_slots_idx: u32,
+        slots_idx: u32,
     },
     /// Register a package name so it's accessible as a Package value.
     RegisterPackage { name_idx: u32 },
@@ -4897,6 +4914,12 @@ pub(crate) struct EnvConsumerSlots {
     /// decl-seed placeholder out of `env` instead of the slot's live value
     /// (`todo/tickets/package-block-resets-an-outer-lexical-declared-before-any-env-flush.md`).
     pub(crate) package_scope: Vec<bool>,
+    /// Per `OpCode::PackageScope` (its `slots_idx`): the slots that one body
+    /// reads or writes by name or by index, plus their same-named peers, in
+    /// slot order. Those are the only slots its exit saves, restores and
+    /// re-syncs from `env`, so the op does not scale with the frame's locals
+    /// (#9171).
+    pub(crate) package_scope_lists: Vec<Vec<u32>>,
 }
 
 /// A declaration-time expression lowered to its own bytecode chunk (ADR-0019 C5).
@@ -5413,6 +5436,9 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
             Stmt::SubsetDecl { is_my: true, .. } => None,
             Stmt::SubsetDecl { .. } => Some("subset"),
             Stmt::EnumDecl { is_my: true, .. } => None,
+            // An anonymous `enum <A B>` installs no package symbol, so there is
+            // nothing ambiguous to complain about (rakudo accepts it).
+            Stmt::EnumDecl { name, .. } if name.as_str().is_empty() => None,
             Stmt::EnumDecl { .. } => Some("enum"),
             Stmt::RoleDecl { custom_traits, .. }
                 if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
@@ -6717,6 +6743,13 @@ pub(crate) struct CompiledCode {
     /// `reads_topic` one shadow write. Computed once in
     /// `compute_needs_env_sync`.
     pub(crate) mentions_native_scalar_type_name: bool,
+    /// Whether this body or a closure nested in it names the `.VAR` method,
+    /// the only reader of a parameter's `__mutsu_var_source_name::` record
+    /// (the container's `.VAR.name`). The light bind of a plain `@x`/`%x`
+    /// parameter writes that record only when this is set (#12526). A stray
+    /// `"VAR"` constant costs one harmless record. Computed once in
+    /// `compute_needs_env_sync`.
+    pub(crate) names_var_method: bool,
     /// Whether the body touches a routine-owned implicit (`$/`, `$0`,
     /// `$<name>`, `$!`): it sets one ([`Self::sets_routine_state`]), or its
     /// constant pool names one of those variables or `make` -- the sound
@@ -6736,6 +6769,11 @@ pub(crate) struct CompiledCode {
     /// Pointy blocks are NOT routine boundaries — `return` propagates through
     /// them to the enclosing routine, and `&?ROUTINE` sees the enclosing routine.
     pub(crate) is_pointy_block: bool,
+    /// Whether this compiled code is a WhateverCode body (`* + 1`, `* + *`),
+    /// built by Whatever-currying. Like a pointy block it is no routine
+    /// boundary, but its call frame is named after the code object rather than
+    /// the pointy-block marker. Read by the light closure call (#13286).
+    pub(crate) is_whatever_code: bool,
     /// Whether this is a single-`$`-sigiled-parameter pointy block (`-> $v {
     /// }`, compiled via `Expr::Lambda`) whose one parameter must be marked
     /// readonly (`ReadonlyKind::Alias`) at the call site. Set only for the
@@ -7350,6 +7388,13 @@ pub(crate) struct CompiledCode {
     /// (a per-call `free_at_entry` cost), so only names matching a declared
     /// `&`-lexical count.
     pub(crate) outer_code_var_names: std::collections::HashSet<String>,
+    /// The lexicals the static scopes around this chunk's `EVAL` calls
+    /// declare, including those declared later in the source (#10511):
+    /// rakudo's pads are static, so `EVAL '$y'` before `my $y` in the same
+    /// block names a declared variable. The `EVAL` undeclared-variable check
+    /// consults it; the run-time env only knows names already declared.
+    /// Empty unless the chunk calls `EVAL`.
+    pub(crate) eval_scope_names: std::collections::HashSet<String>,
     /// Bare words naming an ENCLOSING sigilless binding (`\attr`) that this
     /// code also declares as a same-keyed `$` local (`my $attr = attr`). The
     /// shared local key would hide the capture from `compute_free_vars`, so the
@@ -7595,6 +7640,10 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Whether the light closure call can run this body, and what it needs
+    /// (#8335, `light_closure_shape`); settled on the first call.
+    pub(crate) light_closure_shape:
+        std::sync::OnceLock<Option<crate::light_closure_shape::LightClosureShape>>,
     /// Memo of [`Self::capture_hidden_set`].
     pub(crate) capture_hidden_set: std::sync::OnceLock<Option<Arc<rustc_hash::FxHashSet<Symbol>>>>,
     /// Lazily-built list of the env keys a closure capture probes by name
@@ -7623,6 +7672,11 @@ pub(crate) struct CompiledCode {
     /// `params`/`param_defs` used to be cloned out of the pool on every
     /// creation, which is O(signature) with a fat `ParamDef` element.
     pub(crate) stmt_pool_signatures: std::sync::OnceLock<StmtPoolSignatures>,
+    /// Lazily-decoded argument-source descriptor per constant-pool slot (see
+    /// `Interpreter::decode_arg_sources_shared`): a call site's names are the
+    /// same on every execution, so they are decoded once rather than
+    /// re-allocated (a vector and a `String` per named argument) per call.
+    pub(crate) arg_source_decodes: std::sync::OnceLock<ArgSourceDecodes>,
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
     #[cfg(feature = "jit")]
     pub(crate) jit: JitCodeState,
@@ -7733,6 +7787,20 @@ pub(crate) struct ClosureSignature {
 
 /// The per-`stmt_pool`-slot shared signature table of a chunk; see
 /// [`CompiledCode::closure_signature`].
+/// One call site's decoded argument-source descriptor: the caller-visible
+/// source variable name of each argument position, and the compiler-baked
+/// local slots of the sources that have one.
+#[derive(Debug, Clone)]
+pub(crate) struct ArgSourceDecode {
+    pub(crate) names: std::sync::Arc<Vec<Option<String>>>,
+    pub(crate) slots: Vec<(Symbol, u32)>,
+    /// Whether any argument is written `|EXPR` (then the arguments spread).
+    pub(crate) has_slip: bool,
+}
+
+/// [`CompiledCode::arg_source_decodes`]: one lazily-filled slot per constant.
+pub(crate) type ArgSourceDecodes = Box<[std::sync::OnceLock<Option<ArgSourceDecode>>]>;
+
 pub(crate) type StmtPoolSignatures = Box<[std::sync::OnceLock<ClosureSignature>]>;
 
 /// JIT hotness/entry state carried on each `CompiledCode` (ADR-0004 layer 4).
@@ -7976,6 +8044,27 @@ impl CompiledCode {
         }
     }
 
+    /// Mark the slots a `PackageScope` body binds itself (its
+    /// `own_slots_idx`), which its exit must restore so they do not leak out
+    /// of the block. Many ops write a slot without naming it the way
+    /// [`Self::mark_local_access_slots`] sees (`DeclareOurScalar`, a by-name
+    /// `update_local_if_exists`), so this is what keeps the set sound.
+    // Cost: O(s), s = the listed slots.
+    fn mark_package_body_own_slots(&self, own_slots_idx: u32, slots: &mut [bool]) {
+        let Some(items) = self
+            .constants
+            .get(own_slots_idx as usize)
+            .and_then(Value::as_list_items)
+        else {
+            return;
+        };
+        for slot in items.iter().filter_map(Value::as_int) {
+            if let Some(marked) = usize::try_from(slot).ok().and_then(|s| slots.get_mut(s)) {
+                *marked = true;
+            }
+        }
+    }
+
     fn mark_same_named_slot_peers(&self, slots: &mut [bool]) {
         let selected_names: std::collections::HashSet<&str> = slots
             .iter()
@@ -8060,6 +8149,7 @@ impl CompiledCode {
             uses_routine_state: false,
             sets_routine_state: false,
             mentions_native_scalar_type_name: false,
+            names_var_method: false,
             has_once: false,
             uses_callframe: false,
             uses_capture: false,
@@ -8070,6 +8160,7 @@ impl CompiledCode {
             may_observe_named_slurpy: false,
             source_line: None,
             is_pointy_block: false,
+            is_whatever_code: false,
             pointy_alias_param: false,
             immutable_topic: false,
             declarator_doc: None,
@@ -8134,6 +8225,7 @@ impl CompiledCode {
             self_capture_decl_locals: Vec::new(),
             captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
+            eval_scope_names: std::collections::HashSet::new(),
             shadowed_sigilless_reads: Vec::new(),
             unscoped_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),
@@ -8155,6 +8247,7 @@ impl CompiledCode {
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            light_closure_shape: std::sync::OnceLock::new(),
             capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
             free_enum_bare_keys: std::sync::OnceLock::new(),
@@ -8162,6 +8255,7 @@ impl CompiledCode {
             op_scan_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
             stmt_pool_signatures: std::sync::OnceLock::new(),
+            arg_source_decodes: std::sync::OnceLock::new(),
             #[cfg(feature = "jit")]
             jit: JitCodeState::default(),
         }
@@ -8300,6 +8394,29 @@ impl CompiledCode {
         })
     }
 
+    /// The decoded argument-source descriptor at `constants[idx]`, built once
+    /// per slot by `decode` (`None` when the constant is no descriptor).
+    // Cost: O(1) after the first call for a slot; O(a) for it, a = arguments.
+    pub(crate) fn arg_source_decode(
+        &self,
+        idx: usize,
+        decode: impl FnOnce() -> Option<ArgSourceDecode>,
+    ) -> Option<std::borrow::Cow<'_, ArgSourceDecode>> {
+        let slots = self.arg_source_decodes.get_or_init(|| {
+            (0..self.constants.len())
+                .map(|_| std::sync::OnceLock::new())
+                .collect()
+        });
+        match slots.get(idx) {
+            Some(slot) => slot
+                .get_or_init(decode)
+                .as_ref()
+                .map(std::borrow::Cow::Borrowed),
+            // The pool grew after the side table was sized: decode uncached.
+            None => decode().map(std::borrow::Cow::Owned),
+        }
+    }
+
     pub(crate) fn closure_body_arc(&self, idx: usize) -> std::sync::Arc<Vec<Stmt>> {
         let extract = |i: usize| -> std::sync::Arc<Vec<Stmt>> {
             match self.stmt_pool.get(i) {
@@ -8434,9 +8551,11 @@ impl CompiledCode {
                     continue;
                 }
                 keys.push(sym);
-                for prefix in crate::symbol::SHADOW_META_PREFIXES {
-                    keys.push(sym.with_str(|name| Symbol::intern(&format!("{prefix}{name}"))));
-                }
+                sym.with_str(|name| {
+                    for prefix in crate::symbol::shadow_meta_prefixes_for(name) {
+                        keys.push(Symbol::intern(&format!("{prefix}{name}")));
+                    }
+                });
             }
             keys.into_boxed_slice()
         })
@@ -8480,11 +8599,11 @@ impl CompiledCode {
                         continue;
                     }
                     hidden.insert(sym);
-                    for prefix in crate::symbol::SHADOW_META_PREFIXES {
-                        hidden.insert(
-                            sym.with_str(|name| Symbol::intern(&format!("{prefix}{name}"))),
-                        );
-                    }
+                    sym.with_str(|name| {
+                        for prefix in crate::symbol::shadow_meta_prefixes_for(name) {
+                            hidden.insert(Symbol::intern(&format!("{prefix}{name}")));
+                        }
+                    });
                 }
                 (!hidden.is_empty()).then(|| Arc::new(hidden))
             })
@@ -8928,6 +9047,13 @@ impl CompiledCode {
             matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
                 || crate::native_types::is_native_int_type(s.as_str()))
         });
+        self.names_var_method =
+            self.constants.iter().any(
+                |c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "VAR"),
+            ) || self
+                .closure_compiled_codes
+                .iter()
+                .any(|c| c.names_var_method);
         (self.uses_routine_state, self.sets_routine_state) = self.scan_routine_state();
         self.compute_const_syms();
         self.compute_locals_sym();
@@ -8993,6 +9119,7 @@ impl CompiledCode {
         let mut block_local_scope_slots = vec![false; n];
         let mut gather_slots = vec![false; n];
         let mut package_scope_slots = vec![false; n];
+        let mut package_scope_lists: Vec<(usize, Vec<u32>)> = Vec::new();
         for (op_idx, op) in self.ops.iter().enumerate() {
             match op {
                 OpCode::ForLoop(spec) => {
@@ -9040,18 +9167,26 @@ impl CompiledCode {
                     self.mark_closure_parent_slots(*cc_idx, &mut gather_slots);
                 }
                 OpCode::MakeGather(_, None, _) => has_gather = true,
-                OpCode::PackageScope { body_end, .. } => {
+                OpCode::PackageScope {
+                    body_end,
+                    own_slots_idx,
+                    ..
+                } => {
                     has_package_scope = true;
-                    self.mark_name_access_slots(
-                        op_idx + 1,
-                        *body_end as usize,
-                        &mut package_scope_slots,
-                    );
-                    self.mark_local_access_slots(
-                        op_idx + 1,
-                        *body_end as usize,
-                        &mut package_scope_slots,
-                    );
+                    let mut body_slots = vec![false; n];
+                    self.mark_name_access_slots(op_idx + 1, *body_end as usize, &mut body_slots);
+                    self.mark_local_access_slots(op_idx + 1, *body_end as usize, &mut body_slots);
+                    self.mark_package_body_own_slots(*own_slots_idx, &mut body_slots);
+                    self.mark_same_named_slot_peers(&mut body_slots);
+                    let list: Vec<u32> = body_slots
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(slot, &touched)| touched.then_some(slot as u32))
+                        .collect();
+                    for &slot in &list {
+                        package_scope_slots[slot as usize] = true;
+                    }
+                    package_scope_lists.push((op_idx, list));
                 }
                 _ => {}
             }
@@ -9093,6 +9228,12 @@ impl CompiledCode {
         }
         if has_package_scope {
             self.env_consumer_slots.package_scope = package_scope_slots;
+            for (list_idx, (op_idx, list)) in package_scope_lists.into_iter().enumerate() {
+                if let OpCode::PackageScope { slots_idx, .. } = &mut self.ops[op_idx] {
+                    *slots_idx = list_idx as u32;
+                }
+                self.env_consumer_slots.package_scope_lists.push(list);
+            }
         }
         // §1.4 shadow slots: flag every slot whose name occupies more than one
         // `locals` slot (a genuine inner-block shadow under MUTSU_SHADOW_SLOTS)
@@ -9173,6 +9314,24 @@ impl CompiledCode {
             if let Some(idx) = name_idx
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(idx as usize).map(Value::view)
+                && let Some(&slot) = locals_map.get(name.as_str())
+            {
+                self.needs_env_sync[slot] = true;
+            }
+            // An op that resolves a `@`/`%` container by name to store into it
+            // or call a method on it (`@x.push`, `%h{$k} = v`, `@a[$i]++`)
+            // reads that name from env (#12526). Only aggregates: a scalar
+            // `$x.method` target is read from its slot.
+            let container_idx = match op {
+                OpCode::CallMethodMut {
+                    target_name_idx, ..
+                } => Some(*target_name_idx),
+                _ => self.op_container_mutate_const_idx(op),
+            };
+            if let Some(idx) = container_idx
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
+                && name.starts_with(['@', '%'])
                 && let Some(&slot) = locals_map.get(name.as_str())
             {
                 self.needs_env_sync[slot] = true;
@@ -9678,7 +9837,16 @@ impl CompiledCode {
             | OpCode::IndexAssignExprNested { name_idx: idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
             | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
-            | OpCode::IndexElemAutoviv { name_idx: idx, .. } => Some(*idx),
+            | OpCode::IndexElemAutoviv { name_idx: idx, .. }
+            // Element delete / increment mutate the named container in place
+            // like an element assign: a scalar `$x` holding the container must
+            // be captured too, or a closure run after its frame is gone (a
+            // deferred `.map` the caller sinks) mutates a stale copy.
+            | OpCode::DeleteIndexNamed(idx, _)
+            | OpCode::PostIncrementIndex(idx, ..)
+            | OpCode::PostDecrementIndex(idx, ..)
+            | OpCode::PreIncrementIndex(idx, ..)
+            | OpCode::PreDecrementIndex(idx, ..) => Some(*idx),
             _ => None,
         }
     }
@@ -9836,7 +10004,10 @@ impl CompiledCode {
         while i < bytes.len() {
             let c = bytes[i];
             if matches!(c, b'$' | b'@' | b'%' | b'&') {
-                let start_ident = i + 1;
+                // A placeholder (`$^a`) is keyed with its `^` twigil, the way
+                // the block's implicit signature names it.
+                let twigil = usize::from(bytes.get(i + 1) == Some(&b'^'));
+                let start_ident = i + 1 + twigil;
                 if start_ident < bytes.len()
                     && (bytes[start_ident].is_ascii_alphabetic() || bytes[start_ident] == b'_')
                 {
@@ -9849,7 +10020,7 @@ impl CompiledCode {
                     // while @/%/& lexicals keep their sigil. Match that convention
                     // so the free-var name lines up with the local slot / env key.
                     let name = if c == b'$' {
-                        pattern[start_ident..j].to_string()
+                        pattern[i + 1..j].to_string()
                     } else {
                         pattern[i..j].to_string()
                     };
@@ -10876,8 +11047,13 @@ impl CompiledCode {
         // A plain-scalar for-loop parameter (`for @a -> $i {...}`) is this
         // code's OWN binding, never something to capture from an enclosing
         // scope. See `for_loop_param_syms`.
+        // A name the chunk also reads outside the loop while no loop binds
+        // it is a forced capture of the enclosing frame's lexical (#13420):
+        // it stays free.
         if !self.for_loop_param_syms.is_empty() {
-            free.retain(|sym| !self.for_loop_param_syms.contains(sym));
+            free.retain(|sym| {
+                !self.for_loop_param_syms.contains(sym) || self.forced_free_var_syms.contains(sym)
+            });
         }
         // ADR-0032 D1 populates `container_ref_capture_syms` at EMISSION time
         // inside `Compiler::emit_wrap_var_ref`, purely from "does `local_map`
@@ -11199,6 +11375,10 @@ impl CompiledCode {
             // unconditional strip that would defeat D1/D2 for the exact
             // shape they exist to fix.
             .filter(|sym| !self.container_ref_capture_syms.contains(sym))
+            // A name a by-name loop parameter also binds in this chunk keeps
+            // its by-name reads: inside the loop they must see the parameter's
+            // env binding, which an upvalue read would bypass (#13420).
+            .filter(|sym| !self.for_loop_param_syms.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| {
                     crate::env::is_plain_user_lexical(s)
@@ -13012,6 +13192,41 @@ impl FastParamCheck {
         Self::of(pd.type_constraint.as_ref())
     }
 
+    /// The sigil (`@` or `%`) of a plain positional aggregate parameter the
+    /// positional-light paths may bind, or `None` for every other parameter.
+    ///
+    /// Plain means: untyped, no trait, no default, `where`, shape or
+    /// sub-signature, and a bare identifier after the sigil (no twigil, not
+    /// the implicit `@_`/`%_`). Such a parameter binds the caller's container
+    /// itself: mutsu's `Array`/`Hash` are shared by reference and assignment
+    /// to one stores in place, so element writes, `.push` and a whole `=`
+    /// all reach the caller with no writeback. Whether a given *argument* may
+    /// take that bind is decided per call
+    /// (`Interpreter::positional_light_aggregate_args_admitted`).
+    pub(crate) fn light_aggregate_sigil(pd: &ParamDef) -> Option<char> {
+        let mut chars = pd.name.chars();
+        let sigil = chars.next().filter(|c| matches!(c, '@' | '%'))?;
+        let plain = chars.next().is_some_and(|c| c.is_alphabetic())
+            && !pd.named
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && !pd.onearg
+            && !pd.sigilless
+            && !pd.is_invocant
+            && !pd.optional_marker
+            && pd.default.is_none()
+            && pd.type_constraint.is_none()
+            && pd.type_capture.is_none()
+            && pd.where_constraint.is_none()
+            && pd.traits.is_empty()
+            && pd.literal_value.is_none()
+            && pd.sub_signature.is_none()
+            && pd.outer_sub_signature.is_none()
+            && pd.code_signature.is_none()
+            && pd.shape_constraints.is_none();
+        plain.then_some(sigil)
+    }
+
     /// Is `pd` an untyped parameter whose implicit nominal type is `Any`? The
     /// general binder's rule (`bind_function_args_values`): a routine's `$x` /
     /// `\x` / `:$x`, but not a block's (implicitly `Mu`), and not one whose
@@ -13070,6 +13285,15 @@ pub(crate) struct CompiledFunction {
     /// no `is rw` parameter — the overwhelming majority — pays no per-call
     /// scan for one. Computed once in `precompute_param_name_syms`.
     pub(crate) has_rw_positional_param: bool,
+    /// Bit `i` is set when parameter `i` is a plain `@x`/`%x` the
+    /// positional-light paths may bind
+    /// ([`FastParamCheck::light_aggregate_sigil`]), so neither the eligibility
+    /// test nor the per-call argument shape check
+    /// (`positional_light_aggregate_args_admitted`) re-derives it per call
+    /// (#12526); zero means a routine pays nothing for the check. A plain
+    /// aggregate past index 63 sets no bit and keeps the general binder.
+    /// Computed once in `precompute_param_name_syms`.
+    pub(crate) aggregate_positional_params: u64,
     /// Pre-computed mapping from positional parameter index to locals slot index.
     /// Used by the positional light call fast path to avoid name-based lookup per call.
     pub(crate) param_local_slots: Option<Vec<usize>>,
@@ -13683,6 +13907,13 @@ impl CompiledFunction {
             .param_defs
             .iter()
             .any(|pd| !pd.named && pd.traits.iter().any(|t| t == "rw"));
+        self.aggregate_positional_params = self
+            .param_defs
+            .iter()
+            .take(64)
+            .enumerate()
+            .filter(|(_, pd)| FastParamCheck::light_aggregate_sigil(pd).is_some())
+            .fold(0, |mask, (i, _)| mask | (1u64 << i));
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -13798,6 +14029,7 @@ mod compiled_fns_identity {
             is_raw: false,
             uses_return_rw: false,
             has_rw_positional_param: false,
+            aggregate_positional_params: 0,
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,

@@ -240,6 +240,15 @@ impl Interpreter {
                         .borrow_mut()
                         .insert(name.to_string());
                 }
+                if hoisted {
+                    // The seed creates a binding for a name nothing bound yet.
+                    // Record that absence for the innermost branch/loop body
+                    // scope, so its exit takes the seed away again: the
+                    // declaration's own `SetVarDynamic` finds the seed and
+                    // would otherwise see an existing binding to shadow, not a
+                    // fresh one to remove (#13516).
+                    self.save_lexical_type_binding_for_scope_exit(name);
+                }
                 self.set_env_with_main_alias_sym(name, Some(name_sym), init_val.clone());
                 // A declaration's SetVarDynamic directly precedes this op.
                 // Its slot is authoritative when an inner `my` shadows an

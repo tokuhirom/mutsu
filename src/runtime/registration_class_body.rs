@@ -615,6 +615,13 @@ impl Interpreter {
         let proto_cell = fdef.routine_cell.clone();
         self.registry_mut()
             .set_proto_method(owner, &method_name, fdef);
+        if trait_args
+            .iter()
+            .any(|(name, _)| name == "__hidden_from_backtrace")
+        {
+            self.registry_mut()
+                .mark_proto_method_hidden(owner, &method_name);
+        }
         self.apply_method_is_traits(
             owner,
             &method_name,

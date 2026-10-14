@@ -1,0 +1,1 @@
+RakuAST round-tripping now preserves a scalar compound assignment followed by a loose word-logical operator. The assignment is the first operand in the emitted tree, and lowering reconstructs the existing parser path so the target is evaluated and written once.

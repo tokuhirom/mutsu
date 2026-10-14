@@ -148,6 +148,11 @@ impl Interpreter {
     /// even after `unsuppress_name` clears the suppression (see
     /// `class_scoped_short_names`).
     pub(crate) fn register_class_scoped_short_name(&mut self, name: &str) {
+        // Already recorded (a re-run declaration): no write, so no copy of a
+        // table a thread clone still shares (#13010).
+        if self.types.class_scoped_short_names.contains(name) {
+            return;
+        }
         crate::runtime::cow_table_mut(&mut self.types.class_scoped_short_names)
             .insert(name.to_string());
     }

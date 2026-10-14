@@ -152,7 +152,7 @@ impl Interpreter {
         method_args: &[Value],
     ) -> bool {
         let class_name = Self::raw_invocant_class_name(target);
-        if let Some(def) = self.resolve_method(&class_name, method, method_args) {
+        if let Some(def) = self.resolve_method(&class_name, method, method_args, target) {
             return Self::method_is_rw_capable(&def) && method_def_has_raw_invocant(&def);
         }
         native_method_returns_raw_invocant(method)
@@ -172,7 +172,7 @@ impl Interpreter {
         }
         native_method_writes_raw_invocant(method) && {
             let class_name = Self::raw_invocant_class_name(target);
-            self.resolve_method(&class_name, method, method_args)
+            self.resolve_method(&class_name, method, method_args, target)
                 .is_none()
         }
     }
@@ -210,7 +210,7 @@ impl Interpreter {
         method_args: &[Value],
     ) -> bool {
         let class_name = Self::raw_invocant_class_name(target);
-        self.resolve_method(&class_name, method, method_args)
+        self.resolve_method(&class_name, method, method_args, target)
             .as_ref()
             .is_some_and(method_def_has_raw_invocant)
     }

@@ -108,7 +108,7 @@ impl Interpreter {
             return None;
         }
         self.registry()
-            .method_wrap_chain(class_name, method, 0)
+            .builtin_method_wrap_chain_along_mro(class_name, method)
             .cloned()
     }
 

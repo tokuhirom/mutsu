@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 28;
 
 # A BEGIN nested in a routine runs at compile time (ADR-0134, slice 2), even
 # when it calls a routine of its scope that is a multi, an `our` or exported
@@ -69,3 +69,106 @@ is $method-eval, 'm', '.EVAL reaches a multi of the scope';
 
 sub with-symbolic { sub sym-helper { 'sym' }; BEGIN $symbolic = &::('sym-helper').() }
 is $symbolic, 'sym', 'a symbolic lookup reaches a routine of the scope';
+
+# A token, rule or regex of the scope is declared again in the lifted block,
+# whether or not the body seems to use it: a regex reaches it as a subrule
+# (#13096).
+my ($token, $rule, $after-token);
+sub with-token { my token t { x+ }; BEGIN $token = so 'axxb' ~~ /<t>/ }
+ok $token, 'a token of the scope, used as a subrule';
+
+sub with-rule { my token d { \d+ }; my rule p { <d> '+' <d> }; BEGIN $rule = ~('1 + 2' ~~ /<p>/) }
+is $rule, '1 + 2', 'a rule calling a token of the scope';
+
+sub declares-token { my token u { y }; BEGIN 1 }
+sub after-token { BEGIN $after-token = 'lifted' }
+is $after-token, 'lifted', 'a scope declaring a token no longer keeps later BEGINs in place';
+
+# A token whose pattern runs code or interpolates a variable closes over the
+# scope's lexicals, which the lifted block supplies as it does for a routine:
+# the variables the code blocks read and the ones the pattern interpolates.
+my ($code-token, $code-count, $interp-token, $array-token, $quant-token, $after-code-token);
+sub with-code-token {
+    my $c = 0;
+    my token ct { x { $c++ } };
+    BEGIN { $code-token = so 'xx' ~~ /<ct>+/; $code-count = $c }
+}
+is-deeply ($code-token, $code-count), (True, 2), 'a token code block updates a lexical of the scope';
+
+sub with-interp-token {
+    my $w; BEGIN $w = 'ab';
+    my token it { $w <?{ $w.chars == 2 }> };
+    BEGIN $interp-token = so 'zab' ~~ /<it>/;
+}
+ok $interp-token, 'a token interpolating a lexical, and asserting on it';
+
+sub with-array-token {
+    my @alts; BEGIN @alts = <p q>;
+    my regex ar { @alts+ };
+    BEGIN $array-token = ~('ppq' ~~ /<ar>/);
+}
+is $array-token, 'ppq', 'a regex interpolating an array of the scope';
+
+sub with-quant-token {
+    my $n; BEGIN $n = 2;
+    my token qt { x ** {$n} };
+    BEGIN $quant-token = ~('xxx' ~~ /<qt>/);
+}
+is $quant-token, 'xx', 'a quantifier block reading a lexical of the scope';
+
+sub declares-code-token { my token cu { y { 1 } }; BEGIN 1 }
+sub after-code-token { BEGIN $after-code-token = 'lifted' }
+is $after-code-token, 'lifted', 'a scope declaring a token with a code block no longer keeps later BEGINs in place';
+
+# A call qualified by a pseudo-package (`GLOBAL::`, `MY::`, `OUTER::`) makes
+# the body reach the whole scope, so it no longer keeps the BEGIN (and every
+# later nested BEGIN) in place (#13096). As on rakudo, `MY::name()` finds no
+# routine at all (it looks up `name`, not `&name`), while `GLOBAL::` reaches
+# an `our` routine installed at compile time.
+my ($pseudo-global, $pseudo-my, $after-pseudo);
+sub with-pseudo-global { our sub glob-helper { 'g' }; BEGIN $pseudo-global = GLOBAL::glob-helper() }
+is $pseudo-global, 'g', 'a GLOBAL-qualified call to an our routine of the scope';
+
+sub with-pseudo-my { sub my-helper { 1 }; BEGIN $pseudo-my = (try MY::my-helper()) // 'failed' }
+is $pseudo-my, 'failed', 'a MY-qualified call finds no routine, as on rakudo';
+
+sub after-pseudo { BEGIN $after-pseudo = 'lifted' }
+is $after-pseudo, 'lifted', 'a pseudo-package call no longer keeps later BEGINs in place';
+
+# A BEGIN reading a multi as `&name` through a read-only method or a call is
+# lifted (#13096); one that may change the proto object (`add_dispatchee`, or
+# handing `&name` on) still runs in place, since a change to the lifted copy
+# would be lost; that halts every later nested BEGIN, so it comes last.
+my ($multi-candidates, $multi-call, $after-multi-read, $wrap-lifted);
+sub reads-multi-candidates {
+    proto sub mc(|) {*}
+    multi sub mc(Int) { 1 }
+    multi sub mc(Str) { 2 }
+    BEGIN $multi-candidates = &mc.candidates.elems;
+}
+is $multi-candidates, 2, 'a multi read through .candidates';
+
+sub calls-multi-code {
+    proto sub mk(|) {*}
+    multi sub mk(Int $x) { $x * 2 }
+    BEGIN $multi-call = &mk(21) ~ ' ' ~ &mk.signature.raku;
+}
+is $multi-call, '42 :(|)', 'a multi called through its code object';
+
+sub after-multi-read { BEGIN $after-multi-read = 'lifted' }
+is $after-multi-read, 'lifted', 'a read-only multi read no longer keeps later BEGINs in place';
+
+sub wraps-plain {
+    sub wp { 'p' }
+    BEGIN { &wp.wrap(-> { 'w' ~ callsame }); $wrap-lifted = 'lifted' }
+    wp()
+}
+is $wrap-lifted ~ ' ' ~ wraps-plain(), 'lifted wp', 'a BEGIN wrapping a plain routine is lifted and keeps the wrap';
+
+sub changes-multi {
+    proto sub ad(|) {*}
+    multi sub ad(Int) { 'int' }
+    BEGIN &ad.add_dispatchee(sub (Str $) { 'str' });
+    ad('x') ~ ad(1)
+}
+is changes-multi(), 'strint', 'a BEGIN adding a dispatchee changes the real proto';

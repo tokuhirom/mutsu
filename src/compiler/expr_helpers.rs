@@ -889,6 +889,7 @@ impl Compiler {
                 self.code.emit(OpCode::GetLocal(slot));
             }
         } else {
+            self.note_shadowed_outer_capture(name, false);
             let name_idx = self
                 .code
                 .add_constant(Value::str(self.qualify_variable_name(name)));

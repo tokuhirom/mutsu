@@ -19,6 +19,19 @@ use crate::value::{RuntimeError, Value};
 const PROP_GENERAL_CATEGORY: i64 = 20;
 /// MoarVM's property code for `Script`.
 const PROP_SCRIPT: i64 = 9;
+/// MoarVM's property code for `East_Asian_Width`.
+const PROP_EAST_ASIAN_WIDTH: i64 = 7;
+/// MoarVM's East_Asian_Width value codes: the index is the value
+/// `getuniprop_int` answers; then the short alias (what `getuniprop_str`
+/// answers) and the long name `unipvalcode` also takes. Read off rakudo.
+const EAST_ASIAN_WIDTH_VALUES: [(&str, &str); 6] = [
+    ("N", "Neutral"),
+    ("A", "Ambiguous"),
+    ("H", "Halfwidth"),
+    ("W", "Wide"),
+    ("F", "Fullwidth"),
+    ("Na", "Narrow"),
+];
 
 fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
@@ -45,6 +58,7 @@ fn name_matches(input: &str, name: &str) -> bool {
 enum Prop {
     GeneralCategory,
     Script,
+    EastAsianWidth,
     /// A binary property, by its canonical name.
     Binary(&'static str),
 }
@@ -53,6 +67,7 @@ fn prop_of(code: i64) -> Option<Prop> {
     match code {
         PROP_GENERAL_CATEGORY => Some(Prop::GeneralCategory),
         PROP_SCRIPT => Some(Prop::Script),
+        PROP_EAST_ASIAN_WIDTH => Some(Prop::EastAsianWidth),
         _ => BINARY_PROPERTIES
             .binary_search_by_key(&code, |&(c, _)| c)
             .ok()
@@ -63,7 +78,7 @@ fn prop_of(code: i64) -> Option<Prop> {
 fn unsupported_prop(op: &str, code: i64) -> RuntimeError {
     RuntimeError::new(format!(
         "nqp::{op}: unsupported property code {code} \
-         (mutsu answers General_Category, Script and the binary properties)"
+         (mutsu answers General_Category, Script, East_Asian_Width and the binary properties)"
     ))
 }
 
@@ -75,6 +90,9 @@ fn prop_code(name: &str) -> Option<i64> {
     }
     if name_matches(name, "Script") || name_matches(name, "sc") {
         return Some(PROP_SCRIPT);
+    }
+    if name_matches(name, "East_Asian_Width") || name_matches(name, "ea") {
+        return Some(PROP_EAST_ASIAN_WIDTH);
     }
     BINARY_PROPERTIES
         .iter()
@@ -116,6 +134,14 @@ fn prop_value_code(op: &str, cp: i64, code: i64) -> Result<i64, RuntimeError> {
                 .map(crate::builtins::unicode::unicode_script_name)
                 .and_then(|name| SCRIPT_VALUES.iter().position(|&(n, _)| n == name))
                 .unwrap_or(0) as i64,
+            Prop::EastAsianWidth => char_of(cp)
+                .map(crate::builtins::uniprop::east_asian_width_abbrev)
+                .and_then(|abbrev| {
+                    EAST_ASIAN_WIDTH_VALUES
+                        .iter()
+                        .position(|&(short, _)| short == abbrev)
+                })
+                .unwrap_or(0) as i64,
             Prop::Binary(name) => char_of(cp)
                 .and_then(|ch| crate::builtins::uniprop::try_binary_property(ch, name))
                 .map_or(0, i64::from),
@@ -147,6 +173,10 @@ fn value_code(op: &str, code: i64, name: &str) -> Result<i64, RuntimeError> {
                     name_matches(name, long) || aliases.iter().any(|a| name_matches(name, a))
                 })
                 .map_or(0, |i| i as i64),
+            Prop::EastAsianWidth => EAST_ASIAN_WIDTH_VALUES
+                .iter()
+                .position(|&(short, long)| name_matches(name, short) || name_matches(name, long))
+                .map_or(0, |i| i as i64),
             Prop::Binary(_) => 0,
         },
     )
@@ -176,7 +206,7 @@ pub(super) fn call_nqp_unicode_op(op: &str, args: &[Value]) -> Option<Result<Val
             prop_code(&name).map(Value::int).ok_or_else(|| {
                 RuntimeError::new(format!(
                     "nqp::unipropcode: unsupported property '{name}' \
-                     (mutsu answers General_Category, Script and the binary properties)"
+                     (mutsu answers General_Category, Script, East_Asian_Width and the binary properties)"
                 ))
             })
         }
@@ -200,6 +230,7 @@ pub(super) fn call_nqp_unicode_op(op: &str, args: &[Value]) -> Option<Result<Val
                 Value::str_from(match prop_of(code) {
                     Some(Prop::GeneralCategory) => GENERAL_CATEGORY_VALUES[value as usize].0,
                     Some(Prop::Script) => SCRIPT_VALUES[value as usize].0,
+                    Some(Prop::EastAsianWidth) => EAST_ASIAN_WIDTH_VALUES[value as usize].0,
                     _ => "",
                 })
             })

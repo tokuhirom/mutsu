@@ -1037,3 +1037,144 @@ They now hold the root's stripe (`chained_root_guard`; cell and node for a celle
 writer keys it). All of them are leaves; the `WhateverCode` index resolution, which runs user
 code, stays outside. The repro is 0 in 180 runs after this slice and 2 in 74 before it.
 Pinned by the 16-thread blocks added to the test file.
+
+## 19. Hash readers: the `%h` harness and nine more funnels (2026-10-13, #13079)
+
+`t/concurrency/concurrent-param-hash-reader-families.t` is the `%h` twin of §18's array
+harness. Eight threads share one parameter hash: four restructure it (insert/delete,
+overwrite, delete-and-re-add, `.push`) and four run one of 31 reader families, directly and
+through a routine call. Nine families crashed on a debug build before this slice, with nanbox
+`classify` panics, `double free` aborts and SIGSEGV. Each crash was a walk of a map that
+another thread was rehashing:
+
+| family | funnel | fix |
+| --- | --- | --- |
+| `my %c = %x` | `coerce_hash_var_value`'s entry probes | `shared_snapshot` on entry |
+| `%x{*}` | the zen arms of `exec_index_op_with_positional` | node stripe around the walk |
+| `.gist`, `eqv` (through `value_has_proxy`) | `value_has_proxy_seen`'s Array/Hash arms | node stripe |
+| `\|%x` | `exec_make_slip_op` | `shared_snapshot` before the item walk |
+| `.Map` | `to_map`'s decont walk (and `to_hash`'s Array arm) | node stripe |
+| `.clone` | the method dispatch | `clone` joins `is_snapshot_read` |
+| `%(%x)` | the debug-build site-lane cross-check rendering the answer | node stripe around `gist_value` |
+| `eqv` | `eqv_inner`'s Array/Hash arms | `acquire_for_both`: both nodes' stripes, in stripe order |
+
+`.Hash` and `.Map` are deliberately **not** snapshot reads. On a Hash they answer the receiver
+itself (`%h.Hash<b> = 2` writes `%h`, as in raku), and a snapshot would quietly break that
+identity once a thread exists. The test file pins it.
+
+### 19.1 Still open
+
+This is still the funnel-by-funnel pattern that #13079 asks to replace. The array harness,
+extended the same way (`tmp`-only, not landed), still crashes in the general subscript path
+(`@x[1..3]`, `@x[0,1,2]`, `@x[*-1]`), in `.List`/`.Array` (`array_holes.rs`), `.sort`,
+`.head`/`.tail`, `.kv`/`.pairs`, `(elem)`, `.max`, `my @c = @x`, and in `eqv`, which reaches
+`vm_comparison_order_ops.rs` for arrays and not `eqv_inner`. The structural fix (§18.1's
+options: a guard inside the node accessor or `gc_contents_mut`, or a closure-based
+`with_items`) remains #13079's goal. It is also #13078's prerequisite: an in-place celled push
+is safe only once no reader walks a shared node unguarded.
+
+## 20. A read of a shared container runs on a snapshot by default (2026-10-13, #13079)
+
+Resolves §19.1 for arrays. The array harness, widened to the `%h` file's 44-family shape,
+crashed in 22 families on a debug build (`range start index N out of range for slice of length
+0`, nanbox `classify` panics, a `sort_by` total-order panic). Backtraces put the 22 behind
+about fifteen different readers, reached through four method entries and seven VM ops, so a
+guard per funnel was not going to converge.
+
+§18.1's two structural options were both measured against the code and rejected for this slice:
+
+- **A guard inside the node accessor or `gc_contents_mut`.** `ArrayData` dereferences to
+  `[Value]`, and readers index, iterate and `len()` that slice directly (`items.iter()`,
+  `items[i]`) at far more sites than the 87 explicit `items()` calls. No lock taken inside the
+  accessor can cover a borrow the caller keeps, and a guard in `gc_contents_mut` excludes
+  writers from each other, which the stripe already does; the hazard is the unguarded reader.
+- **A closure accessor `with_items(|s| ..)`.** Correct, but it means rewriting every one of
+  those borrowing sites at once. It stays the long-term shape if the reader side ever needs to
+  be complete by construction.
+
+Decided instead: invert the default. `value::container_read` (split out of `container_lock`)
+owns the reader policy, and every method funnel asks it the same question:
+
+- `reads_live_receiver(method)` names the methods that run on the LIVE receiver: the mutators
+  (`is_container_mutator`, held under the stripe as before), the leaf reads
+  (`is_leaf_structure_read`, under the stripe), the identity answers (`.self`, `.item`,
+  `.cache`, `.eager`, `.VAR`, `.Hash`/`.Map`; `.list` is a leaf read), metadata reads that touch
+  no element (`.WHAT`, `.defined`, `.of`, ...), and the four methods that write through the
+  receiver while running user code (`BIND-POS`, `BIND-KEY`, `classify-list`, `categorize-list`).
+- Every other method on a shared `Array`/`Hash` receiver runs on a `shared_snapshot`, except
+  `.map`/`.grep` on a non-shaped Array (§16.1). Before this slice that was an allowlist of 18
+  names; a reader added later is now safe without being listed.
+
+The funnels that apply it: `method_table::dispatch::call` and `call_method_with_values` (as
+before), plus the two that bypassed them: the cascades under `try_native_method`
+(`try_native_method_raw`) and the lever-A natives in the compiled mut-call tail
+(`compiled_mut_resolved_dispatch`: `.first`, `.min`/`.max`, `.Set`/`.Bag`, `.Seq`, ...). The
+mut tail's fallback keeps the live receiver, because it may write the receiver back.
+
+The readers that are not method calls are guarded at the primitive or the op:
+
+| Reader | Guard |
+| --- | --- |
+| `ListGen::pull_one` (the lazy `.kv`/`.pairs`/`.values`/`.keys`/`.batch`/`.flat`/`.tree` views) | node stripe per pull; the views keep handing out live element containers |
+| `value_to_list` (both copies) | node stripe around the copy |
+| `eqv_values` | `read_operand` (snapshot) after the user-candidate and laziness checks |
+| `pop_set_operands` (every set operator) | `read_operand` |
+| `Z` / `X` | `read_operand` |
+| a hyper operator (not an assigning one) | `read_operand` |
+| `resolve_bound_array_elements` (list-assignment source, `say`, `~`) | `read_operand` |
+| `:exists` probe | node stripe |
+| the general subscript path's Array arms | node stripe, or a snapshot when a `WhateverCode` index runs user code in the arm |
+
+`read_operand` is used only by ops that are already linear in the operand, so the copy does
+not change their order. `.sort` also decontainerizes each element once before sorting: a bound
+element cell written by another thread mid-sort made the comparator inconsistent, which Rust's
+`sort_by` answers with a panic.
+
+The trade-off is §16's, widened: once a thread exists, a method that hands out element
+containers of a snapshot (`.first`, `.head`, `.reverse`) can lose an aliasing write that races
+another thread. Measured, the single-threaded-after-a-`start` aliasing shapes (`@a.first(*>1) =
+9`, `@a.head = 0`, `$_ *= 2 for @a.values`, `.kv` with `is rw`, `.pairs`, `for @a`) still
+answer as raku does; the test file pins `.values`/`.kv` and `.list` identity.
+
+Measured, debug build, 4 runs of each family alone (`main` -> this slice): 22 of 44 families
+crashing -> 0 of 44. The release build passes both reader-family files 3 of 3. The
+single-threaded cost is the gate's relaxed load: `scripts/bench-det.sh` instruction counts
+(release, `main` / this slice) are bench-fib 3,114,353,509 / 3,114,344,808, bench-tak
+2,998,892,430 / 2,998,879,791 and bench-array 220,278,415 / 220,236,190, with identical
+allocation counts; the JIT-on rows agree to the same digits.
+
+### 20.1 Still open
+
+- The reader side is complete only by convention: a new reader that walks an `ArrayData`
+  outside these funnels (a new VM op, a new `ListGen` variant) is unguarded until a harness
+  finds it. A `with_items` accessor would make that impossible, at the cost of rewriting the
+  borrowing sites.
+- #13078 (the in-place celled push) can now be reconsidered: the reader-family harnesses no
+  longer find an unguarded walk of a shared node. Done in §21.
+
+## 21. A celled array's push is written in place (2026-10-13, #13078)
+
+`celled_array_mutate` (every `push`/`unshift`/`append`/`prepend`/`pop`/`shift`/`splice`
+on a `my @a` bound to a decl-site cell) and the `ContainerRef` arm of `exec_array_push_op`
+wrote through `Gc::make_mut`. Other holders of the cell's node are routine: the worker's
+slot, a parameter bound to the node, a `for` source, an element store's copy. With any of
+them alive, `make_mut` copied the node and appended to the copy, so the push was lost. That
+happened without a race, too: `my @a = ^3; await start { @a[0] = 5; @a.push(1) }` printed
+`[5 1 2]`, where raku prints `[5 1 2 1]`.
+
+Both now write in place (`gc_contents_mut`) while holding the cell's stripe, the node's
+stripe and the cell's mutex. The push arm also follows the cell's alias chain first
+(`value_cell_of`) and takes the stripes it lacked. This is rakudo's model: a VMArray grows
+in place. MoarVM keeps it memory-safe by freeing the old slots only at a safepoint; mutsu
+relies on §20's readers instead, which hold the stripe or read a snapshot.
+
+**Maintainer decision.** Without `make_mut`, an unguarded reader is no longer protected by
+the copy, and AGENTS.md reserves that weakening for the maintainer. The maintainer approved
+it on 2026-10-13, on the grounds that rakudo has the same semantics and §20 guards the
+readers. §20.1's caveat applies in full: a future reader that walks a shared `ArrayData`
+outside §20's funnels can now crash rather than read a stale copy.
+
+Measured on a debug build. Each of the four single-thread shapes and the two 4-thread races
+(a mutating and a read-only callee racing `push`, expecting 1010) failed 6 of 6 before this
+change and pass 5 of 5 after it (`t/concurrency/concurrent-celled-push-is-not-lost.t`). The
+array, hash and container-mutation harnesses pass 3 of 3.

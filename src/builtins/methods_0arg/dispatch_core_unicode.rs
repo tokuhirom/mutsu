@@ -9,15 +9,6 @@ pub(super) fn dispatch(
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
         "bytes" => Some(match target.view() {
-            ValueView::Instance { class_name, .. }
-                if {
-                    let cn = class_name.resolve();
-                    crate::runtime::utils::is_buf_or_blob_class(&cn)
-                } =>
-            {
-                // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
-                crate::builtins::method_table::blob::bytes(target, &[])
-            }
             // `Blob.bytes` is `Blob:D:` only: a Buf/Blob type object must
             // throw rather than count the bytes of its name (`$buf //
             // Buf[uint8]` handed to `BIO_write` as a 12-byte buffer).
@@ -46,6 +37,14 @@ pub(super) fn dispatch(
                 return Some(Some(Err(crate::runtime::Interpreter::buf_as_str_error(
                     target, "chars",
                 ))));
+            }
+            // `Cool.chars` is `self.Str.chars`: an instance may define its own
+            // `Str`, which `method_table::answer_shapeless` reads.
+            if let ValueView::Instance { class_name, .. } = target.view()
+                && crate::builtin_types::catalog::builtin_type_mro_strs(class_name.as_str())
+                    .is_none()
+            {
+                return None;
             }
             Some(Some(Ok(Value::int(
                 crate::builtins::str_prim::chars(target) as i64,

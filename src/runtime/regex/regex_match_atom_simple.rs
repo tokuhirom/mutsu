@@ -273,6 +273,9 @@ impl Interpreter {
                 }
                 return None;
             }
+            RegexAtom::StartOfString => {
+                return if pos == 0 { Some(pos) } else { None };
+            }
             RegexAtom::EndOfString => {
                 // Raku's `$` is end-of-STRING, unlike `$$` below.
                 return if pos == chars.len() { Some(pos) } else { None };
@@ -825,6 +828,7 @@ impl Interpreter {
             | RegexAtom::TildeMarker
             | RegexAtom::EndOfLine
             | RegexAtom::EndOfString
+            | RegexAtom::StartOfString
             | RegexAtom::WsRule
             | RegexAtom::SameAssertion { .. }
             | RegexAtom::RecurseSelf(_)

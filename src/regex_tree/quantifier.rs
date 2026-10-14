@@ -194,6 +194,16 @@ impl Parser {
 
     // Cost: O(1).
     fn parse_backtrack(&mut self) -> Option<RegexBacktrack> {
+        // `*:?` / `*:!` spell the frugal / greedy modifier with a colon.
+        if self.chars.get(self.pos) == Some(&':')
+            && matches!(self.chars.get(self.pos + 1), Some('?' | '!'))
+            && !self
+                .chars
+                .get(self.pos + 2)
+                .is_some_and(|next| next.is_alphanumeric())
+        {
+            self.pos += 1;
+        }
         let backtrack = match self.chars.get(self.pos).copied() {
             Some('?') => RegexBacktrack::Frugal,
             Some('!') => RegexBacktrack::Greedy,

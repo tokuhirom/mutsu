@@ -1,14 +1,11 @@
 //! Substitution expression building helpers.
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::Expr;
 use crate::parser::expr::expression_no_word_logical;
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
-use crate::value::Value;
-
-use super::adverbs::MatchAdverbs;
 
 pub(super) fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
     let (input, _) = ws(input)?;
@@ -72,16 +69,13 @@ pub(super) fn try_strip_subst_compound_assign(input: &str) -> Option<(&str, &str
     None
 }
 
-/// Build an expression for `s[pattern] op= value` compound substitution.
-/// This is equivalent to `$_.subst(pattern, { $/ op value })` applied to `$_`.
-pub(super) fn build_topic_subst_compound_expr(
-    pattern: String,
-    op: &str,
-    rhs: Expr,
-    adverbs: &MatchAdverbs,
-) -> Result<Expr, PError> {
+/// The per-match replacement of `s[pattern] OP= EXPR`: `$/ OP EXPR`, with a
+/// user operator called as `infix:<OP>($/, EXPR)`. The parser and the RakuAST
+/// lowering both build it here; [`subst_compound_rhs`] reads `EXPR` back.
+// Cost: O(1).
+pub(crate) fn subst_compound_thunk(op: &str, rhs: Expr) -> Expr {
+    // `$/` is stored as Var("/") in the AST (the parser strips the sigil).
     let match_var = Expr::Var("/".to_string());
-
     let op_token = match op {
         "+" => Some(TokenKind::Plus),
         "-" => Some(TokenKind::Minus),
@@ -96,51 +90,27 @@ pub(super) fn build_topic_subst_compound_expr(
         "&&" => Some(TokenKind::AndAnd),
         _ => None,
     };
-
-    // Build: { $/ op rhs }
-    // Note: $/ is stored as Var("/") in the AST (the parser strips the sigil)
-    let body_expr = if let Some(op_token) = op_token {
-        Expr::Binary {
+    match op_token {
+        Some(op) => Expr::Binary {
             left: Box::new(match_var),
-            op: op_token,
+            op,
             right: Box::new(rhs),
             form: Default::default(),
-        }
-    } else {
-        // User-defined infix operator: call infix:<op>($/, rhs)
-        Expr::Call {
+        },
+        None => Expr::Call {
             name: Symbol::intern(&format!("infix:<{op}>")),
             args: vec![match_var, rhs],
             listop: false,
-        }
-    };
-
-    let regex_value = Value::regex(pattern);
-
-    let mut args = vec![
-        Expr::Literal(regex_value),
-        Expr::AnonSub {
-            body: vec![Stmt::Expr(body_expr)],
-            is_rw: false,
-            is_raw: false,
-            is_block: true,
-            doc: Default::default(),
         },
-    ];
-    if adverbs.global {
-        args.push(Expr::Literal(Value::pair("g".to_string(), Value::TRUE)));
     }
+}
 
-    Ok(Expr::AssignExpr {
-        name: "_".to_string(),
-        expr: Box::new(Expr::MethodCall {
-            target: Box::new(Expr::Var("_".to_string())),
-            name: Symbol::intern("subst"),
-            args,
-            modifier: None,
-            quoted: false,
-            sugar: false,
-        }),
-        is_bind: false,
-    })
+/// The written `EXPR` of a [`subst_compound_thunk`].
+// Cost: O(1).
+pub(crate) fn subst_compound_rhs(thunk: &Expr) -> Option<&Expr> {
+    match thunk {
+        Expr::Binary { right, .. } => Some(right),
+        Expr::Call { args, .. } if args.len() == 2 => Some(&args[1]),
+        _ => None,
+    }
 }

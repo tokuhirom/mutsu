@@ -1,5 +1,6 @@
 use super::*;
 use crate::value::ValueMap;
+use crate::value::container_lock::ContainerStructGuard;
 use crate::value::value_buf::{buf_elems, buf_elems_in, buf_len_or_zero};
 
 impl Interpreter {
@@ -874,6 +875,9 @@ impl Interpreter {
         // addressed NO slots and answered `()`. Tag-probed, so every other
         // subscript shape pays one relaxed check.
         self.reify_map_grep_seq(&index)?;
+        // A plain `gather` index (`@a[gather { take 1; take 2 }]`) holds only an
+        // empty seed until it is pulled (ADR-11678): run it the same way.
+        self.reify_gather_seq(&index)?;
         // An *itemized* list/Range used as a subscript (`@a[$(7,8,9)]`,
         // `@a[my $ = ^2]`) is a SINGLE subscript, not a slice: itemization makes
         // it one item. (A bare `@a[7,8,9]` / `@a[^2]` is still a slice.)
@@ -984,6 +988,11 @@ impl Interpreter {
             }
             matches!(probe.descalarize().view(), ValueView::Hash(arc) if arc.has_typed_keys())
         };
+        // A `Str`-keyed hash coerces a user object key through its own `.Str`
+        // (#13293); an object hash keys by identity and is left alone.
+        if !is_positional && !target_is_object_hash {
+            index = self.hash_key_through_user_str(&target, index)?;
+        }
         if let ValueView::Junction { kind, values } = index.view()
             && !target_is_object_hash
         {
@@ -1205,6 +1214,30 @@ impl Interpreter {
                 return Err(crate::value::seq_consumed_error());
             }
             items.mark_cache_requested();
+            // A single non-negative position reads its element in place:
+            // normalizing to a List below copies the whole Seq, which made
+            // `$seq[$_] for ^$n` quadratic (#13023). It answers what the
+            // List's `resolve_array_entry` would: a bound cell's value, and
+            // `Nil` past the end.
+            if is_positional
+                && !items.has_element_containers()
+                && let ValueView::Int(i) = index.view()
+                && i >= 0
+            {
+                let elems: &[Value] = if prefix_pulled {
+                    items.live_generation()
+                } else {
+                    &items
+                };
+                let elem = match elems.get(i as usize) {
+                    Some(v) if v.is_container_ref() => v.deref_container(),
+                    Some(v) if v.is_hash_entry_ref_value() => v.hash_entry_read(),
+                    Some(v) => v.clone(),
+                    None => Value::NIL,
+                };
+                self.stack.push(elem);
+                return Ok(());
+            }
             if !items.has_element_containers() {
                 // After a bounded prefix pull, read just the pulled prefix:
                 // going through `Deref` would cut the rest of a `Str` cursor
@@ -1494,6 +1527,24 @@ impl Interpreter {
         if is_positional && matches!(target.view(), ValueView::Array(..)) {
             Self::reject_pair_positional_index(&index)?;
         }
+        // ADR-0068 §20: the Array arms below walk the target's node, which
+        // another thread may be restructuring. They run no user code, so they
+        // hold the node's stripe -- except a `WhateverCode` index (`@a[*-1]`,
+        // `@a[0, *-2]`), whose closure runs in the arm: that reads a snapshot.
+        let _read = if crate::value::container_lock::multi_mutator_threads_live()
+            && matches!(target.view(), ValueView::Array(..))
+        {
+            if Self::index_needs_target_elems(&index) {
+                if let Some(copy) = crate::value::container_read::shared_snapshot(&target) {
+                    target = copy;
+                }
+                None
+            } else {
+                ContainerStructGuard::acquire_for(None, &target)
+            }
+        } else {
+            None
+        };
         let result = match (target.view(), index.view()) {
             // Any subscript (positional or associative) on Nil yields Nil again,
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps
@@ -1807,10 +1858,14 @@ impl Interpreter {
                     Value::NIL
                 }
             }
+            // A zen read walks every entry; another thread sharing the hash
+            // can rehash it meanwhile, so hold its stripe (ADR-0068, #13079).
             (ValueView::Hash(items), ValueView::Whatever) => {
+                let _read = ContainerStructGuard::acquire_for(None, &target);
                 Value::array(items.values().cloned().collect())
             }
             (ValueView::Hash(items), ValueView::Num(f)) if f.is_infinite() && f > 0.0 => {
+                let _read = ContainerStructGuard::acquire_for(None, &target);
                 Value::array(items.values().cloned().collect())
             }
             (ValueView::Hash(items), ValueView::Nil) => Value::hash_with_data(items.clone()),
@@ -2094,11 +2149,8 @@ impl Interpreter {
             // — which re-resolves the parametrized MRO (`Blob[uint32]`) per
             // access — and `decode_elems`, which decodes the WHOLE buffer into a
             // fresh `Vec<Value>` per access (O(N) per read, O(N^2) for a loop).
-            // Same result as the dispatch_1arg AT-POS arm: in-range -> element,
-            // out-of-range (or storage-less) -> 0; a negative index falls out of
-            // AT-POS as Nil, which the generic arm below turns into the typed
-            // container default — reproduced here. Same name-is-authoritative
-            // trust as the `CArray[T]` native-handle arm above.
+            // Same name-is-authoritative trust as the `CArray[T]` native-handle
+            // arm above.
             (
                 ValueView::Instance {
                     class_name,
@@ -2109,7 +2161,14 @@ impl Interpreter {
             ) if crate::runtime::utils::is_native_elems_class(class_name.as_str())
                 && crate::value::value_buf::has_buf_elems(&attributes) =>
             {
-                if i < 0 {
+                // A `Blob`/`Buf` answers its `AT-POS` row's read (an
+                // `X::OutOfRange` failure past a `Blob`'s end, #13312); a
+                // Raku-side `CArray` reads `0` past its end.
+                if let Some(element) =
+                    crate::builtins::method_table::scalars::blob_pos::subscript_at(&target, i)
+                {
+                    element
+                } else if i < 0 {
                     self.typed_container_default(&target)
                 } else {
                     crate::value::value_buf::buf_elem_at(&attributes, i as usize)
@@ -2493,11 +2552,16 @@ impl Interpreter {
                 // that legitimately returns `Nil` (a missing key on a plain
                 // Mixin with no restriction) is unaffected: `?` only
                 // short-circuits on `Err`, not on an `Ok(Value::NIL)`.
-                let result = self.try_compiled_method_or_interpret(
-                    target.clone(),
-                    "AT-KEY",
-                    vec![Value::str_arc(key.clone())],
-                )?;
+                // An rvalue subscript reads the element: `AT-KEY` may answer
+                // the element's container (a native Hash inside the mixin
+                // does), and the value is what the read produces.
+                let result = self
+                    .try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-KEY",
+                        vec![Value::str_arc(key.clone())],
+                    )?
+                    .deref_container();
                 if result.is_nil() { default } else { result }
             }
             // A role-punned Positional value is represented as a Mixin rather
@@ -2795,17 +2859,19 @@ impl Interpreter {
                 keys.iter()
                     .map(|k| {
                         let (key, _) = crate::runtime::utils::quanthash_elem_entry(k);
-                        Self::mix_weight_as_value(m.get(&key).copied().unwrap_or_default())
+                        Self::mix_weight_as_value(m.get(&key).cloned().unwrap_or_default())
                     })
                     .collect(),
             ),
             // `%mix{*}` returns all values (the element weights).
-            (ValueView::Mix(m, _), ValueView::Whatever) => {
-                Value::array(m.values().map(|w| Self::mix_weight_as_value(*w)).collect())
-            }
+            (ValueView::Mix(m, _), ValueView::Whatever) => Value::array(
+                m.values()
+                    .map(|w| Self::mix_weight_as_value(w.clone()))
+                    .collect(),
+            ),
             (ValueView::Mix(m, _), _) => {
                 let (key, _) = crate::runtime::utils::quanthash_elem_entry(&index);
-                Self::mix_weight_as_value(m.get(&key).copied().unwrap_or_default())
+                Self::mix_weight_as_value(m.get(&key).cloned().unwrap_or_default())
             }
             // Range indexing (supports infinite ranges)
             (_, ValueView::Int(i)) if target.is_range() => {

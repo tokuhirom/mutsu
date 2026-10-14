@@ -147,6 +147,17 @@ impl Interpreter {
                     )
                     .map(|family| format!("__native_{family}__"))
                     .unwrap_or(shape);
+                    // A definiteness smiley (`:D`/`:U`/`:_`) is no dispatch
+                    // distinction: rakudo ranks `multi f(Int $x)` and
+                    // `multi f(Int:U $x)` (or `Int:D`) as tied, so a call
+                    // both bind is ambiguous (#13064).
+                    let shape = match [":D", ":U", ":_"]
+                        .iter()
+                        .find_map(|smiley| shape.strip_suffix(smiley))
+                    {
+                        Some(base) => base.to_string(),
+                        None => shape,
+                    };
                     Some(shape)
                 } else if !p.slurpy && p.name.starts_with('@') {
                     Some("__sigil_@__".to_string())

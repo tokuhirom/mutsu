@@ -296,7 +296,16 @@ impl Interpreter {
                 self.reify_seq_body(&body)?;
             }
         }
-        Ok((left, right))
+        // A user `Iterable` instance is a set operand through its elements.
+        let left = self.iterable_instance_elements(left)?;
+        let right = self.iterable_instance_elements(right)?;
+        // Every set operator walks its operands, and may run user code over
+        // them (an element's `.WHICH`), so a shared Array/Hash operand is read
+        // as a snapshot (ADR-0068 §20).
+        Ok((
+            crate::value::container_read::read_operand(left),
+            crate::value::container_read::read_operand(right),
+        ))
     }
 
     /// Cost: see `set_contains` -- O(e) on a list RHS, O(1) on a Set/Bag/Mix/Hash.

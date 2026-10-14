@@ -29,6 +29,16 @@ impl Interpreter {
         if let Some(path) = self.io_path_subclass_cool_receiver(target, method_sym.as_str()) {
             return self.try_native_method(&path, method_sym, args);
         }
+        // A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
+        // captures (ADR-11276 §9.98).
+        if let Some(list) = self.match_list_receiver(target, method_sym.as_str()) {
+            if args.is_empty()
+                && crate::value::match_view::match_list_answers_itself(method_sym.as_str())
+            {
+                return Some(Ok(list));
+            }
+            return self.try_native_method(&list, method_sym, args);
+        }
         // A member of a `my Array enum` answers the base type's collection methods.
         if let Some(base) = Self::enum_aggregate_base(target, method_sym.as_str()) {
             return self.try_native_method(&base, method_sym, args);
@@ -48,14 +58,22 @@ impl Interpreter {
         // binds the original argument and reads it again -- cannot tell. Any
         // other `Proxy` is read once by the parameter that binds it (a bound
         // `Mu $test` of `grep`), and a bind keeps the container.
+        // A shared scalar cell (`ContainerRef`) is read the same way: a spread
+        // capture keeps the containers of its positionals (`|\($p, 2)`, or the
+        // `|c` a `method subbuf(|c) { $.ords.subbuf(|c) }` forwards), and a
+        // native row refuses a container argument (#12907).
         // Cost: O(n) tag probes, n = arguments; no allocation unless one is a reference.
-        if args.iter().any(|a| a.is_proxy_value())
+        if args
+            .iter()
+            .any(|a| a.is_proxy_value() || a.is_container_ref())
             && !method_sym.as_str().starts_with("BIND")
             && !method_sym.as_str().starts_with("bind")
         {
             let mut fetched = Vec::with_capacity(args.len());
             for arg in args {
-                if arg.is_proxy_value() {
+                if arg.is_container_ref() {
+                    fetched.push(arg.deref_container());
+                } else if arg.is_proxy_value() {
                     match self.auto_fetch_proxy(arg) {
                         Ok(value) => fetched.push(value),
                         Err(e) => return Some(Err(e)),
@@ -104,11 +122,31 @@ impl Interpreter {
         {
             return Some(Err(err));
         }
+        if let Some(result) = self.cool_instance_text_via_str(target, method_sym.as_str(), args) {
+            return Some(result);
+        }
         // The `Cool`-subtype sibling (#9772): `Str.comb` / `Int.uc` on the type
         // object refuse it instead of answering out of its gist.
+        if let Some(result) = self.cool_type_object_default_fmt(target, method_sym.as_str(), args) {
+            return Some(result);
+        }
         if let Some(result) = self.cool_type_object_string_method(target, method_sym.as_str()) {
             return Some(result);
         }
+        // ADR-0068 §20: the cascades read a shared Array/Hash receiver with
+        // nothing held, as the table's own entry (`dispatch::call`) would not:
+        // a leaf read holds the node's stripe, any other read runs on a
+        // snapshot.
+        let method_name = method_sym.as_str();
+        let _read = if crate::value::container_lock::multi_mutator_threads_live()
+            && crate::value::container_read::is_leaf_structure_read(method_name)
+        {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
+        } else {
+            None
+        };
+        let snapshot = crate::value::container_read::snapshot_read_receiver(method_name, target);
+        let target = snapshot.as_ref().unwrap_or(target);
         let result = self.try_native_method_raw(target, method_sym, args)?;
         Some(self.settle_native_warning(result))
     }
@@ -707,10 +745,6 @@ impl Interpreter {
             return Some(result);
         }
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
-        // `$buf.subbuf(*-2)`: the pure cascade cannot call a closure, so a
-        // Callable offset is resolved to an Int here (issue #10118).
-        let subbuf_args = self.resolve_subbuf_callable_args(target, method_name, args);
-        let args: &[Value] = subbuf_args.as_deref().unwrap_or(args);
         // The pure `unique`/`repeated`/`squish` compare elements by `.WHICH`
         // and cannot run a user `WHICH`, so deposit it first
         // (see `runtime::which_identity`).
@@ -719,7 +753,16 @@ impl Interpreter {
         }
         let mut result =
             if args.len() == 2 {
-                crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
+                crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1]).or_else(
+                    || {
+                        crate::builtins::method_table::answer_shapeless(
+                            Some(self),
+                            target,
+                            method_sym,
+                            args,
+                        )
+                    },
+                )
             } else if args.len() == 1 {
                 crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0])
                     .or_else(|| {
@@ -1047,16 +1090,21 @@ impl Interpreter {
             if matches!(name.as_str(), "flat" | "eager") {
                 // For `flat`, a single lazy argument stays lazy (`flat 42 xx *`
                 // / `flat 10,11 ... *` propagate `.is-lazy`). The one exception
-                // is a finite `gather` coroutine: it must be forced and
-                // flattened here so `flat` descends into its nested lazy elements
-                // (`take internals($child)` in a binary-tree walk), which a raw
-                // return would leave un-descended (`('A', Seq(...), ...)`). Only
-                // a coroutine-backed, not-yet-forced gather is force-flattened;
-                // every other lazy list keeps its laziness.
-                // TODO: an actually-infinite `gather` (`flat gather { loop {
-                // take $i++ } }`) is forced eagerly here and would hang — raku
-                // keeps it lazy. (A `lazy gather` takes the flattening-pipe
-                // path below and stays lazy.)
+                // is a `gather` coroutine: `flat` must descend into its nested
+                // lazy elements (`take internals($child)` in a binary-tree
+                // walk), which a raw return would leave un-descended
+                // (`('A', Seq(...), ...)`).
+                // A plain gather's coroutine list (`flat(gather {...})`, the
+                // §8.2 Stream class) is flattened as it is pulled instead, so
+                // an infinite one works; the result is a Seq, as in Rakudo.
+                if name.as_str() == "flat"
+                    && let [arg] = args
+                    && let ValueView::LazyList(ll) = arg.view()
+                    && ll.is_gather_coroutine()
+                    && !ll.is_genuinely_lazy()
+                {
+                    return Some(Ok(Self::lazy_flat_gather(arg.clone())));
+                }
                 let is_finite_gather = |v: &Value| {
                     matches!(v.view(), ValueView::LazyList(ll)
                         if ll.coroutine.is_some() && ll.cache.lock().unwrap().is_none())

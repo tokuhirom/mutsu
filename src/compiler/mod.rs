@@ -1451,6 +1451,12 @@ pub(crate) struct Compiler {
     /// runs in the env it captured from the enclosing scope, so a `SetTopic`
     /// there overwrote the enclosing `$_` with the body's last value.
     pub(crate) unit_tail_discards: bool,
+    /// Whether a compilation unit's tail value stays on the VM stack as the
+    /// unit's result instead of travelling through `$_`. Set for an `EVAL`
+    /// unit, which runs in its caller's scope: delivering the tail through
+    /// `$_` clobbered the caller's topic (`EVAL '$_ = "b"'` was undone by
+    /// the tail `SetTopic`, and `EVAL '1 + 2'` replaced `$_` with `3`).
+    pub(crate) unit_tail_on_stack: bool,
     /// Whether a compilation unit's final expression or call statement is in
     /// sink context, like every other statement (#9766). Set for a program's
     /// mainline: Raku sinks its last statement, so an unhandled `Failure`
@@ -2040,6 +2046,7 @@ impl Compiler {
             callframe_block_depth: 0,
             is_routine: false,
             unit_tail_discards: false,
+            unit_tail_on_stack: false,
             unit_tail_sinks: false,
             in_closure_body: false,
             lexically_in_routine: false,
@@ -2653,6 +2660,14 @@ impl Compiler {
             .extend(self.shadowed_sigilless_terms.iter().cloned());
         sub.enclosing_local_names
             .extend(self.local_map.keys().cloned());
+        // A routine hoisted to its scope's entry is compiled before the
+        // scope's own `my`s are, so the names the enclosing scopes declare
+        // later count too (#13377): a nested block's same-named `my` in the
+        // routine shadows them only for that block.
+        for frame in self.enclosing_scopes.iter().chain(self.local_scopes.iter()) {
+            sub.enclosing_local_names
+                .extend(frame.all_declared_names().cloned());
+        }
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
         sub.class_body_static_code_vars
@@ -3007,6 +3022,7 @@ impl Compiler {
     /// This is the lexical-axis twin of [`Interpreter::push_eval_caller_frames`](crate::runtime::Interpreter::push_eval_caller_frames),
     /// which already models the same layout on the caller axis for `CALLER::`.
     pub(crate) fn mark_as_eval_unit(&mut self) {
+        self.unit_tail_on_stack = true;
         self.push_local_scope();
         // The EVAL'd unit's declarations now land in this freshly-pushed frame,
         // so it — not the empty wrapper below it — is the unit's `UNIT::` root.
@@ -3108,6 +3124,7 @@ impl Compiler {
             let slot = self.alloc_local(name);
             self.code.emit(OpCode::SetLocal(slot));
         } else {
+            self.note_shadowed_outer_capture(name, true);
             let idx = self
                 .code
                 .add_constant(Value::str(self.qualify_variable_name(name)));
@@ -3127,9 +3144,25 @@ impl Compiler {
             && !self.enclosing_sigilless.contains(name)
     }
 
-    /// Retain the enclosing scalar binding when a sigilless parameter reuses
-    /// its canonical name. The two source namespaces are distinct even though
-    /// both runtime env entries use the bare scalar key.
+    /// An enclosing frame's lexical reached by name where this chunk has a
+    /// same-named local only in a nested block (`my $b = 99; sub f { say $b;
+    /// { my $b = 3 }; $b = 1 }`): the local hides the name from
+    /// `compute_free_vars`, so the capture is forced (#13391), in a routine
+    /// and a closure body alike; a closure's exit writeback leaves the
+    /// block-local slot of a forced name alone (#13396). Only an actual
+    /// by-name read or write forces it, so a chunk that merely declares the
+    /// name never shares the outer cell. A read inside a `for` loop whose
+    /// by-name parameter has the name is the parameter, so it forces nothing;
+    /// one after the loop is the outer lexical again (#13420).
+    // Cost: O(p), p = by-name `for` parameters of the loops being compiled.
+    pub(super) fn note_shadowed_outer_capture(&mut self, name: &str, writes: bool) {
+        if self.enclosing_local_names.contains(name)
+            && !self.by_name_for_params.iter().any(|p| p == name)
+        {
+            self.note_forced_outer_scalar_capture(name, writes);
+        }
+    }
+
     pub(super) fn note_forced_outer_scalar_capture(&mut self, name: &str, writes: bool) {
         let sym = crate::symbol::Symbol::intern(name);
         if !self.code.forced_free_var_syms.contains(&sym) {
@@ -3169,6 +3202,7 @@ impl Compiler {
             let slot = self.alloc_local(name);
             self.code.emit(OpCode::SetLocal(slot));
         } else {
+            self.note_shadowed_outer_capture(name, true);
             let idx = self
                 .code
                 .add_constant(Value::str(self.qualify_variable_name(name)));
@@ -4785,6 +4819,16 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
+                        // A statement-form I/O builtin tail prints and the unit's
+                        // value is `True`, as for a routine body.
+                        Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_)
+                            if self.unit_tail_on_stack =>
+                        {
+                            self.compile_stmt(stmt);
+                            self.compile_expr(&Expr::Literal(Value::TRUE));
+                            self.emit_unit_tail_result();
+                            continue;
+                        }
                         Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => {
                             self.compile_type_decl_value(stmt);
                             self.emit_unit_tail_result();
@@ -4832,6 +4876,8 @@ impl Compiler {
     fn emit_unit_tail_result(&mut self) {
         if self.unit_tail_discards {
             self.code.emit(OpCode::Pop);
+        } else if self.unit_tail_on_stack {
+            // The value stays on the stack: `run_nested` returns it.
         } else {
             self.code.emit(OpCode::SetTopic);
         }

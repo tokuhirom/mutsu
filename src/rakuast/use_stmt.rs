@@ -67,16 +67,42 @@ pub(super) fn convert_use(
         }
         return Err(super::convert::unsupported("language version argument"));
     }
-    // The smiley pragmas (`use variables :D`) are parsed into a `":D"` string
-    // argument rather than a colonpair; rakudo's node is
-    // `Pragma(argument => ColonPair::True("D"))`. Refuse until the parser keeps
-    // the colonpair.
-    if matches!(
-        module,
-        "variables" | "attributes" | "parameters" | "invocant"
-    ) {
-        return Err(super::convert::unsupported("smiley pragma"));
+    // The smiley pragmas (`use variables :D`): the parser keeps the smiley as
+    // a `":D"` string argument, which only the colonpair spelling produces (a
+    // written string is a parse error), and rakudo's node is
+    // `Pragma(argument => ColonPair::True("D"))`.
+    if is_smiley_pragma(module) {
+        let smiley = match arg {
+            Some(Expr::Literal(value)) if tags.is_empty() && condition.is_none() => value
+                .as_str()
+                .and_then(|text| text.strip_prefix(':'))
+                .filter(|smiley| matches!(*smiley, "D" | "U" | "_"))
+                .map(str::to_string),
+            _ => None,
+        };
+        let Some(smiley) = smiley else {
+            return Err(super::convert::unsupported("smiley pragma"));
+        };
+        let mut node = pragma_node(module);
+        node.fields
+            .push(node_field(Some("argument"), colonpair_true(&smiley)));
+        return Ok(node);
     }
+    // `use Foo:from<NQP>`: the parser splits the `:from` adverb of the module
+    // name into an argument and a tag; rakudo keeps it on the name.
+    let from_spelling = match (arg.map(Expr::peel_parens), tags) {
+        (Some(Expr::Literal(v)), [tag]) if tag == "from" && !is_pragma_name(module) => v
+            .as_str()
+            .filter(|text| !text.is_empty() && !text.contains(['<', '>', ' ', '\'', '"', '\\']))
+            .map(str::to_string),
+        _ => None,
+    };
+    let from_text = from_spelling;
+    let (arg, tags) = if from_text.is_some() {
+        (None, &[][..])
+    } else {
+        (arg, tags)
+    };
     let argument = use_argument(arg, tags)?;
     let mut node = if is_pragma_name(module) {
         pragma_node(module)
@@ -85,7 +111,10 @@ pub(super) fn convert_use(
             class: RakuAstClass::StatementUse,
             fields: vec![node_field(
                 Some("module-name"),
-                name_from_identifier(module),
+                from_text.as_deref().map_or_else(
+                    || name_from_identifier(module),
+                    |text| name_with_from(module, text),
+                ),
             )],
         }
     };
@@ -163,20 +192,31 @@ pub(super) fn convert_need(module: &str) -> RakuAstNode {
 
 /// A statically named `require` keeps its package target through the round trip.
 // Cost: O(1).
-pub(super) fn convert_require(args: &[Expr]) -> Option<RakuAstNode> {
-    let [Expr::Literal(target)] = args else {
-        return None;
+pub(super) fn convert_require(args: &[Expr]) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let (Expr::Literal(target), rest) = (match args {
+        [first, rest @ ..] => (first, rest),
+        [] => return Ok(None),
+    }) else {
+        return Ok(None);
     };
     let ValueView::Package(module) = target.view() else {
-        return None;
+        return Ok(None);
     };
-    Some(RakuAstNode {
+    let mut node = RakuAstNode {
         class: RakuAstClass::StatementRequire,
         fields: vec![node_field(
             Some("module-name"),
             name_from_identifier(&module.resolve()),
         )],
-    })
+    };
+    match rest {
+        [] => {}
+        [import_list] => node
+            .fields
+            .push(node_field(Some("argument"), convert_expr(import_list)?)),
+        _ => return Ok(None),
+    }
+    Ok(Some(node))
 }
 
 /// Lower `Statement::Require` to the parser's package-valued call operand.
@@ -185,7 +225,7 @@ pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if node
         .fields
         .iter()
-        .any(|field| matches!(field.name, Some("file" | "argument")))
+        .any(|field| matches!(field.name, Some("file")))
     {
         return Err(super::lower::unsupported(node));
     }
@@ -193,9 +233,13 @@ pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         Some(NameShape::Identifier(name)) => name,
         _ => return Err(super::lower::unsupported(node)),
     };
+    let mut args = vec![Expr::Literal(Value::package(Symbol::intern(&module)))];
+    if let Ok(import_list) = named_child(node, "argument") {
+        args.push(lower_expr(import_list)?);
+    }
     Ok(Expr::Call {
         name: Symbol::intern("require"),
-        args: vec![Expr::Literal(Value::package(Symbol::intern(&module)))],
+        args,
         listop: false,
     })
 }
@@ -228,6 +272,57 @@ fn pragma_node(name: &str) -> RakuAstNode {
         class: RakuAstClass::Pragma,
         fields: vec![leaf_field(Some("name"), Value::str(name.to_string()))],
     }
+}
+
+/// `Foo:from<NQP>` as a `Name` with a `from` colonpair, measured on 2026.09:
+/// `Name.from-identifier("Foo", colonpairs => (ColonPair::Value(key => "from",
+/// value => QuotedString<words val>)))`.
+// Cost: O(n), n = length of the module and language names.
+fn name_with_from(module: &str, language: &str) -> RakuAstNode {
+    let mut name = name_from_identifier(module);
+    name.fields.push(RakuAstField {
+        name: Some("colonpairs"),
+        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::ColonPairValue,
+            fields: vec![
+                leaf_field(Some("key"), Value::str("from".to_string())),
+                node_field(Some("value"), super::convert::word_quote(language)),
+            ],
+        }))]),
+    });
+    name
+}
+
+/// The language of a module name's `from` colonpair (the inverse of
+/// [`name_with_from`]).
+// Cost: O(1).
+fn from_language(name: &RakuAstNode) -> Option<String> {
+    let field = name.fields.iter().find(|f| f.name == Some("colonpairs"))?;
+    let RakuAstFieldValue::List(pairs) = &field.value else {
+        return None;
+    };
+    let [pair] = pairs.as_slice() else {
+        return None;
+    };
+    let ValueView::RakuAst(pair) = pair.view() else {
+        return None;
+    };
+    if pair.class != RakuAstClass::ColonPairValue || leaf_str(pair, "key").ok()? != "from" {
+        return None;
+    }
+    let ValueView::RakuAst(value) = pair
+        .fields
+        .iter()
+        .find(|f| f.name == Some("value"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(v) => Some(v),
+            _ => None,
+        })?
+        .view()
+    else {
+        return None;
+    };
+    name_parts::quoted_text(value)
 }
 
 /// The `argument` of a `use` statement. Both an argument and tags at once
@@ -273,14 +368,46 @@ fn colonpair_true(tag: &str) -> RakuAstNode {
     }
 }
 
+/// The pragmas whose argument is a type smiley (`use variables :D`).
+// Cost: O(1).
+fn is_smiley_pragma(name: &str) -> bool {
+    matches!(name, "variables" | "attributes" | "parameters" | "invocant")
+}
+
 /// `RakuAST::Pragma` -> `Stmt::Use`, or `Stmt::No` when it is switched off.
 pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let module = leaf_str(node, "name")?;
     let off = node.fields.iter().any(|f| {
         f.name == Some("off") && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
     });
-    let (arg, tags) = lower_argument(node)?;
+    let (mut arg, mut tags) = lower_argument(node)?;
+    // `Foo:from<NQP>`: the parser keeps the language as an argument and a tag.
+    if let Some(language) = node
+        .fields
+        .iter()
+        .any(|f| f.name == Some("module-name"))
+        .then(|| named_child(node, "module-name"))
+        .transpose()?
+        .and_then(from_language)
+    {
+        if arg.is_some() || !tags.is_empty() {
+            return Err(super::lower::unsupported(node));
+        }
+        arg = Some(Expr::Literal(Value::str(language)));
+        tags.push("from".to_string());
+    }
     let (condition, if_imports) = lower_source_if(node)?;
+    // `use variables :D`: the parser's `":D"` argument, not an import tag.
+    if is_smiley_pragma(&module) {
+        let [smiley] = tags.as_slice() else {
+            return Err(super::lower::unsupported(node));
+        };
+        if off || arg.is_some() || !matches!(smiley.as_str(), "D" | "U" | "_") {
+            return Err(super::lower::unsupported(node));
+        }
+        arg = Some(Expr::Literal(Value::str(format!(":{smiley}"))));
+        tags.clear();
+    }
     if off {
         if arg.is_some() || !tags.is_empty() || condition.is_some() || !if_imports.is_empty() {
             return Err(super::lower::unsupported(node));
@@ -303,6 +430,14 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         _ => return Err(super::lower::unsupported(node)),
     };
     let (mut arg, mut tags) = lower_argument(node)?;
+    // `Foo:from<NQP>`: the parser keeps the language as an argument and a tag.
+    if let Some(language) = from_language(named_child(node, "module-name")?) {
+        if arg.is_some() || !tags.is_empty() {
+            return Err(super::lower::unsupported(node));
+        }
+        arg = Some(Expr::Literal(Value::str(language)));
+        tags.push("from".to_string());
+    }
     let (condition, if_imports) = lower_source_if(node)?;
     // `use newline :crlf` keeps its pair as the argument, where any other
     // module's `:tag` is an import tag.
@@ -396,7 +531,17 @@ fn lower_argument(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), Run
             return Ok((None, tags));
         }
     }
-    Ok((Some(lower_expr(argument)?), Vec::new()))
+    let lowered = lower_expr(argument)?;
+    // The parser keeps the parentheses of an import list (`use Foo ()`, `use Foo
+    // (1, 2)`); an empty one is what suppresses the module's default exports.
+    let lowered = if argument.class == RakuAstClass::CircumfixParentheses
+        && !matches!(lowered, Expr::Grouped(_))
+    {
+        Expr::Grouped(Box::new(lowered))
+    } else {
+        lowered
+    };
+    Ok((Some(lowered), Vec::new()))
 }
 
 fn colonpair_true_key(node: &RakuAstNode) -> Option<String> {

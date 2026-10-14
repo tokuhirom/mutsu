@@ -5,9 +5,10 @@ use crate::opcode::{LEXICAL_STASH_ROUTINE_SLOT, LexicalStashRoutines};
 use crate::value::ValueMap;
 
 impl Interpreter {
-    // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL, locals for MY::):
-    // every pseudo/package stash read materializes a fresh map by scanning them all (see
-    // `package_stash_value`), however few symbols the package has. Rakudo: O(1) -- see #9171.
+    // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL, locals for MY::),
+    // for a pseudo-package stash: it materializes a fresh map by scanning them all. A named
+    // package's stash is O(k + t), k = interned names under it, t = registered types, plus
+    // each routine member's code value (see `package_stash_value`). Rakudo: O(1) -- see #9171.
     pub(super) fn exec_get_pseudo_stash_op(
         &mut self,
         code: &CompiledCode,
@@ -97,6 +98,23 @@ impl Interpreter {
         if name == "UNIT::" {
             for (display, value) in self.unit_lexical_types() {
                 entries.entry(display).or_insert(value);
+            }
+            // The unit's own names live at the chain's tail, below every frame
+            // the read runs in: a module's `sub EXPORT` runs over the module
+            // scope, and a closure inside it over that frame. Iterating the
+            // running env sees its overlay only, so a `my constant &name` of
+            // the unit was missing (#13272).
+            let env = self.env();
+            if env.is_scoped() {
+                for (key, val) in env.chain_tail().iter() {
+                    let key_str = key.resolve();
+                    if self.should_hide_from_my_global_stash(&key_str) {
+                        continue;
+                    }
+                    entries
+                        .entry(Self::add_sigil_prefix(&key_str))
+                        .or_insert_with(|| val.clone());
+                }
             }
         }
         let stash = self.pseudo_stash_hash(entries);

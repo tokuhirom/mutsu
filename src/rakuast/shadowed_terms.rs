@@ -18,6 +18,9 @@ thread_local! {
     /// The sigilless terms the unit declares: `my \x`, `constant x`, a `\x`
     /// parameter. Unlike `SHADOWED`, only the declared name counts.
     static TERMS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    /// The names of the packages the unit declares (`class Nil`, `role X`,
+    /// `grammar G`, `module M`, `package P`).
+    static PACKAGES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
 /// Record the constant names `root` redeclares, replacing the previous unit's.
@@ -29,6 +32,48 @@ pub(super) fn scan(root: &RakuAstNode) {
     let mut terms = HashSet::new();
     visit_terms(root, &mut terms);
     TERMS.with(|t| *t.borrow_mut() = terms);
+    let mut packages = HashSet::new();
+    visit_packages(root, &mut packages);
+    PACKAGES.with(|p| *p.borrow_mut() = packages);
+}
+
+/// Whether the unit last passed to [`scan`] declares a package named `name`.
+/// A declared `class Nil` makes `Nil` that type, not the setting's `Nil` term.
+// Cost: O(1).
+pub(super) fn declares_package(name: &str) -> bool {
+    PACKAGES.with(|p| p.borrow().contains(name))
+}
+
+fn visit_packages(node: &RakuAstNode, found: &mut HashSet<String>) {
+    if matches!(
+        node.class,
+        RakuAstClass::Class
+            | RakuAstClass::Role
+            | RakuAstClass::Grammar
+            | RakuAstClass::Module
+            | RakuAstClass::Package
+    ) && let Ok(name) = named_child(node, "name")
+        && let Some(NameShape::Identifier(name)) = name_parts::name_shape(name)
+    {
+        found.insert(name);
+    }
+    for field in &node.fields {
+        match &field.value {
+            RakuAstFieldValue::Node(v) => visit_packages_value(v, found),
+            RakuAstFieldValue::List(items) => {
+                for v in items {
+                    visit_packages_value(v, found);
+                }
+            }
+            RakuAstFieldValue::Adverb(_) => {}
+        }
+    }
+}
+
+fn visit_packages_value(v: &crate::value::Value, found: &mut HashSet<String>) {
+    if let ValueView::RakuAst(child) = v.view() {
+        visit_packages(child, found);
+    }
 }
 
 /// Whether the unit last passed to [`scan`] declares a sigilless term `name`.
@@ -92,6 +137,10 @@ fn is_term_declaration(class: RakuAstClass) -> bool {
 fn visit(node: &RakuAstNode, in_decl: bool, found: &mut HashSet<String>) {
     let in_decl = in_decl || is_term_declaration(node.class);
     for field in &node.fields {
+        // The initializer of `constant p = pi` reads terms, it declares none.
+        let in_decl = in_decl
+            && !(node.class == RakuAstClass::VarDeclarationConstant
+                && field.name == Some("initializer"));
         match &field.value {
             RakuAstFieldValue::Node(v) => visit_value(v, in_decl, found),
             RakuAstFieldValue::List(items) => {

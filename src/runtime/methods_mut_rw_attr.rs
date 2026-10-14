@@ -272,7 +272,7 @@ impl Interpreter {
             return None;
         };
         let class_name = class_name.resolve();
-        if let Some(def) = self.resolve_method(&class_name, method, method_args) {
+        if let Some(def) = self.resolve_method(&class_name, method, method_args, target) {
             return match Self::rw_method_attribute_target(&def.body) {
                 Some((name, '$')) => Some(name),
                 _ => None,

@@ -138,6 +138,12 @@ pub(super) fn named_parameter(
         return Err(unsupported("named alias without a name"));
     }
     let (sigil, desigil) = split_sigil(&flat.target.name);
+    // The anonymous scalar `$` has no name in rakudo.
+    let desigil = if flat.target.name == super::convert::ANONYMOUS_SCALAR_PARAM {
+        ""
+    } else {
+        desigil
+    };
     let anonymous = matches!(
         flat.target.name.as_str(),
         "@" | super::convert::ANONYMOUS_SUBSIGNATURE
@@ -230,7 +236,18 @@ pub(super) fn wrap_aliases(
         return Err(super::lower::unsupported(owner));
     }
     let mut inner = bare_level(&def.name, target_is_named, &def);
-    inner.sub_signature = def.sub_signature.take();
+    // `:x($r) ($a, $b)`: with a real target the sub-signature follows the
+    // alias chain (the parser's `outer_sub_signature`); an anonymous target
+    // destructures itself.
+    let outer = if def.name == "@"
+        || def.name == super::convert::ANONYMOUS_SUBSIGNATURE
+        || def.name == super::convert::ANONYMOUS_ARRAY_SUBSIGNATURE
+    {
+        inner.sub_signature = def.sub_signature.take();
+        None
+    } else {
+        def.sub_signature.take()
+    };
     for alias in inner_aliases {
         let mut level = bare_level(alias, true, &def);
         level.named_alias = true;
@@ -240,6 +257,7 @@ pub(super) fn wrap_aliases(
     def.name = outermost.clone();
     def.named_alias = true;
     def.sub_signature = Some(vec![inner]);
+    def.outer_sub_signature = outer;
     Ok(def)
 }
 

@@ -8,7 +8,7 @@
 //! All three exceed or approach the 500-line limit individually but are not
 //! decomposable at a function boundary without semantic change.
 
-use crate::ast::Expr;
+use crate::ast::{Expr, SubstThunk};
 use crate::parser::expr::{
     expression, expression_no_word_logical, is_angle_subscript_key_char,
     starts_with_loose_word_logical,
@@ -34,7 +34,7 @@ use super::call_args::{
 use super::rakuast_adverbs::rakuast_regex_adverbs;
 use super::scan::{scan_to_delim, scan_to_delim_replacement, scan_to_delim_subst_pattern};
 use super::subst::{
-    build_topic_subst_compound_expr, parse_subst_replacement_expr, try_strip_subst_compound_assign,
+    parse_subst_replacement_expr, subst_compound_thunk, try_strip_subst_compound_assign,
 };
 use super::subst_source::subst_expr;
 use super::trans::{TransHead, parse_trans_adverbs, process_trans_escapes};
@@ -582,16 +582,25 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         let (after_eq_ws, _) = ws(after_op_eq)?;
                         // Item-assignment precedence: stop before `and`/`or`/...
                         let (rest, rhs_expr) = expression_no_word_logical(after_eq_ws)?;
-                        let pattern_str = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                        validate_regex_pattern_or_perror(&pattern_str)?;
+                        let pattern_raw = pattern;
+                        let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                        validate_regex_pattern_or_perror(&pattern)?;
+                        // Each match is replaced by `$/ OP EXPR`, evaluated
+                        // per match like the thunk of `s[...] = EXPR`.
+                        let thunk = SubstThunk {
+                            expr: subst_compound_thunk(op_str, rhs_expr),
+                            infix: Some(op_str.into()),
+                        };
                         return Ok((
                             rest,
-                            build_topic_subst_compound_expr(
-                                pattern_str,
-                                op_str,
-                                rhs_expr,
+                            subst_expr(
+                                true,
+                                pattern_raw,
+                                pattern,
+                                String::new(),
                                 &adverbs,
-                            )?,
+                                Some(Box::new(thunk)),
+                            ),
                         ));
                     }
                     if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
@@ -636,7 +645,10 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 String::new(),
                                 &adverbs,
-                                Some(Box::new(replacement_expr)),
+                                Some(Box::new(SubstThunk {
+                                    expr: replacement_expr,
+                                    infix: None,
+                                })),
                             ),
                         ));
                     }
@@ -767,7 +779,10 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 String::new(),
                                 &adverbs,
-                                Some(Box::new(replacement_expr)),
+                                Some(Box::new(SubstThunk {
+                                    expr: replacement_expr,
+                                    infix: None,
+                                })),
                             ),
                         ));
                     }

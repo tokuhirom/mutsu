@@ -30,6 +30,30 @@ thread_local! {
 /// reclassify it as a builtin after the parser's lexical import scope is gone.
 const USER_CALL: &str = "source-user-routine";
 
+/// An argument-less `Call::Name` built from a bareword nothing resolves.
+/// Rakudo has no such tree (its `.AST` throws `X::Undeclared::Symbols`), and
+/// `foo()` prints identically, so this hidden field tells lowering to restore
+/// the parser's `BareWord` instead of a call.
+const SOURCE_BAREWORD: &str = "source-bareword";
+
+// Cost: O(1).
+pub(super) fn bareword_field() -> RakuAstField {
+    RakuAstField {
+        name: Some(SOURCE_BAREWORD),
+        value: RakuAstFieldValue::Node(Value::TRUE),
+    }
+}
+
+// Cost: O(f), f = fields of the call node.
+pub(super) fn is_source_bareword(node: &RakuAstNode) -> bool {
+    node.fields.iter().any(|f| f.name == Some(SOURCE_BAREWORD))
+}
+
+// Cost: O(1).
+pub(super) fn is_bareword_field(field: &RakuAstField) -> bool {
+    field.name == Some(SOURCE_BAREWORD)
+}
+
 // Cost: O(1).
 pub(super) fn user_call_field() -> RakuAstField {
     RakuAstField {

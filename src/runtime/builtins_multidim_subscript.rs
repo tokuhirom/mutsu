@@ -325,6 +325,11 @@ impl Interpreter {
                 for i in 0..len {
                     let value = self
                         .try_compiled_method_or_interpret(t.clone(), "AT-POS", vec![Value::int(i)])
+                        // The snapshot holds values: an element container (or
+                        // the vivification token a hash-backed AT-POS answers
+                        // for a missing key) reads as what it holds, so the
+                        // hole predicate sees the gap marker.
+                        .map(|v| v.deref_container())
                         .unwrap_or(Value::NIL);
                     let exists = self
                         .try_compiled_method_or_interpret(

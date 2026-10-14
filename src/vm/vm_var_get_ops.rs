@@ -169,6 +169,18 @@ impl Interpreter {
             self.stack.push(Value::package(storage));
             return Ok(());
         }
+        // `buf16` and its siblings are constants bound to the parameterized
+        // types in Rakudo, so the type object IS `Buf[uint16]` (#13314).
+        if matches!(
+            name,
+            "buf8" | "buf16" | "buf32" | "buf64" | "blob8" | "blob16" | "blob32" | "blob64"
+        ) && !over_scalar
+            && !self.registry().classes.contains_key(name)
+        {
+            let canonical = crate::runtime::utils::normalize_buf_type_name(name);
+            self.stack.push(Value::package(Symbol::intern(&canonical)));
+            return Ok(());
+        }
         let over_scalar = over_scalar && !self.registry().has_lexical_type_key_for(name);
         let mut preferred_module_bareword = None;
         // `Pkg::tail` split once per symbol; `None` for an unqualified name.
@@ -274,6 +286,27 @@ impl Interpreter {
         {
             self.stack.push(v);
             return Ok(());
+        }
+        // `OUR::c` at file scope names the `our`-scoped sigil-less constant `c`
+        // of the unit, stored under its term key like a `GLOBAL::` one.
+        if let Some(bare) = name.strip_prefix("OUR::")
+            && !crate::qualified::is_qualified_str(bare)
+            && crate::qualified::is_global_package(self.current_package_sym())
+            && let Some(v) = self.term_binding(bare)
+        {
+            self.stack.push(v);
+            return Ok(());
+        }
+        // Inside `package M`, `OUR::k` is `M::k` when `M` declared an `our` constant `k`.
+        if let Some(bare) = name.strip_prefix("OUR::")
+            && !crate::qualified::is_qualified_str(bare)
+            && !crate::qualified::is_global_package(self.current_package_sym())
+        {
+            let real =
+                crate::qualified::qualified(self.current_package_sym(), Symbol::intern(bare));
+            if self.get_our_var(real.as_str()).is_some() {
+                return self.push_bare_word_value_in(real, compiled_fns, false);
+            }
         }
         // An imported routine may share its short spelling with a type
         // (`Time::localtime` exports `localtime`). Resolve a callable nullary
@@ -822,6 +855,13 @@ impl Interpreter {
                 && let Some(our_val) = self.get_our_var(name).cloned()
             {
                 our_val
+            // `Fac::make` where `Fac` is the short name a `use` of
+            // `unit module A::B::Fac is export` installed: the sub lives under
+            // the full package name.
+            } else if let Some(real) = self.resolve_package_alias_prefix(name)
+                && self.has_function(&real)
+            {
+                self.call_function_compiled_first(&real, Vec::new(), compiled_fns)?
             // Try resolving as a package-qualified function call (e.g.
             // `Module::func` used as a term without parens).
             } else if self.has_function(

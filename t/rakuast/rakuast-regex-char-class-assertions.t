@@ -3,7 +3,7 @@ use Test;
 # Enumerated character-class assertions (`<[a..z]>`, `<-alpha>`) in RakuAST,
 # measured on rakudo 2026.09.
 
-plan 20;
+plan 27;
 
 sub body($src) { $src.AST.statements.head.expression.body }
 
@@ -40,3 +40,18 @@ is ~("cz" ~~ EVAL(RakuAST::QuotedRegex.new(body => RakuAST::Regex::Assertion::Ch
     RakuAST::Regex::CharClassEnumerationElement::Range.new(from => 97, to => 99),
     RakuAST::Regex::CharClassEnumerationElement::Character.new("z"))))))), 'c',
   'a hand-built class';
+
+my $dot-base = body(Q|/<.-:letter-:digit>/|);
+isa-ok $dot-base, RakuAST::Regex::Assertion::CharClass,
+  'a dot base is represented by its arithmetic terms';
+is $dot-base.elements.elems, 2, 'the implicit all-character base is omitted';
+is-deeply $dot-base.elements.map(*.negated), (True, True),
+  'both property subtractions remain negated';
+is $dot-base.elements.map(*.property).join(' '), 'letter digit',
+  'the two property names are retained';
+is "ab1 c".comb(EVAL(Q|/<.-:letter-:digit>/|.AST)).join('|'), ' ',
+  'the round-tripped dot-base class subtracts both properties';
+is "ab1 c".comb(EVAL(Q|/<.-[a]-[b]-[c]>/|.AST)).join('|'), '1| ',
+  'the round-tripped dot-base class subtracts chained enumerations';
+is "ab1 c".comb(EVAL(Q|/<.-[a]+[1]>/|.AST)).join('|'), 'b|1| |c',
+  'a later positive term does not re-admit a subtracted character';

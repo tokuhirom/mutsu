@@ -10,6 +10,8 @@ pub(crate) enum RoutineTrait {
     },
     Returns(String),
     Of(String),
+    /// `handles TERM` on a method, with the term as written (`<a b>`, `*`).
+    Handles(Expr),
     Unsupported(String),
 }
 

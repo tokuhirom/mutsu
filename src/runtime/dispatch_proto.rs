@@ -114,9 +114,24 @@ impl Interpreter {
         }
         let saved_env = self.env.clone();
         let saved_readonly = self.enter_readonly_frame();
+        // A `{*}`-only proto never binds its own signature: Rakudo hands the
+        // arguments straight to the candidates (#13250).
+        // Rakudo still rejects a call whose arguments are ALL literals at
+        // compile time (`proto f(Int $x) {*}; multi f($) {...}; f 'foo'`);
+        // mutsu has no compile-time check, so it gates those calls here.
+        let all_literal = self.literal_native_args != 0
+            && self.literal_native_args.count_ones() as usize == args.len();
+        let only_star = !all_literal
+            && (def.body.is_empty()
+                || super::dispatch_proto_rewrite::is_only_star_block(&def.body));
+        let (bind_defs, bind_params): (&[ParamDef], &[String]) = if only_star {
+            (&[], &[])
+        } else {
+            (&def.param_defs, &def.params)
+        };
         let rw_bindings = match self.bind_function_args_values_with_argspec(
-            &def.param_defs,
-            &def.params,
+            bind_defs,
+            bind_params,
             args,
             Some(crate::ast::body_reads_args_array(&def.body)),
             Some(
@@ -282,11 +297,15 @@ impl Interpreter {
         args: Vec<Value>,
         proto: FunctionDef,
     ) -> Result<Value, RuntimeError> {
+        // A `{*}`-only proto never binds its own signature: Rakudo hands the
+        // arguments straight to the candidates, so a call only a candidate
+        // accepts is not rejected by the proto's parameter types (#13250).
+        let only_star = super::dispatch_proto_rewrite::is_only_star_block(&proto.body);
         let mut method_def = MethodDef {
             syms: Default::default(),
             lexical_package: proto.package,
-            params: proto.params.clone(),
-            param_defs: proto.param_defs.clone(),
+            params: if only_star { Vec::new() } else { proto.params.clone() },
+            param_defs: if only_star { Vec::new() } else { proto.param_defs.clone() },
             // A `{*}`-only body is the routine-level onlystar: the bare `*`
             // in it is the dispatch (the onlystar *term* in a longer body is
             // parsed into the dispatch call already, #10746).
@@ -311,7 +330,9 @@ impl Interpreter {
             is_default: false,
             deprecated_message: None,
             is_submethod: false,
-            is_hidden_from_backtrace: false,
+            is_hidden_from_backtrace: self
+                .registry()
+                .method_entry_proto_hidden(owner_class, method_name),
             captured_env: None,
             source_file: proto.source_file,
             role_param_bindings: None,

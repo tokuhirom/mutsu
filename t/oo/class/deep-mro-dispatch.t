@@ -9,10 +9,10 @@ use Test;
 plan 6;
 
 # 4-level linear hierarchy.
-class L0 { method tag { 'L0' } method only0 { 'o0' } }
+class L0 { method tag { 'L0' }; method only0 { 'o0' } }
 class L1 is L0 { method tag { 'L1' } }
 class L2 is L1 { }
-class L3 is L2 { method tag { 'L3' } method only3 { 'o3' } }
+class L3 is L2 { method tag { 'L3' }; method only3 { 'o3' } }
 
 # 1. Most-derived override wins through a deep chain.
 is L3.new.tag, 'L3', 'most-derived override resolves through 4 levels';

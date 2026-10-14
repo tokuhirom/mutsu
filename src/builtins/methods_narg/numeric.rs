@@ -1,36 +1,6 @@
 use crate::runtime;
 use crate::value::{Value, ValueView};
 
-pub(crate) fn int_to_superscript(n: i64) -> String {
-    const SUPER_DIGITS: [char; 10] = [
-        '\u{2070}', '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}',
-        '\u{2077}', '\u{2078}', '\u{2079}',
-    ];
-    let s = n.to_string();
-    s.chars()
-        .map(|c| match c {
-            '-' => '\u{207B}', // superscript minus
-            d if d.is_ascii_digit() => SUPER_DIGITS[(d as u8 - b'0') as usize],
-            _ => c,
-        })
-        .collect()
-}
-
-pub(crate) fn int_to_subscript(n: i64) -> String {
-    const SUB_DIGITS: [char; 10] = [
-        '\u{2080}', '\u{2081}', '\u{2082}', '\u{2083}', '\u{2084}', '\u{2085}', '\u{2086}',
-        '\u{2087}', '\u{2088}', '\u{2089}',
-    ];
-    let s = n.to_string();
-    s.chars()
-        .map(|c| match c {
-            '-' => '\u{208B}', // subscript minus
-            d if d.is_ascii_digit() => SUB_DIGITS[(d as u8 - b'0') as usize],
-            _ => c,
-        })
-        .collect()
-}
-
 // ── 1-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 1-argument method call on a Value.
 /// Compute the nth roots of a number. Used by both the `.roots` method and the

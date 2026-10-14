@@ -2,7 +2,7 @@
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::runtime;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value, ValueView, const_str_eq};
 use num_bigint::BigInt as NumBigInt;
 
 macro_rules! rows {
@@ -33,15 +33,27 @@ pub(super) static LIST_ROWS: &[MethodRow] = rows!["List":
 ];
 
 /// `combinations($of)`: the first row to take a `Range` argument, so it opts
-/// in to every plain argument.
-pub(super) static LIST_COMBINATIONS_OF: &[MethodRow] = &[MethodRow {
-    owner: "List",
-    name: "combinations",
-    arity: 1,
-    handler: Handler::Narrow(combinations_of),
-    flags: RowFlags::ANY_ARGS,
-    named: &[],
-}];
+/// in to every plain argument. Rakudo declares it on `List` and on `Any`
+/// (`self.list.combinations(|c)`), which a `Seq`, a `Range` or a `Str`
+/// reaches (ADR-11276 §9.100).
+pub(super) static LIST_COMBINATIONS_OF: &[MethodRow] =
+    &[combinations_of_row("List"), combinations_of_row("Any")];
+
+const fn combinations_of_row(owner: &'static str) -> MethodRow {
+    MethodRow {
+        owner,
+        name: "combinations",
+        arity: 1,
+        handler: Handler::Narrow(combinations_of),
+        // `Any`'s candidate takes a type object too (`Str.combinations(1)`).
+        flags: if const_str_eq(owner, "Any") {
+            RowFlags::ANY_ARGS.or(RowFlags::TYPE_OBJECT_OK)
+        } else {
+            RowFlags::ANY_ARGS
+        },
+        named: &[],
+    }
+}
 
 fn plain_extrema_items(target: &Value) -> Option<Vec<Value>> {
     // A `Date`, `DateTime`, `Instant`, `Duration` or `Pair` is one item and
@@ -185,11 +197,11 @@ fn extrema_pairs(
                 result.push(pair);
             }
         }
-        return Some(Ok(Value::seq(result)));
+        return Some(Ok(Value::array(result)));
     }
     let items = plain_extrema_items(target)?;
     if items.is_empty() {
-        return Some(Ok(Value::seq(Vec::new())));
+        return Some(Ok(Value::array(Vec::new())));
     }
     let mut best = items[0].clone();
     let mut result = vec![Value::value_pair(Value::int(0), best.clone())];
@@ -204,7 +216,7 @@ fn extrema_pairs(
             result.push(Value::value_pair(Value::int(index as i64), item.clone()));
         }
     }
-    Some(Ok(Value::seq(result)))
+    Some(Ok(Value::array(result)))
 }
 
 // Cost: O(e), e = plain positional elements compared with the running extremum.
@@ -254,9 +266,21 @@ pub(crate) fn minmax(target: &Value, args: &[Value]) -> Option<Result<Value, Run
                 max = item;
             }
         }
-        Some(Ok(
-            crate::runtime::builtins_collection::make_inclusive_range_pub(min.clone(), max.clone()),
-        ))
+        // The endpoints are `Real`s: a `Match` is compared as the `Cool` it is,
+        // then numifies through its text (a non-numeric one is a `Failure`).
+        let endpoint = |item: &Value| -> Result<Value, RuntimeError> {
+            if item.match_str_value().is_none() {
+                return Ok(item.clone());
+            }
+            match crate::runtime::utils::str_numeric_operand_failure(item) {
+                Some(failure) => Ok(failure),
+                None => crate::builtins::arith_add(Value::int(0), item.clone()),
+            }
+        };
+        Some(endpoint(min).and_then(|lo| {
+            endpoint(max)
+                .map(|hi| crate::runtime::builtins_collection::make_inclusive_range_pub(lo, hi))
+        }))
     }
 }
 
@@ -284,6 +308,15 @@ pub(crate) fn sum(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
             }
             if let Err(err) = validate_sum_items(&items) {
                 return Some(Err(err));
+            }
+            // A plain `Match` numifies through its text (`Match.Numeric` is
+            // `self.Str.Numeric`): a non-numeric one makes the sum a Failure.
+            if let Some(failure) = items
+                .iter()
+                .filter(|item| item.match_str_value().is_some())
+                .find_map(crate::runtime::utils::str_numeric_operand_failure)
+            {
+                return Some(Ok(failure));
             }
             Some(
                 items
@@ -544,6 +577,15 @@ pub(crate) fn combinations_of(
     let [arg] = args else {
         return None;
     };
+    // A `$k` read out of a variable is an itemized Range or Int.
+    let arg = arg.descalarize();
+    // `self.list.combinations` counts the list first: a lazy one throws
+    // (`(1..*).combinations(2)` is `X::Cannot::Lazy`), never hangs.
+    if crate::builtins::methods_0arg::is_lazy_count_source(target)
+        || crate::builtins::methods_0arg::is_infinite_range(target)
+    {
+        return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
+    }
     let items = target
         .as_list_items()
         .map(|items| items.to_vec())

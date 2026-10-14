@@ -36,6 +36,8 @@ fn parent_spelling<'a>(
 }
 
 impl Interpreter {
+    // Cost: O(n + h), n = declarations and metadata in the selected plan, h = user-defined hooks
+    // run during registration.
     pub(super) fn exec_register_decl_op(
         &mut self,
         code: &CompiledCode,
@@ -397,7 +399,23 @@ impl Interpreter {
                     let p = if does_parents.contains(&p) {
                         p
                     } else {
-                        self.canonical_class_parent_name(&p)
+                        let mut canonical = self.canonical_class_parent_name(&p);
+                        // `also is Outer::Inner` names a type the body itself
+                        // declares and has not registered yet; the bare tail
+                        // `canonical` falls back to would be an unrelated
+                        // outer `Inner` (possibly package-qualified). Keep the spelling so registration
+                        // resolves it once the body has run.
+                        if body_parents.contains(&p)
+                            && crate::qualified::is_qualified_str(&p)
+                            && canonical != p
+                            && !self.has_type_direct(&p)
+                        {
+                            canonical = p.clone();
+                        }
+                        // `use A::Base; unit class A::Kid is Base`: the parent is
+                        // the compunit's imported short name for `A::Base`.
+                        self.child_package_type_alias(&qualified_name, &canonical)
+                            .unwrap_or(canonical)
                     };
                     (p, pre_args)
                 })
@@ -495,14 +513,26 @@ impl Interpreter {
             // own attributes and methods, as before.
             let declare_how_keyword = custom_traits
                 .iter()
-                .find(|(trait_name, _)| trait_name == "__mutsu_declare_how")
+                .find(|(trait_name, _)| trait_name == crate::parser::DECLARE_HOW_TRAIT)
                 .and_then(|(_, arg)| arg.as_ref())
                 .and_then(crate::opcode::DeclTraitArg::literal)
                 .map(|kw| kw.to_string_value());
             let (declare_how_installed, declare_how_has_compose) =
                 if let Some(keyword) = declare_how_keyword {
+                    let how_name = crate::qualified::qualified(
+                        Symbol::intern("EXPORTHOW::DECLARE"),
+                        Symbol::intern(&keyword),
+                    );
+                    // The HOW can be either a constant in the env or a class
+                    // registered at this name in the type registry.
                     let how_type = self
-                        .get_env_with_main_alias(&format!("EXPORTHOW::DECLARE::{keyword}"))
+                        .get_env_with_main_alias_sym(how_name.as_str(), how_name)
+                        .or_else(|| {
+                            self.registry()
+                                .classes
+                                .contains_key(how_name.as_str())
+                                .then(|| Value::package(how_name))
+                        })
                         .or_else(|| self.slang_declarator_how(&keyword));
                     if let Some(how_type) = how_type {
                         (
@@ -1461,6 +1491,9 @@ impl Interpreter {
                 type_param_defs,
             );
             self.record_role_body_bind_cells(code, &qualified_name, body_bind_source_slots);
+            // A class composed before this registration ran (a hoisted shell)
+            // copied the role's methods and attributes without these captures.
+            self.give_role_captures_to_composed_classes(&qualified_name);
 
             self.record_module_owned_type(&qualified_name);
             self.types.last_registered_role_key = Some(qualified_name.clone());

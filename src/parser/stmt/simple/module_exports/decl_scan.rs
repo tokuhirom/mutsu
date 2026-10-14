@@ -30,6 +30,8 @@ use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use std::collections::HashMap;
 
+mod stash_expr;
+
 /// The declarations [`scan_module_decls`] found.
 #[derive(Default)]
 pub(super) struct ModuleDecls {
@@ -115,6 +117,21 @@ impl DeclScan {
         self.out.type_names.push(name);
     }
 
+    /// An `is export` routine installs it in its package's `EXPORT::DEFAULT`
+    /// and `EXPORT::ALL` stashes, which a file that loaded the module names as
+    /// packages (`need M; M::EXPORT::DEFAULT.WHO`).
+    fn export_stash_types(&mut self) {
+        if self.prefix.is_empty() {
+            return;
+        }
+        let export = compose_type_name(&self.prefix, "EXPORT");
+        for stash in ["DEFAULT", "ALL"] {
+            let name = compose_type_name(&export, stash);
+            self.push_type(name.clone(), name, false);
+        }
+        self.push_type(export.clone(), export, false);
+    }
+
     fn export(&mut self, name: String) {
         self.out
             .exports
@@ -127,31 +144,45 @@ impl DeclScan {
             });
     }
 
-    /// `my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`:
-    /// a `constant` inside a package parses as an our-scoped `VarDecl`
-    /// carrying the `__constant` marker trait, with the HOW type name as a
-    /// bareword initializer.
+    /// `EXPORTHOW::DECLARE` entries can be constants (`constant kw = SomeHOW`)
+    /// or class declarations (`class DECLARE::kw is Metamodel::ClassHOW { }`).
+    /// The latter is registered as a type object, so runtime HOW lookup checks
+    /// the type registry as well as the env.
     fn collect_declare_keywords(&mut self, exporthow_body: &[Stmt]) {
         for inner in exporthow_body {
-            let Stmt::Package { name, body, .. } = inner else {
-                continue;
-            };
-            if name.resolve() != "DECLARE" {
-                continue;
-            }
-            for decl in body {
-                if let Stmt::VarDecl {
-                    name,
-                    expr: Expr::BareWord(how_type),
-                    custom_traits,
-                    ..
-                } = decl
-                    && custom_traits.iter().any(|(t, _)| t == "__constant")
-                {
-                    self.out
-                        .declare_keywords
-                        .push((name.clone(), how_type.clone()));
+            match inner {
+                Stmt::ClassDecl { name, .. } => {
+                    let name = name.resolve();
+                    if let Some(keyword) = name.strip_prefix("DECLARE::") {
+                        self.out
+                            .declare_keywords
+                            .push((keyword.to_string(), package_type_name("EXPORTHOW", &name)));
+                    }
                 }
+                Stmt::Package { name, body, .. } if name.resolve() == "DECLARE" => {
+                    for decl in body {
+                        match decl {
+                            Stmt::VarDecl {
+                                name,
+                                expr: Expr::BareWord(how_type),
+                                custom_traits,
+                                ..
+                            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
+                                self.out
+                                    .declare_keywords
+                                    .push((name.clone(), how_type.clone()));
+                            }
+                            Stmt::ClassDecl { name, .. } if !name.resolve().contains("::") => {
+                                self.out.declare_keywords.push((
+                                    name.resolve(),
+                                    package_type_name("EXPORTHOW::DECLARE", &name.resolve()),
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -162,16 +193,10 @@ impl DeclScan {
         is_export: bool,
         export_tags: &[String],
     ) {
-        let mut names: Vec<String> = variants
-            .iter()
-            .map(|(name, _)| name.clone())
-            .filter(|name| name != "__DYNAMIC__" && !name.is_empty())
+        let names: Vec<String> = crate::parser::enum_value_names(variants)
+            .into_iter()
+            .filter(|name| !name.is_empty())
             .collect();
-        if let [(name, Some(body))] = variants
-            && name == "__DYNAMIC__"
-        {
-            crate::parser::stmt::decl::collect_dynamic_enum_value_names(body, &mut names);
-        }
         if is_export && !super::enum_values::exported_by_default(export_tags) {
             self.out
                 .tagged_enum_values
@@ -182,6 +207,24 @@ impl DeclScan {
     }
 }
 
+/// `name` as the importer can write it: a `GLOBAL::` prefix is the root
+/// namespace every spelling already starts from (`class GLOBAL::X` is `X`).
+fn absolute_name(name: &str) -> String {
+    name.strip_prefix("GLOBAL::")
+        .filter(|rest| !rest.is_empty())
+        .unwrap_or(name)
+        .to_string()
+}
+
+/// The full name of a type declared as `name` inside the package path
+/// `prefix`: a `GLOBAL::`-qualified name is absolute, not nested.
+fn package_type_name(prefix: &str, name: &str) -> String {
+    match name.strip_prefix("GLOBAL::") {
+        Some(rest) if !rest.is_empty() => rest.to_string(),
+        _ => compose_type_name(prefix, name),
+    }
+}
+
 impl<'ast> Visit<'ast> for DeclScan {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
@@ -189,6 +232,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 name,
                 is_lexical,
                 is_unit,
+                custom_traits,
                 ..
             } => {
                 let name = name.resolve();
@@ -197,19 +241,34 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
                 }
-                let composed = compose_type_name(&self.prefix, &name);
-                if self.spine || !*is_lexical {
-                    self.push_type(composed.clone(), name, false);
+                let composed = package_type_name(&self.prefix, &name);
+                // `is export` reaches the importer from any depth, a lexical
+                // `my class` in a routine or block included, and under the
+                // class's short name (`class A::B::C is export` imports `C`).
+                let exported = custom_traits
+                    .iter()
+                    .any(|(t, _)| t == crate::parser::EXPORT_TYPE_MARKER);
+                if exported && let Some((_, short)) = name.rsplit_once("::") {
+                    self.out.type_names.push(short.to_string());
+                }
+                if self.spine || !*is_lexical || exported {
+                    self.push_type(composed.clone(), absolute_name(&name), false);
                 }
                 self.enter_package(stmt, composed, *is_unit, String::new());
             }
-            Stmt::RoleDecl { name, .. } => {
+            Stmt::RoleDecl {
+                name, is_export, ..
+            } => {
                 let name = name.resolve();
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
                 }
-                let composed = compose_type_name(&self.prefix, &name);
-                self.push_type(composed.clone(), name, false);
+                let composed = package_type_name(&self.prefix, &name);
+                // `role A::B is export` imports `B`, as a class does.
+                if *is_export && let Some((_, short)) = name.rsplit_once("::") {
+                    self.out.type_names.push(short.to_string());
+                }
+                self.push_type(composed.clone(), absolute_name(&name), false);
                 self.enter_package(stmt, composed, false, String::new());
             }
             Stmt::Package {
@@ -260,6 +319,13 @@ impl<'ast> Visit<'ast> for DeclScan {
                     let name = name.resolve();
                     self.push_type(compose_type_name(&self.prefix, &name), name, true);
                 }
+                // `is export` imports a qualified enum under its short name, as
+                // it does a class (`my enum M::Endian is export` makes
+                // `Endian::Vax` the imported value).
+                if *is_export && let Some((_, short)) = name.resolve().rsplit_once("::") {
+                    self.out.enum_type_names.push(short.to_string());
+                    self.out.type_names.push(short.to_string());
+                }
                 if self.spine || *is_export {
                     self.collect_enum_values(variants, *is_export, export_tags);
                 }
@@ -267,31 +333,49 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // package, so `Pkg::Value` resolves globally, export or not
                 // (`package WS::Msg { enum Opcode is export (:Ping(9)) }` makes
                 // `WS::Msg::Ping` visible to any file that loaded the module).
-                if !*is_my && !self.prefix.is_empty() {
-                    let prefix = self.prefix.clone();
-                    self.out.enum_values.extend(
-                        variants
-                            .iter()
-                            .map(|(value, _)| value)
-                            .filter(|value| *value != "__DYNAMIC__" && !value.is_empty())
-                            .map(|value| compose_type_name(&prefix, value)),
-                    );
+                // An `our` enum's values are also reachable qualified by the
+                // enum's own name (`enum DepsShort::LC <New>` makes
+                // `DepsShort::LC::New` resolve in any file that loaded it).
+                if !*is_my {
+                    let enum_name = compose_type_name(&self.prefix, &name.resolve());
+                    let mut packages = vec![absolute_name(&enum_name)];
+                    if !self.prefix.is_empty() {
+                        packages.push(self.prefix.clone());
+                    }
+                    for package in packages {
+                        self.out.enum_values.extend(
+                            crate::parser::enum_value_names(variants)
+                                .iter()
+                                .filter(|value| !value.is_empty())
+                                .map(|value| compose_type_name(&package, value)),
+                        );
+                    }
                 }
                 self.off_spine(|v| walk_stmt(v, stmt));
             }
             Stmt::VarDecl {
                 name,
                 is_export,
+                is_our,
                 custom_traits,
                 ..
             } => {
                 // Sigiled constants (`constant $x = 1`) are not barewords.
                 if custom_traits.iter().any(|(t, _)| t == "__constant")
-                    && (self.spine || *is_export)
                     && !name.is_empty()
                     && !name.starts_with(['$', '@', '%', '&'])
                 {
-                    self.out.constant_names.push(name.clone());
+                    if self.spine || *is_export {
+                        self.out.constant_names.push(name.clone());
+                    }
+                    // An `our` constant is installed in its package, so
+                    // `Pkg::NAME` resolves from any file that loaded the
+                    // module, export or not.
+                    if *is_our && !self.prefix.is_empty() {
+                        self.out
+                            .constant_names
+                            .push(compose_type_name(&self.prefix, name));
+                    }
                 }
                 // `our &infix:<op> is export = &[other];` (PatternMatching's
                 // `┇` alias) exports a routine under the same `&name` a
@@ -326,6 +410,9 @@ impl<'ast> Visit<'ast> for DeclScan {
                         *is_test_assertion,
                     );
                     self.out.exports.insert(entry.name.clone(), entry);
+                    if *is_export {
+                        self.export_stash_types();
+                    }
                 }
                 self.off_spine(|v| walk_stmt(v, stmt));
             }
@@ -370,58 +457,26 @@ impl<'ast> Visit<'ast> for DeclScan {
             // `module Foo:auth<x> { }`) is wrapped in a bare or synthetic
             // block together with its metadata statements. The wrapper opens
             // no package, so it stays on the spine with the same paths.
-            Stmt::Block(_) | Stmt::SyntheticBlock(_) => walk_stmt(self, stmt),
+            Stmt::Block(_) | Stmt::SyntheticBlock(_) => {
+                // An exported qualified type is imported under its short name
+                // too (`class A::B::C is export { }` imports `C`).
+                if let Some((decl, header)) = crate::ast::package_header::unwrap(stmt)
+                    && header.export_tags.is_some()
+                    && let Stmt::ClassDecl { name, .. }
+                    | Stmt::RoleDecl { name, .. }
+                    | Stmt::Package { name, .. } = decl
+                    && let Some((_, short)) = name.resolve().rsplit_once("::")
+                {
+                    self.out.type_names.push(short.to_string());
+                }
+                walk_stmt(self, stmt)
+            }
             _ => self.off_spine(|v| walk_stmt(v, stmt)),
         }
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        match expr {
-            // An L10N distribution's generated EXPORT hook calls
-            // `$*LANG.define_slang(...)` instead of `use Slangify`. Read off
-            // the AST, not the source text: a comment mentioning
-            // `define_slang` must not make a module run at parse time.
-            Expr::MethodCall { name, .. } | Expr::HyperMethodCall { name, .. }
-                if name.resolve() == "define_slang" =>
-            {
-                self.out.defines_slang = true;
-            }
-            // `OUR::{'&infix:<@~~>'} := ...` in an export stash binds that
-            // routine into the tag's export list like an `our sub` declared
-            // there (Data::Record). A literal key names it; a computed one
-            // (`OUR::{'&postfix:<' ~ $c ~ '>'}`) flags the module for a
-            // parse-time probe instead (#9500).
-            Expr::IndexAssign { target, index, .. }
-                if matches!(target.as_ref(), Expr::PseudoStash(s) if s == "OUR::")
-                    && is_export_stash_package(&self.package) =>
-            {
-                if let Expr::Literal(key) = index.as_ref() {
-                    if let crate::value::ValueView::Str(key) = key.view()
-                        && let Some(routine) = key.strip_prefix('&')
-                        && !routine.is_empty()
-                    {
-                        self.export(routine.to_string());
-                    }
-                } else {
-                    self.out.dynamic_export_stash = true;
-                }
-            }
-            // `%EXPORT<&slack> := &trampoline;` (Object::Delayed): a module
-            // that hands out its routines through a `sub EXPORT { %EXPORT }`
-            // hook names them as literal keys of a lexical `%EXPORT`, which
-            // the importer's parse must know are routines (a listop call
-            // `slack { ... }` is otherwise "two terms in a row").
-            Expr::IndexAssign { target, index, .. } if matches!(target.as_ref(), Expr::HashVar(h) if h == "EXPORT") => {
-                if let Expr::Literal(key) = index.as_ref()
-                    && let crate::value::ValueView::Str(key) = key.view()
-                    && let Some(routine) = key.strip_prefix('&')
-                    && !routine.is_empty()
-                {
-                    self.export(routine.to_string());
-                }
-            }
-            _ => {}
-        }
+        self.scan_expr(expr);
         self.off_spine(|v| walk_expr(v, expr));
     }
 }

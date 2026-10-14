@@ -60,6 +60,14 @@ pub(crate) fn role_type_object_keeps_mu_method(method: &str) -> bool {
     matches!(method, "Str" | "gist" | "raku" | "perl")
 }
 
+/// Reading a role type object's identity (`R.WHAT`, `R.HOW`, `R.^name`, ...)
+/// answers for the role itself and never puns it: the role body runs only when
+/// the role is composed or punned, not when it is merely named (#13103).
+// Cost: O(1), a prefix test and a comparison against a few constants.
+pub(crate) fn role_type_object_identity_method(method: &str) -> bool {
+    method.starts_with('^') || matches!(method, "WHAT" | "HOW" | "WHO" | "WHERE" | "VAR")
+}
+
 /// A role's `role_id` is drawn from the SAME process-global counter as the
 /// parse-time declaration-site ids (`crate::ast::next_global_decl_id`). Both
 /// end up after a `\u{0}` in a type name -- `R\u{0}<role_id>` is one parametric
@@ -82,6 +90,7 @@ use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, ReadonlyKind, Stmt};
 use crate::env::Env;
 use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
 use crate::parse_dispatch;
+use crate::runtime::family_gen_cache::FamilyGenCache;
 use crate::runtime::gen_cache::GenCache;
 use crate::value::ValueView;
 use crate::value::{
@@ -616,7 +625,7 @@ pub(crate) struct ClassAttributeDef {
     /// Lexicals visible where a role attribute default was declared. A role's
     /// default is copied onto each consuming class, but its compiled chunk must
     /// still resolve imported names in the role's own scope.
-    pub(crate) captured_env: Option<std::sync::Arc<ValueMap>>,
+    pub(crate) captured_env: Option<crate::env_capture_view::CapturedScope>,
     /// Compunit whose imports were visible where a role attribute default was
     /// declared. Composed defaults run during construction, after the role's
     /// compunit has finished loading, so they must restore that visibility.
@@ -1879,7 +1888,7 @@ pub struct Interpreter {
     current_package_sym: Arc<AtomicU32>,
     routine_stack: routine_stack::RoutineStack,
     callframe_stack: Vec<CallFrameEntry>,
-    pending_call_arg_sources: Option<Vec<Option<String>>>,
+    pending_call_arg_sources: Option<std::sync::Arc<Vec<Option<String>>>>,
     /// An exception thrown while *evaluating a `where` constraint* during
     /// candidate matching. Raku propagates such an exception out of the whole
     /// dispatch (the `where` block is ordinary code); mutsu's matchers are
@@ -1916,7 +1925,7 @@ pub struct Interpreter {
     /// `arg-source name -> caller local slot` for the current call, decoded from the
     /// `Pair(name, Int(slot))` arg-source entries. Set alongside the names by
     /// `decode_arg_sources`, taken with them by `bind_function_args_values`.
-    pub(crate) pending_call_arg_source_slots: std::collections::HashMap<String, u32>,
+    pub(crate) pending_call_arg_source_slots: rustc_hash::FxHashMap<crate::symbol::Symbol, u32>,
     /// Bitmask of the CURRENT call's argument positions that were written as a
     /// literal, published by `exec_call_func_op` from the call opcode's
     /// `literal_native_args` and restored when that call returns. Multi
@@ -2612,10 +2621,13 @@ pub(crate) type RoutineRegistrySnapshot = (
 /// stayed visible to `has_proto` after the block and kept `skip(5, @a)` on the
 /// user-routine argument path (VarRef-wrapped) instead of the list builtin's.
 pub(crate) struct ImportScopeSnapshot {
-    pub(crate) functions: HashSet<Symbol>,
-    pub(crate) classes: HashSet<String>,
-    pub(crate) proto_subs: HashSet<String>,
-    pub(crate) proto_functions: HashSet<Symbol>,
+    /// The registry tables as the scope opened: each is copy-on-write, so the
+    /// snapshot is a reference to the very table (O(1), #9170), and a table
+    /// still identical to it at the pop was not written in the scope.
+    pub(crate) functions: Arc<function_table::FunctionTable>,
+    pub(crate) classes: registry::ClassTable,
+    pub(crate) proto_subs: Arc<registry::ProtoSubSet>,
+    pub(crate) proto_functions: Arc<registry::ProtoFunctionMap>,
     /// Function definitions hidden by an imported proto/multi family in this
     /// scope. Imports merge multi candidates into one package key, so the
     /// ordinary key snapshot cannot restore an enclosing candidate that the

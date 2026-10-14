@@ -144,6 +144,17 @@ pub(super) fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
 pub(in crate::parser::stmt) fn parse_array_shape_suffix(input: &str) -> PResult<'_, Vec<Expr>> {
     let (rest, _) = parse_char(input, '[')?;
     let (rest, _) = ws(rest)?;
+    if let Some(after_empty_dim) = rest.strip_prefix(';') {
+        let (after_empty_dim, _) = ws(after_empty_dim)?;
+        if after_empty_dim.starts_with(']') {
+            let (rest, _) = parse_char(after_empty_dim, ']')?;
+            crate::parser::add_parse_warning(
+                "Ignoring [Nil] as shape specification, did you mean 'my Nil @foo' ?".into(),
+                crate::parser::primary::current_line_number(input),
+            );
+            return Ok((rest, Vec::new()));
+        }
+    }
     let mut dims = Vec::new();
     let mut rest = rest;
 
@@ -286,4 +297,20 @@ pub(in crate::parser::stmt) fn attribute_bind_initializer_error() -> PError {
     attrs.insert("payload".to_string(), Value::str(MSG.to_string()));
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Comp::AdHoc"), attrs);
     PError::fatal_with_exception(MSG.to_string(), Box::new(ex))
+}
+
+/// Parse fake-infix adverb arguments: `:key<val> :key2<val2>`.
+pub(super) fn parse_fake_infix_adverbs(input: &str) -> PResult<'_, Vec<Expr>> {
+    let mut args = Vec::new();
+    let mut r = input;
+    while r.starts_with(':') && !r.starts_with("::") {
+        if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r) {
+            args.push(arg);
+            let (r3, _) = ws(r2)?;
+            r = r3;
+        } else {
+            break;
+        }
+    }
+    Ok((r, args))
 }

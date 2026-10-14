@@ -37,8 +37,35 @@ impl Interpreter {
         multi_dispatch: bool,
         candidate_package: Option<Symbol>,
     ) -> Option<bool> {
+        self.args_match_simple_positional_with(
+            args,
+            param_defs,
+            multi_dispatch,
+            candidate_package,
+            false,
+        )
+    }
+
+    /// [`Self::args_match_simple_positional`], optionally also taking the
+    /// `__type_only__` placeholder a nameless typed parameter (`multi m(Int)`)
+    /// carries. Only a caller that has checked the placeholder's constraint is
+    /// a core class may allow it: `multi f(LOG;; $x)` / `multi f(G)` put an
+    /// enum value or a constant there, which is a value constraint the plain
+    /// type check would get wrong.
+    // Cost: O(p) type checks plus the predicates, p = parameters.
+    pub(crate) fn args_match_simple_positional_with(
+        &mut self,
+        args: &[Value],
+        param_defs: &[ParamDef],
+        multi_dispatch: bool,
+        candidate_package: Option<Symbol>,
+        allow_type_only: bool,
+    ) -> Option<bool> {
         if args.len() != param_defs.len()
-            || !param_defs.iter().all(Self::is_simple_positional_param)
+            || !param_defs.iter().all(|pd| {
+                Self::is_simple_positional_param(pd)
+                    || (allow_type_only && pd.name == "__type_only__" && Self::is_simple_positional_param_named(pd))
+            })
             || args
                 .iter()
                 .any(|arg| arg.unwrap_varref().is_string_pair_value())
@@ -127,12 +154,58 @@ impl Interpreter {
         verdict.is_ok_and(|v| v.truthy())
     }
 
+    /// Match a method candidate of plain nominal positionals on the argument
+    /// types alone, or `None` when the candidate has any other shape.
+    ///
+    /// Such a candidate reads nothing of the speculative window
+    /// `method_args_match_for_invocant` opens (the scoped env, the captured
+    /// lexical scope, `self`, the receiver's package, role bindings): every
+    /// parameter is a plain positional (see [`Self::is_simple_positional_param`])
+    /// with no `where`, typed with a core builtin class (no package alias or
+    /// type capture is spelled that way) or untyped, and the only other
+    /// parameter allowed is the implicit `*%_` every method carries, which a
+    /// call with no named arguments satisfies. A call with named arguments, or
+    /// with a different arity, is the general walk's to judge (#12942).
+    // Cost: O(p) type checks, p = parameters of the candidate.
+    pub(crate) fn match_candidate_by_type_alone(
+        &mut self,
+        def: &MethodDef,
+        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
+        args: &[Value],
+    ) -> Option<bool> {
+        if role_bindings.is_some_and(|b| !b.is_empty())
+            || def.role_param_bindings.as_deref().is_some_and(|b| !b.is_empty())
+        {
+            return None;
+        }
+        let params = match def.param_defs.split_last() {
+            Some((last, rest)) if last.name == "%_" && last.slurpy && last.type_constraint.is_none() => rest,
+            _ => def.param_defs.as_slice(),
+        };
+        let plain = params.iter().all(|pd| {
+            pd.where_constraint.is_none()
+                && pd
+                    .type_constraint
+                    .as_deref()
+                    .is_none_or(|tc| crate::builtin_types::catalog::builtin_type_info(tc).is_some())
+        });
+        if !plain {
+            return None;
+        }
+        self.args_match_simple_positional_with(args, params, false, None, true)
+    }
+
     pub(crate) fn is_simple_positional_param(pd: &ParamDef) -> bool {
+        !pd.name.starts_with("__") && Self::is_simple_positional_param_named(pd)
+    }
+
+    /// [`Self::is_simple_positional_param`] without the check on the name's
+    /// `__` prefix.
+    fn is_simple_positional_param_named(pd: &ParamDef) -> bool {
         // A scalar parameter's name carries no sigil (`$x` is `x`); `@`/`%`/`&`
         // parameters and the synthetic `_capture` / `__type_only__` names do.
         !pd.name.is_empty()
             && !pd.name.starts_with(['@', '%', '&'])
-            && !pd.name.starts_with("__")
             && pd.name != "_capture"
             && !pd.named
             && !pd.slurpy

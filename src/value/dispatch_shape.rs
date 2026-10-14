@@ -307,15 +307,9 @@ impl DispatchShape {
                 | DispatchShape::IoPath
                 | DispatchShape::Match
         ) && const_str_eq(owner, "Cool"))
+            || (matches!(self, DispatchShape::Match) && const_str_eq(owner, "Capture"))
             || (self.reaches_audited_any() && const_str_eq(owner, "Any"))
             || (!self.inherits() && const_str_eq(owner, "Mu"))
-    }
-
-    /// Whether `Mu`'s or `Any`'s row `method` reaches this shape through the
-    /// per-method audit of a closed shape.
-    // Cost: O(m), m = audited names.
-    pub(crate) const fn reaches_audited_ancestor(self, method: &str) -> bool {
-        self.reaches_audited("Mu", method) || self.reaches_audited("Any", method)
     }
 
     /// Whether this closed shape reaches some of `Any`'s list rows
@@ -328,7 +322,7 @@ impl DispatchShape {
 
     /// Whether `Any`'s list row `method` reaches this closed shape. None
     /// reaches `sort`, whose handler reads only a list (a closed shape sorts
-    /// through the interpreter), and only a `Pair` reaches `reverse`, `min`
+    /// through the interpreter), and only a `Pair`, `Capture` or `Version` reaches `reverse`, a `Pair` `min`
     /// and `max`, whose handlers read a scalar, a hash, a list and a pair. A `Capture` flattens to itself
     /// (`methods_0arg`'s `Capture` block), and the
     /// quant hashes read as their list of pairs for `unique` first
@@ -340,9 +334,15 @@ impl DispatchShape {
             return false;
         }
         match self {
-            // A `Match` answers the others on its matched string (`methods_0arg`'s
-            // `Match` delegation), but joins its positional captures.
-            DispatchShape::Match => const_str_eq(method, "join"),
+            // A `Match` joins its positional captures, counts them for `end`
+            // and is its own `serial`; the others' handlers do not read a
+            // `Match`'s captures (ADR-11276 §9.96).
+            _ if const_str_eq(method, "ACCEPTS") => matches!(self, DispatchShape::Capture),
+            DispatchShape::Match => {
+                const_str_eq(method, "join")
+                    || const_str_eq(method, "serial")
+                    || const_str_eq(method, "end")
+            }
             _ if const_str_eq(method, "sort") => false,
             // `min`/`max` read a `Pair` as its one element; the other closed
             // shapes take the interpreter's extremum walk.
@@ -350,7 +350,11 @@ impl DispatchShape {
                 matches!(self, DispatchShape::Pair)
             }
             DispatchShape::Pair => true,
-            _ if const_str_eq(method, "reverse") => false,
+            // `Any.reverse` is `self.list.reverse`: a `Capture` reads its
+            // positionals, a `Version` is the one-element list holding itself.
+            _ if const_str_eq(method, "reverse") => {
+                matches!(self, DispatchShape::Capture | DispatchShape::Version)
+            }
             DispatchShape::Capture => !const_str_eq(method, "flat"),
             DispatchShape::Set
             | DispatchShape::SetHash
@@ -390,12 +394,18 @@ impl DispatchShape {
             return const_list_contains(&MU_FOR_CLOSED_SHAPES, method)
                 || self.reaches_mu_numeric(method);
         }
+        if const_str_eq(owner, "Capture") {
+            return const_list_contains(&CAPTURE_FOR_MATCH, method);
+        }
         if matches!(self, DispatchShape::Match) {
             return const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
                 || const_list_contains(&COOL_TEXT_FOR_MATCH, method)
-                // `Match` declares `Int`/`Num`/`Numeric`, not `UInt`: `Cool.UInt`
-                // reads the matched text (§9.92).
-                || const_str_eq(method, "UInt");
+                // `Match` declares `Int`/`Num`/`Numeric`, not `UInt` or the
+                // numeric methods: `Cool`'s read the matched text through
+                // `numify` (§9.92, §9.96). `Match.Num` is its own row.
+                || const_str_eq(method, "UInt")
+                || const_list_contains(&COOL_NUMERIC_FOR_COLLECTIONS, method)
+                || const_list_contains(&COOL_COERCE_FOR_MATCH, method);
         }
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
@@ -468,7 +478,7 @@ impl DispatchShape {
 /// type methods `of`/`keyof` (§9.86), which read nothing but the receiver's
 /// type and its container descriptor; a role gaining another row is audited
 /// for every composing shape first.
-pub(crate) const ROLES_WITH_ROWS: [&str; 7] = [
+pub(crate) const ROLES_WITH_ROWS: [&str; 8] = [
     "Positional",
     "Associative",
     "Callable",
@@ -476,6 +486,9 @@ pub(crate) const ROLES_WITH_ROWS: [&str; 7] = [
     "Setty",
     "Mixy",
     "QuantHash",
+    // `Numeric.ACCEPTS` (§9.108), the smartmatch every numeric shape agrees
+    // with.
+    "Numeric",
 ];
 
 /// The `Cool` numeric methods a `Range` or `Seq` reaches
@@ -487,6 +500,14 @@ const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 51] = [
     "unpolar", "abs", "sign", "floor", "ceiling", "truncate", "round", "is-prime", "conj", "chr",
     "rand", "int", "uint", "byte", "Complex", "UInt", "Version", "Real", "Num",
 ];
+
+/// Whether `Cool` declares `name` as `self.Numeric.METHOD` (or a numeric
+/// coercion), so a receiver with both a string and a number (an allomorph,
+/// `method_table::allomorph`) answers it on its number.
+// Cost: O(m), m = names in [`COOL_NUMERIC_FOR_COLLECTIONS`].
+pub(crate) fn cool_numeric_method(name: &str) -> bool {
+    COOL_NUMERIC_FOR_COLLECTIONS.contains(&name)
+}
 
 /// The `Cool` text methods a `Range`, `Seq`, `IO::Path` or `Match` reaches
 /// ([`DispatchShape::reaches_audited`]), and every receiver with no shape
@@ -550,27 +571,79 @@ const COOL_TEXT_FOR_MATCH: [&str; 12] = [
     "IO",
 ];
 
+/// The `Cool` coercions and parsers a `Match` reaches besides the numeric
+/// methods ([`DispatchShape::reaches_audited`]; ADR-11276 §9.96): neither
+/// `Match` nor `Capture` declares them, so each is `Cool`'s candidate, which
+/// reads the matched text (`self.Str.METHOD` or `self.Numeric.METHOD`).
+const COOL_COERCE_FOR_MATCH: [&str; 6] =
+    ["Rat", "FatRat", "Failure", "parse-names", "uniparse", "AST"];
+
 /// The `Any` list methods every closed shape with instances reaches
 /// ([`DispatchShape::reaches_audited_any`]): Rakudo's `Any` declares them as
 /// `self.list.METHOD`, and their handlers read any receiver as its list (a
 /// `Pair` or a `Set` as one element or its pairs, a `Blob` as its bytes).
 /// A shape whose own type declares one of them (`Seq.reverse`, `Range.flat`)
-/// answers its own row first. `join` (`self.list.join`) reads a `Pair` as its
+/// answers its own row first. `combinations` and `batch` read any receiver
+/// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
-/// (`method_table::collections::join`).
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 14] = [
-    "flat", "sort", "unique", "repeated", "reverse", "end", "join", "pick", "roll", "minmax",
-    "head", "tail", "min", "max",
+/// (`method_table::collections::join`). `serial` is the receiver itself.
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 22] = [
+    "flat",
+    "sort",
+    "unique",
+    "repeated",
+    "reverse",
+    "end",
+    "join",
+    "pick",
+    "roll",
+    "minmax",
+    "head",
+    "tail",
+    "min",
+    "max",
+    "serial",
+    "combinations",
+    "batch",
+    // `Any`'s subscript protocol (§9.106): a value that is not `Positional`
+    // is the one-element list holding itself, and has no keys.
+    "AT-POS",
+    "EXISTS-POS",
+    "AT-KEY",
+    "EXISTS-KEY",
+    // `Any.ACCEPTS` (`self === topic`, §9.108) reaches a `Capture` alone: the
+    // other closed shapes declare their own or are not audited for it.
+    "ACCEPTS",
+];
+
+/// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];
+/// ADR-11276 §9.95): Rakudo's `Match` is a `Capture` and declares none of
+/// them, and their handlers (`method_table::collections::capture`) read a
+/// `Match`'s captures as its parts, `list` as a live view of its positional
+/// captures and `Capture` as the `Match` itself (§9.96).
+pub(crate) const CAPTURE_FOR_MATCH: [&str; 11] = [
+    "keys",
+    "values",
+    "kv",
+    "pairs",
+    "antipairs",
+    "hash",
+    "elems",
+    "list",
+    "Capture",
+    "AT-POS",
+    "EXISTS-POS",
 ];
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])
 /// and every receiver with no shape (`method_table::answer_shapeless`): their
 /// handlers read only the receiver's truth or its lazy flag, wrap it in an item
-/// container, or sink it, which every value supports. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
+/// container, sink it, or render it (`Str`, `Stringy`, which a shape with its own
+/// `Str` row answers first) or ask its type (`isa`), which every value supports. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
 /// answers its own row first.
-pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 12] = [
+pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 15] = [
     "so", "not", "is-lazy", "item", "sink", "self", "defined", "DEFINITE", "Bool", "WHICH",
-    "WHERE", "clone",
+    "WHERE", "clone", "Str", "Stringy", "isa",
 ];
 
 /// Whether `list` contains `name`, for a `const fn`.

@@ -666,6 +666,25 @@ impl Interpreter {
             self.record_import_env_key(symbol);
             return true;
         }
+        // An exported enum key (`enum HashAlgorithm is export (ARGON2I13 => ..)`)
+        // is in the module's export table like any `use`-imported symbol, and
+        // goes into the enum-key namespace exactly as `use` puts it there (see
+        // `runtime::enum_bare_names`).
+        if !crate::qualified::is_qualified_str(symbol)
+            && self
+                .module
+                .exported_vars
+                .get(module)
+                .is_some_and(|vars| vars.contains_key(symbol))
+            && let Some(value) = self.exported_var_value(module, symbol)
+            && matches!(value.view(), ValueView::Enum { .. })
+        {
+            let key = crate::runtime::enum_bare_names::enum_bare_key_for_insert(symbol);
+            self.unsuppress_name(symbol);
+            self.record_import_env_key(&key);
+            self.env.insert(key, value);
+            return true;
+        }
         if let Some(value) = self.env.get(&source_single).cloned() {
             if self
                 .registry()

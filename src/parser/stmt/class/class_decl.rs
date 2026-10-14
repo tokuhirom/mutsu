@@ -168,6 +168,31 @@ pub(crate) const EXPORT_TYPE_MARKER: &str = "__mutsu_export_type";
 /// does. Internal (`__`-prefixed), so never dispatched as a trait.
 pub(crate) const LEADING_COLONS_TRAIT: &str = "__leading_colons";
 
+/// The `custom_traits` marker of a declaration written with a declarator a
+/// `use`d module registered through `EXPORTHOW::DECLARE` (`monitor Name { }`).
+/// Its argument is the keyword; registration resolves the HOW from it, and the
+/// RakuAST layer renders it as the package's `parsed-declarator`.
+pub(crate) const DECLARE_HOW_TRAIT: &str = "__mutsu_declare_how";
+
+/// The [`DECLARE_HOW_TRAIT`] entry for the declarator keyword `kw`.
+// Cost: O(1).
+pub(crate) fn declare_how_marker(kw: String) -> (String, Option<Expr>) {
+    (
+        DECLARE_HOW_TRAIT.to_string(),
+        Some(Expr::Literal(Value::str(kw))),
+    )
+}
+
+/// The declarator keyword a [`DECLARE_HOW_TRAIT`] entry in `custom_traits`
+/// names, if there is one.
+// Cost: O(t), t = number of custom traits.
+pub(crate) fn declare_how_keyword(custom_traits: &[(String, Option<Expr>)]) -> Option<String> {
+    custom_traits.iter().find_map(|(name, arg)| match arg {
+        Some(Expr::Literal(kw)) if name == DECLARE_HOW_TRAIT => Some(kw.to_string_value()),
+        _ => None,
+    })
+}
+
 pub(crate) fn export_type_marker(tags: &[String]) -> (String, Option<Expr>) {
     let tags = tags
         .iter()
@@ -260,10 +285,7 @@ pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = ws1(rest)?;
         let (rest, mut stmt) = class_decl_body(rest, false)?;
         if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push((
-                "__mutsu_declare_how".to_string(),
-                Some(Expr::Literal(Value::str(kw))),
-            ));
+            custom_traits.push(declare_how_marker(kw));
         }
         return Ok((rest, stmt));
     }
@@ -363,9 +385,8 @@ pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse `anon class Name { ... }` declaration.
-/// The class is created but not installed in the lexical scope.
-/// Emits a ClassDecl (registered under the real name) followed by a call to
-/// `__MUTSU_UNREGISTER_CLASS__` to remove the name from the scope.
+/// The class is created but not installed in the lexical scope: it is the
+/// expression form's declaration (`mark_anon_package_decl`) as a statement.
 pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("anon", input).ok_or_else(|| PError::expected("anon class declaration"))?;
     let (rest, _) = ws1(rest)?;
@@ -428,13 +449,11 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         parent_args: Vec::new(),
         body_parents: Vec::new(),
     };
-    // Emit the class registration followed by unregistering the name from the scope
-    let unregister = Stmt::Expr(Expr::Call {
-        name: Symbol::intern("__MUTSU_UNREGISTER_CLASS__"),
-        args: vec![Expr::Literal(Value::str(user_name))],
-        listop: false,
-    });
-    Ok((rest, Stmt::Block(vec![class_decl, unregister])))
+    // The same declaration `anon class Name { }` is as an expression: the
+    // name gets a site suffix, so nothing can look the class up by it.
+    let mut class_decl = class_decl;
+    crate::parser::mark_anon_package_stmt(&mut class_decl);
+    Ok((rest, Stmt::Expr(Expr::DoStmt(Box::new(class_decl)))))
 }
 
 /// Parse the body of a class declaration (after `class` keyword and whitespace).
@@ -655,11 +674,19 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     // exists so the shared helper can serve the grammar path too.
     let mut implicit_grammar_parent = false;
     let mut body_parents: Vec<String> = Vec::new();
+    let nested_types = nested_type_names(&body);
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
             class_is_rw = true;
             false
         } else if let Some(parent_name) = stmt_also_is_parent(stmt) {
+            // `also is Inner` names the type this body declares, not an outer
+            // type of the same name.
+            let parent_name = if nested_types.contains(&parent_name) {
+                format!("{name}::{parent_name}")
+            } else {
+                parent_name
+            };
             push_also_is_parent(
                 &mut parents,
                 &mut body_parents,

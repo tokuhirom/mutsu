@@ -710,12 +710,14 @@ impl crate::runtime::Interpreter {
             }
             return None;
         }
+        // The handle carries the class's registered name: a struct declared in
+        // a module (`unit module R; class Face is repr('CStruct')`) is
+        // `R::Face`, and a handle tagged with the short `Face` answered none
+        // of its methods (Font::FreeType's `FT_Size.face.FT_Reference_Face`,
+        // #12934).
+        let class = self.cstruct_class_name(&declared);
         Some(crate::runtime::nativecall::make_native_handle(
-            if self.is_cstruct_class(&declared) {
-                crate::qualified::last_segment(crate::symbol::Symbol::intern(&declared)).as_str()
-            } else {
-                "Pointer"
-            },
+            class.as_deref().unwrap_or("Pointer"),
             addr,
         ))
     }

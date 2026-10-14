@@ -253,6 +253,16 @@ impl EntryTerminal {
     /// The raw value currently stored at this slot, without decontainerizing
     /// and without creating anything.
     pub(crate) fn peek(&self) -> Option<Value> {
+        // Another thread inserting into a shared container rehashes (or
+        // regrows) it in place, so the lookup below runs under the container
+        // stripe a structural writer holds: a `for %!h -> $p { $p.value }`
+        // reads every entry through this walk while other threads insert
+        // (ADR-0068 §16, #13277). A no-op until a second mutator thread
+        // exists, and when this thread already holds a stripe.
+        let _stripe = crate::value::container_lock::ContainerStructGuard::acquire(match self {
+            EntryTerminal::Hash(arc, _) => Gc::as_ptr(arc) as usize,
+            EntryTerminal::Array(arc, _) => Gc::as_ptr(arc) as usize,
+        });
         match self {
             EntryTerminal::Hash(arc, key) => {
                 // SAFETY: a shared read of the aliased container, mirroring the

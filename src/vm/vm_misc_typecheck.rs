@@ -521,7 +521,17 @@ impl Interpreter {
         }
         let matched = match known_matched {
             Some(matched) => matched,
-            None => !value.is_nil() && self.type_matches_value_why(constraint, &value, &mut why),
+            None => {
+                // A bind source is a VarRef/container wrapper; a subset or a
+                // user type constrains the value it carries
+                // (`my UInt \x = $o`), as in the known-type arm above.
+                let probe = if bind_mode && value.is_varref() {
+                    value.unwrap_varref().deref_container()
+                } else {
+                    value.clone()
+                };
+                !value.is_nil() && self.type_matches_value_why(constraint, &probe, &mut why)
+            }
         };
         if matched {
             self.decl_typechecked_context().set(true);

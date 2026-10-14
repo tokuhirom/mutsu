@@ -293,38 +293,30 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
 /// Get the property value for a codepoint (as u32), handling
 /// codepoints that may not be valid chars (like surrogates or
 /// very high codepoints).
+// Cost: O(1) (a table lookup) plus the property name's parse.
 pub(crate) fn unicode_property_value_for_codepoint(cp: u32, prop: Option<&str>) -> Value {
-    match char::from_u32(cp) {
-        Some(ch) => match prop {
+    if let Some(ch) = char::from_u32(cp) {
+        return match prop {
             Some(p) => unicode_property_value(ch, p),
             None => Value::str_from(crate::builtins::unicode::unicode_general_category(ch)),
-        },
-        None => {
-            // Invalid codepoint (surrogate or out of range)
-            let is_surrogate = (0xD800..=0xDFFF).contains(&cp);
-            match prop {
-                Some("General_Category") | Some("gc") | None => {
-                    if is_surrogate {
-                        Value::str_from("Cs")
-                    } else {
-                        Value::str_from("Cn")
-                    }
-                }
-                Some("Block") | Some("blk") => {
-                    // Try to find block for surrogate codepoints
-                    if (0xD800..=0xDB7F).contains(&cp) {
-                        Value::str_from("High Surrogates")
-                    } else if (0xDB80..=0xDBFF).contains(&cp) {
-                        Value::str_from("High Private Use Surrogates")
-                    } else if (0xDC00..=0xDFFF).contains(&cp) {
-                        Value::str_from("Low Surrogates")
-                    } else {
-                        Value::str_from("No_Block")
-                    }
-                }
-                _ => Value::str_from(""),
-            }
-        }
+        };
+    }
+    let prop = prop.map(super::prop_names::canonical_property_name);
+    let prop = prop.as_deref();
+    if (0xD800..=0xDFFF).contains(&cp) {
+        return match prop {
+            Some("General_Category") | Some("gc") | None => Value::str_from("Cs"),
+            Some("Block") | Some("blk") => Value::str_from(surrogate_block(cp)),
+            _ => Value::str_from(""),
+        };
+    }
+    // Past 0x10FFFF MoarVM has no Unicode data: each property answers its
+    // type's default.
+    match prop {
+        Some(p) if super::binary_props::try_binary_property('\0', p).is_some() => Value::FALSE,
+        Some("Numeric_Value") | Some("nv") => Value::NIL,
+        Some("Name") | Some("na") => Value::str_from("<unassigned>"),
+        _ => Value::str_from(""),
     }
 }
 
@@ -355,9 +347,9 @@ pub(crate) fn unimatch(ch: char, prop_value: &str, prop_name: Option<&str>) -> b
         return true;
     }
 
-    // 4. Block name (normalize underscores/spaces/case)
-    let block = super::char_props::unicode_block(ch);
-    if block_matches(&block, prop_value) {
+    // 4. Block name (case and underscores normalized)
+    let block = unimatch_block(ch);
+    if block_matches_bare(&block, prop_value) {
         return true;
     }
 
@@ -373,7 +365,7 @@ fn unimatch_property(ch: char, prop_value: &str, prop_name: &str) -> bool {
             script.eq_ignore_ascii_case(prop_value)
         }
         "blk" | "Block" => {
-            let block = super::char_props::unicode_block(ch);
+            let block = unimatch_block(ch);
             block_matches(&block, prop_value)
         }
         "ea" | "East_Asian_Width" => {
@@ -420,6 +412,12 @@ fn east_asian_width_matches(actual: &str, target: &str) -> bool {
     !short.is_empty() && short.eq_ignore_ascii_case(target.trim())
 }
 
+/// The short East_Asian_Width alias (`W`, `Na`, ...) of a codepoint.
+// Cost: O(1) (range table).
+pub(crate) fn east_asian_width_abbrev(ch: char) -> &'static str {
+    east_asian_width_short(&super::char_props::unicode_east_asian_width(ch))
+}
+
 /// The short property-value alias (`W`, `Na`, ...) of an East_Asian_Width
 /// value, or `""` for an unknown one.
 fn east_asian_width_short(value: &str) -> &'static str {
@@ -434,6 +432,25 @@ fn east_asian_width_short(value: &str) -> &'static str {
     }
 }
 
+/// The block `unimatch` reads for `ch`: an unassigned codepoint (`Cn`) is in
+/// `No_Block`, though `uniprop("Block")` still answers its range's block.
+// Cost: O(1) (a table lookup).
+fn unimatch_block(ch: char) -> String {
+    if unimatch_general_category(ch, "Cn") {
+        "No_Block".to_string()
+    } else {
+        super::char_props::unicode_block(ch)
+    }
+}
+
+/// Whether a property-less `unimatch` value names `block`: case and
+/// underscores are ignored, but not spaces or hyphens (Rakudo matches
+/// `Basic_Latin`, not `Basic Latin` or `Basic-Latin`).
+// Cost: O(n), n = chars of the names.
+fn block_matches_bare(block: &str, target: &str) -> bool {
+    !target.contains([' ', '-']) && block_matches(block, target)
+}
+
 /// Check if a block name matches, normalizing case, underscores, spaces, and hyphens.
 fn block_matches(block: &str, target: &str) -> bool {
     let normalize = |s: &str| -> String {
@@ -445,10 +462,51 @@ fn block_matches(block: &str, target: &str) -> bool {
     normalize(block) == normalize(target)
 }
 
-/// unimatch for a codepoint (u32), handling invalid chars.
-pub(crate) fn unimatch_for_codepoint(cp: u32, prop_value: &str, prop_name: Option<&str>) -> Value {
-    match char::from_u32(cp) {
-        Some(ch) => Value::truth(unimatch(ch, prop_value, prop_name)),
-        None => Value::truth(false),
+/// The block of a surrogate codepoint (`0xD800..=0xDFFF`).
+// Cost: O(1).
+fn surrogate_block(cp: u32) -> &'static str {
+    if cp <= 0xDB7F {
+        "High Surrogates"
+    } else if cp <= 0xDBFF {
+        "High Private Use Surrogates"
+    } else {
+        "Low Surrogates"
     }
+}
+
+/// An unassigned codepoint (`Cn`, script `Unknown`): `unimatch` reads the
+/// properties of a codepoint no `char` can hold (a surrogate, or one past
+/// `0x10FFFF`) from it, since MoarVM gives such a codepoint the same
+/// defaults. Only its general category and block differ, and those are
+/// matched separately.
+const UNASSIGNED: char = '\u{0378}';
+
+/// `unimatch` for an integer codepoint below `2**31`: a surrogate is `Cs` in
+/// its surrogate block, a codepoint past `0x10FFFF` is `Cn` in `No_Block`, and
+/// both take an unassigned codepoint's other property values.
+// Cost: O(1) (a table lookup) plus the value name's parse.
+pub(crate) fn unimatch_for_codepoint(cp: u32, prop_value: &str, prop_name: Option<&str>) -> Value {
+    if let Some(ch) = char::from_u32(cp) {
+        return Value::truth(unimatch(ch, prop_value, prop_name));
+    }
+    let (gc, block) = if (0xD800..=0xDFFF).contains(&cp) {
+        ("Cs", surrogate_block(cp))
+    } else {
+        ("Cn", "No_Block")
+    };
+    // An exact category, or its major class ("C").
+    let gc_matches = || prop_value == gc || (prop_value.len() == 1 && gc.starts_with(prop_value));
+    Value::truth(match prop_name {
+        Some("gc") | Some("General_Category") => gc_matches(),
+        Some("blk") | Some("Block") => block_matches(block, prop_value),
+        Some(name) => unimatch_property(UNASSIGNED, prop_value, name),
+        // The order `unimatch` tries for a char.
+        None => {
+            gc_matches()
+                || super::binary_props::try_binary_property(UNASSIGNED, prop_value).unwrap_or(false)
+                || crate::builtins::unicode::unicode_script_name(UNASSIGNED)
+                    .eq_ignore_ascii_case(prop_value)
+                || block_matches_bare(block, prop_value)
+        }
+    })
 }

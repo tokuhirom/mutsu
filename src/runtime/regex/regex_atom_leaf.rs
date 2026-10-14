@@ -60,7 +60,7 @@ impl Interpreter {
             }
             RegexAtom::VarInterp(name) | RegexAtom::VarAssertion(name) => {
                 let assertion = matches!(atom, RegexAtom::VarAssertion(_));
-                match self.var_interp_target(name, assertion, caps, chars, pos, ignore_case) {
+                match self.var_interp_target(name, assertion, caps, chars, pos, (ignore_case, false)) {
                     VarInterpTarget::End(end) => end,
                     // The walk takes the interpolated pattern's
                     // highest-priority end, as for a `$( … )` atom.
@@ -116,7 +116,7 @@ impl Interpreter {
         caps: &RegexCaptures,
         chars: &[char],
         pos: usize,
-        ignore_case: bool,
+        (ignore_case, markless): (bool, bool),
     ) -> VarInterpTarget {
         let val = caps
             .regex_vars()
@@ -140,7 +140,9 @@ impl Interpreter {
             },
             None => String::new(),
         };
-        if is_regex || (ignore_case && !ref_text.is_empty()) {
+        // A markless run compares bases, so a plain value becomes a pattern
+        // too: its markless program does the comparison.
+        if is_regex || ((ignore_case || markless) && !ref_text.is_empty()) {
             let mut source = String::from(if ignore_case { ":i " } else { "" });
             if is_regex {
                 source.push_str(&ref_text);
@@ -383,16 +385,15 @@ impl Interpreter {
 // Cost: O(n), n = the characters compared.
 fn backref_end(idx: usize, caps: &RegexCaptures, chars: &[char], pos: usize) -> Option<usize> {
     let slot = caps.backref_positional(idx)?;
+    let origin = StrippedOrigin::of(chars);
     let mut cursor = pos;
     let mut compare_span = |a: usize, b: usize| -> bool {
-        let (a, b) = (a.min(chars.len()), b.min(chars.len()));
-        let (a, b) = (a, b.max(a));
-        let len = b - a;
-        if cursor + len <= chars.len() && chars[cursor..cursor + len] == chars[a..b] {
-            cursor += len;
-            true
-        } else {
-            false
+        match span_repeats_at(chars, a, b, cursor, origin.as_ref()) {
+            Some(next) => {
+                cursor = next;
+                true
+            }
+            None => false,
         }
     };
     let ok = match &slot.quantified {
@@ -422,8 +423,63 @@ fn named_backref_end(
                 .as_ref()
                 .and_then(|outer| outer.lookup_named(&sym))
         })?;
-    let (a, b) = (node.from.min(chars.len()), node.to.min(chars.len()));
+    span_repeats_at(chars, node.from, node.to, pos, StrippedOrigin::of(chars).as_ref())
+}
+
+/// Where `chars` sits in the current match target when it is (a suffix of)
+/// that target's mark-stripped view: the subject a `:m` pattern runs over
+/// (`ignoremark_on_target`, the whole-pattern `:m` entries).
+struct StrippedOrigin {
+    target: MatchTarget,
+    /// The stripped position `chars[0]` stands at.
+    offset: usize,
+}
+
+impl StrippedOrigin {
+    // Cost: O(1).
+    fn of(chars: &[char]) -> Option<Self> {
+        let target = super::regex_helpers::current_match_target()?;
+        let stripped = target.stripped_if_built()?;
+        if stripped.is_unchanged() {
+            return None;
+        }
+        // A suffix of the stripped view: the same allocation, ending where it
+        // ends. Only the addresses are compared; nothing is dereferenced.
+        let whole = stripped.chars();
+        let bytes = (chars.as_ptr() as usize).checked_sub(whole.as_ptr() as usize)?;
+        let offset = bytes / std::mem::size_of::<char>();
+        (offset + chars.len() == whole.len()).then_some(Self { target, offset })
+    }
+}
+
+/// The end of the text `chars[a..b]` repeated at `cursor`, or `None`. Over a
+/// mark-stripped view (`origin`) the two spans are compared in the original
+/// subject, marks included: rakudo compares a backreference exactly even
+/// under `:m`, as it does under `:i`.
+// Cost: O(n), n = the characters compared.
+fn span_repeats_at(
+    chars: &[char],
+    a: usize,
+    b: usize,
+    cursor: usize,
+    origin: Option<&StrippedOrigin>,
+) -> Option<usize> {
+    let (a, b) = (a.min(chars.len()), b.min(chars.len()));
     let (a, b) = (a, b.max(a));
     let len = b - a;
-    (pos + len <= chars.len() && chars[pos..pos + len] == chars[a..b]).then_some(pos + len)
+    if cursor + len > chars.len() || chars[cursor..cursor + len] != chars[a..b] {
+        return None;
+    }
+    if let Some(origin) = origin
+        && let Some(stripped) = origin.target.stripped_if_built()
+    {
+        let orig = origin.target.chars();
+        let to_orig = |p: usize| stripped.stripped_to_original(p + origin.offset).min(orig.len());
+        let (oa, ob) = (to_orig(a), to_orig(b));
+        let (oc, od) = (to_orig(cursor), to_orig(cursor + len));
+        if orig[oa..ob.max(oa)] != orig[oc..od.max(oc)] {
+            return None;
+        }
+    }
+    Some(cursor + len)
 }

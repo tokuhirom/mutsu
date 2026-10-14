@@ -51,10 +51,18 @@ pub(super) fn lookup(name: &str) -> Option<Value> {
     })
 }
 
-// Cost: O(n), n = label name length.
+/// The label a loop control's single argument names, or `None` when the
+/// argument is a value (`next 42`, v6.e's `next Empty`). A bare word is a
+/// label when one of that name is in scope, or by the parser's own rule
+/// ([`crate::parser::is_loop_control_label`]).
+// Cost: O(n + d), n = label name length, d = labelled statement nesting depth.
 pub(super) fn expression_name(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::BareWord(name) => Some(name.clone()),
+        Expr::BareWord(name)
+            if lookup(name).is_some() || crate::parser::is_loop_control_label(name) =>
+        {
+            Some(name.clone())
+        }
         Expr::Literal(value) => crate::value::label::label_name(value),
         _ => None,
     }

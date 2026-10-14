@@ -186,13 +186,9 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         ValueView::Mix(items, _) => {
             // Sort values before summing for deterministic results
             // regardless of HashMap iteration order.
-            let mut vals: Vec<crate::value::MixWeight> = items.values().copied().collect();
+            let mut vals: Vec<crate::value::MixWeight> = items.values().cloned().collect();
             vals.sort_by(|a, b| a.to_f64().total_cmp(&b.to_f64()));
-            // TODO: sum under the numeric tower (`builtins::mix_weight::sum`, as
-            // `.total` does) so a Rat total stays exact; `value` may not name
-            // `builtins` (layer ratchet), so this sums in `f64` for now.
-            let total: f64 = vals.iter().map(|w| w.to_f64()).sum();
-            MixWeight::from(total).to_value()
+            MixWeight::sum(vals).to_value()
         }
         ValueView::LazyList(ll) => {
             if let Some(count) = &ll.elems_count {

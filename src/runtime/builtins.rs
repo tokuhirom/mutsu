@@ -680,7 +680,7 @@ impl Interpreter {
             "__mutsu_assignment_ro" => self.builtin_assignment_ro(&args),
             "__mutsu_var_is_writable" => self.builtin_var_is_writable(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
-            "__mutsu_sig_bind_check" => self.builtin_sig_bind_check(&args),
+            "__mutsu_sig_bind" => self.builtin_sig_bind(&args),
             "__mutsu_list_assign_rhs" => self.builtin_list_assign_rhs(&args),
             "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
             "__mutsu_record_shaped_array_dims" => self.builtin_record_shaped_array_dims(&args),
@@ -826,25 +826,6 @@ impl Interpreter {
                     ));
                 }
                 self.call_method_with_values(args[0].clone(), "HOW", vec![])
-            }
-            "__MUTSU_UNREGISTER_CLASS__" => {
-                if let Some(name) = args.first() {
-                    let class_name = name.to_string_value();
-                    self.registry_mut().classes.remove(&class_name);
-                    // ADR-0019 F4c-8(e): this `classes.remove` called no
-                    // sync at all, leaving permanently stale `method_entries`
-                    // rows behind -- masked only because every dispatcher
-                    // checks `classes.contains_key` first. Explicit mutator
-                    // calls instead of `sync_user_method_entries`, per the
-                    // design note's own instruction not to inherit this
-                    // latent bug into the new world.
-                    let owner = crate::symbol::Symbol::intern(&class_name);
-                    self.registry_mut().clear_user_methods_for_owner(owner);
-                    self.registry_mut().sync_accessor_entries(owner);
-                    self.env.remove(&class_name);
-                    self.suppress_name(&class_name);
-                }
-                Ok(Value::NIL)
             }
             "__MUTSU_SET_META__" => {
                 if args.len() < 3 {

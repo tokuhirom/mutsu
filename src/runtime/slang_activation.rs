@@ -187,49 +187,6 @@ pub(crate) fn run_slang_activation(
 }
 
 impl Interpreter {
-    /// `Str.AST`: parse source using this interpreter's module search paths.
-    ///
-    /// Module exports must be scanned while parsing the source, just as they
-    /// are for a program being run by this interpreter. The pure builtin path
-    /// has no access to those paths, so `.AST` is dispatched through this
-    /// interpreter carrier.
-    pub(crate) fn str_ast_with_paths(
-        &mut self,
-        source: &str,
-        compunit: bool,
-    ) -> Result<Value, RuntimeError> {
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
-        crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let result = if compunit {
-            crate::rakuast::str_dot_ast_compunit(source)
-        } else {
-            crate::rakuast::str_dot_ast(source)
-        };
-        crate::parser::clear_parser_lib_paths();
-        result
-    }
-
-    /// `Str.AST($slang)`: parse `source` under the localized surface syntax of
-    /// the `L10N::<$slang>` distribution.
-    ///
-    /// Lives on the interpreter, like `EVAL`, because the sub-parse resolves a
-    /// module: the parser's search-path list is only populated around a parse,
-    /// so this installs this interpreter's paths for the duration exactly as
-    /// `run_program` / `require` do. An undefined `$slang` (rakudo's `Mu
-    /// $slang?` default) is the plain, unlocalized parse.
-    pub(crate) fn str_ast_with_slang(
-        &mut self,
-        source: &str,
-        slang: &Value,
-    ) -> Result<Value, RuntimeError> {
-        let slang = crate::runtime::types::value_is_defined(slang).then(|| slang.to_string_value());
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
-        crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let result = crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref());
-        crate::parser::clear_parser_lib_paths();
-        result
-    }
-
     /// Native methods of the `$*LANG` object graph. Returns `None` for
     /// methods this dispatcher does not know, letting the normal instance
     /// dispatch produce its usual error.

@@ -83,6 +83,35 @@ fn cool_only_names() -> &'static FxHashSet<&'static str> {
     })
 }
 
+/// The builtin method names `Any` declares and `Mu` does not: the `Mu` type
+/// object is no `Any`, so it does not resolve them (`Mu.elems`, `Mu.List`,
+/// `Mu.first` are `X::Method::NotFound` in Rakudo, #12976).
+///
+/// The coercions `Any` declares for the container types (`Any.List`, `Any.Hash`)
+/// are not in the catalog `.^can` reads (`Any.^can('List')` is empty), so they
+/// are listed here.
+const ANY_COERCIONS: &[&str] = &[
+    "Array", "Bag", "BagHash", "Hash", "List", "Map", "Mix", "MixHash", "Seq", "Set", "SetHash",
+    "Slip", "Supply",
+];
+
+/// Names the `Any` catalog lists that `Mu` answers all the same
+/// (`Mu.iterator` is the empty iterator, `Mu.ACCEPTS` is identity).
+const ALSO_ON_MU: &[&str] = &["ACCEPTS", "iterator"];
+
+fn any_only_names() -> &'static FxHashSet<&'static str> {
+    static NAMES: OnceLock<FxHashSet<&'static str>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        use crate::builtins::builtin_type_methods::builtin_type_method_names;
+        let mu: FxHashSet<&'static str> = builtin_type_method_names("Mu").into_iter().collect();
+        builtin_type_method_names("Any")
+            .into_iter()
+            .chain(ANY_COERCIONS.iter().copied())
+            .filter(|name| !mu.contains(name) && !ALSO_ON_MU.contains(name))
+            .collect()
+    })
+}
+
 /// Whether `method` is resolvable only through `Cool` or one of its subtypes
 /// (see [`cool_only_names`]).
 // Cost: O(|method|), hash lookup in a set built once per process.
@@ -112,7 +141,7 @@ pub(crate) fn cool_method_not_found(
     method: &str,
 ) -> Option<crate::value::RuntimeError> {
     let owner = undefined_owner(target)?;
-    is_cool_only_method(method)
+    (is_cool_only_method(method) || (owner == "Mu" && any_only_names().contains(method)))
         .then(|| super::methods_signature_errors::make_method_not_found_error(method, owner, false))
 }
 
@@ -123,6 +152,73 @@ fn undefined_owner(target: &Value) -> Option<&'static str> {
         ValueView::Package(name) if name == "Mu" => Some("Mu"),
         _ => None,
     }
+}
+
+/// The `Cool` names Rakudo's `Blob` role declares for itself: `chars` and
+/// `codes` raise `X::Buf::AsStr` (verified against rakudo v2026.07: of the
+/// `Cool`-only names, a `Buf` or `Blob` `.can` these two alone, 2026-10-13).
+const BLOB_DECLARED_COOL_NAMES: &[&str] = &["chars", "codes"];
+
+/// The `Cool` text and search methods a `Pair`, `Capture`, `Version` or
+/// quanthash does not resolve (verified against rakudo v2026.07 on each of
+/// them, 2026-10-14): [`crate::value::COOL_TEXT_FOR_CLOSED_SHAPES`] and the
+/// argument-taking names of a `Match`, without `fmt` and `split`, which `Any`
+/// declares.
+const NON_COOL_TEXT: &[&str] = &[
+    "words", "codes", "lines", "trim", "trim-leading", "trim-trailing", "flip", "chomp", "chop",
+    "comb", "uc", "lc", "fc", "tc", "tclc", "wordcase", "encode", "NFC", "NFD", "NFKC", "NFKD",
+    "ord", "ords", "uniname", "uninames", "uniprop", "uniprops", "unival", "univals", "unimatch",
+    "samecase", "samemark", "indent", "contains", "starts-with", "ends-with", "index", "rindex",
+    "substr", "subst", "trans", "indices", "chars",
+];
+
+/// The type name to report a `Cool`-only method under when `target` is not a
+/// `Cool`, so it does not answer `contains`, `starts-with`, `substr`, ...: a
+/// buffer (a `Blob`/`Buf` instance or type object, an alias such as `utf8`, a
+/// user class composing a buffer role; #13313), or a `Pair`, `Capture`,
+/// `Version` or one of the quanthashes (#13035). `None` for any other receiver
+/// or method. The caller still lets a method the receiver's own class declares
+/// (or its `FALLBACK`) answer first.
+// Cost: O(|method|) for the name lookups, O(1) for the shape probe.
+pub(crate) fn buffer_refuses_cool_method(target: &Value, method: &str) -> Option<String> {
+    use crate::value::DispatchShape as Shape;
+    if !is_cool_only_method(method) {
+        return None;
+    }
+    // A code object (`Sub`, `Block`, ...) is no `Cool` either (#13035).
+    if matches!(target.view(), ValueView::Sub(..) | ValueView::Routine { .. }) {
+        return NON_COOL_TEXT
+            .contains(&method)
+            .then(|| crate::value::types::what_type_name(target));
+    }
+    let receiver = crate::builtins::method_table::Receiver::of_settled(target)?;
+    let refused = match receiver.shape {
+        Shape::Blob | Shape::Buf => !BLOB_DECLARED_COOL_NAMES.contains(&method),
+        // Only the text and search methods: `fmt` and `split` exist on `Any`,
+        // and the other `Cool` names (`reverse`, `invert`, `Int`, ...) are
+        // also answered by an ancestor these shapes have, which the catalog
+        // `is_cool_only_method` reads does not list.
+        Shape::Pair
+        | Shape::Capture
+        | Shape::Version
+        | Shape::Set
+        | Shape::SetHash
+        | Shape::Bag
+        | Shape::BagHash
+        | Shape::Mix
+        | Shape::MixHash => NON_COOL_TEXT.contains(&method),
+        _ => false,
+    };
+    refused.then(|| crate::value::types::what_type_name(target))
+}
+
+/// Whether `method` is `fmt` on a `Capture` or `Version`: `Any` declares the
+/// `proto` but no candidate takes these receivers, so Rakudo answers
+/// `X::Multi::NoMatch` (not `X::Method::NotFound`) whatever the arguments
+/// (#13477).
+// Cost: O(1).
+pub(crate) fn fmt_has_no_candidate(target: &Value, method: &str) -> bool {
+    method == "fmt" && matches!(target.view(), ValueView::Capture { .. } | ValueView::Version { .. })
 }
 
 #[cfg(test)]

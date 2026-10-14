@@ -36,6 +36,11 @@ pub(crate) struct RankProfile {
     /// difference is only read as "narrower" between related types. For an
     /// unreached slot (see `unreached`) it is the declared type.
     nominal: [Option<Symbol>; PROFILE_LEN],
+    /// Each parameter's DECLARED type (`None`: a literal or a slurpy, whose
+    /// type is not compared), independent of the argument. Rakudo's tiers
+    /// are built from declared types, so [`Self::declared_wins`] compares a
+    /// pair by these even when an argument is unrelated to one of them.
+    declared: [Option<Symbol>; PROFILE_LEN],
     /// Bit `i` set: slot `i` is an optional positional the call supplies no
     /// argument for. Its score says nothing (there is no argument to measure
     /// a distance from), so such a slot is compared by its declared type in
@@ -52,6 +57,7 @@ impl RankProfile {
     pub(crate) const EMPTY: RankProfile = RankProfile {
         scores: [u16::MAX; PROFILE_LEN],
         nominal: [None; PROFILE_LEN],
+        declared: [None; PROFILE_LEN],
         unreached: 0,
         refined: false,
         unrelated: false,
@@ -68,11 +74,13 @@ impl RankProfile {
         delta: usize,
         refined: bool,
         nominal: Option<Symbol>,
+        declared: Option<Symbol>,
     ) {
         if slot < PROFILE_LEN {
             let d = delta.min(20_000) as u16;
             self.scores[slot] = d * 2 + u16::from(!refined);
             self.nominal[slot] = nominal;
+            self.declared[slot] = declared;
             self.refined |= refined;
         }
     }
@@ -138,6 +146,38 @@ impl RankProfile {
             other_wins |= b < a;
         }
         self_wins && other_wins
+    }
+
+    /// Rakudo's per-parameter comparison by DECLARED type over the positional
+    /// slots both candidates type: `(self wins one, other wins one)`. A type
+    /// that strictly conforms to the other's wins; the same type is won by a
+    /// refinement (`where`, literal, subset) and unrelated types are skipped
+    /// (neither narrower nor wider).
+    // Cost: O(r), r = the cost of one `conforms` call; the profile length is a constant.
+    pub(crate) fn declared_wins(
+        &self,
+        other: &RankProfile,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
+    ) -> (bool, bool) {
+        let (mut self_wins, mut other_wins) = (false, false);
+        for i in 0..PROFILE_LEN {
+            let (Some(a), Some(b)) = (self.declared[i], other.declared[i]) else {
+                continue;
+            };
+            if a == b {
+                // The low score bit is "unrefined".
+                let (ra, rb) = (self.scores[i] & 1, other.scores[i] & 1);
+                self_wins |= ra < rb;
+                other_wins |= rb < ra;
+                continue;
+            }
+            match (conforms(a, b), conforms(b, a)) {
+                (true, false) => self_wins = true,
+                (false, true) => other_wins = true,
+                _ => {}
+            }
+        }
+        (self_wins, other_wins)
     }
 
     /// Rakudo's per-parameter comparison over the optional positionals the
@@ -227,6 +267,11 @@ pub(crate) struct MultiRank {
     /// its MRO-ordered match list.
     pub(crate) decl_order: u64,
     pub(crate) profile: RankProfile,
+    /// The class declaring a multi METHOD candidate (`None` for a sub). Rakudo
+    /// types a method candidate's invocant by its declaring class and compares
+    /// it as the first parameter, so a subclass's candidate is narrower than
+    /// an ancestor's on it ([#13507](https://github.com/tokuhirom/mutsu/issues/13507)).
+    pub(crate) invocant: Option<Symbol>,
     /// Rakudo's tier: the candidate's layer in the topological sort of the
     /// whole candidate set by narrowness, the first (narrowest) being 0 (see
     /// [`assign_tiers`]). It leads every comparison, so a candidate in a
@@ -317,6 +362,17 @@ impl MultiRank {
     /// `f(1)` is ambiguous in rakudo).
     // Cost: O(r), r = the cost of one `conforms` call.
     fn narrower_by_rank(&self, other: &MultiRank, conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
+        // Of two method candidates declared in related classes, the subclass's
+        // invocant is the narrower parameter. Rakudo then calls the pair
+        // ordered only when no declared parameter type is narrower in the
+        // other candidate (a `where` or a tied type decides nothing here).
+        match self.invocant_order(other, conforms) {
+            Some(Ordering::Greater) => return false,
+            Some(Ordering::Less) => {
+                return !self.profile.declared_wins(&other.profile, conforms).1;
+            }
+            _ => {}
+        }
         let (self_wins, other_wins) = self.profile.unreached_wins(&other.profile, conforms);
         if other_wins {
             return false;
@@ -326,6 +382,47 @@ impl MultiRank {
             Ordering::Equal => self_wins && !self.incomparable(other, conforms),
             Ordering::Greater => false,
         }
+    }
+
+    /// How the invocant types of two method candidates order them: `Less`
+    /// when `self`'s (a subclass of `other`'s) is narrower, `Greater` when it
+    /// is wider, `None` when equal, unrelated or not a method pair.
+    // Cost: O(r), r = the cost of one `conforms` call.
+    fn invocant_order(
+        &self,
+        other: &MultiRank,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
+    ) -> Option<Ordering> {
+        let (a, b) = (self.invocant?, other.invocant?);
+        if a == b {
+            return None;
+        }
+        match (conforms(a, b), conforms(b, a)) {
+            (true, false) => Some(Ordering::Less),
+            (false, true) => Some(Ordering::Greater),
+            _ => None,
+        }
+    }
+
+    /// [`Self::rakudo_narrower`] for a pair in which a candidate cannot bind
+    /// the call's arguments (so its argument distances say nothing): compared
+    /// by declared types alone, the invocant first, and tied or unrelated
+    /// types leave a candidate without a slurpy positional narrower.
+    // Cost: O(r), r = the cost of one `conforms` call.
+    fn declared_narrower(&self, other: &MultiRank, conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
+        if self.arity_mismatch(other) {
+            return self.non_slurpy && !other.non_slurpy;
+        }
+        let (mut self_wins, mut other_wins) = self.profile.declared_wins(&other.profile, conforms);
+        match self.invocant_order(other, conforms) {
+            Some(Ordering::Less) => self_wins = true,
+            Some(Ordering::Greater) => other_wins = true,
+            _ => {}
+        }
+        if other_wins {
+            return false;
+        }
+        self_wins || (self.non_slurpy && !other.non_slurpy)
     }
 
     /// Whether `self` and `other` differ in both positional count and
@@ -433,10 +530,18 @@ pub(crate) fn assign_tiers<T>(
         .map(|i| {
             (0..n)
                 .map(|j| {
-                    i != j
-                        && !ranks[i].profile.unrelated
-                        && !ranks[j].profile.unrelated
-                        && ranks[i].rakudo_narrower(&ranks[j], conforms)
+                    if i == j {
+                        return false;
+                    }
+                    if ranks[i].profile.unrelated || ranks[j].profile.unrelated {
+                        // Only method candidates compare by declared type
+                        // (rakudo's tiers do); a sub's unbindable candidate
+                        // stays out of the relation.
+                        return ranks[i].invocant.is_some()
+                            && ranks[j].invocant.is_some()
+                            && ranks[i].declared_narrower(&ranks[j], conforms);
+                    }
+                    ranks[i].rakudo_narrower(&ranks[j], conforms)
                 })
                 .collect()
         })
@@ -596,6 +701,10 @@ pub(crate) fn needs_named_bind_check(params: &[&ParamDef]) -> bool {
         || params
             .iter()
             .any(|p| p.is_variadic() && p.where_constraint.is_some())
+        // A destructuring sub-signature on a positional (`% (:$op!)`,
+        // `($a, $b)`) is checked by trial binding too: a tie with a candidate
+        // that lacks one runs the first declared instead of being ambiguous.
+        || params.iter().any(|p| !p.named && p.sub_signature.is_some())
 }
 
 /// `(positional count, required positional count)` of a candidate's

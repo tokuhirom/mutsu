@@ -955,8 +955,8 @@ impl Interpreter {
                 let saved = self.env.clone();
                 if let Some(captured) = &role.captured_env {
                     for (k, v) in captured.iter() {
-                        if !self.env.contains_key(k) {
-                            self.env.insert(k.clone(), v.clone());
+                        if !self.env.contains_key_sym(*k) {
+                            self.env.insert_sym(*k, v.clone());
                         }
                     }
                 }
@@ -1169,8 +1169,8 @@ impl Interpreter {
         // and modifications propagate back to the original scope.
         if let Some(captured) = &role.captured_env {
             for (k, v) in captured.iter() {
-                if !self.env.contains_key(k) {
-                    self.env.insert(k.clone(), v.clone());
+                if !self.env.contains_key_sym(*k) {
+                    self.env.insert_sym(*k, v.clone());
                 }
             }
         }

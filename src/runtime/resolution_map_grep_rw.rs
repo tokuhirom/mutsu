@@ -280,7 +280,17 @@ impl Interpreter {
                                     vm.env_mut().insert_sym_noting(p, item.clone());
                                 }
                             }
-                            bind_loop_topic(vm.env_mut(), &item, keeps_outer_topic, &outer_topic);
+                            // A raw/rw param named `_` (a WhateverCode `* += 1`)
+                            // IS the topic: re-binding `_` by value here would
+                            // replace the container bound above.
+                            if !rw_param.is_some_and(|pd| pd.name == "_") {
+                                bind_loop_topic(
+                                    vm.env_mut(),
+                                    &item,
+                                    keeps_outer_topic,
+                                    &outer_topic,
+                                );
+                            }
                         } else {
                             for (idx, &p) in plan.param_syms.iter().skip(assumed_count).enumerate()
                             {

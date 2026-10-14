@@ -110,6 +110,10 @@ pub(crate) struct PatternDerived {
     /// yet and keeps the tree walk. A pure function of the pattern: a subrule
     /// call is resolved when it is reached, not when the pattern compiles.
     pub(crate) rx_program: std::sync::OnceLock<Option<Arc<crate::runtime::regex::RxProgram>>>,
+    /// The markless compile of a mark-stripped whole-`:m` rule body
+    /// (`rx_compile::compile_markless`), or `None` when it declines.
+    pub(crate) rx_markless_program:
+        std::sync::OnceLock<Option<Arc<crate::runtime::regex::RxProgram>>>,
 }
 
 /// One package's entry in [`PatternDerived::prefilter_in_pkg`].
@@ -409,6 +413,10 @@ pub(crate) enum RegexAtom {
     /// pattern's `anchor_end` instead; this atom covers a `$` that is followed by
     /// something else (`^ .* $ { make … }`).
     EndOfString,
+    /// A mid-pattern `^` — start-of-string assertion (zero-width). A leading `^`
+    /// sets `anchor_start` instead; this atom covers a `^` after another atom
+    /// (`z ^ abc`), which can only match at position 0.
+    StartOfString,
     /// `$0`, `$1`, etc. — backreference to positional capture group
     Backref(usize),
     /// `$<name>` — backreference to named capture group

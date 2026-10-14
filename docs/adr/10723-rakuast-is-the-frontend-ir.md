@@ -673,3 +673,518 @@ initiating declaration as Rakudo does and retains declarations from its colon
 argument list as hidden model metadata. The RakuAST round-trip tests cover
 typed groups, `is rw`, typed defaults, nested colon declarations, and chained
 colon lists. The refreshed frontend ratchet passes 7,101 of 7,389 files.
+
+### 6.22 S10: role name adverbs (2026-10-13)
+
+Role declarations with `:ver`, `:auth` and `:api` now pass through the shared
+package-header conversion instead of being refused as parser-generated
+synthetic blocks. Conversion keeps the adverbs as colonpairs on the role name
+and retains a following parameterization signature. Lowering restores the
+parser's metadata setters around the role declaration, which keeps role body
+lexicals in scope for its methods. The focused RakuAST test checks the measured
+name and signature shape, round-trip composition, and a role body lexical. The
+frontend ratchet now passes 7,105 of 7,393 files.
+
+### 6.23 S10: exported declarations and imported type names (2026-10-13)
+
+The parser keeps `is export` on a `constant` or an `our` variable as the
+declaration's `is_export` flag and tags, not as a custom trait, and the
+converter used to drop both: under `MUTSU_RAKUAST=1` an exported constant
+nested in a routine body was not exported at all. Conversion now renders the
+flag as rakudo's `Trait::Is(export)` (with the tags as its colonpair
+argument, measured on 2026.09), and lowering reads that trait back into the
+flag, so both directions go through the parser's own export registration.
+Like `is dynamic`, the flag has lost its position among other traits, so an
+exported declaration with further traits stays the boundary.
+
+A bareword naming an imported type resolves only if the importer's module
+scan (`decl_scan.rs`) lists it. The scan now lists what rakudo imports and
+it had missed: a lexical `my class X is export` nested in a routine or
+block, a `class GLOBAL::X` (an absolute name), and the short name of an
+exported qualified type (`class A::B::C is export` imports `C`). These were
+the `BareWord` first refusals of the `t/modules/` import tests; a name the
+importer cannot see in rakudo either (an undeclared name under `try`) stays
+a refusal.
+
+### 6.24 S10: immediately called routine declarations (2026-10-13)
+
+`sub foo($n) { … }(21)` declares `foo` and calls it in place. The parser
+expands it into the declaration followed by a call of the declared name;
+rakudo's tree is an `ApplyPostfix` whose operand is the `Sub` and whose
+postfix is a `Call::Term` (measured on 2026.09). `ast::immediate_call::expand`
+is the one builder: a spelling-keeping parse opens the expansion with a
+`SourceForm::ImmediateCall` record, which the converter reads to render the
+source form, and lowering hands a measured node back to the same function, so
+the routine stays declared in the enclosing scope. Under `do` the node is
+the statement of a `StatementPrefix::Do`. A routine declaration with a
+statement modifier (`sub f { } given …`) is a separate parser expansion and
+stays a refusal.
+
+### 6.25 S10: compound-assignment declarations (2026-10-13)
+
+`my $x OP= EXPR` parses to the declaration (with its default value) and one
+assignment of the operator applied to it; rakudo's tree is an `ApplyInfix`
+whose `left` is the `VarDeclaration` and whose infix is `MetaInfix::Assign`
+(measured on 2026.09). `ast::decl_compound_assign::expand` builds the
+expansion; when the written operator is known (a spelling-keeping parse of a
+built-in operator, or the lowering) it opens with a
+`SourceForm::DeclarationCompoundAssign` record and the assignment keeps the
+operator and right-hand side in its `Expr::CompoundAssign` marker, which the
+compiler already sees through. A postfix `for` hoists the declaration out of
+the loop (`split_for_modifier`, shared by the parser and the lowering), so the
+variable is declared once rather than reset per iteration; the converter
+renders that loop as the assignment statement with its `loop-modifier` and the
+declaration as the assignment's left operand. `Z=` and user-defined compound
+operators keep their own expansions and stay refusals.
+
+### 6.26 S10: type-smiley pragmas (2026-10-13)
+
+`use variables :D` (and `attributes`, `parameters`, `invocant`) is a
+`RakuAST::Pragma` whose `argument` is a `ColonPair::True` of the smiley
+(measured on 2026.09). The parser keeps the smiley as a `":D"` string
+argument; only the colonpair spelling produces it (a written string argument
+is a parse error), so the string is the smiley's own record rather than a
+lost distinction. Conversion renders the colonpair, and lowering turns the
+colonpair, which the generic `use` lowering would read as an import tag,
+back into that argument.
+
+### 6.27 S10: EXPORTHOW::DECLARE declarators (2026-10-13)
+
+A `use`d module can register a class-like keyword through
+`EXPORTHOW::DECLARE` (`monitor Name { }`, `shouter Name { }`). Measured on
+rakudo 2026.09, the declaration is the ordinary `RakuAST::Class` (or
+`RakuAST::Role`, for a role HOW) with a `parsed-declarator` field holding the
+keyword, after `scope` and before `name`. The resolved HOW is an attribute of
+the node but not part of its rendered tree, and `.parsed-declarator` answers
+the built-in keyword (`class`, `role`, `grammar`) otherwise. The parser's
+`DECLARE_HOW_TRAIT` marker already holds that keyword, so it is the field's
+record: conversion renders it (`rakuast::declare_how`), lowering hands it back
+through the package head, and registration resolves the HOW from the keyword
+exactly as for a parsed declaration. Nothing has to encode the metaobject.
+
+### 6.28 S10: symbolic subrule calls in regexes (2026-10-13)
+
+`<::(EXPR)>` calls the rule whose name `EXPR` computes when the cursor reaches
+it. Measured on rakudo 2026.09, it is a `Regex::Assertion::Named` whose name
+is `Name(Part::Empty, Part::Expression(EXPR))`, with `capturing => True`
+unless written `<.::(EXPR)>`; `<q=::(EXPR)>` wraps it in
+`Regex::Assertion::Alias`. The regex tree had no node for it, so a whole regex
+holding one lost its tree. `RegexNode::SymbolicSubrule` keeps the parsed
+expression and its written source; execution stays on the runtime parser path
+(the matcher resolves the name from the regex text, as before), and lowering
+rebuilds the source with `expression_source`, which now also renders an
+interpolated string.
+
+### 6.29 S10: named `anon` declarations (2026-10-13)
+
+`anon sub g { }`, `anon class Foo { }`, `anon role R { }` and
+`anon grammar G { }` build a routine or type that keeps its name but is not
+installed under it. Measured on rakudo 2026.09, each is the ordinary `Sub` /
+`Class` / `Role` / `Grammar` with `scope => "anon"` before the name (a
+nameless `anon class { }` has the scope and no name). The parser's
+`ANON_DECL_TRAIT` marker is that scope: conversion renders it, and lowering
+marks the declaration again (`mark_anon_package_stmt`, which also gives a
+package's registry name its site suffix). A statement-level `anon sub` lowers
+back to the parser's expression statement, which declares nothing.
+
+A statement-level `anon class C { }` was a second mechanism: it registered
+`C` and then removed it again with a `__MUTSU_UNREGISTER_CLASS__` call. It
+now parses to the expression form's marked declaration, so there is one
+mechanism; the builtin and the compiler's special case for its block are gone.
+
+### 6.30 S10: package-qualified variable declarations (2026-10-13)
+
+`my $pkg::x` declares a variable in the stub package `pkg`. Measured on
+rakudo 2026.09, the declaration's `desigilname` is
+`Name.from-identifier-parts("pkg", "x")`, which the converter already built;
+lowering now reads a multi-part desigilname back as the parser's `::`-joined
+name. The declaration also makes `pkg` a type at parse time, so the unit's
+name scan lists the stub packages of a qualified variable, and `OUR::A` /
+`MY::A` over a name that resolves is a `Term::Name` of the qualified name,
+whether `A` is a type or a term (it was a `Call::Name`, which lowered to a
+sub lookup).
+
+### 6.31 S10: regex boundary assertions and other tree gaps (2026-10-13)
+
+Several regex spellings had no regex-tree node, so a regex holding one lost
+its whole tree and refused to round-trip. Measured on rakudo 2026.09:
+`<|b>`, `<|c>` and `<|g>` are `Assertion::Pass` (a grapheme or codepoint
+boundary holds at every position of an NFG string), and `<?|w>` / `<!|w>` /
+`<!|b>` are an `Assertion::Lookahead` over `wb` / `Pass`; the tree models
+them so, and spells a lookahead over `Pass` back as `<?>` / `<!>`. An inline
+adverb before an atom (`:i<[ab]>`) is the modifier followed by the atom,
+`*:?` / `*:!` are the frugal / greedy quantifier, `@$ref` is an
+`Interpolation` over `Contextualizer::List(Var::Lexical)` (a new
+`RegexExtension::ContextualizedVariable`), `$( a; b )` may hold several
+statements, `<rx={$r}>` is an `Assertion::Alias` over an
+`InterpolatedBlock`, a lookaround may hold any RakuAST-only construct (a
+back-reference), and a regex literal argument of a subrule call
+(`<v(/\d+/)>`) is spelled back from its tree. Execution keeps the regex text.
+
+Two runtime-parser bugs surfaced on the way and are fixed in the matcher's
+`<?before …>` body scanner: a bracketed escape inside a class
+(`<-[\x[22]]>`) and whitespace between the parts of a compound class
+(`<[0..9] + [x]>`) closed the assertion early; and an inline adverb written
+right after an atom (`/x:i<[ab]>/`) was read as that atom's `:` backtrack
+control.
+
+### 6.32 S10: regex placeholders, scalar callees and package variables (2026-10-13)
+
+Measured on rakudo 2026.09: `/$^a/` is a `Regex::Interpolation` whose `var`
+is a `VarDeclaration::Placeholder::Positional` (a new
+`RegexExtension::Placeholder`; the enclosing block still finds the
+placeholder by scanning the lowered regex text, as for a parsed one);
+`<&$tok(1)>` is an `Assertion::Callable` whose callee is
+`Contextualizer::Item(Var::Lexical("$tok"))` (the tree's `Callable` keeps
+the name with its `$`); `<@Pkg::list>` is an `Assertion::InterpolatedVar`
+over a `Var::Package`. A `:my token T { … }` statement whose block ends its
+line needs no `;` and takes no `WithWhitespace` wrapper, and the quotes in
+the character class of a regex nested in `$( … )` no longer open a string
+in the contextualizer's scanner.
+### 6.33 S10: a declaration followed by a postfix (2026-10-13)
+
+`my @a.[2] = 42`, `my %h.<k> = 1`, `my @a.push(1)` and `my Int $x.say`
+declare the variable and apply the postfix to it. Measured on rakudo 2026.09,
+each is one `ApplyPostfix` whose operand is the `VarDeclaration::Simple` --
+the node `(my @a)[2] = 42` builds too, since rakudo drops the parentheses of
+a postfix's operand. The two compute the same thing, so the converter now
+puts the declaration back under a postfix of the parser's declaration tail
+(`decl_tail`), and lowering keeps reading that node the parenthesized way.
+The parser's tail read the declared array or hash as `Var("@a")` rather than
+the `ArrayVar` / `HashVar` a written `@a` is; it now builds the same node.
+
+### 6.34 S10: enum base types, colonpair words and computed bodies (2026-10-13)
+
+An enum's body is one term rakudo evaluates at compile time, and
+`Type::Enum.term` keeps it as written. Measured on rakudo 2026.09: a base
+type (`our Str enum E ...`) is the `of` field (a `Type::Simple`, between
+`name` and `traits`); a colonpair word of a `«…»` body is a `QuoteWordsAtom`
+segment over a `ColonPair::Value` between the literal words; a parenthesized
+body the parser cannot decompose (`enum E (:20A, slip <B C>)`) is the
+`Circumfix::Parentheses` term itself. The converter renders the three from
+the parser's variants (`src/rakuast/enum_term.rs`), and lowering decomposes
+a parenthesized term with the parser's own `enum_variants_from_body`, so a
+round-tripped enum takes the static or the computed path the parsed one took.
+The value names a computed body introduces (its static pairs and the words
+of its `slip` entries) come from one parser helper, `enum_value_names`, which
+the converter's declared-name table and the module export scan share; an
+`our` enum's values are also declared under the enclosing packages
+(`module M { enum E <a> }; M::a`).
+
+### 6.35 S10: hyper prefix operators (2026-10-13)
+
+`-« @a`, `++<< @a` and the other hyper prefixes are, on rakudo 2026.09, an
+`ApplyPrefix` whose `prefix` is a `MetaPrefix::Hyper` over the plain
+`Prefix`. The parser spells the operation as the call
+`__mutsu_hyper_prefix("-", arg)` the runtime executes; that call is the
+lowered form, so the converter reads it as the node and lowering builds it
+back (`src/rakuast/hyper_prefix.rs`), the way the atomic operators map to
+`ast::atomic_op`'s calls.
+
+### 6.36 S10: package-qualified constants of a loaded module (2026-10-13)
+
+A `use`d module's `our constant NAME` is installed in its package, so
+rakudo 2026.09 renders `Pkg::NAME` in the importer as a `Term::Name`; only a
+name it cannot resolve is a `Call::Name`. The module export scan collected
+constants by their bare name only, so the converter rendered the qualified
+spelling as a call and the round trip looked up `&NAME`. The scan now also
+collects an `our` constant under its package path (a `my` constant stays
+lexical to the module), the way it already did for an `our` enum's values.
+
+### 6.37 S10: `$.name OP= EXPR` as a statement (2026-10-13)
+
+The statement parser spells `$.n += 100` as a method compound assignment on
+`__ANON_STATE__`, the bare-`$` carrier the VM resolves to `self`; the
+expression parser spells `($.n += 100)` over `Var(".n")`. Rakudo 2026.09
+builds one node for both: `ApplyInfix(left => Var::Attribute::Public("$.n"),
+infix => MetaInfix::Assign(Infix("+")))`. The converter now reads the
+statement spelling as that node, and lowering keeps producing the expression
+spelling, which computes the same thing (an `is rw` accessor assigns; a
+read-only one assigns into a throwaway container).
+
+### 6.38 S10: loop controls with a value or a slip (2026-10-13)
+
+Rakudo 2026.09 renders every loop control as a bare
+`Call::Name::WithoutParentheses` over its argument, whether that is a label
+(`next L`, a `Term::Name`), a v6.e value (`last $_ * 10`, `next Empty`) or a
+slip (`next |$c`). Statement lowering only accepted a label and refused the
+rest; a non-label argument now lowers to the expression form the parser keeps
+for it. Two parser rules are shared rather than restated: a bare word is a
+label when one of that name is in scope or by the parser's own
+`is_loop_control_label` (any word before v6.e, a declared or all-caps one
+from v6.e), and a slipped argument stays the call form in
+`loop_control_expr`, as `loop_control_call_form` parses it.
+
+### 6.39 S10: names a loaded module or a package alias makes known (2026-10-13)
+
+Rakudo resolves a name while parsing, so its node says what the name is. The
+converter learns the names of a loaded module from the parse-time module
+scan, which missed five kinds; each rendered as a `Call::Name` (the round
+trip then looked up `&NAME`) or was refused. Measured on rakudo 2026.09, all
+are terms or packages:
+
+- an `our` enum's values qualified by the enum's own name, from any module
+  loaded transitively (`enum DepsShort::LC <New>` → `DepsShort::LC::New`);
+- a qualified enum or role exported with `is export`, under its short name,
+  the way a class already was (`my enum M::Endian is export` makes
+  `Endian::Vax` a value, `unit role M::Greeter is export` makes `Greeter` a type);
+- the enum values an `import Module :TAG` selects (only `use` replayed the
+  tagged values before; an `import` now replays the scan with its tags);
+- a module's `EXPORT`, `EXPORT::DEFAULT` and `EXPORT::ALL` packages, which
+  an `is export` routine creates;
+- a sigilless value bound into an export stash at BEGIN time
+  (`EXPORT::special::<Answer> := 42`), which the scan now records like an
+  exported constant.
+
+Within one unit, a `constant` bound to a package the unit declares is that
+package (`constant E = Outer::Inner`): the converter renders `E` as a
+`Type::Simple` and copies every name declared under the target to the alias
+(`E::Status::Started`), in `src/rakuast/bareword/package_alias.rs`.
+
+### 6.40 S10: `.=` with a term as the method (2026-10-13)
+
+Rakudo 2026.09 renders the method of a `.=` whose method is not a name as
+the term itself: `$x .= &f` and `$x .= $m` are `ApplyDottyInfix(right =>
+Call::TermAsMethod(callee => …))`, even for `&f` (after a plain `.`, `$o.&f`
+is a `Call::NameAsMethod`), and an interpolated quoted name (`$x .=
+"{…}"(42)`) is a `Call::QuotedMethod`. A declaration has the same call in
+its `Initializer::CallAssign` (`my %h .= &f`, accessor `postfixish`). Lowering
+takes the call over a placeholder invocant and gives each target the parser's
+`.=` expansion reaches its own copy, so the static and the dynamic forms share
+one path.
+
+The declaration's source form (`ast::method_assign_decl::MethodAssignDecl`)
+now also keeps a term as the method (`callee`), a trailing postfix chain
+(`chain`) and a shaped array's dimensions (`shape`). The chain applies to the
+new value and is sunk (`my $o .= $m.uc`); rakudo makes the declaration the
+innermost operand of the chain's `ApplyPostfix`, and lowering rebuilds the
+form with the chain over the declared variable. The shape is source-only: the
+parser's call already builds the container (`my @c[2;2] .= new(:shape(2,2),
+…)`), so the expansion is unchanged.
+
+### 6.41 S10: interpolating `words` quotes and colonpair word quotes (2026-10-13)
+
+An interpolating `words` quote (`qqw/a $x b/`, `qq:w/$foo $bar/`) is, on
+rakudo 2026.09, a `QuotedString` with `processors => ("words",)` (`<words
+val>` with `:v`) over the string's interpolation segments: the words are only
+known once the string is built. The parser spells it as the call
+`__mutsu_words_atom(STRING)` (`__mutsu_quotewords_atom` with allomorphs) the
+runtime splits; that call is the lowered form, so the converter reads it as
+the node and lowering rebuilds it over the interpolation
+(`src/rakuast/word_quote.rs`).
+
+A colonpair whose value is a `«…»` / `<<…>>` word quote (`:args«green
+yellow»`) is a `ColonPair::Value` over the same `QuotedString(processors =>
+<quotewords val>)` a bare `«…»` term is. The colonpair parser built the word
+list without the term's spelling record; it now parses the value with the
+term parser (`french_quote_term` / `double_angle_term`), which evaluates to the
+same list. A `<<…>>` that nests its own opener (`<< a <<b>> c >>`) is still
+rendered as one literal run; rakudo nests a `QuotedString` there, and that
+spelling stays open.
+
+### 6.42 S10: package-qualified symbolic lookups (2026-10-13)
+
+`MY::(q[$x])`, `CALLERS::('$_')` and `GLOBAL::('Int')` look a symbol up
+under a written package. Rakudo 2026.09 keeps the package and the key apart:
+`Name(Part::Simple("MY"), Part::Expression(EXPR))`, under a `Term::Name`
+when the first segment is a lexical pseudo-package (`MY`, `OUR`, `CORE`,
+`SETTING`, `UNIT`, `OUTER(S)`, `CALLER(S)`, `DYNAMIC`, `LEXICAL`, `CLIENT`)
+and under a `Call::Name` otherwise (`GLOBAL`, `PROCESS`, `EXPORT`, a user
+package). The parser concatenates `"PKG::" ~ EXPR` into the symbolic
+dereference the runtime performs, which a converter cannot tell from a
+written `::("MY::" ~ $k)`, so the lookup records the two parts as a spelling
+(`Spelling::PackageIndirect`) and lowering builds the concatenation back
+(`src/rakuast/symbolic_deref.rs`). A lookup with further `::(…)` / `::name`
+segments after the first keeps the old boundary.
+
+### 6.43 S10: compound-assignment substitutions (2026-10-13)
+
+`s[PAT] OP= EXPR` replaces each match by `$/ OP EXPR`. Rakudo 2026.09 renders
+it as `Substitution(infix => MetaInfix::Assign(Infix(OP)), replacement =>
+EXPR)`, the sibling of `s[PAT] = EXPR`'s `infix => Assignment`, and answers
+the Match (a List of them under `:g`). The parser used to desugar it to
+`$_ = $_.subst(rx, { $/ OP EXPR }, :g)`: no tree to show, only `:g` of its
+adverbs honoured, and a Str for its value. It is now an `Expr::Subst` whose
+`replacement_thunk` is an `ast::SubstThunk`: the per-match expression
+(`$/ OP EXPR`, built by `parser::subst_compound_thunk` for both the parser and
+the lowering) with the written `OP` beside it (`SubstThunk::infix`), so the
+converter renders the written EXPR (`parser::subst_compound_rhs`) and the
+operator without reconstructing either. The `=` form is unchanged.
+
+### 6.44 S10: `handles` on a method (2026-10-13)
+
+`method NAME handles TERM { … }` makes the method a delegation source.
+Rakudo 2026.09 renders `Method(traits => (Trait::Handles(TERM),))`, the
+written term (`QuotedString(<words val>)` for `<a b>`, `Term::Whatever` for
+`*`) in written order among the other traits. `Stmt::MethodDecl` keeps only
+the folded `handles: Vec<HandleSpec>`, and a field beside it would touch every
+`MethodDecl` constructor; instead the term rides the routine source-trait
+record the parser already keeps in `.AST` mode
+(`ast::routine_trait::RoutineTrait::Handles`, attached to the body like
+`is`/`returns`/`of`). The converter renders it, and lowering rebuilds the specs
+from the retained terms with `parser::handle_specs_from_term`, the routine the
+attribute form uses. A clause whose spelling the parser does not rebuild specs
+from (`parser::handles_clause_term` answers `None`) records an `Unsupported`
+trait, so it stays the boundary.
+
+### 6.45 S10: constant colonpair statements and numeric colonpairs (2026-10-13)
+
+A colonpair written as a statement (`:a(7);`, the body of `"{:a}"`, the
+pairs of `@{:a, :b}`) is folded by the parser to `LiteralSrc(Pair, ":a(7)")`,
+so a sink warning can echo the written form. Rakudo 2026.09 shows the written
+`ColonPair::Value` / `True` / `False` / `Number`. The source text is exactly
+the colonpair, so the converter parses it again with the parser's own
+colonpair routine (`parser::colonpair_source_expr`) and renders that; lowering
+gives the ordinary colonpair `Binary`, so a round-tripped bare colonpair
+statement words its sink warning like a fatarrow. `:7a` had no form of its
+own and rendered as `FatArrow`; it is now `BinaryForm::ColonPairNumber`,
+rendered as `ColonPair::Number(key, value)` and lowered back to the same form.
+
+### 6.46 S10: adverbs on a user-declared infix (2026-10-13)
+
+`1 foo 3 :round` passes `:round` to `infix:<foo>`. The parser appends the
+trailing colonpairs to the `Expr::InfixFunc` operands
+(`attach_trailing_adverbs`); rakudo 2026.09 renders them as the
+`ApplyInfix`'s `colonpairs`. The converter splits the trailing adverbs off
+the operands (a two-operand application only; a list-associative chain with
+adverbs stays the boundary), and lowering appends them to the `InfixFunc`
+call again. An application with adverbs is always a routine call, also for a
+core operator the unit declares (`infix:</>`), whose plain application keeps
+the native layer; one whose operator the unit does not declare is refused.
+
+### 6.47 S10: user operators named with a `__` prefix (2026-10-13)
+
+The converter refused an `Expr::InfixFunc` whose name starts with `__`,
+assuming the parser used such names for its own helpers. No parser path
+builds one: the only non-operator `InfixFunc` names are the class trait `is`
+and `§`. A user operator may be named `__` (`infix:<__>`, exported from an
+`EXPORT` sub in Understitch's style); rakudo 2026.09 renders it as an
+ordinary `ApplyInfix(Infix("__"))`, and `[__]` as a `Term::Reduce`. The
+prefix test is gone.
+
+### 6.48 S10: names of the scope that runs `EVAL` or `Str.AST` (2026-10-13)
+
+An `EVAL` string's bare names are classified against the names its calling
+scope declares (`CallerNames`). The scan of constant markers read only the
+current frame's env tier, so an outer constant was lost from a block whose
+frame does not flatten its outer scope (`constant b = 1; { EVAL 'b' }; sub f
+{ }`). It now walks every enclosing scope (`Env::visible_keys_where`), and,
+for code running in GLOBAL, also takes the `our`-scoped constants of blocks
+that have already ended (`{ constant c = 1 }; EVAL 'c'`), which `our_vars`
+keeps under their `\name` spelling.
+
+`Str.AST` installs the same names. Rakudo resolves the source's bare names
+against the scope that runs `.AST` and renders a caller's constant *and* a
+caller's class as `Term::Name` (only the source's own and the setting's types
+are `Type::Simple`), so `.AST` passes all of them as terms.
+
+### 6.49 S10: a sigilless term bound to a declarator (2026-10-13)
+
+`my \foo = my $x = 3` and `my \foo = my $ = -3` bind `foo` to the new
+Scalar. The parser splits them into the inner declaration (an anonymous `$`
+renamed `anon-sigilless-src-N`, so two of them in a scope stay apart) followed
+by the sigilless bind to its variable. Rakudo 2026.09 renders the inner
+declaration itself as the initializer:
+`VarDeclaration::Term(initializer => Initializer::Assign(VarDeclaration::Simple
+| VarDeclaration::Anonymous))`. `sigilless_decl::declaration` now recognises
+the pair (`declarator`), the converter renders the inner declaration with its
+anonymous name restored, and lowering hands it back to
+`build_sigilless_bind_stmt`, which splits it again.
+
+A `my $ = EXPR` in expression position is a `VarDeclaration::Anonymous` with
+rakudo's default scope (no `scope` field), no longer a `VarDeclaration::Simple`
+named `__ANON_STATE__`; lowering gives it a non-`state` declaration.
+`VarDeclaration::Simple.name` answers the full spelling (`$x`, `$*x`).
+
+### 6.50 S10: `has $!g OP= EXPR` (2026-10-13)
+
+A `has` declaration whose operator is not one of its initializers (`//=`,
+`+=`, ...) declares the attribute without one and applies the operator to it
+as an ordinary compound assignment (#8441 gap 2). Rakudo 2026.09 renders it
+like `my $x OP= EXPR`: `ApplyInfix(left => VarDeclaration::Simple(scope =>
+"has"), infix => MetaInfix::Assign(Infix(OP)), right => EXPR)`. In a
+spelling-keeping parse the parser now builds the same record for a private or
+alias attribute (`SourceForm::DeclarationCompoundAssign`, the assignment's
+`Expr::CompoundAssign`), and `decl_compound_assign::parts` accepts a
+`HasDecl`. The expansion lives in `parser::attribute_compound_assign`, which
+both the parser and the lowering call. A public `$.g` writes through its
+accessor (`Expr::AssignExpr`) and keeps no record, so it stays the boundary.
+
+### 6.51 S10: `will PHASE` traits on a variable (2026-10-13)
+
+`my $x will begin { ... }` runs the block in its phase with `$_` bound to the
+container. The parser expands each trait into a phaser after the declaration
+(`parser::wrap_with_will_phasers`: a `Phaser` whose body is a `given` of the
+container or, for a compile-time phase, of the initial value). Rakudo 2026.09
+keeps them on the declaration: `VarDeclaration::Simple(traits =>
+(Trait::Will(phase => "begin", block => Block),))`, the block marked
+`may-have-signature`. `RakuAST::Trait::Will` is a new model class;
+`ast::var_will` reads the expansion back and holds the one phase-name table
+the parser also uses, and lowering strips the traits and hands the phasers to
+`wrap_with_will_phasers`. The parser reads `is` traits both before and after
+`will` ones without recording their order, so a declaration with both stays
+the boundary rather than render a guessed order.
+
+### 6.52 S10: `require MODULE <imports>` (2026-10-13)
+
+Rakudo renders the import list as `Statement::Require(module-name => ...,
+argument => QuotedString(words))`. The converter now keeps the one-list form
+(any other operand shape stays the boundary) and lowering passes it back as the
+call's second operand. The caller names of an `EVAL` string include the loaded
+modules' packages, since a package is global rather than lexical to the frame
+that runs the `EVAL`.
+
+### 6.53 S10: `::(EXPR)` declarator names (2026-10-14)
+
+The parser keeps a computed declarator name as the declaration's `name_expr`
+(plus a placeholder name unless the expression is a literal or bare word).
+Rakudo 2026.09 renders it for `Sub`, `Method` and `Class` alike as
+`name => Name(Part::Empty, Part::Expression(EXPR))`. The converter swaps the
+`name` field for that form (`symbolic_deref::replace_declarator_name`) and
+lowering reads it back (`routine_lower::declarator_name`); the package head
+no longer mistakes the leading empty edge of such a name for a `class ::Foo`
+stash. A grammar with a computed name stays the boundary. A name that only a
+constant fold resolves (`my constant cname = 'X'; class ::(cname) { }; X.m`)
+is still an unknown bareword to the converter.
+
+### 6.54 S10: zen slices with `:exists` (2026-10-14)
+
+The parser models `@a[]:adverb` as an `Index` with a Whatever index, except
+when `:exists` / `:!exists` follows the brackets directly: then it keeps
+`ZenSlice` under the `Exists` expansion. `ast::subscript_adverb::expand`
+accepts `ZenSlice` when an `exists` adverb is present, the converter reads it
+back as a subscript with no dimension, and lowering produces `ZenSlice` when
+the first colonpair is `exists` (an `Index` otherwise, as before). An explicit
+`:exists(True)` and the multi-dimensional `:exists:delete` error builtin stay
+the boundary.
+
+### 6.55 S10: attribute `will PHASE BLOCK` traits (2026-10-14)
+
+An attribute's `will lazy { ... }` is kept by the parser as an unknown trait
+`("will", phase, Some(AnonSub))`. The converter renders it as
+`Trait::Will(phase, block)` in the attribute's `traits`, and lowering turns it
+back into the same unknown-trait tuple, so `trait_mod:<will>` receives the block
+as its positional Callable. A `will` trait without a block stays the boundary.
+
+### 6.56 S10: compound assignment with a loose word-logical tail (2026-10-15)
+
+For `$x += 1 andthen 42`, the statement parser keeps a scopeless
+`SyntheticBlock([Expr(CompoundAssign), Expr(Binary(Var("x"), andthen, 42))])`.
+Rakudo's tree is an `ApplyListInfix` whose first operand is the compound
+assignment. The existing declaration-tail round trip now also recognizes a
+scalar compound-assignment head, replaces the tail's leading variable read
+with that head in `.AST`, and reconstructs the same parser shape in `lower`.
+This pins the compound assignment as the value that seeds the short-circuit
+tail and preserves its single evaluation. Other `SyntheticBlock` first
+refusals remain for separate measured slices.
+
+### 6.57 S10: grouped declaration with a loose word-logical tail (2026-10-15)
+
+For `my ($a, $b) andthen "y"`, the parser stores the `SignatureDecl` expansion
+inside the first statement of the loose-tail `SyntheticBlock`; the tail reads
+the declared variables as an `ArrayLiteral`. Rakudo renders the declaration
+itself as the first operand of `ApplyListInfix`. The converter now replaces
+that comma-list seed with `VarDeclaration::Signature`, and lowering restores
+the same declaration expansion and array seed. This record covers bare groups
+of plain variables; initialized, nested, named and typed groups remain on their
+existing paths or boundaries.

@@ -49,51 +49,6 @@ pub(crate) fn resolve_buf_index(arg: &Value, len: usize) -> i64 {
     }
 }
 
-pub(crate) fn resolve_buf_len(arg: &Value, total_len: usize, start: usize) -> i64 {
-    match arg.view() {
-        ValueView::Int(n) => n,
-        ValueView::Num(f) => {
-            if f.is_infinite() && f > 0.0 {
-                (total_len - start) as i64
-            } else {
-                f as i64
-            }
-        }
-        ValueView::Rat(n, d) => {
-            if d != 0 {
-                n / d
-            } else {
-                0
-            }
-        }
-        ValueView::Whatever => (total_len - start) as i64,
-        _ => 0,
-    }
-}
-
-pub(crate) fn range_bounds(arg: &Value) -> Option<(i64, i64)> {
-    match arg.view() {
-        ValueView::Range(start, end) => Some((start, end + 1)),
-        ValueView::RangeExcl(start, end) => Some((start, end)),
-        _ => None,
-    }
-}
-
-pub(crate) fn out_of_range_error(got: i64, min: i64, max: i64) -> RuntimeError {
-    let mut attrs = std::collections::HashMap::new();
-    let msg = format!(
-        "Index out of range. Is: {}, should be in {}..{}",
-        got, min, max
-    );
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
-    attrs.insert("got".to_string(), Value::int(got));
-    attrs.insert("range".to_string(), Value::str(format!("{}..{}", min, max)));
-    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-    let mut err = RuntimeError::new(msg);
-    err.exception = Some(Box::new(ex));
-    err
-}
-
 /// Extract byte array from a Buf/Blob instance.
 pub(crate) fn buf_get_bytes(target: &Value) -> Option<Vec<u8>> {
     if let ValueView::Instance {
@@ -151,36 +106,16 @@ pub(crate) fn read_byte_offset(
         // MoarVM-op-based decoders (`CBOR::Simple` among them) match it by
         // PREFIX in their own `CATCH { when /^ 'MVMArray: read_buf out of
         // bounds' / { ... } }`. See `mvm_array_read_buf_oob_message`'s
-        // doc comment for the full story; `offset` here is the pre-width-
-        // scaled BYTE offset (clamped to 0 when the raw offset was already
-        // negative, matching the caller-facing `Is: {offset}` wording).
+        // doc comment for the full story; `offset` here is the width-scaled
+        // BYTE offset, negative as given (`offset -1`, as MoarVM reports it).
         _ => Err(RuntimeError::new(
             crate::builtins::mvm_array_read_buf_oob_message(
-                offset.max(0) as usize * width,
+                offset.saturating_mul(width as i64),
                 bytes.len(),
                 size,
             ),
         )),
     }
-}
-
-pub(crate) fn to_int_val(v: &Value) -> i64 {
-    match v.view() {
-        ValueView::Int(i) => i,
-        ValueView::Num(f) => f as i64,
-        _ => 0,
-    }
-}
-
-pub(crate) fn read_ubits_from_bytes(bytes: &[u8], from: usize, bits: usize) -> BigInt {
-    let mut acc = BigInt::ZERO;
-    for i in 0..bits {
-        let bit_index = from + i;
-        let byte = bytes[bit_index / 8];
-        let bit = (byte >> (7 - (bit_index % 8))) & 1;
-        acc = (acc << 1) + BigInt::from(bit);
-    }
-    acc
 }
 
 pub(crate) fn bigint_to_value(value: BigInt) -> Value {
@@ -220,23 +155,6 @@ pub(crate) fn read_f64_endian(bytes: &[u8], endian_val: i64) -> f64 {
         1 => f64::from_le_bytes(arr), // LittleEndian
         2 => f64::from_be_bytes(arr), // BigEndian
         _ => f64::from_ne_bytes(arr), // NativeEndian
-    }
-}
-
-/// Returns (byte_size, is_signed) for a read-int/uint method name.
-pub(crate) fn read_int_method_info(method: &str) -> (usize, bool) {
-    match method {
-        "read-uint8" => (1, false),
-        "read-int8" => (1, true),
-        "read-uint16" => (2, false),
-        "read-int16" => (2, true),
-        "read-uint32" => (4, false),
-        "read-int32" => (4, true),
-        "read-uint64" => (8, false),
-        "read-int64" => (8, true),
-        "read-uint128" => (16, false),
-        "read-int128" => (16, true),
-        _ => unreachable!(),
     }
 }
 

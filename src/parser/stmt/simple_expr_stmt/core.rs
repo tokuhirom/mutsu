@@ -30,6 +30,15 @@ use super::predicates::{
 };
 use super::sig_info::{SigParamInfo, extract_signature_param_infos, extract_static_named_map};
 
+/// The binder's (and the env's) name for a signature-literal variable: a
+/// scalar is stored without its `$`, the other sigils keep theirs.
+fn sig_bind_var_name(info: &SigParamInfo) -> String {
+    match info.sigiled_name.strip_prefix('$') {
+        Some(stripped) => stripped.to_string(),
+        None => info.sigiled_name.clone(),
+    }
+}
+
 /// Desugar `LVALUE = RHS` for a method-call / sub-call / callable lvalue into the
 /// corresponding `__mutsu_assign_*` call expression. Mirrors the inline handling
 /// of the main `=` assignment path; factored out so a statement-prefix-wrapped
@@ -985,98 +994,72 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             // or comma-list of FatArrow pairs, we can bind each named param
             // directly to its source expression (preserving identity).
             let static_named = extract_static_named_map(&rhs);
-            let has_named = param_infos.iter().any(|p: &SigParamInfo| p.is_named);
             let mut stmts = Vec::new();
-            // Declare and assign the temp variable (used for positional params
-            // and for named params when no static map is available).
             let tmp_name = format!(
                 "__sig_bind_tmp_{}",
                 TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
             );
-            let need_tmp = param_infos.iter().any(|p: &SigParamInfo| !p.is_named)
-                || (has_named && static_named.is_none());
-            if need_tmp {
-                stmts.push(Stmt::VarDecl {
-                    name: tmp_name.clone(),
-                    expr: rhs,
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    where_constraint: None,
-                });
-            } else {
-                // Still evaluate rhs for side effects.
-                stmts.push(Stmt::Expr(rhs));
-            }
-            let mut pos_index: usize = 0;
+            // The right-hand side is evaluated once into a temp, bound to the
+            // signature by the signature binder (`__mutsu_sig_bind`), which
+            // raises a type, `where`, definiteness or arity failure as a call
+            // would, and answers what each parameter bound to.
+            let bound_name = format!("{tmp_name}_bound");
+            let decl = |name: String, expr: Expr| Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            };
+            stmts.push(decl(tmp_name.clone(), rhs));
+            stmts.push(decl(
+                bound_name.clone(),
+                Expr::Call {
+                    name: Symbol::intern("__mutsu_sig_bind"),
+                    args: vec![
+                        expr.clone(),
+                        Expr::Var(tmp_name.clone()),
+                        Expr::Literal(Value::array(
+                            param_infos
+                                .iter()
+                                .filter(|info| !info.sigiled_name.is_empty())
+                                .map(|info| Value::str(sig_bind_var_name(info)))
+                                .collect(),
+                        )),
+                    ],
+                    listop: false,
+                },
+            ));
             for info in param_infos.iter() {
                 if info.sigiled_name.is_empty() {
-                    if !info.is_named {
-                        pos_index += 1;
-                    }
                     continue;
                 }
-                let assign_name = if let Some(stripped) = info.sigiled_name.strip_prefix('$') {
-                    stripped.to_string()
-                } else {
-                    info.sigiled_name.clone()
-                };
-                let value_expr = if info.is_named {
-                    // Find a key match in static_named, or fall back to .hash<key>
+                let assign_name = sig_bind_var_name(info);
+                // What the binder bound the parameter to. A named parameter
+                // whose source the right-hand side spells out statically
+                // (`\(:a($b))`) binds that source itself, keeping its
+                // container (`:(:$a is raw) := \(:a($b))` aliases `$b`).
+                let static_source = if info.is_named {
                     let key = info
                         .named_keys
                         .first()
                         .cloned()
                         .unwrap_or_else(|| assign_name.clone());
-                    if let Some(map) = static_named.as_ref() {
-                        match map.get(&key) {
-                            Some(e) => e.clone(),
-                            None => Expr::Literal(Value::NIL),
-                        }
-                    } else {
-                        // Runtime: $tmp.hash{key}
-                        Expr::Index {
-                            target: Box::new(Expr::MethodCall {
-                                target: Box::new(Expr::Var(tmp_name.clone())),
-                                name: Symbol::intern("hash"),
-                                args: Vec::new(),
-                                modifier: None,
-                                quoted: false,
-                                sugar: false,
-                            }),
-                            index: Box::new(Expr::Literal(Value::str(key))),
-                            is_positional: false,
-                            spelling: Default::default(),
-                        }
-                    }
+                    static_named.as_ref().and_then(|map| map.get(&key).cloned())
                 } else {
-                    let i = pos_index;
-                    pos_index += 1;
-                    Expr::Index {
-                        target: Box::new(Expr::Var(tmp_name.clone())),
-                        index: Box::new(Expr::Literal(Value::int(i as i64))),
-                        is_positional: true,
-                        spelling: Default::default(),
-                    }
+                    None
                 };
-                // A typed parameter (`:(Int $a) := ...`) is checked as the
-                // signature binder checks it, before the name is bound.
-                let value_expr = match info.type_name.as_ref() {
-                    Some(ty) => Expr::Call {
-                        name: Symbol::intern("__mutsu_sig_bind_check"),
-                        args: vec![
-                            value_expr,
-                            Expr::Literal(Value::str(ty.clone())),
-                            Expr::Literal(Value::str(info.sigiled_name.clone())),
-                        ],
-                        listop: false,
-                    },
-                    None => value_expr,
-                };
+                let value_expr = static_source.unwrap_or_else(|| Expr::Index {
+                    target: Box::new(Expr::Var(bound_name.clone())),
+                    index: Box::new(Expr::Literal(Value::str(assign_name.clone()))),
+                    is_positional: false,
+                    spelling: Default::default(),
+                });
                 stmts.push(Stmt::Assign {
                     name: assign_name,
                     expr: value_expr,

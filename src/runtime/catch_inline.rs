@@ -425,7 +425,6 @@ impl Interpreter {
         // Per Raku semantics the handler sees its own `$!`, starting out `Nil`:
         // inside the handler the exception is the topic, and the enclosing scope's
         // `$!` has not been written yet.
-        let prior_bang = self.env().get("!").map(Value::deref_container);
         let handler_env = (!same_frame)
             .then(|| self.enter_installing_env(installing_base, installing_call_depth));
         let handler_env = handler_env.flatten();
@@ -440,7 +439,7 @@ impl Interpreter {
         // The handler runs on the throw site's operand stack; isolate its effects
         // so the suspended computation's stack is left exactly as it was.
         let saved_stack = self.stack.len();
-        let result = self.run_handler_range(code, catch_begin, control_begin, fns, Some(err_val));
+        let result = self.run_handler_range(code, catch_begin, control_begin, fns, Some(err_val.clone()));
         self.stack.truncate(saved_stack);
         let handled = self.when_matched();
         if let Some(frame) = frame {
@@ -457,24 +456,22 @@ impl Interpreter {
             self.env_mut().remove("_");
         }
 
-        // A handled (or resumed) exception leaves `$!` at its pre-throw value.
-        let mut restore_bang = || {
-            self.env_mut().assign_error_var(prior_bang.clone().unwrap_or(Value::NIL));
-        };
+        // A handled (or resumed) exception is published in `$!`, as rakudo's
+        // `try` does (#12904).
         match result {
             // `.resume` — the throw resumes at its own call site.
             Err(ce) if ce.is_resume() => {
-                restore_bang();
+                self.env_mut().assign_error_var(err_val);
                 CatchRunOutcome::Resumed
             }
             // A `when`/`default` matched and exited via succeed: handled, but not
             // resumed — the region must still be abandoned, which needs unwinding.
             Err(ce) if ce.is_succeed() => {
-                restore_bang();
+                self.env_mut().assign_error_var(err_val);
                 CatchRunOutcome::Handled(err, ce.return_value)
             }
             Ok(()) if handled => {
-                restore_bang();
+                self.env_mut().assign_error_var(err_val);
                 CatchRunOutcome::Handled(err, None)
             }
             Ok(()) => CatchRunOutcome::Declined(err),

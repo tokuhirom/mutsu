@@ -120,6 +120,18 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Vec<crate::symbol::Symbol>> {
         let mut keys = Vec::with_capacity(args.len());
+        self.multi_arg_type_keys_into(args, &mut keys)
+            .then_some(keys)
+    }
+
+    /// [`Self::multi_arg_type_keys`] into a caller-owned (reusable) buffer;
+    /// `false` when some argument has no type key.
+    // Cost: O(a), a = arguments (one type-key intern each).
+    pub(crate) fn multi_arg_type_keys_into(
+        &mut self,
+        args: &[Value],
+        keys: &mut Vec<crate::symbol::Symbol>,
+    ) -> bool {
         for (pos_idx, raw) in args.iter().enumerate() {
             // A `VarRef` (a variable passed as an argument) dispatches on the
             // *source variable's declared type* as well as on the value's own
@@ -139,9 +151,14 @@ impl Interpreter {
             // of roast) re-ran the whole candidate walk on every call.
             let a = match raw.view() {
                 ValueView::VarRef { name, value, .. } => {
-                    if let Some(tc) = name.with_str(|n| self.var_type_constraint(n)) {
+                    // The symbol is at hand and the env's own `Str` is borrowed,
+                    // so a typed variable argument costs no re-intern of its
+                    // name and no copy of its constraint per call.
+                    if let Some(tc) = self.var_type_constraint_value_sym(name)
+                        && let ValueView::Str(tc) = tc.view()
+                    {
                         keys.push(key_syms::declared_type());
-                        keys.push(crate::symbol::Symbol::intern(&tc));
+                        keys.push(crate::symbol::Symbol::intern(tc.as_str()));
                     }
                     value.clone()
                 }
@@ -250,7 +267,7 @@ impl Interpreter {
                 | ValueView::Capture { .. }
                 // A `VarRef` nested inside a `VarRef` is not a shape the
                 // unwrap above produces; refuse it rather than guess.
-                | ValueView::VarRef { .. } => return None,
+                | ValueView::VarRef { .. } => return false,
                 _ => {
                     let name = crate::runtime::utils::value_type_name(a);
                     // ADR-0019 E1a shadow probe (zero behavior change): see
@@ -281,7 +298,7 @@ impl Interpreter {
                 keys.push(key_syms::undefined_arg());
             }
         }
-        Some(keys)
+        true
     }
 
     /// Whether one candidate parameter's type constraint makes the enclosing
@@ -533,21 +550,51 @@ impl Interpreter {
         // answer is not cached, but it costs one bool while nothing is wrapped.
         if self.registry().has_any_method_wrap_chains()
             && let ValueView::Instance { class_name, .. } = target.view()
+            // A built-in instance whose class inherits the method (`NFD.list`
+            // is `Uni.list`) is wrapped through the class the wrap landed on.
             && self
                 .registry()
-                .method_wrap_chain(class_name.as_str(), method_sym.as_str(), 0)
+                .builtin_method_wrap_chain_along_mro(class_name.as_str(), method_sym.as_str())
                 .is_some()
         {
             return true;
         }
-        if let Some(&hit) = self.caches.native_lever_a_override_cache.get(&key) {
-            return hit;
-        }
-        let answer = self.has_user_method(type_name, method_sym.as_str());
-        self.caches
-            .native_lever_a_override_cache
-            .insert(key, answer);
-        answer
+        let answer = match self.caches.native_lever_a_override_cache.get(&key) {
+            Some(&hit) => hit,
+            None => {
+                let answer = self.has_user_method(type_name, method_sym.as_str());
+                self.caches
+                    .native_lever_a_override_cache
+                    .insert(key, answer);
+                answer
+            }
+        };
+        answer && !self.user_override_outranked_by_builtin(target, type_name, method_sym.as_str())
+    }
+
+    /// An `augment`ed `multi` joins the built-in method's candidates and is
+    /// ranked with them. A candidate that is only a capture or slurpies
+    /// (`multi method map(|c)`) ranks after every candidate with a positional
+    /// parameter, and a core-type receiver has a built-in one, so such an
+    /// augmentation wins no call of its own (#12751). It stays reachable
+    /// through the built-in's `nextsame` / `callsame`.
+    ///
+    /// Approximation: "the built-in has a positional candidate" is "the
+    /// receiver's MRO has a built-in method of that name", because the row
+    /// table has no signatures. The shapes only the built-in's own catch-all
+    /// accepts (`map()` is ambiguous in Rakudo, `grep()` picks the user
+    /// candidate) therefore answer the built-in's error.
+    // TODO: a user-class instance (`C.new.map(*.so)`) still takes the
+    // augmented candidate: its dispatch has no built-in leg to fall through to.
+    // Cost: O(m * c), m = MRO depth, c = candidates per level.
+    pub(crate) fn user_override_outranked_by_builtin(
+        &mut self,
+        target: &Value,
+        type_name: &str,
+        method: &str,
+    ) -> bool {
+        Self::is_core_type_receiver(target)
+            && self.user_candidates_all_outranked_by_builtin(type_name, method)
     }
 
     /// Resolve a method, consulting the sound multi-resolution cache for a
@@ -864,10 +911,16 @@ impl Interpreter {
         method_def: &std::sync::Arc<crate::runtime::MethodDef>,
         cc: &std::sync::Arc<CompiledCode>,
     ) {
+        // An `is rw` or explicit `is raw` parameter binds the argument's own
+        // container, which only the full binder realizes (the shared-cell
+        // lookup in `bind_function_args_values`); the fast path binds a copy,
+        // so every cached call after the first dropped the callee's writes
+        // (#13207: `self!coercer.coerce($a)` relaying an `is raw` `$a`). The
+        // implicit-raw sigilless form is excluded below for the same reason.
         let has_rw_params = method_def
             .param_defs
             .iter()
-            .any(|pd| pd.traits.iter().any(|t| t == "rw"));
+            .any(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
         if has_rw_params {
             return;
         }

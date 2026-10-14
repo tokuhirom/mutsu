@@ -269,13 +269,16 @@ impl Interpreter {
             // `multi` candidates make `callsame` redispatch through the same
             // user routine repeatedly instead of reaching the native base.
             let preregistered = site_fp.is_some_and(|fingerprint| {
-                self.env()
-                    .get(&MetaNs::InlinePackageSub.owned_key_from_parts(&[
-                        &self.current_package(),
-                        &resolved_name,
-                        &fingerprint.to_string(),
-                    ]))
-                    .is_some()
+                crate::runtime::inline_package_subs::INLINE_PACKAGE_SUB_MARKERS
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    && self
+                        .env()
+                        .get(&MetaNs::InlinePackageSub.owned_key_from_parts(&[
+                            &self.current_package(),
+                            &resolved_name,
+                            &fingerprint.to_string(),
+                        ]))
+                        .is_some()
             });
             // The hoist pre-pass (see `hoist_sub_decls`) registers this same
             // declaration early, purely so the name is callable before its
@@ -652,30 +655,44 @@ impl Interpreter {
                 // write-only free var, e.g. a setter `sub set-v($x) { $v = $x
                 // }`, never appears in `free_var_syms` — see
                 // `compute_free_vars`'s doc comment on the two sets).
-                let mut free_syms: std::collections::HashSet<Symbol> =
-                    std::collections::HashSet::new();
+                // Order-insensitive sets, kept as `Vec`s: a sub has a handful
+                // of free variables, and hashing them dominated a block-
+                // declared sub's per-activation registration (#13049).
+                fn add_syms(set: &mut Vec<Symbol>, syms: &[Symbol]) {
+                    // Cost: O(n * m) for small sets, O(n + m) hashed past 16.
+                    if set.len() + syms.len() <= 16 {
+                        for sym in syms {
+                            if !set.contains(sym) {
+                                set.push(*sym);
+                            }
+                        }
+                    } else {
+                        set.extend_from_slice(syms);
+                        let mut seen = std::collections::HashSet::new();
+                        set.retain(|sym| seen.insert(*sym));
+                    }
+                }
+                let mut free_syms: Vec<Symbol> = Vec::new();
                 // The free variables the sub (or a closure inside it) REBINDS
                 // with `:=` (#9416): their store entry must be a binding cell,
                 // the named-sub twin of the one `box_captured_lexicals` gives a
                 // closure's capture (#9307). See the boxing below.
-                let mut rebound_syms: std::collections::HashSet<Symbol> =
-                    std::collections::HashSet::new();
+                let mut rebound_syms: Vec<Symbol> = Vec::new();
                 if let Some(compiled) = primary_compiled {
-                    free_syms.extend(compiled.get().code.free_var_syms.iter().copied());
-                    free_syms.extend(compiled.get().code.free_var_writes.iter().copied());
-                    rebound_syms.extend(compiled.get().code.free_var_rebinds.iter().copied());
+                    add_syms(&mut free_syms, &compiled.get().code.free_var_syms);
+                    add_syms(&mut free_syms, &compiled.get().code.free_var_writes);
+                    add_syms(&mut rebound_syms, &compiled.get().code.free_var_rebinds);
                 }
                 for slot in 0..signature_alternates.len() {
                     if let Some(alt_compiled) = plan_compiled(slot + 1) {
-                        free_syms.extend(alt_compiled.get().code.free_var_syms.iter().copied());
-                        free_syms.extend(alt_compiled.get().code.free_var_writes.iter().copied());
-                        rebound_syms
-                            .extend(alt_compiled.get().code.free_var_rebinds.iter().copied());
+                        add_syms(&mut free_syms, &alt_compiled.get().code.free_var_syms);
+                        add_syms(&mut free_syms, &alt_compiled.get().code.free_var_writes);
+                        add_syms(&mut rebound_syms, &alt_compiled.get().code.free_var_rebinds);
                     }
                 }
                 // A statement-level `$F := 5` neither reads nor writes `$F`, so
                 // a rebind-only free variable is in neither set above.
-                free_syms.extend(rebound_syms.iter().copied());
+                add_syms(&mut free_syms, &rebound_syms);
                 let mut captured_any = false;
                 for sym in free_syms {
                     let name = sym.resolve();
@@ -837,8 +854,12 @@ impl Interpreter {
                     captured_any = true;
                 }
                 if captured_any {
-                    crate::runtime::cow_table_mut(&mut self.lexicals.mainline_lexical_subs)
-                        .insert(resolved_name.clone(), unit_key);
+                    // Re-registering the same sub in the same bucket (every
+                    // iteration of the block that declares it) changes nothing.
+                    if self.lexicals.mainline_lexical_subs.get(&resolved_name) != Some(&unit_key) {
+                        crate::runtime::cow_table_mut(&mut self.lexicals.mainline_lexical_subs)
+                            .insert(resolved_name.clone(), unit_key);
+                    }
                 }
             }
             // A sub declared inside a BLOCK scope is lexical: the block-exit

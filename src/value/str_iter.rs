@@ -263,7 +263,14 @@ pub(crate) fn parse_limit(arg: &Value) -> Option<Option<usize>> {
         ValueView::Whatever => Some(None),
         ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => Some(None),
         ValueView::Num(f) if f >= 0.0 => Some(Some(f as usize)),
+        ValueView::Num(f) if f < 0.0 => Some(Some(0)),
         ValueView::Rat(n, d) if d == 0 && n > 0 => Some(None),
+        // Any other count is read as `.Int` (Rakudo's `head($limit)`): a
+        // rational truncates, a numeric string parses, an allomorph reads its
+        // number.
+        ValueView::Rat(n, d) if d != 0 => Some(Some((n / d).max(0) as usize)),
+        ValueView::Str(s) => parse_limit(&Value::num(s.trim().parse::<f64>().ok()?)),
+        ValueView::Mixin(inner, mixins) if mixins.contains_key("Str") => parse_limit(inner),
         _ => None,
     }
 }

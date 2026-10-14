@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::container_lock::ContainerStructGuard;
 
 /// How [`Value::eqv`] compares two instances of the same user class.
 pub(crate) enum InstanceEqv {
@@ -162,6 +163,9 @@ impl Value {
             // Cost: O(1) on a kind/length mismatch, else O(i) to the first differing
             // element (recursing into it), O(e) when equal.
             (ValueView::Array(a, a_kind), ValueView::Array(b, b_kind)) => {
+                // Both walks are pure; other threads may restructure either
+                // container meanwhile (ADR-0068, #13079).
+                let _read = ContainerStructGuard::acquire_for_both(self, other);
                 a_kind.is_real_array() == b_kind.is_real_array()
                     && a.len() == b.len()
                     && super::eqv_container_type::same_container_parameterization(self, other)
@@ -171,6 +175,7 @@ impl Value {
             (ValueView::BufStorage(a), ValueView::BufStorage(b)) => *a == *b,
             // Hashes: recursively use eqv for values
             (ValueView::Hash(a), ValueView::Hash(b)) => {
+                let _read = ContainerStructGuard::acquire_for_both(self, other);
                 a.len() == b.len()
                     && super::eqv_container_type::same_container_parameterization(self, other)
                     && a.iter()

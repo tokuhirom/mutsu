@@ -1,5 +1,18 @@
 use super::*;
+
+/// What a call site's argument descriptor says about its arguments
+/// ([`Interpreter::stack_arg_kinds`]).
+#[derive(Clone, Copy, Default)]
+pub(super) struct CallArgKinds {
+    /// A syntactically named argument (ADR-0021).
+    pub(super) named: bool,
+    /// A `|EXPR` argument-list interpolation (ADR-0054).
+    pub(super) slip: bool,
+}
 use crate::symbol::Symbol;
+
+/// A call site's argument-source names, shared between the call op and the callee.
+pub(super) type SharedArgNames = std::sync::Arc<Vec<Option<String>>>;
 
 impl Interpreter {
     /// Convert a named-flavour Pair into the positional flavour; a no-op for
@@ -75,7 +88,9 @@ impl Interpreter {
         Self::decode_arg_slip_positions(code, arg_sources_idx).is_some()
     }
 
-    /// Does this call site contain a syntactically named argument?
+    /// Whether this call site contains a syntactically named argument, and
+    /// whether it contains a `|EXPR` one ([`Self::stack_args_have_slip`]), in
+    /// one pass over the call site's descriptor (#12526).
     ///
     /// ADR-0021 makes namedness a call-site property. `FALSE` is the compact
     /// descriptor for a named argument without an rw source; an array whose
@@ -83,15 +98,24 @@ impl Interpreter {
     /// its second element. This is deliberately separate from the runtime
     /// Pair flavour, which cannot distinguish `f(:x)` from a positional Pair
     /// by the time the positional-light binder sees the value.
+    // Cost: O(a), a = the call's compiled arguments.
     #[inline]
-    pub(super) fn stack_args_have_named(code: &CompiledCode, arg_sources_idx: Option<u32>) -> bool {
+    pub(super) fn stack_arg_kinds(
+        code: &CompiledCode,
+        arg_sources_idx: Option<u32>,
+    ) -> CallArgKinds {
+        let mut kinds = CallArgKinds::default();
         let Some(idx) = arg_sources_idx else {
-            return false;
+            return kinds;
         };
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
-            return false;
+            return kinds;
         };
-        items.iter().any(Self::arg_source_entry_is_named)
+        for item in items.iter() {
+            kinds.named |= Self::arg_source_entry_is_named(item);
+            kinds.slip |= matches!(item.view(), ValueView::Bool(true));
+        }
+        kinds
     }
 
     #[inline]
@@ -136,6 +160,27 @@ impl Interpreter {
         } else {
             args
         }
+    }
+
+    /// [`Self::spread_call_args_by_syntax`] for a caller that keeps the names
+    /// shared: a call site with no `|` argument (the common one) hands the
+    /// shared names straight back.
+    pub(super) fn spread_call_args_by_syntax_shared(
+        code: &CompiledCode,
+        raw_args: Vec<Value>,
+        arg_sources_idx: Option<u32>,
+        decoded_sources: Option<(SharedArgNames, bool)>,
+    ) -> (Vec<Value>, Option<SharedArgNames>) {
+        let Some((names, true)) = decoded_sources else {
+            return (raw_args, decoded_sources.map(|(names, _)| names));
+        };
+        let (args, sources) = Self::spread_call_args_by_syntax(
+            code,
+            raw_args,
+            arg_sources_idx,
+            Some((*names).clone()),
+        );
+        (args, sources.map(std::sync::Arc::new))
     }
 
     pub(super) fn spread_call_args_by_syntax(
@@ -280,35 +325,87 @@ impl Interpreter {
         code: &CompiledCode,
         arg_sources_idx: Option<u32>,
     ) -> Option<Vec<Option<String>>> {
+        self.decode_arg_sources_shared(code, arg_sources_idx)
+            .map(|(names, _)| (*names).clone())
+    }
+
+    /// [`Self::decode_arg_sources`] sharing the call site's names: they are
+    /// decoded once per site (`CompiledCode::arg_source_decode`) and handed
+    /// out as one `Arc`, instead of allocating the vector and every name on
+    /// each execution. The slot map is still repopulated per call.
+    // Cost: O(s) for the s slotted sources, O(1) otherwise (the names are shared).
+    pub(super) fn decode_arg_sources_shared(
+        &mut self,
+        code: &CompiledCode,
+        arg_sources_idx: Option<u32>,
+    ) -> Option<(SharedArgNames, bool)> {
         // §1.4/§1.5: repopulate the companion `name -> slot` map for this call from
         // the `Pair(name, Int(slot))` arg-source entries. Cleared first so a call
         // with no slotted sources leaves it empty (no stale slot from a prior call).
         self.pending_call_arg_source_slots.clear();
         let idx = arg_sources_idx?;
-        let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
-            return None;
-        };
-        let mut slots: Vec<(String, u32)> = Vec::new();
-        let names: Vec<Option<String>> = items
-            .iter()
-            .map(|item| {
-                Self::decode_arg_source_entry(item).map(|(name, slot)| {
-                    if let Some(slot) = slot {
-                        slots.push((name.clone(), slot));
-                    }
-                    name
+        let decode = code.arg_source_decode(idx as usize, || {
+            let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
+                return None;
+            };
+            let mut slots: Vec<(crate::symbol::Symbol, u32)> = Vec::new();
+            let names: Vec<Option<String>> = items
+                .iter()
+                .map(|item| {
+                    Self::decode_arg_source_entry(item).map(|(name, slot)| {
+                        if let Some(slot) = slot {
+                            slots.push((crate::symbol::Symbol::intern(&name), slot));
+                        }
+                        name
+                    })
                 })
+                .collect();
+            Some(crate::opcode::ArgSourceDecode {
+                names: std::sync::Arc::new(names),
+                slots,
+                has_slip: Self::decode_arg_slip_positions_at(code, idx).is_some(),
             })
-            .collect();
-        for (name, slot) in slots {
+        })?;
+        for &(name, slot) in &decode.slots {
             self.pending_call_arg_source_slots.insert(name, slot);
         }
-        Some(names)
+        Some((decode.names.clone(), decode.has_slip))
     }
 
     /// Decode the source half of an argument descriptor. Named arguments use
     /// `[FALSE, source]` so this helper keeps their source name/slot visible
     /// to rw writeback and container-sharing checks.
+    /// Whether any argument of the call site names a source variable, which is
+    /// what `decode_arg_sources` would report as a `Some` -- answered from the
+    /// descriptor without decoding (allocating) the names.
+    // Cost: O(a), a = arguments of the call site.
+    pub(super) fn arg_sources_name_any(code: &CompiledCode, arg_sources_idx: Option<u32>) -> bool {
+        let Some(idx) = arg_sources_idx else {
+            return false;
+        };
+        let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
+            return false;
+        };
+        items.iter().any(Self::arg_source_entry_names_source)
+    }
+
+    /// [`Self::decode_arg_source_entry`]'s `is_some()`, without the decode.
+    fn arg_source_entry_names_source(item: &Value) -> bool {
+        match item.view() {
+            ValueView::Str(_) | ValueView::Pair(..) => true,
+            ValueView::Array(items, ..)
+                if items
+                    .first()
+                    .is_some_and(|marker| matches!(marker.view(), ValueView::Bool(false))) =>
+            {
+                items
+                    .get(1)
+                    .is_some_and(Self::arg_source_entry_names_source)
+            }
+            _ => false,
+        }
+    }
+
     fn decode_arg_source_entry(item: &Value) -> Option<(String, Option<u32>)> {
         match item.view() {
             ValueView::Str(name) => Some((name.to_string(), None)),
@@ -356,6 +453,12 @@ impl Interpreter {
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
             return None;
         };
+        // A call site with an argument-source table but no `|` argument (any
+        // call passing a named variable) allocates nothing (#12526).
+        let is_slip = |item: &Value| matches!(item.view(), ValueView::Bool(true));
+        if !items.iter().any(is_slip) {
+            return None;
+        }
         let positions: Vec<usize> = items
             .iter()
             .enumerate()

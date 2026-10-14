@@ -120,7 +120,15 @@ fn check_two_terms_across_lines(cond_input: &str, r: &str) -> Result<(), PError>
 /// declaration belongs outside the loop while the assignment runs once per
 /// item; otherwise the synthetic block would redeclare and reset the variable
 /// on every iteration (`my $product *= $_ for @values`).
-fn split_compound_decl_for_modifier(stmt: Stmt) -> (Option<Stmt>, Stmt) {
+///
+/// A spelling-keeping parse records the declaration's source form
+/// (`ast::decl_compound_assign`); the hoisted part is then the record and the
+/// declaration, as a synthetic block the caller flattens.
+pub(crate) fn split_compound_decl_for_modifier(stmt: Stmt) -> (Option<Stmt>, Stmt) {
+    let stmt = match crate::ast::decl_compound_assign::split_for_modifier(stmt) {
+        (Some(hoisted), assign) => return (Some(Stmt::SyntheticBlock(hoisted)), assign),
+        (None, stmt) => stmt,
+    };
     let Stmt::SyntheticBlock(mut stmts) = stmt else {
         return (None, stmt);
     };

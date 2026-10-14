@@ -1060,13 +1060,15 @@ impl Interpreter {
         classes.insert(
             "IO::Pipe".to_string(),
             ClassDef {
-                parents: Vec::new(),
+                // `IO::Pipe is IO::Handle`: a pipe satisfies `IO::Handle` constraints and
+                // `slurp($proc.err)` reads it instead of opening a path.
+                parents: vec!["IO::Handle".to_string()],
                 attributes: Vec::new(),
                 native_methods: ["slurp", "slurp-rest", "Str", "gist", "print", "close"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: sym_mro(&["IO::Pipe"]),
+                mro: sym_mro(&["IO::Pipe", "IO::Handle"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -3188,7 +3190,7 @@ impl Interpreter {
             pending_where_exception: None,
             pending_skip_constraint_recheck: false,
             pending_raw_invocant: None,
-            pending_call_arg_source_slots: std::collections::HashMap::new(),
+            pending_call_arg_source_slots: rustc_hash::FxHashMap::default(),
             pending_rw_writeback_slots: super::rw_writeback_slots::RwWritebackSlots::new(),
             test_pending_callsite_line: None,
             nqp_arg_scratch: Vec::new(),

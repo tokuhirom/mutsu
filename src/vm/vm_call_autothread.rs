@@ -222,6 +222,12 @@ impl Interpreter {
     pub(super) fn unwrap_junction_value(
         val: &Value,
     ) -> Option<(crate::value::JunctionKind, Arc<Vec<Value>>)> {
+        // A variable argument (`g($x)` with `Mu $x`) arrives wrapped in a
+        // varref carrying the variable's declared type; the Junction is its
+        // value (#13148).
+        if let Some((_, inner, _)) = val.as_varref() {
+            return Self::unwrap_junction_value(inner);
+        }
         match val.view() {
             ValueView::Junction { kind, values } => Some((kind, values.clone())),
             ValueView::Scalar(inner) => {
@@ -525,6 +531,12 @@ impl Interpreter {
 
     /// Recursively unwrap a Junction to get a non-junction eigenstate.
     fn unwrap_junction_deep(val: &Value) -> Value {
+        // A variable argument arrives wrapped in a varref (#13148).
+        if let Some((_, inner, _)) = val.as_varref()
+            && Self::unwrap_junction_value(inner).is_some()
+        {
+            return Self::unwrap_junction_deep(inner);
+        }
         match val.view() {
             ValueView::Junction { values, .. } => {
                 if let Some(first) = values.first() {

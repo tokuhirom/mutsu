@@ -18,7 +18,7 @@ impl CompoundAssignOp {
         )
     }
 
-    pub(super) fn symbol(self) -> &'static str {
+    pub(crate) fn symbol(self) -> &'static str {
         match self {
             CompoundAssignOp::Comma => ",=",
             CompoundAssignOp::DefinedOr => "//=",

@@ -58,10 +58,12 @@ impl Encode for CompiledCode {
             succeed_passes_through,
             reads_topic,
             mentions_native_scalar_type_name,
+            names_var_method,
             uses_routine_state,
             sets_routine_state,
             source_line,
             is_pointy_block,
+            is_whatever_code,
             pointy_alias_param,
             immutable_topic,
             declarator_doc,
@@ -123,6 +125,7 @@ impl Encode for CompiledCode {
             self_capture_decl_locals,
             captures_own_declaration,
             outer_code_var_names,
+            eval_scope_names,
             shadowed_sigilless_reads,
             unscoped_amp_reads,
             needs_cell_free_vars,
@@ -155,6 +158,7 @@ impl Encode for CompiledCode {
             free_var_rebinds,
             free_var_sym_set: _,
             local_sym_set: _,
+            light_closure_shape: _,
             capture_hidden_set: _,
             capture_probe_keys: _,
             free_enum_bare_keys: _,
@@ -162,6 +166,7 @@ impl Encode for CompiledCode {
             op_scan_index: _,
             stmt_pool_bodies: _,
             stmt_pool_signatures: _,
+            arg_source_decodes: _,
             #[cfg(feature = "jit")]
                 jit: _,
         } = self;
@@ -209,10 +214,12 @@ impl Encode for CompiledCode {
         succeed_passes_through.encode(encoder)?;
         reads_topic.encode(encoder)?;
         mentions_native_scalar_type_name.encode(encoder)?;
+        names_var_method.encode(encoder)?;
         uses_routine_state.encode(encoder)?;
         sets_routine_state.encode(encoder)?;
         source_line.encode(encoder)?;
         is_pointy_block.encode(encoder)?;
+        is_whatever_code.encode(encoder)?;
         pointy_alias_param.encode(encoder)?;
         immutable_topic.encode(encoder)?;
         Compat(declarator_doc.as_deref()).encode(encoder)?;
@@ -274,6 +281,7 @@ impl Encode for CompiledCode {
         self_capture_decl_locals.encode(encoder)?;
         captures_own_declaration.encode(encoder)?;
         encode_string_set(outer_code_var_names, encoder)?;
+        encode_string_set(eval_scope_names, encoder)?;
         shadowed_sigilless_reads.encode(encoder)?;
         unscoped_amp_reads.encode(encoder)?;
         needs_cell_free_vars.encode(encoder)?;
@@ -348,10 +356,12 @@ impl Decode<DecodeCtx> for CompiledCode {
             succeed_passes_through: Decode::decode(decoder)?,
             reads_topic: Decode::decode(decoder)?,
             mentions_native_scalar_type_name: Decode::decode(decoder)?,
+            names_var_method: Decode::decode(decoder)?,
             uses_routine_state: Decode::decode(decoder)?,
             sets_routine_state: Decode::decode(decoder)?,
             source_line: Decode::decode(decoder)?,
             is_pointy_block: Decode::decode(decoder)?,
+            is_whatever_code: Decode::decode(decoder)?,
             pointy_alias_param: Decode::decode(decoder)?,
             immutable_topic: Decode::decode(decoder)?,
             declarator_doc: decode_serde::<Option<crate::decl_doc::DeclDoc>, _>(decoder)?
@@ -414,6 +424,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             self_capture_decl_locals: Decode::decode(decoder)?,
             captures_own_declaration: Decode::decode(decoder)?,
             outer_code_var_names: decode_set(decoder)?,
+            eval_scope_names: decode_set(decoder)?,
             shadowed_sigilless_reads: Decode::decode(decoder)?,
             unscoped_amp_reads: Decode::decode(decoder)?,
             needs_cell_free_vars: Decode::decode(decoder)?,
@@ -446,6 +457,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             free_var_rebinds: Decode::decode(decoder)?,
             free_var_sym_set: Default::default(),
             local_sym_set: Default::default(),
+            light_closure_shape: Default::default(),
             capture_hidden_set: Default::default(),
             capture_probe_keys: Default::default(),
             free_enum_bare_keys: Default::default(),
@@ -453,6 +465,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             op_scan_index: Default::default(),
             stmt_pool_bodies: Default::default(),
             stmt_pool_signatures: Default::default(),
+            arg_source_decodes: Default::default(),
             #[cfg(feature = "jit")]
             jit: Default::default(),
         })

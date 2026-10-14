@@ -441,6 +441,17 @@ impl Interpreter {
             }
         }
         for (k, orig) in saved {
+            // A write to a rule's own `:my $*x` is a write to a variable the
+            // rule's sub-rules read from the env (they do not share the rule's
+            // `:my` lexicals), so it stays installed until the rule frame's
+            // window is uninstalled. Rakudo does not undo it on backtracking
+            // either (#13222).
+            let dyn_key = k.strip_prefix('$').unwrap_or(&k);
+            if writes.contains_key(dyn_key)
+                && super::regex_helpers::grammar_dynvar_scope_active(dyn_key)
+            {
+                continue;
+            }
             match orig {
                 Some(v) => self.env.insert(k, v),
                 None => self.env.remove(&k),

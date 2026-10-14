@@ -14,6 +14,18 @@ pub(super) const UNRELATED_DISTANCE: usize = 500;
 /// the type. Read from the builtin type catalog, so a type the catalog knows
 /// ranks its roles as Rakudo does (`Real` before `Numeric` for an `Int`) and
 /// carries no ancestor Rakudo denies (`Pair` is not `Cool`).
+/// The ancestors of `Parameter` and `Signature`, which have no catalog row (a
+/// row changes how their `ACCEPTS` and method dispatch resolve) but are plain
+/// `Any` subclasses. Without them a `Mu`/`Any` candidate scored "unrelated"
+/// for such a value and outranked a nominally exact candidate.
+fn implicit_builtin_mro(type_name: &str) -> &'static [&'static str] {
+    match type_name {
+        "Parameter" => &["Parameter", "Any", "Mu"],
+        "Signature" => &["Signature", "Any", "Mu"],
+        _ => &[],
+    }
+}
+
 fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
     crate::builtin_types::ancestry::builtin_type_narrowness_chain(type_name).unwrap_or(&[])
 }
@@ -118,6 +130,7 @@ impl Interpreter {
             optional: constrained == 0 && multi_rank::has_optional_positional(&params),
             decl_order: def.decl_order,
             profile,
+            invocant: None,
             tier: 0,
             tiered: false,
         }
@@ -664,7 +677,6 @@ impl Interpreter {
     ) -> (usize, RankProfile) {
         let owner = WalkOwner {
             package: def.package,
-            literal_mask: self.literal_native_args,
         };
         self.params_type_distance_profile(args, &Self::dispatch_visible_params(def), owner)
     }
@@ -877,6 +889,12 @@ impl Interpreter {
                     return i;
                 }
             }
+            if let Some(i) = implicit_builtin_mro(cn.as_str())
+                .iter()
+                .position(|&ancestor| ancestor == catalog_base)
+            {
+                return i;
+            }
             // Check composed roles
             if let Some(roles) = self.registry().class_composed_roles.get(cn.as_str())
                 && roles.iter().any(|r| r == base)
@@ -889,12 +907,32 @@ impl Interpreter {
             if base == cn.as_str() {
                 return 0;
             }
+            // The type object of an `Int`-based enum is one step below `Int`
+            // (`enum E <a b>`: `E.^mro` is `(E) (Int) (Cool) (Any) (Mu)`), so
+            // it out-ranks `Int:U` and the ancestors follow at +1 (#13243).
+            if self.is_int_enum_type_name(cn.as_str()) {
+                // The candidate may spell the same enum by its qualified or
+                // its short name (`module Foo { enum Format ...; multi
+                // mt(Format) }`): distance 0 either way.
+                if self.resolve_enum_type_key(base).is_some()
+                    && self.resolve_enum_type_key(base) == self.resolve_enum_type_key(cn.as_str())
+                {
+                    return 0;
+                }
+                let enum_mro = builtin_type_mro("Int");
+                if let Some(i) = enum_mro.iter().position(|&a| a == base) {
+                    return i + 1;
+                }
+            }
             // A parametric type object (`Positional[Dog]`) ranks by its base
             // name: distance 0 to a `Positional` constraint (JSON::Unmarshal's
             // `_unmarshal($json, @x)` receiving an attribute type).
             let cn_base = cn.split('[').next().unwrap_or(cn.as_str());
             if base == cn_base {
                 return 0;
+            }
+            if let Some(distance) = self.role_type_object_distance(cn_base, base) {
+                return distance;
             }
             for lookup in [cn.as_str(), cn_base] {
                 // `mro_readonly` walks the parent chain live — the registry's

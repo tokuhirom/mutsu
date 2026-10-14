@@ -430,6 +430,7 @@ fn analyze_atom(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
         | RegexAtom::StartOfLine
         | RegexAtom::EndOfLine
         | RegexAtom::EndOfString
+        | RegexAtom::StartOfString
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_) => Some(Info::zero_width()),
         // A lookaround is zero-width too, but its body still RUNS at every

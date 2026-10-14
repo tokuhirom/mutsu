@@ -230,3 +230,44 @@ env held at measurement time. The body is memoized per (package, rule, token
 generation) when its text interpolates to itself. **~258.2M → ~252.1M Ir per warm
 parse (−2.4%)**, paired against `main` at 47774046 (`profiling`, `MUTSU_JIT=off`,
 (4−1)/3). Upstream YAMLish's own test files pass unchanged.
+
+### Per-call binding and construction, measured against rakudo per region (2026-10-13)
+
+Timing each region of one warm `load-yaml` against rakudo on the same box
+(`profiling`, `MUTSU_JIT=off`, 40 runs each) put the largest ratio outside
+the grammar: `concretize` (the walk that turns the parsed nodes into Raku
+data) took ~33 ms against rakudo's ~6 ms, and the 60 `Schema::Core` parses
+inside it only half of that. Two general costs explained most of it, neither
+grammar-specific:
+
+- **A plain `@x`/`%x` parameter took the general binder.** The positional-light
+  sub path and the fast method binder refused every `@`/`%` parameter, so
+  `concretize($schema, $namespaces, %anchors, %callbacks)` paid the general
+  binder and its exit-time writeback: `sub f(%h)` cost ~40k Ir per call against
+  ~7k for `sub f($x)`, and the four-parameter method ~98k. mutsu's
+  `Array`/`Hash` are shared by reference and assignment to one stores in place,
+  so binding the caller's container is all Raku's readonly-container semantics
+  need. Both light paths now bind a plain one directly, for an `Array`/`List`
+  or `Hash` argument, typed or not (the bind registers the container's own
+  constraint under the parameter's name, or shadows an outer one, as the
+  binder does); every other argument shape keeps the binder
+  (`src/vm/vm_light_aggregate_params.rs`). `sub f(%h)`: ~40.7k → ~8.1k Ir;
+  the four-parameter method: ~98k → ~34k.
+- **A class composing a role never took the native default constructor.** The
+  role is listed in the class's `parents` and in its MRO, and both eligibility
+  checks accepted only registered classes there, so `Plain.new(...)` (`Plain
+  does Single does Element does Node`) went through the general `.new` at
+  ~198k Ir. A plain user role is now accepted (its attributes and submethods
+  are already part of the class shape the native builder reads); a
+  parametric, builtin or Baggy/Setty one keeps the general path.
+  `Plain.new(...)`: ~198k → ~29k Ir.
+
+Together, per warm `load-yaml`: **~251.4M → ~217.9M Ir (−13.3%)**, paired
+against `main` at 74ab10fe in the same session; the local section time went
+from ~92 ms to ~81 ms (rakudo ~41 ms here). What remains is spread over the
+per-call frame of every method and closure call (a method call with no
+argument is still ~16k Ir against rakudo's ~3k), which is the env campaign's
+(ADR-12529), plus a grammar-side fixed cost per small parse (`Schema::Core.new
+.parse("key1")` is ~550k Ir: ~170k for its two `{ make ... }` blocks, ~110k for
+the grammar's `.new`, ~70k re-casefolding `:i` literals per attempt, ~70k
+re-collecting token definitions).

@@ -234,9 +234,11 @@ impl Interpreter {
             return self.call_method_with_values(argfiles, "slurp", args.to_vec());
         }
         // If first arg is an IO::Handle, delegate to .slurp() method on it
+        // Any IO::Handle: a pipe (`slurp($proc.err)`), a socket's handle or a
+        // user subclass slurps its stream, it is not a path to open.
         if let Some(handle) = args.first()
-            && let ValueView::Instance { class_name, .. } = handle.view()
-            && class_name == "IO::Handle"
+            && matches!(handle.view(), ValueView::Instance { .. })
+            && self.type_matches_value("IO::Handle", handle)
         {
             let has_close = args[1..].iter().any(|arg| {
                 matches!(arg.view(), ValueView::Pair(name, value) if name == "close" && value.truthy())

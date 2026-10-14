@@ -11,12 +11,15 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! row {
     ($name:literal, $arity:literal, $handler:expr) => {
+        row!($name, $arity, $handler, RowFlags::NONE)
+    };
+    ($name:literal, $arity:literal, $handler:expr, $flags:expr) => {
         MethodRow {
             owner: "Uni",
             name: $name,
             arity: $arity,
             handler: $handler,
-            flags: RowFlags::NONE,
+            flags: $flags,
             named: &[],
         }
     };
@@ -31,8 +34,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("list", 0, Handler::Pure(list)),
     row!("gist", 0, Handler::Pure(gist)),
     row!("raku", 0, Handler::Pure(raku)),
-    row!("AT-POS", 1, Handler::Narrow(at_pos)),
-    row!("EXISTS-POS", 1, Handler::Narrow(exists_pos)),
+    // `Uni:D: Int:D $pos`; any other index is `Any`'s (`index_arg`).
+    row!("AT-POS", 1, Handler::Narrow(at_pos), RowFlags::INDEX_ARG),
+    row!(
+        "EXISTS-POS",
+        1,
+        Handler::Narrow(exists_pos),
+        RowFlags::INDEX_ARG
+    ),
 ];
 
 /// The `Uni` a handler was resolved for.

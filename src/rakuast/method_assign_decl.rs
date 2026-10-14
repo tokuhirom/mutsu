@@ -1,10 +1,10 @@
 //! RakuAST conversion of method-assignment declarations and calls.
 
 use super::convert::{Initializer, arg_list, leaf_field, node_field, unsupported, var_declaration};
-use super::{RakuAstClass, RakuAstNode, decl_traits};
-use crate::ast::Expr;
+use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, decl_traits};
 use crate::ast::method_assign_decl::MethodAssignDecl;
-use crate::value::{RuntimeError, Value};
+use crate::ast::{Expr, SourceForm, Stmt};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// A declaration with a source-level `.=` initializer.
 pub(super) fn convert(form: &MethodAssignDecl) -> Result<RakuAstNode, RuntimeError> {
@@ -39,7 +39,95 @@ pub(super) fn convert(form: &MethodAssignDecl) -> Result<RakuAstNode, RuntimeErr
         None,
     )?;
     decl_traits::insert(&mut decl, decl_traits::convert(&form.custom_traits)?);
-    Ok(decl)
+    if let Some(dims) = &form.shape {
+        super::keyed_hash::insert_dimensions(&mut decl, dims)?;
+    }
+    match &form.chain {
+        // `my $o .= $m.uc`: the declaration is the operand of the chain
+        // (`ApplyPostfix(operand => VarDeclaration, …)`, rakudo 2026.09).
+        Some(chain) => with_innermost_operand(&super::convert::convert_expr(chain)?, decl),
+        None => Ok(decl),
+    }
+}
+
+/// `chain` with the operand at the bottom of its postfixes replaced by
+/// `operand`.
+// Cost: O(d), d = length of the chain.
+fn with_innermost_operand(
+    chain: &RakuAstNode,
+    operand: RakuAstNode,
+) -> Result<RakuAstNode, RuntimeError> {
+    let unsupported_chain = || unsupported("a `.=` declaration chain");
+    if chain.class != RakuAstClass::ApplyPostfix {
+        return Err(unsupported_chain());
+    }
+    let mut fields = Vec::with_capacity(chain.fields.len());
+    for field in &chain.fields {
+        if field.name != Some("operand") {
+            fields.push(field.clone());
+            continue;
+        }
+        let RakuAstFieldValue::Node(value) = &field.value else {
+            return Err(unsupported_chain());
+        };
+        let ValueView::RakuAst(child) = value.view() else {
+            return Err(unsupported_chain());
+        };
+        let replaced = if child.class == RakuAstClass::ApplyPostfix {
+            with_innermost_operand(child, operand.clone())?
+        } else {
+            operand.clone()
+        };
+        fields.push(node_field(Some("operand"), replaced));
+    }
+    Ok(RakuAstNode {
+        class: chain.class,
+        fields,
+    })
+}
+
+/// Whether `node` is a postfix chain over a `.=` declaration
+/// (`my $o .= $m.uc`), the statement [`lower_chained`] takes.
+// Cost: O(d), d = length of the chain.
+pub(super) fn is_chained_declaration(node: &RakuAstNode) -> bool {
+    let mut current = node.clone();
+    while current.class == RakuAstClass::ApplyPostfix {
+        let Ok(operand) = super::lower::named_child(&current, "operand") else {
+            return false;
+        };
+        current = operand.clone();
+    }
+    current.class == RakuAstClass::VarDeclarationSimple
+        && super::lower::named_child(&current, "initializer")
+            .is_ok_and(|init| init.class == RakuAstClass::InitializerCallAssign)
+}
+
+/// The parser's statement for `my $o .= $m.uc`: the declaration's source
+/// form, now carrying the chain, applied over the declared variable.
+// Cost: O(n), n = size of the declaration and the chain.
+pub(super) fn lower_chained(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let mut declaration = node.clone();
+    while declaration.class == RakuAstClass::ApplyPostfix {
+        declaration = super::lower::named_child(&declaration, "operand")?.clone();
+    }
+    let lowered = super::lower::lower_var_decl(&declaration)?;
+    let Stmt::SyntheticBlock(stmts) = &lowered else {
+        return Err(unsupported("a `.=` declaration chain"));
+    };
+    let Some(Stmt::SourceForm(form)) = stmts.first() else {
+        return Err(unsupported("a `.=` declaration chain"));
+    };
+    let SourceForm::MethodAssignDecl(form) = form.as_ref() else {
+        return Err(unsupported("a `.=` declaration chain"));
+    };
+    if form.name.starts_with(['@', '%', '&']) {
+        return Err(unsupported("a `.=` declaration chain"));
+    }
+    let variable = super::convert::var_lexical("$", &form.name);
+    let chain = super::lower::lower_expr(&with_innermost_operand(node, variable)?)?;
+    let mut form = form.clone();
+    form.chain = Some(Box::new(chain));
+    Ok(crate::ast::method_assign_decl::expand(form))
 }
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.

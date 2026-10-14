@@ -11,9 +11,11 @@ plan 24;
 
 sub decl($src) { $src.AST.statements.head.expression }
 sub same($src, $expected, $desc) {
-    my $parsed = do { my @*LOG; EVAL($src) };
+    # The round trip alone: a second EVAL of the same declarations in one
+    # process is a redeclaration, in rakudo and in the round trip's CHECK-time
+    # validation alike (#13295); `$expected` is what the parsed program gives.
     my $round = do { my @*LOG; EVAL($src.AST) };
-    is "$parsed|$round", "$expected|$expected", $desc;
+    is "$round", "$expected", $desc;
 }
 
 # --- the tree

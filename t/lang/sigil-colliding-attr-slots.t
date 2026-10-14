@@ -20,7 +20,7 @@ is Dflt.new.l, 3, 'public $.l default survives a private @!l';
 is Dflt.new.n, 0, 'private @!l stays empty';
 
 # Across a parent/child pair.
-class P { has %!d; method pd { %!d.raku } method s { %!d<z> = 2; self } }
+class P { has %!d; method pd { %!d.raku }; method s { %!d<z> = 2; self } }
 class C is P { has $.d }
 my $c = C.new(:d(5));
 is $c.d, 5, 'child $.d binds the named arg';

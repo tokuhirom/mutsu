@@ -122,7 +122,15 @@ impl Interpreter {
                     debug_assert!(false, "a Look op names a lookaround");
                     return None;
                 };
-                let Some(body) = super::rx_entry::program_for(pattern) else {
+                // A markless program's look-around body is markless too: it
+                // compares bases over the same subject, so its positions need
+                // no mapping (`compile_markless` checked that it compiles).
+                let body = if program.markless {
+                    super::rx_entry::markless_program_for(pattern)
+                } else {
+                    super::rx_entry::program_for(pattern)
+                };
+                let Some(body) = body else {
                     debug_assert!(false, "a compiled lookaround's body compiles");
                     return None;
                 };
@@ -144,8 +152,15 @@ impl Interpreter {
                     // A start earlier than `pos` minus the most the body can
                     // consume cannot end at `pos` (#7576), rule calls included
                     // (#12917).
+                    // A markless body consumes whole graphemes, so it starts
+                    // only on a grapheme boundary.
                     let floor = self.lookbehind_start_floor_in(pattern, chars, pos, pkg);
-                    (floor..=pos).find_map(|from| run(self, from, Some(pos)))
+                    (floor..=pos)
+                        .filter(|&from| {
+                            !program.markless
+                                || super::super::regex_helpers::is_grapheme_boundary(chars, from)
+                        })
+                        .find_map(|from| run(self, from, Some(pos)))
                 } else {
                     run(self, pos, None)
                 };
@@ -276,8 +291,14 @@ impl Interpreter {
                 let from = regs[start as usize];
                 let mut merged = merge_regex_captures(RegexCaptures::default(), levels.close());
                 for branch in &branches[1..] {
-                    let branch_program = super::rx_entry::program_for(branch)
-                        .expect("a compiled conjunction's branches compile");
+                    // A markless program's branches are markless too
+                    // (`compile_markless` checked that they compile).
+                    let branch_program = if program.markless {
+                        super::rx_entry::markless_program_for(branch)
+                    } else {
+                        super::rx_entry::program_for(branch)
+                    }
+                    .expect("a compiled conjunction's branches compile");
                     // Every other branch is part of the same regex too: its
                     // nested run starts from the enclosing level's view and the
                     // earlier branches' captures, as rakudo's one cursor has them.

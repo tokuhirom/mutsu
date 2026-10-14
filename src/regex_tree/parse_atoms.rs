@@ -134,10 +134,21 @@ impl Parser {
                 Some(RegexNode::AnchorRightWordBoundary)
             }
             '|' | '+' | '*' | '?' | '^' | '>' => None,
+            // `<::(EXPR)>` is a symbolic subrule call, not a `<:prop>` class.
+            '<' if self.chars[self.pos + 1..].starts_with(&[':', ':', '('])
+                || self.chars[self.pos + 1..].starts_with(&['.', ':', ':', '(']) =>
+            {
+                self.parse_subrule()
+            }
             '<' if self
                 .chars
                 .get(self.pos + 1)
-                .is_some_and(|next| matches!(next, '[' | '-' | '+' | ':')) =>
+                .is_some_and(|next| matches!(next, '[' | '-' | '+' | ':'))
+                || self.chars.get(self.pos + 1) == Some(&'.')
+                    && self
+                        .chars
+                        .get(self.pos + 2)
+                        .is_some_and(|next| matches!(next, '-' | '+')) =>
             {
                 self.parse_char_class_assertion()
             }

@@ -472,7 +472,15 @@ impl Interpreter {
                             &method_name,
                             required,
                         ));
-                        let total = inherited_matches + accessor_match;
+                        // An explicit method of the accessor's name (own or inherited)
+                        // replaces the generated accessor, so it is one candidate,
+                        // not two (PDF::Content::Font::Enc::Type1 has both
+                        // `has %.charset` and `multi method charset`).
+                        let total = if inherited_matches > 0 {
+                            inherited_matches
+                        } else {
+                            accessor_match
+                        };
                         if total == 0 && Self::is_universal_object_method(&method_name) {
                             // A role requirement is satisfied by NAME, and every
                             // object inherits a set of methods from `Mu`/`Any`

@@ -111,7 +111,7 @@ impl Interpreter {
             Some(ValueView::Mix(mix, true)) => Some(
                 mix.weights
                     .get(&store_key)
-                    .map(|weight| crate::value::mix_weight_to_value(*weight))
+                    .map(|weight| crate::value::mix_weight_to_value(weight.clone()))
                     .unwrap_or_else(|| Value::int(0)),
             ),
             _ => None,
@@ -145,7 +145,7 @@ impl Interpreter {
                 .map(|(key, weight)| {
                     (
                         mix.typed_key(key),
-                        crate::value::mix_weight_to_value(*weight),
+                        crate::value::mix_weight_to_value(weight.clone()),
                     )
                 })
                 .collect(),

@@ -234,14 +234,17 @@ impl Interpreter {
             match arg.view() {
                 ValueView::Slip(vals) => items.extend(vals.iter().cloned()),
                 // Ranges and sequences passed to `.new` flatten into
-                // their elements (e.g. `array[num].new(1e0..10e0)`).
+                // their elements (e.g. `array[num].new(1e0..10e0)`); not for
+                // `List.new`, a `**@` slurpy that keeps each argument whole.
                 ValueView::Range(..)
                 | ValueView::RangeExcl(..)
                 | ValueView::RangeExclStart(..)
                 | ValueView::RangeExclBoth(..)
                 | ValueView::GenericRange { .. }
                 | ValueView::Seq(_)
-                | ValueView::LazyList(_) => {
+                | ValueView::LazyList(_)
+                    if base_class_name != "List" =>
+                {
                     items.extend(crate::runtime::utils::value_to_list(arg));
                 }
                 // `Array.new(|c)` slurps with `+@`, so the single-argument rule

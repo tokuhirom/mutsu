@@ -2,13 +2,18 @@ use super::multi_rank::RankProfile;
 use super::*;
 
 impl Interpreter {
+    /// Resolve `method_name` for `invocant`. The invocant must be passed: a
+    /// candidate's `where` clause can read `self` / `$!attr` (CSS::Module's
+    /// `multi method parse-property(Str:D $n where (%!coerce{.lc}:exists), ...)`),
+    /// and matching without it records an `X::Syntax::NoSelf` for the call.
     pub(super) fn resolve_method(
         &mut self,
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
+        invocant: &Value,
     ) -> Option<MethodDef> {
-        self.resolve_method_with_owner(class_name, method_name, arg_values)
+        self.resolve_method_with_owner_invocant(class_name, method_name, arg_values, invocant)
             .map(|(_, def)| def)
     }
 
@@ -30,6 +35,11 @@ impl Interpreter {
         // and it is the single biggest source of env deep copies on that path.
         // The overlay starts empty, so the same writes are O(1) and the
         // rollback is dropping a tier.
+        // A candidate of plain nominal positionals reads none of the window
+        // below: match it on the argument types alone (#12942).
+        if let Some(verdict) = self.match_candidate_by_type_alone(def, role_bindings, arg_values) {
+            return verdict;
+        }
         let saved_env = self.env.clone();
         self.env = crate::env::Env::scoped_child(std::mem::take(&mut self.env));
         // A `where` constraint (or the type check just below) can run user
@@ -409,7 +419,6 @@ impl Interpreter {
     ) -> (usize, RankProfile) {
         let owner = super::multi_type_walk::WalkOwner {
             package: def.lexical_package,
-            literal_mask: 0,
         };
         self.params_type_distance_profile(args, &Self::method_rank_params(def), owner)
     }

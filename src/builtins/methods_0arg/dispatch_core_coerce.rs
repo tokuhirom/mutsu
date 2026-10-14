@@ -1,8 +1,13 @@
-/// Type coercion methods: Str, Int, UInt, Version, Num, Real, Numeric. `self`,
-/// `clone`, `defined`, `DEFINITE`, `Bool`, `WHICH` and `WHERE` are `Mu`'s rows
-/// (`method_table::ctors_mop::mu_identity`, ADR-11276 §9.91).
+/// The exceptions the coercion rows raise: `X::Str::Numeric` for a string that
+/// is no number and `X::Numeric::Real` for a `Complex` with an imaginary part.
+/// The coercions themselves are rows: `self`, `clone`, `defined`, `DEFINITE`,
+/// `Bool`, `WHICH` and `WHERE` of `Mu` (`method_table::ctors_mop::mu_identity`,
+/// ADR-11276 §9.91), the numeric coercions of `Cool` and `Mu` (§9.92), `Str`/
+/// `Stringy` of `Mu` (`method_table::ctors_mop::mu_str`, §9.93), and
+/// `Complex.Complex`, `Any.serial` and the `Blob`/`Buf` reinterpretations
+/// (§9.94).
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 use crate::value::ValueMap;
 
@@ -122,103 +127,4 @@ pub(crate) fn complex_not_real_error(
         source,
     )));
     err
-}
-
-pub(super) fn dispatch(
-    target: &Value,
-    method: &str,
-) -> Option<Option<Result<Value, RuntimeError>>> {
-    // `.Buf` / `.Blob` on any byte-string (Buf/Blob/utf8/blob8/...) returns a
-    // value of the requested role carrying the same bytes. `utf8` (what
-    // `.encode` produces) does Blob, so `.Buf`/`.Blob` reinterpret those bytes
-    // as a plain `Buf[uint8]` / `Blob[uint8]`. Humming-Bird's HTTPServer uses
-    // `"\r\n".encode.Buf` to build its constant delimiters.
-    if matches!(method, "Buf" | "Blob")
-        && let ValueView::Instance { class_name, .. } = target.view()
-        && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
-    {
-        // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
-        return Some(crate::builtins::method_table::blob::reinterpret(
-            target, method,
-        ));
-    }
-    // `Complex.Complex` is the identity coercion (`method Complex() { self }`);
-    // `Int.Int` is `Mu.Int`'s row (`method_table::ctors_mop::mu_numeric`).
-    if let ValueView::Package(name) = target.view()
-        && method == "Complex"
-        && name == "Complex"
-    {
-        return Some(Some(Ok(target.clone())));
-    }
-    match method {
-        // The `Any.serial` row's implementation (`method_table::collections::any_misc`).
-        "serial" => Some(Some(
-            crate::builtins::method_table::collection_any_misc::serial(target, &[]),
-        )),
-        "Str" | "Stringy" => Some(match target.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Failure" => {
-                // Using a Failure in string context throws the wrapped exception.
-                if let Some(ex) = attributes.as_map().get("exception") {
-                    Some(Err(RuntimeError::from_exception_value(ex.clone())))
-                } else {
-                    Some(Err(RuntimeError::new("Failed")))
-                }
-            }
-            ValueView::Package(_) | ValueView::Instance { .. } => None,
-            ValueView::LazyList(_) => None, // fall through to runtime to force the list
-            // A lazy (infinite-backed) array stringifies to a bounded `...`
-            // placeholder rather than materializing its capped backing.
-            ValueView::Array(_, crate::value::ArrayKind::Lazy) => Some(Ok(Value::str_from("..."))),
-            ValueView::Enum { .. } => None, // fall through to enum dispatch for string enum support
-            ValueView::Str(s) if s.as_str() == "IO::Special" => Some(Ok(Value::str_from(""))),
-            ValueView::Rat(_, 0) | ValueView::FatRat(_, 0) => {
-                // Zero-denominator Rat/FatRat .Str throws X::Numeric::DivideByZero
-                None // fall through to runtime for exception with proper context
-            }
-            // A collection stringifies every element, so a zero-denominator
-            // Rational inside it dies like its own `.Str` (GH #9608). The walk
-            // runs twice only on the error path.
-            ValueView::Array(..)
-            | ValueView::Seq(..)
-            | ValueView::Slip(..)
-            | ValueView::Hash(..)
-            | ValueView::Pair(..)
-            | ValueView::ValuePair(..)
-                if crate::runtime::utils::zero_denominator_rational_error(target).is_some() =>
-            {
-                crate::runtime::utils::zero_denominator_rational_error(target).map(Err)
-            }
-            // A list holding an `Instance` element needs the interpreter: the
-            // element's class may define its own `Str`, which this pure
-            // renderer cannot call (it would print the `ClassName()` fallback
-            // -- `~@a` then disagreed with `@a.join("")` for the same array).
-            // `dispatch_list_str_method` resolves the elements and re-renders.
-            _ if crate::Interpreter::list_str_needs_interpreter(target) => None,
-            // Likewise a quant hash with an object element
-            // (`quanthash_element_stringify.rs`).
-            _ if crate::Interpreter::quanthash_needs_element_dispatch(target) => None,
-            // A `Regex` warns and yields the EMPTY string rather than its
-            // source text, and the warning needs the interpreter -- see
-            // `Interpreter::regex_str_coercion`.
-            ValueView::Regex(_)
-            | ValueView::RegexWithAdverbs(..)
-            | ValueView::Routine { is_regex: true, .. } => None,
-            // Every other code object answers its name with the same kind of
-            // warning: the `Code.Str` row (`method_table::code`).
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                if method == "Str" =>
-            {
-                None
-            }
-            // Cost: O(1) for a plain Str invocant (the value is shared, not
-            // copied); O(n) otherwise, n = chars of the rendered string.
-            _ if target.is_str_value() => Some(Ok(target.clone())),
-            _ => Some(Ok(Value::str(target.to_string_value()))),
-        }),
-        _ => None,
-    }
 }

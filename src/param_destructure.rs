@@ -247,10 +247,20 @@ pub(crate) fn destructure_binds(
                 bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
             }
         } else if sub.slurpy && sub.sigilless {
-            // |rest capture parameter: collect remaining elements into a Capture
-            // Generates: rest = \(|target[positional_index..*])
+            // |rest capture parameter: the remaining positional elements and the
+            // named part not taken by a named sub-param, as a Capture.
+            // Generates: rest = \(|target.Capture.list[positional_index..*], |%named)
+            let method = |target: Expr, name: &str| Expr::MethodCall {
+                target: Box::new(target),
+                name: Symbol::intern(name),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            };
+            let capture_of = || method(Expr::Var(target_name.to_string()), "Capture");
             let slice_expr = Expr::Index {
-                target: Box::new(Expr::Var(target_name.to_string())),
+                target: Box::new(method(capture_of(), "list")),
                 index: Box::new(Expr::Binary {
                     left: Box::new(Expr::Literal(Value::int(positional_index as i64))),
                     op: crate::token_kind::TokenKind::DotDot,
@@ -260,12 +270,34 @@ pub(crate) fn destructure_binds(
                 is_positional: true,
                 spelling: Default::default(),
             };
+            let named_tmp = format!("%__capture_named_{}", sub.name.trim_start_matches('\\'));
+            bind_stmts.push(decl_stmt(named_tmp.clone(), method(capture_of(), "hash")));
+            let taken: Vec<Expr> = sub_params
+                .iter()
+                .filter(|p| p.named && !p.is_variadic())
+                .map(|p| Expr::Literal(Value::str(named_lookup_name(&p.name))))
+                .collect();
+            if !taken.is_empty() {
+                bind_stmts.push(Stmt::Expr(method(
+                    Expr::Index {
+                        target: Box::new(Expr::HashVar(named_tmp[1..].to_string())),
+                        index: Box::new(Expr::ArrayLiteral(taken)),
+                        is_positional: false,
+                        spelling: Default::default(),
+                    },
+                    "DELETE-KEY",
+                )));
+            }
+            let pipe = |expr: Expr| Expr::Unary {
+                op: crate::token_kind::TokenKind::Pipe,
+                expr: Box::new(expr),
+                word: false,
+            };
             let capture_expr = Expr::CaptureLiteral(
-                vec![Expr::Unary {
-                    op: crate::token_kind::TokenKind::Pipe,
-                    expr: Box::new(slice_expr),
-                    word: false,
-                }],
+                vec![
+                    pipe(slice_expr),
+                    pipe(Expr::HashVar(named_tmp[1..].to_string())),
+                ],
                 true,
             );
             bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));

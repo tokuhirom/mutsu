@@ -117,7 +117,13 @@ pub(super) fn untyped_cell_decl(mut decl: Stmt) -> Stmt {
 /// static state is its nominal type object, which an untyped cell
 /// ([`untyped_cell_decl`]) does not hold until something is stored into it, so
 /// it falls back to that.
-pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str) -> Stmt {
+///
+/// With `bind`, the declaration binds the cell's container instead of copying
+/// it (`my @a := @cell`). That is what an `@`/`%` lexical gets: rakudo's pad
+/// clone hands every frame the static pad's own Array or Hash, so a BEGIN's
+/// push and every run's push land in one object (#10333). A scalar is copied,
+/// since its pad clone is a fresh Scalar holding the static value.
+pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str, bind: bool) -> Stmt {
     let mut decl = static_decl.clone();
     if let Stmt::VarDecl {
         expr,
@@ -137,14 +143,21 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str) -> Stmt {
             read_var(cell_name)
         };
         let mut traits = without_initializer_markers(custom_traits);
-        traits.push(("__has_initializer".to_string(), None));
+        if !bind {
+            traits.push(("__has_initializer".to_string(), None));
+        }
         traits.push((
             crate::runtime::phasers::BEGIN_STATIC_TRAIT.to_string(),
             None,
         ));
         *custom_traits = traits;
     }
-    decl
+    if bind {
+        // The same bookkeeping the parser wraps around `my @a := …`.
+        crate::ast::bind_decl::expand(decl)
+    } else {
+        decl
+    }
 }
 
 /// Reads a value slot the way the BEGIN's own value would be read: the slot is

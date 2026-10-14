@@ -514,13 +514,13 @@ impl Interpreter {
     fn fold_rw_writeback_slots(
         &mut self,
         rw_bindings: &[(String, String)],
-        arg_source_slots: &std::collections::HashMap<String, u32>,
+        arg_source_slots: &rustc_hash::FxHashMap<crate::symbol::Symbol, u32>,
     ) {
         if arg_source_slots.is_empty() {
             return;
         }
         for (_, source) in rw_bindings {
-            if let Some(&slot) = arg_source_slots.get(source) {
+            if let Some(&slot) = arg_source_slots.get(&crate::symbol::Symbol::intern(source)) {
                 let owner_depth = self.call_frames.len().saturating_sub(1);
                 self.pending_rw_writeback_slots
                     .insert(source.clone(), slot, owner_depth);
@@ -1975,7 +1975,14 @@ impl Interpreter {
                                 if matches!(key.view(), ValueView::Str(_))
                                     && explicit_named_keys.contains(&key.to_string_value())
                         );
-                        if !val.is_string_pair_value() && !is_explicit_named_value_pair {
+                        if let ValueView::Slip(slipped) = val.view() {
+                            // A Slip slips into the list even here: `**@`
+                            // keeps each other argument whole, but a Slip is
+                            // exactly the value that asks to be flattened into
+                            // its surroundings (`f((1, 2).Slip, 3)` binds
+                            // `[1, 2, 3]`).
+                            items.extend(slipped.iter().cloned());
+                        } else if !val.is_string_pair_value() && !is_explicit_named_value_pair {
                             items.push(val);
                         }
                         positional_idx += 1;
@@ -2864,7 +2871,23 @@ impl Interpreter {
                     // the body's `$colour` read finds an (undefined) value
                     // instead of throwing "not declared".
                     if let Some(sub_params) = &pd.sub_signature {
-                        bind_named_rename_sub_signature(self, sub_params, &value, &pd.traits)?;
+                        // `:exitcode([$e = 0, :pass($p) = True])` with no `:exitcode`
+                        // passed destructures an empty list, so the inner
+                        // defaults apply; the placeholder would unpack as one
+                        // undefined element and hide them.
+                        let anonymous_unpack = matches!(
+                            sub_params.as_slice(),
+                            [only] if matches!(only.name.as_str(), "@" | "%")
+                                && only.sub_signature.is_some()
+                        );
+                        let empty;
+                        let target = if anonymous_unpack {
+                            empty = Value::real_array(Vec::new());
+                            &empty
+                        } else {
+                            &value
+                        };
+                        bind_named_rename_sub_signature(self, sub_params, target, &pd.traits)?;
                     }
                 }
                 // Check the where constraint against the *bound* value, whether it
@@ -3397,6 +3420,18 @@ impl Interpreter {
                             let list = crate::gc::Gc::clone(&list);
                             value = Value::real_array(self.force_lazy_list_vm(&list)?);
                         }
+                    }
+                    // A sigiled parameter (`$obj`) is a fresh binding of the
+                    // bare name `obj` in this frame, so the readonly marker a
+                    // caller's sigilless `\obj` left in the inherited env
+                    // names a different variable. Left in place, a write to
+                    // `$obj is rw` died with "Cannot modify an immutable"
+                    // (#13207: PDF's `sub (\obj) is rw` accessor around
+                    // `coerce-to($obj is rw, ...)`). `is copy` cleared it
+                    // above already.
+                    if !pd.sigilless && self.lexicals.sigilless_alias_seen {
+                        self.env
+                            .remove_sym(crate::runtime::sigilless_readonly_key(&pd.name));
                     }
                     if pd.sigilless {
                         // Every arm below writes at least one of the two

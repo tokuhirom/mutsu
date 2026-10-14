@@ -61,7 +61,7 @@ pub(crate) struct RoleDef {
     /// Shared, not owned: the role's own copy and every attribute default
     /// it hands to a composing class point at the one flattened scope, so
     /// cloning a `RoleDef` or an attribute list never copies the map.
-    pub(crate) captured_env: Option<std::sync::Arc<ValueMap>>,
+    pub(crate) captured_env: Option<crate::env_capture_view::CapturedScope>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
     pub(crate) wildcard_handles: Vec<String>,
     /// Unique identifier for this role definition instance, used to distinguish

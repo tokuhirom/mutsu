@@ -88,6 +88,7 @@ impl Interpreter {
         def: &MethodDef,
         shared_positions: usize,
         decl_order: u64,
+        owner: Symbol,
     ) -> MultiRank {
         let params = Self::method_rank_params(def);
         // A literal is nominally as narrow as the argument it equals, so
@@ -107,9 +108,84 @@ impl Interpreter {
             optional: multi_rank::has_optional_positional(&params),
             decl_order,
             profile,
+            invocant: Some(owner),
             tier: 0,
             tiered: false,
         }
+    }
+
+    pub(crate) fn is_core_type_receiver(invocant: &Value) -> bool {
+        !(invocant.is_lazy_match_value()
+            || matches!(
+                invocant.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Package(_)
+            ))
+    }
+
+    /// The MRO index of the most-derived level with a built-in method
+    /// `method_name`, or `None`.
+    // Cost: O(m), m = MRO depth.
+    fn builtin_method_level(mro: &[Symbol], method_name: &str) -> Option<usize> {
+        let name: &'static str = Symbol::intern(method_name).as_str();
+        mro.iter().position(|owner| {
+            let folded =
+                crate::builtins::builtin_type_methods::canonical_builtin_owner(owner.as_str());
+            let owner = if folded.is_empty() {
+                owner.as_str()
+            } else {
+                folded
+            };
+            crate::builtins::native_method_row::native_method_row_exists(owner, name)
+        })
+    }
+
+    /// Whether `class_name` has user candidates for `method_name` and every one
+    /// is a `multi` of only a capture / slurpies, while the receiver has a
+    /// built-in of that name declared at the user candidates' level or below
+    /// (`Any.map` against an augment of `Any`; not `Mu.say`, whose invocant is
+    /// wider than the augmented `Any`): no user candidate can win a call,
+    /// whatever its arguments (#12751).
+    // Cost: O(m * c), m = MRO depth, c = candidates per level.
+        pub(crate) fn user_candidates_all_outranked_by_builtin(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> bool {
+        let mro = self.class_mro(class_name);
+        let Some(builtin_level) = Self::builtin_method_level(&mro, method_name) else {
+            return false;
+        };
+        let mut any = false;
+        for (level, owner) in mro.iter().enumerate() {
+            let overloads = self
+                .registry()
+                .get_method_overloads(owner.as_str(), method_name);
+            for def in overloads.iter().flatten() {
+                if def.is_private {
+                    continue;
+                }
+                if !def.is_multi
+                    || !Self::candidate_is_slurpy_only(def)
+                    || level < builtin_level
+                {
+                    return false;
+                }
+                any = true;
+            }
+        }
+        any
+    }
+
+    /// Whether `def` takes nothing but a capture or slurpies (`|c`, `*@a`,
+    /// `*%h`, and the implicit `*%_`): the candidates Rakudo ranks after every
+    /// one with a plain positional parameter.
+    // Cost: O(p), p = parameters of the candidate.
+    pub(crate) fn candidate_is_slurpy_only(def: &MethodDef) -> bool {
+        !def.param_defs.is_empty()
+            && def
+                .param_defs
+                .iter()
+                .all(|pd| pd.is_invocant || pd.is_variadic())
     }
 
     /// Pick the winning candidate from an MRO walk's collected multi-method
@@ -149,7 +225,7 @@ impl Interpreter {
             .enumerate()
             .map(|(i, (owner, def))| {
                 let order = Self::method_decl_order(mro, *owner, i);
-                self.method_rank_key(arg_values, def, usize::MAX, order)
+                self.method_rank_key(arg_values, def, usize::MAX, order, *owner)
             })
             .collect();
         // The candidates tied on the leading tiers (literal count, type
@@ -181,7 +257,7 @@ impl Interpreter {
         let mut tiered: Vec<MultiRank> = ranks.clone();
         tiered.extend(rivals.iter().enumerate().map(|(j, (owner, def))| {
             let order = Self::method_decl_order(mro, *owner, matched + j);
-            self.method_rank_key(arg_values, def, usize::MAX, order)
+            self.method_rank_key(arg_values, def, usize::MAX, order, *owner)
         }));
         multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
             self.nominal_type_conforms(x, y)

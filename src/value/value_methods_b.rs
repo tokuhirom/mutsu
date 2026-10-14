@@ -633,6 +633,35 @@ impl Value {
         compiled_routine: Option<Arc<crate::opcode::CompiledFunction>>,
         authoritative_captures: Vec<Symbol>,
     ) -> Self {
+        let data = Self::sub_data_for_routine(
+            package,
+            name,
+            params,
+            param_defs,
+            body,
+            is_rw,
+            env,
+            compiled_routine,
+            authoritative_captures,
+        );
+        Value::Sub(crate::gc::Gc::new(data))
+    }
+
+    /// The `SubData` of [`Self::make_sub_for_routine_owning`], for a caller
+    /// that sets more fields before wrapping it (one allocation instead of a
+    /// clone of the wrapped data).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn sub_data_for_routine(
+        package: Symbol,
+        name: Symbol,
+        params: impl Into<std::sync::Arc<Vec<String>>>,
+        param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
+        body: impl Into<std::sync::Arc<Vec<Stmt>>>,
+        is_rw: bool,
+        env: Env,
+        compiled_routine: Option<Arc<crate::opcode::CompiledFunction>>,
+        authoritative_captures: Vec<Symbol>,
+    ) -> SubData {
         let mut data = Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
         data.authoritative_captures = authoritative_captures;
         // Declaration source location for `Code.line`/`Code.file`. Both already
@@ -647,7 +676,7 @@ impl Value {
             data.source_file.clone_from(&cf.source_file);
         }
         data.compiled_routine = compiled_routine;
-        Value::Sub(crate::gc::Gc::new(data))
+        data
     }
 
     /// Create a new Sub value with an explicit id.
