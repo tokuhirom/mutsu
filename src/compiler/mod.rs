@@ -1787,10 +1787,6 @@ pub(crate) struct Compiler {
     /// by name (a single-parameter loop has no slot); a nested `my` of the same
     /// name shadows them, see [`Self::declare_local`].
     by_name_for_params: Vec<String>,
-    /// Every name this chunk has bound as a by-name `for` parameter. Such a
-    /// binding writes through a captured cell of the same name, so an
-    /// enclosing lexical it shadows is not force-captured (#13391).
-    by_name_param_names: std::collections::HashSet<String>,
     /// Free variables (reads and writes) of each named sub declared inside a
     /// ROUTINE body that is lexically visible here, keyed by the sub's name.
     /// Such a sub resolves its free variables against the env live at call
@@ -2091,7 +2087,6 @@ impl Compiler {
             enclosing_local_names: std::collections::HashSet::new(),
             for_param_names: Vec::new(),
             by_name_for_params: Vec::new(),
-            by_name_param_names: std::collections::HashSet::new(),
             lexical_sub_free_vars: Default::default(),
             lexical_sub_written_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
@@ -3148,11 +3143,14 @@ impl Compiler {
     /// and a closure body alike; a closure's exit writeback leaves the
     /// block-local slot of a forced name alone (#13396). Only an actual
     /// by-name read or write forces it, so a chunk that merely declares the
-    /// name never shares the outer cell; a by-name `for` parameter of the name
-    /// would write through the captured cell, so it is left alone.
-    // Cost: O(|name|).
+    /// name never shares the outer cell. A read inside a `for` loop whose
+    /// by-name parameter has the name is the parameter, so it forces nothing;
+    /// one after the loop is the outer lexical again (#13420).
+    // Cost: O(p), p = by-name `for` parameters of the loops being compiled.
     pub(super) fn note_shadowed_outer_capture(&mut self, name: &str, writes: bool) {
-        if self.enclosing_local_names.contains(name) && !self.by_name_param_names.contains(name) {
+        if self.enclosing_local_names.contains(name)
+            && !self.by_name_for_params.iter().any(|p| p == name)
+        {
             self.note_forced_outer_scalar_capture(name, writes);
         }
     }

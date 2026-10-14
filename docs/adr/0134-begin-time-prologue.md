@@ -333,11 +333,13 @@ status here.
 - **Nested `constant`.** A nested `constant` whose initializer reads a
   cell-backed lexical is lifted the same way, so it sees the static value
   (`roast/S04-declarations/constant.t` test 27).
-- **Deviation from §2.1.3.** An `@`/`%` lexical is copied from its cell on
-  each scope entry, where rakudo binds the same object into every frame
-  (`sub f { my @a; BEGIN @a.push(1); @a.push(2); say @a }; f(); f()` prints
-  `[1 2]` twice, where rakudo prints `[1 2]` then `[1 2 2]`). Every scalar
-  case matches rakudo.
+- **`@`/`%` cells are bound, as §2.1.3 specifies** (#10333). An `@`/`%`
+  lexical binds its cell (`my @a := @cell`) on each scope entry and in the
+  lifted body, so every frame shares the static pad's object as on rakudo:
+  `sub f { my @a; BEGIN @a.push(1); @a.push(2); say @a }; f(); f()` prints
+  `[1 2]` then `[1 2 2]`. Slice 2 first shipped a copy here, recorded as a
+  deviation. One whose cell is untyped (its type is declared in an inner
+  scope) is still copied, since binding would drop its element type.
 - **Not lifted.** These keep their pre-ADR handling (`BeginOnceExpr`, the
   nested reorder rules):
   - a BEGIN whose enclosing inner scopes declare ahead of it a routine, a
@@ -855,9 +857,9 @@ method-level proto outside a package, implemented**
   phaser that reads `self`, an attribute, an `EVAL` or symbolic name, or a
   package variable the store does not hold (`our`, `state`, dynamic, a
   constant) is not lifted.
-- **Static cells of an array or hash.** The deviation of slice 2 holds here:
-  an `@`/`%` lexical is copied from its cell on each frame entry, where rakudo
-  binds one object into every frame.
+- **Static cells of an array or hash.** As in slice 2, an `@`/`%` lexical
+  binds its cell on each frame entry, so every frame shares one object, as on
+  rakudo (#10333).
 - **Not lifted.** A phaser of a method of a class declared inside code
   (`sub f { my class K { method m { my $z; INIT $z = 5; $z } } }`): the class
   does not exist at the unit's level. Lifted since: see the #10645 section below.

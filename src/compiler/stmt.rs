@@ -1834,9 +1834,16 @@ impl Compiler {
                 let is_native_type = type_constraint
                     .as_ref()
                     .is_some_and(|tc| self.is_native_type_constraint(tc));
+                // A `:=` bind of an array (`my Int @a := @src`) takes the bound
+                // container whole: its element type is checked against the
+                // declared one by the store (`check_array_bind_value_type`),
+                // and the element-wise check here would test the Array itself
+                // against `Int`.
+                let is_array_bind = bind_vardecl && name.starts_with('@');
                 let mut deferred_bind_type_check = None;
                 if let Some(tc) = type_constraint
                     && !is_hash
+                    && !is_array_bind
                     && !defer_type_constraint
                     && !(has_explicit_initializer
                         && matches!(expr, Expr::Literal(lit) if lit.is_nil())
