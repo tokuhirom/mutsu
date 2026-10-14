@@ -6623,6 +6623,7 @@ impl Interpreter {
                 lexicals_idx,
                 decls_idx,
                 slots_idx,
+                ..
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_package_scope_op(

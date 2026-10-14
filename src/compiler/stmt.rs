@@ -3885,6 +3885,7 @@ impl Compiler {
                         body_end: 0,
                         lexicals_idx: crate::opcode::NO_PACKAGE_LEXICALS,
                         decls_idx: u32::MAX,
+                        own_slots_idx: u32::MAX,
                         slots_idx: u32::MAX,
                     });
                     let saved_package = self.current_package.clone();
@@ -3918,6 +3919,7 @@ impl Compiler {
                     // The names the body's own scope declares: the exit must
                     // not mistake them for writes to an enclosing lexical
                     // (#13428).
+                    let locals_from = self.code.locals.len();
                     self.block_decl_tracker
                         .push((self.decl_scope_depth + 1, Vec::new()));
                     let lexical_scope = self.push_dynamic_scope_lexical();
@@ -3928,6 +3930,11 @@ impl Compiler {
                     }
                     self.pop_dynamic_scope_lexical(lexical_scope);
                     let (_, decls) = self.block_decl_tracker.pop().unwrap_or_default();
+                    self.set_package_scope_own_slots(
+                        pkg_idx,
+                        locals_from,
+                        decls.iter().map(String::as_str),
+                    );
                     if !decls.is_empty() {
                         let decls = self.code.add_constant(Value::array(
                             decls.into_iter().map(Value::str).collect::<Vec<_>>(),
