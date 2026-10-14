@@ -89,6 +89,8 @@ const NON_SYMBOL_BAREWORDS: &[&str] = &[
     "react",
     "supply",
     "whenever",
+    // A core routine; outside `react`/`supply` it fails at run time.
+    "done",
     "start",
     "gather",
     "take",
