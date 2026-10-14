@@ -112,14 +112,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn is_core_type_receiver(invocant: &Value) -> bool {
-        !(invocant.is_lazy_match_value()
-            || matches!(
-                invocant.view(),
-                ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Package(_)
-            ))
-    }
-
     /// The MRO index of the most-derived level with a built-in method
     /// `method_name`, or `None`.
     // Cost: O(m), m = MRO depth.
