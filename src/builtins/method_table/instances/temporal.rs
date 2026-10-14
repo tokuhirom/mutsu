@@ -34,6 +34,39 @@ pub(super) fn with_attrs(
     }
 }
 
+/// Run `f` on the attributes and the class name of an `Instance` receiver, so a
+/// subclass instance (`class MD is Date`) answers under its own name (#12994).
+pub(super) fn with_attrs_class(
+    target: &Value,
+    f: impl FnOnce(&AttrMap, &str) -> Value,
+) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Instance {
+            attributes,
+            class_name,
+            ..
+        } => Some(Ok(f(&attributes.as_map(), &class_name.resolve()))),
+        _ => None,
+    }
+}
+
+/// `result` (a plain `Date`/`DateTime` instance) rebuilt as `class`.
+pub(super) fn reclass(result: Value, class: &str) -> Value {
+    match result.view() {
+        ValueView::Instance {
+            attributes,
+            class_name,
+            ..
+        } if class_name.resolve() != class => {
+            Value::make_instance(
+                crate::symbol::Symbol::intern(class),
+                (*attributes.as_map()).clone(),
+            )
+        }
+        _ => result,
+    }
+}
+
 /// The separator argument of a `Dateish` ordering. The guard hands a row plain
 /// scalars only, and the cascade this replaces read any of them as the
 /// separator's text, so a row does the same.
