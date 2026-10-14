@@ -2684,6 +2684,9 @@ impl Interpreter {
                                 negated: true,
                                 items: vec![ClassItem::Char('\r')],
                             }),
+                            // `\0` is NUL (a following digit is a literal:
+                            // `/\00/` matches NUL then `0`), as in a char class.
+                            '0' => RegexAtom::Literal('\0'),
                             'e' => RegexAtom::Literal('\u{001B}'), // escape (ESC)
                             'E' => RegexAtom::CharClass(CharClass {
                                 negated: true,
