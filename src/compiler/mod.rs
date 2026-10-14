@@ -1787,9 +1787,10 @@ pub(crate) struct Compiler {
     /// by name (a single-parameter loop has no slot); a nested `my` of the same
     /// name shadows them, see [`Self::declare_local`].
     by_name_for_params: Vec<String>,
-    /// Names [`Compiler::note_shadowed_outer_capture`] force-captured; in a
-    /// closure body a later same-named local withdraws them (#13396).
-    shadow_forced_names: std::collections::HashSet<String>,
+    /// Every name this chunk has bound as a by-name `for` parameter. Such a
+    /// binding writes through a captured cell of the same name, so an
+    /// enclosing lexical it shadows is not force-captured (#13391).
+    by_name_param_names: std::collections::HashSet<String>,
     /// Free variables (reads and writes) of each named sub declared inside a
     /// ROUTINE body that is lexically visible here, keyed by the sub's name.
     /// Such a sub resolves its free variables against the env live at call
@@ -2090,7 +2091,7 @@ impl Compiler {
             enclosing_local_names: std::collections::HashSet::new(),
             for_param_names: Vec::new(),
             by_name_for_params: Vec::new(),
-            shadow_forced_names: std::collections::HashSet::new(),
+            by_name_param_names: std::collections::HashSet::new(),
             lexical_sub_free_vars: Default::default(),
             lexical_sub_written_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
@@ -2847,13 +2848,6 @@ impl Compiler {
         if !is_ancestor_shadow && prev == Some(slot) {
             self.code.multi_scope_slots.insert(slot);
         }
-        // See `note_shadowed_outer_capture`: a closure that now has a local of
-        // a force-captured name gives the capture up (#13396).
-        if self.in_closure_body && self.shadow_forced_names.remove(name) {
-            let sym = crate::symbol::Symbol::intern(name);
-            self.code.forced_free_var_syms.retain(|s| *s != sym);
-            self.code.forced_free_var_writes.retain(|s| *s != sym);
-        }
         if let Some(frame) = self.local_scopes.last_mut() {
             // Only a genuine ancestor shadow needs the outer slot restored on exit.
             frame.insert(
@@ -3155,24 +3149,21 @@ impl Compiler {
     /// { my $b = 3 }; $b = 1 }`): the local hides the name from
     /// `compute_free_vars`, so the capture is forced (#13391). Only an actual
     /// by-name read or write forces it, so a chunk that merely declares the
-    /// name never shares the outer cell. A read inside a loop whose by-name
-    /// parameter is the name reads the parameter; outside the loop, the
-    /// loop's exit restores the captured binding (`ForParamRestore`, #13377).
-    // Cost: O(|name| + p), p = enclosing loops' by-name parameters.
+    /// name never shares the outer cell; a by-name `for` parameter of the name
+    /// would write through the captured cell, so it is left alone.
+    // Cost: O(|name|).
     pub(super) fn note_shadowed_outer_capture(&mut self, name: &str, writes: bool) {
         // TODO: a closure's exit writes a captured name back to its caller from
-        // the chunk's local slot of that name. When a nested block of the
-        // closure declares a same-named `my`, that slot is the block local's,
-        // and a forced capture clobbered the outer variable with its value. A
-        // closure therefore forces the capture only while it has no local of
-        // the name, and a later such declaration withdraws it (`declare_local`)
-        // until that writeback tells the two apart (#13396).
-        if self.enclosing_local_names.contains(name)
-            && !self.by_name_for_params.iter().any(|p| p == name)
-            && !(self.in_closure_body && self.code.locals.iter().any(|l| l == name))
+        // the chunk's local slot of that name, which here is the nested block's
+        // own `my`; forcing the capture in a closure therefore clobbered the
+        // outer variable with the block local's value. Until that writeback
+        // tells a block-local slot from the captured binding, the capture is
+        // forced only in a named routine body (#13391).
+        if !self.in_closure_body
+            && self.enclosing_local_names.contains(name)
+            && !self.by_name_param_names.contains(name)
         {
             self.note_forced_outer_scalar_capture(name, writes);
-            self.shadow_forced_names.insert(name.to_string());
         }
     }
 
