@@ -139,24 +139,8 @@ impl Interpreter {
         let merge_to_capture = opts.merge && opts.capture_out && opts.out_handle_id.is_none();
         let mut merged_output_reader: Option<std::fs::File> = None;
         if let Some(handle_id) = opts.out_handle_id {
-            let table = self.io_handles();
-            let state = table
-                .map
-                .get(&handle_id)
-                .ok_or_else(|| RuntimeError::new("Invalid IO::Handle for :out"))?;
-            let file = state
-                .file
-                .as_ref()
-                .ok_or_else(|| RuntimeError::new(":out IO::Handle has no file"))?;
-            let cloned = file
-                .try_clone()
-                .map_err(|e| RuntimeError::new(format!("Cannot dup file for :out: {e}")))?;
-            if opts.merge {
-                stdout_file_for_merge =
-                    Some(cloned.try_clone().map_err(|e| {
-                        RuntimeError::new(format!("Cannot dup file for :merge: {e}"))
-                    })?);
-            }
+            let (cloned, merge_file) = self.out_handle_files(handle_id, opts.merge)?;
+            stdout_file_for_merge = merge_file;
             cmd.stdout(std::process::Stdio::from(cloned));
         } else if merge_to_capture {
             #[cfg(all(unix, feature = "native"))]
@@ -428,6 +412,40 @@ impl Interpreter {
         }
     }
 
+    /// The file a child's stdout is redirected to for `:out($handle)`, as a
+    /// duplicate of the handle's descriptor, plus a second duplicate for
+    /// `:merge` (stderr follows stdout into the same file). Shared by `run` and
+    /// `shell`.
+    // Cost: O(1), two dup(2) calls and one handle-table lookup.
+    fn out_handle_files(
+        &self,
+        handle_id: usize,
+        want_merge_copy: bool,
+    ) -> Result<(std::fs::File, Option<std::fs::File>), RuntimeError> {
+        let table = self.io_handles();
+        let state = table
+            .map
+            .get(&handle_id)
+            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle for :out"))?;
+        let file = state
+            .file
+            .as_ref()
+            .ok_or_else(|| RuntimeError::new(":out IO::Handle has no file"))?;
+        let cloned = file
+            .try_clone()
+            .map_err(|e| RuntimeError::new(format!("Cannot dup file for :out: {e}")))?;
+        let merge_copy = if want_merge_copy {
+            Some(
+                cloned
+                    .try_clone()
+                    .map_err(|e| RuntimeError::new(format!("Cannot dup file for :merge: {e}")))?,
+            )
+        } else {
+            None
+        };
+        Ok((cloned, merge_copy))
+    }
+
     pub(super) fn builtin_shell(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let command_str = args
             .first()
@@ -458,14 +476,23 @@ impl Interpreter {
             cmd
         };
 
-        if opts.capture_out {
+        // `:out($handle)` redirects the child's stdout into that file, as for
+        // `run`; with `:merge` stderr follows it.
+        let mut stdout_file_for_merge: Option<std::fs::File> = None;
+        if let Some(handle_id) = opts.out_handle_id {
+            let (cloned, merge_file) = self.out_handle_files(handle_id, opts.merge)?;
+            stdout_file_for_merge = merge_file;
+            command.stdout(std::process::Stdio::from(cloned));
+        } else if opts.capture_out {
             command.stdout(std::process::Stdio::piped());
         } else if opts.out_explicit {
             command.stdout(std::process::Stdio::null());
         } else {
             command.stdout(std::process::Stdio::inherit());
         }
-        if opts.capture_err {
+        if let Some(file) = stdout_file_for_merge {
+            command.stderr(std::process::Stdio::from(file));
+        } else if opts.capture_err {
             command.stderr(std::process::Stdio::piped());
         } else if opts.err_explicit {
             command.stderr(std::process::Stdio::null());
