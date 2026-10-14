@@ -46,7 +46,10 @@ pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
         ValueView::ContainerRef(_) | ValueView::ContainerView(_) => {
             let inner = v.deref_container();
             inner.is_proxy_value()
-                || matches!(inner.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+                || matches!(
+                    inner.view(),
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                )
         }
         ValueView::Array(items, kind) if !kind.is_itemized() => {
             items.iter().any(join_needs_interpreter)
