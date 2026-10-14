@@ -545,14 +545,9 @@ impl Interpreter {
         // last `%v` stayed bound when control returned, so the OUTER iteration
         // finished with the inner element (`Template::Nest::Fast`'s render spliced
         // the nested component's offsets into the parent template).
-        let saved_param: Option<(String, Option<Value>, Option<u32>)> =
-            param_name.as_ref().map(|name| {
-                (
-                    name.clone(),
-                    self.env().get(name).cloned(),
-                    spec.param_local,
-                )
-            });
+        let saved_param = param_name
+            .as_ref()
+            .map(|name| self.save_for_param(name, spec.param_local));
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures). Balanced by pop on every exit.
         //
@@ -703,7 +698,7 @@ impl Interpreter {
         // copy taken under its stripe instead (ADR-0068 §16, #13016): its
         // probes walk the items with no lock held.
         let live_items = live.and_then(|array| {
-            let array = crate::value::container_lock::shared_snapshot(array)
+            let array = crate::value::container_read::shared_snapshot(array)
                 .unwrap_or_else(|| array.clone());
             match array.view() {
                 ValueView::Array(items, _) => Some(items.clone()),
@@ -1815,19 +1810,51 @@ impl Interpreter {
     /// iteration value bound leaks it out of the routine via
     /// `merge_method_env` when the CALLER has a same-named binding.
     // Cost: O(1).
-    fn restore_saved_for_param(&mut self, entry: (String, Option<Value>, Option<u32>)) {
-        let (name, saved_val, colliding_slot) = entry;
+    /// The prior binding of the loop parameter `name` (and of a placeholder
+    /// parameter's bare alias), to restore when the loop is done.
+    // Cost: O(d), d = env tiers searched for the names.
+    pub(super) fn save_for_param(
+        &self,
+        name: &str,
+        colliding_slot: Option<u32>,
+    ) -> crate::runtime::topic_state::ForParamRestore {
+        let alias = crate::runtime::topic_state::placeholder_alias(name).map(|alias| {
+            let saved = self.env().get(&alias).cloned();
+            (alias, saved)
+        });
+        crate::runtime::topic_state::ForParamRestore {
+            name: name.to_string(),
+            saved: self.env().get(name).cloned(),
+            colliding_slot,
+            alias,
+        }
+    }
+
+    /// Put back the bindings [`Self::save_for_param`] saved.
+    // Cost: O(1) env writes.
+    pub(crate) fn restore_saved_for_param(
+        &mut self,
+        entry: crate::runtime::topic_state::ForParamRestore,
+    ) {
+        let crate::runtime::topic_state::ForParamRestore {
+            name,
+            saved,
+            colliding_slot,
+            alias,
+        } = entry;
         if let Some(slot) = colliding_slot
             && (slot as usize) < self.locals.len()
         {
-            self.locals[slot as usize] = saved_val.clone().unwrap_or(Value::NIL);
+            self.locals[slot as usize] = saved.clone().unwrap_or(Value::NIL);
         }
-        match saved_val {
-            Some(v) => {
-                self.env_mut().insert(name, v);
-            }
-            None => {
-                self.env_mut().remove(&name);
+        for (name, saved) in std::iter::once((name, saved)).chain(alias) {
+            match saved {
+                Some(v) => {
+                    self.env_mut().insert(name, v);
+                }
+                None => {
+                    self.env_mut().remove(&name);
+                }
             }
         }
     }

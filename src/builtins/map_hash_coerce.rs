@@ -14,6 +14,7 @@ use crate::runtime::Interpreter;
 use crate::runtime::utils::set_hash_original_keys;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
+use crate::value::container_lock::ContainerStructGuard;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
@@ -280,7 +281,12 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
                 Ok(target.clone().with_hash_itemized(false))
             }
         }
-        ValueView::Array(items, ..) => items_to_hash(items.as_ref(), check_odd),
+        // A pure walk of an Array another thread may restructure: hold its
+        // stripe (ADR-0068, #13079).
+        ValueView::Array(items, ..) => {
+            let _read = ContainerStructGuard::acquire_for(None, &target);
+            items_to_hash(items.as_ref(), check_odd)
+        }
         ValueView::Seq(items) => items_to_hash(&items, check_odd),
         ValueView::Slip(items) => items_to_hash(items.as_ref(), check_odd),
         ValueView::Set(s, _) => Ok(quanthash_to_hash(
@@ -298,7 +304,7 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             m.iter().map(|(k, v)| {
                 (
                     k.clone(),
-                    crate::value::mix_weight_to_value(*v),
+                    crate::value::mix_weight_to_value(v.clone()),
                     m.typed_key(k),
                 )
             }),
@@ -367,6 +373,9 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
             // An object hash stores `.WHICH` keys — a plain `.Map` is
             // Str-keyed, so stringify each original key object (raku:
             // `my %h{Any} = 1 => "a"; %h.Map.keys` is `("1",)`).
+            // A pure walk of a Hash another thread may rehash: hold its
+            // stripe (ADR-0068, #13079).
+            let _read = ContainerStructGuard::acquire_for(None, &target);
             let typed = map.has_typed_keys();
             let deconted: ValueMap = map
                 .iter()

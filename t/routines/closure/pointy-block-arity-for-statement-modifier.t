@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 18;
+plan 20;
 
 # `EXPR for LIST` where `EXPR` is a closure with an explicit signature uses
 # that closure as the loop body, so the loop must consume as many elements per
@@ -87,11 +87,13 @@ plan 18;
 }
 
 {
-    # WhateverCode is always arity 1, no matter how many `*` placeholders occur
-    # in the expression -- it must NOT become the loop's own signature.
+    # A WhateverCode is an ordinary expression, evaluated once per iteration:
+    # the loop yields one WhateverCode per element and calls none (#13308).
     my @a = (1, 2, 3);
     my @r = (* + 1 for @a);
-    is-deeply @r, [2, 3, 4], 'WhateverCode stays one element at a time';
+    is @r.elems, 3, 'one WhateverCode per element';
+    is @r.map(*.^name).join(","), "WhateverCode,WhateverCode,WhateverCode", 'they are WhateverCodes, not called';
+    is @r[0](5), 6, 'and each is callable';
 }
 
 {

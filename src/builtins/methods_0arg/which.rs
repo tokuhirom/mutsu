@@ -242,6 +242,11 @@ pub(crate) fn which_of(target: &Value) -> Value {
         ValueView::Seq(items) => {
             format!("Seq|{}", items.which_id())
         }
+        // A lazy Seq is a reference type: its identity is the one list object,
+        // stable across reads while it is alive (#12972).
+        ValueView::LazyList(list) => {
+            format!("Seq|{}", crate::gc::Gc::as_ptr(&list) as usize)
+        }
         // A `Slip`'s payload is a bare `Arc<Vec<Value>>` with nowhere
         // to embed the id the other containers carry, so its
         // never-reused id comes from the weak-checked side table.

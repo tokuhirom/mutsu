@@ -210,12 +210,7 @@ impl Interpreter {
                         .child
                         .stdout
                         .take()
-                        .map(|mut s: std::process::ChildStdout| {
-                            let mut buf = String::new();
-                            use std::io::Read;
-                            let _ = s.read_to_string(&mut buf);
-                            buf
-                        })
+                        .and_then(|s| crate::runtime::exit_aware_read::slurp_pipe(s).ok())
                 } else {
                     None
                 };
@@ -224,12 +219,7 @@ impl Interpreter {
                         .child
                         .stderr
                         .take()
-                        .map(|mut s: std::process::ChildStderr| {
-                            let mut buf = String::new();
-                            use std::io::Read;
-                            let _ = s.read_to_string(&mut buf);
-                            buf
-                        })
+                        .and_then(|s| crate::runtime::exit_aware_read::slurp_pipe(s).ok())
                 } else {
                     None
                 };

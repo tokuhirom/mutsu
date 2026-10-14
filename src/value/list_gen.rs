@@ -219,6 +219,18 @@ impl ListGen {
     // O(e) for a permutation, e = elements (amortized O(1) index steps, plus
     // building the e-element result).
     pub(crate) fn pull_one(&mut self) -> Option<Value> {
+        // A view over a live Array reads a node another thread may be
+        // restructuring, so each pull holds the node's stripe (ADR-0068 §20).
+        // No arm below runs user code.
+        let _read = match self {
+            ListGen::Positional { array, .. }
+            | ListGen::Batch { array, .. }
+            | ListGen::Flat { array, .. }
+            | ListGen::Tree { array, .. } => {
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, array)
+            }
+            _ => None,
+        };
         match self {
             ListGen::Positional {
                 array,

@@ -10,8 +10,8 @@ pub(crate) use container::angle_list;
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
 pub(crate) use misc::{
-    ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
-    prepend_does_header,
+    ANON_COLONS_TRAIT, ANON_DECL_TRAIT, mark_anon_package_stmt, next_anon_class_name,
+    next_anon_grammar_name, next_anon_role_name, prepend_does_header,
 };
 pub(in crate::parser) mod fragment_attempts;
 mod hexfloat;
@@ -525,6 +525,7 @@ pub(in crate::parser) use number::wrap_divergent_literal;
 pub(in crate::parser) use regex::parse_call_arg_list;
 
 pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
+    let _nesting = crate::parser::NestingGuard::enter(input)?;
     if let Some(cached) = PRIMARY_MEMO.get(input) {
         return cached;
     }

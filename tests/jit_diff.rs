@@ -110,7 +110,7 @@ fn jit_backedges_work_with_profiler_consumer_armed() {
 /// interpreter-identical output.
 #[test]
 fn hot_method_body_compiles_and_matches() {
-    let src = "class Counter { has $.n is rw; method bump() { $.n = $.n * 2 <= 64 ?? $.n * 2 !! $.n + 1; } method label() { \"n=\" ~ $.n } }\nmy $c = Counter.new(n => 1);\nfor ^30 { $c.bump() }\nsay $c.label();";
+    let src = "class Counter { has $.n is rw; method bump() { $.n = $.n * 2 <= 64 ?? $.n * 2 !! $.n + 1; }; method label() { \"n=\" ~ $.n } }\nmy $c = Counter.new(n => 1);\nfor ^30 { $c.bump() }\nsay $c.label();";
     let (off_out, off_err, off_ok) = run(src, &[("MUTSU_JIT", "off")]);
     let (on_out, on_err, on_ok) = run(
         src,

@@ -25,6 +25,20 @@ pub(super) fn return_constraint(
         RakuAstClass::IntLiteral | RakuAstClass::NumLiteral | RakuAstClass::RatLiteral => {
             regex_subrule_argument_source(node)
         }
+        // `--> "foo"`: a plain string literal, spelled with double quotes.
+        RakuAstClass::QuotedString => match lower_expr(node)? {
+            Expr::Literal(value)
+                if matches!(value.view(), ValueView::Str(_))
+                    && super::type_build::plain_string_literal(&format!(
+                        "\"{}\"",
+                        value.to_string_value()
+                    ))
+                    .is_some() =>
+            {
+                Ok(format!("\"{}\"", value.to_string_value()))
+            }
+            _ => Err(unsupported(owner)),
+        },
         _ => type_constraint(owner, node),
     }
 }

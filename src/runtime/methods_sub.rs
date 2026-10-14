@@ -796,7 +796,18 @@ impl Interpreter {
         if let Some(answer) = self.regex_str_coercion(target) {
             return Some(answer);
         }
-        let name = self.code_name_value(target)?;
+        // A `Method`/`Submethod` (`.^lookup`, `.^methods`) is an `Instance`
+        // whose own `name` method answers the name.
+        let name = if let ValueView::Instance { class_name, .. } = target.view()
+            && matches!(class_name.as_str(), "Method" | "Submethod")
+        {
+            match self.try_compiled_method_or_interpret(target.clone(), "name", Vec::new()) {
+                Ok(name) => name,
+                Err(e) => return Some(Err(e)),
+            }
+        } else {
+            self.code_name_value(target)?
+        };
         let name = if name.to_string_value() == "<anon>" {
             Value::str_from("")
         } else {

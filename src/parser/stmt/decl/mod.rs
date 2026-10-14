@@ -1,11 +1,14 @@
 mod constant_subset;
 pub(crate) mod destructure;
 mod enum_decl;
+pub(crate) use enum_decl::{enum_value_names, enum_variants_from_body};
 mod enum_decl_traits;
 mod handles;
+mod has_compound_assign;
 mod has_decl;
+pub(crate) use has_compound_assign::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use has_decl::attribute_type_seed;
-pub(crate) use my_decl_helpers::build_sigilless_bind_stmt;
+pub(crate) use my_decl_helpers::{build_sigilless_bind_stmt, is_anon_sigilless_source};
 mod helpers;
 mod my_decl;
 mod my_decl_assign;
@@ -16,9 +19,9 @@ mod use_decl;
 // Re-export public items that were previously accessible from the flat `decl` module.
 pub(in crate::parser) use constant_subset::inline_subset_term;
 pub(in crate::parser::stmt) use constant_subset::{constant_decl, constant_stmt, subset_decl};
-pub(in crate::parser::stmt) use enum_decl::collect_dynamic_enum_value_names;
 pub(crate) use enum_decl::{anon_enum_decl, enum_decl};
 pub(crate) use handles::handle_specs_from_term;
+pub(in crate::parser) use handles::handles_clause_term;
 pub(in crate::parser::stmt) use handles::parse_handle_specs;
 pub(in crate::parser::stmt) use has_decl::has_decl;
 pub(in crate::parser::stmt) use helpers::parse_array_shape_suffix;
@@ -68,7 +71,7 @@ fn parse_decl_type_constraint(input: &str) -> Option<(&str, String)> {
 /// variable's initial expression rather than the variable reference.
 /// This ensures the correct type is available even before runtime
 /// initialization (e.g. `@a` has type `Array`, not `Nil`, at BEGIN time).
-fn wrap_with_will_leave(
+pub(crate) fn wrap_with_will_phasers(
     stmt: Stmt,
     var_name: &str,
     will_phasers: Vec<(PhaserKind, Vec<Stmt>)>,

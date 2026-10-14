@@ -44,7 +44,10 @@ where
     let handle = std::thread::Builder::new()
         .name("mutsu-lsp-analysis".to_string())
         .stack_size(ANALYSIS_STACK_SIZE)
-        .spawn(f)
+        .spawn(move || {
+            mutsu::arm_stack_guard(ANALYSIS_STACK_SIZE);
+            f()
+        })
         .expect("failed to spawn the analysis thread");
     match handle.join() {
         Ok(value) => value,

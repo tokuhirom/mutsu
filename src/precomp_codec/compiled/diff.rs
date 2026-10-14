@@ -105,10 +105,12 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         succeed_passes_through,
         reads_topic,
         mentions_native_scalar_type_name,
+        names_var_method,
         uses_routine_state,
         sets_routine_state,
         source_line,
         is_pointy_block,
+        is_whatever_code,
         pointy_alias_param,
         immutable_topic,
         writes_topic,
@@ -201,6 +203,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         for_loop_param_syms,
         expr_declared_syms,
         outer_code_var_names,
+        eval_scope_names,
         block_scope_protected_slots,
     );
     None

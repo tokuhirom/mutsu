@@ -287,3 +287,19 @@ pub(in crate::parser::stmt) fn attribute_bind_initializer_error() -> PError {
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Comp::AdHoc"), attrs);
     PError::fatal_with_exception(MSG.to_string(), Box::new(ex))
 }
+
+/// Parse fake-infix adverb arguments: `:key<val> :key2<val2>`.
+pub(super) fn parse_fake_infix_adverbs(input: &str) -> PResult<'_, Vec<Expr>> {
+    let mut args = Vec::new();
+    let mut r = input;
+    while r.starts_with(':') && !r.starts_with("::") {
+        if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r) {
+            args.push(arg);
+            let (r3, _) = ws(r2)?;
+            r = r3;
+        } else {
+            break;
+        }
+    }
+    Ok((r, args))
+}

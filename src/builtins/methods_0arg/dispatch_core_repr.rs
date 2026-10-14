@@ -142,14 +142,13 @@ pub(super) fn dispatch(
                 ))))
             }
         }
-        // A buffer's rendering is the `Blob`/`Buf` rows' (`method_table::blob`).
+        // `Mu.perl` is `.raku`, a buffer's the `Blob`/`Buf` rows'
+        // (`method_table::blob`), which answer `gist` and `raku` themselves.
         ValueView::Instance { class_name, .. }
-            if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
+            if method == "perl"
+                && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
         {
-            crate::builtins::method_table::blob::render(
-                target,
-                method == "raku" || method == "perl",
-            )
+            crate::builtins::method_table::blob::render(target, true)
         }
         // The renderers the quant hashes' rows share. The rows decline an
         // element that may carry a user `gist`/`raku`; this arm renders it

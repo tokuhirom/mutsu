@@ -48,6 +48,11 @@ fn answered_by_the_instance(method: &str) -> bool {
             | "Capture"
             | "new"
             | "bless"
+            // Type tests ask about the subclass: `MyStr.new.isa(MyStr)` is
+            // True, which the `Str` payload cannot know (#12907).
+            | "isa"
+            | "does"
+            | "can"
     )
 }
 

@@ -22,8 +22,9 @@
 //! not lifted from a scope that declares routines, since that routine may
 //! evaluate a string where it was called from.
 
-use super::routine_copy::copyable_routine;
-use super::scan::{Scan, is_core_routine};
+use super::routine_copy::{copyable_routine, copyable_token};
+use super::scan::{Scan, is_core_routine, is_pseudo_qualified};
+use super::token_reads::TokenReads;
 use super::{BindingKind, Walker};
 use crate::ast::Stmt;
 use crate::opcode::CompiledCode;
@@ -41,6 +42,23 @@ pub(super) struct Routine {
     /// How many bindings the scope held when the routine was declared. The
     /// routine closes over those and no later ones.
     pub(super) bindings: usize,
+    /// Copied whether or not the body seems to use it: an operator or other
+    /// category routine, or a token, which code reaches through syntax.
+    pub(super) always: bool,
+    /// For a token, what its pattern reads, which the scan of its
+    /// declaration does not see.
+    pub(super) reads: Option<TokenReads>,
+}
+
+impl Routine {
+    /// What the routine reads and calls, as declared in its scope.
+    // Cost: O(n), n = the size of the declaration.
+    fn scan(&self) -> Scan {
+        match &self.reads {
+            Some(reads) => reads.scan(),
+            None => Scan::of(std::slice::from_ref(&self.decl)),
+        }
+    }
 }
 
 /// How the lifted body reaches one inner name.
@@ -105,10 +123,32 @@ impl Walker<'_> {
         };
         match copyable_routine(decl) {
             Some((name, multi, decl)) => frame.routines.push(Routine {
+                always: name.contains(':'),
                 name,
                 multi,
                 decl,
                 bindings: frame.bindings.len(),
+                reads: None,
+            }),
+            None => frame.blocked = true,
+        }
+    }
+
+    /// Note a `token`, `rule` or `regex` declared in the current scope. A
+    /// plain one is declared again in every lifted BEGIN's block; any other
+    /// blocks the scope ([`copyable_token`]).
+    pub(super) fn declare_token(&mut self, decl: &Stmt) {
+        let Some(frame) = self.frames.last_mut() else {
+            return;
+        };
+        match copyable_token(decl) {
+            Some((name, decl, reads)) => frame.routines.push(Routine {
+                name,
+                multi: false,
+                decl,
+                bindings: frame.bindings.len(),
+                always: true,
+                reads: Some(reads),
             }),
             None => frame.blocked = true,
         }
@@ -156,9 +196,14 @@ impl Walker<'_> {
                 self.resolve_free_name(*sym, scope, &mut deps, &mut pending)?;
             }
             // A multi read as `&name` is its proto object, which the code may
-            // change (`&p.add_dispatchee(...)`); a change to the copy would be
-            // lost, as for a type ([`super::decls`]).
-            if scan.code_reads.iter().any(|name| self.reads_multi(&name.resolve(), scope)) {
+            // change (`&p.add_dispatchee(...)`, or `foo(&p)` handing it on); a
+            // change to the copy would be lost, as for a type
+            // ([`super::decls`]). Reading it through a read-only method
+            // (`&p.candidates`) or calling it (`&p(...)`) changes nothing.
+            if scan.code_reads.iter().any(|name| {
+                let name = name.resolve();
+                scan.code_uses.may_change(&name) && self.reads_multi(&name, scope)
+            }) {
                 return None;
             }
             for callee in &scan.callees {
@@ -175,7 +220,12 @@ impl Walker<'_> {
                 // `EVAL` reaches the scope by name, which the whole scope
                 // supplied above covers.
                 let evaluates = scan.reflective && matches!(name.as_str(), "EVAL" | "EVALFILE");
-                if !selected && routines_in_scope && !is_core_routine(*callee) && !evaluates {
+                if !selected
+                    && routines_in_scope
+                    && !is_core_routine(*callee)
+                    && !evaluates
+                    && !is_pseudo_qualified(*callee)
+                {
                     return None;
                 }
             }
@@ -334,12 +384,12 @@ impl Walker<'_> {
     ) {
         for (frame, f) in self.frames.iter().enumerate() {
             for (index, routine) in f.routines.iter().enumerate() {
-                if routine.name.contains(':') && deps.routines.insert((frame, index)) {
+                if routine.always && deps.routines.insert((frame, index)) {
                     let scope = Scope {
                         frame,
                         bindings: routine.bindings,
                     };
-                    pending.push((Scan::of(std::slice::from_ref(&routine.decl)), Some(scope)));
+                    pending.push((routine.scan(), Some(scope)));
                 }
             }
         }
@@ -362,7 +412,7 @@ impl Walker<'_> {
                     frame,
                     bindings: routine.bindings,
                 };
-                pending.push((Scan::of(std::slice::from_ref(&routine.decl)), Some(scope)));
+                pending.push((routine.scan(), Some(scope)));
             }
         }
         !selected.is_empty()

@@ -5,9 +5,11 @@ use crate::value::ValueMap;
 use crate::value::ValueView;
 
 impl Interpreter {
-    // Cost: O(v + c), v = entries scanned across the env and registries, c =
-    // candidate code values captured for the package's multi routines.
-    // Rakudo: O(1) (the package's persistent Stash) -- see #9171.
+    // Cost: GLOBAL: O(v + c), v = entries scanned across the env and registries,
+    // c = candidate code values captured for the package's multi routines.
+    // Rakudo: O(1) (the package's persistent Stash) -- see #9171. A named package:
+    // O(k + t + c), k = interned names under the package (the package index),
+    // t = registered classes, roles and package declarations.
     pub(crate) fn package_stash_value(&self, package: &str) -> Value {
         let package_name = Self::normalize_stash_package(package);
         // Classified once for the whole build (every member loop below asks).
@@ -196,12 +198,32 @@ impl Interpreter {
             })
             .filter(|(key, _)| !self.env.contains_key_sym(*key))
             .collect();
-        for (key, val) in self
-            .env
-            .iter()
-            .chain(package_symbols)
-            .chain(global_enum_keys.iter().map(|(k, v)| (k, v)))
-        {
+        // A named package's members are qualified keys naming it, so only the
+        // names the package index lists can be any (#9171); GLOBAL's members
+        // are every bare key, and its scans stay whole.
+        let candidates: Option<Vec<Symbol>> =
+            (!pkg_is_global).then(|| Self::named_stash_candidates(&package_name));
+        let env_entries: Vec<(&Symbol, &Value)> = match &candidates {
+            Some(names) => names
+                .iter()
+                .filter_map(|name| self.env.iter_get_sym(*name).map(|v| (name, v)))
+                .chain(names.iter().filter_map(|name| {
+                    self.module
+                        .module_toplevel
+                        .package_symbols
+                        .get(name)
+                        .filter(|_| !self.env.contains_key_sym(*name))
+                        .map(|v| (name, v))
+                }))
+                .collect(),
+            None => self
+                .env
+                .iter()
+                .chain(package_symbols)
+                .chain(global_enum_keys.iter().map(|(k, v)| (k, v)))
+                .collect(),
+        };
+        for (key, val) in env_entries {
             let key_s = key.resolve();
             // An enum key is a genuine package symbol, so it belongs in the stash
             // under its BARE name -- but it is stored in the enum-key namespace
@@ -244,8 +266,12 @@ impl Interpreter {
         // is pre-installed (`EndWalker::install_our_symbol`), so a dead-branch
         // `class Foo { if False { our $c = 1 } }` still lists `$c`. `or_insert`
         // so a live env value always wins over the pre-installed type object.
-        if !crate::qualified::is_global_package(package_sym) {
-            for (key, val) in self.our_vars_iter() {
+        if let Some(names) = &candidates {
+            for name in names {
+                let key = name.as_str();
+                let Some(val) = self.get_our_var(key) else {
+                    continue;
+                };
                 if let Some(stash_key) = self.our_var_stash_member(key, &package_name) {
                     symbols.entry(stash_key).or_insert_with(|| val.clone());
                 }
@@ -271,7 +297,20 @@ impl Interpreter {
         }
 
         let mut registered_routines = std::collections::HashSet::new();
-        for (key, def) in self.registry().functions.iter() {
+        let registry = self.registry();
+        let functions: Vec<(Symbol, Arc<FunctionDef>)> = match &candidates {
+            Some(names) => names
+                .iter()
+                .filter_map(|name| registry.functions.get(name).map(|def| (*name, def.clone())))
+                .collect(),
+            None => registry
+                .functions
+                .iter()
+                .map(|(key, def)| (*key, def.clone()))
+                .collect(),
+        };
+        drop(registry);
+        for (key, def) in &functions {
             let key_s = key.resolve();
             let Some(base) = self.routine_stash_member(&key_s, &package_name, true) else {
                 continue;
@@ -360,7 +399,25 @@ impl Interpreter {
         // empty stash and `::('M::&f')` was a Failure. Its candidates are not
         // stash members in Rakudo either (a bare `multi` is lexical); the proto
         // is the one visible name, and it is visible exactly when it is `our`.
-        for (key, def) in self.registry().proto_functions.iter() {
+        let registry = self.registry();
+        let proto_functions: Vec<(Symbol, Arc<FunctionDef>)> = match &candidates {
+            Some(names) => names
+                .iter()
+                .filter_map(|name| {
+                    registry
+                        .proto_functions
+                        .get(name)
+                        .map(|def| (*name, def.clone()))
+                })
+                .collect(),
+            None => registry
+                .proto_functions
+                .iter()
+                .map(|(key, def)| (*key, def.clone()))
+                .collect(),
+        };
+        drop(registry);
+        for (key, def) in &proto_functions {
             let key_s = key.resolve();
             let Some(base) = self.routine_stash_member(&key_s, &package_name, false) else {
                 continue;
@@ -513,6 +570,23 @@ impl Interpreter {
         }
 
         Self::make_stash_instance(package, symbols)
+    }
+
+    /// Every interned name that can be a member of the named (non-GLOBAL)
+    /// package `package`: the qualified names with `package` among their
+    /// package components (`qualified_tail_index::names_under_package`), plus
+    /// the enum-key namespace's spelling of those it leads (#9171). A superset:
+    /// each one is still judged by the member rules the whole scans apply.
+    // Cost: O(k + m), k = the names listed, m = symbols interned since the
+    // index last caught up (amortized O(1) per symbol).
+    fn named_stash_candidates(package: &str) -> Vec<Symbol> {
+        let mut names = crate::qualified_tail_index::names_under_package(package);
+        if crate::runtime::enum_bare_names::enum_bare_keys_in_use() {
+            names.extend(crate::qualified_tail_index::names_under_package(
+                &crate::runtime::enum_bare_names::enum_bare_key(package),
+            ));
+        }
+        names
     }
 
     /// The code value of `module`'s exported routine `name`, read from the

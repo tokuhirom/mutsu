@@ -1275,7 +1275,9 @@ pub(super) fn rewrite_tilde_tokens(
                 hash_capture: None,
                 secondary_named_capture: None,
                 force_list_capture: false,
-                ratchet: false,
+                // Preserve the inner atom's mode on the synthetic GoalMatch
+                // so token ratcheting can commit its choices before the goal.
+                ratchet: tokens[k].ratchet,
                 frugal: false,
                 separator: None,
                 from_runtime_interpolation: false,

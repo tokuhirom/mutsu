@@ -52,6 +52,10 @@ fn real(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> 
     if crate::builtins::methods_0arg::is_lazy_count_source(target) {
         return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
     }
+    // A `Match` coerces its matched text (`Match.Numeric` is `self.Str.Numeric`).
+    if target.is_match_instance() {
+        return real(&Value::str(target.to_string_value()), &[]);
+    }
     if let Some(real) = crate::builtins::method_table::numeric_coerce::real_of(target) {
         return Some(Ok(real));
     }

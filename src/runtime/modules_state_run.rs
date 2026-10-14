@@ -53,6 +53,7 @@ pub(super) mod sprintf;
 mod sprintf_helpers;
 mod sprintf_hexfloat;
 mod sprintf_validate;
+mod str_ast;
 /// Address-space budget for user-code thread stacks (ADR-0123).
 pub(crate) mod stack_budget;
 pub(crate) mod thread_sharing;

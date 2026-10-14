@@ -20,10 +20,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use super::super::regex_atom_leaf::VarInterpTarget;
+use super::super::regex_helpers::strip_marks_pattern;
 use super::super::regex_match_delta::group_merge_delta;
 use super::super::regex_zero_width_iter::zero_width_iter_counts;
-use super::rx_call::{CallTarget, ResolvedCall};
-use super::rx_entry::{Goal, Scratch, program_for};
+use super::rx_call::{CallTarget, ResolvedCall, subject_has_no_marks};
+use super::rx_entry::{Goal, Scratch, markless_program_for, program_for};
 use super::rx_frame::{Choice, FMark, Frame, FrameId, MAX_FRAME_DEPTH, Mark, ProtoChoice};
 use super::rx_scope::{UNDO_ENTER, UNDO_EXIT};
 use super::{RxOp, RxProgram};
@@ -317,16 +318,19 @@ impl Interpreter {
                         None => false,
                     },
                     // Cost: O(1) for every assertion Slice A compiles.
+                    // A markless program decides it on the mark-stripped view
+                    // (`MarklessView`): O(1) more for the published target,
+                    // O(n) to strip any other subject.
                     RxOp::Assert(i) => {
-                        let hit = self
-                            .regex_match_atom_in_pkg(
-                                &program.atoms[i as usize],
-                                chars,
-                                pos,
-                                pkg,
-                                program.atom_ic[i as usize],
-                            )
-                            .is_some();
+                        let atom = &program.atoms[i as usize];
+                        let ic = program.atom_ic[i as usize];
+                        let hit = if program.markless {
+                            let view = super::rx_ltm::MarklessView::of(chars);
+                            self.regex_match_atom_in_pkg(atom, view.chars(), view.at(pos), pkg, ic)
+                                .is_some()
+                        } else {
+                            self.regex_match_atom_in_pkg(atom, chars, pos, pkg, ic).is_some()
+                        };
                         pc += 1;
                         hit
                     }
@@ -391,7 +395,7 @@ impl Interpreter {
                                 levels.top().caps(),
                                 chars,
                                 pos,
-                                program.atom_ic[i as usize],
+                                (program.atom_ic[i as usize], program.markless),
                             ) {
                                 VarInterpTarget::End(end) => {
                                     pc += 1;
@@ -418,11 +422,17 @@ impl Interpreter {
                             // is: code in it runs only on the paths the match
                             // takes. Its return merges its captures here as a
                             // group's (`Frame::interp`).
-                            Some(parsed) => match super::rx_entry::program_for(&parsed) {
+                            Some(parsed) => match if program.markless {
+                                // Over a subject with marks the pattern compares
+                                // bases, like the rest of this markless run.
+                                markless_program_for(&strip_marks_pattern(&parsed)).cloned()
+                            } else {
+                                program_for(&parsed).cloned()
+                            } {
                                 Some(callee) if FRAMES => {
                                     let stack_base = stack.len();
                                     enter_frame!(
-                                        Arc::clone(callee),
+                                        callee,
                                         pkg,
                                         i,
                                         pos,
@@ -474,6 +484,37 @@ impl Interpreter {
                             debug_assert!(false, "a GroupEnds op names a Group atom");
                             break 'run None;
                         };
+                        // The body runs as a frame of its own over the original
+                        // subject, entering its ends lazily as rakudo does (code in
+                        // it runs only on the paths taken): as compiled over a
+                        // mark-free subject, as its markless compile over one with
+                        // marks. Its return merges its captures as a group's.
+                        if FRAMES {
+                            let stripped = strip_marks_pattern(body);
+                            let callee = if subject_has_no_marks(chars) {
+                                program_for(&stripped)
+                            } else {
+                                markless_program_for(&stripped)
+                            };
+                            if let Some(callee) = callee {
+                                let stack_base = stack.len();
+                                pc += 1;
+                                enter_frame!(
+                                    Arc::clone(callee),
+                                    pkg,
+                                    i,
+                                    pos,
+                                    pc,
+                                    false,
+                                    stack_base,
+                                    None,
+                                    None,
+                                    false,
+                                    None
+                                );
+                                continue 'run;
+                            }
+                        }
                         let mut cands: Vec<(usize, RegexCaptures)> = self
                             .regex_match_ends_from_caps_in_pkg(body, chars, pos, pkg)
                             .into_iter()
@@ -514,7 +555,7 @@ impl Interpreter {
                         let name: &crate::runtime::regex_types::NamedAtom = called.as_deref().unwrap_or(declared);
                         let ic = program.atom_ic[atom as usize];
                         // `None`: an argument failed to evaluate, so no match.
-                        match self.rx_call_resolve(name, pkg, ic, levels.top().caps(), chars) {
+                        match self.rx_call_resolve(name, pkg, levels.top().caps(), chars) {
                             None => false,
                             Some(ResolvedCall {
                                 verdict,
@@ -1031,6 +1072,10 @@ impl Interpreter {
                                     // own: rakudo keeps none of its captures, so
                                     // its level goes with the frame.
                                     drop(inner);
+                                } else if matches!(&caller.atoms[f.site as usize], RegexAtom::Group(_)) {
+                                    // A `[:m …]` group's body: its captures merge
+                                    // into the caller's level as a group's.
+                                    levels.edit(|s| s.merge_delta(group_merge_delta(inner)));
                                 } else {
                                     let RegexAtom::Named(site_name) = &caller.atoms[f.site as usize]
                                     else {

@@ -25,20 +25,26 @@ mod compound_stmt;
 mod constructor_positional;
 mod contextualizer;
 mod control_signature;
+mod trait_is_constructor;
 use constructor_positional::single_positional_class;
 mod convert;
 mod core_term_names;
 mod core_type_names;
+mod decl_compound_assign;
 mod decl_tail;
 mod decl_traits;
+mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod dynamic_method;
+mod enum_term;
 mod feed_op;
 mod fields;
 mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
+mod hyper_prefix;
+mod immediate_call;
 mod infix_func;
 mod inherited_fields;
 mod keyed_hash;
@@ -47,6 +53,7 @@ mod lower;
 mod match_vars;
 mod meta_infix;
 mod method_assign_decl;
+mod multidim_splat;
 mod name_parts;
 mod named_param;
 mod origin;
@@ -83,11 +90,13 @@ mod thunk;
 mod type_args;
 mod type_build;
 mod type_call;
+mod type_capture_indirect;
 mod type_ctor;
 mod type_lower;
 mod use_stmt;
 mod var_decl_constructor;
 mod var_does;
+mod var_will;
 mod word_quote;
 
 pub use formatter::formatter_ast;
@@ -239,6 +248,7 @@ pub enum RakuAstClass {
     FunctionInfix,
     ApplyPrefix,
     Prefix,
+    PrefixMultislice,
     ApplyPostfix,
     Postfix,
     Assignment,
@@ -274,6 +284,8 @@ pub enum RakuAstClass {
     CallQuotedMethod,
     // Phase 2 slice 26: hyper method calls.
     MetaPostfixHyper,
+    // Hyper prefix operators (`-« @a`).
+    MetaPrefixHyper,
     // Hyper infix operators (`@a >>+<< @b`).
     MetaInfixHyper,
     // Phase 2 slice 3: blocks & pointy blocks.
@@ -422,6 +434,9 @@ pub enum RakuAstClass {
     TraitIs,
     /// `handles TERM` on an attribute.
     TraitHandles,
+    /// `will PHASE { ... }` on a variable declaration.
+    TraitWill,
+    TraitTrusts,
     TraitDoes,
     /// `class A hides B`.
     TraitHides,
@@ -601,6 +616,7 @@ impl RakuAstClass {
             FunctionInfix => "RakuAST::FunctionInfix",
             ApplyPrefix => "RakuAST::ApplyPrefix",
             Prefix => "RakuAST::Prefix",
+            PrefixMultislice => "RakuAST::Prefix::Multislice",
             ApplyPostfix => "RakuAST::ApplyPostfix",
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
@@ -633,6 +649,7 @@ impl RakuAstClass {
             CallMethod => "RakuAST::Call::Method",
             CallQuotedMethod => "RakuAST::Call::QuotedMethod",
             MetaPostfixHyper => "RakuAST::MetaPostfix::Hyper",
+            MetaPrefixHyper => "RakuAST::MetaPrefix::Hyper",
             MetaInfixHyper => "RakuAST::MetaInfix::Hyper",
             Block => "RakuAST::Block",
             Blockoid => "RakuAST::Blockoid",
@@ -730,6 +747,8 @@ impl RakuAstClass {
             StatementLoopRepeatUntil => "RakuAST::Statement::Loop::RepeatUntil",
             TraitIs => "RakuAST::Trait::Is",
             TraitHandles => "RakuAST::Trait::Handles",
+            TraitWill => "RakuAST::Trait::Will",
+            TraitTrusts => "RakuAST::Trait::Trusts",
             TraitDoes => "RakuAST::Trait::Does",
             TraitHides => "RakuAST::Trait::Hides",
             StatementTrusts => "RakuAST::Statement::Trusts",
@@ -791,6 +810,7 @@ impl RakuAstClass {
                 | RakuAstClass::CallTerm
                 | RakuAstClass::DottyInfixCallAssign
                 | RakuAstClass::TermWhatever
+                | RakuAstClass::PrefixMultislice
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
                 | RakuAstClass::TermSelf
@@ -1060,6 +1080,7 @@ impl RakuAstClass {
                 "RakuAST::Expression",
             ],
             Mixin => &["RakuAST::Infix", "RakuAST::Infixish"],
+            PrefixMultislice => &["RakuAST::Prefix", "RakuAST::Prefixish"],
             Nqp | NqpConst => EXPR,
             VarAttribute => &[
                 "RakuAST::Var",
@@ -1345,6 +1366,8 @@ pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::StatementModifier::Loop"
             | "RakuAST::StatementPrefix"
             | "RakuAST::MetaPostfix"
+            | "RakuAST::MetaPrefix"
+            | "RakuAST::Prefixish"
             | "RakuAST::MetaInfix"
             | "RakuAST::Regex"
             | "RakuAST::Regex::Atom"
@@ -1511,6 +1534,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallMethod,
     RakuAstClass::CallQuotedMethod,
     RakuAstClass::MetaPostfixHyper,
+    RakuAstClass::MetaPrefixHyper,
     RakuAstClass::MetaInfixHyper,
     RakuAstClass::Block,
     RakuAstClass::Blockoid,
@@ -1584,6 +1608,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ContextualizerList,
     RakuAstClass::StatementSequence,
     RakuAstClass::TermWhatever,
+    RakuAstClass::PrefixMultislice,
     RakuAstClass::WhateverCodeArgument,
     RakuAstClass::TermHyperWhatever,
     RakuAstClass::FatArrow,
@@ -1602,6 +1627,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementLoopRepeatUntil,
     RakuAstClass::TraitIs,
     RakuAstClass::TraitHandles,
+    RakuAstClass::TraitWill,
+    RakuAstClass::TraitTrusts,
     RakuAstClass::TraitDoes,
     RakuAstClass::TraitHides,
     RakuAstClass::StatementTrusts,
@@ -2276,6 +2303,9 @@ pub fn construct(
     }
     if class_name == "RakuAST::Class" && method == "new" {
         return class_constructor::construct(args).map(Some);
+    }
+    if class_name == "RakuAST::Trait::Is" && method == "new" {
+        return trait_is_constructor::construct(args).map(Some);
     }
     if matches!(
         class_name,
@@ -3114,6 +3144,30 @@ fn require_any_rakuast(
     }
 }
 
+/// A constructor's list-of-nodes argument (`traits => ($t,)`): each item's
+/// content, which must be a RakuAST node. An item held in a variable arrives
+/// as its container.
+// Cost: O(n), n = list items.
+fn rakuast_node_list(
+    value: &Value,
+    constructor: &str,
+    argument: &str,
+) -> Result<Vec<Value>, RuntimeError> {
+    let items = value.as_list_items().ok_or_else(|| {
+        RuntimeError::new(format!("{constructor} expects `{argument}` to be a list"))
+    })?;
+    let mut nodes = Vec::new();
+    nodes
+        .try_reserve(items.len())
+        .map_err(|_| RuntimeError::new(format!("{constructor} `{argument}` list is too large")))?;
+    for item in items {
+        let node = item.with_deref(|v| v.descalarize().clone());
+        require_any_rakuast(&node, constructor, argument)?;
+        nodes.push(node);
+    }
+    Ok(nodes)
+}
+
 fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeError> {
     match value.view() {
         ValueView::RakuAst(node)
@@ -3275,6 +3329,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::OnlyStar", "new") => RakuAstClass::OnlyStar,
         ("RakuAST::Regex::MatchTo", "new") => RakuAstClass::RegexMatchTo,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
+        ("RakuAST::Prefix::Multislice", "new") => RakuAstClass::PrefixMultislice,
         ("RakuAST::Term::HyperWhatever", "new") => RakuAstClass::TermHyperWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
@@ -3326,6 +3381,9 @@ fn multi_field_schema(
         ("RakuAST::ParameterTarget::Var", "new") => {
             (RakuAstClass::ParameterTargetVar, &["name"][..])
         }
+        ("RakuAST::Trait::Will", "new") => (RakuAstClass::TraitWill, &["phase", "block"][..]),
+        ("RakuAST::Trait::Trusts", "new") => (RakuAstClass::TraitTrusts, &["type"][..]),
+        ("RakuAST::Statement::Trusts", "new") => (RakuAstClass::StatementTrusts, &["type"][..]),
         _ => return None,
     })
 }
@@ -3413,6 +3471,22 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         && let Some(sigil) = s.chars().next()
     {
         return Some(Value::str(sigil.to_string()));
+    }
+    // `VarDeclaration::Simple.name`: the full spelling, sigil, twigil and
+    // `desigilname` together (`$x`, `$*x`, `@!a`), as rakudo derives it.
+    if method == "name"
+        && node.class == RakuAstClass::VarDeclarationSimple
+        && let Ok(sigil) = lower::leaf_str(node, "sigil")
+        && let Some(RakuAstFieldValue::Node(desigil)) = node
+            .fields
+            .iter()
+            .find(|f| f.name == Some("desigilname"))
+            .map(|f| &f.value)
+        && let Some(desigil) = lower::rakuast_node_of(desigil)
+        && let Some(name_parts::NameShape::Identifier(desigil)) = name_parts::name_shape(desigil)
+    {
+        let twigil = lower::leaf_str(node, "twigil").unwrap_or_default();
+        return Some(Value::str(format!("{sigil}{twigil}{desigil}")));
     }
     // `Name.from-identifier("a")` stores one identifier leaf; `.parts` answers
     // the one `Name::Part::Simple` it denotes (rakudo does not split on `::`).

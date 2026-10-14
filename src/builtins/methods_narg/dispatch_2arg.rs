@@ -1,14 +1,5 @@
-use super::buf::{
-    bigint_to_value, buf_class_name, buf_get_int_items, buf_get_raw_bytes, is_buf_like,
-    make_buf_from_int_items, out_of_range_error, read_ubits_from_bytes, resolve_buf_index,
-    resolve_buf_len,
-};
-use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
-use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
-use num_bigint::BigInt;
-use num_traits::Zero;
 
 pub(crate) fn native_method_2arg(
     target: &Value,
@@ -44,23 +35,6 @@ pub(crate) fn native_method_2arg(
     ) {
         return Some(answer);
     }
-    if method == "flat" {
-        let (depth, hammer) = if let Some(depth) = parse_flat_depth(arg1) {
-            (Some(depth), is_hammer_pair(arg2))
-        } else if let Some(depth) = parse_flat_depth(arg2) {
-            (Some(depth), is_hammer_pair(arg1))
-        } else {
-            (None, false)
-        };
-        if let Some(depth) = depth {
-            if hammer {
-                return Some(Ok(flatten_target(target, Some(depth), true)));
-            }
-            return Some(Ok(flatten_target(target, Some(depth), false)));
-        }
-        return None;
-    }
-
     // `.substr-eq($needle, $pos)` with a plain non-negative Int position is a
     // pure substring comparison on a Str receiver. Whatever / negative /
     // out-of-range positions and the case-/mark-insensitive named-arg forms
@@ -146,68 +120,6 @@ pub(crate) fn native_method_2arg(
             }
             _ => crate::builtins::method_table::numeric_base::base_of(target, arg1, Some(arg2)),
         },
-        "read-ubits" | "read-bits" => {
-            let (bytes, _) = buf_get_raw_bytes(target)?;
-            let from = runtime::to_int(arg1);
-            let bits = runtime::to_int(arg2);
-            if from < 0 || bits < 0 {
-                return Some(Err(RuntimeError::new(
-                    "bit offset/length must be non-negative",
-                )));
-            }
-            let from = from as usize;
-            let bits = bits as usize;
-            let total_bits = bytes.len().saturating_mul(8);
-            if from.checked_add(bits).is_none_or(|end| end > total_bits) {
-                return Some(Err(RuntimeError::new(format!(
-                    "read from out of range. Is: {}, should be in 0..{}",
-                    from, total_bits
-                ))));
-            }
-            let unsigned = read_ubits_from_bytes(&bytes, from, bits);
-            if method == "read-ubits" || bits == 0 {
-                return Some(Ok(bigint_to_value(unsigned)));
-            }
-            let sign_bit = BigInt::from(1u8) << (bits - 1);
-            let signed = if (&unsigned & &sign_bit).is_zero() {
-                unsigned
-            } else {
-                unsigned - (BigInt::from(1u8) << bits)
-            };
-            Some(Ok(bigint_to_value(signed)))
-        }
-        // Buf/Blob `read-*` (2 args: offset and byte order) and `subbuf`: the
-        // rows' implementation (`method_table::blob_read`).
-        "read-num32" | "read-num64" | "read-uint8" | "read-int8" | "read-uint16" | "read-int16"
-        | "read-uint32" | "read-int32" | "read-uint64" | "read-int64" | "read-uint128"
-        | "read-int128" => crate::builtins::method_table::blob_read::read(
-            method,
-            target,
-            &[arg1.clone(), arg2.clone()],
-        ),
-        "subbuf" => {
-            crate::builtins::method_table::blob_read::subbuf(target, &[arg1.clone(), arg2.clone()])
-        }
-        "subbuf-rw" => {
-            if !is_buf_like(target) {
-                return None;
-            }
-            let items = buf_get_int_items(target)?;
-            let cn = buf_class_name(target);
-            let len = items.len();
-            let start = resolve_buf_index(arg1, len);
-            if start < 0 || start as usize > len {
-                return Some(Err(out_of_range_error(start, 0, len as i64)));
-            }
-            let sub_len = resolve_buf_len(arg2, len, start as usize);
-            if sub_len < 0 {
-                return Some(Err(out_of_range_error(sub_len, 0, len as i64)));
-            }
-            let s = start as usize;
-            let available = len - s;
-            let take = (sub_len as usize).min(available);
-            Some(Ok(make_buf_from_int_items(&cn, &items[s..s + take])))
-        }
         _ => None,
     }
 }

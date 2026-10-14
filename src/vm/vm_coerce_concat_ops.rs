@@ -111,6 +111,10 @@ impl Interpreter {
             self.stack.push(Value::slip(vec![ll]));
             return Ok(());
         }
+        // The arms below walk an Array/Hash's backing node; another thread
+        // sharing it can restructure it meanwhile, so read a copy taken under
+        // its stripe (ADR-0068 §16, #13079).
+        let val = crate::value::container_read::shared_snapshot(&val).unwrap_or(val);
         let items = match val.view() {
             // ADR-0021 I4: `|@l` / `|$list` produce POSITIONAL arguments even
             // when an element happens to be a Pair (e.g. a literal `x => 1`
@@ -416,7 +420,7 @@ impl Interpreter {
         }
         // A `Regex` in string context warns and yields the empty string, not
         // its source text -- see `regex_str_coercion`.
-        if let Some(coerced) = self.regex_str_coercion(&v) {
+        if let Some(coerced) = self.code_str(&v) {
             return coerced;
         }
         // A `Seq` whose source has not been pulled yet (an

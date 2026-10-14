@@ -98,12 +98,14 @@ sub run-sh($script, :$out, :$err, :$permit-out, :$permit-err, :$kill, :$cwd, :$e
 }
 
 {
-    # One write for both lines: `pwd; echo` is two writes, and a reader
-    # scheduled between them (likely under `prove -j`) sees two `out` chunks
-    # (#12931).
+    # A pipe read is not tied to the child's write boundaries, so a reader
+    # scheduled mid-write (likely under `prove -j`) may split even a single
+    # write into several `out` chunks (#12931, #13265): compare the
+    # concatenated payloads, not one chunk.
     my ($, $events) = run-sh('printf "%s\n%s\n" "$(pwd)" "$FOO"', :out, :permit-out(-1), :cwd</>, :env<bar>);
     my @events = @$events;
-    ok @events (cont) 'out:0|Buf[uint8]="/\nbar\n"|null', 'the child gets the cwd and environment given';
+    my $payload = @events.map({ .match(/^ 'out:' \d+ '|Buf[uint8]="' (.*) '"|null' $/) ?? ~$0 !! Empty }).join;
+    is $payload, '/\nbar\n', 'the child gets the cwd and environment given';
 }
 
 {

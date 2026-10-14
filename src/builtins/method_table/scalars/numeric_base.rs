@@ -1,5 +1,5 @@
-//! The numeric types' radix methods: `base` on `Int`, `Num` and `Rat`, and
-//! `base-repeating` on `Rat` (ADR-11276 §9.70).
+//! The numeric types' radix methods: `base` on `Int`, `Num`, `Rat` and
+//! `FatRat`, and `base-repeating` on `Rat` (ADR-11276 §9.70, §9.104).
 //!
 //! `base($radix)` and `base($radix, $digits)` are two arities of one routine,
 //! [`base_of`]. A bad radix is the `X::OutOfRange` `Failure` Rakudo answers. The
@@ -40,6 +40,8 @@ macro_rules! base_rows {
 
 pub(super) static INT_ROWS: &[MethodRow] = base_rows!("Int");
 pub(super) static NUM_ROWS: &[MethodRow] = base_rows!("Num");
+/// Rakudo declares `base` on `Rational`, which `FatRat` composes too.
+pub(super) static FAT_RAT_ROWS: &[MethodRow] = base_rows!("FatRat");
 pub(super) static RAT_ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "Rat",
@@ -67,6 +69,26 @@ pub(super) static RAT_ROWS: &[MethodRow] = &[
     },
     MethodRow {
         owner: "Rat",
+        name: "base-repeating",
+        arity: 1,
+        handler: Handler::Narrow(base_repeating_1),
+        flags: RowFlags::ANY_ARGS,
+        named: &[],
+    },
+];
+
+/// `base-repeating`, which Rakudo declares on `Rational`, for a `FatRat`.
+pub(super) static FAT_RAT_REPEATING_ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "FatRat",
+        name: "base-repeating",
+        arity: 0,
+        handler: Handler::Narrow(base_repeating_0),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "FatRat",
         name: "base-repeating",
         arity: 1,
         handler: Handler::Narrow(base_repeating_1),
@@ -192,25 +214,28 @@ pub(crate) fn base_of(
     Some(Ok(Value::str(text)))
 }
 
-/// `Rat.base-repeating($radix)`: the digits before the repeating part and the
-/// repeating part, as a two-element list of strings. Rakudo declares it on
-/// `Rat` only; the cascade also answered an `Int` and a `Num` and still does.
+/// `Rational.base-repeating($radix)`: the digits before the repeating part and
+/// the repeating part, as a two-element list of strings, for a `Rat` and a
+/// `FatRat`.
 // Cost: O(d * r), d = digits until the remainder repeats (at most the
 // denominator), r = the radix digits' size.
 pub(crate) fn base_repeating_of(
     target: &Value,
     radix: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
+    use num_bigint::BigInt;
     let (n, d) = match target.view() {
-        // Declared on `Rat` only: Rakudo has no `Int`/`Num` candidate.
-        ValueView::Rat(n, d) => (n, d),
+        // Declared on `Rational` (`Rat` and `FatRat`): Rakudo has no
+        // `Int`/`Num` candidate.
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => (BigInt::from(n), BigInt::from(d)),
+        ValueView::BigRat(n, d) => (n.clone(), d.clone()),
         _ => return None,
     };
     let radix = match radix_arg(radix) {
         Ok(radix) => radix,
         Err(failure) => return Some(Ok(failure)),
     };
-    let (non_repeating, repeating) = rat_base_repeating(n, d, radix);
+    let (non_repeating, repeating) = rat_base_repeating(&n, &d, radix);
     Some(Ok(Value::array_with_kind(
         crate::gc::Gc::new(crate::value::ArrayData::new(vec![
             Value::str(non_repeating),

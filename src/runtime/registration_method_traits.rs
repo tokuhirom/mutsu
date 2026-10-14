@@ -39,17 +39,7 @@ impl Interpreter {
         if !(self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>")) {
             return Ok(());
         }
-        let saved_package_var = self.env.get("*PACKAGE").cloned();
-        // In a role body `$*PACKAGE` is the individual parametric role (its
-        // `.HOW` is a `ParametricRoleHOW`), not the role group.
-        let package_name = match self.registry().declaring_role_ids.get(pkg) {
-            Some(role_id) => crate::runtime::types::role_candidate_type_name(pkg, *role_id),
-            None => pkg.to_string(),
-        };
-        self.env.insert(
-            "*PACKAGE".to_string(),
-            Value::package(Symbol::intern(&package_name)),
-        );
+        let saved_package_var = self.bind_trait_package(pkg);
         let result = self.apply_method_is_traits_inner(
             pkg,
             method_name,
@@ -62,11 +52,46 @@ impl Interpreter {
             traits,
             cell,
         );
-        match saved_package_var {
+        self.restore_trait_package(saved_package_var);
+        result
+    }
+
+    /// Bind `$*PACKAGE` to the package `pkg` being declared, for a trait
+    /// handler that reads `$*PACKAGE.HOW`; returns what to hand back to
+    /// [`Self::restore_trait_package`]. In a role body it is the individual
+    /// parametric role (its `.HOW` is a `ParametricRoleHOW`), not the role
+    /// group.
+    // Cost: O(1).
+    pub(super) fn bind_trait_package(&mut self, pkg: &str) -> Option<Value> {
+        let saved = self.env.get("*PACKAGE").cloned();
+        // A role's attribute traits run at its first composition, after the
+        // declaration: its own definition then names the candidate.
+        let package_name = {
+            let registry = self.registry();
+            match registry.declaring_role_ids.get(pkg) {
+                Some(role_id) => crate::runtime::types::role_candidate_type_name(pkg, *role_id),
+                None => match registry.roles.get(pkg) {
+                    Some(role_def) if !registry.classes.contains_key(pkg) => {
+                        crate::runtime::types::role_candidate_type_name(pkg, role_def.role_id)
+                    }
+                    _ => pkg.to_string(),
+                },
+            }
+        };
+        self.env.insert(
+            "*PACKAGE".to_string(),
+            Value::package(Symbol::intern(&package_name)),
+        );
+        saved
+    }
+
+    /// Undo [`Self::bind_trait_package`].
+    // Cost: O(1).
+    pub(super) fn restore_trait_package(&mut self, saved: Option<Value>) {
+        match saved {
             Some(v) => self.env.insert("*PACKAGE".to_string(), v),
             None => self.env.remove("*PACKAGE"),
         };
-        result
     }
 
     /// A `proto method` inside a role body: its traits dispatch at role

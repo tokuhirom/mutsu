@@ -34,14 +34,14 @@ fn call(
     // A no-op (one relaxed load) until a second VM mutator thread exists, and
     // for a receiver that is no `Hash`/`Array`.
     let _read_exclusion = if crate::value::container_lock::multi_mutator_threads_live()
-        && crate::value::container_lock::is_leaf_structure_read(row.name)
+        && crate::value::container_read::is_leaf_structure_read(row.name)
     {
         crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
     } else {
         None
     };
     // #12456: user code runs over the elements, so run on a snapshot instead.
-    let snapshot = crate::value::container_lock::snapshot_read_receiver(row.name, target);
+    let snapshot = crate::value::container_read::snapshot_read_receiver(row.name, target);
     let target = snapshot.as_ref().unwrap_or(target);
     let answer = match row.handler {
         Handler::Pure(f) => Some((f(target, positional), rerunnable)),
@@ -300,7 +300,11 @@ pub(crate) fn admits(id: RowId, args: &[Value]) -> bool {
 
 #[inline]
 fn admits_row(row: &MethodRow, args: &[Value]) -> bool {
-    if row.flags.contains(RowFlags::ANY_ARGS) {
+    if row.flags.contains(RowFlags::INDEX_ARG) {
+        // Any other index is bound through its `.Int` (`index_arg`).
+        args.iter()
+            .all(|arg| arg.dispatch_shape() == Some(DispatchShape::Int))
+    } else if row.flags.contains(RowFlags::ANY_ARGS) {
         args.iter().all(Value::is_plain_argument)
     } else {
         args.iter().all(is_plain_scalar)
@@ -330,16 +334,25 @@ fn dispatch(
         return None;
     }
     let payload;
+    let allomorph = target;
     let (target, id) = match Receiver::of_settled(target) {
         Some(receiver) => (target, super::resolve(receiver, method, arity)?),
         // The native-base resolution (§9.79): an instance of a user class
         // deriving from a built-in scalar type has no shape of its own, and is
         // answered by the rows of its payload's shape, the payload as invocant.
-        None => {
-            payload = crate::builtins::native_base::redirect(target, method.as_str())?;
-            let receiver = Receiver::of_settled(&payload)?;
-            (&payload, super::resolve(receiver, method, arity)?)
-        }
+        None => match crate::builtins::native_base::redirect(target, method.as_str()) {
+            Some(base) => {
+                payload = base;
+                let receiver = Receiver::of_settled(&payload)?;
+                (&payload, super::resolve(receiver, method, arity)?)
+            }
+            // An allomorph is answered on the part the row reads (§9.101).
+            None => {
+                let (part, id) = super::allomorph::redirect(target, method, arity)?;
+                payload = part;
+                (&payload, id)
+            }
+        },
     };
     let row = row(id);
     // The caller's veto, asked once the row is known and before the handler
@@ -355,7 +368,8 @@ fn dispatch(
         if !admits_row(row, args) {
             return None;
         }
-        return call(row, interp, target, args, Named::NONE);
+        let answer = call(row, interp, target, args, Named::NONE);
+        return super::allomorph::keep_allomorph(allomorph, target, method, args.len(), answer);
     }
     let (named, positional): (Vec<Value>, Vec<Value>) = args
         .iter()
@@ -394,9 +408,9 @@ const COOL_COERCE_FOR_SHAPELESS: [&str; 5] = ["Real", "Num", "UInt", "Int", "Num
 ///   `is-lazy`) answer every receiver, a `Failure` included (asking its truth
 ///   handles it); an instance answers from the first class in its MRO that
 ///   declares the method.
-/// - `Iterable`'s `lazy` ([`ITERABLE_FOR_SHAPELESS`]) answers a `LazyList`
-///   or unsettled `Seq` from `Seq`'s row and a lazy or shaped array or a
-///   `Slip` from `List`'s.
+/// - `Iterable`'s `lazy` ([`ITERABLE_FOR_SHAPELESS`]) and `flat($levels)`
+///   answer a `LazyList` or unsettled `Seq` from `Seq`'s row and a lazy or
+///   shaped array or a `Slip` from `List`'s.
 ///
 /// An instance walks its class's MRO and declines when a built-in class ahead
 /// of `Cool`/`Any` declares the method (`class MyPath is IO::Path` reads its
@@ -421,14 +435,86 @@ pub(crate) fn answer_shapeless(
         return call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result);
     }
     let mut interp = interp;
+    // A row that declares named arguments (`flat($levels, :hammer)`) is
+    // handed them split from the positionals, as the guard step does; the
+    // other rows keep reading every argument as a positional.
+    let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
+    if named_count > 0
+        && let Some(id) = shapeless_row(
+            interp.as_deref_mut(),
+            target,
+            method,
+            args.len() - named_count,
+        )
+        && !row(id).named.is_empty()
+    {
+        let (named, positional): (Vec<Value>, Vec<Value>) = args
+            .iter()
+            .cloned()
+            .partition(|arg| arg.is_string_pair_value());
+        if named.iter().all(|pair| names_declared(row(id), pair)) {
+            return call(row(id), None, target, &positional, Named::new(&named))
+                .map(|(result, _)| result);
+        }
+    }
     let id = shapeless_row(interp.as_deref_mut(), target, method, args.len())?;
+    // `Cool`'s text methods are `self.Str.METHOD`: an instance with a `Str`
+    // method of its own is read through it, not through its built-in string
+    // form (`class C is Cool { method Str { "cool " } }; C.new.uc` is `COOL `).
+    if row(id).owner == "Cool"
+        && cool_text_for_shapeless(method.as_str())
+        && let crate::value::ValueView::Instance { class_name, .. } = target.view()
+        && let Some(interp) = interp.as_deref_mut()
+        && interp.has_user_method(class_name.as_str(), "Str")
+    {
+        let text = match interp.call_method_with_values(target.clone(), "Str", Vec::new()) {
+            Ok(text) => text,
+            Err(err) => return Some(Err(err)),
+        };
+        // A pattern or a limit (`comb(/\w/)`) is the interpreter's.
+        if method == "comb" && !args.is_empty() {
+            return Some(interp.call_method_with_values(text, "comb", args.to_vec()));
+        }
+        return call(row(id), None, &text, args, Named::NONE).map(|(result, _)| result);
+    }
+    // `comb($pattern, $limit)` has no row: it is the user `Str` case alone.
+    if method == "comb" && args.len() == 2 {
+        return None;
+    }
     // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91) and
     // `Cool.UInt` reads `$*TOLERANCE` for a `Complex` (§9.92); the other rows
     // found here are pure.
-    let interp = interp
-        .filter(|_| row(id).owner == "Mu" || COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()));
+    let interp = interp.filter(|_| {
+        row(id).owner == "Mu"
+            || method == "ACCEPTS"
+            || COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str())
+    });
     call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result)
 }
+
+/// `Cool`'s text methods a receiver with no shape reaches: the audited list
+/// plus `chars`, which the closed shapes keep answering from their own rows.
+// Cost: O(m), m = audited names.
+pub(crate) fn cool_text_for_shapeless(method: &str) -> bool {
+    method == "chars"
+        || crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method)
+        || COOL_SEARCH_FOR_SHAPELESS.contains(&method)
+        || method == "split"
+}
+
+/// The argument-taking `Cool` search methods, read through a `Cool` instance's
+/// own `Str` like the text methods above (#13035).
+const COOL_SEARCH_FOR_SHAPELESS: [&str; 9] = [
+    "contains",
+    "starts-with",
+    "ends-with",
+    "index",
+    "rindex",
+    "substr",
+    "subst",
+    "trans",
+    "indices",
+];
 
 /// The row [`answer_shapeless`] answers a call with `arity` positional
 /// arguments from, without running it.
@@ -441,8 +527,9 @@ pub(crate) fn shapeless_row(
 ) -> Option<RowId> {
     use crate::value::ValueView;
     // `join` (its separator), `pick`, `roll`, `head` and `tail` (their count)
-    // and the `Cool` text methods that read a property, a pattern or an
-    // amount (§9.90) alone take an argument.
+    // and the `Cool` text methods that read a property, a pattern, an
+    // amount (§9.90) or a count (`words`, `lines`, `chop`) alone take an
+    // argument.
     if arity > 0
         && (arity > 1
             || !matches!(
@@ -452,20 +539,77 @@ pub(crate) fn shapeless_row(
                     | "roll"
                     | "head"
                     | "tail"
+                    | "combinations"
+                    | "batch"
                     | "uniprop"
                     | "uniprops"
                     | "unimatch"
                     | "samecase"
                     | "samemark"
                     | "indent"
+                    | "words"
+                    | "lines"
+                    | "chop"
+                    | "comb"
+                    | "flat"
+                    | "isa"
+                    | "AT-POS"
+                    | "EXISTS-POS"
+                    | "AT-KEY"
+                    | "EXISTS-KEY"
+                    | "ACCEPTS"
             ))
+        // `comb($pattern, $limit)` has no row of its own: only an instance
+        // with a user `Str` takes it (`answer_shapeless`).
+        && !(arity == 2 && method == "comb")
     {
         return None;
     }
-    let text = crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str());
+    // `Any.ACCEPTS` answers an instance whose MRO declares nothing closer
+    // (§9.108). A code object, a regex, an enum or a mixin has its own
+    // `ACCEPTS`, which the interpreter answers.
+    if method == "ACCEPTS" && !matches!(target.view(), ValueView::Instance { .. }) {
+        return None;
+    }
+    // `Any`'s subscript protocol answers a value that is not `Positional`; a
+    // list with no settled shape (lazy, shaped, a `Seq`, a `Slip`, a buffer)
+    // indexes its elements through the interpreter, though it has no keys
+    // either (§9.106).
+    let positional = matches!(method.as_str(), "AT-POS" | "EXISTS-POS");
+    if (positional || matches!(method.as_str(), "AT-KEY" | "EXISTS-KEY"))
+        && match target.descalarize().view() {
+            ValueView::Array(..)
+            | ValueView::BufStorage(..)
+            | ValueView::Seq(..)
+            | ValueView::HyperSeq(..)
+            | ValueView::RaceSeq(..)
+            | ValueView::Slip(..)
+            | ValueView::LazyList(..) => positional,
+            // A mixin delegates to the value it wraps (`%h but R`).
+            ValueView::Junction { .. }
+            | ValueView::Proxy { .. }
+            | ValueView::Nil
+            | ValueView::Mixin(..) => true,
+            // A package's stash is `Associative` (`CORE::<&say>`), and an
+            // instance's `{ }` subscript may be a user `postcircumfix:<{ }>`
+            // or a tied store, which the interpreter resolves first.
+            ValueView::Package(_) | ValueView::Instance { .. } => !positional,
+            // A hash with no settled shape (a `Map` subclass's raw storage)
+            // is `Associative`: the interpreter reads its keys.
+            ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                !positional
+            }
+            _ => false,
+        }
+    {
+        return None;
+    }
+    let text = cool_text_for_shapeless(method.as_str());
     let list = crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());
-    let iterable = ITERABLE_FOR_SHAPELESS.contains(&method.as_str());
+    // `flat($levels)` is `Iterable`'s alone: `Any` declares only `flat()`.
+    let iterable =
+        ITERABLE_FOR_SHAPELESS.contains(&method.as_str()) || (arity == 1 && method == "flat");
     let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str());
     let text = text || coerce;
     if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
@@ -501,12 +645,20 @@ pub(crate) fn shapeless_row(
         ValueView::Instance { class_name, .. } if mu => {
             // The first class in the MRO that declares the method answers it
             // (`class M is Match` keeps `Match.not`); `Mu` ends every MRO.
-            interp?
+            let owner = interp?
                 .class_mro(class_name.as_str())
                 .iter()
                 .copied()
                 .find(|&class| super::owner_row(class, method, 0).is_some())
-                .unwrap_or(mu_owner)
+                .unwrap_or(mu_owner);
+            // A built-in class's rendering reads its own state, not a
+            // subclass's: an `Exception` subclass renders its own `message`,
+            // a `Str` subclass keeps its type. The interpreter answers those
+            // (§9.93).
+            if matches!(method.as_str(), "Str" | "Stringy") && owner != mu_owner {
+                return None;
+            }
+            owner
         }
         _ if mu => mu_owner,
         ValueView::Enum { .. }
@@ -523,13 +675,48 @@ pub(crate) fn shapeless_row(
         }
         ValueView::Instance { class_name, .. } if class_name != "Failure" => {
             let mut owner = None;
-            for &class in interp?.class_mro(class_name.as_str()).iter() {
+            let subscript = matches!(
+                method.as_str(),
+                "AT-POS" | "EXISTS-POS" | "AT-KEY" | "EXISTS-KEY"
+            );
+            let mro = interp?.class_mro(class_name.as_str());
+            let mut exhausted = true;
+            for &class in mro.iter() {
                 if (class == cool && text) || (class == any && list) {
                     owner = Some(class);
                     break;
                 }
-                if super::owner_row(class, method, arity).is_some() {
+                // A subclass of a built-in class (`is Map`, `is Array`) keeps
+                // its storage's subscript protocol, which the interpreter
+                // answers (§9.106).
+                if subscript
+                    && class != cool
+                    && crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
+                        .is_some()
+                {
+                    exhausted = false;
                     break;
+                }
+                if super::owner_row(class, method, arity).is_some() {
+                    exhausted = false;
+                    // A subclass of a built-in class that declares its own
+                    // `ACCEPTS` (`class DD is Date`) answers from that row.
+                    if method == "ACCEPTS" {
+                        owner = Some(class);
+                    }
+                    break;
+                }
+            }
+            // An `Exception` subclass's MRO ends at `Exception`, whose
+            // catalog chain (`Any`, `Mu`) is not spelled out in it: `Any`
+            // answers what no closer class declared.
+            if owner.is_none() && exhausted && list && !coerce {
+                let is_any = |class: &Symbol| {
+                    crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
+                        .is_some_and(|chain| chain.contains(&"Any"))
+                };
+                if mro.iter().any(is_any) {
+                    owner = Some(any);
                 }
             }
             // A coercion falls back to the `Cool`/`Mu` rows, which answer the
@@ -564,6 +751,11 @@ pub(crate) fn shapeless_row(
         _ => return None,
     };
     // `Int` and `Numeric` are `Mu`'s, not `Cool`'s (§9.92).
+    let arity = if method == "comb" {
+        arity.min(1)
+    } else {
+        arity
+    };
     super::owner_row(owner, method, arity).or_else(|| {
         coerce
             .then(|| super::owner_row(mu_owner, method, arity))

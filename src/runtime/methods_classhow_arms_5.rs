@@ -309,6 +309,25 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => class_name.resolve(),
                 _ => args[0].to_string_value(),
             };
+            // `buf8`/`blob8`... are the native-sized spellings of `Buf[uint8]`
+            // / `Blob[uint8]`, whose pun is that parameterised class itself
+            // (`nqp::create(buf8.^pun)` in path-utils).
+            let canonical = crate::runtime::utils::normalize_buf_type_name(&role_name);
+            if canonical != role_name
+                || matches!(
+                    role_name.as_str(),
+                    "Buf[uint8]"
+                        | "Buf[uint16]"
+                        | "Buf[uint32]"
+                        | "Buf[uint64]"
+                        | "Blob[uint8]"
+                        | "Blob[uint16]"
+                        | "Blob[uint32]"
+                        | "Blob[uint64]"
+                )
+            {
+                return Ok(Value::package(Symbol::intern(&canonical)));
+            }
             self.punned_role_type_object(&role_name)
     }
 
@@ -321,6 +340,14 @@ impl Interpreter {
                 (self.registry().roles.contains_key(&name)
                     && self.registry().classes.contains_key(&name))
                 .then_some(name)
+            }
+            // A method called on a role type object (`R.m`) runs on the role's
+            // pun, which mutsu passes as the role type object itself:
+            // `self.^is_pun` is True there and `self.^pun_source` is the role
+            // (PDF's `PDF::COS::Tie.induce`).
+            ValueView::Package(name) => {
+                let name = name.resolve();
+                self.registry().roles.contains_key(&name).then_some(name)
             }
             ValueView::Mixin(_, overrides) => overrides.keys().find_map(|key| {
                 let role = key.strip_prefix("__mutsu_role__")?;

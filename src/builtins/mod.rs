@@ -266,7 +266,7 @@ pub(crate) fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
 /// the requested read size in bytes — the CATCH regex only checks the
 /// prefix, so the trailing numbers are cosmetic/diagnostic, not
 /// contract-bearing, but kept in the same shape for a faithful message.
-pub(crate) fn mvm_array_read_buf_oob_message(offset: usize, elems: usize, count: usize) -> String {
+pub(crate) fn mvm_array_read_buf_oob_message(offset: i64, elems: usize, count: usize) -> String {
     format!("MVMArray: read_buf out of bounds offset {offset} start 0 elems {elems} count {count}")
 }
 

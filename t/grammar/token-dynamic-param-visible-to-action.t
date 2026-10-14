@@ -24,5 +24,5 @@ grammar H {
     token TOP { <usage('abc')> }
     token usage($*USAGE) { <[a..z]>+ }
 }
-class B { method usage($/) { make ~$*USAGE } method TOP($/) { make $<usage>.ast } }
+class B { method usage($/) { make ~$*USAGE }; method TOP($/) { make $<usage>.ast } }
 is H.parse('abc', :actions(B)).made, 'abc', 'also for a direct subrule call';

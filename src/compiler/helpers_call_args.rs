@@ -358,6 +358,15 @@ impl Compiler {
     /// silently promoted unrelated inner blocks. The escape claim is about the
     /// literal the callee might store, and this is exactly that literal.
     pub(super) fn is_closure_literal_arg(arg: &Expr) -> bool {
+        // `my sub (|c) { ... }` written as an argument parses to a `do`
+        // around the anonymous routine; it is the same literal (#12803).
+        let arg = match arg {
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::Expr(inner) => inner,
+                _ => arg,
+            },
+            _ => arg,
+        };
         matches!(
             arg,
             Expr::Block(_)

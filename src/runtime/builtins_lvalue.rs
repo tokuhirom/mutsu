@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::container_lock::ContainerStructGuard;
 use crate::meta_ns::MetaNs;
 use crate::value::ArrayKind;
 
@@ -139,8 +140,11 @@ impl Interpreter {
             ValueView::ContainerRef(_) | ValueView::ContainerView(_) => {
                 value.deref_container().is_proxy_value()
             }
+            // A pure walk of a container another thread may restructure:
+            // hold its stripe (ADR-0068, #13079).
             ValueView::Array(items, _) => {
                 enter!(items);
+                let _read = ContainerStructGuard::acquire_for(None, value);
                 let found = items.iter().any(|v| Self::value_has_proxy_seen(v, seen));
                 seen.pop();
                 found
@@ -149,6 +153,7 @@ impl Interpreter {
             ValueView::Slip(items) => items.iter().any(|v| Self::value_has_proxy_seen(v, seen)),
             ValueView::Hash(map) => {
                 enter!(map);
+                let _read = ContainerStructGuard::acquire_for(None, value);
                 let found = map.values().any(|v| Self::value_has_proxy_seen(v, seen));
                 seen.pop();
                 found

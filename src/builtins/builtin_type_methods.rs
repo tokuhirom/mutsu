@@ -83,9 +83,10 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     // A registered row recognizes its arity for a receiver of its shape
     // (ADR-11276), table first: a migrated method has no arm left to probe,
     // and `native_method_0arg` asks the table only for a call it would admit.
+    // An itemized value (`my $range = 1..10`) is asked about its value.
     let receivers = [
         crate::builtins::method_table::Receiver::of(value),
-        crate::builtins::method_table::Receiver::of_settled(value),
+        crate::builtins::method_table::Receiver::of_settled(value.descalarize()),
     ];
     for receiver in receivers.into_iter().flatten() {
         for arity in 0..=2u8 {

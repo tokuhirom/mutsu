@@ -1,36 +1,31 @@
 use v6;
 use Test;
 
-# `$!` is only *updated* to an exception when it propagates out of a `try`
-# unhandled (swallowed by the implicit trap). When a CATCH block handles the
-# exception — a matching `when`/`default`, or `.resume` — `$!` keeps whatever it
-# held before the `try`. Regression: mutsu used to leave the handled exception in
-# `$!` (doc-diff perl-var.rakudoc [2]).
+# A `try` leaves its exception in `$!` whether or not a CATCH block handled it
+# (a matching `when`/`default`, or `.resume`), as rakudo does (#12904).
 
 plan 7;
 
-# Handled by a matching `default` leaves the prior $! untouched.
+# Handled by a matching `default` still sets $!.
 try { die "PRIOR" };
 is $!.message, 'PRIOR', 'unhandled exception is stored in $!';
 try { die "H"; CATCH { default { } } };
-is $!.message, 'PRIOR', 'a handled (default) exception keeps the prior $!';
+is $!.message, 'H', 'a handled (default) exception is left in $!';
 
 # An unhandled exception swallowed by a later try overwrites $!.
 try { die "NEXT" };
 is $!.message, 'NEXT', 'a later unhandled exception overwrites $!';
 
-# `.resume` handles the exception: prior $! is kept.
+# `.resume` handles the exception: $! holds it.
 $! = Nil;
 try { die "SEED" };
 is $!.message, 'SEED', 'seed $! with an unhandled exception';
 try { fail "R"; CATCH { default { .resume } } };
-is $!.message, 'SEED', 'a resumed exception keeps the prior $!';
+is $!.message, 'R', 'a resumed exception is left in $!';
 
-# Handling clears the *definedness* view: after a handled try starting from a
-# cleared $!, $! is undefined again.
 $! = Nil;
 try { die "X"; CATCH { default { } } };
-nok $!.defined, 'handled from a cleared $! leaves $! undefined';
+ok $!.defined, 'handled from a cleared $! leaves $! defined';
 
 # Successful try resets $! (does not preserve a prior exception).
 try { die "OLD" };

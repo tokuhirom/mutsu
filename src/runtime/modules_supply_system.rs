@@ -1,5 +1,6 @@
 pub(crate) use crate::value::str_numeric;
 mod supply_callback_args;
+mod supply_channel_merge;
 mod supply_classify;
 mod supply_done_drive;
 mod supply_emit_drive;

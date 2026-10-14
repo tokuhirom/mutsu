@@ -1,7 +1,7 @@
 # Pins the in-place Buf/Blob element read in exec_index_op_with_positional
 # (the fast path that bypasses AT-POS method dispatch and whole-buffer
 # decode): the observable subscript behavior must stay exactly what the
-# dispatch_1arg AT-POS arm produced.
+# `Blob`/`Buf` `AT-POS` rows produce (`blob_pos::subscript_at`, #13312).
 use Test;
 
 plan 12;
@@ -9,9 +9,9 @@ plan 12;
 my $b = blob32.new(1, 2, 3);
 is $b[0], 1, 'blob32 first element';
 is $b[2], 3, 'blob32 last element';
-is $b[5], 0, 'blob32 out-of-range reads as 0';
+throws-like { $b[5] }, X::OutOfRange, 'blob32 out-of-range is X::OutOfRange';
 my $neg = -1;
-ok $b[$neg] === Nil, 'blob32 negative index reads as Nil';
+throws-like { $b[$neg] }, X::OutOfRange, 'blob32 negative index is X::OutOfRange';
 
 my $c = buf8.new(9, 8, 255);
 is $c[1], 8, 'buf8 element';

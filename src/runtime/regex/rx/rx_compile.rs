@@ -49,6 +49,9 @@ pub(super) struct Compiler {
     /// matches those bodies with `IN_QUANTIFIED_ALTERNATION_MATCH` set, which
     /// turns off a `||` branch's positional padding.
     pub(super) quant_alt_depth: usize,
+    /// Inside a ratcheted `~` inner pattern, alternation follows source order
+    /// before the goal is tested, rather than LTM branch ranking.
+    pub(super) goal_inner_source_order: bool,
 }
 
 /// Compile `pattern`, or say why not.
@@ -68,6 +71,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         has_code: false,
         has_call: false,
         quant_alt_depth: 0,
+        goal_inner_source_order: false,
     };
     c.pattern(pattern)?;
     c.ops.push(RxOp::Match);
@@ -86,8 +90,49 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         nregs: c.nregs,
         has_code: c.has_code,
         has_call: c.has_call,
+        markless: false,
         ascii: std::sync::OnceLock::new(),
     })
+}
+
+/// Compile the mark-stripped body of a whole-`:m` rule (`strip_marks_pattern`)
+/// as a markless program ([`RxProgram::markless`]), or say why not. Only the
+/// ops whose every character test goes through a consuming atom are covered,
+/// a look-around whose body compiles markless in turn, and a backreference or
+/// capture marker (`CapAtom`: rakudo compares a backreference exactly, marks
+/// included, which the subject's own positions give), and `<.ws>` (a call,
+/// which does not inherit `:m`: it runs over the subject's own text), and an
+/// interpolation (its value is entered as a markless frame of its own). A
+/// nested `:m` group declines (a stripped body never holds one), and the call
+/// keeps the eager `:m` path. A conjunction is covered when its other branches
+/// compile markless too.
+// Cost: O(t), t = the number of tokens in the pattern tree.
+pub(in crate::runtime::regex) fn compile_markless(
+    pattern: &RegexPattern,
+) -> Result<RxProgram, Decline> {
+    let mut program = compile(pattern)?;
+    let covered = program.ops.iter().all(|op| match op {
+        // The body runs as a markless nested run of its own (`Look`).
+        RxOp::Look(i) => matches!(
+            &program.atoms[*i as usize],
+            RegexAtom::Lookaround { pattern, .. }
+                if super::rx_entry::markless_program_for(pattern).is_some()
+        ),
+        // The other branches run as markless nested runs (`ConjTail`).
+        RxOp::ConjTail { tok, .. } => matches!(
+            &program.toks[*tok as usize].atom,
+            RegexAtom::Conjunction(branches)
+                if branches[1..]
+                    .iter()
+                    .all(|b| super::rx_entry::markless_program_for(b).is_some())
+        ),
+        op => !matches!(op, RxOp::GroupEnds(_)),
+    });
+    if !covered {
+        return Err("markless-uncovered");
+    }
+    program.markless = true;
+    Ok(program)
 }
 
 /// A set of capture names interned, in name order, so the order they are
@@ -301,6 +346,7 @@ impl Compiler {
             self.has_code |= pattern_contains_code(pattern);
             let i = self.push_atom(&RegexAtom::Group(pattern.clone()));
             self.ops.push(RxOp::GroupEnds(i));
+                self.has_call = true;
             return Ok(());
         }
         // The walk tests a level's atoms under that level's own `:i`
@@ -420,6 +466,7 @@ impl Compiler {
                 }
                 let i = self.push_atom(&token.atom);
                 self.ops.push(RxOp::GroupEnds(i));
+                self.has_call = true;
                 if let Some(h) = height {
                     self.ops.push(RxOp::Cut(h));
                 }
@@ -455,6 +502,7 @@ impl Compiler {
                     self.has_code |= pattern_contains_code(p);
                     let i = self.push_atom(&RegexAtom::Group(p.clone()));
                     self.ops.push(RxOp::GroupEnds(i));
+                self.has_call = true;
                 } else {
                     self.pattern(p)?;
                 }
@@ -478,6 +526,9 @@ impl Compiler {
                 // The callee may run code, read lexicals or capture: the
                 // position-only matcher must not run this program.
                 self.has_code = true;
+            }
+            RegexAtom::Alternation(alts) if self.goal_inner_source_order => {
+                self.seq_alternation(token, alts)?
             }
             RegexAtom::Alternation(alts) => self.ltm_alternation(token, alts)?,
             RegexAtom::SequentialAlternation(alts) => self.seq_alternation(token, alts)?,

@@ -402,6 +402,11 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
         if chars[i] == '$' {
             let mut j = i + 1;
             let start = j;
+            // `$*dyn`: the twigil is part of the recorded name.
+            if chars.get(j) == Some(&'*') {
+                j += 1;
+            }
+            let name_start = j;
             while j < chars.len() {
                 let ch = chars[j];
                 let kebab = ch == '-'
@@ -414,7 +419,7 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
                     break;
                 }
             }
-            if j > start {
+            if j > name_start {
                 names.push(chars[start..j].iter().collect());
             }
             i = j;
@@ -781,10 +786,9 @@ impl Interpreter {
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
     /// compile each element as a regex pattern, collapsing to a character class
-    /// when possible. Returns `None` (caller should `continue`) when the array
-    /// is empty / unset. Shared by `<@var>` and its `<?@var>` / `<!@var>`
+    /// when possible. An empty array never matches (`<!>`). Shared by `<@var>` and its `<?@var>` / `<!@var>`
     /// lookahead forms.
-    fn array_var_alternation_atom(&self, env_key: &str, mode: RegexParseMode) -> Option<RegexAtom> {
+    fn array_var_alternation_atom(&self, env_key: &str, mode: RegexParseMode) -> RegexAtom {
         // Reads the array's VALUE at parse time; the tree is not a function of
         // the pattern text alone. `.deref_container()` mirrors the `<$var>`
         // form's `.into_deref()` a few match arms below: a lexical the
@@ -842,13 +846,13 @@ impl Interpreter {
                 alt_patterns.push(parsed);
             }
         }
+        // An empty array is an alternation with no branches: it never
+        // matches, like Rakudo's (#13152): the `<!>` always-fail atom.
         if alt_patterns.is_empty() {
-            return None;
+            return RegexAtom::Named("!".into());
         }
-        Some(
-            try_collapse_alternation_to_charclass(&alt_patterns)
-                .unwrap_or(RegexAtom::Alternation(alt_patterns)),
-        )
+        try_collapse_alternation_to_charclass(&alt_patterns)
+            .unwrap_or(RegexAtom::Alternation(alt_patterns))
     }
 
     /// Build a zero-width lookahead assertion wrapping a *named subrule* call:
@@ -1534,11 +1538,10 @@ impl Interpreter {
                 source = rest.trim_start();
                 continue;
             }
+            // `:i` ends at any non-identifier character, so `:i'only'|'not'`
+            // scopes the modifier over the whole alternation like `:i 'only'|'not'`.
             if let Some(rest) = source.strip_prefix(":i")
-                && (rest.is_empty()
-                    || rest.starts_with(|c: char| c.is_whitespace())
-                    || rest.starts_with(':')
-                    || rest.starts_with('/'))
+                && !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
             {
                 ignore_case = true;
                 source = rest.trim_start();
@@ -2030,12 +2033,21 @@ impl Interpreter {
                 // outer-scope `$var` still goes through pre-substitution.
                 if mode == RegexParseMode::Match
                     && c == '$'
-                    && chars
-                        .peek()
-                        .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+                    && {
+                        let mut look = chars.clone();
+                        let first = look.next();
+                        first.is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+                            || (first == Some('*')
+                                && look.next().is_some_and(|n| n.is_alphabetic() || n == '_'))
+                    }
                 {
                     let mut probe = chars.clone();
                     let mut var_name = String::new();
+                    // `$*dyn`: the twigil is part of the name.
+                    if probe.peek() == Some(&'*') {
+                        var_name.push('*');
+                        probe.next();
+                    }
                     while let Some(&ch) = probe.peek() {
                         let kebab = ch == '-' && {
                             let mut after = probe.clone();
@@ -2049,7 +2061,9 @@ impl Interpreter {
                             break;
                         }
                     }
-                    if declared_regex_vars.contains(&var_name) {
+                    // A dynamic variable is read where the atom matches, whichever
+                    // rule or block bound it: its value is not the one visible now.
+                    if declared_regex_vars.contains(&var_name) || var_name.starts_with('*') {
                         chars = probe;
                         // Through the common atom tail, so a quantifier
                         // (`$q+`, `$r ** 2`) applies to the interpolation.
@@ -2670,6 +2684,9 @@ impl Interpreter {
                                 negated: true,
                                 items: vec![ClassItem::Char('\r')],
                             }),
+                            // `\0` is NUL (a following digit is a literal:
+                            // `/\00/` matches NUL then `0`), as in a char class.
+                            '0' => RegexAtom::Literal('\0'),
                             'e' => RegexAtom::Literal('\u{001B}'), // escape (ESC)
                             'E' => RegexAtom::CharClass(CharClass {
                                 negated: true,
@@ -3390,6 +3407,21 @@ impl Interpreter {
                                                         inner.push('\\');
                                                         if let Some(n) = chars.next() {
                                                             inner.push(n);
+                                                            // `\x[22]` / `\c[NAME]`: the
+                                                            // escape's own brackets do not
+                                                            // close the class.
+                                                            if matches!(
+                                                                n,
+                                                                'x' | 'X' | 'c' | 'C' | 'o' | 'O'
+                                                            ) && chars.peek() == Some(&'[')
+                                                            {
+                                                                for c3 in chars.by_ref() {
+                                                                    inner.push(c3);
+                                                                    if c3 == ']' {
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                     Some(']') => {
@@ -3404,27 +3436,50 @@ impl Interpreter {
                                             // `+[` / `-[` / `[` continue a compound
                                             // class. Anything else falls back to the
                                             // outer loop.
+                                            // Whitespace between the parts
+                                            // (`<[0..9] + [x]>`) is insignificant.
                                             let mut la = chars.clone();
-                                            match la.next() {
+                                            let mut skip = 0usize;
+                                            let mut next = la.next();
+                                            while next.is_some_and(char::is_whitespace) {
+                                                skip += 1;
+                                                next = la.next();
+                                            }
+                                            let mut op_skip = 0usize;
+                                            let mut after_op = la.next();
+                                            while after_op.is_some_and(char::is_whitespace) {
+                                                op_skip += 1;
+                                                after_op = la.next();
+                                            }
+                                            let continues = match next {
                                                 Some('>') => {
-                                                    chars.next();
+                                                    for _ in 0..=skip {
+                                                        chars.next();
+                                                    }
                                                     inner.push('>');
                                                     break 'char_class;
                                                 }
-                                                Some(p @ ('+' | '-')) if la.next() == Some('[') => {
-                                                    chars.next();
-                                                    chars.next();
-                                                    inner.push(p);
-                                                    inner.push('[');
-                                                    continue 'char_class;
-                                                }
-                                                Some('[') => {
-                                                    chars.next();
-                                                    inner.push('[');
-                                                    continue 'char_class;
-                                                }
-                                                _ => break 'char_class,
+                                                Some('+' | '-') => after_op == Some('['),
+                                                Some('[') => true,
+                                                _ => false,
+                                            };
+                                            if !continues {
+                                                break 'char_class;
                                             }
+                                            for _ in 0..skip {
+                                                chars.next();
+                                            }
+                                            inner.push(' ');
+                                            if let Some(p @ ('+' | '-')) = next {
+                                                chars.next();
+                                                for _ in 0..op_skip {
+                                                    chars.next();
+                                                }
+                                                inner.push(p);
+                                            }
+                                            chars.next();
+                                            inner.push('[');
+                                            continue 'char_class;
                                         }
                                     } else if ch == '<' {
                                         angle_depth += 1;
@@ -3735,11 +3790,8 @@ impl Interpreter {
                                         // `!@` is not mistaken for a negated named-class assertion.
                                         let negated = trimmed.starts_with('!');
                                         let env_key = &trimmed[1..]; // drop '?'/'!', keep '@var'
-                                        let Some(inner_atom) =
-                                            self.array_var_alternation_atom(env_key, mode)
-                                        else {
-                                            continue;
-                                        };
+                                        let inner_atom =
+                                            self.array_var_alternation_atom(env_key, mode);
                                         // ADR-0046 Slice 1: array interpolation
                                         // terminates the declarative LTM prefix
                                         // unconditionally (ADR §2.1) -- mark the
@@ -4069,6 +4121,17 @@ impl Interpreter {
                                         // the declarative prefix.
                                         runtime_value_atom = true;
                                         RegexAtom::VarAssertion(var_name.to_string())
+                                    } else if let Some(var_name) = trimmed.strip_prefix('$')
+                                        && var_name.starts_with('*')
+                                    {
+                                        // <$*dyn>: a dynamic variable is read where the atom
+                                        // matches, not when the pattern is parsed, so an
+                                        // alternative that is never reached (`<?{
+                                        // $*dyn.defined }> <$*dyn>`) must not die for an
+                                        // unbound or still undefined one.
+                                        Self::note_regex_parse_ambient_read();
+                                        runtime_value_atom = true;
+                                        RegexAtom::VarAssertion(var_name.to_string())
                                     } else if let Some(var_name) = trimmed.strip_prefix('$') {
                                         // <$var> — look up scalar variable and compile as regex.
                                         // The `${name}` fallback and `.into_deref()` mirror the
@@ -4274,13 +4337,8 @@ impl Interpreter {
                                         // prefix unconditionally, so mark the resulting
                                         // token as runtime-interpolated (propagated to
                                         // the token push below via `runtime_value_atom`).
-                                        match self.array_var_alternation_atom(trimmed, mode) {
-                                            Some(atom) => {
-                                                runtime_value_atom = true;
-                                                atom
-                                            }
-                                            None => continue,
-                                        }
+                                        runtime_value_atom = true;
+                                        self.array_var_alternation_atom(trimmed, mode)
                                     } else if let Some(prop_name) = trimmed.strip_prefix("?:") {
                                         // <?:PropName> — zero-width positive Unicode property assertion
                                         // (the positive twin of `<!:PropName>` above).
@@ -5149,13 +5207,22 @@ impl Interpreter {
             // is a (possibly unrecognized) modifier such as `:11` — not a ratchet
             // control — so leave it for the `:` handler at the loop top to report
             // (reproduces the validator's `/00:11:22/` -> UnrecognizedModifier).
-            let colon_is_modifier =
-                mode == RegexParseMode::Validate && chars.peek() == Some(&':') && {
-                    let mut la = chars.clone();
-                    la.next();
+            // In any mode, a recognized inline modifier written right after
+            // an atom (`/x:i<[ab]>/`) is that modifier, as in rakudo.
+            let colon_is_modifier = chars.peek() == Some(&':') && {
+                let mut la = chars.clone();
+                la.next();
+                if mode == RegexParseMode::Validate {
                     la.peek()
                         .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_')
-                };
+                } else {
+                    let rest: String = la.collect();
+                    let (mut r, mut i, mut m, mut s) = (ratchet, ignore_case, ignore_mark, sigspace);
+                    rest.starts_with(|ch: char| ch.is_alphanumeric() || ch == '!')
+                        && Self::try_parse_inline_modifier(&rest, &mut r, &mut i, &mut m, &mut s)
+                            .is_some()
+                }
+            };
             let token_ratchet = if !colon_is_modifier && chars.peek() == Some(&':') {
                 chars.next();
                 match chars.peek() {

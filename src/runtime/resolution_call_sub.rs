@@ -159,6 +159,17 @@ impl Interpreter {
         // the string-keyed `Env::get` re-interned each literal per call -- three
         // thread-local string hashes for a probe that misses for every ordinary
         // block (#8302).
+        //
+        // A WhateverCode's callable type is `WhateverCode`, never the `Method`
+        // a dispatcher value carries; its compiled code says so without the
+        // env probes and string compare below (#13286).
+        if data
+            .compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.is_whatever_code)
+        {
+            return None;
+        }
         if data
             .env
             .get_sym(crate::symbol::well_known::lookup_candidate_idx())
@@ -602,6 +613,15 @@ impl Interpreter {
                 for (key, value) in named {
                     call_args.push(Value::pair(key, value));
                 }
+            }
+            // A `.assuming`-primed `Method` object: the merged arguments
+            // (invocant first) go to the object's own `CALL-ME`.
+            if let Some(callee) = data
+                .env
+                .get_sym(crate::symbol::wk::assuming_callee_marker())
+                .cloned()
+            {
+                return self.try_compiled_method_or_interpret(callee, "CALL-ME", call_args);
             }
             // Routine wrapper from .assuming() on a multi-dispatch sub
             if let Some(ValueView::Str(routine_name)) =

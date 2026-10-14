@@ -8,18 +8,15 @@
 //! scope that ends with it. A condition or loop header (`if my $x = ...`,
 //! `loop (my $i = 0; ...)`) declares into the enclosing scope, as in rakudo.
 //!
-//! **Uses** are judged only in some positions: a statement of the snippet
-//! (or of a block, routine or type body inside it) that is an expression,
-//! `say`/`print`/`put`/`note` or an assignment, and inside it the variables
-//! reached through interpolation, subscripts, method calls and — on an
-//! assignment's right-hand side — operators. Rakudo judges every position,
-//! but a free variable the snippet does not declare may be a lexical of the
-//! *caller's* pad that is declared later in the caller's source (rakudo's
-//! pads are static: `{ sub e($s) { EVAL $s }; e('!$y.defined'); my $y }`
-//! is fine), and the runtime environment the check consults does not know
-//! such names yet. Until it does (#10511), widening the judged positions
-//! would turn those into false compile errors, so the walk turns judging
-//! off (`Mode::Off`) everywhere else rather than skipping those subtrees.
+//! **Uses** are judged in every position, as rakudo does. A free variable
+//! the snippet does not declare may be a lexical of the *caller's* static
+//! scopes, which rakudo's pads hold from their entry even when it is declared
+//! later in the source (`{ sub e($s) { EVAL $s }; e('!$y.defined'); my $y }`
+//! is fine). The run-time env does not hold such a name yet, so the compiler
+//! records, for every chunk that calls `EVAL`, the names its enclosing static
+//! scopes declare (`CompiledCode::eval_scope_names`, #10511), and the scan
+//! accepts those too. A placeholder's bare name (`$b` next to `$^b`) is left
+//! to the placeholder checks, which report rakudo's own message.
 
 use super::*;
 use crate::ast::ParamDef;
@@ -33,28 +30,28 @@ pub(super) type Undeclared = (&'static str, String, Vec<String>);
 // Cost: O(n * d), n = size of the snippet's AST, d = depth of the scope
 // stack.
 pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Option<Undeclared> {
+    // A placeholder (`$^b`, `$:b`) declares its bare name in its block; a
+    // bare use of that name before the placeholder is the placeholder check's
+    // own error (`check_placeholder_*`, with rakudo's "Perhaps you forgot a
+    // 'sub'" message), not this scan's.
+    let mut refs = VarRefs::default();
+    walk_stmts(&mut refs, stmts);
+    let placeholder_names = refs
+        .names
+        .iter()
+        .filter_map(|n| n.strip_prefix(['^', ':']).map(str::to_string))
+        .collect();
     let mut scan = UndeclaredVars {
         interp,
+        placeholder_names,
+        package_exports: super::eval_package_exports::package_exported_vars(stmts),
         scopes: vec![HashSet::new()],
         strict: true,
         judged_stmt: true,
-        mode: Mode::Off,
         found: None,
     };
     walk_stmts(&mut scan, stmts);
     scan.found
-}
-
-/// How the variables of the expression being walked are judged.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    /// Not judged (declarations are still collected).
-    Off,
-    /// Judged through interpolation, subscripts and method calls.
-    Plain,
-    /// An assignment's right-hand side: also through operators, grouping
-    /// and embedded declarations, in source order.
-    Ordered,
 }
 
 /// The name a declaration (variable, parameter, attribute alias) puts in
@@ -92,14 +89,20 @@ fn is_exempt(name: &str) -> bool {
 
 struct UndeclaredVars<'a> {
     interp: &'a Interpreter,
+    /// Bare names of the snippet's placeholder variables (see
+    /// `first_undeclared_var`).
+    placeholder_names: HashSet<String>,
+    /// The variables each package the snippet declares exports, which an
+    /// `import` of it declares.
+    package_exports: std::collections::HashMap<String, Vec<String>>,
     /// Lexical scopes, innermost last, of names in `declared_var_name` form.
     scopes: Vec<HashSet<String>>,
     /// `no strict` is in effect: an assignment declares its target and no
     /// use is judged.
     strict: bool,
-    /// The statement being visited is in a judged statement list.
+    /// The statement being visited is a statement of a statement list (not
+    /// one embedded in an expression): its assignment target is judged.
     judged_stmt: bool,
-    mode: Mode,
     found: Option<Undeclared>,
 }
 
@@ -113,12 +116,39 @@ impl UndeclaredVars<'_> {
         self.scopes.iter().any(|s| s.contains(name))
     }
 
+    /// Whether `name` is a file-scope lexical of the running routine's own
+    /// compunit, which is not in `env` (an imported `our $x is export` among
+    /// them): the two unit-lexical redirects of the by-name read chokepoint
+    /// (`get_env_with_main_alias`), without its package-variable fallbacks,
+    /// which would make an `our` of an unrelated block look declared.
+    // Cost: O(1) hash probes.
+    fn unit_lexical_declares(&self, name: &str) -> bool {
+        self.interp.unit_scope_lexical(name, None).is_some()
+            || (self.interp.any_lexical_package_frame()
+                && self.interp.module_imported_lexical(name).is_some())
+    }
+
+    /// Whether a static scope around the `EVAL` call declares `name`, here or
+    /// later in its source (`CompiledCode::eval_scope_names`): the run-time
+    /// env does not hold a lexical declared after the call yet (#10511).
+    // Cost: O(|name|).
+    fn caller_scope_declares(&self, name: &str) -> bool {
+        if self.interp.current_code == 0 {
+            return false;
+        }
+        // SAFETY: `current_code` is the address of the live bytecode frame's
+        // `CompiledCode` (the frame calling `EVAL`), kept alive for the whole
+        // frame by `vm_call_*`.
+        let code = unsafe { &*(self.interp.current_code as *const crate::opcode::CompiledCode) };
+        code.eval_scope_names.contains(name)
+    }
+
     /// Runs `f` with the given judging state, restoring the current one.
-    fn judging(&mut self, judged_stmt: bool, mode: Mode, f: impl FnOnce(&mut Self)) {
-        let saved = (self.judged_stmt, self.mode);
-        (self.judged_stmt, self.mode) = (judged_stmt, mode);
+    fn judging(&mut self, judged_stmt: bool, f: impl FnOnce(&mut Self)) {
+        let saved = self.judged_stmt;
+        self.judged_stmt = judged_stmt;
         f(self);
-        (self.judged_stmt, self.mode) = saved;
+        self.judged_stmt = saved;
     }
 
     fn in_scope(&mut self, f: impl FnOnce(&mut Self)) {
@@ -144,7 +174,11 @@ impl UndeclaredVars<'_> {
     }
 
     fn undeclared_scalar(&self, name: &str) -> Option<Undeclared> {
-        if is_exempt(name) || self.is_declared(name) {
+        if is_exempt(name)
+            || self.is_declared(name)
+            || self.placeholder_names.contains(name)
+            || self.caller_scope_declares(name)
+        {
             return None;
         }
         let env = self.interp.env();
@@ -156,7 +190,10 @@ impl UndeclaredVars<'_> {
         // is an actual variable. A class/sub named `Foo` is stored bare (as a
         // type object), but does NOT declare the scalar `$Foo` -- in Raku
         // `$Foo` is its own (undeclared) symbol.
-        if env.contains_key(name)
+        // A file-scope lexical of the running routine's own compunit (an
+        // imported `our $x is export` among them) is not in `env`: the by-name
+        // read chokepoint redirects to the unit's store, and so does this.
+        if (env.contains_key(name) || self.unit_lexical_declares(name))
             && !self.interp.registry().classes.contains_key(name)
             && !self.interp.has_function(name)
         {
@@ -185,11 +222,19 @@ impl UndeclaredVars<'_> {
 
     fn undeclared_container(&self, sigil: &'static str, name: &str) -> Option<Undeclared> {
         let sigiled = format!("{}{}", sigil, name);
-        if is_exempt(name) || self.is_declared(name) || self.is_declared(&sigiled) {
+        if is_exempt(name)
+            || self.is_declared(name)
+            || self.is_declared(&sigiled)
+            || self.placeholder_names.contains(name)
+            || self.caller_scope_declares(&sigiled)
+        {
             return None;
         }
         let env = self.interp.env();
-        if env.contains_key(&sigiled) || env.contains_key(name) {
+        if env.contains_key(&sigiled)
+            || env.contains_key(name)
+            || self.unit_lexical_declares(&sigiled)
+        {
             return None;
         }
         let suggestions = Interpreter::suggest_declared_vars(&sigiled, &self.all_declared());
@@ -227,14 +272,13 @@ impl UndeclaredVars<'_> {
             self.found = Some(r);
             return;
         }
-        self.in_scope(|v| v.judging(judged, Mode::Off, |v| walk_stmt(v, stmt)));
+        self.in_scope(|v| v.judging(true, |v| walk_stmt(v, stmt)));
     }
 
     /// A class or role body's scope: its attributes (`has $.x` makes `$!x`
     /// available, the alias form `has $x` also `$x`) and its body lexicals,
     /// which every method of the body sees, wherever they are declared.
     fn type_body(&mut self, body: &[Stmt], stmt: &Stmt) {
-        let judged = self.judged_stmt;
         self.in_scope(|v| {
             for s in body {
                 match s {
@@ -251,7 +295,7 @@ impl UndeclaredVars<'_> {
                     _ => {}
                 }
             }
-            v.judging(judged, Mode::Off, |v| walk_stmt(v, stmt));
+            v.judging(true, |v| walk_stmt(v, stmt));
         });
     }
 }
@@ -261,22 +305,21 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         if self.found.is_some() {
             return;
         }
-        let judged = self.judged_stmt;
         match stmt {
             Stmt::No { module, .. } if module == "strict" => self.strict = false,
             Stmt::Use { module, .. } if module == "strict" => self.strict = true,
+            Stmt::Import { module, .. } => {
+                if let Some(names) = self.package_exports.get(module).cloned() {
+                    for name in &names {
+                        self.declare(name);
+                    }
+                }
+            }
             // Only uses after it see the new name (`$foo ~ my $foo` is
             // undeclared); its own initializer already does (`my $x = $x`).
-            // Embedded in a judged right-hand side, the initializer stays
-            // judged.
             Stmt::VarDecl { name, .. } => {
                 self.declare(name);
-                let mode = if self.mode == Mode::Ordered {
-                    Mode::Ordered
-                } else {
-                    Mode::Off
-                };
-                self.judging(false, mode, |v| walk_stmt(v, stmt));
+                self.judging(false, |v| walk_stmt(v, stmt));
             }
             Stmt::Assign {
                 name,
@@ -285,12 +328,10 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                 ..
             } => {
                 self.assign_target(name, *target_is_sigilless);
-                let mode = if judged { Mode::Ordered } else { Mode::Off };
-                self.judging(false, mode, |v| v.visit_expr(expr));
+                self.judging(false, |v| v.visit_expr(expr));
             }
             Stmt::Expr(_) | Stmt::Say(_) | Stmt::Print(_) | Stmt::Put(_) | Stmt::Note(_) => {
-                let mode = if judged { Mode::Plain } else { Mode::Off };
-                self.judging(false, mode, |v| walk_stmt(v, stmt));
+                self.judging(false, |v| walk_stmt(v, stmt));
             }
             // A condition or loop header declares into the enclosing scope;
             // the bodies are scopes of their own.
@@ -310,14 +351,14 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Stmt::Given {
                 is_statement_modifier: true,
                 ..
-            } => self.judging(false, Mode::Off, |v| walk_stmt(v, stmt)),
+            } => self.judging(true, |v| walk_stmt(v, stmt)),
             Stmt::If {
                 cond,
                 then_branch,
                 else_branch,
                 binding_var,
                 ..
-            } => self.judging(false, Mode::Off, |v| {
+            } => self.judging(true, |v| {
                 v.visit_expr(cond);
                 for branch in [then_branch, else_branch] {
                     v.in_scope(|v| {
@@ -328,7 +369,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                     });
                 }
             }),
-            Stmt::While { cond, body, .. } => self.judging(false, Mode::Off, |v| {
+            Stmt::While { cond, body, .. } => self.judging(true, |v| {
                 v.visit_expr(cond);
                 v.in_scope(|v| walk_stmts(v, body));
             }),
@@ -338,7 +379,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                 step,
                 body,
                 ..
-            } => self.judging(false, Mode::Off, |v| {
+            } => self.judging(true, |v| {
                 if let Some(init) = init {
                     walk_stmts(v, std::slice::from_ref(init));
                 }
@@ -353,11 +394,19 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
                 self.type_body(body, stmt)
             }
+            // A statement-form phaser (`BEGIN my $c = ...`) declares into the
+            // enclosing scope; its block form (`BEGIN { my $c }`, whose body
+            // starts with a `SetLine`) is a scope of its own, below.
+            Stmt::Phaser { body, .. }
+                if matches!(body.as_slice(), [Stmt::VarDecl { .. }]) =>
+            {
+                self.judging(true, |v| walk_stmts(v, body))
+            }
             // A block's statements are judged as the snippet's are.
             Stmt::Block(_) => {
-                self.in_scope(|v| v.judging(judged, Mode::Off, |v| walk_stmt(v, stmt)))
+                self.in_scope(|v| v.judging(true, |v| walk_stmt(v, stmt)))
             }
-            Stmt::SyntheticBlock(_) => self.judging(judged, Mode::Off, |v| walk_stmt(v, stmt)),
+            Stmt::SyntheticBlock(_) => self.judging(true, |v| walk_stmt(v, stmt)),
             // Every other statement with a body opens a scope for it (its
             // parameters, reported as names, are declared there).
             Stmt::For { .. }
@@ -374,9 +423,9 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Stmt::ProtoDecl { .. }
             | Stmt::Package { .. }
             | Stmt::AugmentClass { .. } => {
-                self.in_scope(|v| v.judging(false, Mode::Off, |v| walk_stmt(v, stmt)))
+                self.in_scope(|v| v.judging(true, |v| walk_stmt(v, stmt)))
             }
-            _ => self.judging(false, Mode::Off, |v| walk_stmt(v, stmt)),
+            _ => self.judging(true, |v| walk_stmt(v, stmt)),
         }
     }
 
@@ -384,20 +433,14 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         if self.found.is_some() {
             return;
         }
-        let mode = self.mode;
         match expr {
-            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => {
-                if mode != Mode::Off {
-                    self.check_var(expr);
-                }
-            }
-            // An embedded declaration on a judged right-hand side keeps its
-            // initializer judged (see the `VarDecl` arm of `visit_stmt`).
-            Expr::DoStmt(inner)
-                if mode == Mode::Ordered && matches!(**inner, Stmt::VarDecl { .. }) =>
-            {
-                walk_expr(self, expr)
-            }
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => self.check_var(expr),
+            // A desugaring's block is no scope: `(my $a, my $b) »=» (1, 2)`
+            // declares `$a` and `$b` where it is written.
+            Expr::DoBlock {
+                origin: crate::ast::DoBlockOrigin::Desugar,
+                ..
+            } => self.judging(true, |v| walk_expr(v, expr)),
             // Closures and inline blocks are scopes of their own.
             Expr::AnonSub { .. }
             | Expr::AnonSubParams { .. }
@@ -407,31 +450,10 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Expr::DoBlock { .. }
             | Expr::Try { .. }
             | Expr::PhaserExpr { .. }
-            | Expr::Once { .. } => {
-                self.in_scope(|v| v.judging(false, Mode::Off, |v| walk_expr(v, expr)))
-            }
-            Expr::StringInterpolation(_) | Expr::Index { .. } | Expr::MethodCall { .. } => {
-                let inner = if mode == Mode::Off {
-                    Mode::Off
-                } else {
-                    Mode::Plain
-                };
-                self.judging(false, inner, |v| walk_expr(v, expr));
-            }
-            Expr::Binary { .. }
-            | Expr::MetaOp { .. }
-            | Expr::Grouped(_)
-            | Expr::Unary { .. }
-            | Expr::PostfixOp { .. }
-            | Expr::Itemize(_) => {
-                let inner = if mode == Mode::Ordered {
-                    Mode::Ordered
-                } else {
-                    Mode::Off
-                };
-                self.judging(false, inner, |v| walk_expr(v, expr));
-            }
-            _ => self.judging(false, Mode::Off, |v| walk_expr(v, expr)),
+            | Expr::Once { .. } => self.in_scope(|v| v.judging(true, |v| walk_expr(v, expr))),
+            // An assignment embedded in an expression declares nothing and
+            // is judged as the expression it is part of.
+            _ => self.judging(false, |v| walk_expr(v, expr)),
         }
     }
 

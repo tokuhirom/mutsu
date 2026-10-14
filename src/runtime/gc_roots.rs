@@ -87,8 +87,11 @@ impl Interpreter {
                 visitor.visit_value(v);
             }
         }
-        for (_, v, _) in &self.topic_state.for_param_restore_stack {
-            visit_opt(visitor, v);
+        for entry in &self.topic_state.for_param_restore_stack {
+            visit_opt(visitor, &entry.saved);
+            if let Some((_, v)) = &entry.alias {
+                visit_opt(visitor, v);
+            }
         }
         for frame in &self.call_frames {
             frame.saved_env.visit_values(visitor);

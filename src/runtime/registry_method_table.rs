@@ -401,6 +401,12 @@ impl Registry {
         self.bump_method_generation();
     }
 
+    /// `owner`'s user candidates named `name`; the caller bumps the generation.
+    pub(crate) fn user_methods_mut(&mut self, owner: Symbol, name: Symbol) -> Option<&mut [MethodDef]> {
+        let entry = self.method_entries.get_mut(&MethodEntryKey { owner, name })?;
+        Some(&mut entry.user_candidates)
+    }
+
     /// Snapshots every user-owned row `owner` currently has, for rollback
     /// (ADR-0019 F4c design note (4)'s `ClassRegSnapshot`/EVAL-rollback
     /// mechanisms). `MethodDef` clones are shallow (`body` is an `Arc`).

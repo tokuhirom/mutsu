@@ -1,0 +1,1 @@
+Declared lowercase type names now accept definiteness smileys inside smartmatch unions. This fixes parser failures such as `xmlNodeSet:D|anyNode:D` when those types were declared earlier in the compilation unit.

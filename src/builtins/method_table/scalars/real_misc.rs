@@ -251,6 +251,10 @@ fn chr(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
             use unicode_normalization::UnicodeNormalization;
             Ok(Value::str(ch.to_string().nfc().collect::<String>()))
         }
+        // MoarVM's own bound: a codepoint it could store but Unicode lacks.
+        _ if (0x110000..1 << 31).contains(&code) => Err(RuntimeError::new(format!(
+            "chr codepoint {code} (0x{code:X}) is out of bounds"
+        ))),
         _ => {
             let hex = if code < 0 {
                 format!("-{:X}", code.unsigned_abs())

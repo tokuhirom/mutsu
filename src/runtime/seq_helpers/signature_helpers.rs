@@ -111,7 +111,7 @@ impl Interpreter {
                     .map(|(k, v)| {
                         (
                             items.typed_key(k).to_string_value(),
-                            crate::value::mix_weight_to_value(*v),
+                            crate::value::mix_weight_to_value(v.clone()),
                         )
                     })
                     .collect(),

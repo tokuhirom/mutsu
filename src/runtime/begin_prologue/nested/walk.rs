@@ -294,19 +294,20 @@ impl Walker<'_> {
             | Stmt::Need { .. }
             | Stmt::Import { .. } => self.declare_type_or_import(stmt),
             // The code blocks of a token, rule or regex are scopes of their own,
-            // whose `BEGIN` statements are lifted (#12812); the declaration still
-            // blocks the frame it is written in.
+            // whose `BEGIN` statements are lifted (#12812).
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {
                 self.lift_declaration_begins(stmt);
                 // A package's members are reached by name from a lifted
-                // phaser, which re-enters the package; the others are not.
+                // phaser, which re-enters the package; the others are copied
+                // into the lifted body when they can be.
                 if !self.directly_in_package() {
-                    self.block_current_frame();
+                    self.declare_token(stmt);
                 }
             }
             // A proto of a multi a lifted BEGIN calls is copied with its
-            // candidates.
-            Stmt::ProtoDecl { is_method: false, .. } if !self.directly_in_package() => {
+            // candidates; so is a method outside a package, when it is lexical
+            // (`my method`).
+            Stmt::ProtoDecl { .. } | Stmt::MethodDecl { .. } if !self.directly_in_package() => {
                 self.declare_routine(stmt)
             }
             Stmt::ProtoDecl { .. }

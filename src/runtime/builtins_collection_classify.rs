@@ -393,7 +393,7 @@ impl Interpreter {
                         );
                         {
                             let e = counts.entry(key).or_insert(crate::value::MixWeight::Int(0));
-                            *e = crate::builtins::mix_weight::add(*e, crate::value::MixWeight::Int(1));
+                            *e = crate::builtins::mix_weight::add(e.clone(), crate::value::MixWeight::Int(1));
                         }
                     }
                 }

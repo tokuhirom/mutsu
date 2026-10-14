@@ -143,7 +143,10 @@ pub(super) fn lower(node: &RakuAstNode, kind: ContextKind) -> Result<Expr, Runti
                 sugar: true,
             });
         }
-        RakuAstClass::VarLexical if kind == ContextKind::Item => {
+        // `$@` / `$%`: the item contextualizer over an anonymous `@` / `%`.
+        RakuAstClass::VarLexical | RakuAstClass::VarDeclarationAnonymous
+            if kind == ContextKind::Item =>
+        {
             let term = lower_expr(target)?;
             if !matches!(
                 term,

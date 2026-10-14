@@ -200,9 +200,17 @@ impl Interpreter {
                 .any(|name| super::regex_helpers::grammar_dynvar_scope_active(name))
             {
                 for name in declared_dynamic_keys {
-                    if let Some(value) = self.env.get(&name).cloned() {
-                        new_caps.regex_vars_mut().insert(name, value);
-                    }
+                    // An uninitialized `:my $*x;` reads as the `Any` type
+                    // object but may have no env entry yet; it is still
+                    // recorded, so a later code block's write to it is
+                    // harvested (`eval_regex_inline_code`) and travels to the
+                    // sub-rules the rule calls (#13222).
+                    let value = self
+                        .env
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+                    new_caps.regex_vars_mut().insert(name, value);
                 }
                 return Some((pos, new_caps));
             }
@@ -228,12 +236,25 @@ impl Interpreter {
             let mut scratch_stmts: Vec<Stmt> = Vec::new();
             for stmt in stmts.iter() {
                 let Stmt::VarDecl {
-                    name, expr, is_our, ..
+                    name,
+                    expr,
+                    is_our,
+                    custom_traits,
+                    ..
                 } = stmt
                 else {
                     scratch_stmts.push(stmt.clone());
                     continue;
                 };
+                // A bare `:my $x;` re-run by a later iteration of a quantified
+                // group is declared once per rule invocation: it keeps the
+                // value it already holds (#13255). An initializer re-runs.
+                if !*is_our
+                    && current_caps.regex_vars().contains_key(name)
+                    && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                {
+                    continue;
+                }
                 if name.trim_start_matches(['@', '%']).starts_with('*') || name == "_" {
                     scratch_stmts.push(stmt.clone());
                     continue;

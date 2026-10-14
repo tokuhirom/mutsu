@@ -106,7 +106,7 @@ impl crate::Interpreter {
                         o.remove(&k);
                     }
                     let e = rebuilt.weights.entry(new_key).or_default();
-                    *e = crate::builtins::mix_weight::add(*e, w);
+                    *e = crate::builtins::mix_weight::add(e.clone(), w);
                 }
                 Ok(Value::mix_parts(crate::gc::Gc::new(rebuilt), is_mut))
             }

@@ -71,7 +71,10 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
                 custom_traits,
                 where_constraint,
                 method,
+                callee,
                 args,
+                chain,
+                shape,
                 is_v6c: _,
             } = declaration;
             v.visit_name(name, NameKind::VarDecl);
@@ -81,8 +84,17 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             if let Some(expr) = where_constraint {
                 v.visit_expr(expr);
             }
-            v.visit_name(&method.resolve(), NameKind::Method);
+            match callee {
+                Some(callee) => v.visit_expr(callee),
+                None => v.visit_name(&method.resolve(), NameKind::Method),
+            }
             exprs(v, args);
+            if let Some(chain) = chain {
+                v.visit_expr(chain);
+            }
+            if let Some(dims) = shape {
+                exprs(v, dims);
+            }
         }
         SourceForm::RoutineTraits(items) => {
             for item in items {
@@ -103,11 +115,14 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
                     RoutineTrait::Returns(name) | RoutineTrait::Of(name) => {
                         v.visit_name(name, NameKind::Type)
                     }
+                    RoutineTrait::Handles(term) => v.visit_expr(term),
                     RoutineTrait::Unsupported(source) => v.visit_name(source, NameKind::Source),
                 }
             }
         }
-        SourceForm::BarePhaser => {}
+        SourceForm::BarePhaser
+        | SourceForm::ImmediateCall
+        | SourceForm::DeclarationCompoundAssign => {}
     }
 }
 

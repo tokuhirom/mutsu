@@ -59,6 +59,21 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
             }
             self.0.insert(name);
         }
+        // `unit role A::B::R is export;` publishes the short name `R` too.
+        if let crate::ast::Stmt::RoleDecl {
+            name,
+            is_export: true,
+            ..
+        } = stmt
+        {
+            let name = name.resolve();
+            let sym = crate::symbol::Symbol::intern(&name);
+            if crate::qualified::is_qualified(sym) {
+                self.0
+                    .insert(crate::qualified::unqualified_part(sym).as_str().to_string());
+            }
+            self.0.insert(name);
+        }
         crate::ast_visit::walk_stmt(self, stmt);
     }
 

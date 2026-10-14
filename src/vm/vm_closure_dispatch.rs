@@ -201,12 +201,6 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         site: TopicArgSite,
     ) -> Result<Value, RuntimeError> {
-        // ADR-0058: a slurpy/`@_` parameter FLATTENS a `Seq` argument
-        // (`{ [+] @_ } o *.map(* * 2)` sums the mapped elements), and the
-        // binder reads them through pure code -- so pull a still-deferred
-        // `.map`/`.grep` argument before binding. A `MapGrep` source is always
-        // finite, so this cannot hang.
-        self.reify_map_grep_seq_args(&args)?;
         // RAII (`PragmaGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores pragma state on drop -- including on a Rust panic unwind
         // through `call_compiled_closure_with_topic` below -- rather than a
@@ -312,6 +306,13 @@ impl Interpreter {
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance =
             std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
+        // A body that can observe nothing below runs light (#8335).
+        if explicit_topic.is_none()
+            && !capture_rw_topic
+            && let Some(out) = self.try_call_closure_light(data, cc, &args, compiled_fns)
+        {
+            return out;
+        }
         // What the call site knew about the argument (see [`TopicArgSite`]).
         let topic_arg_is_bare = site.bare;
         let topic_alias_source = site
@@ -999,6 +1000,40 @@ impl Interpreter {
                     rw_bindings.push(("_".to_string(), source.clone()));
                     cell
                 }
+                // A block that only reads `$_` still binds it raw (#11298):
+                // a write made to the caller's variable while the block runs
+                // must be visible through `$_`. When the variable already
+                // lives in a shared cell the topic IS that cell. When it does
+                // not, the only writer that can reach it during the call is
+                // the block itself, by name through its capture; then the
+                // variable is boxed under the source name here, which the
+                // block's by-name write stores through. The write then left
+                // the binding unchanged, so the free-variable writeback skips
+                // it and the topic writeback hands the caller its new value.
+                // A block that touches neither `$_` nor the variable gets
+                // neither, so it publishes nothing back.
+                Some(ref source)
+                    if !first.is_container_ref()
+                        && !topic_arg_is_bare
+                        && !cc.immutable_topic
+                        && (topic_alias_cell.is_some()
+                            || (source.starts_with('*') && cc.has_calls)
+                            || cc
+                                .free_var_writes
+                                .contains(&crate::symbol::Symbol::intern(source))) =>
+                {
+                    match topic_alias_cell.as_ref() {
+                        Some(existing) => existing.clone(),
+                        None => {
+                            let cell = Value::container_ref(crate::gc::Gc::new(
+                                crate::value::ContainerCell::new(first.clone()),
+                            ));
+                            self.env_mut().insert(source.clone(), cell.clone());
+                            rw_bindings.push(("_".to_string(), source.clone()));
+                            cell
+                        }
+                    }
+                }
                 _ => first.clone(),
             };
             self.env_mut().insert_sym(crate::symbol::wk::topic(), topic);
@@ -1526,6 +1561,11 @@ impl Interpreter {
         // writeback to captured locals avoids an O(env) copy-on-write deep copy
         // per call for the common read-only closure (which has no captured
         // locals to flush at all).
+        //
+        // A forced outer capture (`forced_free_var_syms`) never owns a slot of
+        // its name: the slot is a sigilless parameter or a nested block's own
+        // `my` that merely shares the name (`{ { my $b = 3 }; $b }`), and the
+        // captured binding is the env entry itself, written by name (#13396).
         for (i, local_name) in cc.locals.iter().enumerate() {
             // Pre-interned on both halves (#8302): the by-name form re-interned
             // the local's name for the probe AND allocated a fresh `String` for
@@ -1533,7 +1573,7 @@ impl Interpreter {
             let local_sym = cc.local_sym(i);
             if !local_name.is_empty()
                 && data.env.contains_key_for(local_name, local_sym)
-                && !local_sym.is_some_and(|sym| Self::is_forced_outer_scalar_param(cc, sym))
+                && !local_sym.is_some_and(|sym| cc.forced_free_var_syms.contains(&sym))
             {
                 let __v = self.locals[i].clone();
                 self.env_mut().insert_for(local_name, local_sym, __v);

@@ -1258,7 +1258,9 @@ impl Compiler {
             // build the routine value carrying its declared name WITHOUT
             // registering `&NAME` in the enclosing scope.
             Stmt::SubDecl { custom_traits, .. }
-                if custom_traits.iter().any(|(t, _)| t == "__anon_decl") =>
+                if custom_traits
+                    .iter()
+                    .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT) =>
             {
                 self.compile_anon_named_sub_decl(stmt);
             }
@@ -1281,7 +1283,7 @@ impl Compiler {
                 let mut value = stmt.clone();
                 if let Stmt::SubDecl { custom_traits, .. } = &mut value {
                     *custom_traits = vec![
-                        ("__anon_decl".to_string(), None),
+                        (crate::parser::ANON_DECL_TRAIT.to_string(), None),
                         (crate::ast::MULTI_CANDIDATE_VALUE_MARKER.to_string(), None),
                     ];
                 }

@@ -932,7 +932,7 @@ impl Interpreter {
                 }
                 ValueView::Mix(mix, _) => mix
                     .get(&key)
-                    .map_or(Value::int(0), |w| Self::mix_weight_as_value(*w)),
+                    .map_or(Value::int(0), |w| Self::mix_weight_as_value(w.clone())),
                 ValueView::Set(set, _) => {
                     if set.contains(&key) {
                         Value::TRUE

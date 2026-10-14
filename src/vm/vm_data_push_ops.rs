@@ -173,9 +173,22 @@ impl Interpreter {
                         }
                         _ => vec![Self::itemize_value(val)],
                     };
+                    // The cell the alias chain ends at, under its and its
+                    // node's stripes (ADR-0068 §17), and the write lands in
+                    // place so every holder of the node sees it (#13078; see
+                    // `celled_array_mutate`).
+                    let cell = Self::value_cell_of(&cell);
+                    let _structure =
+                        crate::value::container_lock::ContainerStructGuard::acquire_for_celled(
+                            &cell,
+                        );
                     let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
                     (*guard).with_array_mut(|arc, _| {
-                        let data = crate::gc::Gc::make_mut(arc);
+                        // SAFETY: the cell's and the node's stripes and the
+                        // cell's mutex are held, so no other thread mutates or
+                        // walks the node through a guarded reader, and no
+                        // borrow into it is live on this thread.
+                        let data = unsafe { crate::value::gc_contents_mut(arc) };
                         data.extend(items);
                     });
                     let result = guard.clone();

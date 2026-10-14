@@ -214,8 +214,37 @@ impl Interpreter {
         value: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
         match value.view() {
+            // An element still inside its container cell (`@a.reverse` hands
+            // back the array's own cells) renders as the value it holds.
+            ValueView::ContainerRef(_) => {
+                let inner = value.deref_container();
+                self.join_prerender_user_stringifier(&inner)
+            }
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 let originals: Vec<Value> = items.iter().cloned().collect();
+                let mut mapped = Vec::with_capacity(originals.len());
+                let mut changed = false;
+                for v in &originals {
+                    match self.join_prerender_user_stringifier(v)? {
+                        Some(replacement) => {
+                            changed = true;
+                            mapped.push(replacement);
+                        }
+                        None => mapped.push(v.clone()),
+                    }
+                }
+                Ok(changed.then(|| Value::array(mapped)))
+            }
+            // A Seq / Slip flattens into `join` like a List, so its elements
+            // need the same user-`.Str` pre-render (`join "|", @objs.sort(...)`
+            // handed the sort's Seq to `join_flat`, which stringified the
+            // objects natively).
+            ValueView::Seq(_) | ValueView::Slip(_) => {
+                let originals: Vec<Value> = match value.view() {
+                    ValueView::Seq(items) => items.iter().cloned().collect(),
+                    ValueView::Slip(items) => items.iter().cloned().collect(),
+                    _ => Vec::new(),
+                };
                 let mut mapped = Vec::with_capacity(originals.len());
                 let mut changed = false;
                 for v in &originals {
@@ -290,6 +319,16 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_cache(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `cache(gather {...})` is the gather's own `.cache`: a List over the
+        // cached Seq that pulls the body only as far as it is read, so an
+        // infinite gather works (ADR-11678). The Seq stays readable.
+        if let [arg] = args
+            && Self::is_gather_seq(arg)
+            && let ValueView::Seq(body) = arg.view()
+        {
+            body.mark_cache_requested();
+            return Ok(Value::seq_list_view(&body));
+        }
         // `cache` eagerly evaluates and caches the values into a List
         let mut result = Vec::new();
         for arg in args {
@@ -303,7 +342,7 @@ impl Interpreter {
     /// elements are themselves unread `map` Seqs). The shared `flat_val`
     /// helper is pure and only sees a deferred body as empty.
     // Cost: O(n), n = elements reached through the descended Seqs and Lists.
-    fn touch_flat_operand(&mut self, v: &Value) -> Result<(), RuntimeError> {
+    pub(crate) fn touch_flat_operand(&mut self, v: &Value) -> Result<(), RuntimeError> {
         match v.view() {
             ValueView::Seq(body) | ValueView::HyperSeq(body) | ValueView::RaceSeq(body) => {
                 if matches!(
@@ -345,6 +384,15 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_flat(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // A plain gather's coroutine list is flattened as it is pulled
+        // (ADR-11678), so an infinite gather works.
+        if let [arg] = args
+            && let ValueView::LazyList(ll) = arg.view()
+            && ll.is_gather_coroutine()
+            && !ll.is_genuinely_lazy()
+        {
+            return Ok(Self::lazy_flat_gather(arg.clone()));
+        }
         for arg in args {
             // The sole operand is un-itemized before it is flattened (see
             // below), so a `$`-held Seq is read too.

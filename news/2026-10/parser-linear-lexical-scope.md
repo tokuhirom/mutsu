@@ -1,0 +1,1 @@
+Parsing files with many routine declarations now scales linearly. Nested lexical scopes keep their own declarations without copying every surrounding parser registry, and user-operator matching checks only operators of the relevant category.

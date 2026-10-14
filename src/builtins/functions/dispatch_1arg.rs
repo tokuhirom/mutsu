@@ -267,45 +267,20 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         // Cost: O(1) amortized for a cached `Str` (index built once in O(n) and
         // cached per payload, see `grapheme_index`); O(n) otherwise.
         "chars" => Some(Ok(Value::int(crate::builtins::str_prim::chars(arg) as i64))),
+        // `chr($x)` is `$x.chr` -- one implementation. `Nil` or a type object
+        // matches no `chr` candidate (the method form says the invocant must be
+        // an instance instead).
+        // Cost: O(1) (O(n) for a Str argument, n = chars of the parse).
         "chr" => {
-            let (code, display) = match arg.view() {
-                ValueView::Int(i) => (i, format!("{}", i)),
-                ValueView::BigInt(n) => {
-                    let hex = format!("{:X}", &**n);
-                    return Some(Err(RuntimeError::new(format!(
-                        "Codepoint {} (0x{}) is out of bounds in 'chr'",
-                        *n, hex
-                    ))));
-                }
-                ValueView::Num(f) => (f as i64, format!("{}", f as i64)),
-                _ => {
-                    let s = arg.to_string_value();
-                    let trimmed = s.trim();
-                    // The same Str -> number parse `Str.chr` uses (`:16<41>`,
-                    // `0x41`, `65`); anything that is no integer is out of bounds.
-                    let i = crate::builtins::method_table::scalars::numify::numify_str(trimmed)
-                        .and_then(|n| n.as_int())
-                        .unwrap_or(-1);
-                    (i, format!("{}", i))
-                }
-            };
-            if !(0..=0x10FFFF).contains(&code) {
-                let hex = format!("{:X}", code);
-                return Some(Err(RuntimeError::new(format!(
-                    "Codepoint {} (0x{}) is out of bounds in 'chr'",
-                    display, hex
-                ))));
+            if matches!(
+                arg.view(),
+                ValueView::Nil | ValueView::Package(_) | ValueView::CustomType { .. }
+            ) {
+                return Some(Err(crate::builtins::methods_0arg::make_no_match_error(
+                    "chr",
+                )));
             }
-            if let Some(ch) = std::char::from_u32(code as u32) {
-                // NFC-normalize: some codepoints decompose in NFC
-                let s: String = ch.to_string().nfc().collect();
-                Some(Ok(Value::str(s)))
-            } else {
-                Some(Err(RuntimeError::new(format!(
-                    "Codepoint {} (0x{:X}) is out of bounds in 'chr'",
-                    display, code
-                ))))
-            }
+            crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("chr"))
         }
         // Cost: O(1) (borrows the payload).
         "ord" => Some(Ok(crate::builtins::grapheme_index::with_str(
@@ -363,49 +338,15 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             let s = arg.to_string_value();
             Some(uniparse_impl(&s))
         }
-        "uniprop" => {
-            // uniprop(target) — returns General_Category
-            match arg.view() {
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    Some(Ok(
-                        crate::builtins::uniprop::unicode_property_value_for_codepoint(cp, None),
-                    ))
-                }
-                ValueView::Package(_) => {
-                    // uniprop(Str) or uniprop(Int) — type object, not instance
-                    let msg = "Cannot resolve caller uniprop".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    Some(Err(err))
-                }
-                _ => {
-                    let s = arg.to_string_value();
-                    if s.is_empty() {
-                        return Some(Ok(Value::NIL));
-                    }
-                    let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::str_from(
-                        crate::builtins::unicode::unicode_general_category(ch),
-                    )))
-                }
-            }
-        }
+        // `uniprop($x)` is `$x.uniprop` -- one implementation.
+        // Cost: O(1) (a table lookup).
+        "uniprop" => crate::builtins::method_table::scalars::unicode::uniprop(arg, &[]),
         "is-prime" => Some(crate::builtins::methods_0arg::coercion::value_is_prime(arg)),
-        // unival/univals delegate to the .unival/.univals method implementation
-        // (dispatch_core_unicode) — single source of truth, no separate copy.
-        "unival" => {
-            crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("unival"))
-        }
-        "univals" => {
-            crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("univals"))
-        }
+        // `unival($x)` / `univals($x)` are `$x.unival` / `$x.univals` -- one
+        // implementation.
+        // Cost: O(1) for `unival`; O(n) for `univals`, n = chars of the argument.
+        "unival" => crate::builtins::method_table::scalars::unicode::unival(arg, &[]),
+        "univals" => crate::builtins::method_table::scalars::unicode::univals(arg, &[]),
         "lsb" => crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("lsb")),
         "msb" => crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("msb")),
         "sign" => {

@@ -255,18 +255,29 @@ impl Interpreter {
             // callee body is its own cost); the by-name fallback also clones the call site, O(a).
             OpCode::CallTrir { site: site_idx, .. } => {
                 let site = &code.trir_call_sites[*site_idx as usize];
-                let result = match self.exec_call_trir_site(site, compiled_fns, code) {
-                    Some(r) => r?,
-                    None => {
-                        let site = code.trir_call_sites[*site_idx as usize].clone();
-                        match self.exec_call_trir_fallback_frame_lexical(
-                            code,
-                            &site,
-                            compiled_fns,
-                        )? {
-                            Some(v) => v,
-                            None => self.exec_call_trir_fallback(&site, code)?,
+                let ran = (|| -> Result<Value, RuntimeError> {
+                    Ok(match self.exec_call_trir_site(site, compiled_fns, code) {
+                        Some(r) => r?,
+                        None => {
+                            let site = code.trir_call_sites[*site_idx as usize].clone();
+                            match self.exec_call_trir_fallback_frame_lexical(
+                                code,
+                                &site,
+                                compiled_fns,
+                            )? {
+                                Some(v) => v,
+                                None => self.exec_call_trir_fallback(&site, code)?,
+                            }
                         }
+                    })
+                })();
+                // Same resume point as `CallFunc`: an exception raised by the
+                // call (a parameter-binding failure) can be `.resume`d after it.
+                let result = match ran {
+                    Ok(v) => v,
+                    Err(e) => {
+                        self.record_call_resume_point(code, *ip, &e);
+                        return Err(e);
                     }
                 };
                 self.stack.push(result);
@@ -853,9 +864,12 @@ impl Interpreter {
                     return Ok(());
                 }
                 let val = self
+                    // A package-block `my @a` read by the package's own subs,
+                    // ahead of a same-named enclosing lexical (as `GetGlobal`).
+                    .package_scope_lexical(name)
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every array read.
-                    .get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
+                    .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
                     // A qualified package array created in another frame
                     // outlives that frame in our_vars, like scalar GetGlobal.
                     .or_else(|| {
@@ -1048,6 +1062,9 @@ impl Interpreter {
                     None
                 };
                 let val = package_val
+                    // A package-block `my %h` read by the package's own subs,
+                    // ahead of a same-named enclosing lexical (as `GetGlobal`).
+                    .or_else(|| self.package_scope_lexical(name))
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every hash read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
@@ -1212,8 +1229,10 @@ impl Interpreter {
                 self.stack.push(value);
                 *ip += 1;
             }
-            // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL): every
-            // whole-stash `Pkg::`/`OUTER::`/`MY::`/`DYNAMIC::` term builds a fresh stash map (see
+            // Cost: a named package's `Pkg::` is O(k + t), k = interned names under the
+            // package (the package index), t = registered types, plus each routine member's code
+            // value; `GLOBAL::`/`OUTER::`/`MY::`/`DYNAMIC::` are O(v), v = entries of the whole
+            // env (plus `our_vars` for GLOBAL). Every read builds a fresh stash map (see
             // exec_get_pseudo_stash_op); a one-key read compiles to GetPseudoStashKeyed instead.
             // Rakudo: O(1) -- see #9171.
             OpCode::GetPseudoStash(name_idx) => {
@@ -6131,28 +6150,12 @@ impl Interpreter {
                 // that the loop's LAST/post phasers (which needed the param at
                 // its final value) have run. Paired with the push the ForLoop
                 // opcode performs on normal completion.
-                if let Some((name, saved_val, colliding_slot)) =
-                    self.topic_state.for_param_restore_stack.pop()
-                {
-                    // A loop param that shares a compile-time local slot with an
-                    // enclosing binding of the same bare name overwrote that slot
-                    // each iteration; write the saved value back through it too so
-                    // a later `GetLocal` read of the outer name (`my \x = 10; for
-                    // ... -> \x {}; say x`) sees the restored outer value, not the
-                    // loop's last iteration value.
-                    if let Some(slot) = colliding_slot
-                        && (slot as usize) < self.locals.len()
-                    {
-                        self.locals[slot as usize] = saved_val.clone().unwrap_or(Value::NIL);
-                    }
-                    match saved_val {
-                        Some(v) => {
-                            self.env_mut().insert(name, v);
-                        }
-                        None => {
-                            self.env_mut().remove(&name);
-                        }
-                    }
+                // A loop param that shares a compile-time local slot with an
+                // enclosing binding of the same bare name overwrote that slot
+                // each iteration; the restore writes the saved value back
+                // through it too (see `ForParamRestore::colliding_slot`).
+                if let Some(entry) = self.topic_state.for_param_restore_stack.pop() {
+                    self.restore_saved_for_param(entry);
                 }
                 *ip += 1;
             }
@@ -6609,21 +6612,27 @@ impl Interpreter {
             }
 
             // -- Package scope --
-            // Cost: O(L + v + k) plus the body, L = locals (copied by `locals.to_vec()`), v = env
-            // entries (walked at exit to record package lexicals), k = body lexicals re-bound for
-            // a split-off run-time body (`lexicals_idx`). One-shot per `package` block.
-            // Rakudo: O(1) plus the body -- see #9171.
+            // Cost: O(t + w * m + k) plus the body, all bounded by the body's own size:
+            // t = local slots the body can touch (saved, restored and re-synced at exit;
+            // `EnvConsumerSlots::package_scope_lists`, every local only for a chunk never
+            // finalized), w = names the body wrote by name (its block tier's overlay; the
+            // whole env only when no tier could be opened), m = names the body declares
+            // (`decls_idx`, matched per written name), k = body lexicals re-bound for a
+            // split-off run-time body (`lexicals_idx`). One-shot per `package` block.
             OpCode::PackageScope {
                 name_idx,
                 body_end,
                 lexicals_idx,
+                decls_idx,
+                slots_idx,
+                ..
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_package_scope_op(
                     code,
                     *name_idx,
                     *body_end,
-                    *lexicals_idx,
+                    (*lexicals_idx, *decls_idx, *slots_idx),
                     ip,
                     compiled_fns,
                 )?;
@@ -7068,7 +7077,10 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(F + C) plus the body, F/C = registered routines/classes (import-scope snapshot). Rakudo: O(1) -- see #9170.
+            // Cost: O(1) to open (the scope holds the copy-on-write registry tables) plus the
+            // body; the close is O(1) for a table the body did not write and O(F) / O(C) for
+            // the routine / class table it did, F/C = registered routines/classes (the rollback
+            // filter). Rakudo: O(1) -- see #9170.
             OpCode::ImportScope { body_end } => {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }
@@ -7329,7 +7341,8 @@ impl Interpreter {
                 self.exec_need_module_op(code, *name_idx)?;
                 *ip += 1;
             }
-            // Cost: O(F + C) preload-scope snapshot plus the first load, F/C = registered routines/classes; runs once per site.
+            // Cost: O(1) preload-scope snapshot plus the first load and its O(F) rollback, F =
+            // registered routines; runs once per site.
             OpCode::PreloadModule(name_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_preload_module_op(code, *name_idx);

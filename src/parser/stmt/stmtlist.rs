@@ -5,6 +5,7 @@
 //! and best-effort partial parsing for module loading. Re-exported from
 //! `mod.rs` at their original visibility.
 
+use super::unit_use_hoist::hoist_unit_uses;
 use super::*;
 use crate::parser::parse_result::PError;
 
@@ -279,13 +280,43 @@ fn is_block_ending_stmt(stmt: &Stmt) -> bool {
         // modifiers. So `when 1 { } when 2 { }` on one line (no `;`) is a
         // "Strange text after block" error in Raku, matching `given $x { ... }`.
         Stmt::When { .. } | Stmt::Default(_) => true,
-        // Note: MethodDecl is excluded because it can arrive via my_decl which calls
-        // parse_statement_modifier, consuming the trailing separator before we see it.
+        // A direct method declaration ends with its body. Lexical and
+        // package-qualified methods are excluded because `my_decl` parses their
+        // trailing statement modifier before returning them here. The `is_my`
+        // flag also marks direct submethods, which the declaration parser handles
+        // without `my_decl`.
+        Stmt::MethodDecl {
+            is_my: false,
+            is_our: false,
+            ..
+        }
+        | Stmt::MethodDecl {
+            is_submethod: true,
+            is_our: false,
+            ..
+        } => true,
         // Stmt::Block, Stmt::If, Stmt::For, ClassDecl, RoleDecl, Package, etc. are
         // also excluded for similar reasons -- they may go through paths that consume
         // trailing separators before returning to stmt_list_with_mode.
         _ => false,
     }
+}
+
+/// A method declaration's value can itself be followed by a postfix on the
+/// same line (for example, the `}.list` in a class body).
+fn method_decl_postfix_follows(stmt: &Stmt, rest: &str) -> bool {
+    matches!(
+        stmt,
+        Stmt::MethodDecl {
+            is_my: false,
+            is_our: false,
+            ..
+        } | Stmt::MethodDecl {
+            is_submethod: true,
+            is_our: false,
+            ..
+        }
+    ) && rest.starts_with('.')
 }
 
 /// Check that the remaining input has a proper statement separator
@@ -312,6 +343,7 @@ pub(crate) fn stmt_list_with_mode(
     allow_mainline_capture: bool,
     emit_setline: bool,
 ) -> PResult<'_, Vec<Stmt>> {
+    let _nesting = crate::parser::NestingGuard::enter(input)?;
     let mut stmts = Vec::new();
     let mut rest = input;
     let mut saw_compunit_declarator = false;
@@ -445,17 +477,9 @@ pub(crate) fn stmt_list_with_mode(
                     // out of the body to before the declaration. They stay in the
                     // same compilation-unit scope, so imported symbols remain
                     // visible. (Diamond inheritance: roast/integration/diamond.t.)
+                    // The `use` also stays in the body (see `hoist_unit_uses`).
                     if !parents.is_empty() {
-                        let mut hoisted: Vec<Stmt> = Vec::new();
-                        tail_stmts.retain(|stmt| {
-                            if matches!(stmt, Stmt::Use { .. }) {
-                                hoisted.push(stmt.clone());
-                                false
-                            } else {
-                                true
-                            }
-                        });
-                        stmts.extend(hoisted);
+                        stmts.extend(hoist_unit_uses(&tail_stmts));
                     }
                     // A method declared in a nested block of the body is the
                     // class's too, as in the block form (`package_body_block`).
@@ -480,19 +504,7 @@ pub(crate) fn stmt_list_with_mode(
                         .any(|s| matches!(s, Stmt::DoesDecl { .. }))
                         || body.iter().any(|s| matches!(s, Stmt::DoesDecl { .. }));
                     if composes {
-                        let mut hoisted: Vec<Stmt> = Vec::new();
-                        tail_stmts.retain(|stmt| {
-                            if matches!(
-                                stmt,
-                                Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. }
-                            ) {
-                                hoisted.push(stmt.clone());
-                                false
-                            } else {
-                                true
-                            }
-                        });
-                        stmts.extend(hoisted);
+                        stmts.extend(hoist_unit_uses(&tail_stmts));
                     }
                     // The declarator may have already recorded `does Role`
                     // composition as leading `DoesDecl` statements in `body`
@@ -529,7 +541,10 @@ pub(crate) fn stmt_list_with_mode(
                 if let Some(err) = super::modifier::pending_extra_modifier_error(r_ws) {
                     return Err(err);
                 }
-                if is_block_ending_stmt(&stmt) && !has_statement_separator(r) {
+                if is_block_ending_stmt(&stmt)
+                    && !has_statement_separator(r)
+                    && !method_decl_postfix_follows(&stmt, r_ws)
+                {
                     return Err(PError::fatal(
                         "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
                             .to_string(),

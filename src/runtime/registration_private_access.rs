@@ -269,6 +269,7 @@ impl<'ast> Visit<'ast> for PrivateCallsExist<'_> {
             target,
             name,
             modifier: Some('!'),
+            quoted: false,
             ..
         } = expr
             && matches!(target.as_ref(), Expr::BareWord(w) if w == "self")
@@ -326,6 +327,7 @@ impl<'ast> Visit<'ast> for NestedPrivateCalls<'_> {
             target,
             name,
             modifier: Some('!'),
+            quoted: false,
             ..
         } = expr
             && matches!(target.as_ref(), Expr::BareWord(w) if w == "self")

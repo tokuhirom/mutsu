@@ -636,7 +636,25 @@ impl Interpreter {
                 && let Some(callable) = attributes.as_map().get("__mutsu_method_callable")
                 && let Some(result) = self.dispatch_callable_method(callable, method, &args)
             {
-                return result;
+                // The primed callable keeps the method's signature (minus what
+                // was assumed) for introspection, but runs through this Method
+                // object: its `CALL-ME` binds the invocant to the owner's
+                // candidate, while binding the callable's anonymous invocant
+                // parameter would leave `self` unset.
+                return result.map(|primed| match primed.view() {
+                    ValueView::Sub(data) if !matches!(class_name.as_str(), "Regex") => {
+                        let mut carrier = (**data).clone();
+                        carrier.body = std::sync::Arc::new(Vec::new());
+                        carrier.compiled_code = None;
+                        carrier.compiled_routine = None;
+                        carrier.env.insert_sym(
+                            crate::symbol::wk::assuming_callee_marker(),
+                            target.clone(),
+                        );
+                        Value::sub_value(crate::gc::Gc::new(carrier))
+                    }
+                    _ => primed,
+                });
             }
             if method == "cando"
                 && args.len() == 1
@@ -696,6 +714,10 @@ impl Interpreter {
                     unreachable!("method assuming carrier must be a Sub");
                 };
                 let mut data = (**data).clone();
+                // Called through the dispatcher object's own `CALL-ME`, which
+                // re-dispatches on the (assumed) invocant.
+                data.env
+                    .insert_sym(crate::symbol::wk::assuming_callee_marker(), target.clone());
                 for arg in args {
                     if let ValueView::Pair(key, value) = arg.view() {
                         data.assumed_named.insert(key.clone(), value.clone());
@@ -1116,17 +1138,30 @@ impl Interpreter {
                         // The object may arrive wrapped in a Scalar container
                         // (a `$`-bound alias of the instance); read through it.
                         let obj = obj.clone().deref_container();
+                        let attr_name = attributes
+                            .as_map()
+                            .get("__mutsu_attr_name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        // An attribute a mixed-in role declares lives in the
+                        // mixin's own role cell, not in the wrapped object.
+                        if let ValueView::Mixin(_, mixins) = obj.view() {
+                            let owner = attributes
+                                .as_map()
+                                .get("__mutsu_attr_owner")
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
+                            if let Some(v) = mixins.role_attribute(&owner, bare) {
+                                return Ok(v.deref_container());
+                            }
+                        }
                         // A `$obj but Role` mixin keeps the object's attributes
                         // on the value it wraps.
                         let obj = match obj.view() {
                             ValueView::Mixin(inner, _) => Value::clone(inner),
                             _ => obj.clone(),
                         };
-                        let attr_name = attributes
-                            .as_map()
-                            .get("__mutsu_attr_name")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
                         if let ValueView::Instance {
                             attributes: obj_attrs,
                             ..
@@ -1166,6 +1201,21 @@ impl Interpreter {
                         // object's methods read (a silent no-op here loses e.g.
                         // OO::Monitors' lock installation).
                         let obj = args[0].clone().deref_container();
+                        // An attribute a mixed-in role declares lives in the
+                        // mixin's own role cell, not in the wrapped object.
+                        if let ValueView::Mixin(_, mixins) = obj.view() {
+                            let owner = attributes
+                                .as_map()
+                                .get("__mutsu_attr_owner")
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
+                            if mixins.role_attribute(&owner, bare).is_some()
+                                && mixins.set_role_attribute(&owner, bare, new_val.clone())
+                            {
+                                return Ok(new_val);
+                            }
+                        }
                         let obj = match obj.view() {
                             ValueView::Mixin(inner, _) => Value::clone(inner),
                             _ => obj.clone(),
@@ -1744,7 +1794,8 @@ impl Interpreter {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::Str(name) => name.to_string(),
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => isa_arg.to_string_value(),
+                    // `isa(Mu \type)`: any other value stands for its own type.
+                    _ => crate::value::types::what_type_name(&isa_arg),
                 };
                 // isa only matches classes, not roles. If the target is a role
                 // that has NOT been punned to a class, return False (use .does
@@ -2141,6 +2192,17 @@ impl Interpreter {
                 // X::Method::NotFound (Rakudo: `class C {}; C.new(x=>3).x` dies). A
                 // *built-in* class (exception types, ...) keeps its attributes only
                 // in the stored map (not collected), so still read them.
+                // `IO::Path.path` is the stored path text; a user subclass of
+                // `IO::Path` inherits it even though its own declared
+                // attributes (or none) are all the collected list holds.
+                if method == "path"
+                    && args.is_empty()
+                    && !class_attrs.iter().any(|attr| attr.name == method)
+                    && let Some(val) = attributes.as_map().get(method)
+                    && self.mro_readonly(&cn).iter().any(|c| c == "IO::Path")
+                {
+                    return Ok(val.clone());
+                }
                 if class_attrs.is_empty() {
                     if !self.types.user_declared_classes.contains(&cn)
                         && let Some(val) = attributes.as_map().get(method)
@@ -2736,8 +2798,14 @@ impl Interpreter {
                     }
                 }
 
-                // Try user-defined FALLBACK method
-                if method != "FALLBACK" && self.has_user_method(&class_name.resolve(), "FALLBACK") {
+                // Try user-defined FALLBACK method. `.REPR` is a universal
+                // (Mu) pseudo-method that every object answers itself, so a
+                // class's FALLBACK must never see it (Gnome::N's native-sub
+                // setup does `self.package.REPR` on a class with a FALLBACK).
+                if method != "FALLBACK"
+                    && !(method == "REPR" && args.is_empty())
+                    && self.has_user_method(&class_name.resolve(), "FALLBACK")
+                {
                     let mut fallback_args = vec![Value::str(method.to_string())];
                     fallback_args.extend(args);
                     return self.call_method_with_values(target, "FALLBACK", fallback_args);
@@ -3082,7 +3150,8 @@ impl Interpreter {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::Str(name) => name.to_string(),
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => isa_arg.to_string_value(),
+                    // `isa(Mu \type)`: any other value stands for its own type.
+                    _ => crate::value::types::what_type_name(&isa_arg),
                 };
                 if pkg_name == target_name {
                     return Ok(Value::TRUE);
@@ -3145,6 +3214,18 @@ impl Interpreter {
                 // or the core's own `int*`/`num*`/`str` (`P6int`/`P6num`/`P6str`).
                 if let ValueView::Package(name) = target.view() {
                     let name = name.resolve();
+                    // A definite (`Foo:D`, `Foo:U`) or coercion (`Int(Str)`)
+                    // type object is made by `DefiniteHOW`/`CoercionHOW`, which
+                    // cannot be instantiated: `Uninstantiable`, whatever the base
+                    // type's REPR. NativeCall's `validnctype` accepts a
+                    // `--> ::?CLASS:D` return by it. (`Foo:_` is `Foo` itself.)
+                    if matches!(
+                        crate::runtime::types::strip_type_smiley(&name).1,
+                        Some(":D" | ":U")
+                    ) || crate::runtime::types::is_coercion_constraint(&name)
+                    {
+                        return Ok(Value::str_from("Uninstantiable"));
+                    }
                     if let Some(repr) = self.native_decl(&name).and_then(|d| d.repr) {
                         return Ok(Value::str(repr));
                     }
@@ -3211,6 +3292,13 @@ impl Interpreter {
                         && self.str_subclass_stringy_payload(&target).is_some() =>
                 {
                     Ok(target.clone())
+                }
+                // `Method.Str` is `Code.Str`: the name, with the coercion warning.
+                ValueView::Instance { class_name, .. }
+                    if matches!(class_name.as_str(), "Method" | "Submethod")
+                        && !self.has_user_method(&class_name.resolve(), "Str") =>
+                {
+                    self.code_str(&target).unwrap_or_else(|| Ok(Value::str(target.to_string_value())))
                 }
                 ValueView::Instance { class_name, .. } => {
                     // Stringy defaults to Str, but Str does not default back to
@@ -3393,7 +3481,13 @@ impl Interpreter {
                             && matches!(
                                 am.get("__mutsu_lookup_class").map(Value::view),
                                 Some(ValueView::Str(owner))
-                                    if args.first().is_some_and(|inv| matches!(inv.view(), ValueView::Instance { .. })
+                                    if args.first().is_some_and(|inv| (matches!(inv.view(), ValueView::Instance { .. })
+                                        // A type object of a user class binds the
+                                        // same way; a core owner's type object
+                                        // (`Map.^lookup('new')(MyMap)`) re-enters
+                                        // the subclass's own `new` by name.
+                                        || (matches!(inv.view(), ValueView::Package(_))
+                                            && (self.has_class(owner.as_str()) || self.is_role(owner.as_str()))))
                                         && self.type_matches_value(owner.as_str(), inv))
                             )))
                         && !is_multi_candidate
@@ -3722,6 +3816,24 @@ impl Interpreter {
                     return Err(RuntimeError::new(format!(
                         "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
                         name.resolve()
+                    )));
+                }
+                // A built-in method the receiver has, called with more
+                // positionals than any candidate takes, fails to bind.
+                if let Some(receiver) = crate::builtins::method_table::Receiver::of(&target)
+                    && let Some(max) = crate::builtins::method_table::max_row_arity(
+                        receiver,
+                        Symbol::intern(method),
+                    )
+                    // Named arguments arrive as pairs and bind no positional.
+                    && args.iter().filter(|arg| !arg.is_string_pair_value()).count() > max
+                {
+                    let expected = max + 1;
+                    let got = args.iter().filter(|arg| !arg.is_string_pair_value()).count();
+                    return Err(RuntimeError::new(format!(
+                        "Too many positionals passed; expected {expected} argument{} but got {}",
+                        if expected == 1 { "" } else { "s" },
+                        got + 1
                     )));
                 }
                 Err(make_method_not_found_error(method, &type_name, false))

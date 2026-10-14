@@ -21,10 +21,13 @@ pub(crate) fn parse_indirect_decl_name(input: &str) -> PResult<'_, (String, Expr
     } else if let Expr::BareWord(s) = &expr {
         s.clone()
     } else {
-        "__INDIRECT_DECL_NAME__".to_string()
+        INDIRECT_DECL_NAME.to_string()
     };
     Ok((rest, (name, expr)))
 }
+
+/// The name a declarator carries when its `::(EXPR)` name is not a literal.
+pub(crate) const INDIRECT_DECL_NAME: &str = "__INDIRECT_DECL_NAME__";
 
 /// Parse `sub` declaration.
 pub(crate) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
@@ -587,12 +590,10 @@ pub(crate) fn sub_decl_body(
                 _ => None,
             })
             .collect();
-        let call_expr = Stmt::Expr(Expr::Call {
-            name: sub_name_sym,
-            args: positional_args,
-            listop: false,
-        });
-        return Ok((r, Stmt::SyntheticBlock(vec![sub_decl, call_expr])));
+        return Ok((
+            r,
+            crate::ast::immediate_call::expand(sub_decl, positional_args),
+        ));
     }
     Ok((rest, sub_decl))
 }

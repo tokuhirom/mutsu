@@ -170,6 +170,19 @@ pub(crate) fn stmt_also_is_parent(stmt: &Stmt) -> Option<String> {
 /// `body_parents` records the same name a second time, marking it as
 /// body-positioned so registration can defer resolving it until after the body
 /// has run (`Stmt::ClassDecl::body_parents`).
+/// Names of the types a declaration body declares directly (`class Inner {}`,
+/// `role R {}`), so an `also is Inner` in that body can be qualified to the
+/// body's own scope: inside the body the bare name means the nested type, even
+/// when an outer type of the same name exists.
+pub(crate) fn nested_type_names(body: &[Stmt]) -> Vec<String> {
+    body.iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => Some(name.resolve()),
+            _ => None,
+        })
+        .collect()
+}
+
 pub(crate) fn push_also_is_parent(
     parents: &mut Vec<String>,
     body_parents: &mut Vec<String>,

@@ -55,9 +55,10 @@ impl Interpreter {
     }
 
     /// `$buf.subbuf($from, $len)` / `.subbuf-rw(...)` with a `Callable` offset
-    /// (`*-2`) or end (`*-1`): the replacement argument list with each Callable
-    /// resolved to the `Int` the pure cascade (`builtins::methods_narg`) reads,
-    /// or `None` when there is nothing to resolve.
+    /// (`*-2`) or end (`*-1`), Rakudo's `&From`/`&End` candidates: the
+    /// argument list with each Callable resolved to the `Int` the `subbuf`
+    /// row reads, or `None` when there is nothing to resolve. The rows'
+    /// handler (`method_table::blob_read`) calls it.
     ///
     /// A Callable `$from` is called with the element count and yields the start
     /// offset; a Callable second argument yields an inclusive END index, so it
@@ -66,11 +67,9 @@ impl Interpreter {
     pub(crate) fn resolve_subbuf_callable_args(
         &mut self,
         target: &Value,
-        method_name: &str,
         args: &[Value],
     ) -> Option<Vec<Value>> {
-        if !matches!(method_name, "subbuf" | "subbuf-rw")
-            || !args.iter().any(|a| matches!(a.view(), ValueView::Sub(_)))
+        if !args.iter().any(|a| matches!(a.view(), ValueView::Sub(_)))
             || !crate::builtins::is_buf_like(target)
         {
             return None;

@@ -6,8 +6,8 @@ impl Interpreter {
         cf: &Arc<CompiledFunction>,
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
-        fn_package_sym: Symbol,
-        fn_name_sym: Symbol,
+        (fn_package_sym, fn_name_sym): (Symbol, Symbol),
+        activation: Option<&crate::env::Env>,
     ) -> Result<Value, RuntimeError> {
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
@@ -99,7 +99,13 @@ impl Interpreter {
             // A frame that skips its callers for a lexical (ADR-12529 phase 3).
             // The binder below still resolves each argument's source variable
             // in the caller's scope, so it runs with links suppressed.
-            if cf.code.links_frame_to_unit() {
+            if let Some(capture) = activation {
+                // A code object of its declaring activation: that capture is
+                // the frame's lexical outer, answering ahead of the per-routine
+                // stores (`Env::frame_capture_holds`).
+                self.env_mut().set_capture_fallback(capture.capture_view());
+                self.env_mut().link_static_outer_to_unit(true, true);
+            } else if cf.code.links_frame_to_unit() {
                 self.env_mut().mark_outer_is_unit();
             }
             // A routine owns its `$/`: a match-state lookup that misses the

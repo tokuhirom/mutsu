@@ -321,10 +321,9 @@ impl Interpreter {
                         .contains(&crate::symbol::Symbol::intern(&target_name));
                 Ok(Value::truth(is_match))
             }
-            _ => Err(RuntimeError::new(format!(
-                "No method '{}' on Promise",
-                method
-            ))),
+            _ => Err(super::methods_signature_errors::make_method_not_found_error(
+                method, "Promise", false,
+            )),
         }
     }
 

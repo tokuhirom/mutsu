@@ -22,6 +22,7 @@ pub(crate) mod exit_handover;
 mod frame_write_log;
 pub(crate) mod gc;
 mod interpreter;
+mod light_closure_shape;
 pub(crate) mod meta_ns;
 pub(crate) mod method_signature_shared;
 pub(crate) mod native_stack;

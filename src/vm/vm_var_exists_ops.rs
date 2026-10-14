@@ -158,6 +158,9 @@ impl Interpreter {
                 ValueView::ContainerRef(_) => target.deref_container(),
                 _ => target,
             };
+            if kind != SubscriptKind::Positional {
+                idx = self.hash_key_through_user_str(&target, idx)?;
+            }
             // A nested single-dim slice (`@a[(3, (30, (5,)))]:exists`) preserves
             // its index-tree shape in the result, so it recurses rather than
             // walking a flat pair list. Distinct from a multidim `@a[1;2]` walk.
@@ -852,11 +855,17 @@ impl Interpreter {
         // with every slot unassigned and raku reports `@a[0]:exists` as False
         // until something is written there (`shaped_array_unassigned` seeds the
         // empty `initialized` set that says so).
+        //
+        // The probe holds the node's stripe: another thread may be
+        // restructuring a shared array (ADR-0068 §20).
         let slot_present_at = |i: i64| -> bool {
             i >= 0
-                && arr_data
-                    .as_ref()
-                    .is_some_and(|(data, _)| !data.hole_at(i as usize))
+                && arr_data.as_ref().is_some_and(|(data, _)| {
+                    let _read = crate::value::container_lock::ContainerStructGuard::acquire_for(
+                        None, &target,
+                    );
+                    !data.hole_at(i as usize)
+                })
         };
         // `hole_at` is the whole answer: a `:delete` records the hole in the
         // array's own `initialized` set, which -- unlike the name-keyed

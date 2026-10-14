@@ -533,9 +533,11 @@ impl Interpreter {
         // answer is not cached, but it costs one bool while nothing is wrapped.
         if self.registry().has_any_method_wrap_chains()
             && let ValueView::Instance { class_name, .. } = target.view()
+            // A built-in instance whose class inherits the method (`NFD.list`
+            // is `Uni.list`) is wrapped through the class the wrap landed on.
             && self
                 .registry()
-                .method_wrap_chain(class_name.as_str(), method_sym.as_str(), 0)
+                .builtin_method_wrap_chain_along_mro(class_name.as_str(), method_sym.as_str())
                 .is_some()
         {
             return true;

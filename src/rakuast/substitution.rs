@@ -28,15 +28,15 @@
 //! reads — because a tree has no `qq` source to give back.
 
 use super::convert::{
-    convert_expr, leaf_field, node_field, quoted_string, regex_node, statement_expression,
-    unsupported as unsupported_what,
+    convert_expr, leaf_field, node_field, plain_infix, quoted_string, regex_node,
+    statement_expression, unsupported as unsupported_what,
 };
 use super::lower::{
-    bool_field, leaf_str, list_field, lower_expr, lower_regex_node, named_child, positional_leaf,
-    rakuast_node_of, unsupported,
+    bool_field, leaf_str, list_field, lower_expr, lower_regex_node, named_child,
+    named_child_or_positional, positional_leaf, rakuast_node_of, unsupported,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::Expr;
+use crate::ast::{Expr, SubstThunk};
 use crate::regex_tree::{RegexAdverb, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -86,7 +86,7 @@ fn substitution(
     destructive: bool,
     samespace: bool,
     replacement: &str,
-    thunk: Option<&Expr>,
+    thunk: Option<&SubstThunk>,
     tree: Option<&RegexTree>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let tree =
@@ -101,20 +101,37 @@ fn substitution(
         leaf_field(Some("samespace"), Value::truth(samespace && !written_ss)),
     ];
     push_adverbs(&mut fields, tree.adverbs.iter().map(adverb_node))?;
-    if thunk.is_some() {
-        fields.push(node_field(
-            Some("infix"),
-            RakuAstNode {
-                class: RakuAstClass::Assignment,
-                fields: Vec::new(),
-            },
-        ));
-    }
-    fields.push(node_field(Some("pattern"), regex_node(&tree.body)?));
+    // `s[a] = EXPR` is `infix => Assignment`, `s[a] OP= EXPR`
+    // `infix => MetaInfix::Assign(Infix(OP))` with EXPR as the replacement.
     let replacement = match thunk {
-        Some(expr) => convert_expr(expr)?,
+        Some(SubstThunk { expr, infix: None }) => {
+            fields.push(node_field(
+                Some("infix"),
+                RakuAstNode {
+                    class: RakuAstClass::Assignment,
+                    fields: Vec::new(),
+                },
+            ));
+            convert_expr(expr)?
+        }
+        Some(SubstThunk {
+            expr,
+            infix: Some(op),
+        }) => {
+            fields.push(node_field(
+                Some("infix"),
+                RakuAstNode {
+                    class: RakuAstClass::MetaInfixAssign,
+                    fields: vec![node_field(None, plain_infix(op))],
+                },
+            ));
+            let rhs = crate::parser::subst_compound_rhs(expr)
+                .ok_or_else(|| unsupported_what("compound substitution replacement"))?;
+            convert_expr(rhs)?
+        }
         None => convert_expr(&crate::parser::interpolate_qq_content(replacement))?,
     };
+    fields.push(node_field(Some("pattern"), regex_node(&tree.body)?));
     fields.push(node_field(Some("replacement"), replacement));
     Ok(RakuAstNode {
         class: RakuAstClass::Substitution,
@@ -332,15 +349,26 @@ fn parenthesized_expression(node: &RakuAstNode) -> Option<&RakuAstNode> {
 pub(super) fn lower_substitution(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let adverbs = adverbs_of(node)?;
     let samespace = bool_field(node, "samespace")?;
+    // `None` for `s[a] = EXPR`, the operator of `s[a] OP= EXPR`.
+    let mut compound_op = None;
     if let Some(infix) = node.fields.iter().find(|f| f.name == Some("infix")) {
-        let is_assignment = match &infix.value {
-            RakuAstFieldValue::Node(v) => {
-                rakuast_node_of(v).is_some_and(|n| n.class == RakuAstClass::Assignment)
-            }
-            _ => false,
+        let infix = match &infix.value {
+            RakuAstFieldValue::Node(v) => rakuast_node_of(v).ok_or_else(|| unsupported(node))?,
+            _ => return Err(unsupported(node)),
         };
-        if !is_assignment {
-            return Err(unsupported(node));
+        match infix.class {
+            RakuAstClass::Assignment => {}
+            RakuAstClass::MetaInfixAssign => {
+                let plain = named_child_or_positional(infix)?;
+                if plain.class != RakuAstClass::Infix {
+                    return Err(unsupported(node));
+                }
+                compound_op = match positional_leaf(plain)?.view() {
+                    ValueView::Str(op) => Some(op.to_string()),
+                    _ => return Err(unsupported(node)),
+                };
+            }
+            _ => return Err(unsupported(node)),
         }
     }
     let regex = RegexTree {
@@ -352,7 +380,17 @@ pub(super) fn lower_substitution(node: &RakuAstNode) -> Result<Expr, RuntimeErro
     let (pattern, flags) =
         crate::parser::subst_pattern_source(regex.to_source(), &adverbs, samespace)
             .ok_or_else(|| unsupported(node))?;
-    let thunk = Some(Box::new(lower_expr(named_child(node, "replacement")?)?));
+    let replacement = lower_expr(named_child(node, "replacement")?)?;
+    let thunk = Some(Box::new(match compound_op {
+        Some(op) => SubstThunk {
+            expr: crate::parser::subst_compound_thunk(&op, replacement),
+            infix: Some(op.into()),
+        },
+        None => SubstThunk {
+            expr: replacement,
+            infix: None,
+        },
+    }));
     let (replacement, tree) = (String::new(), None);
     let crate::parser::SubstFlags {
         samecase,

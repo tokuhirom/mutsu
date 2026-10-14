@@ -15,8 +15,8 @@ impl Interpreter {
     /// Run `body` (an `EVAL`'s compunit) with its imported `env` aliases
     /// dropped again afterwards, on every exit path, along with the alias
     /// bookkeeping (`imported_env_aliases`) they were recorded in.
-    // Cost: O(F + C + k) plus the body, F/C = registered routines/classes (the
-    // import-scope snapshot), k = aliases the body imported.
+    // Cost: O(k) plus the body, k = aliases the body imported (the import-scope
+    // snapshot holds the copy-on-write registry tables, O(1)).
     pub(crate) fn with_eval_import_scope<T>(
         &mut self,
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,

@@ -539,6 +539,7 @@ pub(in crate::parser::stmt) fn import_stmt(input: &str) -> PResult<'_, Stmt> {
     // Register exported operators from inline modules at parse time
     // so that custom infix operators are recognized in expression parsing.
     super::super::simple::import_inline_module_exports(&module);
+    super::super::simple::register_import_tags(&module, &tags);
     Ok((rest, Stmt::Import { module, tags }))
 }
 

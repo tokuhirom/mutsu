@@ -505,7 +505,8 @@ impl Interpreter {
         })?;
         // A plain gather argument of a built-in method is read the way
         // Rakudo's method reads it (ADR-11678 §8.3).
-        let args = self.method_gather_args(&target, method, args)?;
+        let mut args = self.method_gather_args(&target, method, args)?;
+        self.coerce_assoc_key_arg(&target, method, &mut args)?;
         // A deferred hash-entry token held by a variable that keeps the
         // container on purpose (the `with`/`without` topic temp over an rw
         // routine's result, `without f() { ... }` where `f` is
@@ -522,7 +523,34 @@ impl Interpreter {
             && let Some(slot) = self.resolve_local_slot(code, None, target_name)
             && matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
         {
-            self.locals[slot].clone()
+            let token = self.locals[slot].clone();
+            // Autovivifying through the variable is a write THROUGH its binding
+            // (`my $t := %h<a>; $t.push: {}`): install a shared cell at the
+            // entry and rebind the slot to it, so `$t` reads as the new Array
+            // afterwards (a plain write would leave the deferred token
+            // reading `Any`, see `hash_entry_read`).
+            let missing = {
+                let current = token.hash_entry_read();
+                current.is_nil() || matches!(current.view(), ValueView::Package(_))
+            };
+            if missing
+                && token.hash_entry_locate().and_then(|t| t.peek()).is_none()
+                && let Some(terminal) = token.hash_entry_terminal()
+            {
+                let cell = Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                    crate::value::ArrayKind::ItemArray,
+                )
+                .into_container_ref();
+                terminal.insert(cell.clone());
+                self.locals[slot] = cell;
+            }
+            let held = self.locals[slot].clone();
+            if held.is_container_ref() {
+                held.deref_container()
+            } else {
+                held
+            }
         } else {
             target
         };
@@ -639,7 +667,7 @@ impl Interpreter {
         // the fat-arrow `MakePair` path performs). Any other receiver (a
         // shadowing user class, a rebound name) unwraps to the plain value —
         // identical to an untagged compile.
-        let args = if has_varref {
+        let mut args = if has_varref {
             let native_pair_new = method == "new"
                 && matches!(target.view(), ValueView::Package(cn) if cn == "Pair")
                 && !self.has_user_method("Pair", "new");
@@ -689,11 +717,17 @@ impl Interpreter {
         // shares, so no writeback is needed: every alias (this frame's
         // variable, a second alias, a value passed to a sub one call frame
         // away) observes it for free.
+        // `.flat` on a gather flattens it as it is pulled (ADR-11678).
+        if let Some(result) = self.gather_flat_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "gather-flat");
+            self.stack.push(result);
+            return Ok(());
+        }
         let target = match self.take_seq_prefix(&target, method, &args)? {
             Some(prefix) => prefix,
             None => target,
         };
-        let target = self.reify_or_consume_seq_target(target, method)?;
+        let target = self.consume_seq_for_call(target, method, &mut args, false)?;
         // A `does Sequence` class with its own `iterator`: see
         // `vm_sequence_role_delegate.rs`.
         if let Some(result) = self.try_sequence_role_delegate(&target, method_sym, &args) {
@@ -947,7 +981,7 @@ impl Interpreter {
         // rather than forcing the (possibly infinite) sequence. Must run before
         // the gather-coroutine force below, which would hang on an infinite list.
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "raku" | "perl")
+            && matches!(method, "gist" | "Str" | "Stringy" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
@@ -1621,11 +1655,21 @@ impl Interpreter {
             }
         }
 
+        // A quoted pseudo-method skips the native answer only when the class
+        // declares a method of that name, as the `CallMethod` twin does
+        // (`vm_call_method_ops.rs`): `$x."WHICH"()` on an `Int` is `Int|5`
+        // (#13055). `VAR` always skips.
         let mut skip_native = quoted
-            && matches!(
-                method,
-                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
-            );
+            && (method == "VAR"
+                || matches!(
+                    method,
+                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE"
+                ) && match target.view() {
+                    ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
+                        self.grammar_has_user_method_memo(class_name, Symbol::intern(method))
+                    }
+                    _ => false,
+                });
         let is_junction_target = match target.view() {
             ValueView::Junction { .. } => true,
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
@@ -1655,6 +1699,12 @@ impl Interpreter {
                     ValueView::Package(_) => {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
+                            // A class-scoped `my @.list` / `our $.elems`
+                            // accessor shadows the `Any` method of that name
+                            // (`C.list.push(...)`, BDD::Behave's
+                            // `Failures.list`), as `should_bypass_native_fastpath`
+                            // already decides for the interpreter's dispatch.
+                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }
                     _ => {
                         self.grammar_has_user_method_memo(cn, method_sym)
@@ -1665,6 +1715,8 @@ impl Interpreter {
                             // accessor read are skipped for a quoted name.
                             || ((quoted || matches!(method, "WHICH" | "WHY"))
                                 && self.has_public_accessor(&cn.resolve(), method))
+                            // The class-scoped accessor, as for a type object.
+                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }
                 }
             {
@@ -2088,7 +2140,7 @@ impl Interpreter {
         // dispatch, and the post-dispatch FALLBACK absorb in
         // `exec_call_method_mut_op` keeps handling genuinely-unknown methods.
         if modifier.is_none() && target.is_nil() {
-            match crate::vm::vm_call_method_ops::nil_predispatch_verdict(method, args.is_empty()) {
+            match crate::vm::vm_call_method_ops::nil_predispatch_verdict(method, &args) {
                 Some(crate::vm::vm_call_method_ops::NilPredispatchVerdict::Error(err)) => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmut",

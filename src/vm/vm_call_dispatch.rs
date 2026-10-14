@@ -72,13 +72,23 @@ impl Interpreter {
         }
         let generation = self.caches.fn_resolve_gen;
         let key = self.bare_name_ctx_key(sym);
-        if let Some(&cached) = self.caches.multi_candidates_cache.get(generation, &key) {
+        if let Some(cached) = self
+            .caches
+            .multi_candidates_cache
+            .get(generation, &key, || {
+                self.dispatch.fn_family_gens.of_name(sym)
+            })
+        {
             return cached;
         }
         let result = self.has_multi_candidates(&sym.resolve());
-        self.caches
-            .multi_candidates_cache
-            .insert(generation, key, result);
+        self.caches.multi_candidates_cache.insert(
+            generation,
+            self.caches.fn_resolve_gen,
+            || self.dispatch.fn_family_gens.of_name(sym),
+            key,
+            result,
+        );
         result
     }
 
@@ -387,6 +397,7 @@ impl Interpreter {
             is_raw: def.is_raw,
             uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
             has_rw_positional_param: false,
+            aggregate_positional_params: 0,
             is_cached: def.is_cached,
             param_local_slots: None,
             params_fill_frame: false,

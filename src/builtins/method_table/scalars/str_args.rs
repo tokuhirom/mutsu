@@ -57,7 +57,16 @@ pub(super) static COOL_FMT_ROWS: &[MethodRow] = &[
 pub(super) static STR_SHARED_ROWS: &[MethodRow] = shared_rows!("Str");
 pub(super) static STR_ROWS: &[MethodRow] = &[
     row!("Str", "Stringy", 0, Handler::Pure(stringy)),
-    row!("Str", "parse-base", 1, Handler::Narrow(parse_base)),
+    // `ANY_ARGS`: an `IntStr` radix binds `Int:D` (§9.103), and any other
+    // argument is the bind failure the handler raises.
+    MethodRow {
+        owner: "Str",
+        name: "parse-base",
+        arity: 1,
+        handler: Handler::Narrow(parse_base),
+        flags: RowFlags::ANY_ARGS.or(RowFlags::TYPE_OBJECT_OK),
+        named: &[],
+    },
     row!("Str", "substr-eq", 1, Handler::Narrow(substr_eq)),
     row!("Str", "substr-eq", 2, Handler::Narrow(substr_eq)),
     row!("Str", "Date", 0, Handler::Narrow(date)),
@@ -129,6 +138,13 @@ pub(crate) fn encode(target: &Value, args: &[Value]) -> Result<Value, RuntimeErr
     if let ValueView::Uni(_) = target.view() {
         return uni_encode(target, args);
     }
+    // `Str.encode` unboxes the invocant, which a type object cannot be.
+    if let ValueView::Package(name) = target.view() {
+        return Err(RuntimeError::new(format!(
+            "Cannot unbox a type object ({}) to a str.",
+            crate::value::user_facing_type_name(name.as_str())
+        )));
+    }
     Ok(with_str(target, |s| {
         crate::value::value_buf::make_buf_from_bytes(Symbol::intern("utf8"), s.as_bytes())
     }))
@@ -159,9 +175,19 @@ const PARSE_BASE_CANDIDATES: [&str; 3] = [
 /// `X::Multi::NoMatch`; a big `Int` takes the cascades.
 // Cost: see `parse_base` (src/builtins/parse_base.rs).
 pub(crate) fn parse_base(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let radix = match args[0].view() {
-        ValueView::Int(radix) => radix,
-        ValueView::BigInt(_) => return None,
+    // An `IntStr` is an `Int`: its number is the radix.
+    let radix_arg = match args[0].view() {
+        ValueView::Mixin(inner, mixins)
+            if mixins.contains_key("Str") && matches!(inner.view(), ValueView::Int(_)) =>
+        {
+            inner
+        }
+        _ => &args[0],
+    };
+    let invocant_concrete = !matches!(target.view(), ValueView::Package(_));
+    let radix = match radix_arg.view() {
+        ValueView::Int(radix) if invocant_concrete => radix,
+        ValueView::BigInt(_) if invocant_concrete => return None,
         _ => {
             let arg_type = match args[0].view() {
                 ValueView::Package(_) | ValueView::Instance { .. } | ValueView::Mixin(..) => {
@@ -178,7 +204,7 @@ pub(crate) fn parse_base(target: &Value, args: &[Value]) -> Option<Result<Value,
                 crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
                     "parse-base",
                     "Str",
-                    true,
+                    invocant_concrete,
                     &format!("{arg_type}{smiley}"),
                     &PARSE_BASE_CANDIDATES.map(str::to_string),
                 ),

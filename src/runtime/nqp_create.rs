@@ -31,7 +31,8 @@ pub(crate) enum CreateKind {
     /// An `is repr('CArray')` class: an instance with native element storage
     /// of the type's `.^array_type` (#11209).
     CArray,
-    /// A native array, a Buf/Blob, or a Map/Hash/List/Array: `.new` with no
+    /// A native array, a Buf/Blob, a Map/Hash/List/Array, or a Capture
+    /// (filled through `p6bindattrinvres` of `@!list`/`%!hash`): `.new` with no
     /// arguments. In mutsu these are indistinguishable from their own
     /// storage, and nqp code creates one to fill it with `nqp::bindkey` /
     /// `nqp::push` or to install a separately built store into it, which an
@@ -62,7 +63,7 @@ impl CreateKind {
             Self::VmArray
         } else if name.starts_with("array[")
             || name == "array"
-            || matches!(name, "Map" | "Hash" | "List" | "Array")
+            || matches!(name, "Map" | "Hash" | "List" | "Array" | "Capture")
             || crate::runtime::utils::is_buf_or_blob_class(name)
         {
             Self::New

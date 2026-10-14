@@ -709,6 +709,18 @@ impl Interpreter {
                         _ => None,
                     })
                     .collect();
+                if live_sids.is_empty()
+                    && source_attrs
+                        .iter()
+                        .any(super::supply_channel_merge::is_channel_source)
+                {
+                    // A channel-backed source (`signal()`, a timer, ...) stays
+                    // connected too: snapshotting `values` would yield a supply
+                    // that is `done` at once.
+                    return Ok(super::supply_channel_merge::create_channel_merge_supply(
+                        &source_attrs,
+                    ));
+                }
                 if !live_sids.is_empty() {
                     let downstream_sid = next_supplier_id();
                     let merge_state_id = register_merge_state(live_sids.len(), downstream_sid);

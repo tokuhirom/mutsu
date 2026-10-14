@@ -45,15 +45,12 @@ pub(crate) fn is_test_assertion_callable(name: &str) -> bool {
 /// Push a new lexical scope (called when entering a `{ }` block).
 pub(crate) fn push_scope() {
     SCOPES.with(|s| {
-        let mut inherited = s.borrow().last().cloned().unwrap_or_default();
-        // Routine-body-ness is a property of ONE scope, not of everything
-        // beneath it — a `map { }` block inside a sub body is a per-call block,
-        // not part of the routine's own (cloned-once) frame.
-        inherited.is_routine_body = false;
-        // Pending anonymous-state declarations belong to the scope that minted
-        // them; a nested block starts with none of its own.
-        inherited.anon_states = Vec::new();
-        s.borrow_mut().push(inherited);
+        let nested = s
+            .borrow()
+            .last()
+            .map(LexicalScope::nested)
+            .unwrap_or_default();
+        s.borrow_mut().push(nested);
     });
 }
 

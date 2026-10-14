@@ -43,6 +43,8 @@ const DEFINITE_ONLY: &[&str] = &[
     "lines",
     "NFC",
     "NFD",
+    "NFKC",
+    "NFKD",
     "ord",
     "ords",
     "rindex",
@@ -59,6 +61,7 @@ const DEFINITE_ONLY: &[&str] = &[
     "uc",
     "uniname",
     "uninames",
+    "uniprops",
     "wordcase",
     "words",
 ];
@@ -83,6 +86,29 @@ fn cool_type_object(target: &Value) -> Option<String> {
         ) && Interpreter::is_builtin_type(&name)
             && Interpreter::type_matches("Cool", &name));
     is_cool.then(|| name.to_string())
+}
+
+/// The `DEFINITE_ONLY` methods whose only `Str` candidate is `Str:D`: an
+/// allomorph type object fails binding the invocant
+/// (`X::Parameter::InvalidConcreteness`); the other names are `multi`s that
+/// find no candidate (`X::Multi::NoMatch`). Verified against rakudo
+/// v2026.07 on `IntStr` (2026-10-14).
+const STR_D_SINGLE_CANDIDATE: &[&str] = &[
+    "chars", "chomp", "chop", "codes", "comb", "fc", "flip", "lc", "subst", "substr", "tc",
+    "tclc", "trim", "trim-leading", "trim-trailing", "uc", "words",
+];
+
+/// What an allomorph type object (`IntStr`, ...) answers a [`DEFINITE_ONLY`]
+/// method with.
+// Cost: O(k), k = the names of `STR_D_SINGLE_CANDIDATE`.
+fn allomorph_refusal(type_name: &str, method: &str) -> RuntimeError {
+    if STR_D_SINGLE_CANDIDATE.contains(&method) {
+        RuntimeError::parameter_invalid_concreteness("Str", type_name, method, "self", true, true)
+    } else {
+        super::methods_signature_errors::make_multi_no_match_error_detailed(
+            method, type_name, false, "", &[],
+        )
+    }
 }
 
 /// The subject argument of a `Cool` string routine whose sub form is the
@@ -119,6 +145,19 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let subject = string_sub_subject(name, args)?;
+        // `uniname(Nil)`: `Nil` is a `Cool` type object whose only candidate
+        // wants a defined invocant, like `Int:U`.
+        if subject.is_nil() && name == "uniname" {
+            return Some(Err(
+                super::methods_signature_errors::make_multi_no_match_error_detailed(
+                    name,
+                    "Nil",
+                    false,
+                    "",
+                    &[],
+                ),
+            ));
+        }
         if !matches!(subject.view(), ValueView::Package(_)) {
             return None;
         }
@@ -127,6 +166,60 @@ impl Interpreter {
         }
         let subject = subject.clone();
         self.cool_type_object_string_method(&subject, name)
+    }
+
+    /// `Cool`'s text and search methods are `self.Str.METHOD`: a `Cool`
+    /// instance whose class declares its own `Str` is read through it, not
+    /// through the default instance rendering (`C<21>`; #13035). `None` for any
+    /// other call.
+    // Cost: O(1) name test, then O(d) for the MRO of an instance with a `Str`.
+    pub(crate) fn cool_instance_text_via_str(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        if !crate::builtins::method_table::cool_text_for_shapeless(method) {
+            return None;
+        }
+        let class_name = class_name.resolve();
+        if !self.has_user_method(&class_name, "Str")
+            || self.has_user_method_including_role(&class_name, method)
+            || !self
+                .class_mro(&class_name)
+                .contains(&crate::symbol::Symbol::intern("Cool"))
+        {
+            return None;
+        }
+        let text = match self.call_method_with_values(target.clone(), "Str", Vec::new()) {
+            Ok(text) => text,
+            Err(err) => return Some(Err(err)),
+        };
+        Some(self.call_method_with_values(text, method, args.to_vec()))
+    }
+
+    /// `Cool.fmt` with the default format: `sprintf('%s', self)` of a `Cool` type
+    /// object, which stringifies to `""` with the uninitialized-value warning
+    /// (`Str.fmt` and `Int.fmt` are `""`). A call with a format already
+    /// reaches the method table, which formats the type object the same way.
+    // Cost: O(1), a name test and the type-object probe.
+    pub(crate) fn cool_type_object_default_fmt(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "fmt" || !args.is_empty() {
+            return None;
+        }
+        let type_name = cool_type_object(target)?;
+        Some(
+            self.warn_type_object_string_context(&type_name, false)
+                .map(|_| Value::str(String::new())),
+        )
     }
 
     /// Answer a `Cool` string method called on a builtin `Cool` type object,
@@ -139,6 +232,14 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if !DEFINITE_ONLY.contains(&method) {
             return None;
+        }
+        if let ValueView::Package(name) = target.view()
+            && matches!(
+                name.resolve().as_str(),
+                "IntStr" | "NumStr" | "RatStr" | "ComplexStr"
+            )
+        {
+            return Some(Err(allomorph_refusal(&name.resolve(), method)));
         }
         let type_name = cool_type_object(target)?;
         if type_name == "Str" && STR_UNDEFINED_STRINGIFIES.contains(&method) {

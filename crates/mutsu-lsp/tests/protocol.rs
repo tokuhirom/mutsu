@@ -50,7 +50,10 @@ impl Client {
         // document with about fifty nested parentheses.
         let server = std::thread::Builder::new()
             .stack_size(mutsu_lsp::ANALYSIS_STACK_SIZE)
-            .spawn(move || mutsu_lsp::server::run(server_connection).map_err(|e| e.to_string()))
+            .spawn(move || {
+                mutsu::arm_stack_guard(mutsu_lsp::ANALYSIS_STACK_SIZE);
+                mutsu_lsp::server::run(server_connection).map_err(|e| e.to_string())
+            })
             .expect("spawn the server thread");
         let mut client = Client {
             connection: client_connection,

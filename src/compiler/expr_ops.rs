@@ -29,7 +29,7 @@ impl Compiler {
                     *global,
                     nth,
                     x,
-                    replacement_thunk.as_deref(),
+                    replacement_thunk.as_deref().map(|t| &t.expr),
                 );
             }
             Expr::NonDestructiveSubst {
@@ -55,7 +55,7 @@ impl Compiler {
                     *global,
                     nth,
                     x,
-                    replacement_thunk.as_deref(),
+                    replacement_thunk.as_deref().map(|t| &t.expr),
                 );
             }
             Expr::Transliterate {

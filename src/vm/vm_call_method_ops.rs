@@ -27,6 +27,13 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "unshift"
             | "prepend"
             // Introspection/coercion Nil genuinely defines.
+            // Cool's Unicode methods: a Nil invocant fails their signature.
+            | "uniprop"
+            | "uniprops"
+            | "unival"
+            | "univals"
+            | "unimatch"
+            | "uniname"
             | "defined"
             | "Bool"
             | "so"
@@ -91,6 +98,9 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "chrs"
             // `Nil` is `Cool`: `Nil.IO` is the `IO::Path` type object.
             | "IO"
+            // `Any:U`'s subscript existence tests: `Nil.EXISTS-POS(0)` is `False`.
+            | "EXISTS-POS"
+            | "EXISTS-KEY"
     )
     // NOTE: the numify-to-0 Real methods (abs/floor/ceiling/round/truncate/sign)
     // are deliberately NOT listed above. Their warn+resume handling lives only in
@@ -148,9 +158,29 @@ pub(crate) enum NilPredispatchVerdict {
 /// apply to the 0-ary form; an argument makes them fall through unchanged).
 pub(crate) fn nil_predispatch_verdict(
     method: &str,
-    no_args: bool,
+    args: &[Value],
 ) -> Option<NilPredispatchVerdict> {
+    let no_args = args.is_empty();
     match method {
+        // `Cool` defines these, so `Nil` (a `Cool` type object) does not absorb
+        // them: the call fails the multi signature instead.
+        "uniprop" | "uniprops" | "unival" | "univals" | "unimatch" | "uniname" => {
+            let profile: String = args
+                .iter()
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                .map(|a| format!("{}:D", crate::value::types::what_type_name(a)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some(NilPredispatchVerdict::Error(
+                crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+                    method,
+                    "Nil",
+                    false,
+                    &profile,
+                    &[],
+                ),
+            ))
+        }
         "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
             Some(NilPredispatchVerdict::Error(RuntimeError::new(format!(
                 "Invocant of method '{}' must be an object instance of type \
@@ -786,7 +816,7 @@ impl Interpreter {
         // a Slip (`.method(@a.Slip)` stays one argument).
         let (args, arg_sources) =
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
-        let args = Self::hllize_call_args(args);
+        let mut args = Self::hllize_call_args(args);
         let bind_source = arg_sources
             .as_ref()
             .and_then(|sources| sources.get(1))
@@ -801,14 +831,21 @@ impl Interpreter {
         // `IO::Handle.lines`/`.words` source (formerly the separate
         // `LazyIoLines` special case). Introspection must not consume the
         // underlying handle: asking for its type is side-effect free.
+        // `.flat` on a gather flattens it as it is pulled (ADR-11678).
+        if let Some(result) = self.gather_flat_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "gather-flat");
+            self.stack.push(result);
+            return Ok(());
+        }
         let target = match self.take_seq_prefix(&target, method, &args)? {
             Some(prefix) => prefix,
             None => target,
         };
-        let target = self.reify_or_consume_seq_target(target, method)?;
+        let target = self.consume_seq_for_call(target, method, &mut args, false)?;
         // A plain gather argument of a built-in method is read the way
         // Rakudo's method reads it (ADR-11678 §8.3).
-        let args = self.method_gather_args(&target, method, args)?;
+        let mut args = self.method_gather_args(&target, method, args)?;
+        self.coerce_assoc_key_arg(&target, method, &mut args)?;
         // A raw `VMArray`/`VMHash` has no methods (ADR-12666).
         if crate::runtime::boot_collection::is_boot_collection_invocant(&target)
             && let Some(result) = Interpreter::vm_collection_method(&target, method)
@@ -1445,12 +1482,16 @@ impl Interpreter {
                     ValueView::Package(_) => {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
+                            // A class-scoped `my @.list` accessor shadows the
+                            // `Any` method of that name.
+                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }
                     // A quoted or run-time name reaches a generated accessor
                     // (`$obj."$n"()` with `$n = "hash"` and `has %.hash`).
                     _ => {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || (quoted && self.has_public_accessor(&cn.resolve(), method))
+                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }
                 }
             {
@@ -1549,7 +1590,7 @@ impl Interpreter {
         // `...` for Str. An eager gather has neither `sequence_spec` nor
         // `lazy_pipe` and is forced & rendered normally below.
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "raku" | "perl")
+            && matches!(method, "gist" | "Str" | "Stringy" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-placeholder");
@@ -2163,7 +2204,7 @@ impl Interpreter {
                     // errors live in `nil_predispatch_verdict`, shared with the
                     // named-receiver opcode (`exec_call_method_mut_op_impl`)
                     // so `my $v := Nil; $v.Int` reaches the same verdict.
-                    match nil_predispatch_verdict(method, args.is_empty()) {
+                    match nil_predispatch_verdict(method, &args) {
                         Some(NilPredispatchVerdict::Error(err)) => {
                             crate::vm::vm_stats::record_dispatch_entry_intercept(
                                 "callmethod",
@@ -2269,6 +2310,11 @@ impl Interpreter {
                         // is the `IO::Path` type object (#9495). Mirrors
                         // `nil_absorbs_method` above.
                         "IO" if args.is_empty() => {
+                            // Fall through to normal dispatch
+                        }
+                        // `Any:U`'s `EXISTS-POS`/`EXISTS-KEY` answer `False`
+                        // (#13294). Mirrors `nil_absorbs_method` above.
+                        "EXISTS-POS" | "EXISTS-KEY" => {
                             // Fall through to normal dispatch
                         }
                         _ => {

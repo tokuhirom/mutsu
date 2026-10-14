@@ -257,6 +257,16 @@ impl Interpreter {
             return None;
         };
 
+        // An allomorph's row that binds its own arguments, given one the guard
+        // step declined (`<1e0>.words(<1>)`): the row, on the part it reads
+        // (ADR-11276 §9.101), before the delegation to the number below.
+        if !args.is_empty()
+            && let Some(result) =
+                crate::builtins::method_table::invoke_unadmitted(self, target, method, &args)
+        {
+            return Some(result);
+        }
+
         // `.clone` on a role mixin. A punned role's `__mutsu_attr__*` entries are
         // construction seeds for the Mixin-owned role cell, not the live state.
         // The generic instance clone unwraps to the inner value and drops the

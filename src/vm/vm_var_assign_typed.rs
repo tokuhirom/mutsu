@@ -769,7 +769,8 @@ impl Interpreter {
             }
             // Interpolating a `Regex` warns and contributes NOTHING, rather
             // than its source text -- see `regex_str_coercion`.
-            if let Some(coerced) = self.regex_str_coercion(&v) {
+            // A `Sub` warns the same way and contributes its name (`code_str`).
+            if let Some(coerced) = self.code_str(&v) {
                 result.push_str(&coerced?.to_string_value());
                 continue;
             }

@@ -25,9 +25,11 @@ sub traits-of($src) { members($src)[0].traits.map({ .name.defined ?? .name.canon
 # A trait sub declared by one EVAL is still there for the next, so the traits
 # below log to a dynamic `@*LOG` that each run starts empty.
 sub same($src, $expected, $desc) {
-    my $parsed = do { my @*LOG; EVAL($src) };
+    # The round trip alone: a second EVAL of the same declarations in one
+    # process is a redeclaration, in rakudo and in the round trip's CHECK-time
+    # validation alike (#13295); `$expected` is what the parsed program gives.
     my $round = do { my @*LOG; EVAL($src.AST) };
-    is "$parsed|$round", "$expected|$expected", $desc;
+    is "$round", "$expected", $desc;
 }
 
 # --- attribute traits keep their written order

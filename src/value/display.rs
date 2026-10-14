@@ -722,10 +722,12 @@ impl Value {
                         .collect();
                     keys.sort_by_key(|(k, _)| k.clone());
                     keys.iter()
-                        .map(|(k, v)| match crate::value::mix_weight_render(**v) {
-                            Some(w) => format!("{}({})", k, w),
-                            None => k.clone(),
-                        })
+                        .map(
+                            |(k, v)| match crate::value::mix_weight_render((**v).clone()) {
+                                Some(w) => format!("{}({})", k, w),
+                                None => k.clone(),
+                            },
+                        )
                         .collect::<Vec<_>>()
                         .join(" ")
                 })
@@ -939,15 +941,6 @@ impl Value {
                     format!("{}", val)
                 }
             }
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Signature" => attributes
-                .as_map()
-                .get("gist")
-                .map(|v: &Value| v.to_string_value())
-                .unwrap_or_else(|| format!("{}()", class_name)),
             ValueView::Instance {
                 class_name,
                 attributes,

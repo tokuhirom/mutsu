@@ -123,3 +123,61 @@ impl super::Compiler {
         });
     }
 }
+
+/// A closure body the runtime compiles again from its AST runs without an
+/// upvalue array of its own, so its call of a block-declared routine
+/// (`&g(...)`, ADR-12529 phase 2) resolved `&g` by name on every call
+/// (#13049). Point each such `CallOnCodeVar` at `origin`'s upvalue for the
+/// name instead: the runner installs the closure's upvalue array, which is
+/// aligned with `origin.upvalue_syms`, while it runs the fresh chunk (the
+/// inline `map` path). A name the fresh chunk binds itself (a `my &g`
+/// anywhere in it) keeps the by-name call, as `compute_upvalues` would, and
+/// a run without the array installed falls back to it too.
+// Cost: O(n + u), n = `target`'s ops, u = `origin`'s upvalues. Once per
+// compiled chunk.
+pub(crate) fn bind_origin_code_var_upvalues(target: &mut CompiledCode, origin: &CompiledCode) {
+    if origin.lexsub_refs.is_empty() {
+        return;
+    }
+    let index_of = |name: &str| -> Option<u32> {
+        if target
+            .locals
+            .iter()
+            .any(|l| l.strip_prefix('&') == Some(name))
+        {
+            return None;
+        }
+        let i = origin
+            .upvalue_syms
+            .iter()
+            .position(|s| s.with_str(|s| s.strip_prefix('&') == Some(name)))?;
+        origin
+            .lexsub_refs
+            .iter()
+            .any(|r| r.with_str(|r| r == name))
+            .then_some(i as u32)
+    };
+    let rewrites: Vec<(usize, u32)> = target
+        .ops
+        .iter()
+        .enumerate()
+        .filter_map(|(pos, op)| match op {
+            crate::opcode::OpCode::CallOnCodeVar {
+                name_idx,
+                upvalue: None,
+                ..
+            } => target
+                .constants
+                .get(*name_idx as usize)
+                .and_then(crate::value::Value::as_str)
+                .and_then(index_of)
+                .map(|i| (pos, i)),
+            _ => None,
+        })
+        .collect();
+    for (pos, i) in rewrites {
+        if let crate::opcode::OpCode::CallOnCodeVar { upvalue, .. } = &mut target.ops[pos] {
+            *upvalue = Some(i);
+        }
+    }
+}

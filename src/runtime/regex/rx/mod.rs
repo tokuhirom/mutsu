@@ -375,6 +375,11 @@ pub(crate) struct RxProgram {
     pub(super) atoms: Vec<RegexAtom>,
     /// Per atom: whether it is tested under `:i` (its pattern level's flag).
     pub(super) atom_ic: Vec<bool>,
+    /// Compiled for a whole-`:m` rule run as a frame over the caller's own
+    /// subject ([`rx_compile::compile_markless`]): every consuming atom tests
+    /// the mark-stripped base of the grapheme at `pos` and consumes the whole
+    /// grapheme, so positions stay in the subject's coordinates.
+    pub(super) markless: bool,
     pub(super) toks: Vec<RegexToken>,
     /// One per `||`: its shared positional width and list-valued names.
     pub(super) alts: Vec<super::regex_helpers::AlternationListFlags>,

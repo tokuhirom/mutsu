@@ -961,6 +961,15 @@ impl Interpreter {
                 || matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.as_str() == "Failure")
                 || matches!(value.view(), ValueView::Package(name) if name == "Nil");
         }
+        // The type object of an `Int`-based enum is an `Int` type
+        // (`E ~~ Int`); the candidate ranking puts it one step below `Int`
+        // (#13243).
+        if constraint == "Int"
+            && let ValueView::Package(name) = value.view()
+            && self.is_int_enum_type_name(name.as_str())
+        {
+            return true;
+        }
         if constraint == "UInt" {
             return match value.view() {
                 ValueView::Int(i) => i >= 0,
@@ -974,6 +983,11 @@ impl Interpreter {
                     name == "UInt"
                         || name == "Int"
                         || self.resolve_subset_base_type(&name) == "UInt"
+                        // Any other `Int` type object (`Bool`, `IntStr`, a user
+                        // `Int` subclass) is not `.DEFINITE`, so it passes.
+                        || self.type_matches_value_resolved("Int", value)
+                        // The type object of an `Int`-based enum (`enum E <a b>`).
+                        || self.is_int_enum_type_name(name.as_str())
                 }
                 ValueView::Enum {
                     value: crate::value::EnumValue::Int(i),
@@ -983,6 +997,15 @@ impl Interpreter {
                 ValueView::Mixin(inner, _) => {
                     let inner = inner.as_ref().clone();
                     self.type_matches_value_resolved("UInt", &inner)
+                }
+                // An instance of a user `Int` subclass is the number it wraps.
+                ValueView::Instance { .. } => {
+                    match crate::value::numeric_payload::numeric_subclass_payload(value) {
+                        Some(payload) if self.type_matches_value_resolved("Int", value) => {
+                            self.type_matches_value_resolved("UInt", &payload)
+                        }
+                        _ => false,
+                    }
                 }
                 _ => false,
             };
@@ -1101,7 +1124,11 @@ impl Interpreter {
         {
             let pkg_resolved = package_name.resolve();
             let target_ok = package_matches_type(&pkg_resolved, target);
-            let source_ok = source.is_some_and(|src| self.type_matches_value(src, value));
+            // A bare `T()` coerces from `Any`, so an `Any` type object (or any
+            // other type object below `Any`) is accepted and handed to the
+            // coercion, as rakudo does (`my PDF::COS::Null() $n = Any` calls
+            // `COERCE(Any:U)`).
+            let source_ok = self.type_matches_value(source.unwrap_or("Any"), value);
             return target_ok || source_ok;
         }
         // Raku's `Metamodel::TypePretense`: an un-composed role type object
@@ -2204,5 +2231,25 @@ impl Interpreter {
 pub(super) fn record_subset_where_fail(why: &mut Option<Box<RuntimeError>>, e: RuntimeError) {
     if e.is_fail() || e.exception.is_some() {
         *why = Some(Box::new(e));
+    }
+}
+
+impl Interpreter {
+    /// Whether `name` is the type object of an enum whose values are all
+    /// `Int`s (`enum E <a b>`), an `Int` subtype.
+    // Cost: O(v), v = the enum's variants.
+    pub(crate) fn is_int_enum_type_name(&self, name: &str) -> bool {
+        let Some(key) = self.resolve_enum_type_key(name) else {
+            return false;
+        };
+        self.registry()
+            .enum_types
+            .get(key.as_str())
+            .is_some_and(|variants| {
+                !variants.is_empty()
+                    && variants
+                        .iter()
+                        .all(|(_, v)| matches!(v, crate::value::EnumValue::Int(_)))
+            })
     }
 }

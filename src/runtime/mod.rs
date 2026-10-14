@@ -90,6 +90,7 @@ use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, ReadonlyKind, Stmt};
 use crate::env::Env;
 use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
 use crate::parse_dispatch;
+use crate::runtime::family_gen_cache::FamilyGenCache;
 use crate::runtime::gen_cache::GenCache;
 use crate::value::ValueView;
 use crate::value::{
@@ -624,7 +625,7 @@ pub(crate) struct ClassAttributeDef {
     /// Lexicals visible where a role attribute default was declared. A role's
     /// default is copied onto each consuming class, but its compiled chunk must
     /// still resolve imported names in the role's own scope.
-    pub(crate) captured_env: Option<std::sync::Arc<ValueMap>>,
+    pub(crate) captured_env: Option<crate::env_capture_view::CapturedScope>,
     /// Compunit whose imports were visible where a role attribute default was
     /// declared. Composed defaults run during construction, after the role's
     /// compunit has finished loading, so they must restore that visibility.
@@ -2620,10 +2621,13 @@ pub(crate) type RoutineRegistrySnapshot = (
 /// stayed visible to `has_proto` after the block and kept `skip(5, @a)` on the
 /// user-routine argument path (VarRef-wrapped) instead of the list builtin's.
 pub(crate) struct ImportScopeSnapshot {
-    pub(crate) functions: HashSet<Symbol>,
-    pub(crate) classes: HashSet<String>,
-    pub(crate) proto_subs: HashSet<String>,
-    pub(crate) proto_functions: HashSet<Symbol>,
+    /// The registry tables as the scope opened: each is copy-on-write, so the
+    /// snapshot is a reference to the very table (O(1), #9170), and a table
+    /// still identical to it at the pop was not written in the scope.
+    pub(crate) functions: Arc<function_table::FunctionTable>,
+    pub(crate) classes: registry::ClassTable,
+    pub(crate) proto_subs: Arc<registry::ProtoSubSet>,
+    pub(crate) proto_functions: Arc<registry::ProtoFunctionMap>,
     /// Function definitions hidden by an imported proto/multi family in this
     /// scope. Imports merge multi candidates into one package key, so the
     /// ordinary key snapshot cannot restore an enclosing candidate that the

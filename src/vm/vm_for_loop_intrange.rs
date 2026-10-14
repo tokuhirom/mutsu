@@ -52,14 +52,9 @@ impl Interpreter {
         // restored after the loop's LAST/post phasers via the `RestoreForParam`
         // opcode (the compiler emits it for any single named param), so the push
         // below must balance that pop on normal completion.
-        let saved_param: Option<(String, Option<Value>, Option<u32>)> =
-            param_name.as_ref().map(|name| {
-                (
-                    name.clone(),
-                    self.env().get(name).cloned(),
-                    spec.param_local,
-                )
-            });
+        let saved_param = param_name
+            .as_ref()
+            .map(|name| self.save_for_param(name, spec.param_local));
 
         // Track loop-body declarations so closures created in the body capture
         // them per-iteration (owned_captures). Balanced by pop on every exit.

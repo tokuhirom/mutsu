@@ -220,10 +220,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         let (r, _) = opt_char(r, ';');
         if let Some(kw) = declare_how {
-            custom_traits.push((
-                "__mutsu_declare_how".to_string(),
-                Some(crate::ast::Expr::Literal(Value::str(kw))),
-            ));
+            custom_traits.push(crate::parser::declare_how_marker(kw));
         }
         // `stmt_list` parses the rest of a `unit class` as this declaration's
         // body. Register the type before returning so body methods can use the
@@ -376,10 +373,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             );
         }
         if role_kw != "role" {
-            custom_traits.push((
-                "__mutsu_declare_how".to_string(),
-                Some(crate::ast::Expr::Literal(Value::str(role_kw))),
-            ));
+            custom_traits.push(crate::parser::declare_how_marker(role_kw));
         }
         return Ok((
             r,

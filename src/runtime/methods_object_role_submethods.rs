@@ -92,7 +92,15 @@ impl Interpreter {
                 && let Some(overloads) = role_def.methods.get(method_name)
             {
                 for md in overloads {
-                    if md.is_my {
+                    // A role that `does` another copies the parent's
+                    // submethod into its own table; the parent is walked on
+                    // its own, so a copy would run the submethod twice.
+                    let copied_from_other_role = md
+                        .original_role
+                        .as_deref()
+                        .or(md.role_origin.as_deref())
+                        .is_some_and(|origin| origin != role_name && ordered.iter().any(|r| r == origin));
+                    if md.is_my && !copied_from_other_role {
                         result.push((role_name.clone(), md.clone()));
                     }
                 }

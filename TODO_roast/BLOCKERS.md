@@ -10,9 +10,11 @@ still-open per-file investigation notes were carried over (see "Investigation no
 The completed cluster diagnostics (①③⑤, man-or-boy, the ② parse cluster) moved to
 [news/2026-07.md](../news/2026-07.md).
 
-**Last full re-measurement 2026-07-14** (★re-measured all non-whitelisted files; nearly all
-`integration/` files are raku full-pass = ★achievable). Per-file mutsu numbers below were
-re-taken 2026-07-15 (debug build) where marked.
+**Last full re-measurement 2026-10-14** (commit `c5896649`): every non-whitelisted file was
+re-run under mutsu (`MUTSU_FUDGE=1`, **release** build, cwd `roast/`, 120 s budget) and under
+the local **Rakudo v2026.09** (unfudged, same cwd). The mutsu and raku columns below are those
+numbers unless a row says otherwise; the per-file diagnoses were re-checked where the numbers
+moved. Previous full re-measurement: 2026-07-14.
 
 ## How to read this document
 
@@ -25,7 +27,7 @@ re-taken 2026-07-15 (debug build) where marked.
   sessions, so before starting work always re-measure the actual pass/fail with
   `MUTSU_FUDGE=1 prove -e target/debug/mutsu roast/<path>.t`.
 - **How to read the raku column**: the local reference implementation is
-  **Rakudo v2026.06 (default language 6.d)**. raku is measured by running the **unfudged raw
+  **Rakudo v2026.09 (default language 6.d)** (it was v2026.06 until the 2026-10-14 re-measure). raku is measured by running the **unfudged raw
   files** directly (fudge cannot be applied because it requires rewriting roast/). `SORRY` means
   the local raku cannot compile the file — removed constructs, rakudo-unimplemented syntax,
   fudge-dependent lines, etc. — and does not mean "the test is invalid". Only the cases where
@@ -74,13 +76,24 @@ Concretely:
 
 ## Current assumptions
 
-- The whitelist stands at **1437 / 1465** (2026-09-12, `wc -l roast-whitelist.txt` against
-  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **28** files not whitelisted — the
-  highest it has ever been, and two files better than before the 2026-09-11 roast re-vendor.
-  That re-vendor (`b2cbe8a4` → `85a87909`) added subtests to six whitelisted files and one new
-  file, temporarily costing five whitelist entries; **all seven were recovered within a day** by
-  implementing what each one asked for (#7902, #7903, #7904, #7905, #7906, #7907), so the section
-  that used to track them here is gone. See `news/2026-09/` for the write-ups.
+- The whitelist stands at **1426 / 1454** (2026-10-14, `wc -l roast-whitelist.txt` against
+  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **28** files not whitelisted (26
+  excluding roast's own Perl 5 tooling tests). The total shrank by 11 files since 2026-09-12
+  (roast re-vendor); the non-whitelisted count is unchanged at 28. Since the previous
+  re-measure `6.c/APPENDICES/A04-experimental/01-misc.t` and `S02-types/quanthash.t` reached
+  the whitelist, and `S24-testing/6-done_testing.t` (a file raku itself aborts on) joined the
+  non-whitelisted set.
+- **The 2026-10-14 re-measure found several files that moved backwards** (not whitelisted, so no
+  gate caught them): `S05-mass/rx.t`, `S12-meta/exporthow.t` and
+  `APPENDICES/A02-some-day-maybe/misc.t` now fail to *compile*, `6.c/MISC/bug-coverage-stress.t`
+  now hangs, and `S10-packages/basic.t` loses its last subtest. Each now has an issue
+  (#13469-#13473, linked from its row). `S05-mass/rx.t`'s cause is a general regex bug, not a
+  roast curiosity.
+- **Full-suite run** (`scripts/roast-history.sh`, HISTORY.tsv row of 2026-10-14): 1262 / 1287
+  files pass, 193653 / 194402 subtests. The four whitelisted files it reported as failing are
+  environment-only: `S16-filehandles/filetest.t`, `S16-io/eof.t` and `S32-io/IO-Socket-Async.t`
+  are listed in `ci/known-env-failures.toml`, and `S03-buf/write-int.t` passes standalone in 21 s
+  on the 4-core remote container (over the script's 10 s budget only under load).
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -93,7 +106,8 @@ Concretely:
   (history: [news/2026-07.md](../news/2026-07.md)).
 - **No cluster remains.** The 28 non-whitelisted files are nearly all non-goal / no-oracle /
   awaiting-infrastructure (see the tables below); the few ★achievable ones each need their own
-  unrelated feature. **roast is no longer the productive axis** — prefer PLAN.md §1 (Batteries),
+  unrelated feature. The one new ★ is `APPENDICES/A02-some-day-maybe/misc.t` (raku v2026.09
+  passes it 6/6), blocked first by #13469. **roast is no longer the productive axis** — prefer PLAN.md §1 (Batteries),
   §5 (perf) or §6, and pick up a roast file only when such work happens to unblock it.
 
 ## 6.c / APPENDICES / MISC — per-file inventory
@@ -102,44 +116,43 @@ Concretely:
 N/M" = a runtime error kills the file after N of M planned tests (the first unexpected
 exception aborts everything after it, so one root cause usually hides more).
 
-mutsu column: `MUTSU_FUDGE=1 prove -e target/debug/mutsu` on 2026-07-15 (debug build) unless
-noted.
+mutsu column: `MUTSU_FUDGE=1 target/release/mutsu` from `roast/` on 2026-10-14 (release build)
+unless noted.
 
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
-| `6.c/APPENDICES/A04-experimental/01-misc.t` | 16/19 | FAIL | `:D`/`:U` DefiniteHow coercion (`Target:D(Source:U)`). #4514: 0/19 → 16/19 |
-| `6.c/APPENDICES/A03-older-specs/01-misc.t` | fails 4+ | 6/9 FAIL | `.open("-")` mapping to `$*IN`/`$*OUT`, deprecated `subst-mutate`. raku itself fails 3 of 9 = partially non-goal. `Pair.freeze` now 6/7 (freeze returns value + RO enforcement done); the last subtest needs a stable Pair object-identity WHICH (mutsu Pairs are by-value with no object address). |
-| `6.c/MISC/bug-coverage-stress.t` | fails 4 | 13/14 FAIL | Supply.merge on signals, supply inside sock, SEGV-in-curries+with, &foo char collection. raku itself fails test 11 (rakudo GH#1535) = not fully passable upstream |
-| `6.c/S02-names/pseudo-6c.t` | aborts at 56/161 on release (2026-10-02: it had regressed to a parse-time SORRY on `::($our)::A43`, fixed by #10657; it now stops at line 188 exactly like `S02-names/pseudo-6d.t`). Earlier: fails 14/161 (2026-07-23, was 18 before the inline-block CALLER slice) | SORRY on ONE line | **`UNIT::` top-level is DONE** (140/141): `UNIT::` names the compilation unit's OUTERMOST lexical scope — `OUTER::` at the top of the chain. `$UNIT::x` (`emit_unit_var_access`) and the indirect `$::('UNIT')::x` (`LexScopeChain::resolve_unit`, runtime `SymbolicDeref`) both reuse the `OUTER::` scope-walk via `lex_scope::resolve_unit` (= `resolve_outer` at depth `n-1`). Pin: `t/pseudo-unit-scope.t`. **`UNIT::` inside EVAL is now DONE too** (142/143): a `unit_root_scope` index skips the `mark_as_eval_unit` wrapper frame so `UNIT::` stops at the EVAL mainline, and `get_outer_var` depth-0 (the mainline-is-current-scope case) reads the live binding instead of Nil. Still failing: **144/145 `CALLER::UNIT::`** (caller-axis + UNIT, same frame-model gap as the CALLER cluster). `UNIT::` inside a plain sub also lands on the sub's outermost, not the file mainline (cross-frame, not tested here). **`DYNAMIC::<$*x>` stash is DONE** (161 "Bound dynamics"): the `DYNAMIC::` pseudo-stash does a dynamic-scope search — `dynamic_pseudo_stash_entries` collects every `$*x`/`@*x`/`%*x` from the whole caller chain + current frame (innermost wins), so `DYNAMIC::<$*x>` / `:exists` find a dynamic bound in ANY caller, INCLUDING one `:=`-bound to a bare value with no Scalar container. Only the subscript form (`exec_get_pseudo_stash_op`) is populated, NOT `.WHO` — raku's `DYNAMIC::.WHO.<$*x>` yields `(Any)`. Pin: `t/pseudo-dynamic-stash.t`. **`OUR::` is DONE** (44, 46-53): `OUR::` is the *current package's* own stash — at file scope GLOBAL, inside `package A {}` the package `A`. A sigiled `$OUR::x`/`@OUR::x`/`%OUR::x` read is qualified with `current_package` (`our_pseudo_var_read`: `A::x` in `A`, bare `x` at GLOBAL) and is authoritative (a miss is undefined, never a GLOBAL leak); the `OUR::.<>` / `.WHO` stash delegates to `package_stash_value(current_package)` so it carries that package's `our` vars AND sub-packages (`::('OUR')::('A')::('$x')` indirect); and `OUR::.<$k> {:=,=} v` compiles to the working sigiled `$OUR::k {:=,=} v` path. No per-package `our` store was needed — the `our` vars are already keyed `A::x`. Pin: `t/pseudo-our-package-scope.t`. **`PROCESS::` is DONE** (82/84/85/86 + indirect): `$PROCESS::IN`/`@PROCESS::x`/`%PROCESS::x` map to the dynamic twigil env key (`*IN`/`@*x`/`%*x`) in `pseudo_package_unqualified_name`, so read/write/`::("PROCESS")` indirect all hit the same slot `$*` does. **`GLOBAL::` stash is DONE** (79/80): `package_stash_value` now folds the flat `our_vars` into the GLOBAL/root stash so `GLOBAL::.<$x>` / `::("GLOBAL")::('$x')` find top-level `our` decls. Pin: `t/pseudo-process-global-stash.t`. Remaining GLOBAL gap: 81 `&GLOBAL::say` must NOT find the CORE builtin (code-var resolution over-reach). **`CALLERS::` is DONE** (119-124: direct `$CALLERS::`, `CALLERS::<$x>` stash, `::("CALLERS")` indirect, `CALLERS::CALLERS::` depth-2, and the `CALLERS::<$*foo>` twigil cascade). Implemented sound, not via the CALLER over-reach: a `$*`-twigil name cascades through the caller chain (`get_callers_var` cascade path), a plain name delegates to `get_caller_var` at the exact depth (raku: a non-twigil `is dynamic` two callers out is NOT found). Pin: `t/pseudo-callers.t`. What remains in this file splits into unrelated gaps — do not conflate: **(1) the stash road** `::($x)::('$y')` → `IndirectTypeLookup($x).WHO.{'$y'}`, where **`::("CORE")` (needs a core-symbol stash)** and 116 `::("CALLER")::<$*bar>` / 125 `::("CALLERS")::('$*foo')` live (61/116/125/139). **The CALLER stash is NOT a clean slice** — do not build `package_stash_value("CALLER")` from `caller_env_stack`: when `.WHO` is evaluated inside `f1({ ::($caller)::('$*bar') })`, the routine frame holding `$*bar` is NOT on `caller_env_stack` (verified 2026-07-23: `caller_env_stack` had only frame[0]=root builtins + frame[1]=empty; the direct `CALLER::<$*bar>` works because it compiles to `GetCallerVar` in the block body where the frame IS live, but the indirect `.WHO` road runs after the method-call machinery has lost it). 116/125 still need the stash road (below). **(2) inline-block CALLER::/CALLERS:: is DONE** (117/118/126/127): resolved at COMPILE time, NOT via a runtime frame push. Key fact (raku-verified): an *immediate* block (bare `{}` / `if` / `for` / `while` body) is run in place, so its dynamic caller IS its lexical parent — thus `$CALLER::y` inside it == `$OUTER::y` (exactly one scope, so it does NOT cascade to a grandparent) and `$CALLERS::y` == `$OUTERS::y` (cascades). `Compiler::in_immediate_block` (`local_scopes.len() > unit_root_scope + 1`) routes the depth-1 literal spellings (`$CALLER::x`, `CALLER::<$x>`, and the CALLERS twins) to a new `GetCallerOuterVar` op (OUTER slot read + the `is dynamic` check that keeps X::Caller::NotDynamic) / to `OUTERS::`; the indirect `$::('CALLER')::x` form carries a `caller_lexical` flag baked into its `LexScopeChain` and takes the same lexical road in `exec_symbolic_deref_op`. Reads come from `locals`/`outer_scope_locals` slots via `get_outer_var`, so this side-steps the dual-store snapshot problem entirely — no caller-frame env clone is consulted. A closure passed to a sub is NOT immediate (`local_scopes.len()==1` in its own fresh compilation), so it keeps the runtime-frame `GetCallerVar`/`GetCallersVar` path. Pin: `t/pseudo-caller-inline-block.t`. Depth>1 inside an immediate block (untested here) still falls back to the runtime path. **(3) 137 `CALLER::OUTER::`**: `parse_caller_prefix` hands `GetCallerVar` the rest of the chain as a literal name ("OUTER::x"), looked up verbatim → Nil for any `CALLER::<pseudo>::` chain; needs the caller frame to re-enter pseudo-package dispatch. Also failing: `::("UNIT")` (140), `::("SETTING")`. **A real CALLER:: over-reach bug persists but buys 0 roast tests**: `sub h1($f){$f()}; sub a2($f){my $v is dynamic=7; h1($f)}; a2({ $CALLER::v })` is Nil in raku, 7 in mutsu — `push_caller_env` clones a *flattened* env so `get_caller_var` cannot tell a declared name from an inherited one. `CALLERS::` for plain names inherits this (noted in `t/pseudo-callers.t`); fixing needs per-frame declared-name data, per-call-site. **"No oracle" is about the FILE, not the constructs**: raku SORRYs only on line 67 (`$MY::z ::= $y`, `::=` NYI), so snippets are verifiable in raku — do that first, this ledger's diagnoses have been wrong before (see news/2026-07.md). Two raku-verified facts to keep: a closure `{ $OUTER::c }` is itself a scope (its OUTER is the enclosing block, not the caller); an undeclared `$OUTER::x` is a `Failure` in raku but `Nil` in mutsu |
-| `APPENDICES/A02-some-day-maybe/misc.t` | aborts (no plan) | 5/6 FAIL | "some-day-maybe" spec aspirations; raku itself not full — non-goal |
-| `MISC/misc.t` | fails 4+ | ABORT 5/7 | `:sym<>` colonpair reservation on sub names, `$*ARGFILES` inside MAIN, native num default 0e0, `undefine` deprecation warning. raku itself aborts = partially non-goal |
+| `6.c/APPENDICES/A03-older-specs/01-misc.t` | aborts after 1/9 (test 1 fails) | 8/9 FAIL (test 9) | `'-'.IO.open` does not map to `$*IN`/`$*OUT` (returns a handle with path `"-"`; no `:bin`/`:enc` applied), and the closed-handle subtest then dies with `Expected IO::Handle` (`temp $*OUT = IO::Handle.new: :path(...)`), aborting the file. Deprecated `subst-mutate`. `Pair.freeze` was 6/7: the last subtest needs a stable Pair object-identity WHICH (mutsu Pairs are by-value). raku now fails only 1 of 9 = mostly ★ |
+| `6.c/MISC/bug-coverage-stress.t` | fails 7, 12, 14 (was: timeout after 1/14) | 12/14 FAIL (9, 12) | #13472 fixed (merged signal supply stays live; `exit` in a signal `whenever` ends the process): tests 2-4 pass again. Remaining: 7 (supply inside sock), 14 (SEGV in curries + with: got empty list), and 12 / 9 (&foo char collection; raku itself fails 9 and 12, rakudo GH#1535) = not fully passable upstream |
+| `6.c/S02-names/pseudo-6c.t` | aborts at 56/161 (2026-10-14, unchanged: dies at line 190 with `No such symbol 'OUR::A43'`; 2026-10-02: it had regressed to a parse-time SORRY on `::($our)::A43`, fixed by #10657; it now stops at line 188 exactly like `S02-names/pseudo-6d.t`). Earlier: fails 14/161 (2026-07-23, was 18 before the inline-block CALLER slice) | SORRY on ONE line | **`UNIT::` top-level is DONE** (140/141): `UNIT::` names the compilation unit's OUTERMOST lexical scope — `OUTER::` at the top of the chain. `$UNIT::x` (`emit_unit_var_access`) and the indirect `$::('UNIT')::x` (`LexScopeChain::resolve_unit`, runtime `SymbolicDeref`) both reuse the `OUTER::` scope-walk via `lex_scope::resolve_unit` (= `resolve_outer` at depth `n-1`). Pin: `t/pseudo-unit-scope.t`. **`UNIT::` inside EVAL is now DONE too** (142/143): a `unit_root_scope` index skips the `mark_as_eval_unit` wrapper frame so `UNIT::` stops at the EVAL mainline, and `get_outer_var` depth-0 (the mainline-is-current-scope case) reads the live binding instead of Nil. Still failing: **144/145 `CALLER::UNIT::`** (caller-axis + UNIT, same frame-model gap as the CALLER cluster). `UNIT::` inside a plain sub also lands on the sub's outermost, not the file mainline (cross-frame, not tested here). **`DYNAMIC::<$*x>` stash is DONE** (161 "Bound dynamics"): the `DYNAMIC::` pseudo-stash does a dynamic-scope search — `dynamic_pseudo_stash_entries` collects every `$*x`/`@*x`/`%*x` from the whole caller chain + current frame (innermost wins), so `DYNAMIC::<$*x>` / `:exists` find a dynamic bound in ANY caller, INCLUDING one `:=`-bound to a bare value with no Scalar container. Only the subscript form (`exec_get_pseudo_stash_op`) is populated, NOT `.WHO` — raku's `DYNAMIC::.WHO.<$*x>` yields `(Any)`. Pin: `t/pseudo-dynamic-stash.t`. **`OUR::` is DONE** (44, 46-53): `OUR::` is the *current package's* own stash — at file scope GLOBAL, inside `package A {}` the package `A`. A sigiled `$OUR::x`/`@OUR::x`/`%OUR::x` read is qualified with `current_package` (`our_pseudo_var_read`: `A::x` in `A`, bare `x` at GLOBAL) and is authoritative (a miss is undefined, never a GLOBAL leak); the `OUR::.<>` / `.WHO` stash delegates to `package_stash_value(current_package)` so it carries that package's `our` vars AND sub-packages (`::('OUR')::('A')::('$x')` indirect); and `OUR::.<$k> {:=,=} v` compiles to the working sigiled `$OUR::k {:=,=} v` path. No per-package `our` store was needed — the `our` vars are already keyed `A::x`. Pin: `t/pseudo-our-package-scope.t`. **`PROCESS::` is DONE** (82/84/85/86 + indirect): `$PROCESS::IN`/`@PROCESS::x`/`%PROCESS::x` map to the dynamic twigil env key (`*IN`/`@*x`/`%*x`) in `pseudo_package_unqualified_name`, so read/write/`::("PROCESS")` indirect all hit the same slot `$*` does. **`GLOBAL::` stash is DONE** (79/80): `package_stash_value` now folds the flat `our_vars` into the GLOBAL/root stash so `GLOBAL::.<$x>` / `::("GLOBAL")::('$x')` find top-level `our` decls. Pin: `t/pseudo-process-global-stash.t`. Remaining GLOBAL gap: 81 `&GLOBAL::say` must NOT find the CORE builtin (code-var resolution over-reach). **`CALLERS::` is DONE** (119-124: direct `$CALLERS::`, `CALLERS::<$x>` stash, `::("CALLERS")` indirect, `CALLERS::CALLERS::` depth-2, and the `CALLERS::<$*foo>` twigil cascade). Implemented sound, not via the CALLER over-reach: a `$*`-twigil name cascades through the caller chain (`get_callers_var` cascade path), a plain name delegates to `get_caller_var` at the exact depth (raku: a non-twigil `is dynamic` two callers out is NOT found). Pin: `t/pseudo-callers.t`. What remains in this file splits into unrelated gaps — do not conflate: **(1) the stash road** `::($x)::('$y')` → `IndirectTypeLookup($x).WHO.{'$y'}`, where **`::("CORE")` (needs a core-symbol stash)** and 116 `::("CALLER")::<$*bar>` / 125 `::("CALLERS")::('$*foo')` live (61/116/125/139). **The CALLER stash is NOT a clean slice** — do not build `package_stash_value("CALLER")` from `caller_env_stack`: when `.WHO` is evaluated inside `f1({ ::($caller)::('$*bar') })`, the routine frame holding `$*bar` is NOT on `caller_env_stack` (verified 2026-07-23: `caller_env_stack` had only frame[0]=root builtins + frame[1]=empty; the direct `CALLER::<$*bar>` works because it compiles to `GetCallerVar` in the block body where the frame IS live, but the indirect `.WHO` road runs after the method-call machinery has lost it). 116/125 still need the stash road (below). **(2) inline-block CALLER::/CALLERS:: is DONE** (117/118/126/127): resolved at COMPILE time, NOT via a runtime frame push. Key fact (raku-verified): an *immediate* block (bare `{}` / `if` / `for` / `while` body) is run in place, so its dynamic caller IS its lexical parent — thus `$CALLER::y` inside it == `$OUTER::y` (exactly one scope, so it does NOT cascade to a grandparent) and `$CALLERS::y` == `$OUTERS::y` (cascades). `Compiler::in_immediate_block` (`local_scopes.len() > unit_root_scope + 1`) routes the depth-1 literal spellings (`$CALLER::x`, `CALLER::<$x>`, and the CALLERS twins) to a new `GetCallerOuterVar` op (OUTER slot read + the `is dynamic` check that keeps X::Caller::NotDynamic) / to `OUTERS::`; the indirect `$::('CALLER')::x` form carries a `caller_lexical` flag baked into its `LexScopeChain` and takes the same lexical road in `exec_symbolic_deref_op`. Reads come from `locals`/`outer_scope_locals` slots via `get_outer_var`, so this side-steps the dual-store snapshot problem entirely — no caller-frame env clone is consulted. A closure passed to a sub is NOT immediate (`local_scopes.len()==1` in its own fresh compilation), so it keeps the runtime-frame `GetCallerVar`/`GetCallersVar` path. Pin: `t/pseudo-caller-inline-block.t`. Depth>1 inside an immediate block (untested here) still falls back to the runtime path. **(3) 137 `CALLER::OUTER::`**: `parse_caller_prefix` hands `GetCallerVar` the rest of the chain as a literal name ("OUTER::x"), looked up verbatim → Nil for any `CALLER::<pseudo>::` chain; needs the caller frame to re-enter pseudo-package dispatch. Also failing: `::("UNIT")` (140), `::("SETTING")`. **A real CALLER:: over-reach bug persists but buys 0 roast tests**: `sub h1($f){$f()}; sub a2($f){my $v is dynamic=7; h1($f)}; a2({ $CALLER::v })` is Nil in raku, 7 in mutsu — `push_caller_env` clones a *flattened* env so `get_caller_var` cannot tell a declared name from an inherited one. `CALLERS::` for plain names inherits this (noted in `t/pseudo-callers.t`); fixing needs per-frame declared-name data, per-call-site. **"No oracle" is about the FILE, not the constructs**: raku SORRYs only on line 67 (`$MY::z ::= $y`, `::=` NYI), so snippets are verifiable in raku — do that first, this ledger's diagnoses have been wrong before (see news/2026-07.md). Two raku-verified facts to keep: a closure `{ $OUTER::c }` is itself a scope (its OUTER is the enclosing block, not the caller); an undeclared `$OUTER::x` is a `Failure` in raku but `Nil` in mutsu |
+| `APPENDICES/A02-some-day-maybe/misc.t` | **SORRY** at line 36 | **6/6 PASS** (v2026.09; was 5/6 on v2026.06) | **Now ★achievable**: raku v2026.09 passes it in full. mutsu cannot compile `my @a[;]` (an empty shape; raku warns and declares an unshaped array) — #13469. The other 5 subtests were not re-checked past that |
+| `MISC/misc.t` | aborts at 2/7 (1 and 2 fail) | ABORT 5/7 | `:sym<>` colonpair reservation on sub names (1), `$*ARGFILES` inside MAIN (2, `no MAIN` case passes); the native-num-default group (3) aborts on `(my role { has num $.z }).new` — anonymous roles cannot be punned, #13468; `undefine` deprecation warning. raku itself aborts = partially non-goal |
 | `t/fudge.t`, `t/fudgeandrun.t` | n/a | n/a | **roast's own tooling tests, written in Perl 5** (run with `perl`, not raku/mutsu) — non-goal by definition |
 
 ## S* per-file remaining items
 
 | Classification | File | mutsu | raku (v2026.06/6.d) | Blocker (one line) |
 |---|---|---|---|---|
-| Track B (element cells) | `S02-types/quanthash.t` | **126/129** | **129/129 full pass** | Parameterized-QuantHash subsystem now implemented: `.^parameterize` on Set/Bag/Mix, coercive types `Int()`/`Date()`, `.keyof`, per-element coercion/validation at `.new` (throws `X::Str::Numeric`/`X::Temporal::InvalidFormat`), key coercion on element access/assignment, and container-variable rebind. The remaining 3 (`97`/`112`/`127` "did all keys get removed") need `%qh.values.map({ $_ = 0 })` **write-through** — an rw `.values` that yields per-element `ContainerRef` cells map can alias. This fails for a plain `Hash` too, so it is general **Track B element-cell** work (ADR-0001, deferred/fused with GC), not QuantHash-specific. Pin: `t/quanthash-parameterized.t` |
-| No oracle | `S11-modules/re-export.t` | 0/3 (aborts) | **SORRY** (`no such tag 'EXPORT'`) | `OuterModule` does `use InnerModule :ALL, :EXPORT` to re-export; **rakudo rejects `:EXPORT` as an undeclared tag**, so this file cannot pass upstream either. mutsu *appeared* to pass it until 2026-07-24 purely because a `unit module`'s routines leaked into `GLOBAL::` — the consumer saw Inner's subs without any re-export happening (news `2026-07/unit-module-routines-stay-in-their-package.md`). Dewhitelisted with that fix. Two independent things would be needed to revisit: real `:EXPORT` re-export semantics, and mutsu raising `X::Import::NoSuchTag` for an unknown tag even when `:ALL` is also requested (today `:ALL` short-circuits tag validation, so `:EXPORT` is silently accepted) |
-| No oracle | `S02-names/pseudo-6d.t` | aborts at 56/159 on release (2026-10-02) | SORRY (`::=` NYI) | Until #10657 mutsu SORRYd at parse time on `::($our)::A43` (an indirect name with a static tail). It now runs 56 tests on release and stops at line 188, where `::($our)::A43` is a `Failure` (the autovivifying bind on line 186 is fudged out) and `.WHO` throws — raku throws there too. A debug build panics earlier, after test 41, on the ADR-0097 §15 env/slot invariant at `$OUR::x30 := $x` (#10731). Beyond that: `::("CALLER")::<$*bar>` CALLER pseudo-package deref unsupported. Even on v2026.06 rakudo SORRYs because `::=` binding is unimplemented |
-| No oracle | `S02-names/pseudo-6e.t` | runs 77/202 on release, 30 failing (2026-10-02) | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Parses since #10657; fails the root/`MY::` binding subtests (`Can bind via root`, `MY::classname`, failed tests 1, 5, 8-11, 13-15, 18, 24-25, 28-30, 32-33) and stops at 77. Still SORRY on v2026.06 |
-| No oracle | `S02-names-vars/names.t` | 144/156, notok 3 | SORRY (unfudged line) | test 142 "Null PMC access when printing a var typed as ::foo" edge. raku SORRYs on a fudge-dependent line (a bare `$`). The later `can use compile-time variables in names` subtest (line 167, BEGIN-time interpolation of an adverb value into an extended identifier) is implemented since 2026-09 (`news/2026-09/begin-time-adverb-value-interpolation.md`) but is never reached, because the file aborts at line 153 first |
-| No oracle | `S10-packages/basic.t` | 59/83, notok 9 | 6/83 (mutsu ahead; same on v2026.06) | Error-detection edges for the semicolon form of package declarations |
-| No oracle | `S12-attributes/trusts.t` | 9/15, notok 4-9 | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06. Failing set shifted 2026-07-15 (private-attr wrong-class throw): tests 4-9 read `$!an_A` which class B never declares (throws now, matching rakudo semantics — likely a typo for the lexical `$an_A` in the test), while the class-C "untrusted access dies" tests now pass |
-| No oracle | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 | 0/8 (`$*OS` unsupported; same on v2026.06) | `-I` + `@*INC` + `$*OS` introspection (is_run subprocess) |
-| No oracle | `S32-basics/xxPOS.t` | aborts at 11/64 | 53/64 (raku also aborts; same on v2026.06) | Aborts from test 12 onward due to deep features |
+| No oracle | `S11-modules/re-export.t` | 0/3 (aborts: `Unknown function: foo`) | **SORRY** (`no such tag 'EXPORT'`) | `OuterModule` does `use InnerModule :ALL, :EXPORT` to re-export; **rakudo rejects `:EXPORT` as an undeclared tag**, so this file cannot pass upstream either. mutsu *appeared* to pass it until 2026-07-24 purely because a `unit module`'s routines leaked into `GLOBAL::` — the consumer saw Inner's subs without any re-export happening (news `2026-07/unit-module-routines-stay-in-their-package.md`). Dewhitelisted with that fix. Two independent things would be needed to revisit: real `:EXPORT` re-export semantics, and mutsu raising `X::Import::NoSuchTag` for an unknown tag even when `:ALL` is also requested (today `:ALL` short-circuits tag validation, so `:EXPORT` is silently accepted) |
+| No oracle | `S02-names/pseudo-6d.t` | aborts at 56/159 (2026-10-14, unchanged since 2026-10-02) | SORRY (`::=` NYI) | Until #10657 mutsu SORRYd at parse time on `::($our)::A43` (an indirect name with a static tail). It now runs 56 tests on release and stops at line 188, where `::($our)::A43` is a `Failure` (the autovivifying bind on line 186 is fudged out) and `.WHO` throws — raku throws there too. A debug build panics earlier, after test 41, on the ADR-0097 §15 env/slot invariant at `$OUR::x30 := $x` (#10731). Beyond that: `::("CALLER")::<$*bar>` CALLER pseudo-package deref unsupported. Even on v2026.06 rakudo SORRYs because `::=` binding is unimplemented |
+| No oracle | `S02-names/pseudo-6e.t` | runs 77/202, 30 failing (2026-10-14, unchanged since 2026-10-02) | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Parses since #10657; fails the root/`MY::` binding subtests (`Can bind via root`, `MY::classname`, failed tests 1, 5, 8-11, 13-15, 18, 24-25, 28-30, 32-33) and stops at 77. Still SORRY on v2026.06 |
+| No oracle | `S02-names-vars/names.t` | **153/156, runs to the end**; notok 144, 147, 148 | SORRY (unfudged line) | Now runs the whole file (it used to abort at line 153). Failing: 144 "no Null PMC access when printing a variable typed as ::foo" (line 142); 147/148 — `my module foo {}; sub foo() {…}` in one scope: bare `foo` must be the module type object (`.HOW ~~ Metamodel::ModuleHOW`) and `foo()` a coercion type (`Metamodel::CoercionHOW`), while `&foo()` calls the sub (149 passes). raku SORRYs on a fudge-dependent line (a bare `$`). The `can use compile-time variables in names` subtest (BEGIN-time adverb interpolation, `news/2026-09/begin-time-adverb-value-interpolation.md`) now runs and passes |
+| No oracle | `S10-packages/basic.t` | **74/83**, notok 8 (2, 14, 15, 20, 21, 30, 53, 57); dies at 83 | 6/83 (mutsu far ahead; same on v2026.09) | Error-detection edges for package declarations (see the investigation note). Test 83 (`use lib` accepts IO::Path objects) dies with `Unknown function: plan` inside the subtest — state left by earlier parts of the file breaks name resolution, #13473 |
+| No oracle | `S12-attributes/trusts.t` | 9/15, notok 4-9 (2026-10-14, unchanged) | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06. Failing set shifted 2026-07-15 (private-attr wrong-class throw): tests 4-9 read `$!an_A` which class B never declares (throws now, matching rakudo semantics — likely a typo for the lexical `$an_A` in the test), while the class-C "untrusted access dies" tests now pass |
+| No oracle | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 (aborts: `Dynamic variable $*OS not found`) | 0/8 (aborts too, `$*OS`; same on v2026.09) | `-I` + `@*INC` + `$*OS` introspection (is_run subprocess) |
+| No oracle | `S32-basics/xxPOS.t` | aborts at 11/64 | 53/64 (raku also aborts; same on v2026.09) | Stops at test 12 because the loop's sigilless `-> \a` is overwritten by the later `my $a` in the same body — #13474 (see the investigation note) |
 | Non-goal | `S05-capture/hash.t` | rejected (matches raku) | SORRY (removed) | Hash captures in regexes `%<name>=(...)` are removed/reserved in the current spec. mutsu also gives a compile error, matching raku = **no implementation needed** |
-| Non-goal | `S05-mass/rx.t` | aborts at test 20 | SORRY (`::` NYI) | rakudo itself cannot compile it: `::` backtracking control NYI. mutsu remaining: `<commit>`, `::`/`:::` cuts, the family of compile-time exceptions for removed metacharacters |
-| Non-goal | `S05-metasyntax/angle-brackets.t` | aborts at 51/95 | SORRY (v2026.06 rejects `<*xyz>` at compile time) | All 51 reachable subtests pass. test 52's code-string subrule (turning a string containing `{...}` into a regex) also kills old raku = requires the equivalent of MONKEY-SEE-NO-EVAL. New raku does not even run due to the unfudged `<*xyz>` at line 267 |
-| Non-goal | `S05-nonstrings/basic.t` | 0/5 (ran 0) | SORRY (removed) | Regex matching against non-strings (streams/arrays) = early Perl 6 spec. Removed from the language while Rakudo never implemented it |
-| Non-goal | `S06-advanced/caller.t` | 19 ran / plan 22 | SORRY | Stale test, over-stated plan (22 planned vs effectively 19 assertions). Confirmed unpassable (#3975) |
-| Non-goal | `S06-advanced/return_function.t` | aborts at 1/4 | SORRY | Expects the old Pair-flattening behavior. rakudo also rejects it at compile time. Outside spectest.data |
-| Non-goal | `S10-packages/require-and-use--dead-file.t` | 4/18 | raku also FAILs | Return values of `require`/`use`/`no` and `%*INC` updates unimplemented. But raku itself also fails this file |
-| Non-goal | `S12-class/open_closed.t` | 8/9, notok 1 | SORRY (no `oo` module) | test 7 is a roast-side typo (the body of `method h` says `'called Qux.i'`). Awaiting an upstream fix |
-| Non-goal | `S12-meta/exporthow.t` | aborts at 1/12 | ABORT at 2/12 | rakudo itself dies at line 22 (`ClassHOW` has no `tryit`) |
-| Non-goal | `S12-traits/basic.t` | 0 at parse | SORRY (removed) | Removed `trait_auxiliary` syntax. raku also rejects it |
+| Non-goal | `S05-mass/rx.t` | **SORRY** (was: aborts at test 20) | SORRY (`::` NYI) | rakudo itself cannot compile it: `::` backtracking control NYI. **Regressed** to a compile-time failure: mutsu rejects `^` after another atom (`/def \n ^ abc/`, line 596) as an unrecognized metacharacter instead of an anchor — #13470, a general regex bug. Behind it: `<commit>`, `::`/`:::` cuts, the compile-time exceptions for removed metacharacters |
+| Non-goal | `S05-metasyntax/angle-brackets.t` | aborts at 51/95 (2026-10-14, unchanged) | SORRY (v2026.06 rejects `<*xyz>` at compile time) | All 51 reachable subtests pass. test 52's code-string subrule (turning a string containing `{...}` into a regex) also kills old raku = requires the equivalent of MONKEY-SEE-NO-EVAL. New raku does not even run due to the unfudged `<*xyz>` at line 267 |
+| Non-goal | `S05-nonstrings/basic.t` | 0/5 (compile error: `Undeclared name: Antelope`) | SORRY (removed) | Regex matching against non-strings (streams/arrays) = early Perl 6 spec. Removed from the language while Rakudo never implemented it |
+| Non-goal | `S06-advanced/caller.t` | aborts at 3/22 (1, 3 fail) | SORRY | Stale test, over-stated plan (22 planned vs effectively 19 assertions). Confirmed unpassable (#3975). Now stops at line 30: `Placeholder variable '@_' may not be used here because the surrounding block does not take a signature` (a Perl-5-style `@_` in a sub with an explicit signature — raku rejects it at compile time too) |
+| Non-goal | `S06-advanced/return_function.t` | 0/4 (runs, all fail) | SORRY | Expects the old Pair-flattening behavior. rakudo also rejects it at compile time. Outside spectest.data |
+| Non-goal | `S10-packages/require-and-use--dead-file.t` | 3/18 | 2/18 FAIL | Return values of `require`/`use`/`no` and `%*INC` updates unimplemented. But raku itself also fails this file |
+| Non-goal | `S12-class/open_closed.t` | **SORRY** at line 17 (was 8/9) | SORRY (no `oo` module) | Line 17 is a roast-side typo: `throws-like '…', Exception, '…');` has an unbalanced `)`, so the file cannot compile anywhere; test 7 also had a typo (`method h` says `'called Qux.i'`). raku cannot load the `oo` module either. Awaiting an upstream fix |
+| Non-goal | `S12-meta/exporthow.t` | **SORRY** at line 40 (was: aborts at 1/12) | ABORT at 2/12 | rakudo itself dies at line 22 (`ClassHOW` has no `tryit`). mutsu now fails to compile `controller Home { }`: the module declares its declarator as `class DECLARE::controller is Metamodel::ClassHOW` inside `my package EXPORTHOW`, a spelling mutsu's DECLARE support does not read — #13471 |
+| Non-goal | `S12-traits/basic.t` | 0 (dies before the plan: `Can only use : as invocant marker…`) | SORRY (removed) | Removed `trait_auxiliary` syntax. raku also rejects it |
 | Non-goal | `S12-traits/parameterized.t` | aborts at 6/8 | SORRY (removed) | Same as above (the `trait_auxiliary:<is>` category has been removed from the language) |
-| Unpassable | `S32-temporal/time.t` | 8/10, notok 2 | SORRY | The test contains 2 deliberate `flunk("FIXME ...")` failures, plus raku also has `gmtime`/`localtime`/`times` undefined |
+| Non-goal | `S24-testing/6-done_testing.t` | dies after 2 tests | dies after 2 tests (same error) | New since the previous re-measure. Line 4 calls `ok 0, :todo(1)` — a `:todo` named argument that today's `Test` does not take; raku and mutsu both die with `Cannot resolve caller ok(Int:D, :todo(Int))`. mutsu matches raku = no implementation needed |
+| Unpassable | `S32-temporal/time.t` | aborts at 5/10 (5 fails) | SORRY | The test contains 2 deliberate `flunk("FIXME ...")` failures, and calls `times`/`localtime`/`gmtime`, which are not core routines (raku SORRYs on them; mutsu stops at `Unknown function: localtime`, line 118) |
 
 ### Investigation notes (carried over from the retired S*.md files)
 
@@ -151,7 +164,8 @@ completed fix history lives in `news/`.
   (`::<$x> := $y`); `X::NoSuchSymbol` exception type; `is dynamic` trait for CALLERS visibility;
   `CORE::v6c/v6d/v6e` namespaces. Note: raku itself fails to parse this test due to `$?` twigil
   constants.
-- **`S05-mass/rx.t`** — the per-token ratchet (`:`) core is fixed (commits to the atom's
+- **`S05-mass/rx.t`** — as of 2026-10-14 the whole file fails to compile because `^` after
+  another atom (`/def \n ^ abc/`) is rejected instead of parsed as an anchor (#13470). The per-token ratchet (`:`) core is fixed (commits to the atom's
   highest-priority match; leading null `||`/`|` alternatives ignored). Remaining: `<commit>`
   named assertion is NYI and its runtime error aborts the file at test 20; later subtests need
   `throws-like` against compile-time regex exception types (`X::Obsolete`,
@@ -167,22 +181,26 @@ completed fix history lives in `news/`.
   assertions are **stale old-Rakudo expectations that mutsu correctly diverges from** — do NOT
   "fix" them (stale line numbers from an older file layout; `Control::Caller()` gist format;
   unqualified `subname`). `caller` is not even a routine in modern Rakudo.
-- **`S10-packages/basic.t`** — remaining 14 fails: tests 12-21 (reference to a
-  grammar/module/role/class/package BEFORE its definition must die with the name in the message)
+- **`S10-packages/basic.t`** — remaining fails (2026-10-14): 2, 14, 15, 20, 21, 30, 53, 57, and
+  83 dies (#13473). Of the old 12-21 block (reference to a grammar/module/role/class/package
+  BEFORE its definition must die with the name in the message) only 14/15/20/21 are left; they
   need a general compile-time undeclared-symbol check; the EVAL-path registry check is gated to
   `::`-qualified names because simple names leak into the global registry from block-scoped
   decls (the lexical-scope-leak / dual-store limitation — same family as my-6e.t). Tests 2/30
   (nested-package autovivification), 53 (`module M is Nonexistent`), 57 ("Too late for
   semicolon form") are each their own package-semantics gap.
 - **`S32-basics/xxPOS.t`** — blocker 1 (file-stopper at test 12): **sigilless variable naming
-  collision** — `my $a` overwrites sigilless `my \a` because both map to env key `a`; needs a
-  sigilless-var identity distinct from the sigil-stripped scalar key (parser flag on VarDecl +
-  distinct env keying). Minimal repro: `my \a = (1,2,3); my $a = 45; say a;` → mutsu `45`, raku
-  `(1 2 3)`. Also: tests 43-53 need xxPOS autovivification on undefined `$a`; 61-63 need
+  collision**, now narrowed to the pointy-block form (#13474). The plain
+  `my \a = (1,2,3); my $a = 45; say a;` case is fixed (prints `(1 2 3)`), and so is a sub param
+  `sub f(\a) { my $a = 45; a }`; what remains is a `for … -> \a { my $a = 45; a }` param, which the
+  later `my $a` in the same body still overwrites (mutsu `(Int)`, raku `(Array)`). Also: tests 43-53 need xxPOS autovivification on undefined `$a`; 61-63 need
   multi-dimensional EXISTS-POS with Failure from a negative index; 64 needs a `but` mixin with a
   role implementing AT-POS + `substr-rw`. (BIND-POS/DELETE-POS and the shared-cell BIND-POS are
   done — pin: t/bind-pos-shared-cell.t.)
-- **`S12-meta/exporthow.t`** — test 1 passes (X::EXPORTHOW::InvalidDirective validation on
+- **`S12-meta/exporthow.t`** — as of 2026-10-14 the file does not compile in mutsu: the
+  `controller` declarator from `packages/S12-meta/lib/Declare.rakumod` (declared as
+  `class DECLARE::controller is Metamodel::ClassHOW` in `my package EXPORTHOW`) is never installed
+  (#13471). Before that, test 1 passed (X::EXPORTHOW::InvalidDirective validation on
   module load). The rest needs EXPORTHOW SUPERSEDE of a custom meta-type HOW (a `tryit` method
   added to ClassHOW), which reference rakudo also lacks — blocks the whitelist regardless of
   mutsu.
@@ -191,23 +209,28 @@ completed fix history lives in `news/`.
 
 ## Recommended order of attack right now
 
-**Re-measured 2026-07-17.** The previous version of this section was stale in every item
-(it pointed at `99problems-51-to-60`/`61-to-70`, `advent2011-day11.t` and "the 11
-not-yet-root-caused `integration/` aborts" — **all of those are whitelisted**, and
-`integration/` has been at 0 remaining since 2026-07-17). Trust nothing here without
-re-running it; this ledger's *diagnoses* have also been wrong (see `my-6c.t` in
-[news/2026-07.md](../news/2026-07.md), where "needs lexical hoisting" was simply false).
+**Re-measured 2026-10-14.** Trust nothing here without re-running it; this ledger's
+*diagnoses* have been wrong before (see `my-6c.t` in [news/2026-07.md](../news/2026-07.md),
+where "needs lexical hoisting" was simply false).
 
-1. **`6.c/S02-names/pseudo-6c.t` — the stash road** (fails 18/161, measured). `CALLERS::` and
-   `OUR::` are now done (119-124; 44/46-53); the biggest remaining cluster is the `::($x)::('$y')`
+1. **Fix the regressions the re-measure found** — each is a general bug that only happens to
+   surface in a non-whitelisted file, so nothing gated it: #13470 (regex `^` after an atom; kills
+   all of `S05-mass/rx.t`), #13472 (merged signal supplies complete at once; `exit` inside a signal
+   `whenever` hangs — `6.c/MISC/bug-coverage-stress.t`), #13473 (`plan` unresolvable in a late
+   subtest — `S10-packages/basic.t`), #13471 (EXPORTHOW `class DECLARE::kw` spelling —
+   `S12-meta/exporthow.t`).
+2. **`APPENDICES/A02-some-day-maybe/misc.t` — the new ★** (raku v2026.09 passes 6/6): #13469
+   (`my @a[;]`) first, then re-check the remaining subtests.
+3. **`6.c/S02-names/pseudo-6c.t` — the stash road** (aborts at 56/161 on `::($our)::A43`; the
+   earlier per-subtest split is in its inventory row). `CALLERS::`, `OUR::` and inline-block
+   `CALLER::`/`CALLERS::` are done; the biggest remaining cluster is the `::($x)::('$y')`
    spelling, which parses to `IndirectTypeLookup($x).WHO.{'$y'}` — a *stash* lookup, distinct from
-   the SymbolicDeref deref road. It carries `::("CORE")` plus 116/125.
-   The other two remaining gaps are smaller and orthogonal: inline-block `CALLER::`/`CALLERS::`
-   (117/118/126/127 — every non-routine block should let `$CALLER::dyn` see the enclosing frame's
-   dynamic var; mutsu pushes no caller frame for blocks) and 137 `CALLER::OUTER::` (literal-name
-   lookup instead of pseudo-package re-entry). Per-snippet oracles work (raku SORRYs only on line
-   67's `::=`); see the inventory row for the full split.
-2. **Everything else in the tables is non-goal / no-oracle / awaiting-infrastructure.** Per the
+   the SymbolicDeref deref road. It carries `::("CORE")` plus 116/125; 137 `CALLER::OUTER::`
+   (literal-name lookup instead of pseudo-package re-entry) is orthogonal. Per-snippet oracles
+   work (raku SORRYs only on line 67's `::=`).
+4. Smaller single-file blockers with issues: #13474 (`S32-basics/xxPOS.t`, sigilless `-> \a`
+   overwritten by `my $a`), #13468 (`MISC/misc.t`, anonymous role punning).
+5. **Everything else in the tables is non-goal / no-oracle / awaiting-infrastructure.** Per the
    Current assumptions above, **roast is no longer the productive axis** — prefer PLAN.md §1
    (Batteries) and pick up a roast file only when that work happens to unblock it.
 

@@ -36,7 +36,11 @@ impl Interpreter {
         // Both iterate their operands, consuming an uncached Seq; a plain
         // gather is streamed through its coroutine list (ADR-11678), so
         // `(gather { loop { ... } }) Z (1..3)` stays lazy.
+        // A shared Array/Hash operand is walked as a snapshot: the operator
+        // runs user code per pair (ADR-0068 §20).
         let (left, right) = if matches!(meta, MetaKind::Zip | MetaKind::Cross) {
+            let left = crate::value::container_read::read_operand(left);
+            let right = crate::value::container_read::read_operand(right);
             let left = self.iterated_operand(left, true, false)?;
             (left, self.iterated_operand(right, true, false)?)
         } else {

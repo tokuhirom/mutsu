@@ -1834,9 +1834,16 @@ impl Compiler {
                 let is_native_type = type_constraint
                     .as_ref()
                     .is_some_and(|tc| self.is_native_type_constraint(tc));
+                // A `:=` bind of an array (`my Int @a := @src`) takes the bound
+                // container whole: its element type is checked against the
+                // declared one by the store (`check_array_bind_value_type`),
+                // and the element-wise check here would test the Array itself
+                // against `Int`.
+                let is_array_bind = bind_vardecl && name.starts_with('@');
                 let mut deferred_bind_type_check = None;
                 if let Some(tc) = type_constraint
                     && !is_hash
+                    && !is_array_bind
                     && !defer_type_constraint
                     && !(has_explicit_initializer
                         && matches!(expr, Expr::Literal(lit) if lit.is_nil())
@@ -1854,8 +1861,20 @@ impl Compiler {
                     };
                     let var_name_idx = self.code.add_constant(Value::str(display_name));
                     // A `:=` bind to a typed scalar reports X::TypeCheck::Binding
-                    // on mismatch (e.g. `my Str $x := 3`), not Assignment.
-                    if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%') {
+                    // on mismatch (e.g. `my Str $x := 3`), not Assignment. So
+                    // does a typed sigilless declaration, which binds its
+                    // initializer whether it is spelled `=` or `:=`
+                    // (`my UInt \x = $o`); its right-hand side reaches the
+                    // check wrapped in a VarRef, which only the bind check
+                    // looks through. A sigilless name in a list declaration
+                    // (`my (\b where "x") = ...`) is assigned, not bound.
+                    if sigilless_bind_vardecl
+                        || custom_traits.iter().any(|(t, _)| t == "__sigilless_decl")
+                    {
+                        self.code
+                            .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
+                    } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')
+                    {
                         if *is_state {
                             self.code
                                 .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
@@ -3865,6 +3884,9 @@ impl Compiler {
                         name_idx,
                         body_end: 0,
                         lexicals_idx: crate::opcode::NO_PACKAGE_LEXICALS,
+                        decls_idx: u32::MAX,
+                        own_slots_idx: u32::MAX,
+                        slots_idx: u32::MAX,
                     });
                     let saved_package = self.current_package.clone();
                     let saved_in_unit = self.in_unit_package;
@@ -3894,6 +3916,12 @@ impl Compiler {
                     // slot once the body exits (`PackageScope` restores the
                     // frame's locals then). Outside the package it is reachable
                     // only by its package name or through an import (#10558).
+                    // The names the body's own scope declares: the exit must
+                    // not mistake them for writes to an enclosing lexical
+                    // (#13428).
+                    let locals_from = self.code.locals.len();
+                    self.block_decl_tracker
+                        .push((self.decl_scope_depth + 1, Vec::new()));
                     let lexical_scope = self.push_dynamic_scope_lexical();
                     self.hoist_sub_decls(body, true);
                     self.hoist_type_decl_shells(body);
@@ -3901,6 +3929,21 @@ impl Compiler {
                         self.compile_stmt_discarding_value(s);
                     }
                     self.pop_dynamic_scope_lexical(lexical_scope);
+                    let (_, decls) = self.block_decl_tracker.pop().unwrap_or_default();
+                    self.set_package_scope_own_slots(
+                        pkg_idx,
+                        locals_from,
+                        decls.iter().map(String::as_str),
+                    );
+                    if !decls.is_empty() {
+                        let decls = self.code.add_constant(Value::array(
+                            decls.into_iter().map(Value::str).collect::<Vec<_>>(),
+                        ));
+                        if let OpCode::PackageScope { decls_idx, .. } = &mut self.code.ops[pkg_idx]
+                        {
+                            *decls_idx = decls;
+                        }
+                    }
                     self.current_package = saved_package;
                     self.in_unit_package = saved_in_unit;
                     self.current_package_kind = saved_package_kind;
@@ -4733,6 +4776,23 @@ impl Compiler {
                 is_lexical,
                 ..
             } => {
+                // A top-level `class Failure` shadows the built-in the way a
+                // `my class Failure` does: mutsu represents `Failure` natively,
+                // by name, so a package-scoped class of that name would be
+                // taken for the core type (#13141). Recompile it as the
+                // lexical declaration, which stores the class under its
+                // declaration-site name instead.
+                if !*is_lexical
+                    && self.current_package == "GLOBAL"
+                    && matches!(name.resolve().as_str(), "Failure")
+                {
+                    let mut lexical = stmt.clone();
+                    if let Stmt::ClassDecl { is_lexical, .. } = &mut lexical {
+                        *is_lexical = true;
+                    }
+                    self.compile_stmt(&lexical);
+                    return;
+                }
                 // Declaring the same class name twice in one lexical scope is an
                 // X::Redeclaration ("Redeclaration of symbol 'A'"), matching Raku's
                 // compile-time check. A stub (`class A {...}`) followed by its real
@@ -4741,7 +4801,9 @@ impl Compiler {
                 // redeclares (the current-scope set is reset on block entry).
                 // An `anon class NAME { ... }` installs no symbol at all, so it
                 // neither claims the name nor collides with a previous claim.
-                let is_anon_decl = custom_traits.iter().any(|(t, _)| t == "__anon_decl");
+                let is_anon_decl = custom_traits
+                    .iter()
+                    .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT);
                 if !is_anon_decl && !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
                     // Package blocks share this compiler scope, so key the

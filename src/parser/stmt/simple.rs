@@ -82,9 +82,10 @@ pub(in crate::parser) use lib_paths::{
     parser_lib_paths, register_preload_module_exports, try_add_parse_time_lib_path,
 };
 pub(in crate::parser) use module_exports::{
-    import_inline_module_exports, note_type_index_incomplete, register_inline_module_exports,
-    register_module_exports, register_module_exports_with_tags, register_module_type_names,
-    source_declares_export_hook, type_index_is_complete,
+    import_inline_module_exports, note_type_index_incomplete, register_import_tags,
+    register_inline_module_exports, register_module_exports, register_module_exports_with_tags,
+    register_module_type_names, scanned_module_value_terms, source_declares_export_hook,
+    type_index_is_complete,
 };
 /// Crate-wide for the compiler's `is_definite_return_spec` too: an imported
 /// `constant` may be a type alias the parser cannot see through (#11706).
@@ -139,6 +140,11 @@ enum TermBinding {
 #[derive(Clone, Default)]
 pub(in crate::parser) struct LexicalScope {
     user_subs: HashSet<String>,
+    prefix_operator_subs: HashSet<String>,
+    postfix_operator_subs: HashSet<String>,
+    infix_operator_subs: HashSet<String>,
+    circumfix_operator_subs: HashSet<String>,
+    postcircumfix_operator_subs: HashSet<String>,
     infix_assoc: HashMap<String, String>,
     test_assertion_subs: HashSet<String>,
     imported_functions: HashSet<String>,
@@ -403,6 +409,19 @@ pub(super) fn parse_hyper_assign_op(input: &str) -> Option<&str> {
 }
 
 impl LexicalScope {
+    /// Create a nested frame that inherits lexical modes but owns no bindings.
+    /// The scope stack itself provides visibility into the parent frames.
+    fn nested(parent: &Self) -> Self {
+        Self {
+            imports_export_hook_module: parent.imports_export_hook_module,
+            worries_suppressed: parent.worries_suppressed,
+            trace_pragma: parent.trace_pragma,
+            attributes_pragma: parent.attributes_pragma.clone(),
+            self_available: parent.self_available,
+            ..Self::default()
+        }
+    }
+
     /// Hand every name this scope binds to the CORE type fold
     /// (`parser::core_type_fold`, ADR-0115), which must not fold a name the
     /// unit binds anywhere.
