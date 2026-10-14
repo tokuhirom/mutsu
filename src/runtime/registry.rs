@@ -75,6 +75,9 @@ pub(crate) struct MethodEntry {
     /// `Registry::proto_methods` table in E8b/E8c). Written by
     /// [`Registry::set_proto_method`]; read by `Interpreter::
     /// lookup_proto_method`'s MRO walk via [`Registry::method_entry_proto`].
+    /// The proto declared `is hidden-from-backtrace`: its dispatch frame is
+    /// left out of a `Backtrace` like any other hidden routine's.
+    pub(crate) proto_hidden_from_backtrace: bool,
     pub(crate) proto: Option<FunctionDef>,
 }
 
@@ -928,6 +931,32 @@ impl Registry {
                 name: Symbol::intern(method_name),
             })
             .and_then(|entry| entry.proto.clone())
+    }
+
+    /// Whether the proto of `(class_name, method_name)` carries
+    /// `is hidden-from-backtrace` (see `MethodEntry::proto_hidden_from_backtrace`).
+    // Cost: O(1).
+    pub(crate) fn method_entry_proto_hidden(&self, class_name: &str, method_name: &str) -> bool {
+        self.method_entries
+            .get(&MethodEntryKey {
+                owner: Symbol::intern(class_name),
+                name: Symbol::intern(method_name),
+            })
+            .is_some_and(|entry| entry.proto_hidden_from_backtrace)
+    }
+
+    /// Record that the proto of `(class_name, method_name)` is hidden from
+    /// backtraces. Call after [`Self::set_proto_method`].
+    // Cost: O(1).
+    pub(crate) fn mark_proto_method_hidden(&mut self, class_name: &str, method_name: &str) {
+        let key = MethodEntryKey {
+            owner: Symbol::intern(class_name),
+            name: Symbol::intern(method_name),
+        };
+        self.method_entries
+            .entry(key)
+            .or_default()
+            .proto_hidden_from_backtrace = true;
     }
 
     pub(crate) fn bump_method_generation(&mut self) {
