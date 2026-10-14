@@ -360,6 +360,7 @@ impl Interpreter {
         args: Vec<Value>,
         skip_user_new: bool,
     ) -> Result<Value, RuntimeError> {
+        let target = self.normalize_role_type_object(&target);
         // A role with defaulted type parameters materialises to its default
         // parameterisation before constructing — but not while it is already
         // constructing through its own pun, where re-materialising would send
