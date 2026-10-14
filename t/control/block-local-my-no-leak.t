@@ -11,8 +11,8 @@ plan 8;
 my $seen-if = False;
 if 1 { my $b = 1; $seen-if = $b == 1; }
 ok $seen-if, 'my var is usable inside the if branch';
-ok !(EVAL 'my $a = 1; if 1 { my $leak_if = 5 }; defined try { $leak_if }'),
-    'if-branch my does not leak (try read is undefined/dies)';
+throws-like 'my $a = 1; if 1 { my $leak_if = 5 }; defined try { $leak_if }', X::Undeclared,
+    'if-branch my does not leak (a read after the branch is undeclared)';
 
 # while-branch fresh declaration does not leak out
 my $i = 0;
