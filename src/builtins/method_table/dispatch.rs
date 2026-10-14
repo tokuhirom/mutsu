@@ -462,7 +462,7 @@ pub(crate) fn answer_shapeless(
     // method of its own is read through it, not through its built-in string
     // form (`class C is Cool { method Str { "cool " } }; C.new.uc` is `COOL `).
     if row(id).owner == "Cool"
-        && crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str())
+        && cool_text_for_shapeless(method.as_str())
         && let crate::value::ValueView::Instance { class_name, .. } = target.view()
         && let Some(interp) = interp.as_deref_mut()
         && interp.has_user_method(class_name.as_str(), "Str")
@@ -471,7 +471,15 @@ pub(crate) fn answer_shapeless(
             Ok(text) => text,
             Err(err) => return Some(Err(err)),
         };
+        // A pattern or a limit (`comb(/\w/)`) is the interpreter's.
+        if method == "comb" && !args.is_empty() {
+            return Some(interp.call_method_with_values(text, "comb", args.to_vec()));
+        }
         return call(row(id), None, &text, args, Named::NONE).map(|(result, _)| result);
+    }
+    // `comb($pattern, $limit)` has no row: it is the user `Str` case alone.
+    if method == "comb" && args.len() == 2 {
+        return None;
     }
     // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91) and
     // `Cool.UInt` reads `$*TOLERANCE` for a `Complex` (§9.92); the other rows
@@ -482,6 +490,13 @@ pub(crate) fn answer_shapeless(
             || COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str())
     });
     call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result)
+}
+
+/// `Cool`'s text methods a receiver with no shape reaches: the audited list
+/// plus `chars`, which the closed shapes keep answering from their own rows.
+// Cost: O(m), m = audited names.
+fn cool_text_for_shapeless(method: &str) -> bool {
+    method == "chars" || crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method)
 }
 
 /// The row [`answer_shapeless`] answers a call with `arity` positional
@@ -518,6 +533,7 @@ pub(crate) fn shapeless_row(
                     | "words"
                     | "lines"
                     | "chop"
+                    | "comb"
                     | "flat"
                     | "isa"
                     | "AT-POS"
@@ -526,6 +542,9 @@ pub(crate) fn shapeless_row(
                     | "EXISTS-KEY"
                     | "ACCEPTS"
             ))
+        // `comb($pattern, $limit)` has no row of its own: only an instance
+        // with a user `Str` takes it (`answer_shapeless`).
+        && !(arity == 2 && method == "comb")
     {
         return None;
     }
@@ -568,7 +587,7 @@ pub(crate) fn shapeless_row(
     {
         return None;
     }
-    let text = crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str());
+    let text = cool_text_for_shapeless(method.as_str());
     let list = crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());
     // `flat($levels)` is `Iterable`'s alone: `Any` declares only `flat()`.
@@ -715,6 +734,7 @@ pub(crate) fn shapeless_row(
         _ => return None,
     };
     // `Int` and `Numeric` are `Mu`'s, not `Cool`'s (§9.92).
+    let arity = if method == "comb" { arity.min(1) } else { arity };
     super::owner_row(owner, method, arity).or_else(|| {
         coerce
             .then(|| super::owner_row(mu_owner, method, arity))
