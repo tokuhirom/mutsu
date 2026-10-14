@@ -495,9 +495,26 @@ pub(crate) fn answer_shapeless(
 /// `Cool`'s text methods a receiver with no shape reaches: the audited list
 /// plus `chars`, which the closed shapes keep answering from their own rows.
 // Cost: O(m), m = audited names.
-fn cool_text_for_shapeless(method: &str) -> bool {
-    method == "chars" || crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method)
+pub(crate) fn cool_text_for_shapeless(method: &str) -> bool {
+    method == "chars"
+        || crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method)
+        || COOL_SEARCH_FOR_SHAPELESS.contains(&method)
+        || method == "split"
 }
+
+/// The argument-taking `Cool` search methods, read through a `Cool` instance's
+/// own `Str` like the text methods above (#13035).
+const COOL_SEARCH_FOR_SHAPELESS: [&str; 9] = [
+    "contains",
+    "starts-with",
+    "ends-with",
+    "index",
+    "rindex",
+    "substr",
+    "subst",
+    "trans",
+    "indices",
+];
 
 /// The row [`answer_shapeless`] answers a call with `arity` positional
 /// arguments from, without running it.

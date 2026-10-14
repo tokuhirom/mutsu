@@ -168,6 +168,39 @@ impl Interpreter {
         self.cool_type_object_string_method(&subject, name)
     }
 
+    /// `Cool`'s text and search methods are `self.Str.METHOD`: a `Cool`
+    /// instance whose class declares its own `Str` is read through it, not
+    /// through the default instance rendering (`C<21>`; #13035). `None` for any
+    /// other call.
+    // Cost: O(1) name test, then O(d) for the MRO of an instance with a `Str`.
+    pub(crate) fn cool_instance_text_via_str(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        if !crate::builtins::method_table::cool_text_for_shapeless(method) {
+            return None;
+        }
+        let class_name = class_name.resolve();
+        if !self.has_user_method(&class_name, "Str")
+            || self.has_user_method_including_role(&class_name, method)
+            || !self
+                .class_mro(&class_name)
+                .contains(&crate::symbol::Symbol::intern("Cool"))
+        {
+            return None;
+        }
+        let text = match self.call_method_with_values(target.clone(), "Str", Vec::new()) {
+            Ok(text) => text,
+            Err(err) => return Some(Err(err)),
+        };
+        Some(self.call_method_with_values(text, method, args.to_vec()))
+    }
+
     /// `Cool.fmt` with the default format: `sprintf('%s', self)` of a `Cool` type
     /// object, which stringifies to `""` with the uninitialized-value warning
     /// (`Str.fmt` and `Int.fmt` are `""`). A call with a format already
