@@ -24,7 +24,7 @@ Reg.clear;
 ok $a !=== Reg.instance, 'a sibling method clearing it is seen by the next call';
 is Reg.bump + Reg.bump, 3, 'a second block keeps its own variable';
 
-class Cnt { { my $n = 0; method inc { $n++; $n } method get { $n } } }
+class Cnt { { my $n = 0; method inc { $n++; $n }; method get { $n } } }
 Cnt.inc; Cnt.inc;
 is Cnt.get, 2, 'postfix ++ in one method is read by a sibling';
 

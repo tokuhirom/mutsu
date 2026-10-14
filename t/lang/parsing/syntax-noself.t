@@ -35,7 +35,7 @@ is-deeply
 
 # A submethod (e.g. TWEAK) also provides `self`.
 lives-ok {
-    EVAL 'class A5 { has $.x = 9; submethod TWEAK { $.x } }; A5.new'
+    EVAL 'class A5 { has $.x = 9; submethod probe { $.x } }; A5.new.probe'
 }, '$.attr works in a submethod body';
 
 # A bare `die`/`fail` (no argument) parses to a reference to `$!` (the error

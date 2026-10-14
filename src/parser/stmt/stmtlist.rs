@@ -280,13 +280,43 @@ fn is_block_ending_stmt(stmt: &Stmt) -> bool {
         // modifiers. So `when 1 { } when 2 { }` on one line (no `;`) is a
         // "Strange text after block" error in Raku, matching `given $x { ... }`.
         Stmt::When { .. } | Stmt::Default(_) => true,
-        // Note: MethodDecl is excluded because it can arrive via my_decl which calls
-        // parse_statement_modifier, consuming the trailing separator before we see it.
+        // A direct method declaration ends with its body. Lexical and
+        // package-qualified methods are excluded because `my_decl` parses their
+        // trailing statement modifier before returning them here. The `is_my`
+        // flag also marks direct submethods, which the declaration parser handles
+        // without `my_decl`.
+        Stmt::MethodDecl {
+            is_my: false,
+            is_our: false,
+            ..
+        }
+        | Stmt::MethodDecl {
+            is_submethod: true,
+            is_our: false,
+            ..
+        } => true,
         // Stmt::Block, Stmt::If, Stmt::For, ClassDecl, RoleDecl, Package, etc. are
         // also excluded for similar reasons -- they may go through paths that consume
         // trailing separators before returning to stmt_list_with_mode.
         _ => false,
     }
+}
+
+/// A method declaration's value can itself be followed by a postfix on the
+/// same line (for example, the `}.list` in a class body).
+fn method_decl_postfix_follows(stmt: &Stmt, rest: &str) -> bool {
+    matches!(
+        stmt,
+        Stmt::MethodDecl {
+            is_my: false,
+            is_our: false,
+            ..
+        } | Stmt::MethodDecl {
+            is_submethod: true,
+            is_our: false,
+            ..
+        }
+    ) && rest.starts_with('.')
 }
 
 /// Check that the remaining input has a proper statement separator
@@ -511,7 +541,10 @@ pub(crate) fn stmt_list_with_mode(
                 if let Some(err) = super::modifier::pending_extra_modifier_error(r_ws) {
                     return Err(err);
                 }
-                if is_block_ending_stmt(&stmt) && !has_statement_separator(r) {
+                if is_block_ending_stmt(&stmt)
+                    && !has_statement_separator(r)
+                    && !method_decl_postfix_follows(&stmt, r_ws)
+                {
                     return Err(PError::fatal(
                         "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
                             .to_string(),

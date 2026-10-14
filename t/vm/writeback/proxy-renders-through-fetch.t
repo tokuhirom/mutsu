@@ -96,7 +96,7 @@ sub make-proxy($cell is rw) {
 # 5. A Proxy whose FETCH returns an object with a user-defined `.Str` composes:
 #    the FETCH runs first, then that class's stringifier.
 {
-    my class Boxed { method Str { 'BOXED' } method gist { 'GIST' } }
+    my class Boxed { method Str { 'BOXED' }; method gist { 'GIST' } }
     my $b = Boxed.new;
     my $p := Proxy.new(FETCH => -> $ { $b }, STORE => -> $, $ { });
     my $l = (1, $p, 3);
