@@ -458,6 +458,21 @@ pub(crate) fn answer_shapeless(
         }
     }
     let id = shapeless_row(interp.as_deref_mut(), target, method, args.len())?;
+    // `Cool`'s text methods are `self.Str.METHOD`: an instance with a `Str`
+    // method of its own is read through it, not through its built-in string
+    // form (`class C is Cool { method Str { "cool " } }; C.new.uc` is `COOL `).
+    if row(id).owner == "Cool"
+        && crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str())
+        && let crate::value::ValueView::Instance { class_name, .. } = target.view()
+        && let Some(interp) = interp.as_deref_mut()
+        && interp.has_user_method(class_name.as_str(), "Str")
+    {
+        let text = match interp.call_method_with_values(target.clone(), "Str", Vec::new()) {
+            Ok(text) => text,
+            Err(err) => return Some(Err(err)),
+        };
+        return call(row(id), None, &text, args, Named::NONE).map(|(result, _)| result);
+    }
     // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91) and
     // `Cool.UInt` reads `$*TOLERANCE` for a `Complex` (§9.92); the other rows
     // found here are pure.
