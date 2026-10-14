@@ -297,6 +297,15 @@ pub(crate) fn sum(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
             if let Err(err) = validate_sum_items(&items) {
                 return Some(Err(err));
             }
+            // A plain `Match` numifies through its text (`Match.Numeric` is
+            // `self.Str.Numeric`): a non-numeric one makes the sum a Failure.
+            if let Some(failure) = items
+                .iter()
+                .filter(|item| item.match_str_value().is_some())
+                .find_map(crate::runtime::utils::str_numeric_operand_failure)
+            {
+                return Some(Ok(failure));
+            }
             Some(
                 items
                     .iter()

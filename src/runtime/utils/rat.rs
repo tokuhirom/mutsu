@@ -60,6 +60,15 @@ pub(crate) fn str_numeric_operand_failure(value: &Value) -> Option<Value> {
         crate::runtime::str_numeric::str_numeric_failure(s)?;
         return Some(crate::builtins::methods_0arg::str_numeric_failure(s));
     }
+    // `Match.Numeric` is `self.Str.Numeric`: a plain match's text is parsed
+    // as a number wherever the match is an operand.
+    if value.match_dispatch_class() == "Match"
+        && let Some(text) = value.match_str_value()
+    {
+        let text = text.to_string_value();
+        crate::runtime::str_numeric::str_numeric_failure(&text)?;
+        return Some(crate::builtins::methods_0arg::str_numeric_failure(&text));
+    }
     let s = match value.view() {
         ValueView::Str(s) => s,
         ValueView::Mixin(inner, _) => match inner.view() {

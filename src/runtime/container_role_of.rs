@@ -23,6 +23,17 @@ impl Interpreter {
         &mut self,
         class_name: &str,
     ) -> Option<String> {
+        self.composed_container_role_arg(class_name, 0)
+    }
+
+    /// The key type (`keyof`) of the `Associative[V, K]` that `class_name` (or
+    /// a class in its MRO) composes: `Str(Any)` when the role names no key.
+    // Cost: as `composed_container_role_value_type`.
+    pub(super) fn composed_container_role_key_type(&mut self, class_name: &str) -> Option<String> {
+        self.composed_container_role_arg(class_name, 1)
+    }
+
+    fn composed_container_role_arg(&mut self, class_name: &str, index: usize) -> Option<String> {
         let mro = self.class_mro(class_name);
         let mut classes: Vec<String> = mro.iter().map(|s| s.resolve()).collect();
         if !classes.iter().any(|c| c == class_name) {
@@ -36,7 +47,7 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_default();
             for role in roles {
-                if let Some(value_type) = self.role_spelling_value_type(&role, 0) {
+                if let Some(value_type) = self.role_spelling_arg(&role, 0, index) {
                     return Some(value_type);
                 }
             }
@@ -48,6 +59,13 @@ impl Interpreter {
     /// `R[Str]`) supplies.
     // Cost: as `composed_container_role_value_type`, for one role.
     pub(crate) fn role_spelling_value_type(&self, role: &str, depth: usize) -> Option<String> {
+        self.role_spelling_arg(role, depth, 0)
+    }
+
+    /// Argument `index` of the `Positional`/`Associative` a role spelled
+    /// `role` supplies (0 the value type, 1 `Associative`'s key type).
+    // Cost: as `role_spelling_value_type`.
+    fn role_spelling_arg(&self, role: &str, depth: usize, index: usize) -> Option<String> {
         if depth > MAX_ROLE_DEPTH {
             return None;
         }
@@ -55,8 +73,13 @@ impl Interpreter {
             Some((base, rest)) => (base, rest.strip_suffix(']').map(parse_args)),
             None => (role, None),
         };
+        if base == "Associative" && index == 1 {
+            // `Associative[V]` and a bare `Associative` key on `Str(Any)`.
+            let key = args.and_then(|a| a.into_iter().nth(1));
+            return Some(key.unwrap_or_else(|| "Str(Any)".to_string()));
+        }
         if matches!(base, "Associative" | "Positional") {
-            return args.and_then(|a| a.into_iter().next());
+            return args.and_then(|a| a.into_iter().nth(index));
         }
         // A role's own parents, with its type parameters bound to `args`.
         let (params, parents) = {
@@ -69,7 +92,7 @@ impl Interpreter {
         let args = args.unwrap_or_default();
         for parent in parents {
             let bound = substitute_role_params(&parent, &params, &args);
-            if let Some(value_type) = self.role_spelling_value_type(&bound, depth + 1) {
+            if let Some(value_type) = self.role_spelling_arg(&bound, depth + 1, index) {
                 return Some(value_type);
             }
         }

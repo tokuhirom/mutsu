@@ -190,6 +190,19 @@ pub(crate) fn shape_has_row(receiver: Receiver, method: Symbol) -> bool {
     bits & (1 << (receiver.shape as u64)) != 0
 }
 
+/// The most positional arguments any row `receiver` reaches for `method`
+/// takes, when the name has rows for it and none is slurpy (a call with more
+/// positionals than that cannot bind: Rakudo's "Too many positionals passed").
+// Cost: O(a * log e), a = 8 arities, e = entries of the method's name.
+pub(crate) fn max_row_arity(receiver: Receiver, method: Symbol) -> Option<usize> {
+    if resolve(receiver, method, 7).is_some() {
+        return None;
+    }
+    (0..7)
+        .rev()
+        .find(|&arity| resolve(receiver, method, arity).is_some())
+}
+
 /// The row a receiver dispatches `method` to when called with `arity`
 /// positional arguments, if the table has one.
 // Cost: O(log e), e = entries of the method's name (a memo read, two bit
