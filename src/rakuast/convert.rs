@@ -6667,7 +6667,10 @@ fn slipped_control_call(
         [Stmt::Succeed] => "succeed",
         _ => return Ok(None),
     };
-    let Expr::MethodCall { target, name: m, .. } = cond else {
+    let Expr::MethodCall {
+        target, name: m, ..
+    } = cond
+    else {
         return Ok(None);
     };
     let (Expr::ArrayLiteral(items), "elems") = (&**target, m.as_str()) else {

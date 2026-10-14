@@ -11,6 +11,7 @@ pub(crate) use expr::{
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
+pub(crate) use primary::ident::slipped_control_stmt;
 pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
@@ -22,7 +23,6 @@ pub(crate) use primary::regex::{
     subst_compound_thunk, subst_pattern_source,
 };
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
-pub(crate) use primary::ident::slipped_control_stmt;
 pub(crate) use primary::var::{fresh_anon_array_name, fresh_anon_state_name, is_pseudo_package};
 pub(crate) use primary::{
     ANON_COLONS_TRAIT, ANON_DECL_TRAIT, mark_anon_package_stmt, next_anon_class_name,
