@@ -2132,6 +2132,7 @@ t/lang/double-array-sigil-context.t
 t/lang/double-sigil-hash-term.t
 t/lang/eval-angle-list-whitespace.t
 t/lang/eval-caller-frames.t
+t/lang/eval-check-imports.t
 t/lang/eval-class-redeclaration-cross-boundary.t
 t/lang/eval-class-redeclaration.t
 t/lang/eval-compile-checks-nested-positions.t
@@ -4594,6 +4595,7 @@ t/rakuast/rakuast-eval-block-arg.t
 t/rakuast/rakuast-eval-bool.t
 t/rakuast/rakuast-eval-call.t
 t/rakuast/rakuast-eval-callterm.t
+t/rakuast/rakuast-eval-check-validation.t
 t/rakuast/rakuast-eval-class.t
 t/rakuast/rakuast-eval-control.t
 t/rakuast/rakuast-eval-cstyle-loop.t

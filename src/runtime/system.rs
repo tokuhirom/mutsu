@@ -72,7 +72,7 @@ pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
 ];
 
 impl Interpreter {
-    fn validate_eval_source(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+    pub(super) fn validate_eval_source(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
         self.check_eval_mainline_placeholders(stmts)?;
         self.check_eval_class_redeclarations(stmts)?;
         self.check_eval_undeclared_trusts(stmts)?;

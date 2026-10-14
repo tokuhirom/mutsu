@@ -170,6 +170,11 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
+/// See `stmt::simple::scanned_module_value_terms`.
+pub(crate) fn scanned_module_value_terms(path: &std::path::Path) -> Option<Vec<String>> {
+    stmt::simple::scanned_module_value_terms(path)
+}
+
 /// See `stmt::simple::source_declares_export_hook`.
 pub(crate) fn source_declares_export_hook(source: &str) -> bool {
     stmt::simple::source_declares_export_hook(source)

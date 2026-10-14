@@ -147,6 +147,11 @@ impl Scan {
             return;
         }
         self.declared.insert(bare.to_string());
+        // `constant term:<$bar> = 42` declares `$bar`, which the parser reads
+        // as a bare term, sigil and all.
+        if bare.len() != name.len() {
+            self.declared.insert(name.to_string());
+        }
         // `sub term:<x> {...}` declares the bare term `x`.
         if let Some(inner) = term_name(bare) {
             self.declared.insert(inner.to_string());

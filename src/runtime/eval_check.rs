@@ -67,12 +67,24 @@ fn collect_use_declared_type_names(
         if j > start {
             let name: String = bytes[start..j].iter().collect();
             if name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                // `role A::Greeter is export` is imported as `Greeter`.
+                if let Some((_, short)) = name.rsplit_once("::")
+                    && !short.is_empty()
+                {
+                    out.insert(short.to_string());
+                }
                 out.insert(name);
             }
         }
         i = (i + kw.len()).max(j);
     }
     collect_source_constant_names(&bytes, out);
+    // Its enum values and value terms, which the parse that read the unit's
+    // `use` already scanned (`use M :Tag; C`); like a `constant`, each is
+    // usable as a term and as a value constraint.
+    if let Some(terms) = crate::parser::scanned_module_value_terms(&path) {
+        out.extend(terms);
+    }
     crate::parser::source_declares_export_hook(&source)
 }
 
