@@ -563,10 +563,16 @@ impl Compiler {
     /// are a set, so a scope reached by both is noted once.
     // Cost: O(s), s = statements in `stmts`.
     pub(super) fn note_predeclared_vars(&mut self, stmts: &[Stmt]) {
+        // A `for` body parks its own frame in `pending_scope_frame` while its
+        // routines are hoisted: the innermost `local_scopes` entry is then the
+        // ENCLOSING scope, which must not learn the body's declarations (#13531).
         let scope = self.local_scopes.len() - 1;
         for stmt in stmts {
             if let Stmt::VarDecl { name, .. } = stmt {
-                self.local_scopes[scope].note_predeclared(name);
+                match self.pending_scope_frame.as_mut() {
+                    Some(frame) => frame.note_predeclared(name),
+                    None => self.local_scopes[scope].note_predeclared(name),
+                }
             }
         }
     }
