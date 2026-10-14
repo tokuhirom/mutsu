@@ -4819,6 +4819,14 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
+                        // A statement-form I/O builtin tail prints and the unit's
+                        // value is `True`, as for a routine body.
+                        Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => {
+                            self.compile_stmt(stmt);
+                            self.compile_expr(&Expr::Literal(Value::TRUE));
+                            self.emit_unit_tail_result();
+                            continue;
+                        }
                         Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => {
                             self.compile_type_decl_value(stmt);
                             self.emit_unit_tail_result();
