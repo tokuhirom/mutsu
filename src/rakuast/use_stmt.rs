@@ -382,7 +382,14 @@ pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     });
     let (mut arg, mut tags) = lower_argument(node)?;
     // `Foo:from<NQP>`: the parser keeps the language as an argument and a tag.
-    if let Some(language) = from_language(named_child(node, "module-name")?) {
+    if let Some(language) = node
+        .fields
+        .iter()
+        .any(|f| f.name == Some("module-name"))
+        .then(|| named_child(node, "module-name"))
+        .transpose()?
+        .and_then(from_language)
+    {
         if arg.is_some() || !tags.is_empty() {
             return Err(super::lower::unsupported(node));
         }
