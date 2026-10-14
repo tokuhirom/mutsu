@@ -1319,10 +1319,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 is_colons_package(custom_traits),
             );
             if let Some(expr) = name_expr {
-                let name = node_field(
-                    Some("name"),
-                    super::symbolic_deref::indirect_name(expr)?,
-                );
+                let name = node_field(Some("name"), super::symbolic_deref::indirect_name(expr)?);
                 match fields.iter_mut().find(|f| f.name == Some("name")) {
                     Some(slot) => *slot = name,
                     None => fields.push(name),
