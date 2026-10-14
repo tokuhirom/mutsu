@@ -37,7 +37,7 @@ pub(super) fn return_constraint_node(t: &str) -> Result<RakuAstNode, RuntimeErro
 pub(super) fn plain_string_literal(t: &str) -> Option<&str> {
     let quote = t.chars().next().filter(|c| matches!(c, '\'' | '"'))?;
     let inner = t.strip_prefix(quote)?.strip_suffix(quote)?;
-    if inner.contains(|c| matches!(c, '\'' | '"' | '\\' | '$' | '@' | '%' | '&' | '{')) {
+    if inner.contains(['\'', '"', '\\', '$', '@', '%', '&', '{']) {
         return None;
     }
     Some(inner)
