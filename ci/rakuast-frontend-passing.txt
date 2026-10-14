@@ -4004,6 +4004,7 @@ t/oo/method/temporal-shift-edit-method-rows.t
 t/oo/method/topic-dynamic-method-call.t
 t/oo/method/topic-method-colon-args-trailing-comma-modifier.t
 t/oo/method/topic-quoted-method-call.t
+t/oo/method/topic-quoted-method-name-modifier.t
 t/oo/method/tree-method.t
 t/oo/method/trig-method-name-on-user-class.t
 t/oo/method/type-object-method-aggregate-assign.t
