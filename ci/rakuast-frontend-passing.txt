@@ -1933,6 +1933,7 @@ t/grammar/token-my-closure-outlives-defining-frame.t
 t/grammar/token-my-two-instances-same-name.t
 t/grammar/token-param-default-without-args.t
 t/grammar/token-redeclaration.t
+t/grammar/token-subrule-arg-side-effects.t
 t/grammar/token-wrap-callsame-failed-cursor.t
 t/grammar/token-zero-width-quantified-subrule.t
 t/grammar/unit-grammar-also-is.t
@@ -4658,6 +4659,7 @@ t/rakuast/rakuast-interp-code-block.t
 t/rakuast/rakuast-interpolating-angle-subscript.t
 t/rakuast/rakuast-interpolating-word-quotes.t
 t/rakuast/rakuast-invocant-parameters.t
+t/rakuast/rakuast-itemize-anonymous.t
 t/rakuast/rakuast-keyed-hash-declaration.t
 t/rakuast/rakuast-l10n-constructs.t
 t/rakuast/rakuast-labelled-callable-cohort.t
@@ -4717,6 +4719,7 @@ t/rakuast/rakuast-quoted-method-dispatch.t
 t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-react-whenever-done.t
 t/rakuast/rakuast-reduction.t
+t/rakuast/rakuast-regex-arg-expressions.t
 t/rakuast/rakuast-regex-argumented-aliases.t
 t/rakuast/rakuast-regex-argumented-subrules.t
 t/rakuast/rakuast-regex-assertions-and-backrefs.t
@@ -4782,6 +4785,7 @@ t/rakuast/rakuast-supply-block.t
 t/rakuast/rakuast-supply-done-round-trip.t
 t/rakuast/rakuast-temp-and-let.t
 t/rakuast/rakuast-temp-method-assign.t
+t/rakuast/rakuast-term-constant.t
 t/rakuast/rakuast-term-name-math-constants.t
 t/rakuast/rakuast-ternary.t
 t/rakuast/rakuast-topic-call.t
@@ -5174,6 +5178,7 @@ t/regex/regex-str-coercion-name.t
 t/regex/regex-str-coercion-warns.t
 t/regex/regex-subpattern-parse-memo.t
 t/regex/regex-subrule-absolute-position.t
+t/regex/regex-subrule-block-argument.t
 t/regex/regex-subrule-parameter-typecheck.t
 t/regex/regex-subrule-parse-cache.t
 t/regex/regex-symbolic-call-lazy.t
@@ -5459,6 +5464,7 @@ t/routines/closure/anon-sigilless-proxy-store.t
 t/routines/closure/anon-state-per-routine-call.t
 t/routines/closure/anon-sub-name-gist.t
 t/routines/closure/anon-sub-raw-lvalue-return.t
+t/routines/closure/anon-var-eval.t
 t/routines/closure/assuming-named-currying.t
 t/routines/closure/assuming-type-capture.t
 t/routines/closure/block-sub-closure-binding.t
