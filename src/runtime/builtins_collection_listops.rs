@@ -587,88 +587,54 @@ impl Interpreter {
         )
     }
 
+    // Cost: as `builtin_uniq_family`.
     pub(super) fn builtin_unique(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if args.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
-
-        let mut positional = Vec::new();
-        let mut method_args = Vec::new();
-        for arg in args {
-            match arg.view() {
-                ValueView::Pair(key, _) if key == "as" || key == "with" => {
-                    method_args.push(arg.clone());
-                }
-                _ => positional.push(arg.clone()),
-            }
-        }
-
-        if positional.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
-
-        let target = if positional.len() == 1 {
-            positional[0].clone()
-        } else {
-            Value::array(positional)
-        };
-        self.warm_which_identity(&target);
-        self.call_method_with_values(target, "unique", method_args)
+        self.builtin_uniq_family(args, "unique")
     }
 
+    // Cost: as `builtin_uniq_family`.
     pub(super) fn builtin_repeated(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if args.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
-
-        let mut positional = Vec::new();
-        let mut method_args = Vec::new();
-        for arg in args {
-            match arg.view() {
-                ValueView::Pair(key, _) if key == "as" || key == "with" => {
-                    method_args.push(arg.clone());
-                }
-                _ => positional.push(arg.clone()),
-            }
-        }
-
-        if positional.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
-
-        let target = if positional.len() == 1 {
-            positional[0].clone()
-        } else {
-            Value::array(positional)
-        };
-        self.call_method_with_values(target, "repeated", method_args)
+        self.builtin_uniq_family(args, "repeated")
     }
 
+    // Cost: as `builtin_uniq_family`.
     pub(super) fn builtin_squish(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if args.is_empty() {
-            return Ok(Value::array(Vec::new()));
-        }
+        self.builtin_uniq_family(args, "squish")
+    }
 
+    /// The routine forms of `unique`/`repeated`/`squish` (`+values, :&as,
+    /// :&with`): the `:as`/`:with` pairs go to the method, the rest is the
+    /// list under the single-argument rule, with a `Slip` argument slipping
+    /// into it (`unique((1, 2).Slip, (2, 3).Slip)` is `(1 2 3)`, #13506).
+    // Cost: O(n) to gather the arguments, n = arguments plus slipped items,
+    // then the method's own cost.
+    fn builtin_uniq_family(&mut self, args: &[Value], method: &str) -> Result<Value, RuntimeError> {
         let mut positional = Vec::new();
         let mut method_args = Vec::new();
+        let mut slipped = false;
         for arg in args {
             match arg.view() {
                 ValueView::Pair(key, _) if key == "as" || key == "with" => {
                     method_args.push(arg.clone());
                 }
+                ValueView::Slip(items) => {
+                    slipped = true;
+                    positional.extend(items.iter().cloned());
+                }
                 _ => positional.push(arg.clone()),
             }
         }
-
         if positional.is_empty() {
             return Ok(Value::array(Vec::new()));
         }
-
-        let target = if positional.len() == 1 {
-            positional[0].clone()
+        let target = if positional.len() == 1 && !slipped {
+            positional.pop().unwrap_or(Value::NIL)
         } else {
             Value::array(positional)
         };
-        self.call_method_with_values(target, "squish", method_args)
+        if method == "unique" {
+            self.warm_which_identity(&target);
+        }
+        self.call_method_with_values(target, method, method_args)
     }
 }
