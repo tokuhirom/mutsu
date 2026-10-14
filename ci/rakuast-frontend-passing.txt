@@ -1859,6 +1859,7 @@ t/grammar/grammar-rule-args.t
 t/grammar/grammar-rule-comment-and-lookaround-layout.t
 t/grammar/grammar-rule-constant-argument-forms.t
 t/grammar/grammar-rule-dynvar-decl-frames.t
+t/grammar/grammar-rule-object-argument.t
 t/grammar/grammar-rule-optional-separator-whitespace.t
 t/grammar/grammar-rule-params-bound-per-call.t
 t/grammar/grammar-rule-percent-percent-sep.t
@@ -4234,6 +4235,7 @@ t/oo/role/role-attribute-is-default-nil-restore.t
 t/oo/role/role-attribute-type-constraint.t
 t/oo/role/role-augment-method-deprecated-message.t
 t/oo/role/role-bless-pun.t
+t/oo/role/role-block-callable-arg.t
 t/oo/role/role-body-bind-aliases-outer-lexical.t
 t/oo/role/role-body-bind-composer-shadow.t
 t/oo/role/role-body-bind-group.t
@@ -4276,6 +4278,7 @@ t/oo/role/role-diamond-stub-concrete.t
 t/oo/role/role-does-container-decl.t
 t/oo/role/role-does-parametric-role-attr-default.t
 t/oo/role/role-dotted-name-sibling-not-real-nesting.t
+t/oo/role/role-double-parametric-args-distinct.t
 t/oo/role/role-double-parametric-multi-dispatch.t
 t/oo/role/role-enum-coercion-param-type.t
 t/oo/role/role-expr-hyphenated-name.t
@@ -4750,6 +4753,7 @@ t/rakuast/rakuast-regex.t
 t/rakuast/rakuast-require-import-list.t
 t/rakuast/rakuast-require-statement.t
 t/rakuast/rakuast-return-type.t
+t/rakuast/rakuast-role-arg-blocks.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
 t/rakuast/rakuast-routine-trait-order.t
@@ -5891,6 +5895,7 @@ t/routines/seq-cache-list-view-and-eqv-routine.t
 t/routines/sibling-scope-routine-shadow.t
 t/routines/signature/aggregate-param-shares-container.t
 t/routines/signature/allomorph-param-type-check.t
+t/routines/signature/amp-infix-param-shadows-proto.t
 t/routines/signature/amp-param-positional-light.t
 t/routines/signature/anon-onearg-param-marker.t
 t/routines/signature/anon-optional-param-tail.t
@@ -7197,6 +7202,7 @@ t/vm/scope/lexical-class-identity.t
 t/vm/scope/lexical-class-refines-builtin.t
 t/vm/scope/lexical-class-shadows-exited-constant.t
 t/vm/scope/lexical-class-sibling-identity.t
+t/vm/scope/lexical-code-binding-shadow-survives-recompile.t
 t/vm/scope/lexical-decl-and-autoviv.t
 t/vm/scope/lexical-name-resolution-recursive-activation.t
 t/vm/scope/lexical-name-resolution-reflective.t
