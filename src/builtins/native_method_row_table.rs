@@ -2387,6 +2387,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Associative", "of", 1, 25),
     ("Associative", "keyof", 1, 25),
     ("Callable", "of", 1, 25),
+    // `Block` declares its own `of` next to the `Callable` one `Code` composes.
+    ("Block", "of", 1, 29),
     ("Baggy", "of", 1, 25),
     ("Setty", "of", 1, 25),
     ("Mixy", "of", 1, 25),
