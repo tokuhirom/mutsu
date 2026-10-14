@@ -68,10 +68,9 @@ fn collect_use_declared_type_names(
             let name: String = bytes[start..j].iter().collect();
             if name.starts_with(|c: char| c.is_ascii_uppercase()) {
                 // `role A::Greeter is export` is imported as `Greeter`.
-                if let Some((_, short)) = name.rsplit_once("::")
-                    && !short.is_empty()
-                {
-                    out.insert(short.to_string());
+                let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(&name));
+                if short.as_str() != name && !short.as_str().is_empty() {
+                    out.insert(short.as_str().to_string());
                 }
                 out.insert(name);
             }
