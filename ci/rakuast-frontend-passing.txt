@@ -4706,6 +4706,7 @@ t/rakuast/rakuast-pre-post-phasers.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
 t/rakuast/rakuast-private-quoted-method.t
 t/rakuast/rakuast-proto-onlystar-coercion.t
+t/rakuast/rakuast-pseudo-type-coercion-param.t
 t/rakuast/rakuast-qualified-decl-name.t
 t/rakuast/rakuast-qualified-module-constants.t
 t/rakuast/rakuast-qualified-variable-declaration.t
@@ -5930,6 +5931,7 @@ t/routines/signature/destructure-literal-postconstraint.t
 t/routines/signature/destructure-named-alias.t
 t/routines/signature/destructure-named-from-capture.t
 t/routines/signature/destructure-nested-pattern.t
+t/routines/signature/destructure-pseudo-type-constraint.t
 t/routines/signature/destructure-rest-params-named-default.t
 t/routines/signature/destructuring-sigilless-params.t
 t/routines/signature/direct-call-outer-var-ignores-callers-readonly-param.t

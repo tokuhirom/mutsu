@@ -5857,7 +5857,10 @@ pub(super) const ANONYMOUS_SUBSIGNATURE: &str = "__subsig__";
 /// pseudo-type is a nominal type here, the way rakudo's `.AST` shows it.
 pub(super) fn type_capture_name(pd: &ParamDef) -> Option<&str> {
     pd.captured_type_name().filter(|_| {
-        !pd.type_constraint.as_deref().is_some_and(is_pseudo_type) || pd.type_capture.is_some()
+        !pd.type_constraint.as_deref().is_some_and(|t| {
+            // `::?CLASS() $x` is a coercion on the pseudo-type, not a capture.
+            is_pseudo_type(t.strip_suffix("()").unwrap_or(t))
+        }) || pd.type_capture.is_some()
     })
 }
 
