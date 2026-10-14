@@ -10945,8 +10945,13 @@ impl CompiledCode {
         // A plain-scalar for-loop parameter (`for @a -> $i {...}`) is this
         // code's OWN binding, never something to capture from an enclosing
         // scope. See `for_loop_param_syms`.
+        // A name the chunk also reads outside the loop while no loop binds
+        // it is a forced capture of the enclosing frame's lexical (#13420):
+        // it stays free.
         if !self.for_loop_param_syms.is_empty() {
-            free.retain(|sym| !self.for_loop_param_syms.contains(sym));
+            free.retain(|sym| {
+                !self.for_loop_param_syms.contains(sym) || self.forced_free_var_syms.contains(sym)
+            });
         }
         // ADR-0032 D1 populates `container_ref_capture_syms` at EMISSION time
         // inside `Compiler::emit_wrap_var_ref`, purely from "does `local_map`
@@ -11268,6 +11273,10 @@ impl CompiledCode {
             // unconditional strip that would defeat D1/D2 for the exact
             // shape they exist to fix.
             .filter(|sym| !self.container_ref_capture_syms.contains(sym))
+            // A name a by-name loop parameter also binds in this chunk keeps
+            // its by-name reads: inside the loop they must see the parameter's
+            // env binding, which an upvalue read would bypass (#13420).
+            .filter(|sym| !self.for_loop_param_syms.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| {
                     crate::env::is_plain_user_lexical(s)
