@@ -216,8 +216,7 @@ impl Compiler {
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
         let attr_decls = self.compile_class_attr_decls(body);
-        let attr_free_reads = self.attr_decl_free_var_syms(&attr_decls);
-        self.bubble_decl_time_free_reads(attr_free_reads);
+        self.bubble_attr_decl_captures(&attr_decls);
         let method_name_chunks = self.compile_method_name_chunks(body);
         let parent_arg_chunks = self.compile_parent_arg_chunks(parent_args);
         // ADR-0019 D3-8a: only a statically-named class (`name_expr` absent —
@@ -654,6 +653,59 @@ impl Compiler {
         out
     }
 
+    /// Hand the outer lexicals the attribute DEFAULT and `where` expressions
+    /// of a class/role body name to the declaring frame: their reads join its
+    /// capture set ([`Self::bubble_decl_time_free_reads`]), and every one of
+    /// them, read or written, is boxed into a shared cell at its declaration,
+    /// as a method body's writes are (`compile_method_body`'s
+    /// `named_sub_captures` push).
+    ///
+    /// The expressions run at construction time, long after registration and
+    /// usually from another frame. Registration captures each named lexical's
+    /// binding (`Interpreter::capture_attr_decl_lexicals`), and only a cell
+    /// is that binding rather than a copy of its value: a write from the
+    /// default (`has $.n = ++$count`) has to reach the lexical, and a read has
+    /// to see the declaring scope's later writes (#13340).
+    // Cost: O(n), n = names the attribute expressions read or write.
+    fn bubble_attr_decl_captures(&mut self, attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)]) {
+        let reads = self.attr_decl_free_var_syms(attr_decls);
+        let mut writes: Vec<Symbol> = Vec::new();
+        for (_, decl) in attr_decls {
+            for arg in [decl.default.as_ref(), decl.where_constraint.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                let crate::opcode::DeclTraitArg::Compiled(chunk) = arg else {
+                    continue;
+                };
+                let code = &chunk.code;
+                for sym in code
+                    .free_var_writes
+                    .iter()
+                    .chain(code.free_var_container_writes.iter())
+                    .chain(code.needs_cell_named_sub_free.iter())
+                {
+                    if sym.with_str(crate::env::is_plain_user_lexical) && !writes.contains(sym) {
+                        writes.push(*sym);
+                    }
+                }
+            }
+        }
+        let mut cells = writes.clone();
+        for sym in &reads {
+            if !cells.contains(sym) {
+                cells.push(*sym);
+            }
+        }
+        self.bubble_decl_time_free_reads(reads);
+        if !writes.is_empty() {
+            self.record_type_body_written_lexicals(writes);
+        }
+        if !cells.is_empty() {
+            self.code.named_sub_captures.push((cells, Vec::new()));
+        }
+    }
+
     /// Free plain-lexical names referenced by the attribute DEFAULT and
     /// `where` expressions of a class/role body, so the declaring frame can
     /// capture them (see [`Self::bubble_decl_time_free_reads`]). These chunks
@@ -743,8 +795,7 @@ impl Compiler {
         };
         let trait_args = self.compile_decl_trait_args(custom_traits);
         let attr_decls = self.compile_role_attr_decls(body);
-        let attr_free_reads = self.attr_decl_free_var_syms(&attr_decls);
-        self.bubble_decl_time_free_reads(attr_free_reads);
+        self.bubble_attr_decl_captures(&attr_decls);
         let method_name_chunks = self.compile_method_name_chunks(body);
         let parent_ops = self.compile_role_parent_ops(body);
         // ADR-0019 D3-8a: `role_body_method_decl` always passes `is_hidden:
