@@ -7,7 +7,7 @@ plan 6;
 # is True, like the call form (#13319).
 my $out = "";
 {
-    my $*OUT = class { method print(*@a) { $out ~= @a.join; True } method flush { } }.new;
+    my $*OUT = class { method print(*@a) { $out ~= @a.join; True }; method flush { } }.new;
     is-deeply EVAL(q[say 1]), True, 'say listop tail is True';
     is-deeply EVAL(q[put 2]), True, 'put listop tail is True';
     is-deeply EVAL(q[print 3]), True, 'print listop tail is True';
