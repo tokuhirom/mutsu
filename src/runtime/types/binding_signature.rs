@@ -3421,6 +3421,18 @@ impl Interpreter {
                             value = Value::real_array(self.force_lazy_list_vm(&list)?);
                         }
                     }
+                    // A sigiled parameter (`$obj`) is a fresh binding of the
+                    // bare name `obj` in this frame, so the readonly marker a
+                    // caller's sigilless `\obj` left in the inherited env
+                    // names a different variable. Left in place, a write to
+                    // `$obj is rw` died with "Cannot modify an immutable"
+                    // (#13207: PDF's `sub (\obj) is rw` accessor around
+                    // `coerce-to($obj is rw, ...)`). `is copy` cleared it
+                    // above already.
+                    if !pd.sigilless && self.lexicals.sigilless_alias_seen {
+                        self.env
+                            .remove_sym(crate::runtime::sigilless_readonly_key(&pd.name));
+                    }
                     if pd.sigilless {
                         // Every arm below writes at least one of the two
                         // sigilless meta keys; the latch is what lets an
