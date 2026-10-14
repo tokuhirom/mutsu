@@ -1396,6 +1396,7 @@ t/control/for-kv-rw-immutable-source.t
 t/control/for-literal-list-view-readonly.t
 t/control/for-live-array-name-collision.t
 t/control/for-loop-instance-writeback.t
+t/control/for-loop-zero-arity-block.t
 t/control/for-modifier-trailing-comma.t
 t/control/for-pairs-value-quanthash-writeback.t
 t/control/for-paren-comment-semicolon.t
@@ -1960,6 +1961,7 @@ t/io/double-slurpy-implicit-named.t
 t/io/eval-method-implicit-slurpy-not-undeclared.t
 t/io/file-open-errors.t
 t/io/file-test-ops.t
+t/io/for-loop-slurpy-param-arity.t
 t/io/for-slurpy-rw-lazy.t
 t/io/handle-lines-head-reads-prefix.t
 t/io/handle-subclass-open-keeps-subclass.t
@@ -4528,6 +4530,7 @@ t/rakuast/rakuast-bareword-declared-scope.t
 t/rakuast/rakuast-bareword-resolution.t
 t/rakuast/rakuast-bareword-scope-shadowing.t
 t/rakuast/rakuast-bind-declaration.t
+t/rakuast/rakuast-bind-where.t
 t/rakuast/rakuast-blocks.t
 t/rakuast/rakuast-call-assign-initializer.t
 t/rakuast/rakuast-call-lvalue-assign.t
@@ -4537,6 +4540,7 @@ t/rakuast/rakuast-caller-scope-names.t
 t/rakuast/rakuast-calls-assign.t
 t/rakuast/rakuast-class-traits-multi-constant.t
 t/rakuast/rakuast-class.t
+t/rakuast/rakuast-colonpair-allomorph.t
 t/rakuast/rakuast-colonpair-literal.t
 t/rakuast/rakuast-compound-assign.t
 t/rakuast/rakuast-compunit.t
@@ -4630,6 +4634,7 @@ t/rakuast/rakuast-fat-arrow-key.t
 t/rakuast/rakuast-fat-arrow-whatever.t
 t/rakuast/rakuast-folded-literals.t
 t/rakuast/rakuast-for-destructuring.t
+t/rakuast/rakuast-for-lone-slurpy.t
 t/rakuast/rakuast-for-pointy-params.t
 t/rakuast/rakuast-for-signature.t
 t/rakuast/rakuast-for.t
@@ -6358,6 +6363,7 @@ t/types/buf-type-object-repr.t
 t/types/buf-wide-read-write-int.t
 t/types/buf-write-int-int-subclass.t
 t/types/cas-typed-constraint.t
+t/types/coercion/allomorph-angle-bracket-whitespace.t
 t/types/coercion/allomorph-numeric-compare.t
 t/types/coercion/allomorph-raku-gist.t
 t/types/coercion/allomorph-raku-repr.t
@@ -7159,6 +7165,7 @@ t/vm/scope/compound-declared-name-is-not-a-scope.t
 t/vm/scope/conditional-my-declaration.t
 t/vm/scope/declaration-initializer-self-scope.t
 t/vm/scope/declaration-scope.t
+t/vm/scope/declaration-where-outer-lexicals.t
 t/vm/scope/declarator-adverb-body-lexicals.t
 t/vm/scope/dynamic-array-hash-var-not-found.t
 t/vm/scope/dynamic-codevar-chdir.t
