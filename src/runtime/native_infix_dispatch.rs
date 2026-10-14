@@ -29,7 +29,7 @@ use crate::runtime::dispatch_candidates::UNRELATED_DISTANCE;
 type CoreParam = &'static str;
 
 /// One core candidate, reduced to its two positional constraints.
-type CoreSig = (CoreParam, CoreParam);
+pub(crate) type CoreSig = (CoreParam, CoreParam);
 
 // --- The building blocks the core candidate sets are assembled from ---------
 //
@@ -230,6 +230,22 @@ pub(crate) struct CoreInfixWinsKey {
 struct CoreRank {
     typed: usize,
     distance: usize,
+    /// The two positional constraints of the candidate, for the ambiguity message.
+    sig: CoreSig,
+}
+
+/// Who takes a call to an operator that has both a user candidate and the
+/// modelled core set.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum CoreInfixVerdict {
+    /// The user candidate out-ranks the core set (or there is no core
+    /// candidate to rank against).
+    User,
+    /// The core set out-ranks the user candidate: the native operator runs.
+    Core,
+    /// The user candidate ties the narrowest core candidate exactly and is not
+    /// `is default`: `X::Multi::Ambiguous` in rakudo.
+    Tie(CoreSig),
 }
 
 impl Interpreter {
@@ -259,7 +275,7 @@ impl Interpreter {
         def: &Arc<FunctionDef>,
         left: &Value,
         right: &Value,
-    ) -> bool {
+    ) -> CoreInfixVerdict {
         let key = self.core_infix_wins_key(name, def, left, right);
         let generation = self.caches.fn_resolve_gen;
         if let Some(key) = &key
@@ -311,19 +327,19 @@ impl Interpreter {
         def: &FunctionDef,
         left: &Value,
         right: &Value,
-    ) -> bool {
+    ) -> CoreInfixVerdict {
         let CoreInfixCandidates::Modelled(shape) = core_infix_candidates(name) else {
             // Neither an unmodelled core operator nor a shadowing declaration
             // has a core candidate to rank against, so the user's takes the
             // call. What differs between the two is what happens when NO user
             // candidate matches, and that is `call_infix_fallback`'s question.
-            return false;
+            return CoreInfixVerdict::User;
         };
         if !self.has_multi_function_cached(name) {
-            return false;
+            return CoreInfixVerdict::User;
         }
         let Some(core) = self.narrowest_core_infix_candidate(&shape, left, right) else {
-            return false;
+            return CoreInfixVerdict::User;
         };
         // Rank the way multi dispatch does, with *nominal type* narrowness as
         // the primary key: a refinement (subset / `where`) only breaks a tie
@@ -348,17 +364,61 @@ impl Interpreter {
         let user_key = (typed + literal_positionals, literal, constrained, subsig);
         let core_key = (core.typed, 0usize, 0usize, 0usize);
         if user_key != core_key {
-            return core_key > user_key;
+            return if core_key > user_key {
+                CoreInfixVerdict::Core
+            } else {
+                CoreInfixVerdict::User
+            };
         }
         // Equally narrow by nominal type (`multi infix:<+>(U $a, U $b) is
         // default` against the core `(Int:D, Int:D)` for `1 but U`), `is
         // default` is what breaks the tie in the user candidate's favour; an
-        // unmarked one is ambiguous in rakudo, so the core candidate keeps it.
+        // unmarked one is ambiguous in rakudo (#12973).
         if def.is_default {
-            return false;
+            return CoreInfixVerdict::User;
         }
         let user_distance = self.candidate_type_distance(&args, def);
-        core.distance <= user_distance
+        match core.distance.cmp(&user_distance) {
+            std::cmp::Ordering::Less => CoreInfixVerdict::Core,
+            std::cmp::Ordering::Equal => CoreInfixVerdict::Tie(core.sig),
+            std::cmp::Ordering::Greater => CoreInfixVerdict::User,
+        }
+    }
+
+    /// The `X::Multi::Ambiguous` for a user infix candidate that ties the
+    /// narrowest core candidate (`multi infix:<%>(Int $a, Int $b)`).
+    // Cost: O(p), p = parameters of the user candidate (the message build).
+    pub(crate) fn core_infix_tie_error(
+        &self,
+        name: &str,
+        def: &FunctionDef,
+        core: CoreSig,
+        left: &Value,
+        right: &Value,
+    ) -> RuntimeError {
+        let op = name
+            .strip_prefix("infix:<")
+            .and_then(|n| n.strip_suffix('>'))
+            .unwrap_or(name);
+        let arg_types = format!(
+            "{}, {}",
+            super::value_type_name(&Self::infix_dispatch_probe(left)),
+            super::value_type_name(&Self::infix_dispatch_probe(right))
+        );
+        let user_sig = Self::build_signature_string(&def.param_defs);
+        let header = format!("infix:<{}>({})", op, arg_types);
+        let message = format!(
+            "Ambiguous call to '{}'; these signatures all match:\n  ({} $a, {} $b) from SETTING::src/core.c\n  {}",
+            header, core.0, core.1, user_sig
+        );
+        let mut err = RuntimeError::new(message.clone());
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message));
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::Multi::Ambiguous"),
+            attrs,
+        )));
+        err
     }
 
     /// The narrowest core candidate that accepts `left`/`right`, or `None` when
@@ -386,6 +446,7 @@ impl Interpreter {
                     continue;
                 };
                 let rank = CoreRank {
+                    sig: (lc, rc),
                     typed: Self::core_param_is_typed(lc) as usize
                         + Self::core_param_is_typed(rc) as usize,
                     distance: ld + rd,
@@ -408,6 +469,7 @@ impl Interpreter {
         let ld = self.core_param_distance(catch_all, &l)?;
         let rd = self.core_param_distance(catch_all, &r)?;
         Some(CoreRank {
+            sig: (catch_all, catch_all),
             typed: 2 * Self::core_param_is_typed(catch_all) as usize,
             distance: ld + rd,
         })
