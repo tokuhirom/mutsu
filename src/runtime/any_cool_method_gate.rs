@@ -212,6 +212,15 @@ pub(crate) fn buffer_refuses_cool_method(target: &Value, method: &str) -> Option
     refused.then(|| crate::value::types::what_type_name(target))
 }
 
+/// Whether `method` is `fmt` on a `Capture` or `Version`: `Any` declares the
+/// `proto` but no candidate takes these receivers, so Rakudo answers
+/// `X::Multi::NoMatch` (not `X::Method::NotFound`) whatever the arguments
+/// (#13477).
+// Cost: O(1).
+pub(crate) fn fmt_has_no_candidate(target: &Value, method: &str) -> bool {
+    method == "fmt" && matches!(target.view(), ValueView::Capture { .. } | ValueView::Version { .. })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

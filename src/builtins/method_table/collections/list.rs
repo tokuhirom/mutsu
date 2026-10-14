@@ -486,7 +486,14 @@ pub(crate) fn reverse(target: &Value, _args: &[Value]) -> Option<Result<Value, R
         | ValueView::BigRat(..)
         | ValueView::Complex(..)
         | ValueView::Pair(..)
-        | ValueView::ValuePair(..) => Some(Ok(Value::seq(vec![target.clone()]))),
+        | ValueView::ValuePair(..)
+        | ValueView::Version { .. } => Some(Ok(Value::seq(vec![target.clone()]))),
+        // `Capture.list` is its positionals; the named arguments do not show.
+        ValueView::Capture { positional, .. } => {
+            let mut reversed = positional.to_vec();
+            reversed.reverse();
+            Some(Ok(Value::seq(reversed)))
+        }
         ValueView::Seq(items) => {
             let mut reversed = items.to_vec();
             reversed.reverse();
