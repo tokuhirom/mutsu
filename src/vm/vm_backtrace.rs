@@ -202,7 +202,14 @@ impl BacktraceCapture {
             if frame.name.is_empty() || frame.name == "<unit>" || frame.name == "<pointy-block>" {
                 lines.push(format!("  in block <unit>{}", location));
             } else {
-                lines.push(format!("  in sub {}{}", frame.name, location));
+                let kind = if frame.is_submethod {
+                    "submethod"
+                } else if frame.is_method {
+                    "method"
+                } else {
+                    "sub"
+                };
+                lines.push(format!("  in {} {}{}", kind, frame.name, location));
             }
         }
         // Add the <unit> frame at the bottom
