@@ -3720,6 +3720,7 @@ t/oo/method/definite-type-method-assign-v6d.t
 t/oo/method/destroy-plain-method.t
 t/oo/method/dot-assign-decl-indirect-method.t
 t/oo/method/dot-method-subrule-with-args.t
+t/oo/method/dynamic-method-name-matches-static.t
 t/oo/method/dynamic-method-object-call.t
 t/oo/method/dynamic-method-type-object.t
 t/oo/method/dynamic-method.t
@@ -4070,6 +4071,7 @@ t/oo/mop/metamodel-is-pun.t
 t/oo/mop/metamodel-naming-stashing.t
 t/oo/mop/metamodel-nqp-parameterizer-ops.t
 t/oo/mop/metamodel-primitives-method-cache.t
+t/oo/mop/metamodel-private-methods.t
 t/oo/mop/metamodel-set-name.t
 t/oo/mop/metamodel-shortname-ver-auth.t
 t/oo/mop/mop-method-rows.t

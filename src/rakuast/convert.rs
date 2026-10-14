@@ -3994,7 +3994,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             args,
             modifier,
             quoted: true,
-        } if matches!(modifier, None | Some('?' | '+' | '*')) => super::postfix_grouping::convert(
+        } if matches!(modifier, None | Some('?' | '+' | '*' | '!')) => super::postfix_grouping::convert(
             target,
             call_quoted_method_expr(convert_expr(name_expr)?, args, *modifier)?,
         ),
@@ -6114,7 +6114,7 @@ fn method_call_postfix(
     quoted: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     if quoted {
-        if !matches!(modifier, None | Some('?' | '+' | '*')) {
+        if !matches!(modifier, None | Some('?' | '+' | '*' | '!')) {
             return Err(unsupported("quoted method name with a modifier"));
         }
         return call_quoted_method(name, args, modifier);
@@ -6158,9 +6158,15 @@ pub(super) fn call_quoted_method_expr(
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));
     }
-    // `.?"name"` / `.+"name"` / `.*"name"` keep the dispatch string.
+    // `.?"name"` / `.+"name"` / `.*"name"` keep the dispatch string; the
+    // private call `self!"name"` has the bare `!`.
     if let Some(m) = modifier {
-        fields.push(leaf_field(Some("dispatch"), Value::str(format!(".{m}"))));
+        let dispatch = if m == '!' {
+            "!".to_string()
+        } else {
+            format!(".{m}")
+        };
+        fields.push(leaf_field(Some("dispatch"), Value::str(dispatch)));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::CallQuotedMethod,
