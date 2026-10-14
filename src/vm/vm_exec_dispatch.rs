@@ -7075,7 +7075,10 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(F + C) plus the body, F/C = registered routines/classes (import-scope snapshot). Rakudo: O(1) -- see #9170.
+            // Cost: O(1) to open (the scope holds the copy-on-write registry tables) plus the
+            // body; the close is O(1) for a table the body did not write and O(F) / O(C) for
+            // the routine / class table it did, F/C = registered routines/classes (the rollback
+            // filter). Rakudo: O(1) -- see #9170.
             OpCode::ImportScope { body_end } => {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }
@@ -7336,7 +7339,8 @@ impl Interpreter {
                 self.exec_need_module_op(code, *name_idx)?;
                 *ip += 1;
             }
-            // Cost: O(F + C) preload-scope snapshot plus the first load, F/C = registered routines/classes; runs once per site.
+            // Cost: O(1) preload-scope snapshot plus the first load and its O(F) rollback, F =
+            // registered routines; runs once per site.
             OpCode::PreloadModule(name_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_preload_module_op(code, *name_idx);

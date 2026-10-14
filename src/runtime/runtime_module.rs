@@ -386,6 +386,9 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1) per registry table the scope did not write (the snapshot is the
+    // table itself); O(F) / O(C) for the routine / class table it did, F/C =
+    // registered routines/classes (the rollback filter). Rakudo: O(1) -- see #9170.
     pub(crate) fn pop_import_scope(&mut self) {
         if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let crate::runtime::ImportScopeSnapshot {
