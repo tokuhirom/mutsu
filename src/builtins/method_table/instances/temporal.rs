@@ -57,12 +57,10 @@ pub(super) fn reclass(result: Value, class: &str) -> Value {
             attributes,
             class_name,
             ..
-        } if class_name.resolve() != class => {
-            Value::make_instance(
-                crate::symbol::Symbol::intern(class),
-                (*attributes.as_map()).clone(),
-            )
-        }
+        } if class_name.resolve() != class => Value::make_instance(
+            crate::symbol::Symbol::intern(class),
+            (*attributes.as_map()).clone(),
+        ),
         _ => result,
     }
 }
