@@ -1251,6 +1251,7 @@ impl Interpreter {
 
     /// Multi-dimensional index assignment with named target.
     /// Stack: [value, dim0, dim1, ..., dimN-1]
+    // Cost: O(d + E), d = dimensions, E = selected leaves for a slice assignment.
     pub(super) fn exec_multi_dim_index_assign_op(
         &mut self,
         code: &CompiledCode,
@@ -1324,16 +1325,31 @@ impl Interpreter {
         }
 
         let assign_value = value.clone();
+        let is_slice_assignment = (Self::assoc_multislice(is_positional) && dims.len() >= 2)
+            || dims.iter().any(Self::dim_is_multi);
+        let mut assigned_values = Vec::new();
+        let assigned_values_ref = &mut assigned_values;
         self.mutate_named_container(code, &var_name, !is_shaped, move |slf, container| {
             if is_shaped {
                 // For shaped arrays, use bounds-checked assignment
                 Self::assign_array_multidim(container, &resolved_dims, assign_value)
             } else {
-                slf.multi_dim_assign(container, &dims, assign_value, is_positional)
+                slf.multi_dim_assign(
+                    container,
+                    &dims,
+                    assign_value,
+                    is_positional,
+                    assigned_values_ref,
+                )
             }
         })?;
 
-        self.stack.push(value);
+        self.stack
+            .push(if is_slice_assignment && assigned_values.len() > 1 {
+                Value::array(assigned_values)
+            } else {
+                value
+            });
         Ok(())
     }
 
@@ -1432,6 +1448,7 @@ impl Interpreter {
     /// Multi-dimensional index assignment through a subscript CHAIN rooted at a
     /// named variable (`%o<inner>{1;2} = 5`).
     /// Stack: [value, prefix0, ..., prefixP-1, dim0, ..., dimN-1]
+    // Cost: O(p + d + E), p = prefix depth, d = dimensions, E = selected slice leaves.
     pub(super) fn exec_multi_dim_index_assign_nested_op(
         &mut self,
         code: &CompiledCode,
@@ -1475,14 +1492,30 @@ impl Interpreter {
 
         let var_name = Self::const_str(code, name_idx).to_string();
         let assign_value = value.clone();
+        let mut assigned_values = Vec::new();
         // A chain never targets a shaped array's dimensions directly, so the
         // `$`-root itemization rule always applies (as it does for the
         // un-chained op's non-shaped branch).
+        let is_slice_assignment = (Self::assoc_multislice(is_positional) && dims.len() >= 2)
+            || dims.iter().any(Self::dim_is_multi);
+        let assigned_values_ref = &mut assigned_values;
         self.mutate_named_container(code, &var_name, true, move |slf, container| {
-            slf.multi_dim_assign_nested(container, &prefix, &dims, assign_value, is_positional)
+            slf.multi_dim_assign_nested(
+                container,
+                &prefix,
+                &dims,
+                assign_value,
+                is_positional,
+                assigned_values_ref,
+            )
         })?;
 
-        self.stack.push(value);
+        self.stack
+            .push(if is_slice_assignment && assigned_values.len() > 1 {
+                Value::array(assigned_values)
+            } else {
+                value
+            });
         Ok(())
     }
 
@@ -1497,14 +1530,22 @@ impl Interpreter {
         dims: &[Value],
         value: Value,
         is_positional: bool,
+        assigned_values: &mut Vec<Value>,
     ) -> Result<(), RuntimeError> {
         let Some(((key, level_positional), rest)) = prefix.split_first() else {
-            return self.multi_dim_assign(target, dims, value, is_positional);
+            return self.multi_dim_assign(target, dims, value, is_positional, assigned_values);
         };
         // A celled intermediate level — see `multi_dim_assign_slice`.
         if target.is_container_ref() {
             return self.assign_through_cell(target, |slf, inner| {
-                slf.multi_dim_assign_nested(inner, prefix, dims, value, is_positional)
+                slf.multi_dim_assign_nested(
+                    inner,
+                    prefix,
+                    dims,
+                    value,
+                    is_positional,
+                    assigned_values,
+                )
             });
         }
         let level_positional = *level_positional;
@@ -1522,6 +1563,7 @@ impl Interpreter {
                 dims,
                 value,
                 is_positional,
+                assigned_values,
             )?;
         } else if !matches!(target.view(), ValueView::Hash(..))
             && let Some(i) = Self::index_to_usize(&key)
@@ -1537,6 +1579,7 @@ impl Interpreter {
                         dims,
                         value,
                         is_positional,
+                        assigned_values,
                     );
                     // Mark the slot written, so `ArrayData::hole_at` tells it
                     // apart from a genuine gap (ADR-0049 §1.6/§4 slice 5).
@@ -1557,7 +1600,15 @@ impl Interpreter {
         } else if let ValueView::Str(s) = key.view() {
             let k = s.as_str().to_string();
             Self::ensure_hash(target);
-            self.assign_chain_into_hash_key(target, k, rest, dims, value, is_positional)?;
+            self.assign_chain_into_hash_key(
+                target,
+                k,
+                rest,
+                dims,
+                value,
+                is_positional,
+                assigned_values,
+            )?;
         } else {
             return Err(RuntimeError::new("Invalid index for multi-dim assignment"));
         }
@@ -1575,6 +1626,7 @@ impl Interpreter {
         dims: &[Value],
         value: Value,
         is_positional: bool,
+        assigned_values: &mut Vec<Value>,
     ) -> Result<(), RuntimeError> {
         let r = target
             .with_hash_mut(|map| {
@@ -1583,7 +1635,14 @@ impl Interpreter {
                 let entry = map
                     .entry(key.clone())
                     .or_insert_with(|| Value::package(crate::symbol::wk::any()));
-                let r = self.assign_chain_into_slot(entry, rest, dims, value, is_positional);
+                let r = self.assign_chain_into_slot(
+                    entry,
+                    rest,
+                    dims,
+                    value,
+                    is_positional,
+                    assigned_values,
+                );
                 if r.is_err() && !existed {
                     map.remove(&key);
                 }
@@ -1604,6 +1663,7 @@ impl Interpreter {
         dims: &[Value],
         value: Value,
         is_positional: bool,
+        assigned_values: &mut Vec<Value>,
     ) -> Result<(), RuntimeError> {
         let was_undef = matches!(entry.view(), ValueView::Nil | ValueView::Package(..));
         if let Some((_, next_positional)) = rest.first() {
@@ -1613,12 +1673,12 @@ impl Interpreter {
                 // Array.
                 *entry = Self::fresh_chain_level(*next_positional);
             }
-            self.multi_dim_assign_nested(entry, rest, dims, value, is_positional)?;
+            self.multi_dim_assign_nested(entry, rest, dims, value, is_positional, assigned_values)?;
         } else {
             // The dimension group runs against the slot as-is: it applies its
             // own autovivification rules (and, for a positional multi-dim
             // subscript, refuses to autovivify at all — see `multi_dim_assign`).
-            self.multi_dim_assign(entry, dims, value, is_positional)?;
+            self.multi_dim_assign(entry, dims, value, is_positional, assigned_values)?;
         }
         if was_undef {
             let v = std::mem::replace(entry, Value::NIL);
@@ -1640,6 +1700,7 @@ impl Interpreter {
 
     /// Multi-dimensional index assignment with generic (expression) target.
     /// Stack: [target, dim0, ..., dimN-1, value]
+    // Cost: O(d + E), d = dimensions, E = selected leaves for a slice assignment.
     pub(super) fn exec_multi_dim_index_assign_generic_op(
         &mut self,
         ndims: u32,
@@ -1658,14 +1719,28 @@ impl Interpreter {
         dims.reverse();
         let dims = Self::expand_pipe_multidim_dims(dims);
         let mut target = self.stack.pop().unwrap_or(Value::NIL);
+        let is_slice_assignment = (Self::assoc_multislice(is_positional) && dims.len() >= 2)
+            || dims.iter().any(Self::dim_is_multi);
+        let mut assigned_values = Vec::new();
         let is_shaped = crate::runtime::utils::is_shaped_array(&target);
         if is_shaped {
             let resolved_dims = self.resolve_multidim_indices_for_assign(&target, &dims)?;
             Self::assign_array_multidim(&mut target, &resolved_dims, value.clone())?;
         } else {
-            self.multi_dim_assign(&mut target, &dims, value.clone(), is_positional)?;
+            self.multi_dim_assign(
+                &mut target,
+                &dims,
+                value.clone(),
+                is_positional,
+                &mut assigned_values,
+            )?;
         }
-        self.stack.push(value);
+        self.stack
+            .push(if is_slice_assignment && assigned_values.len() > 1 {
+                Value::array(assigned_values)
+            } else {
+                value
+            });
         Ok(())
     }
 
@@ -1763,6 +1838,7 @@ impl Interpreter {
         dims: &[Value],
         value: Value,
         is_positional: bool,
+        assigned_values: &mut Vec<Value>,
     ) -> Result<(), RuntimeError> {
         // A POSITIONAL multi-dim subscript does not autovivify its invocant:
         // `ASSIGN-POS` has no candidate taking more than one index on an
@@ -1790,7 +1866,14 @@ impl Interpreter {
                 vec![value]
             };
             let mut vi = 0usize;
-            self.multi_dim_assign_slice(target, dims, &values, &mut vi, is_positional)
+            self.multi_dim_assign_slice(
+                target,
+                dims,
+                &values,
+                &mut vi,
+                is_positional,
+                assigned_values,
+            )
         } else {
             self.multi_dim_assign_scalar(target, dims, value, is_positional)
         }
@@ -1904,6 +1987,7 @@ impl Interpreter {
         values: &[Value],
         vi: &mut usize,
         is_positional: bool,
+        assigned_values: &mut Vec<Value>,
     ) -> Result<(), RuntimeError> {
         if dims.is_empty() {
             let v = values
@@ -1911,6 +1995,7 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
             *vi += 1;
+            assigned_values.push(v.clone());
             // Write through a `ContainerRef` leaf (Track B element cell /
             // `:=`-bound element) so every snapshot holder observes the write.
             Value::assign_element_slot(target, v);
@@ -1920,7 +2005,7 @@ impl Interpreter {
         // lock (shared by every snapshot) instead of failing `with_array_mut`.
         if target.is_container_ref() {
             return self.assign_through_cell(target, |slf, inner| {
-                slf.multi_dim_assign_slice(inner, dims, values, vi, is_positional)
+                slf.multi_dim_assign_slice(inner, dims, values, vi, is_positional, assigned_values)
             });
         }
         let keys = self.resolve_assign_dim(target, &dims[0])?;
@@ -1933,7 +2018,14 @@ impl Interpreter {
                     .with_hash_mut(|map| {
                         let map = crate::value::gc_data_mut(map);
                         let entry = Self::assoc_entry(map, &key, rest.is_empty());
-                        let r = self.multi_dim_assign_slice(entry, rest, values, vi, is_positional);
+                        let r = self.multi_dim_assign_slice(
+                            entry,
+                            rest,
+                            values,
+                            vi,
+                            is_positional,
+                            assigned_values,
+                        );
                         Self::itemize_assoc_leaf(entry, rest.is_empty());
                         r
                     })
@@ -1952,6 +2044,7 @@ impl Interpreter {
                             values,
                             vi,
                             is_positional,
+                            assigned_values,
                         );
                         // See the matching comment in `multi_dim_assign_scalar`
                         // (ADR-0049 §1.6/§4 slice 5).
@@ -1969,7 +2062,14 @@ impl Interpreter {
                         let entry = map
                             .entry(s.as_str().to_string())
                             .or_insert_with(|| Value::package(crate::symbol::wk::any()));
-                        self.multi_dim_assign_slice(entry, rest, values, vi, is_positional)
+                        self.multi_dim_assign_slice(
+                            entry,
+                            rest,
+                            values,
+                            vi,
+                            is_positional,
+                            assigned_values,
+                        )
                     })
                     .transpose()?;
             }
