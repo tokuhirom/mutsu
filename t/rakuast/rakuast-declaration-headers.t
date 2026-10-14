@@ -12,16 +12,17 @@ use Test;
 #
 # mutsu's parser spells the adverbs as meta setters and the export as a
 # registration around the declaration; the lowering rebuilds those, so the
-# round trip is the parsed program. The tree part also passes under `raku`; the
-# round trip part declares each name twice in one process, which raku refuses.
+# round trip is the parsed program. The tree part also passes under `raku`.
 
 plan 64;
 
 sub exprs($src) { $src.AST.statements.map(*.expression) }
-sub run($src) { my $parsed = EVAL($src); my $round = EVAL($src.AST); ($parsed, $round) }
 sub same($src, $expected, $desc) {
-    my ($parsed, $round) = run($src);
-    is "$parsed|$round", "$expected|$expected", $desc;
+    # The round trip alone: a second EVAL of the same declarations in one
+    # process is a redeclaration, in rakudo and in the round trip's CHECK-time
+    # validation alike (#13295); `$expected` is what the parsed program gives.
+    my $round = EVAL($src.AST);
+    is "$round", "$expected", $desc;
 }
 
 # --- the tree

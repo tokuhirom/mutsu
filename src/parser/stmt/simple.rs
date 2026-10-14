@@ -84,7 +84,8 @@ pub(in crate::parser) use lib_paths::{
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_import_tags,
     register_inline_module_exports, register_module_exports, register_module_exports_with_tags,
-    register_module_type_names, source_declares_export_hook, type_index_is_complete,
+    register_module_type_names, scanned_module_value_terms, source_declares_export_hook,
+    type_index_is_complete,
 };
 /// Crate-wide for the compiler's `is_definite_return_spec` too: an imported
 /// `constant` may be a type alias the parser cannot see through (#11706).

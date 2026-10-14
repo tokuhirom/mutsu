@@ -44,6 +44,7 @@ pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Opti
     let mut scan = UndeclaredVars {
         interp,
         placeholder_names,
+        package_exports: super::eval_package_exports::package_exported_vars(stmts),
         scopes: vec![HashSet::new()],
         strict: true,
         judged_stmt: true,
@@ -91,6 +92,9 @@ struct UndeclaredVars<'a> {
     /// Bare names of the snippet's placeholder variables (see
     /// `first_undeclared_var`).
     placeholder_names: HashSet<String>,
+    /// The variables each package the snippet declares exports, which an
+    /// `import` of it declares.
+    package_exports: std::collections::HashMap<String, Vec<String>>,
     /// Lexical scopes, innermost last, of names in `declared_var_name` form.
     scopes: Vec<HashSet<String>>,
     /// `no strict` is in effect: an assignment declares its target and no
@@ -304,6 +308,13 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         match stmt {
             Stmt::No { module, .. } if module == "strict" => self.strict = false,
             Stmt::Use { module, .. } if module == "strict" => self.strict = true,
+            Stmt::Import { module, .. } => {
+                if let Some(names) = self.package_exports.get(module).cloned() {
+                    for name in &names {
+                        self.declare(name);
+                    }
+                }
+            }
             // Only uses after it see the new name (`$foo ~ my $foo` is
             // undeclared); its own initializer already does (`my $x = $x`).
             Stmt::VarDecl { name, .. } => {
@@ -424,6 +435,12 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         }
         match expr {
             Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => self.check_var(expr),
+            // A desugaring's block is no scope: `(my $a, my $b) »=» (1, 2)`
+            // declares `$a` and `$b` where it is written.
+            Expr::DoBlock {
+                origin: crate::ast::DoBlockOrigin::Desugar,
+                ..
+            } => self.judging(true, |v| walk_expr(v, expr)),
             // Closures and inline blocks are scopes of their own.
             Expr::AnonSub { .. }
             | Expr::AnonSubParams { .. }

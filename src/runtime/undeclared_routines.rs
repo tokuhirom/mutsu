@@ -352,19 +352,25 @@ impl Interpreter {
         Ok(guards)
     }
 
-    /// The undeclared-routine check for a unit of kind `mode`; see
-    /// [`ScanMode`] for how an `EVAL`'d snippet differs.
+    /// The undeclared-routine check for an `EVAL`'d unit (see [`ScanMode`]
+    /// for how it differs from the mainline's), whose `use` statements have
+    /// not run yet: a call `explained` accepts (a name the unit's `use`d
+    /// modules declare, `use M :Tag; C`) is not judged.
     // Cost: O(n + c * r), n = size of the unit's AST, c = unexplained calls,
     // r = cost of one registry/env lookup.
-    pub(crate) fn check_undeclared_routines(
+    pub(crate) fn check_eval_unit_routines(
         &self,
         stmts: &[Stmt],
-        mode: ScanMode,
+        explained: impl Fn(&str) -> bool,
     ) -> Result<(), RuntimeError> {
-        self.judge_unexplained_calls(stmts, mode, &mut Vec::new())
+        let Some(mut found) = unexplained_calls(stmts, ScanMode::Eval) else {
+            return Ok(());
+        };
+        found.calls.retain(|(name, _)| !explained(name));
+        self.judge_found(&found, &mut Vec::new())
     }
 
-    // Cost: O(n + c * r), as `check_undeclared_routines`.
+    // Cost: O(n + c * r), as `check_eval_unit_routines`.
     fn judge_unexplained_calls(
         &self,
         stmts: &[Stmt],

@@ -7,7 +7,7 @@
 //! every position rakudo judges it — a routine body, a method of a class, a
 //! closure, a parameter default — not only at the snippet's top level.
 
-use super::undeclared_routines::{ScanMode, scope_blind_declared_names};
+use super::undeclared_routines::scope_blind_declared_names;
 use super::*;
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
 
@@ -246,6 +246,7 @@ impl UndeclaredName<'_> {
             || Interpreter::is_builtin_function(name)
             || super::system_eval_names::EVAL_KNOWN_ROUTINE_NAMES.contains(&name)
             || crate::parser::is_imported_function(name)
+            || crate::parser::is_imported_value_term(name)
     }
 }
 
@@ -273,6 +274,22 @@ impl<'ast> Visit<'ast> for UndeclaredName<'_> {
             return;
         }
         walk_expr(self, expr);
+    }
+
+    fn visit_regex_node(&mut self, node: &'ast crate::regex_tree::RegexNode) {
+        // `<value:sym<number>>` keeps its `:sym<number>` adverb as the
+        // argument `sym<number>`, whose `sym` is no term.
+        if let crate::regex_tree::RegexNode::Subrule {
+            args: Some(args), ..
+        }
+        | crate::regex_tree::RegexNode::SubruleAlias {
+            args: Some(args), ..
+        } = node
+            && args.sym_adverb().is_some()
+        {
+            return;
+        }
+        crate::ast_visit::walk_regex_node(self, node);
     }
 }
 
@@ -407,12 +424,24 @@ impl Interpreter {
     /// so a call is judged in every position — a method body included — and a
     /// name resolving to a routine, type or `&name` the caller has in scope is
     /// fine.
-    // Cost: see `check_undeclared_routines`.
+    // Cost: see `check_eval_unit_routines`, plus `eval_declared_types`.
     pub(crate) fn check_eval_undeclared_routines(
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        self.check_undeclared_routines(stmts, ScanMode::Eval)
+        let imported = self.eval_declared_types(stmts);
+        // A `sub EXPORT` hook's names are known only once it runs (see
+        // `check_eval_undeclared_names`), and what such a hook installs is
+        // overwhelmingly a routine or a term (`%( 'other' => 42 )`), so a
+        // lowercase call is not judged; a capitalised one still is.
+        // TODO: run the unit's `use` statements before this CHECK-time
+        // validation, as rakudo does at BEGIN time, so the hook's real import
+        // set is in scope; this split only approximates it (#13441).
+        let hook = imported.imports_through_export_hook;
+        self.check_eval_unit_routines(stmts, |name| {
+            imported.types.contains(name)
+                || (hook && name.starts_with(|c: char| c.is_lowercase()))
+        })
     }
 
     /// Reject a bareword term that names nothing — not a type, routine,

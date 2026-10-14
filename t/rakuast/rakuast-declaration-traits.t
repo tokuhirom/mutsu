@@ -20,9 +20,11 @@ plan 35;
 
 sub exprs($src) { $src.AST.statements.map(*.expression) }
 sub same($src, $expected, $desc) {
-    my $parsed = EVAL($src);
+    # The round trip alone: a second EVAL of the same declarations in one
+    # process is a redeclaration, in rakudo and in the round trip's CHECK-time
+    # validation alike (#13295); `$expected` is what the parsed program gives.
     my $round = EVAL($src.AST);
-    is "$parsed|$round", "$expected|$expected", $desc;
+    is "$round", "$expected", $desc;
 }
 
 # --- grammar parents and roles

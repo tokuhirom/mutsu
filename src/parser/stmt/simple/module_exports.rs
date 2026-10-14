@@ -541,6 +541,27 @@ pub(crate) fn register_module_type_names(module: &str) {
     }
 }
 
+/// The bare value terms a `use` of the module whose source is at `path` can
+/// import: its enum values, under whatever export tags (the safe direction for
+/// an undeclared-name check), and its sigilless value terms. Read from this
+/// process's scan cache only, so asking never parses; `None` when the module
+/// was not scanned here. An `EVAL`'s own parse (or `.AST`) scans every module
+/// its `use` statements name, so the cache holds them when the unit is checked.
+// Cost: O(c + v), c = cached scans, v = names in the matching scan.
+pub(crate) fn scanned_module_value_terms(path: &std::path::Path) -> Option<Vec<String>> {
+    let wanted = std::fs::canonicalize(path).ok()?;
+    let scan = MODULE_SCAN_CACHE.with(|c| {
+        c.borrow()
+            .iter()
+            .find(|(cached, _)| std::fs::canonicalize(cached).ok().as_ref() == Some(&wanted))
+            .map(|(_, scan)| Rc::clone(scan))
+    })?;
+    let mut names = scan.enum_values.clone();
+    names.extend(scan.tagged_enum_values.iter().map(|(name, _)| name.clone()));
+    names.extend(scan.value_terms.iter().cloned());
+    Some(names)
+}
+
 /// Resolve a module name to its source file and scan it, memoized per file
 /// path in this process and — since GH-8095 — on disk across processes. Either
 /// cache hit performs no parse: the callers replay the stored registrations
