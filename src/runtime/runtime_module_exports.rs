@@ -479,6 +479,8 @@ impl Interpreter {
     /// hidden definitions on the import-scope snapshot so the enclosing family
     /// is restored when the block exits. Further imports in the same scope are
     /// allowed to merge with the first imported family.
+    // Cost: O(k + c), k = interned names of the family (the family index), c =
+    // its candidates removed.
     fn shadow_imported_proto_family(&mut self, target_single: &str) {
         let should_shadow = match self.module.import_scope_stack.last_mut() {
             Some(snapshot) => snapshot
@@ -494,34 +496,28 @@ impl Interpreter {
         if !should_shadow {
             return;
         }
-        let prefix = format!("{target_single}/");
-        let visible_keys: HashSet<Symbol> = self
-            .module
-            .import_scope_stack
-            .last()
-            .map(|snapshot| {
-                snapshot
-                    .functions
-                    .keys()
-                    .filter(|key| **key == *target_single || key.as_str().starts_with(&prefix))
-                    .copied()
-                    .collect()
-            })
-            .unwrap_or_else(|| {
-                self.registry()
-                    .functions
-                    .keys()
-                    .filter(|key| **key == *target_single || key.as_str().starts_with(&prefix))
-                    .copied()
-                    .collect()
-            });
-        let keys: Vec<Symbol> = self
-            .registry()
-            .functions
-            .keys()
-            .filter(|key| visible_keys.contains(key))
-            .copied()
-            .collect();
+        // The family's keys, read through the family index of the table the
+        // scope opened on (or of the current one at the top level), not by a
+        // scan of every registered routine (#9170).
+        let target_sym = Symbol::intern(target_single);
+        let family_of = |table: &crate::runtime::function_table::FunctionTable| -> Vec<Symbol> {
+            let mut keys = table.family_keys(target_single);
+            if table.contains_key(&target_sym) {
+                keys.push(target_sym);
+            }
+            keys
+        };
+        let visible_keys: Vec<Symbol> = match self.module.import_scope_stack.last() {
+            Some(snapshot) => family_of(&snapshot.functions),
+            None => family_of(&self.registry().functions),
+        };
+        let keys: Vec<Symbol> = {
+            let registry = self.registry();
+            visible_keys
+                .into_iter()
+                .filter(|key| registry.functions.contains_key(key))
+                .collect()
+        };
         let mut shadowed_functions = HashMap::new();
         for key in keys {
             if let Some(def) = self.registry_mut().functions_mut().remove(&key) {

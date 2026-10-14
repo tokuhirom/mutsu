@@ -101,10 +101,11 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
 /// a look-around whose body compiles markless in turn, and a backreference or
 /// capture marker (`CapAtom`: rakudo compares a backreference exactly, marks
 /// included, which the subject's own positions give), and `<.ws>` (a call,
-/// which does not inherit `:m`: it runs over the subject's own text). A
-/// construct that reads the subject another way (an interpolation or a nested
-/// `:m` group) declines, and the call keeps the eager `:m` path. A
-/// conjunction is covered when its other branches compile markless too.
+/// which does not inherit `:m`: it runs over the subject's own text), and an
+/// interpolation (its value is entered as a markless frame of its own). A
+/// nested `:m` group declines (a stripped body never holds one), and the call
+/// keeps the eager `:m` path. A conjunction is covered when its other branches
+/// compile markless too.
 // Cost: O(t), t = the number of tokens in the pattern tree.
 pub(in crate::runtime::regex) fn compile_markless(
     pattern: &RegexPattern,
@@ -125,7 +126,7 @@ pub(in crate::runtime::regex) fn compile_markless(
                     .iter()
                     .all(|b| super::rx_entry::markless_program_for(b).is_some())
         ),
-        op => !matches!(op, RxOp::InterpEnds(_) | RxOp::GroupEnds(_)),
+        op => !matches!(op, RxOp::GroupEnds(_)),
     });
     if !covered {
         return Err("markless-uncovered");
@@ -345,6 +346,7 @@ impl Compiler {
             self.has_code |= pattern_contains_code(pattern);
             let i = self.push_atom(&RegexAtom::Group(pattern.clone()));
             self.ops.push(RxOp::GroupEnds(i));
+                self.has_call = true;
             return Ok(());
         }
         // The walk tests a level's atoms under that level's own `:i`
@@ -464,6 +466,7 @@ impl Compiler {
                 }
                 let i = self.push_atom(&token.atom);
                 self.ops.push(RxOp::GroupEnds(i));
+                self.has_call = true;
                 if let Some(h) = height {
                     self.ops.push(RxOp::Cut(h));
                 }
@@ -499,6 +502,7 @@ impl Compiler {
                     self.has_code |= pattern_contains_code(p);
                     let i = self.push_atom(&RegexAtom::Group(p.clone()));
                     self.ops.push(RxOp::GroupEnds(i));
+                self.has_call = true;
                 } else {
                     self.pattern(p)?;
                 }

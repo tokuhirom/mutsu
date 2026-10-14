@@ -60,7 +60,7 @@ impl Interpreter {
             }
             RegexAtom::VarInterp(name) | RegexAtom::VarAssertion(name) => {
                 let assertion = matches!(atom, RegexAtom::VarAssertion(_));
-                match self.var_interp_target(name, assertion, caps, chars, pos, ignore_case) {
+                match self.var_interp_target(name, assertion, caps, chars, pos, (ignore_case, false)) {
                     VarInterpTarget::End(end) => end,
                     // The walk takes the interpolated pattern's
                     // highest-priority end, as for a `$( … )` atom.
@@ -116,7 +116,7 @@ impl Interpreter {
         caps: &RegexCaptures,
         chars: &[char],
         pos: usize,
-        ignore_case: bool,
+        (ignore_case, markless): (bool, bool),
     ) -> VarInterpTarget {
         let val = caps
             .regex_vars()
@@ -140,7 +140,9 @@ impl Interpreter {
             },
             None => String::new(),
         };
-        if is_regex || (ignore_case && !ref_text.is_empty()) {
+        // A markless run compares bases, so a plain value becomes a pattern
+        // too: its markless program does the comparison.
+        if is_regex || ((ignore_case || markless) && !ref_text.is_empty()) {
             let mut source = String::from(if ignore_case { ":i " } else { "" });
             if is_regex {
                 source.push_str(&ref_text);
