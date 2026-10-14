@@ -384,6 +384,9 @@ impl Interpreter {
             crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
                 &mut code, &mut fns, origin,
             );
+            crate::compiler::frame_lexical_inherit::bind_origin_code_var_upvalues(
+                &mut code, origin,
+            );
         }
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);
@@ -742,6 +745,9 @@ impl Interpreter {
                 // load/sync/init all resolve through `scoped_state_key`, so
                 // within-map persistence across items is unaffected.
                 vm.lexicals.state_scope_id.set(Some(data.id));
+                // The fresh chunk's block-declared routine calls read the
+                // closure's own upvalues (`bind_origin_code_var_upvalues`).
+                vm.upvalues = data.upvalues.clone();
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
