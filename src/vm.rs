@@ -285,6 +285,7 @@ mod vm_map_grep_pure;
 pub(crate) mod vm_meta_ops;
 pub(crate) mod vm_method_call_attrs;
 pub(crate) mod vm_method_dispatch;
+mod vm_param_values;
 mod vm_method_finalize;
 pub(crate) mod vm_misc_assign;
 pub(crate) mod vm_misc_block;
