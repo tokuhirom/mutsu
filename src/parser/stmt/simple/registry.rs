@@ -9,15 +9,15 @@ pub(crate) fn register_user_sub(name: &str) {
             .expect("scope stack should never be empty");
         let name = name.to_string();
         if current.user_subs.insert(name.clone()) {
-            if name.starts_with("prefix:<") {
+            if name.starts_with("prefix:<") && name.ends_with('>') {
                 current.prefix_operator_subs.insert(name);
-            } else if name.starts_with("postfix:<") {
+            } else if name.starts_with("postfix:<") && name.ends_with('>') {
                 current.postfix_operator_subs.insert(name);
-            } else if name.starts_with("infix:<") {
+            } else if name.starts_with("infix:<") && name.ends_with('>') {
                 current.infix_operator_subs.insert(name);
-            } else if name.starts_with("circumfix:<") {
+            } else if name.starts_with("circumfix:<") && name.ends_with('>') {
                 current.circumfix_operator_subs.insert(name);
-            } else if name.starts_with("postcircumfix:<") {
+            } else if name.starts_with("postcircumfix:<") && name.ends_with('>') {
                 current.postcircumfix_operator_subs.insert(name);
             }
         }
