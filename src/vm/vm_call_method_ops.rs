@@ -816,7 +816,7 @@ impl Interpreter {
         // a Slip (`.method(@a.Slip)` stays one argument).
         let (args, arg_sources) =
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
-        let args = Self::hllize_call_args(args);
+        let mut args = Self::hllize_call_args(args);
         let bind_source = arg_sources
             .as_ref()
             .and_then(|sources| sources.get(1))
@@ -841,7 +841,7 @@ impl Interpreter {
             Some(prefix) => prefix,
             None => target,
         };
-        let target = self.reify_or_consume_seq_target(target, method)?;
+        let target = self.consume_seq_for_call(target, method, &mut args, false)?;
         // A plain gather argument of a built-in method is read the way
         // Rakudo's method reads it (ADR-11678 §8.3).
         let mut args = self.method_gather_args(&target, method, args)?;
