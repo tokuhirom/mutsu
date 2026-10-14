@@ -830,7 +830,11 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     explicit_zero_params = true;
                     (None, None, Vec::new(), Vec::new())
                 }
-                1 => (names.into_iter().next(), defs.pop(), Vec::new(), Vec::new()),
+                // A lone slurpy (`-> *@a`, `-> *%h`) is kept in `params`, as the
+                // parser does.
+                1 if !defs[0].slurpy && !defs[0].double_slurpy => {
+                    (names.into_iter().next(), defs.pop(), Vec::new(), Vec::new())
+                }
                 _ => (None, None, names, defs),
             }
         }
@@ -3001,7 +3005,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         None => None,
         Some(f) => Some(Box::new(lower_expr(child_node(&f.value)?)?)),
     };
-    if where_constraint.is_some() && (is_binding || call_assign.is_some()) {
+    if where_constraint.is_some() && call_assign.is_some() {
         return Err(unsupported(node));
     }
     // A shaped array: the parser's `Array.new(shape => ..., data => ...)`.
@@ -3066,7 +3070,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             is_export,
             export_tags: export_tags.clone(),
             custom_traits,
-            where_constraint: None,
+            where_constraint,
         }));
     }
     Ok(Stmt::VarDecl {
@@ -4634,7 +4638,26 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::ColonPairNumber => {
             let key = leaf_str(node, "key")?;
             let value_node = named_child(node, "value")?;
-            let value = lower_expr(value_node)?;
+            // `:a<2/3>` is quote-words, so its one word is the allomorph
+            // (`RatStr`), unlike the lone `<2/3>` term, which is a `Rat`.
+            let single_word = if node.class == RakuAstClass::ColonPairValue
+                && value_node.class == RakuAstClass::QuotedString
+            {
+                match word_quote_content(value_node)? {
+                    Some((false, true, word))
+                        if !word.is_empty() && !word.contains(char::is_whitespace) =>
+                    {
+                        Some(word)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let value = match single_word {
+                Some(word) => Expr::Literal(crate::parser::angle_word_value(&word)),
+                None => lower_expr(value_node)?,
+            };
             Ok(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
