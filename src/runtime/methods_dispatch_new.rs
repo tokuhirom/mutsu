@@ -379,7 +379,7 @@ impl Interpreter {
                     .registry()
                     .class_composed_roles
                     .get(cn.as_str())
-                    .is_some_and(|composed| composed.iter().any(|r| *r == cn));
+                    .is_some_and(|composed| composed.contains(&cn));
             if is_pun {
                 instance = self.mark_punned_role_instance(name, instance, ValueMap::default());
             }
