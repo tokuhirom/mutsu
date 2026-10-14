@@ -14,9 +14,10 @@ included as well. Each candidate is still judged by the same member rules, so
 the stash comes out the same. `GLOBAL::` and the pseudo-packages, whose
 members are bare names, still scan everything.
 
-With 2000 lexicals and 2000 package variables elsewhere in the program, 300
-reads of `P::.keys` take the same time as with 1000 of each. Before this
-change the time grew with them, from 0.43 s to 0.76 s (release).
+300 reads of `P::.keys` (release build) with 1000 / 2000 lexicals and package
+variables elsewhere in the program went from 0.43 / 0.76 s to 0.07 / 0.11 s.
+For a package with no routine member the time no longer depends on them at
+all (0.07 / 0.04 s).
 
 A routine member's code value is still built per read, and that build
 captures the env the read runs in (#9170).
