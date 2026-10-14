@@ -4745,6 +4745,23 @@ impl Compiler {
                 is_lexical,
                 ..
             } => {
+                // A top-level `class Failure` shadows the built-in the way a
+                // `my class Failure` does: mutsu represents `Failure` natively,
+                // by name, so a package-scoped class of that name would be
+                // taken for the core type (#13141). Recompile it as the
+                // lexical declaration, which stores the class under its
+                // declaration-site name instead.
+                if !*is_lexical
+                    && self.current_package == "GLOBAL"
+                    && matches!(name.resolve().as_str(), "Failure")
+                {
+                    let mut lexical = stmt.clone();
+                    if let Stmt::ClassDecl { is_lexical, .. } = &mut lexical {
+                        *is_lexical = true;
+                    }
+                    self.compile_stmt(&lexical);
+                    return;
+                }
                 // Declaring the same class name twice in one lexical scope is an
                 // X::Redeclaration ("Redeclaration of symbol 'A'"), matching Raku's
                 // compile-time check. A stub (`class A {...}`) followed by its real
