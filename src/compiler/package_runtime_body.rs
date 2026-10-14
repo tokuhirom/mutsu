@@ -44,7 +44,10 @@ impl Compiler {
             body_end: 0,
             lexicals_idx,
             decls_idx: u32::MAX,
+            own_slots_idx: u32::MAX,
+            slots_idx: u32::MAX,
         });
+        let locals_from = self.code.locals.len();
         let saved_package = std::mem::replace(&mut self.current_package, qualified_name);
         let saved_in_unit = std::mem::replace(&mut self.in_unit_package, false);
         let saved_package_kind = self.current_package_kind.take();
@@ -77,11 +80,54 @@ impl Compiler {
             }
         }
         self.local_map.extend(shadowed);
+        let declared: Vec<&str> = crate::ast::scope_members(body)
+            .filter_map(|stmt| match stmt {
+                Stmt::VarDecl { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        self.set_package_scope_own_slots(pkg_idx, locals_from, declared);
         self.package_body_lexicals = saved_lexicals;
         self.current_package = saved_package;
         self.in_unit_package = saved_in_unit;
         self.current_package_kind = saved_package_kind;
         self.code.patch_body_end(pkg_idx);
+    }
+
+    /// Record on the `PackageScope` at `pkg_idx` the local slots its body
+    /// binds itself (`own_slots_idx`): every slot allocated since
+    /// `locals_from`, and every slot named by one of `declared`, the names the
+    /// body's own scope declares (a body `my`/`our` reuses a same-named outer
+    /// slot). Its exit restores at least these (#9171).
+    // Cost: O(r + d * L), r = slots allocated by the body, d = declared names,
+    // L = locals. Once per compiled package body.
+    pub(super) fn set_package_scope_own_slots<'a>(
+        &mut self,
+        pkg_idx: usize,
+        locals_from: usize,
+        declared: impl IntoIterator<Item = &'a str>,
+    ) {
+        let mut own: Vec<usize> = (locals_from..self.code.locals.len()).collect();
+        for name in declared {
+            own.extend(
+                self.code.locals[..locals_from]
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, local)| local.as_str() == name)
+                    .map(|(slot, _)| slot),
+            );
+        }
+        if own.is_empty() {
+            return;
+        }
+        let idx = self.code.add_constant(Value::array(
+            own.into_iter()
+                .map(|slot| Value::int(slot as i64))
+                .collect::<Vec<_>>(),
+        ));
+        if let OpCode::PackageScope { own_slots_idx, .. } = &mut self.code.ops[pkg_idx] {
+            *own_slots_idx = idx;
+        }
     }
 
     /// The `my` lexicals a class or package body declares at its top level,

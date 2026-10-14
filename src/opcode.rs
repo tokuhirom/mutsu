@@ -3894,11 +3894,22 @@ pub(crate) enum OpCode {
     /// scope declares (an Array of Str), or `u32::MAX` when it declares none.
     /// Those are bindings of the body, never writes to a same-named enclosing
     /// lexical, so the exit does not carry them out (#13428).
+    ///
+    /// `own_slots_idx` is the constant-pool index of the local slots the body
+    /// binds itself (an Array of Int; `u32::MAX` for none): the slots first
+    /// allocated while it was compiled, and the slots of the names its own
+    /// scope declares. `slots_idx` indexes
+    /// [`EnvConsumerSlots::package_scope_lists`]: the frame's local slots the
+    /// exit saves and reconciles, filled in by `compute_needs_env_sync`.
+    /// `u32::MAX` (not yet finalized) makes the exit save and reconcile every
+    /// local slot.
     PackageScope {
         name_idx: u32,
         body_end: u32,
         lexicals_idx: u32,
         decls_idx: u32,
+        own_slots_idx: u32,
+        slots_idx: u32,
     },
     /// Register a package name so it's accessible as a Package value.
     RegisterPackage { name_idx: u32 },
@@ -4903,6 +4914,12 @@ pub(crate) struct EnvConsumerSlots {
     /// decl-seed placeholder out of `env` instead of the slot's live value
     /// (`todo/tickets/package-block-resets-an-outer-lexical-declared-before-any-env-flush.md`).
     pub(crate) package_scope: Vec<bool>,
+    /// Per `OpCode::PackageScope` (its `slots_idx`): the slots that one body
+    /// reads or writes by name or by index, plus their same-named peers, in
+    /// slot order. Those are the only slots its exit saves, restores and
+    /// re-syncs from `env`, so the op does not scale with the frame's locals
+    /// (#9171).
+    pub(crate) package_scope_lists: Vec<Vec<u32>>,
 }
 
 /// A declaration-time expression lowered to its own bytecode chunk (ADR-0019 C5).
@@ -8008,6 +8025,27 @@ impl CompiledCode {
         }
     }
 
+    /// Mark the slots a `PackageScope` body binds itself (its
+    /// `own_slots_idx`), which its exit must restore so they do not leak out
+    /// of the block. Many ops write a slot without naming it the way
+    /// [`Self::mark_local_access_slots`] sees (`DeclareOurScalar`, a by-name
+    /// `update_local_if_exists`), so this is what keeps the set sound.
+    // Cost: O(s), s = the listed slots.
+    fn mark_package_body_own_slots(&self, own_slots_idx: u32, slots: &mut [bool]) {
+        let Some(items) = self
+            .constants
+            .get(own_slots_idx as usize)
+            .and_then(Value::as_list_items)
+        else {
+            return;
+        };
+        for slot in items.iter().filter_map(Value::as_int) {
+            if let Some(marked) = usize::try_from(slot).ok().and_then(|s| slots.get_mut(s)) {
+                *marked = true;
+            }
+        }
+    }
+
     fn mark_same_named_slot_peers(&self, slots: &mut [bool]) {
         let selected_names: std::collections::HashSet<&str> = slots
             .iter()
@@ -9038,6 +9076,7 @@ impl CompiledCode {
         let mut block_local_scope_slots = vec![false; n];
         let mut gather_slots = vec![false; n];
         let mut package_scope_slots = vec![false; n];
+        let mut package_scope_lists: Vec<(usize, Vec<u32>)> = Vec::new();
         for (op_idx, op) in self.ops.iter().enumerate() {
             match op {
                 OpCode::ForLoop(spec) => {
@@ -9085,18 +9124,26 @@ impl CompiledCode {
                     self.mark_closure_parent_slots(*cc_idx, &mut gather_slots);
                 }
                 OpCode::MakeGather(_, None, _) => has_gather = true,
-                OpCode::PackageScope { body_end, .. } => {
+                OpCode::PackageScope {
+                    body_end,
+                    own_slots_idx,
+                    ..
+                } => {
                     has_package_scope = true;
-                    self.mark_name_access_slots(
-                        op_idx + 1,
-                        *body_end as usize,
-                        &mut package_scope_slots,
-                    );
-                    self.mark_local_access_slots(
-                        op_idx + 1,
-                        *body_end as usize,
-                        &mut package_scope_slots,
-                    );
+                    let mut body_slots = vec![false; n];
+                    self.mark_name_access_slots(op_idx + 1, *body_end as usize, &mut body_slots);
+                    self.mark_local_access_slots(op_idx + 1, *body_end as usize, &mut body_slots);
+                    self.mark_package_body_own_slots(*own_slots_idx, &mut body_slots);
+                    self.mark_same_named_slot_peers(&mut body_slots);
+                    let list: Vec<u32> = body_slots
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(slot, &touched)| touched.then_some(slot as u32))
+                        .collect();
+                    for &slot in &list {
+                        package_scope_slots[slot as usize] = true;
+                    }
+                    package_scope_lists.push((op_idx, list));
                 }
                 _ => {}
             }
@@ -9138,6 +9185,12 @@ impl CompiledCode {
         }
         if has_package_scope {
             self.env_consumer_slots.package_scope = package_scope_slots;
+            for (list_idx, (op_idx, list)) in package_scope_lists.into_iter().enumerate() {
+                if let OpCode::PackageScope { slots_idx, .. } = &mut self.ops[op_idx] {
+                    *slots_idx = list_idx as u32;
+                }
+                self.env_consumer_slots.package_scope_lists.push(list);
+            }
         }
         // §1.4 shadow slots: flag every slot whose name occupies more than one
         // `locals` slot (a genuine inner-block shadow under MUTSU_SHADOW_SLOTS)

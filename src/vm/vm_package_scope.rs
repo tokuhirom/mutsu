@@ -10,13 +10,13 @@ use super::*;
 use crate::vm::vm_block_env::{BlockEnvSave, BlockWrites, ClosedBlockEnv};
 
 impl Interpreter {
-    // Cost: O(L + w * m + k) plus the body -- see the `OpCode::PackageScope` arm.
+    // Cost: O(t + w * m + k) plus the body -- see the `OpCode::PackageScope` arm.
     pub(super) fn exec_package_scope_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
         body_end: u32,
-        (lexicals_idx, decls_idx): (u32, u32),
+        (lexicals_idx, decls_idx, slots_idx): (u32, u32, u32),
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -25,7 +25,20 @@ impl Interpreter {
         let body_end = body_end as usize;
         let saved = self.current_package();
         let save = self.open_block_env_tier();
-        let saved_locals = self.locals.to_vec();
+        // The slots the body can touch (`EnvConsumerSlots::package_scope_lists`),
+        // or every slot for a chunk that was never finalized.
+        let touched: Option<&[u32]> = code
+            .env_consumer_slots
+            .package_scope_lists
+            .get(slots_idx as usize)
+            .map(Vec::as_slice);
+        let saved_locals: Vec<Value> = match touched {
+            Some(slots) => slots
+                .iter()
+                .map(|&slot| self.locals[slot as usize].clone())
+                .collect(),
+            None => self.locals.to_vec(),
+        };
         self.set_current_package(name.clone());
         let lexicals = (lexicals_idx != crate::opcode::NO_PACKAGE_LEXICALS)
             .then(|| Self::const_str(code, lexicals_idx));
@@ -171,32 +184,41 @@ impl Interpreter {
         for (k, v) in write_back {
             env.insert_sym(k, v);
         }
-        self.locals.refill_from(&saved_locals);
-        // Only pull a slot's value back from `env` when the compiler actually
-        // keeps that slot's env mirror live (`code.needs_env_sync`,
-        // `compute_needs_env_sync` in `opcode.rs`). `env`'s bare keys are
-        // pre-seeded with a decl-seed placeholder (`Any`) for every mainline
-        // lexical before any of them run, and the (B) per-store env-write gate
-        // means a "slot-authoritative" local (the common case — nothing reads
-        // it by name) never overwrites that placeholder on assignment. Reading
-        // `env` unconditionally here — for every declared local in the whole
-        // compiled unit, not just the ones this package/module body could
-        // plausibly have touched — copied that stale placeholder straight over
-        // a live, correctly-assigned local the block never went near
-        // (`todo/tickets/package-block-resets-an-outer-lexical-declared-before-any-env-flush.md`):
-        // `my $x = "top"; module M { }; say $x` read back `(Any)`. Gating on
-        // `needs_env_sync` is the same test the write side already trusts, so
-        // a slot whose env mirror IS kept current (referenced inside this or
-        // another package-scope body, closed over, etc.) still reconciles
-        // exactly as before — including the write-through case this loop
-        // exists for (`my $x = 1; module M { $x = 2 }`, which the compiler
-        // marks needs_env_sync via `EnvConsumerSlots::package_scope`).
-        for (idx, local_name) in code.locals.iter().enumerate() {
-            if !code.needs_env_sync.get(idx).copied().unwrap_or(true) {
-                continue;
+        // Restore the locals the body touched, then pull back from `env` the
+        // ones whose env mirror the compiler keeps live (`code.needs_env_sync`,
+        // `compute_needs_env_sync` in `opcode.rs`), so a body's write to an
+        // enclosing lexical (`my $x = 1; module M { $x = 2 }`) survives while a
+        // body `my` that reuses an outer slot does not. A slot the body cannot
+        // reach is left alone: restoring it would be a no-op.
+        //
+        // Only a slot whose mirror is live may be read from `env`: `env`'s bare
+        // keys are pre-seeded with a decl-seed placeholder (`Any`) for every
+        // mainline lexical, and a "slot-authoritative" local never overwrites
+        // that placeholder on assignment, so reading it for any other slot
+        // copied the placeholder over a live local
+        // (`todo/tickets/package-block-resets-an-outer-lexical-declared-before-any-env-flush.md`).
+        let sync = |idx: usize| code.needs_env_sync.get(idx).copied().unwrap_or(true);
+        match touched {
+            Some(slots) => {
+                for (&slot, saved) in slots.iter().zip(saved_locals) {
+                    let idx = slot as usize;
+                    let synced = sync(idx)
+                        .then(|| code.local_sym(idx))
+                        .flatten()
+                        .and_then(|sym| env.get_sym(sym).cloned());
+                    self.locals[idx] = synced.unwrap_or(saved);
+                }
             }
-            if let Some(val) = env.get(local_name).cloned() {
-                self.locals[idx] = val;
+            None => {
+                self.locals.refill_from(&saved_locals);
+                for (idx, local_name) in code.locals.iter().enumerate() {
+                    if !sync(idx) {
+                        continue;
+                    }
+                    if let Some(val) = env.get(local_name).cloned() {
+                        self.locals[idx] = val;
+                    }
+                }
             }
         }
         *self.env_mut() = env;

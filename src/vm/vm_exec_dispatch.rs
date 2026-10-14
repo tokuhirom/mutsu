@@ -6610,24 +6610,27 @@ impl Interpreter {
             }
 
             // -- Package scope --
-            // Cost: O(L + w + k) plus the body, L = locals (copied by `locals.to_vec()` and
-            // re-synced at exit), w = names the body wrote by name (its block tier's overlay;
-            // the whole env only when no tier could be opened), k = body lexicals re-bound for
-            // a split-off run-time body (`lexicals_idx`), plus O(w * m), m = names the body
-            // declares (`decls_idx`, matched per written name). One-shot per `package` block.
-            // Rakudo: O(1) plus the body -- see #9171.
+            // Cost: O(t + w * m + k) plus the body, all bounded by the body's own size:
+            // t = local slots the body can touch (saved, restored and re-synced at exit;
+            // `EnvConsumerSlots::package_scope_lists`, every local only for a chunk never
+            // finalized), w = names the body wrote by name (its block tier's overlay; the
+            // whole env only when no tier could be opened), m = names the body declares
+            // (`decls_idx`, matched per written name), k = body lexicals re-bound for a
+            // split-off run-time body (`lexicals_idx`). One-shot per `package` block.
             OpCode::PackageScope {
                 name_idx,
                 body_end,
                 lexicals_idx,
                 decls_idx,
+                slots_idx,
+                ..
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_package_scope_op(
                     code,
                     *name_idx,
                     *body_end,
-                    (*lexicals_idx, *decls_idx),
+                    (*lexicals_idx, *decls_idx, *slots_idx),
                     ip,
                     compiled_fns,
                 )?;
