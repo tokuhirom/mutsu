@@ -7,7 +7,20 @@ pub(crate) fn register_user_sub(name: &str) {
         let current = scopes
             .last_mut()
             .expect("scope stack should never be empty");
-        current.user_subs.insert(name.to_string());
+        let name = name.to_string();
+        if current.user_subs.insert(name.clone()) {
+            if name.starts_with("prefix:<") {
+                current.prefix_operator_subs.insert(name);
+            } else if name.starts_with("postfix:<") {
+                current.postfix_operator_subs.insert(name);
+            } else if name.starts_with("infix:<") {
+                current.infix_operator_subs.insert(name);
+            } else if name.starts_with("circumfix:<") {
+                current.circumfix_operator_subs.insert(name);
+            } else if name.starts_with("postcircumfix:<") {
+                current.postcircumfix_operator_subs.insert(name);
+            }
+        }
     });
     // Circumfix/postcircumfix subs change how expressions parse, so invalidate memos.
     if name.starts_with("circumfix:") || name.starts_with("postcircumfix:") {
@@ -241,14 +254,9 @@ pub(crate) fn reset_user_subs() {
     });
     EVAL_USER_SUB_PRESEED.with(|preseed| {
         let names = preseed.borrow();
-        SCOPES.with(|s| {
-            let mut scopes = s.borrow_mut();
-            if let Some(scope) = scopes.last_mut() {
-                for name in names.iter() {
-                    scope.user_subs.insert(name.clone());
-                }
-            }
-        });
+        for name in names.iter() {
+            register_user_sub(name);
+        }
     });
     EVAL_USER_TYPE_PRESEED.with(|preseed| {
         let names = preseed.borrow();

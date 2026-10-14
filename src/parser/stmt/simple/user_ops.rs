@@ -45,13 +45,11 @@ pub(crate) fn match_user_declared_prefix_op(input: &str) -> Option<(String, usiz
         let mut best: Option<(String, usize)> = None;
 
         for scope in scopes.iter().rev() {
-            for name in &scope.user_subs {
-                let Some(op) = name
+            for name in &scope.prefix_operator_subs {
+                let op = name
                     .strip_prefix("prefix:<")
                     .and_then(|s| s.strip_suffix('>'))
-                else {
-                    continue;
-                };
+                    .expect("prefix operator index contains canonical names");
                 if !input.starts_with(op) {
                     continue;
                 }
@@ -104,7 +102,7 @@ pub(crate) fn match_user_declared_postfix_op(input: &str) -> Option<(String, usi
         let ops: Vec<(&String, &str)> = scopes
             .iter()
             .rev()
-            .flat_map(|scope| scope.user_subs.iter())
+            .flat_map(|scope| scope.postfix_operator_subs.iter())
             .filter_map(|name| {
                 name.strip_prefix("postfix:<")
                     .and_then(|s| s.strip_suffix('>'))
@@ -198,13 +196,11 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
         let mut best: Option<(String, usize)> = None;
 
         for scope in scopes.iter().rev() {
-            for name in &scope.user_subs {
-                let Some(op) = name
+            for name in &scope.infix_operator_subs {
+                let op = name
                     .strip_prefix("infix:<")
                     .and_then(|s| s.strip_suffix('>'))
-                else {
-                    continue;
-                };
+                    .expect("infix operator index contains canonical names");
                 if op.is_empty() {
                     continue;
                 }
@@ -534,13 +530,11 @@ pub(crate) fn match_user_declared_circumfix_op(input: &str) -> Option<(String, u
         let mut best: Option<(String, usize, String)> = None;
 
         for scope in scopes.iter().rev() {
-            for name in &scope.user_subs {
-                let Some(delims) = name
+            for name in &scope.circumfix_operator_subs {
+                let delims = name
                     .strip_prefix("circumfix:<")
                     .and_then(|s| s.strip_suffix('>'))
-                else {
-                    continue;
-                };
+                    .expect("circumfix operator index contains canonical names");
                 // Split into open and close delimiters (space-separated)
                 let parts: Vec<&str> = delims.split_whitespace().collect();
                 if parts.len() != 2 {
@@ -573,13 +567,11 @@ pub(crate) fn match_user_declared_postcircumfix_op(input: &str) -> Option<(Strin
         let mut best: Option<(String, usize, String)> = None;
 
         for scope in scopes.iter().rev() {
-            for name in &scope.user_subs {
-                let Some(delims) = name
+            for name in &scope.postcircumfix_operator_subs {
+                let delims = name
                     .strip_prefix("postcircumfix:<")
                     .and_then(|s| s.strip_suffix('>'))
-                else {
-                    continue;
-                };
+                    .expect("postcircumfix operator index contains canonical names");
                 // Split into open and close delimiters (space-separated)
                 let parts: Vec<&str> = delims.split_whitespace().collect();
                 if parts.len() != 2 {
@@ -618,15 +610,19 @@ pub(crate) fn is_circumfix_close_delimiter_word(word: &str) -> bool {
     }
     SCOPES.with(|s| {
         s.borrow().iter().rev().any(|scope| {
-            scope.user_subs.iter().any(|name| {
-                name.strip_prefix("circumfix:<")
-                    .or_else(|| name.strip_prefix("postcircumfix:<"))
-                    .and_then(|d| d.strip_suffix('>'))
-                    .is_some_and(|delims| {
-                        let parts: Vec<&str> = delims.split_whitespace().collect();
-                        parts.len() == 2 && parts[1] == word
-                    })
-            })
+            scope
+                .circumfix_operator_subs
+                .iter()
+                .chain(&scope.postcircumfix_operator_subs)
+                .any(|name| {
+                    name.strip_prefix("circumfix:<")
+                        .or_else(|| name.strip_prefix("postcircumfix:<"))
+                        .and_then(|d| d.strip_suffix('>'))
+                        .is_some_and(|delims| {
+                            let parts: Vec<&str> = delims.split_whitespace().collect();
+                            parts.len() == 2 && parts[1] == word
+                        })
+                })
         })
     })
 }
@@ -637,7 +633,11 @@ pub(crate) fn is_circumfix_close_delimiter(input: &str) -> bool {
     SCOPES.with(|s| {
         let scopes = s.borrow();
         for scope in scopes.iter().rev() {
-            for name in &scope.user_subs {
+            for name in scope
+                .circumfix_operator_subs
+                .iter()
+                .chain(&scope.postcircumfix_operator_subs)
+            {
                 let delims = if let Some(d) = name
                     .strip_prefix("circumfix:<")
                     .and_then(|s| s.strip_suffix('>'))

@@ -12,7 +12,7 @@ use Test;
 # news/2026-09/do-block-scopes-its-routine-declarations.md); that form has its
 # own pin file, t/do-block-scopes-routine-decls.t.
 
-plan 22;
+plan 27;
 
 # --- 1. plain single sub shadowing (was already correct; guard it) ----------
 {
@@ -154,4 +154,17 @@ dies-ok { EVAL 'our proto d10b($) {*}; our multi d10b(Int $x) { "o" }; sub s10b(
     }
     is $inner, "inner", "a lexical proto still shadows an outer `our` proto";
     is s10c(5), "outer", "the `our` proto comes back after the block";
+}
+
+# --- 11. user-operator indexes retain lexical visibility ------------------
+{
+    sub infix:<⊗>(Int $a, Int $b) { $a + $b };
+    is 2 ⊗ 3, 5, "an operator is registered in its declaring scope";
+    {
+        is 4 ⊗ 5, 9, "a nested scope sees an operator from its parent";
+        sub infix:<⊙>(Int $a, Int $b) { $a * $b };
+        is 2 ⊙ 3, 6, "an operator is registered in a nested scope";
+    }
+    dies-ok { EVAL '2 ⊙ 3' }, "a nested operator does not leak out of its scope";
+    is EVAL('2 ⊗ 3'), 5, "EVAL inherits the outer operator declaration";
 }
