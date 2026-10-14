@@ -89,6 +89,11 @@ impl<'ast> Visit<'ast> for PlaceholderMutationScan<'_> {
                 modifier: Some('='),
                 ..
             } => self.refs_placeholder(target),
+            // `* += *` — a compound assignment through a numbered placeholder.
+            // Not for the topic `_`: treating its assignment as a mutation
+            // broke shaped-array `map(* *= 2)` writeback (99e7273ef), so the
+            // single-star scan keeps its narrower set.
+            Expr::AssignExpr { name, .. } => self.name != "_" && name == self.name,
             _ => false,
         };
         if !self.found {

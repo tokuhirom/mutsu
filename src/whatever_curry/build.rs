@@ -225,7 +225,13 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         // `WhateverCurry` wrapped around it must see the RHS placeholder so
         // `$out ~= *` becomes `{ $out ~= $_ }`.
         Expr::AssignExpr { expr, .. } => count_whatever(expr),
-        Expr::CompoundAssign { rhs, .. } => count_whatever(rhs),
+        // A bare `*` target joins the RHS's priming scope only when the RHS
+        // primes too: `* += *` is arity 2. `* += 1` alone keeps its own
+        // one-parameter expansion (`build_compound_assign_expr`).
+        Expr::CompoundAssign { target, rhs, .. } => {
+            let n = count_whatever(rhs);
+            n + usize::from(n > 0 && is_whatever(target))
+        }
         // A nested, already-planted WhateverCurry operand (e.g. `(* - 1)`
         // inside `(* - 1) - 1`) contributes its own un-curried placeholder
         // count. `count_whatever` already handles the chained-comparison
