@@ -879,7 +879,8 @@ impl Interpreter {
         // of any MRO, so they are appended after the user-class candidates
         // and the attribute-accessor probes below.
         let mut native_declared: Vec<&String> = Vec::new();
-        for cn in &mro {
+        let mro_strs: Vec<&str> = mro.iter().map(String::as_str).collect();
+        for (m, cn) in mro.iter().enumerate() {
             // The candidate list comes from the canonical `Registry::method_
             // entries[(owner, name)].user_candidates` table (ADR-0019 Phase F
             // box F1 item 2) rather than `ClassDef::methods` directly --
@@ -892,8 +893,20 @@ impl Interpreter {
                 self.registry()
                     .get_method_overloads_with_role_fallback(cn, method_name)
             };
+            // Rakudo flattens a role's methods into the class that does it
+            // (`List.^can('of')` finds `Positional.of` as List's), so a role the
+            // catalog composes at this level counts as declared by the level.
             if defs.is_none()
-                && crate::builtins::native_method_row::native_method_declared(cn, method_name)
+                && (crate::builtins::native_method_row::native_method_declared(cn, method_name)
+                    || crate::builtin_types::catalog::builtin_type_roles_strs(cn)
+                        .iter()
+                        .any(|role| {
+                            crate::builtin_types::catalog::composes_role_at(&mro_strs, m, role)
+                                && crate::builtins::native_method_row::native_method_declared(
+                                    role.split_once('[').map_or(*role, |(base, _)| base),
+                                    method_name,
+                                )
+                        }))
             {
                 native_declared.push(cn);
             }
