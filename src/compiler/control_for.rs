@@ -574,7 +574,9 @@ impl Compiler {
             self.decl_is_sigilless = false;
         }
         // The parameters the declarations above gave no slot stay by-name env
-        // bindings for the whole body.
+        // bindings for the whole body. A by-name read of the name after the
+        // loop is the enclosing lexical again (`note_shadowed_outer_capture`,
+        // #13420).
         let by_name_mark = self.by_name_for_params.len();
         for p in param.iter().chain(params.iter()) {
             let bare = p.strip_prefix('\\').unwrap_or(p);
