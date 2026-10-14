@@ -1212,9 +1212,13 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Some(_) => Some(leaf_str(node, "repr")?),
         None => None,
     };
+    let name_expr = match node.fields.iter().any(|f| f.name == Some("name")) {
+        true => super::routine_lower::declarator_name(node)?.1,
+        false => None,
+    };
     Ok(head.finish(Stmt::ClassDecl {
         name: crate::symbol::Symbol::intern(&head.name),
-        name_expr: None,
+        name_expr,
         parents,
         class_is_rw,
         is_hidden,
@@ -1330,7 +1334,7 @@ pub(super) fn package_head(
         },
         None | Some("my" | "our" | "unit") => Ok(PackageHead {
             name: if node.fields.iter().any(|f| f.name == Some("name")) {
-                call_name_str(node)?
+                super::routine_lower::declarator_name(node)?.0
             } else {
                 fresh()
             },
@@ -1345,6 +1349,10 @@ pub(super) fn package_head(
                     RakuAstFieldValue::Node(v) => matches!(
                         v.view(),
                         ValueView::RakuAst(n) if name_parts::has_leading_empty(n)
+                            && !matches!(
+                                name_parts::name_shape(n),
+                                Some(NameShape::Indirect { .. })
+                            )
                     ),
                     _ => false,
                 }),
@@ -1680,7 +1688,7 @@ pub(super) fn multiness(node: &RakuAstNode) -> Result<bool, RuntimeError> {
 }
 
 fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = call_name_str(node)?;
+    let (name, name_expr) = super::routine_lower::declarator_name(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = super::routine_traits::IsTraits::default();
     let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
@@ -1711,7 +1719,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let handles = super::routine_source::handle_specs(&body).ok_or_else(|| unsupported(node))?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
-        name_expr: None,
+        name_expr,
         params,
         param_defs,
         body,

@@ -37,7 +37,7 @@ pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::modifier::for_modifier_loop_params;
 pub(crate) use stmt::modifier::rewrite_placeholder_block_modifier_stmt;
-pub(crate) use stmt::sub::op_prec_trait;
+pub(crate) use stmt::sub::{INDIRECT_DECL_NAME, op_prec_trait};
 pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;

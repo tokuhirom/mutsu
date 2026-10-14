@@ -22,7 +22,7 @@ use crate::ast::Expr;
 use crate::value::{RuntimeError, Value};
 
 /// The `Name(Part::Empty, Part::Expression(EXPR))` of a dynamic lookup.
-fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn indirect_name(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let part = RakuAstNode {
         class: RakuAstClass::NamePartExpression,
         fields: vec![node_field(None, convert_expr(expr)?)],
@@ -210,4 +210,55 @@ pub(super) fn lower_package_indirect(node: &RakuAstNode) -> Option<Result<Expr, 
             form: Default::default(),
         }),
     }))
+}
+
+/// A declarator's `::(EXPR)` name (`sub ::("x") { }`, `method ::($n) { }`): the
+/// parser's name text and the name expression, read back from
+/// `Name(Part::Empty, Part::Expression(EXPR))`. A literal or bare word keeps
+/// its text as the name, anything else the parser's placeholder.
+// Cost: O(n), n = nodes of the name expression.
+pub(super) fn lower_declarator_name(
+    name: &RakuAstNode,
+) -> Result<Option<(String, Expr)>, RuntimeError> {
+    let Some(NameShape::Indirect {
+        expr,
+        tail,
+        trailing: false,
+    }) = name_parts::name_shape(name)
+    else {
+        return Ok(None);
+    };
+    if !tail.is_empty() {
+        return Ok(None);
+    }
+    let lowered = lower_expr(expr)?;
+    let text = match &lowered {
+        Expr::Literal(v) => match v.view() {
+            crate::value::ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        },
+        Expr::BareWord(s) => Some(s.clone()),
+        _ => None,
+    };
+    Ok(Some((
+        text.unwrap_or_else(|| crate::parser::INDIRECT_DECL_NAME.to_string()),
+        lowered,
+    )))
+}
+
+/// Swap a routine node's `name` for the `::(EXPR)` form when the declaration
+/// had a computed name.
+// Cost: O(n), n = nodes of the name expression.
+pub(super) fn replace_declarator_name(
+    node: &mut RakuAstNode,
+    name_expr: Option<&Expr>,
+) -> Result<(), RuntimeError> {
+    if let Some(expr) = name_expr {
+        let field = node_field(Some("name"), indirect_name(expr)?);
+        match node.fields.iter_mut().find(|f| f.name == Some("name")) {
+            Some(slot) => *slot = field,
+            None => node.fields.insert(0, field),
+        }
+    }
+    Ok(())
 }
