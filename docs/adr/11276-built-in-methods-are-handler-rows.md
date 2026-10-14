@@ -2616,6 +2616,11 @@ Not changed: the operator's own disagreements with Rakudo, which the rows now sh
 instance and a subclass of a built-in class with its own row (`class DD is Date`) (#13333); the allomorphs keep
 `allomorph.rs`'s path. Pinned in `t/oo/method/accepts-method-open-rows.t`.
 
+Addendum (#13333): an instance whose class MRO ends at a built-in class (`class X2 is Exception`) reaches `Any`'s rows through
+the catalog chain of that class (the MRO spells out `Exception` but not `Any`), and a subclass of a built-in class with its
+own `ACCEPTS` row (`class DD is Date`) answers from that row, with the interpreter (`shapeless_row`). Pinned in
+`t/oo/method/accepts-method-builtin-instances.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

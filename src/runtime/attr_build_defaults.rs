@@ -525,6 +525,10 @@ impl Interpreter {
             BlockEnvSave::Whole(_) => return self.eval_decl_trait_arg_inserting_scope(arg, captured),
         };
         self.env_mut().set_capture_fallback(captured.clone());
+        let cells = captured_lexical_cells(arg, captured);
+        for (key, cell) in &cells {
+            self.env_mut().insert_sym(*key, cell.clone());
+        }
         let result = self.eval_decl_trait_arg(arg);
         self.env_mut().clear_capture_fallback();
         let ClosedBlockEnv {
@@ -533,6 +537,11 @@ impl Interpreter {
             removed,
         } = self.close_block_env_tier(save);
         for (key, value) in writes.iter() {
+            // A lexical bound to its declaring scope's cell is not the
+            // running scope's name, even when it spells the same.
+            if cells.iter().any(|(k, _)| k == key) {
+                continue;
+            }
             if base.contains_key_sym(*key) || captured.get(key).is_none() {
                 base.insert_sym(*key, value.clone());
             }
@@ -560,7 +569,22 @@ impl Interpreter {
                 inserted.push(*key);
             }
         }
+        let mut shadowed = Vec::new();
+        for (key, cell) in captured_lexical_cells(arg, captured) {
+            shadowed.push((key, self.env.get_sym(key).cloned()));
+            self.env.insert_sym(key, cell);
+        }
         let result = self.eval_decl_trait_arg(arg);
+        for (key, old) in shadowed.into_iter().rev() {
+            match old {
+                Some(old) => {
+                    self.env.insert_sym(key, old);
+                }
+                None => {
+                    self.env.remove_sym(key);
+                }
+            }
+        }
         for key in inserted {
             self.env.remove_sym(key);
         }
@@ -580,5 +604,69 @@ impl Interpreter {
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
         self.current_unit = saved_unit;
         result
+    }
+}
+
+/// The plain lexicals a declaration expression names, each paired with the
+/// shared cell `captured` (its declaring scope) binds it to. These resolve
+/// ahead of the running scope -- a default's `$x` is the `$x` of the scope
+/// the declaration was written in, whatever the constructing frame calls
+/// `$x` (#13340). A name captured as a plain value is left out: a copy is
+/// not the binding, so it keeps resolving the way it did before.
+// Cost: O(f), f = free variables of the expression's chunk.
+fn captured_lexical_cells(
+    arg: &DeclTraitArg,
+    captured: &crate::env_capture_view::CapturedScope,
+) -> Vec<(Symbol, Value)> {
+    let DeclTraitArg::Compiled(chunk) = arg else {
+        return Vec::new();
+    };
+    chunk
+        .code
+        .free_var_syms
+        .iter()
+        .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
+        .filter_map(|sym| {
+            captured
+                .get(sym)
+                .filter(|value| value.is_container_ref())
+                .map(|cell| (*sym, cell.clone()))
+        })
+        .collect()
+}
+
+impl Interpreter {
+    /// The bindings, in the running (declaring) scope, of the plain lexicals
+    /// a class attribute's default names, captured at registration so the
+    /// default resolves them through its declaring scope however long after
+    /// and from wherever the class is constructed (#13340). Only a shared
+    /// cell is captured: the compiler boxes each such lexical at its
+    /// declaration (`Compiler::bubble_attr_decl_captures`), and a name it
+    /// could not box keeps resolving by name at construction.
+    // Cost: O(f * d), f = free variables of the default's chunk, d = env tiers.
+    pub(crate) fn capture_attr_decl_lexicals(
+        &self,
+        default: Option<&DeclTraitArg>,
+    ) -> Option<crate::env_capture_view::CapturedScope> {
+        let Some(DeclTraitArg::Compiled(chunk)) = default else {
+            return None;
+        };
+        let mut cells = crate::env_tier::SymMap::default();
+        for sym in chunk.code.free_var_syms.iter() {
+            if !sym.with_str(crate::env::is_plain_user_lexical) {
+                continue;
+            }
+            if let Some(value) = self.env.get_sym(*sym)
+                && value.is_container_ref()
+            {
+                cells.insert(*sym, value.clone());
+            }
+        }
+        if cells.is_empty() {
+            return None;
+        }
+        Some(std::sync::Arc::new(crate::env_capture_view::CaptureView::single(
+            std::sync::Arc::new(crate::env_tier::Tier::new(cells)),
+        )))
     }
 }

@@ -4813,6 +4813,7 @@ t/rakuast/rakuast-word-quotes.t
 t/rakuast/rakuast-words-processor-and-colonpair-words.t
 t/rakuast/rakuast-yada-stubs.t
 t/rakuast/rakuast-zen-slice-adverbs.t
+t/rakuast/rakuast-zen-slice-exists.t
 t/regex/anon-regex-declarator-signature.t
 t/regex/associative-at-key-regex-subscript.t
 t/regex/contains-regex.t

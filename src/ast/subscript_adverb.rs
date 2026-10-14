@@ -595,6 +595,9 @@ pub(crate) fn expand(subscript: Expr, adverbs: &[Adverb], six_e: bool) -> Option
         // is a by-name builtin of its own the parser builds, which is not
         // modelled.
         Expr::MultiDimIndex { .. } => {}
+        // `@a[]:exists...` keeps the zen slice itself (the parser only does so
+        // when `:exists` / `:!exists` directly follows the empty subscript).
+        Expr::ZenSlice(_) if adverbs.iter().any(|(key, _)| key == "exists") => {}
         _ => return None,
     }
     let mut exists = None;

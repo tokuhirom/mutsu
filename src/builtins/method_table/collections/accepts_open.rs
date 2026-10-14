@@ -61,9 +61,12 @@ fn smartmatch(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    Some(Ok(Value::truth(accepts_by_smartmatch(
-        interp, &args[0], target,
-    ))))
+    // An exception raised while matching (a Blob topic against a Str
+    // receiver dies `X::Buf::AsStr`) propagates.
+    if let Some(pure) = crate::vm::vm_smart_match::pure_smart_match(&args[0], target) {
+        return Some(Ok(Value::truth(pure)));
+    }
+    Some(interp.try_smart_match(&args[0], target).map(Value::truth))
 }
 
 /// `$topic ~~ $matcher` as the operator decides it for a matcher with no
