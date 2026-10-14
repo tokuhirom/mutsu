@@ -302,6 +302,23 @@ fn is_block_ending_stmt(stmt: &Stmt) -> bool {
     }
 }
 
+/// A method declaration's value can itself be followed by a postfix on the
+/// same line (for example, the `}.list` in a class body).
+fn method_decl_postfix_follows(stmt: &Stmt, rest: &str) -> bool {
+    matches!(
+        stmt,
+        Stmt::MethodDecl {
+            is_my: false,
+            is_our: false,
+            ..
+        } | Stmt::MethodDecl {
+            is_submethod: true,
+            is_our: false,
+            ..
+        }
+    ) && rest.starts_with('.')
+}
+
 /// Check that the remaining input has a proper statement separator
 /// (newline, semicolon, comma, closing brace, or end-of-input)
 /// before any non-whitespace code on the same line.
@@ -524,7 +541,10 @@ pub(crate) fn stmt_list_with_mode(
                 if let Some(err) = super::modifier::pending_extra_modifier_error(r_ws) {
                     return Err(err);
                 }
-                if is_block_ending_stmt(&stmt) && !has_statement_separator(r) {
+                if is_block_ending_stmt(&stmt)
+                    && !has_statement_separator(r)
+                    && !method_decl_postfix_follows(&stmt, r_ws)
+                {
                     return Err(PError::fatal(
                         "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
                             .to_string(),

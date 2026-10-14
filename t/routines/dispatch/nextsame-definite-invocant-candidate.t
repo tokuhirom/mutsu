@@ -6,7 +6,7 @@ use Test;
 
 plan 5;
 
-class A { multi method g(A:D:) { "Ag" } multi method i(A:D: $x) { "Ai" } }
+class A { multi method g(A:D:) { "Ag" }; multi method i(A:D: $x) { "Ai" } }
 class B is A {
     multi method g() { nextsame }
     multi method i($x) { callsame }

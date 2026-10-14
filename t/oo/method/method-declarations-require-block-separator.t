@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 7;
 
 throws-like 'EVAL q[class A { method a { 1 } method b { 2 } }]',
     X::Syntax::Confused,
@@ -32,3 +32,6 @@ lives-ok {
         CODE
 },
     'a lexical submethod followed by a newline still ends its statement';
+
+lives-ok { EVAL 'class G { method m { 1 }.list }' },
+    'a same-line postfix may follow a method declaration body';

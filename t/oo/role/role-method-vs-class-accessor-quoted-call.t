@@ -26,5 +26,5 @@ class H does R { }
 is-deeply H.new."street"(), Str, "no class accessor: the role method still answers";
 
 role R2 { method s2 { "role" } }
-class G2 does R2 { method s2 { "class" } has $.s2; }
+class G2 does R2 { method s2 { "class" }; has $.s2; }
 is G2.new(s2 => "attr")."s2"(), "class", "an explicit class method still beats the accessor";
