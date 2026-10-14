@@ -1165,3 +1165,15 @@ An attribute's `will lazy { ... }` is kept by the parser as an unknown trait
 `Trait::Will(phase, block)` in the attribute's `traits`, and lowering turns it
 back into the same unknown-trait tuple, so `trait_mod:<will>` receives the block
 as its positional Callable. A `will` trait without a block stays the boundary.
+
+### 6.56 S10: compound assignment with a loose word-logical tail (2026-10-15)
+
+For `$x += 1 andthen 42`, the statement parser keeps a scopeless
+`SyntheticBlock([Expr(CompoundAssign), Expr(Binary(Var("x"), andthen, 42))])`.
+Rakudo's tree is an `ApplyListInfix` whose first operand is the compound
+assignment. The existing declaration-tail round trip now also recognizes a
+scalar compound-assignment head, replaces the tail's leading variable read
+with that head in `.AST`, and reconstructs the same parser shape in `lower`.
+This pins the compound assignment as the value that seeds the short-circuit
+tail and preserves its single evaluation. Other `SyntheticBlock` first
+refusals remain for separate measured slices.

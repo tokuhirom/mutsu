@@ -1,4 +1,4 @@
-//! A declaration or assignment with a loose tail across the RakuAST boundary.
+//! A declaration or variable assignment with a loose tail across the RakuAST boundary.
 //!
 //! `my $x = 1 and 2` and `my $x = 1, 2, 3` are one expression
 //! in RakuAST, with the declaration as the leftmost operand of the whole thing:
@@ -8,9 +8,9 @@
 //! my $x = 1, 2, 3   ApplyListInfix(Infix(","), operands => (VarDeclaration::Simple, 2, 3))
 //! ```
 //!
-//! The parser splits it into the declaration and a tail that re-reads the
-//! variable ([`crate::ast::decl_tail`]), so the converter puts the declaration
-//! back in place of that re-read, and lowering takes it out again.
+//! The parser splits it into a head and a tail that re-reads the variable
+//! ([`crate::ast::decl_tail`]), so the converter puts the head back in place of
+//! that re-read, and lowering takes it out again.
 
 use super::convert::{convert_expr, convert_stmt, split_sigil, var_lexical};
 use super::lower::{lower_expr, lower_stmt, named_child, rakuast_node_of};
@@ -126,11 +126,22 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
         if depth == 0 || *bottom != var_lexical(sigil, name) {
             return Err(unsupported_statement());
         }
-        let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
-        let declaration =
-            super::convert::expression_of(&statement).ok_or_else(unsupported_statement)?;
-        Ok(replace_leftmost(&converted, &declaration))
+        let operand = if let Some(expr) = compound_assignment_expr(head) {
+            convert_expr(expr)?
+        } else {
+            let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
+            super::convert::expression_of(&statement).ok_or_else(unsupported_statement)?
+        };
+        Ok(replace_leftmost(&converted, &operand))
     })())
+}
+
+// Cost: O(1).
+fn compound_assignment_expr(head: &Stmt) -> Option<&crate::ast::Expr> {
+    match head {
+        Stmt::Expr(expr @ crate::ast::Expr::CompoundAssign { .. }) => Some(expr),
+        _ => None,
+    }
 }
 
 fn unsupported_statement() -> RuntimeError {
@@ -142,12 +153,22 @@ fn unsupported_statement() -> RuntimeError {
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
     let (bottom, depth) = leftmost(node, false);
-    if depth == 0 || bottom.class != RakuAstClass::VarDeclarationSimple {
+    let is_declaration = bottom.class == RakuAstClass::VarDeclarationSimple;
+    let is_compound_assignment = bottom.class == RakuAstClass::ApplyInfix
+        && super::lower::infix_is_compound_assignment(bottom);
+    if depth == 0 || (!is_declaration && !is_compound_assignment) {
         return None;
     }
-    let head = match lower_stmt(bottom) {
-        Ok(head) => head,
-        Err(error) => return Some(Err(error)),
+    let head = if is_declaration {
+        match lower_stmt(bottom) {
+            Ok(head) => head,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        match lower_expr(bottom) {
+            Ok(expr) => Stmt::Expr(expr),
+            Err(error) => return Some(Err(error)),
+        }
     };
     let (sigil, name) = declared_variable(&head)?;
     let seed = var_lexical(sigil, name);
