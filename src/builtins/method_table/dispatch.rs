@@ -734,7 +734,11 @@ pub(crate) fn shapeless_row(
         _ => return None,
     };
     // `Int` and `Numeric` are `Mu`'s, not `Cool`'s (§9.92).
-    let arity = if method == "comb" { arity.min(1) } else { arity };
+    let arity = if method == "comb" {
+        arity.min(1)
+    } else {
+        arity
+    };
     super::owner_row(owner, method, arity).or_else(|| {
         coerce
             .then(|| super::owner_row(mu_owner, method, arity))
