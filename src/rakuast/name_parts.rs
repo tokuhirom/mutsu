@@ -328,6 +328,12 @@ fn operator_symbol(node: &RakuAstNode) -> Option<String> {
     let ValueView::RakuAst(quoted) = pair.view() else {
         return None;
     };
+    quoted_text(quoted)
+}
+
+/// The text of a `QuotedString` of one plain segment.
+// Cost: O(1).
+pub(super) fn quoted_text(quoted: &RakuAstNode) -> Option<String> {
     if quoted.class != RakuAstClass::QuotedString {
         return None;
     }

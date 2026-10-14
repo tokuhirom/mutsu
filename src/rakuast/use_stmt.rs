@@ -88,6 +88,23 @@ pub(super) fn convert_use(
             .push(node_field(Some("argument"), colonpair_true(&smiley)));
         return Ok(node);
     }
+    // `use Foo:from<NQP>`: the parser splits the `:from` adverb of the module
+    // name into an argument and a tag; rakudo keeps it on the name.
+    let from_spelling = match (arg.map(Expr::peel_parens), tags) {
+        (Some(Expr::Literal(v)), [tag]) if tag == "from" && !is_pragma_name(module) => v
+            .as_str()
+            .filter(|text| {
+                !text.is_empty() && !text.contains(['<', '>', ' ', '\'', '"', '\\'])
+            })
+            .map(str::to_string),
+        _ => None,
+    };
+    let from_text = from_spelling;
+    let (arg, tags) = if from_text.is_some() {
+        (None, &[][..])
+    } else {
+        (arg, tags)
+    };
     let argument = use_argument(arg, tags)?;
     let mut node = if is_pragma_name(module) {
         pragma_node(module)
@@ -96,7 +113,10 @@ pub(super) fn convert_use(
             class: RakuAstClass::StatementUse,
             fields: vec![node_field(
                 Some("module-name"),
-                name_from_identifier(module),
+                from_text.as_deref().map_or_else(
+                    || name_from_identifier(module),
+                    |text| name_with_from(module, text),
+                ),
             )],
         }
     };
@@ -256,6 +276,57 @@ fn pragma_node(name: &str) -> RakuAstNode {
     }
 }
 
+/// `Foo:from<NQP>` as a `Name` with a `from` colonpair, measured on 2026.09:
+/// `Name.from-identifier("Foo", colonpairs => (ColonPair::Value(key => "from",
+/// value => QuotedString<words val>)))`.
+// Cost: O(n), n = length of the module and language names.
+fn name_with_from(module: &str, language: &str) -> RakuAstNode {
+    let mut name = name_from_identifier(module);
+    name.fields.push(RakuAstField {
+        name: Some("colonpairs"),
+        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::ColonPairValue,
+            fields: vec![
+                leaf_field(Some("key"), Value::str("from".to_string())),
+                node_field(Some("value"), super::convert::word_quote(language)),
+            ],
+        }))]),
+    });
+    name
+}
+
+/// The language of a module name's `from` colonpair (the inverse of
+/// [`name_with_from`]).
+// Cost: O(1).
+fn from_language(name: &RakuAstNode) -> Option<String> {
+    let field = name.fields.iter().find(|f| f.name == Some("colonpairs"))?;
+    let RakuAstFieldValue::List(pairs) = &field.value else {
+        return None;
+    };
+    let [pair] = pairs.as_slice() else {
+        return None;
+    };
+    let ValueView::RakuAst(pair) = pair.view() else {
+        return None;
+    };
+    if pair.class != RakuAstClass::ColonPairValue || leaf_str(pair, "key").ok()? != "from" {
+        return None;
+    }
+    let ValueView::RakuAst(value) = pair
+        .fields
+        .iter()
+        .find(|f| f.name == Some("value"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(v) => Some(v),
+            _ => None,
+        })?
+        .view()
+    else {
+        return None;
+    };
+    name_parts::quoted_text(value)
+}
+
 /// The `argument` of a `use` statement. Both an argument and tags at once
 /// (`use Foo :tag<x>`) is a shape the parser does not keep distinct.
 fn use_argument(arg: Option<&Expr>, tags: &[String]) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -312,6 +383,14 @@ pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         f.name == Some("off") && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
     });
     let (mut arg, mut tags) = lower_argument(node)?;
+    // `Foo:from<NQP>`: the parser keeps the language as an argument and a tag.
+    if let Some(language) = from_language(named_child(node, "module-name")?) {
+        if arg.is_some() || !tags.is_empty() {
+            return Err(super::lower::unsupported(node));
+        }
+        arg = Some(Expr::Literal(Value::str(language)));
+        tags.push("from".to_string());
+    }
     let (condition, if_imports) = lower_source_if(node)?;
     // `use variables :D`: the parser's `":D"` argument, not an import tag.
     if is_smiley_pragma(&module) {
@@ -346,6 +425,14 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         _ => return Err(super::lower::unsupported(node)),
     };
     let (mut arg, mut tags) = lower_argument(node)?;
+    // `Foo:from<NQP>`: the parser keeps the language as an argument and a tag.
+    if let Some(language) = from_language(named_child(node, "module-name")?) {
+        if arg.is_some() || !tags.is_empty() {
+            return Err(super::lower::unsupported(node));
+        }
+        arg = Some(Expr::Literal(Value::str(language)));
+        tags.push("from".to_string());
+    }
     let (condition, if_imports) = lower_source_if(node)?;
     // `use newline :crlf` keeps its pair as the argument, where any other
     // module's `:tag` is an import tag.
