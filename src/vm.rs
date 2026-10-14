@@ -315,6 +315,7 @@ mod vm_our_package_vars;
 mod vm_outer_capture;
 pub(crate) mod vm_package_body_lexicals;
 mod vm_package_containers;
+pub(crate) mod vm_package_scope;
 pub(crate) mod vm_poll;
 mod vm_positional_index_key;
 mod vm_pseudo_stash_ops;

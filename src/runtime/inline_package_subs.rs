@@ -284,6 +284,18 @@ impl Interpreter {
                     ]),
                     Value::TRUE,
                 );
+                // The same marker with an empty site says "some candidate of
+                // this name was pre-registered", so the proto's registration
+                // can ask by lookup instead of scanning every env key
+                // (`register_proto_decl`).
+                self.env_mut().insert(
+                    MetaNs::InlinePackageSub.owned_key_from_parts(&[
+                        &package,
+                        &name.resolve(),
+                        "",
+                    ]),
+                    Value::TRUE,
+                );
             }
             result?;
         }

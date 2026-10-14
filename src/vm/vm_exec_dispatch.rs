@@ -6620,8 +6620,9 @@ impl Interpreter {
             }
 
             // -- Package scope --
-            // Cost: O(L + v + k) plus the body, L = locals (copied by `locals.to_vec()`), v = env
-            // entries (walked at exit to record package lexicals), k = body lexicals re-bound for
+            // Cost: O(L + w + k) plus the body, L = locals (copied by `locals.to_vec()` and
+            // re-synced at exit), w = names the body wrote by name (its block tier's overlay;
+            // the whole env only when no tier could be opened), k = body lexicals re-bound for
             // a split-off run-time body (`lexicals_idx`). One-shot per `package` block.
             // Rakudo: O(1) plus the body -- see #9171.
             OpCode::PackageScope {
