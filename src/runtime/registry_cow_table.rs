@@ -78,7 +78,6 @@ impl<T: Clone> CowTable<T> {
 impl<T> CowTable<T> {
     /// Whether `self` and `other` are the same shared table (no copy yet).
     // Cost: O(1).
-    #[cfg(test)]
     pub(crate) fn shares_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }

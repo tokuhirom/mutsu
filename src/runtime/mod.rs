@@ -2613,10 +2613,13 @@ pub(crate) type RoutineRegistrySnapshot = (
 /// stayed visible to `has_proto` after the block and kept `skip(5, @a)` on the
 /// user-routine argument path (VarRef-wrapped) instead of the list builtin's.
 pub(crate) struct ImportScopeSnapshot {
-    pub(crate) functions: HashSet<Symbol>,
-    pub(crate) classes: HashSet<String>,
-    pub(crate) proto_subs: HashSet<String>,
-    pub(crate) proto_functions: HashSet<Symbol>,
+    /// The registry tables as the scope opened: each is copy-on-write, so the
+    /// snapshot is a reference to the very table (O(1), #9170), and a table
+    /// still identical to it at the pop was not written in the scope.
+    pub(crate) functions: Arc<function_table::FunctionTable>,
+    pub(crate) classes: registry::ClassTable,
+    pub(crate) proto_subs: Arc<registry::ProtoSubSet>,
+    pub(crate) proto_functions: Arc<registry::ProtoFunctionMap>,
     /// Function definitions hidden by an imported proto/multi family in this
     /// scope. Imports merge multi candidates into one package key, so the
     /// ordinary key snapshot cannot restore an enclosing candidate that the

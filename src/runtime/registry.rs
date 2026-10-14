@@ -41,6 +41,14 @@ use super::dispatch_key;
 use super::function_table::{FunctionTable, FunctionTableTransitions};
 use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
+/// [`Registry::classes`]'s type: a copy-on-write table, so a snapshot of it
+/// (an import scope's, `ImportScopeSnapshot`) is a reference bump.
+pub(crate) type ClassTable = CowTable<HashMap<String, CowTable<ClassDef>>>;
+/// [`Registry::proto_functions`]'s map.
+pub(crate) type ProtoFunctionMap = HashMap<Symbol, Arc<FunctionDef>>;
+/// The `proto sub` marker set behind [`Registry::proto_subs_snapshot`].
+pub(crate) type ProtoSubSet = HashSet<String>;
+
 /// Canonical method-table key. Both built-in handlers and user candidates will
 /// occupy this namespace; the latter still live in `ClassDef::methods` during
 /// the next migration step.
@@ -217,7 +225,7 @@ pub(crate) struct Registry {
     /// short-lived `registry()` guards and clone the minimal projection they need
     /// (e.g. `mro.clone()`, `methods.get(name).cloned()`) rather than the whole
     /// `ClassDef`.
-    pub(crate) classes: CowTable<HashMap<String, CowTable<ClassDef>>>,
+    pub(crate) classes: ClassTable,
 
     // ----- class metadata (PR-A slice 2) -----
     /// Classes declared as a C `union` (native interop helper set).
