@@ -150,9 +150,14 @@ impl Interpreter {
             // of roast) re-ran the whole candidate walk on every call.
             let a = match raw.view() {
                 ValueView::VarRef { name, value, .. } => {
-                    if let Some(tc) = name.with_str(|n| self.var_type_constraint(n)) {
+                    // The symbol is at hand and the env's own `Str` is borrowed,
+                    // so a typed variable argument costs no re-intern of its
+                    // name and no copy of its constraint per call.
+                    if let Some(tc) = self.var_type_constraint_value_sym(name)
+                        && let ValueView::Str(tc) = tc.view()
+                    {
                         keys.push(key_syms::declared_type());
-                        keys.push(crate::symbol::Symbol::intern(&tc));
+                        keys.push(crate::symbol::Symbol::intern(tc.as_str()));
                     }
                     value.clone()
                 }
