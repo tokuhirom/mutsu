@@ -7,6 +7,25 @@ use super::*;
 impl Interpreter {
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_add_method(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.mop_add_method_kind(args, false)
+    }
+
+    // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
+    /// `Metamodel::PrivateMethodContainer.add_private_method`: the same install as
+    /// `add_method`, but the definition lands in the private namespace.
+    pub(crate) fn mop_add_private_method(
+        &mut self,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        self.mop_add_method_kind(args, true)
+    }
+
+    // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
+    fn mop_add_method_kind(
+        &mut self,
+        args: Vec<Value>,
+        private: bool,
+    ) -> Result<Value, RuntimeError> {
             let class_name = match args[0].view() {
                 ValueView::Package(name) => name.resolve(),
                 ValueView::Str(name) => name.to_string(),
@@ -362,7 +381,7 @@ impl Interpreter {
                 body: method_body,
                 is_rw: sub_data.is_rw,
                 is_raw: sub_data.is_raw,
-                is_private: false,
+                is_private: private,
                 is_multi: false,
                 is_my: false,
                 role_origin: None,
@@ -395,7 +414,10 @@ impl Interpreter {
             if !self.registry().classes.contains_key(&class_name)
                 && self.registry().roles.contains_key(&class_name)
             {
-                let defs = multi_family.unwrap_or_else(|| vec![def]);
+                let mut defs = multi_family.unwrap_or_else(|| vec![def]);
+                for d in &mut defs {
+                    d.is_private = private;
+                }
                 return self.add_methods_to_role(&class_name, &method_name, defs);
             }
             // If the class doesn't exist yet (e.g. built-in types like Rat, Int, Str),
@@ -419,6 +441,9 @@ impl Interpreter {
                 );
             }
             let mut defs = multi_family.unwrap_or_else(|| vec![def]);
+            for d in &mut defs {
+                d.is_private = private;
+            }
             // `add_method` adds a *public* method. A private `method !name`
             // is a separate namespace in Raku, but mutsu keys it under the
             // same name, so replacing the name's candidate list would drop
@@ -429,7 +454,8 @@ impl Interpreter {
                 .registry()
                 .user_method_overloads(&class_name, &method_name)
             {
-                defs.extend(existing.into_iter().filter(|def| def.is_private));
+                // `add_private_method` is the mirror image: it keeps the public ones.
+                defs.extend(existing.into_iter().filter(|def| def.is_private != private));
             }
             self.registry_mut().set_user_methods(
                 Symbol::intern(&class_name),
