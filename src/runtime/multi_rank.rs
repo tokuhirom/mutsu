@@ -140,8 +140,9 @@ impl RankProfile {
 
     /// Rakudo's per-parameter comparison by DECLARED type over the positional
     /// slots both candidates type: `(self wins one, other wins one)`. A type
-    /// that strictly conforms to the other's wins; the same type ties and
-    /// unrelated types are skipped (neither narrower nor wider).
+    /// that strictly conforms to the other's wins; the same type is won by a
+    /// refinement (`where`, literal, subset) and unrelated types are skipped
+    /// (neither narrower nor wider).
     // Cost: O(r), r = the cost of one `conforms` call; the profile length is a constant.
     pub(crate) fn declared_wins(
         &self,
@@ -154,6 +155,10 @@ impl RankProfile {
                 continue;
             };
             if a == b {
+                // The low score bit is "unrefined".
+                let (ra, rb) = (self.scores[i] & 1, other.scores[i] & 1);
+                self_wins |= ra < rb;
+                other_wins |= rb < ra;
                 continue;
             }
             match (conforms(a, b), conforms(b, a)) {
