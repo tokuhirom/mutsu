@@ -80,6 +80,15 @@ fn is_declaration(stmt: &Stmt) -> bool {
     )
 }
 
+/// The declaration `stmt` is, or the one inside its header wrapper.
+// Cost: O(p), p = statements in the wrapper.
+pub(crate) fn declaration(stmt: &Stmt) -> Option<&Stmt> {
+    match stmt {
+        Stmt::SyntheticBlock(parts) => parts.iter().find(|part| is_declaration(part)),
+        other => is_declaration(other).then_some(other),
+    }
+}
+
 /// The declaration `stmt` is, or the one inside its header wrapper (the
 /// wrapper is one level deep: [`wrap`] never nests).
 // Cost: O(p), p = statements in the wrapper.
