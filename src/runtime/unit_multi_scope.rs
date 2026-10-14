@@ -277,7 +277,16 @@ impl Interpreter {
         let table = crate::runtime::cow_table_mut(&mut self.module.operator_import_units);
         for name in names {
             let families = table.entry(name).or_default();
-            families.entry(decl_unit).or_default();
+            // Units that imported the family before it was scoped keep seeing it.
+            let earlier = self
+                .module
+                .unscoped_import_units
+                .get(&name)
+                .and_then(|units| units.get(&decl_unit));
+            families
+                .entry(decl_unit)
+                .or_default()
+                .extend(earlier.into_iter().flatten().copied());
             if contested_main.contains(&name) {
                 families.entry(main).or_default();
             }

@@ -28,6 +28,13 @@ pub(crate) struct ModuleState {
     /// Bumped whenever `operator_import_units` gains an entry, so a memo of an
     /// operator-visibility answer (`bare_multi_plan_cache`) can key on it.
     pub(crate) operator_import_gen: u64,
+    /// Imports of a candidate family that carried no `operator_import_units`
+    /// record yet (same shape). A family is scoped lazily -- when a module it
+    /// declared is first used as the importer of a nested load -- and the
+    /// record must then start with the units that already imported it, or
+    /// they would lose a family they had a perfectly good import of.
+    pub(crate) unscoped_import_units:
+        std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
     /// Package-less top-level routines a loaded compunit declared but did NOT
     /// export, keyed by that compunit's unit symbol and then by routine name.
     ///
@@ -522,6 +529,7 @@ impl ModuleState {
         Self {
             imported_operator_names: Default::default(),
             operator_import_units: Default::default(),
+            unscoped_import_units: Default::default(),
             operator_import_gen: 0,
             unit_private_routines: Default::default(),
             unit_private_names: Default::default(),
@@ -601,6 +609,7 @@ impl ModuleState {
         Self {
             imported_operator_names: self.imported_operator_names.clone(),
             operator_import_units: self.operator_import_units.clone(),
+            unscoped_import_units: self.unscoped_import_units.clone(),
             operator_import_gen: self.operator_import_gen,
             unit_private_routines: self.unit_private_routines.clone(),
             unit_private_names: self.unit_private_names.clone(),

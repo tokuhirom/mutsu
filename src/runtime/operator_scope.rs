@@ -47,6 +47,14 @@ impl Interpreter {
             .collect();
         if !create {
             let Some(families) = self.module.operator_import_units.get(&name_sym) else {
+                // Not scoped (yet): remember the import for when it is (see
+                // `ModuleState::unscoped_import_units`).
+                let table =
+                    crate::runtime::cow_table_mut(&mut self.module.unscoped_import_units);
+                let families = table.entry(name_sym).or_default();
+                for unit in decl_units {
+                    families.entry(unit).or_default().insert(importer);
+                }
                 return;
             };
             decl_units.retain(|unit| {
