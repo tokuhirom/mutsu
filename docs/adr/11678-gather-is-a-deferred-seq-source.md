@@ -1,6 +1,6 @@
 # ADR-11678: A gather is a deferred `SeqSource`
 
-- **Status**: Accepted — steps 0-3 implemented (2026-10-12, see §8); the hand-off retirement, step 4 and step 5 remain (#13026)
+- **Status**: Accepted — steps 0-3 implemented (2026-10-12, see §8); the hand-off retirement, step 4 and step 5 remain (#13026); the lazy Slip of a genuinely lazy list implemented, a gather's lazy Slip decided but not built (§8.6, #13117)
 - **Date**: 2026-10-07
 - **Deciders**: tokuhirom, Claude
 - **Amended**: 2026-10-12 (see "Amendment" below)
@@ -532,3 +532,46 @@ quadratic today: every pull publishes a whole new generation, and the
 generation store keeps every superseded one (`seq_body/generations.rs`). So
 the pipe needs an append-only generation first, or a chunked pull that does
 not run the gather body ahead of what the consumer asked for.
+
+### 8.6 The lazy Slip (#13117, amendment 2026-10-15)
+
+A Rakudo `Slip` is a `List` that reifies on demand, so `.Slip` and `slip(...)`
+of a lazy source must not pull it. mutsu's `Value::Slip` holds its items
+eagerly. This amendment records how a lazy one is represented and which part
+is decided but not yet built.
+
+**Decided and implemented: the lazy-tail Slip.** A Slip of a genuinely lazy
+list (`LazyList::renders_lazy_placeholder`: an infinite Range, a `.lazy`
+gather, a lazy `.map`, a scan) is a `Value::Slip` holding that list whole as
+one item. This is the shape `|EXPR` already gave a lazy operand, which the list
+constructor turns into a lazy tail (`lazy_literal_with_slipped_tail`), so no
+new `Value` variant is added and every existing Slip consumer keeps working:
+an eager flatten site sees one lazy list element, which is where an eager
+context over an infinite list stops in mutsu anyway.
+
+- `.Slip` (`Interpreter::lazy_slip_coercion`, ahead of the dispatch paths that
+  copy a receiver's elements, and the `Slip` coercion arm) and `slip(+args)`
+  under the single-argument rule build it through
+  `builtins::lazy_slip::lazy_slip_tail`.
+- `Value::is_lazy_tail_slip` recognises it. A method call on it
+  (`CallMethod`, `CallMethodMut`, `call_method_with_values`), a positional
+  subscript and the `DeSlip` op of a list-operator argument read the lazy
+  concatenation of its items (`Interpreter::lazy_slip_receiver`); a method
+  about the Slip itself (`WHAT`, `WHICH`, `.Slip`, `.raku`, `.Str`, `.item`,
+  `.defined`, the `^` metamethods) keeps the Slip. Its gist is the lazy list
+  placeholder `(...)`.
+
+**Decided, not yet built: a gather's Slip.** A plain `gather` is not
+genuinely lazy (`.is-lazy` is `False` in Rakudo too), yet `slip(gather { loop
+{ take ... } })` and `.Slip` on it must not pull the body: Rakudo's Slip
+reifies from the gather's iterator. A gather therefore needs the same
+lazy-tail shape with the stolen gather list (§2.3) as its tail. That cannot
+land on its own: a *finite* gather's Slip must still flatten into an eager
+list (`(1, 2).map({ slip(gather { take $_; take $_ }) })` is `(1 1 2 2)`), and
+the 368 `ValueView::Slip` matches (179 files, measured 2026-10-15) flatten a
+Slip's items without an interpreter to run the coroutine. The prerequisite is
+to route those flatten sites through one interpreter-side chokepoint that
+reifies a gather tail (the `|EXPR` forcing in `exec_make_slip_op` is the one
+site that does it today), after which `.Slip`, `slip(...)` and `|EXPR` of an
+unpulled gather can share the lazy-tail representation. Until then a gather's
+Slip is pulled whole, as before, so an infinite gather's `.Slip` still hangs.

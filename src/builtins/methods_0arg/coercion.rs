@@ -108,6 +108,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         "Capture" => Some(value_to_capture(target)),
         // Cost: O(e), e = elements (O(1) for a Slip, which is returned as is).
+        // A genuinely lazy list (or an unbounded Range) slips as a lazy tail:
+        // the Slip carries the list whole, as `|EXPR` does, and reads reify
+        // from it on demand (#13117).
+        "Slip" if crate::builtins::lazy_slip::lazy_slip_tail(target).is_some() => crate::builtins::lazy_slip::lazy_slip_tail(target).map(Ok),
         "Slip" => match target.view() {
             // The `Seq.Slip` row's implementation (`method_table::seq`).
             ValueView::Seq(_) => crate::builtins::method_table::seq::slip(target, &[]),

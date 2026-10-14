@@ -424,6 +424,13 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_slip(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `slip(+args)`: under the single-argument rule a lone lazy list is
+        // the list, and it slips as a lazy tail (#13117).
+        if let [only] = args
+            && let Some(lazy) = crate::builtins::lazy_slip::lazy_slip_tail(only)
+        {
+            return Ok(lazy);
+        }
         let mut items = Vec::new();
         for arg in args {
             match arg.view() {

@@ -837,6 +837,12 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        if let Some(slip) = Self::lazy_slip_coercion(&target, method, args.len()) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-slip");
+            self.stack.push(slip);
+            return Ok(());
+        }
+        let target = Self::lazy_slip_receiver(target, method);
         let target = match self.take_seq_prefix(&target, method, &args)? {
             Some(prefix) => prefix,
             None => target,

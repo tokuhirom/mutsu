@@ -18,6 +18,7 @@ pub(crate) mod grapheme_index;
 pub(crate) mod iterator_construct;
 pub(crate) mod label;
 pub(crate) mod lazy_scan;
+pub(crate) mod lazy_slip;
 pub(crate) mod map_hash_coerce;
 pub(crate) mod math_prim;
 pub(crate) mod method_table;

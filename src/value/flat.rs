@@ -268,3 +268,18 @@ pub(crate) fn tree_to_depth(v: &Value, depth: usize) -> Value {
         .collect();
     Value::scalar(Value::seq(treed))
 }
+
+impl Value {
+    /// Whether this is a lazy-tail Slip (#13117): a Slip one of whose items is
+    /// a genuinely lazy list riding it whole (`(1..*).Slip`, `|(1..*)`), so
+    /// its elements are that list's and reify on demand.
+    // Cost: O(k), k = items in the Slip.
+    pub(crate) fn is_lazy_tail_slip(&self) -> bool {
+        match self.view() {
+            ValueView::Slip(items) => items.iter().any(
+                |item| matches!(item.view(), ValueView::LazyList(ll) if ll.renders_lazy_placeholder()),
+            ),
+            _ => false,
+        }
+    }
+}

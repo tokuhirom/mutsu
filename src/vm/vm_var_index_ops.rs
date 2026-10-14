@@ -910,7 +910,9 @@ impl Interpreter {
             // an object hash.
             index = Value::scalar(index.clone());
         }
-        let mut target = self.stack.pop().unwrap();
+        // A lazy-tail Slip (`(1..*).Slip`) is indexed as the lazy list it
+        // reifies from (#13117).
+        let mut target = Self::lazy_slip_receiver(self.stack.pop().unwrap(), "AT-POS");
         // A subscript decontainerizes its invocant, so a `Proxy` receiver is
         // FETCHed and the subscript addresses what it FETCHes to. This is
         // reachable since #7748: an `is rw` `AT-POS`/`AT-KEY` now hands its
