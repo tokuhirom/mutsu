@@ -69,16 +69,20 @@ impl Compiler {
         }
         match slot.filter(|_| own) {
             Some(slot) => {
-                self.code.emit(OpCode::GetLocal(slot));
+                // The sigilless binding keeps its own slot: the term key names
+                // that very slot, so a `:=` alias (or a container) it holds
+                // tracks later writes instead of freezing a copy.
+                self.local_map
+                    .insert(crate::runtime::term_names::term_key(name), slot);
             }
             None => {
                 self.code.shadowed_sigilless_reads.push(name.to_string());
                 let name_idx = self.code.add_constant(Value::str(name.to_string()));
                 self.code.emit(OpCode::GetGlobal(name_idx));
+                let slot = self.alloc_local(&crate::runtime::term_names::term_key(name));
+                self.code.emit(OpCode::SetLocal(slot));
             }
         }
-        let slot = self.alloc_local(&crate::runtime::term_names::term_key(name));
-        self.code.emit(OpCode::SetLocal(slot));
         self.shadowed_sigilless_terms.insert(name.to_string());
         self.sigilless_locals.remove(name);
     }
