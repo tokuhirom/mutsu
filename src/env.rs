@@ -1269,6 +1269,18 @@ impl Env {
         self.parent.is_some()
     }
 
+    /// The flat env this chain bottoms out at: the scope every frame chained
+    /// over it shares (the program scope, or the module scope a module's
+    /// `sub EXPORT` runs over). `self` when this env is already flat.
+    // Cost: O(d), d = chain depth (bounded by `MAX_OVERLAY_DEPTH`).
+    pub(crate) fn chain_tail(&self) -> &Env {
+        let mut cur = self;
+        while let Some(parent) = &cur.parent {
+            cur = parent;
+        }
+        cur
+    }
+
     /// True when this scoped env's overlay is *exactly* the process-shared
     /// empty singleton (see [`empty_overlay`]) with no tombstones: the state a
     /// fresh `scoped_child` starts in and leaves only on the first by-name
