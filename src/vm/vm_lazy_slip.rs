@@ -14,8 +14,19 @@ impl Interpreter {
     pub(crate) fn lazy_slip_receiver(target: Value, method: &str) -> Value {
         if matches!(
             method,
-            "WHAT" | "WHICH" | "WHO" | "HOW" | "VAR" | "Slip" | "raku" | "Str" | "item"
-                | "defined" | "isa" | "does" | "can"
+            "WHAT"
+                | "WHICH"
+                | "WHO"
+                | "HOW"
+                | "VAR"
+                | "Slip"
+                | "raku"
+                | "Str"
+                | "item"
+                | "defined"
+                | "isa"
+                | "does"
+                | "can"
         ) || method.starts_with('^')
             || !crate::builtins::lazy_slip::has_lazy_tail(&target)
         {
