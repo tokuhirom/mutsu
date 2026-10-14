@@ -5,9 +5,10 @@ use crate::opcode::{LEXICAL_STASH_ROUTINE_SLOT, LexicalStashRoutines};
 use crate::value::ValueMap;
 
 impl Interpreter {
-    // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL, locals for MY::):
-    // every pseudo/package stash read materializes a fresh map by scanning them all (see
-    // `package_stash_value`), however few symbols the package has. Rakudo: O(1) -- see #9171.
+    // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL, locals for MY::),
+    // for a pseudo-package stash: it materializes a fresh map by scanning them all. A named
+    // package's stash is O(k + t), k = interned names under it, t = registered types, plus
+    // each routine member's code value (see `package_stash_value`). Rakudo: O(1) -- see #9171.
     pub(super) fn exec_get_pseudo_stash_op(
         &mut self,
         code: &CompiledCode,
