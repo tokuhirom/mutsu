@@ -3751,6 +3751,7 @@ t/oo/method/class-eval-method.t
 t/oo/method/classhow-lookup-method-instance-callable.t
 t/oo/method/classhow-lookup-method-is-dispatcher-multi.t
 t/oo/method/classhow-method-names.t
+t/oo/method/classhow-methods-catalog-own-methods.t
 t/oo/method/closure-capture-class-in-block-method.t
 t/oo/method/closure-captures-method-arg-decl.t
 t/oo/method/closure-named-arg-method-escape.t
@@ -4175,6 +4176,7 @@ t/oo/role/add-method-alias-unpunned-role-multi.t
 t/oo/role/add-role-declaration-expression.t
 t/oo/role/allomorph-role-mixin-what.t
 t/oo/role/anon-class-does-imported-role.t
+t/oo/role/anonymous-role-pun-new.t
 t/oo/role/attr-does-role-trait.t
 t/oo/role/attr-trait-role-mixin.t
 t/oo/role/attribute-get-value-lvalue-and-mixin-role-attrs.t
@@ -4188,6 +4190,7 @@ t/oo/role/but-role-list.t
 t/oo/role/but-role-on-list-array-name-and-join-flatten.t
 t/oo/role/but-role-type-object-new.t
 t/oo/role/callsame-punned-role-and-hyper-infix-sub.t
+t/oo/role/can-methods-composed-role-methods.t
 t/oo/role/can-role-declared-methods.t
 t/oo/role/class-does-enumeration-role.t
 t/oo/role/class-does-self-named-role.t
@@ -4385,6 +4388,7 @@ t/oo/role/role-multi-scalar-vs-positional-same-name.t
 t/oo/role/role-multi-where-candidates-survive-class-multi.t
 t/oo/role/role-my-class-level-attr-accessor.t
 t/oo/role/role-my-subset.t
+t/oo/role/role-name-does-not-run-body.t
 t/oo/role/role-named-param-type-object-class-check.t
 t/oo/role/role-nested-in-class-sees-sibling-after-composition.t
 t/oo/role/role-nonmulti-class-multi-override.t
@@ -4440,6 +4444,7 @@ t/oo/role/role-submethod-composed-into-class.t
 t/oo/role/role-submethod-destroy-compiled.t
 t/oo/role/role-submethod-runtime-does-compiled.t
 t/oo/role/role-submethods-6e.t
+t/oo/role/role-tweak-through-role.t
 t/oo/role/role-type-arg-reparse-no-sink-warning.t
 t/oo/role/role-type-capture-smiley-transitive-load.t
 t/oo/role/role-type-object-multi-rank.t
@@ -4733,6 +4738,7 @@ t/rakuast/rakuast-hyper-prefix.t
 t/rakuast/rakuast-hyper-whatever-term.t
 t/rakuast/rakuast-identity.t
 t/rakuast/rakuast-if-pointy-block.t
+t/rakuast/rakuast-imaginary-bigrat-literal.t
 t/rakuast/rakuast-imaginary-literal.t
 t/rakuast/rakuast-immediate-sub-call.t
 t/rakuast/rakuast-imported-bareword-call.t
@@ -4962,6 +4968,7 @@ t/regex/match/for-smartmatch-result.t
 t/regex/match/frugal-quantifier-global-match.t
 t/regex/match/instance-regex-smartmatch.t
 t/regex/match/io-path-smartmatch-permissions.t
+t/regex/match/list-methods-match-elements.t
 t/regex/match/make-requires-match.t
 t/regex/match/match-any-list-methods.t
 t/regex/match/match-caps-chunks.t
@@ -5355,6 +5362,7 @@ t/regex/subst/subst-mutate-miss.t
 t/regex/subst/subst-mutate.t
 t/regex/subst/subst-named-sub-replacement.t
 t/regex/subst/subst-nth-range.t
+t/regex/subst/subst-on-declaration-assignment.t
 t/regex/subst/subst-pattern-dollar-anchor.t
 t/regex/subst/subst-readonly-literal.t
 t/regex/subst/subst-readonly-topic.t
@@ -5481,6 +5489,7 @@ t/routines/call/capture-nqp-storage.t
 t/routines/call/capture-slip-pair-non-str-key.t
 t/routines/call/capture-slip.t
 t/routines/call/capture-var-topic-slot.t
+t/routines/call/capture-version-any-methods.t
 t/routines/call/captured-outer-cell-sharing.t
 t/routines/call/captured-outer-container-cell-sharing.t
 t/routines/call/captured-outer-pair-container-alias.t
@@ -5831,6 +5840,7 @@ t/routines/dispatch/multidim-index-through-itemized-seq.t
 t/routines/dispatch/multidim-indexing.t
 t/routines/dispatch/multidim-list-assign-no-alias.t
 t/routines/dispatch/multidim-shaped-delete-bounds.t
+t/routines/dispatch/multidim-slice-assignment-result.t
 t/routines/dispatch/multidim-slice-lvalue.t
 t/routines/dispatch/multidim-slice-scalar-leaf.t
 t/routines/dispatch/multidim-splat-lazy.t
@@ -6726,6 +6736,8 @@ t/types/numeric/complex-cool-coercion.t
 t/types/numeric/complex-int-rat-coerce.t
 t/types/numeric/complex-integer-power.t
 t/types/numeric/complex-non-cool-receiver.t
+t/types/numeric/complex-rat-fatrat-epsilon.t
+t/types/numeric/complex-real-coercion-tolerance.t
 t/types/numeric/complex-round-scale.t
 t/types/numeric/complex-uint-coerce.t
 t/types/numeric/complex.t

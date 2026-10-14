@@ -5530,7 +5530,7 @@ pub(super) fn list_field<'a>(
 fn imaginary_part(number: &Value) -> Option<f64> {
     match number.view() {
         ValueView::Int(n) => Some(n as f64),
-        ValueView::Rat(..) | ValueView::Num(_) => Some(number.to_f64()),
+        ValueView::Rat(..) | ValueView::BigRat(..) | ValueView::Num(_) => Some(number.to_f64()),
         _ => None,
     }
 }
