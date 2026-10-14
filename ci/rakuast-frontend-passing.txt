@@ -717,12 +717,14 @@ t/collections/subscript/shaped-array-delete-pos.t
 t/collections/subscript/shaped-array-exists-holes.t
 t/collections/subscript/shaped-array-gist-dimensions.t
 t/collections/subscript/shaped-array-list-coerce.t
+t/collections/subscript/shaped-array-map-mutation.t
 t/collections/subscript/shaped-array-raku-any.t
 t/collections/subscript/shaped-array-rat-shape.t
 t/collections/subscript/shaped-array-reassign-rows.t
 t/collections/subscript/shaped-array-row-kind.t
 t/collections/subscript/shaped-array-slice-assign-lazy-rhs.t
 t/collections/subscript/shaped-array-slice-exists.t
+t/collections/subscript/shaped-array-type-preservation.t
 t/collections/subscript/shaped-attr-constant-dimension.t
 t/collections/subscript/shaped-buf-alloc-guard.t
 t/collections/subscript/shaped-enum-value-and-anon-array-type.t
@@ -3207,6 +3209,7 @@ t/nativecall/native-tweak-construct.t
 t/nativecall/native-type-class-perf.t
 t/nativecall/native-type-smiley-and-element-checks.t
 t/nativecall/native-type-smiley.t
+t/nativecall/native-typed-arrays.t
 t/nativecall/native-typed-attr-ctor.t
 t/nativecall/native-value-smartmatch.t
 t/nativecall/native-where-construct.t
@@ -4884,6 +4887,7 @@ t/rakuast/rakuast-variable-container-traits.t
 t/rakuast/rakuast-variable-does-trait.t
 t/rakuast/rakuast-visit-children-origin.t
 t/rakuast/rakuast-whatever-code.t
+t/rakuast/rakuast-whatever-compound-assign.t
 t/rakuast/rakuast-when-modifier.t
 t/rakuast/rakuast-where-parameter.t
 t/rakuast/rakuast-while-until-modifier.t
@@ -5626,6 +5630,7 @@ t/routines/closure/whatever-rw-and-currying.t
 t/routines/closure/whatever-xz-currying.t
 t/routines/closure/whatevercode-call-arg-value.t
 t/routines/closure/whatevercode-compose.t
+t/routines/closure/whatevercode-compound-assign-star-rhs.t
 t/routines/closure/whatevercode-gist-raku.t
 t/routines/closure/whatevercode-lvalue-assignment.t
 t/routines/closure/whatevercode-pair-arg-arity.t
@@ -6921,6 +6926,7 @@ t/types/trans.t
 t/types/whatever-block-numeric-nomatch.t
 t/types/whatever-chained-comparison.t
 t/types/whatever-code-fixes.t
+t/types/whatever-compound-assign-writeback.t
 t/types/whatever-compound-assign.t
 t/types/whatever-index-bound.t
 t/types/whatever-new.t

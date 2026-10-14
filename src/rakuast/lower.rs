@@ -2577,7 +2577,13 @@ pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, Run
         _ => return Err(unsupported(node)),
     };
     let rhs = lower_expr(named_child(node, "right")?)?;
-    let expanded = crate::parser::expand_compound_assign_expr(target.clone(), &op, rhs.clone())
+    // `* *= 2` curries to `{ $_ *= 2 }`; the parser expands a bare `*` target
+    // so, and a read-back tree spells that `*` as a priming argument.
+    let expansion_target = match &target {
+        Expr::WhateverArg => Expr::Whatever,
+        other => other.clone(),
+    };
+    let expanded = crate::parser::expand_compound_assign_expr(expansion_target, &op, rhs.clone())
         .map_err(RuntimeError::new)?;
     Ok(Expr::CompoundAssign {
         target: Box::new(target),
