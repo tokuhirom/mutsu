@@ -227,11 +227,23 @@ impl Interpreter {
         let cond = ensure_condition(&lock, cond_id)
             .ok_or_else(|| RuntimeError::new("Condition variable state not found"))?;
         match method {
+            // The count is bumped under the lock-state mutex, which a waiter
+            // holds from its last look at the count until it parks, so a
+            // signal is either counted before the waiter looks or notifies a
+            // parked waiter.
             "signal" => {
+                lock.state
+                    .lock()
+                    .map_err(|_| RuntimeError::new("Lock state is poisoned"))?
+                    .note_signal(cond_id);
                 cond.notify_one();
                 Ok(Value::NIL)
             }
             "signal_all" => {
+                lock.state
+                    .lock()
+                    .map_err(|_| RuntimeError::new("Lock state is poisoned"))?
+                    .note_signal(cond_id);
                 cond.notify_all();
                 Ok(Value::NIL)
             }
@@ -265,10 +277,14 @@ impl Interpreter {
                 // signaller may be that very worker. It gives up without the
                 // lock, so the caller unwinds instead of running on.
                 let adopter = crate::exit_handover::is_adopter_thread();
+                // The signal count as of the last look under the state mutex.
+                let mut seen = state.signal_count(cond_id);
                 loop {
                     state = if adopter {
                         // A timeout is not a signal: wait again until one
-                        // arrives or the handover does.
+                        // arrives or the handover does. A notification that
+                        // lands as the poll times out is reported as a
+                        // timeout, so the signal count decides (#13184).
                         loop {
                             let (s, timeout) = cond
                                 .wait_timeout(state, crate::exit_handover::POLL)
@@ -277,7 +293,7 @@ impl Interpreter {
                                 return Err(RuntimeError::exit_handover_pending());
                             }
                             state = s;
-                            if !timeout.timed_out() {
+                            if !timeout.timed_out() || state.signal_count(cond_id) != seen {
                                 break state;
                             }
                         }
@@ -311,6 +327,7 @@ impl Interpreter {
                         .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
                     state.owner = None;
                     state.recursion = 0;
+                    seen = state.signal_count(cond_id);
                     super::thread_lock_count::note_lock_released();
                     lock.lock_cv.notify_one();
                 }
