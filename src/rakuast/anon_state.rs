@@ -86,12 +86,24 @@ pub(super) fn is_anonymous(node: &RakuAstNode) -> bool {
     node.class == RakuAstClass::VarDeclarationAnonymous
 }
 
-/// The sigil and the `= EXPR` of an anonymous declaration. Only the `state`
-/// scope the converter renders lowers.
-fn parts(node: &RakuAstNode) -> Result<(String, Option<Expr>), RuntimeError> {
-    if leaf_str(node, "scope")? != "state" {
-        return Err(unsupported(node));
+/// Whether an anonymous declaration is the `state` default of a bare `$`
+/// rather than a declared `my $` (no `scope`, rakudo's default).
+// Cost: O(f), f = fields of the node.
+fn is_my(node: &RakuAstNode) -> Result<bool, RuntimeError> {
+    if node.fields.iter().all(|f| f.name != Some("scope")) {
+        return Ok(true);
     }
+    match leaf_str(node, "scope")?.as_str() {
+        "state" => Ok(false),
+        "my" => Ok(true),
+        _ => Err(unsupported(node)),
+    }
+}
+
+/// The sigil and the `= EXPR` of an anonymous declaration. Only the `state`
+/// and `my` scopes the converter renders lower.
+fn parts(node: &RakuAstNode) -> Result<(String, Option<Expr>), RuntimeError> {
+    is_my(node)?;
     let sigil = leaf_str(node, "sigil")?;
     let initializer = match node.fields.iter().find(|f| f.name == Some("initializer")) {
         None => None,
@@ -106,15 +118,15 @@ fn parts(node: &RakuAstNode) -> Result<(String, Option<Expr>), RuntimeError> {
     Ok((sigil, initializer))
 }
 
-/// `state $ = EXPR` / `state $`: the declaration the parser builds for the
-/// anonymous scalar, under its shared `__ANON_STATE__` name.
-fn declaration(initializer: Option<Expr>) -> Stmt {
+/// `state $ = EXPR` / `my $ = EXPR` / `state $`: the declaration the parser
+/// builds for the anonymous scalar, under its shared `__ANON_STATE__` name.
+fn declaration(initializer: Option<Expr>, is_state: bool) -> Stmt {
     let has_initializer = initializer.is_some();
     Stmt::VarDecl {
         name: "__ANON_STATE__".to_string(),
         expr: initializer.unwrap_or(Expr::Literal(Value::NIL)),
         type_constraint: None,
-        is_state: true,
+        is_state,
         is_our: false,
         is_dynamic: false,
         is_export: false,
@@ -131,11 +143,19 @@ fn declaration(initializer: Option<Expr>) -> Stmt {
 /// An anonymous variable in expression position: `$++`, `@.push`, `state $ = 0`.
 // Cost: O(n), n = size of the initializer.
 pub(super) fn lower_term(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if is_my(node)? {
+        return match parts(node)? {
+            (sigil, init) if sigil == "$" => Ok(Expr::DoStmt(Box::new(declaration(init, false)))),
+            _ => Err(unsupported(node)),
+        };
+    }
     match parts(node)? {
         (sigil, None) if sigil == "$" => Ok(Expr::Var(mint_scalar())),
         (sigil, None) if sigil == "@" => Ok(Expr::ArrayVar(crate::parser::fresh_anon_array_name())),
         (sigil, None) if sigil == "%" => Ok(Expr::HashVar("__ANON_HASH__".to_string())),
-        (sigil, Some(init)) if sigil == "$" => Ok(Expr::DoStmt(Box::new(declaration(Some(init))))),
+        (sigil, Some(init)) if sigil == "$" => {
+            Ok(Expr::DoStmt(Box::new(declaration(Some(init), true))))
+        }
         _ => Err(unsupported(node)),
     }
 }
@@ -144,7 +164,7 @@ pub(super) fn lower_term(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 // Cost: O(n), n = size of the initializer.
 pub(super) fn lower_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match parts(node)? {
-        (sigil, init) if sigil == "$" => Ok(declaration(init)),
+        (sigil, init) if sigil == "$" => Ok(declaration(init, !is_my(node)?)),
         _ => Ok(Stmt::Expr(lower_term(node)?)),
     }
 }
@@ -152,6 +172,9 @@ pub(super) fn lower_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> 
 /// The name an assignment to an anonymous scalar (`$ = 5`) writes.
 // Cost: O(depth).
 pub(super) fn assign_target(node: &RakuAstNode) -> Result<String, RuntimeError> {
+    if is_my(node)? {
+        return Err(unsupported(node));
+    }
     match parts(node)? {
         (sigil, None) if sigil == "$" => Ok(mint_scalar()),
         _ => Err(unsupported(node)),

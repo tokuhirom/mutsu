@@ -244,7 +244,14 @@ impl Interpreter {
     /// cell with its current value, so that callers that snapshot or iterate
     /// elements (assignment copies, stringification, `say`, `gist`) see the
     /// live value instead of the cell.
+    ///
+    /// Every caller copies or renders the result, so a shared Array is read
+    /// as a snapshot first and nothing here or after walks the live node
+    /// (ADR-0068 §20).
+    // Cost: O(e), e = elements; plus the snapshot's copy once a second mutator
+    // thread exists.
     pub(super) fn resolve_bound_array_elements(&self, val: Value) -> Value {
+        let val = crate::value::container_read::read_operand(val);
         if let ValueView::Array(items, kind) = val.view() {
             let needs_resolve = items
                 .iter()

@@ -20,7 +20,10 @@ use super::convert::{
     arg_list, convert_expr, leaf_field, name_from_identifier, node_field, postfix_operand,
     unsupported as unsupported_expr,
 };
-use super::lower::{arg_list_exprs, call_name_str, lower_expr, named_child, unsupported};
+use super::lower::{
+    arg_exprs, arg_list_exprs, call_name_str, dispatch_modifier, lower_expr, named_child,
+    unsupported,
+};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -31,6 +34,19 @@ fn postfix(
     name_expr: &Expr,
     args: &[Expr],
     modifier: Option<char>,
+) -> Result<RakuAstNode, RuntimeError> {
+    postfix_of(name_expr, args, modifier, true)
+}
+
+/// [`postfix`]; `name_as_method` is false for the method of a `.=`, where
+/// rakudo 2026.09 has even `&f` as the callee of a `Call::TermAsMethod`
+/// (`$x .= &f`, `my $x .= &f`).
+// Cost: O(n), n = nodes of the name and arguments.
+fn postfix_of(
+    name_expr: &Expr,
+    args: &[Expr],
+    modifier: Option<char>,
+    name_as_method: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     if modifier == Some('^') {
         return Err(unsupported_expr("dynamic metamethod call"));
@@ -47,7 +63,7 @@ fn postfix(
             fields.push(node_field(Some("block"), convert_expr(name_expr)?));
             RakuAstClass::CallBlockMethod
         }
-        Expr::CodeVar(name) if dispatch.is_none() => {
+        Expr::CodeVar(name) if dispatch.is_none() && name_as_method => {
             fields.push(node_field(Some("name"), name_from_identifier(name)));
             RakuAstClass::CallNameAsMethod
         }
@@ -61,6 +77,68 @@ fn postfix(
     }
     fields.extend(dispatch);
     Ok(RakuAstNode { class, fields })
+}
+
+/// The `right` of a `.=` whose method is a term: `$x .= &f` / `$x .= $m`
+/// (`Call::TermAsMethod`, `Call::NameAsMethod`) or an interpolated quoted
+/// name, `$x .= "{...}"()` (`Call::QuotedMethod`). `call` is the marker's
+/// call applied to the target; only its method part is rendered.
+// Cost: O(n), n = nodes of the name and arguments.
+pub(super) fn call_assign_postfix(call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    match call {
+        Expr::DynamicMethodCall {
+            name_expr,
+            args,
+            modifier,
+            quoted: false,
+            ..
+        } => postfix_of(name_expr, args, *modifier, false),
+        Expr::DynamicMethodCall {
+            name_expr,
+            args,
+            modifier: None,
+            quoted: true,
+            ..
+        } => super::convert::call_quoted_method_expr(convert_expr(name_expr)?, args),
+        _ => Err(unsupported_expr(
+            "`.=` with a call that is not a method call",
+        )),
+    }
+}
+
+/// The `Initializer::CallAssign` call of `my $x .= &f(args)` / `my $x .= $m`.
+// Cost: O(n), n = nodes of the callee and arguments.
+pub(super) fn callee_postfix(callee: &Expr, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    postfix_of(callee, args, None, false)
+}
+
+/// A declaration's `Initializer::CallAssign` call, lowered to the parser's
+/// pieces: the method name, or the term called as the method, and the
+/// arguments. A dispatch modifier is not a declaration form.
+// Cost: O(n), n = nodes of the call.
+pub(super) fn call_assign_initializer(
+    call: &RakuAstNode,
+) -> Result<(String, Option<Expr>, Vec<Expr>), RuntimeError> {
+    match call.class {
+        RakuAstClass::CallMethod if dispatch_modifier(call)?.is_none() => {
+            Ok((call_name_str(call)?, None, arg_exprs(call)?))
+        }
+        _ if is_dynamic(call) && modifier(call)?.is_none() => {
+            Ok((String::new(), Some(name_expr(call)?), args(call)?))
+        }
+        _ => Err(unsupported(call)),
+    }
+}
+
+/// `template`, a lowered method call, over `invocant` instead of its target:
+/// the call a `.=` makes on each target the parser's expansion reaches.
+// Cost: O(n), n = size of `template` (one clone).
+pub(super) fn retarget(template: &Expr, invocant: Expr) -> Expr {
+    let mut call = template.clone();
+    if let Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } = &mut call {
+        **target = invocant;
+    }
+    call
 }
 
 /// `$o.$name(args)` / `$o.&f(args)`.

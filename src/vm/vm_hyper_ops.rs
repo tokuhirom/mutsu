@@ -218,6 +218,21 @@ impl Interpreter {
         let right_itemized = Self::is_itemized_operand(&right);
         let right = Self::deitemize_hyper_operand(&right);
         let left = Self::deitemize_hyper_operand(&left);
+        // The operator runs user code per element pair, so a shared Array/Hash
+        // operand is walked as a snapshot (ADR-0068 §20) -- unless the operator
+        // assigns (`@a >>+=>> 1`), which must write the live elements.
+        let (left, right) = if !crate::value::container_lock::multi_mutator_threads_live() || {
+            let name = op.as_str();
+            name.ends_with('=')
+                && !matches!(name, "==" | "!=" | "<=" | ">=" | "===" | "=:=" | "=~=")
+        } {
+            (left, right)
+        } else {
+            (
+                crate::value::container_read::read_operand(left),
+                crate::value::container_read::read_operand(right),
+            )
+        };
         let left = if matches!(left.view(), ValueView::Mixin(..))
             && self.mixin_composes_method(&left, "iterator")
         {

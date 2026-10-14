@@ -14,6 +14,8 @@ pub(super) struct Scan {
     pub(super) callees: HashSet<crate::symbol::Symbol>,
     /// The routines among `callees` read as `&name` rather than only called.
     pub(super) code_reads: HashSet<crate::symbol::Symbol>,
+    /// What the code does with each routine it reads as `&name`.
+    pub(super) code_uses: super::code_uses::CodeUses,
     /// The code can reach a name dynamically (`EVAL`, `CALLER::`, symbolic
     /// lookup), which neither of the sets above can bound.
     pub(super) reflective: bool,
@@ -36,6 +38,7 @@ impl Scan {
             free,
             callees: HashSet::new(),
             code_reads: HashSet::new(),
+            code_uses: super::code_uses::CodeUses::of(stmts),
             reflective: false,
         };
         scan.absorb_code(&code);
@@ -105,17 +108,29 @@ impl Scan {
 /// Any other routine might: an imported one (`throws-like 'helper()'`) or a
 /// unit's own (`sub run-it($code) { EVAL $code }`) evaluates its argument where
 /// it was called from.
-/// A proto's `{*}` is a call too, which dispatches to the candidates in scope.
+/// A proto's `{*}` is a call too, which dispatches to the candidates in scope,
+/// and so is a re-dispatcher (`callsame`, `nextwith`, ...), which the RakuAST
+/// frontend lowers to a call where the parser leaves a bare word.
 pub(super) fn is_core_routine(name: crate::symbol::Symbol) -> bool {
     !crate::qualified::is_qualified(name)
         && (crate::runtime::Interpreter::is_builtin_function(name.as_str())
-            || name.as_str() == crate::ast::ONLYSTAR_DISPATCH)
+            || matches!(
+                name.as_str(),
+                crate::ast::ONLYSTAR_DISPATCH
+                    | "callsame"
+                    | "callwith"
+                    | "nextsame"
+                    | "nextwith"
+                    | "samewith"
+                    | "nextcallee"
+                    | "lastcall"
+            ))
 }
 
 /// Whether a called name is qualified by a pseudo-package (`MY::helper`,
 /// `OUTER::helper`), which names a routine in a scope the bare-name scan does
 /// not look at.
-fn is_pseudo_qualified(name: crate::symbol::Symbol) -> bool {
+pub(super) fn is_pseudo_qualified(name: crate::symbol::Symbol) -> bool {
     crate::qualified::package_parent(name)
         .and_then(|pkg| crate::qualified::package_ancestors(pkg).last())
         .is_some_and(|head| crate::runtime::Interpreter::is_pseudo_package_name(head.as_str()))

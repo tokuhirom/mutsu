@@ -161,7 +161,9 @@ fn read_buf_at(
     let elems = bytes.len() / width.max(1);
     if elems < offset.saturating_add(size) {
         return Err(RuntimeError::new(mvm_array_read_buf_oob_message(
-            offset, elems, size,
+            offset as i64,
+            elems,
+            size,
         )));
     }
     Ok(offset * width.max(1))

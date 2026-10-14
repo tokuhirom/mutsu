@@ -1,3 +1,4 @@
+use super::vm_call_helpers::CallArgKinds;
 use super::*;
 use crate::runtime::dispatch_key;
 use crate::runtime::native_increment_dispatch::IncrementOp;
@@ -488,7 +489,18 @@ impl Interpreter {
         // `_inner`, not the wrapper: this frame's mask is already published by
         // `exec_call_func_named_op`, and re-entering the wrapper would
         // overwrite it with a zero it was never given.
-        self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, true, compiled_fns)
+        let call_has_slip = Self::stack_args_have_slip(code, arg_sources_idx);
+        self.exec_call_func_op_inner(
+            code,
+            name_idx,
+            arity,
+            arg_sources_idx,
+            CallArgKinds {
+                named: true,
+                slip: call_has_slip,
+            },
+            compiled_fns,
+        )
     }
 
     /// Publish the call site's literal-argument mask (and its
@@ -511,13 +523,13 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
         let saved_static = std::mem::replace(&mut self.static_call_args, static_arg_types);
-        let call_has_named = Self::stack_args_have_named(code, arg_sources_idx);
+        let arg_kinds = Self::stack_arg_kinds(code, arg_sources_idx);
         let r = self.exec_call_func_op_inner(
             code,
             name_idx,
             arity,
             arg_sources_idx,
-            call_has_named,
+            arg_kinds,
             compiled_fns,
         );
         self.literal_native_args = saved;
@@ -531,9 +543,13 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
-        call_has_named: bool,
+        arg_kinds: CallArgKinds,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        let CallArgKinds {
+            named: call_has_named,
+            slip: call_has_slip,
+        } = arg_kinds;
         crate::vm::vm_stats::record_function_dispatch();
         // ADR-0113: a frame-lexical routine is resolved at compile time and is
         // in no registry the name-keyed dispatch below could consult.
@@ -718,8 +734,8 @@ impl Interpreter {
         // probing the stack for Slip-shaped values on every cache check
         // below. A plain argument that merely evaluates to a Slip
         // (`f(@a.Slip)`) does not set this, so such a call stays eligible
-        // for the light-call / OTF caches instead of forfeiting them.
-        let call_has_slip = Self::stack_args_have_slip(code, arg_sources_idx);
+        // for the light-call / OTF caches instead of forfeiting them. The
+        // caller decoded it (`stack_arg_kinds`).
         // Ultra-fast path: positional light-call cache for positional-only functions.
         if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
@@ -881,6 +897,13 @@ impl Interpreter {
                             // for the overwhelming majority of routines
                             // (`has_rw_positional_param` is false).
                             && Self::positional_light_rw_args_admitted(
+                                cf,
+                                &self.stack[self.stack.len() - arity_usize..],
+                            )
+                            // Same per-call re-check for a plain `@x`/`%x`
+                            // parameter's argument shape; one bool test for
+                            // a routine without one.
+                            && Self::positional_light_aggregate_args_admitted(
                                 cf,
                                 &self.stack[self.stack.len() - arity_usize..],
                             )
@@ -1685,6 +1708,16 @@ impl Interpreter {
             ));
         }
         let start = self.stack.len() - arity;
+        // A closure body made of pure value ops runs light, straight off the
+        // stack (#8335).
+        if let Some(result) =
+            self.try_value_call_closure_light(code, start, arg_sources_idx, compiled_fns)
+        {
+            let result = result?;
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(result);
+            return Ok(());
+        }
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // ADR-0054 S2: spread only the `|EXPR` positions, decided by
         // call-site syntax rather than a value's runtime Slip-shape.
@@ -2161,16 +2194,14 @@ impl Interpreter {
                     && self.wrap_sub_id_for_name(name).is_none()
                     && !self.light_call_blocked_by_mainline_capture(name)
                 {
-                    if !where_verified {
-                        self.note_multi_light_call(
-                            name,
-                            name_sym,
-                            &args,
-                            multi_def_memo.as_ref(),
-                            cf,
-                            compiled_fns,
-                        );
-                    }
+                    self.note_multi_light_call(
+                        name,
+                        name_sym,
+                        &args,
+                        multi_def_memo.as_ref(),
+                        cf,
+                        compiled_fns,
+                    );
                     let pushed_dispatch = loan_env!(
                         self,
                         push_multi_dispatch_frame_with_winner_sym(
@@ -2558,6 +2589,10 @@ impl Interpreter {
                     // The export registration behind the `trait_mod:<is>
                     // (Routine, :$export!)` prelude candidate (see
                     // vm::vm_trait_mod_export_ops).
+                    result
+                } else if let Some(result) = self.try_routine_set_returns(name, &args) {
+                    // The return-type writeback behind the `trait_mod:<of>`
+                    // prelude candidates (see vm::vm_trait_mod_of_ops).
                     result
                 } else if let Some(result) = self.try_trait_mod_set_default(name, &args) {
                     // The writeback behind the `trait_mod:<is>(Attribute,

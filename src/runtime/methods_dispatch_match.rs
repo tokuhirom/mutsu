@@ -99,15 +99,6 @@ impl Interpreter {
             // (`method_table::str_interp`).
             "printf" => self.dispatch_printf_row(&target, &args),
             "sprintf" => self.dispatch_sprintf_row(&target, &args),
-            "zprintf" if !args.is_empty() => {
-                // Method form `$format.zprintf(*@args)`: mirrors the `.sprintf`
-                // arm above (interpreter-aware coercion via `builtin_sprintf`),
-                // but with zprintf semantics.
-                let mut full = Vec::with_capacity(args.len() + 1);
-                full.push(target.clone());
-                full.extend(args.iter().cloned());
-                Some(self.builtin_sprintf(&full, true))
-            }
             "shape" if args.is_empty() => self.dispatch_shape(&target),
             "default" if args.is_empty() => Self::dispatch_default(&target),
             "note" if args.is_empty() => Some(self.dispatch_note(&target)),
@@ -123,7 +114,6 @@ impl Interpreter {
                 let template = args.first().map(Value::to_string_value).unwrap_or_default();
                 Some(crate::builtins::pack::unpack(&bytes, &template))
             }
-            "subbuf" => self.dispatch_subbuf(&target, &args),
             // ADR-0051 §3 (#9948): this interceptor is receiver-blind (it
             // reads any value as a number), so a receiver whose ancestry
             // declares no `polymod` (`Str`, `Complex`, ...) falls through to

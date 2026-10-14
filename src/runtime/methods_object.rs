@@ -74,6 +74,11 @@ impl Interpreter {
         // interpreter. So such a class is native-constructible even though
         // `has_attribute` stays false; track that here.
         let mut is_exception = false;
+        // A Baggy/Setty class stores its elements in a QuantHash, which only
+        // the full constructor builds (`construct_baggy_instance`).
+        if self.class_does_baggy_or_setty(cn_resolved) {
+            return false;
+        }
         for cls in self.mro_readonly(cn_resolved) {
             if cls == "Exception" {
                 is_exception = true;
@@ -86,7 +91,13 @@ impl Interpreter {
             // same-thread recursive read lock). No user-code re-entry here.
             let registry = self.registry();
             let Some(class_def) = registry.classes.get(&cls) else {
-                // A non-class entry in the MRO (e.g. a role) — be conservative.
+                // A composed user role is in the MRO too; the class it is
+                // composed into already carries its attributes and
+                // submethods (see the `parents` check below).
+                if Self::native_ctor_composable_role(&registry, &cls) {
+                    continue;
+                }
+                // Any other non-class entry — be conservative.
                 return false;
             };
             // `TWEAK` and `BUILD` submethods are allowed: the native path
@@ -114,9 +125,21 @@ impl Interpreter {
                     .attribute_build_overrides
                     .keys()
                     .any(|(owner, _)| owner == &cls)
+                // A composed user role is a `parents` entry too. Its
+                // attributes, accessors and BUILD/TWEAK submethods are already
+                // part of the class shape the native builder reads (the
+                // composed attribute defs, `NativeCtorPlan::build_steps`); what
+                // only the full constructor does for a role -- binding a
+                // parametric role's type arguments, the Baggy/Setty storage --
+                // is refused below and before the loop.
                 && class_def.parents.iter().all(|p| {
-                    p == "Any" || p == "Mu" || p == "Cool" || registry.classes.contains_key(p)
+                    p == "Any"
+                        || p == "Mu"
+                        || p == "Cool"
+                        || registry.classes.contains_key(p)
+                        || Self::native_ctor_composable_role(&registry, p)
                 })
+                && !registry.class_role_param_bindings.contains_key(&cls)
                 && class_def.attributes.iter().all(
                     |attr| {
                         let name = &attr.name;
@@ -198,6 +221,21 @@ impl Interpreter {
             has_attribute |= !class_def.attributes.is_empty();
         }
         has_attribute || is_exception
+    }
+
+    /// A role whose composition the native default constructor serves: a user
+    /// role, not parametric (`R[T]` binds type arguments only the full
+    /// constructor installs) nor a builtin one, and with no MOP
+    /// `Attribute.set_build` override on its attributes.
+    // Cost: O(o), o = registered attribute build overrides.
+    fn native_ctor_composable_role(registry: &super::Registry, name: &str) -> bool {
+        registry.roles.contains_key(name)
+            && !name.contains('[')
+            && !crate::runtime::types::is_builtin_role_name(name)
+            && !registry
+                .attribute_build_overrides
+                .keys()
+                .any(|(owner, _)| owner == name)
     }
 
     /// A type constraint the native default constructor can enforce with a plain

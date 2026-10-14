@@ -1,7 +1,6 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
-use num_traits::ToPrimitive;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
@@ -141,6 +140,16 @@ pub(crate) fn native_method_0arg(
     // tag probe and one hash lookup plus the row's handler.
     if let Some(result) = crate::builtins::method_table::answer(target, method_sym, &[]) {
         return Some(result);
+    }
+    // A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
+    // captures (ADR-11276 §9.98), as the interpreter's entries do
+    // (`Interpreter::match_list_receiver`, which also asks the grammar).
+    // Cost: O(1) unless the receiver is a Match and the name one of those.
+    if let Some(list) = target.match_list_receiver(method_sym.as_str()) {
+        if crate::value::match_view::match_list_answers_itself(method_sym.as_str()) {
+            return Some(Ok(list));
+        }
+        return native_method_0arg(&list, method_sym);
     }
     native_method_0arg_cascade(target, method_sym)
 }
@@ -445,6 +454,10 @@ pub(crate) fn native_method_0arg_cascade(
 
     // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
     if let ValueView::Mixin(inner, mixins) = target.view() {
+        // A plain allomorph's method with a row is the row's (§9.101).
+        if crate::builtins::method_table::allomorph::answers(target, method_sym, &[]) {
+            return None;
+        }
         if method == "Bool"
             && let Some(bool_val) = mixins.get("Bool")
         {
@@ -519,32 +532,16 @@ pub(crate) fn native_method_0arg_cascade(
                 attrs,
             )));
         }
-        // For allomorphic types, string-oriented methods should use the Str part.
-        if let Some(str_val) = mixins.get("Str") {
-            match method {
-                // `ord`/`ords` belong here for the same reason as `comb`: they
-                // read the *characters*, so on an allomorph they must read the
-                // Str part. Without them the generic mixin delegation below
-                // handed them the inner NUMBER, so `IntStr.new(0, "zero").ords`
-                // was `(48,)` — the codepoint of "0" — instead of "zero"'s.
-                "comb" | "chars" | "codes" | "words" | "lines" | "chomp" | "chop" | "trim"
-                | "trim-leading" | "trim-trailing" | "uc" | "lc" | "tc" | "tclc" | "fc"
-                | "flip" | "ord" | "ords" | "samemark" | "samespace" | "uniname" | "uninames"
-                | "unival" | "univals" | "uniprop" | "uniprops" | "uniparse" | "parse-names"
-                | "NFC" | "NFD" | "NFKC" | "NFKD" | "encode" => {
-                    return native_method_0arg(str_val, method_sym);
-                }
-                // `wordcase` reads the Str part like its siblings above, but
-                // unlike them it preserves the allomorph type — see
-                // `allomorph_wordcase_result` for why.
-                "wordcase" => {
-                    let wordcased = crate::value::wordcase_str(&str_val.to_string_value());
-                    return Some(Ok(crate::value::types::allomorph_wordcase_result(
-                        inner, wordcased,
-                    )));
-                }
-                _ => {}
-            }
+        // An allomorph's `wordcase` reads the Str part but preserves the
+        // allomorph type (see `allomorph_wordcase_result`); its other string
+        // methods are `Str`'s and `Cool`'s rows on the Str part (§9.101).
+        if method == "wordcase"
+            && let Some(str_val) = mixins.get("Str")
+        {
+            let wordcased = crate::value::wordcase_str(&str_val.to_string_value());
+            return Some(Ok(crate::value::types::allomorph_wordcase_result(
+                inner, wordcased,
+            )));
         }
         // An allomorph (IntStr/RatStr/NumStr/ComplexStr) renders its `.raku` /
         // `.perl` as `TypeStr.new(<numeric>, "<string>")`, NOT the bare inner
@@ -1025,19 +1022,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // table (`method_table::instances::instant`): `Instant.Instant`, `succ`/`pred`,
     // `to-posix`, `DateTime`, `Date`, `tai` and `narrow` have no arm here.
 
-    // Buf/Blob.Str throws X::Buf::AsStr — except `utf8`, whose `.Str`/`.Stringy`
-    // decodes (rakudo: `utf8.new(98,117).Str` is "bu", while `Buf`, `Blob` and
-    // `Blob[uint8]` all die). Only the type object's own name matters; prefix
-    // `~` still dies for utf8 too.
-    if (method == "Str" || method == "Stringy") && crate::runtime::Interpreter::is_buf_value(target)
-    {
-        // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
-        return crate::builtins::method_table::blob::str_or_stringy(target, method);
-    }
-
-    // Buf/Blob .values and .list return the byte values as integers
-    if (method == "values" || method == "list") && crate::runtime::Interpreter::is_buf_value(target)
-    {
+    // `Any.values` is `self.list`, and a buffer's `list` its `Blob` row's.
+    if method == "values" && crate::runtime::Interpreter::is_buf_value(target) {
         return crate::builtins::method_table::blob::list(target, &[]);
     }
 
@@ -1259,207 +1245,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         if let Some(result) = match_owner_row(target, Symbol::intern(method), &[]) {
             return Some(result);
         }
-        let list_v = target.match_list();
-        let named_v = target.match_named();
-        match method {
-            "list" => {
-                return Some(Ok(target.match_list_view()));
-            }
-            // Cost: O(p), p = positional captures (copied once into the result).
-            // The 0-arg members of `is_capture_list_method` that arrays answer
-            // natively: a Match is never coerced to its `.Str` for them.
-            "Array" | "List" | "Slip" | "Seq" | "flat" | "cache" | "eager" | "reverse" => {
-                let list = target.match_positional_list(method == "Array");
-                // `Capture.List` is the positional list itself; a `List`'s own
-                // `.List` would materialize an unbound slot's hole as `Nil`.
-                if method == "List" {
-                    return Some(Ok(list));
-                }
-                return native_method_0arg(&list, Symbol::intern(method));
-            }
-            "hash" | "Hash" => {
-                let named = if method == "hash" {
-                    target.match_named_map()
-                } else {
-                    target.match_named()
-                };
-                return Some(Ok(named.unwrap_or_else(|| Value::hash(ValueMap::default()))));
-            }
-            "keys" => {
-                let mut keys = Vec::new();
-                if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
-                    for i in 0..list.len() {
-                        keys.push(Value::int(i as i64));
-                    }
-                }
-                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
-                    let mut sorted: Vec<&String> = named.keys().collect();
-                    sorted.sort();
-                    for k in sorted {
-                        keys.push(Value::str(k.clone()));
-                    }
-                }
-                return Some(Ok(Value::seq(keys)));
-            }
-            "values" => {
-                let mut vals = Vec::new();
-                if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
-                    // A quantified positional capture (`( ... )*` — $0 is an
-                    // Array of per-iteration Matches) flattens into the value
-                    // list, matching raku's Seq flattening: `$m.values` over
-                    // `( <element> ','?)*` yields the group Matches themselves.
-                    for v in list.iter() {
-                        if let ValueView::Array(inner, _) = v.view() {
-                            vals.extend(inner.iter().cloned());
-                        } else {
-                            vals.push(v.clone().unbound_capture_as_mu());
-                        }
-                    }
-                }
-                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
-                    let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
-                    sorted.sort_by_key(|(k, _)| (*k).clone());
-                    // Same flattening as the positional branch above: a
-                    // quantified/multi-match named capture (`<a>*`) renders
-                    // as an Array, but `.values` flattens its entries rather
-                    // than yielding the Array itself.
-                    for (_, v) in sorted {
-                        if let ValueView::Array(inner, _) = v.view() {
-                            vals.extend(inner.iter().cloned());
-                        } else {
-                            vals.push(v.clone());
-                        }
-                    }
-                }
-                return Some(Ok(Value::seq(vals)));
-            }
-            "pairs" => {
-                // ADR-0021 I2: data-minted pairs default positional.
-                let mut pairs = Vec::new();
-                if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
-                    for (i, v) in list.iter().enumerate() {
-                        pairs.push(Value::value_pair(
-                            Value::int(i as i64),
-                            v.clone().unbound_capture_as_mu(),
-                        ));
-                    }
-                }
-                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
-                    let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
-                    sorted.sort_by_key(|(k, _)| (*k).clone());
-                    for (k, v) in sorted {
-                        pairs.push(Value::value_pair(Value::str(k.clone()), v.clone()));
-                    }
-                }
-                return Some(Ok(Value::seq(pairs)));
-            }
-            "kv" => {
-                let mut kv = Vec::new();
-                if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
-                    for (i, v) in list.iter().enumerate() {
-                        kv.push(Value::int(i as i64));
-                        // A quantified capture's Array flattens after its key
-                        // (raku: `$m.kv` over `(\w)*` is `(0, m1, m2)`).
-                        if let ValueView::Array(inner, _) = v.view() {
-                            kv.extend(inner.iter().cloned());
-                        } else {
-                            kv.push(v.clone().unbound_capture_as_mu());
-                        }
-                    }
-                }
-                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
-                    let mut sorted: Vec<(&String, &Value)> = named.iter().collect();
-                    sorted.sort_by_key(|(k, _)| (*k).clone());
-                    for (k, v) in sorted {
-                        kv.push(Value::str(k.clone()));
-                        // A quantified/multi-match named capture's Array
-                        // flattens after its key, same as the positional
-                        // branch above (raku: `$m.kv` over `<a>*` is
-                        // `("a", m1, m2)`, not `("a", [m1, m2])`; zero
-                        // matches leave the key with nothing after it).
-                        if let ValueView::Array(inner, _) = v.view() {
-                            kv.extend(inner.iter().cloned());
-                        } else {
-                            kv.push(v.clone());
-                        }
-                    }
-                }
-                return Some(Ok(Value::seq(kv)));
-            }
-            "elems" => {
-                let count = match list_v.as_ref().map(Value::view) {
-                    Some(ValueView::Array(list, _)) => list.len(),
-                    _ => 0,
-                };
-                return Some(Ok(Value::int(count as i64)));
-            }
-            "Capture" => {
-                // Match.Capture returns self
-                return Some(Ok(target.clone()));
-            }
-            // A row of `Mu` or `Any` a Match reaches answers on the Match, not
-            // on its matched string: `.so` of a zero-width match is True
-            // (#9180), `.join` joins its positional captures, `.item` is the
-            // Match itself.
-            _ if crate::value::DispatchShape::Match.reaches_audited_ancestor(method) => {}
-            _ => {
-                let str_val = Value::str(target.to_string_value());
-                return native_method_0arg(&str_val, Symbol::intern(method));
-            }
-        }
+        // `Any`'s list methods (`self.list.METHOD`) were answered on the
+        // positional captures before the call reached here
+        // (`Interpreter::match_list_receiver`, §9.98); every other name is
+        // answered on the Match itself, never on its matched string (§9.96):
+        // a row of `Mu`, `Any`, `Capture` or `Cool` it reaches, or the generic
+        // arms below. `.so` of a zero-width match is True (#9180), and a name
+        // Rakudo's `Match` lacks is `X::Method::NotFound`.
     }
 
-    // Numeric type object .Range methods
-    if let ValueView::Package(name) = target.view()
-        && method == "Range"
-        && matches!(
-            name.resolve().as_str(),
-            "Real" | "Num" | "Rational" | "Rat" | "FatRat" | "BigRat"
-        )
-    {
-        return Some(Ok(Value::generic_range(
-            Value::num(f64::NEG_INFINITY),
-            Value::num(f64::INFINITY),
-            false,
-            false,
-        )));
-    }
-    if let ValueView::Package(name) = target.view()
-        && name.resolve() == "Int"
-        && method == "Range"
-    {
-        return Some(Ok(Value::generic_range(
-            Value::num(f64::NEG_INFINITY),
-            Value::num(f64::INFINITY),
-            true,
-            true,
-        )));
-    }
-    if let ValueView::Package(name) = target.view()
-        && crate::runtime::native_types::is_native_int_type(&name.resolve())
-        && method == "Range"
-        && let Some((min_big, max_big)) =
-            crate::runtime::native_types::native_int_bounds(&name.resolve())
-    {
-        let min_i64 = min_big.to_i64();
-        let max_i64 = max_big.to_i64();
-        // `Value::range` reads `i64::MIN` / `i64::MAX` as the -Inf / Inf
-        // sentinels, so the full 64-bit range needs the generic form.
-        if let (Some(min_v), Some(max_v)) = (min_i64, max_i64)
-            && min_v != i64::MIN
-            && max_v != i64::MAX
-        {
-            return Some(Ok(Value::range(min_v, max_v)));
-        } else {
-            let min_val = min_i64
-                .map(Value::int)
-                .unwrap_or_else(|| Value::bigint(min_big));
-            let max_val = max_i64
-                .map(Value::int)
-                .unwrap_or_else(|| Value::bigint(max_big));
-            return Some(Ok(Value::generic_range(min_val, max_val, false, false)));
-        }
-    }
     // Kernel type object methods
     // `Kernel.hostname` works on the type object (Sys::Hostname does exactly this).
     // Cost: O(1), reads the process-cached uname(2) result.
@@ -1512,7 +1306,6 @@ fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, 
         };
     }
 
-    try_dispatch!(dispatch_core_coerce);
     try_dispatch!(dispatch_core_unicode);
     try_dispatch!(dispatch_core_numeric);
     try_dispatch!(dispatch_core_list);

@@ -19,15 +19,18 @@ use crate::ast::Stmt;
 use crate::value::{RuntimeError, Value};
 
 /// The operand an expression node starts with: the left of an infix, the first
-/// operand of a list infix.
+/// operand of a list infix, and (with `postfix`) the operand of a postfix.
 ///
-/// A postfix is left out on purpose: rakudo drops the parentheses of a
-/// postfix's operand, so `(my @a).push(1)` and a declaration followed by a
-/// method call are the same node and cannot be told apart again.
+/// Lowering leaves a postfix out on purpose: rakudo drops the parentheses of a
+/// postfix's operand, so `(my @a).push(1)` and `my @a.push(1)` are the same
+/// node and cannot be told apart again. They compute the same thing, so the
+/// converter may build that node for either, and lowering reads it back the
+/// parenthesized way.
 // Cost: O(1).
-fn leading_operand(node: &RakuAstNode) -> Option<&RakuAstNode> {
+fn leading_operand(node: &RakuAstNode, postfix: bool) -> Option<&RakuAstNode> {
     match node.class {
         RakuAstClass::ApplyInfix => named_child(node, "left").ok(),
+        RakuAstClass::ApplyPostfix if postfix => named_child(node, "operand").ok(),
         RakuAstClass::ApplyListInfix => {
             let field = node.fields.iter().find(|f| f.name == Some("operands"))?;
             match &field.value {
@@ -42,10 +45,10 @@ fn leading_operand(node: &RakuAstNode) -> Option<&RakuAstNode> {
 /// The node at the end of the chain of leading operands, and how long the
 /// chain is.
 // Cost: O(d), d = depth of the chain.
-fn leftmost(node: &RakuAstNode) -> (&RakuAstNode, usize) {
+fn leftmost(node: &RakuAstNode, postfix: bool) -> (&RakuAstNode, usize) {
     let mut current = node;
     let mut depth = 0;
-    while let Some(next) = leading_operand(current) {
+    while let Some(next) = leading_operand(current, postfix) {
         current = next;
         depth += 1;
     }
@@ -55,11 +58,12 @@ fn leftmost(node: &RakuAstNode) -> (&RakuAstNode, usize) {
 /// `node` with the end of its chain of leading operands replaced.
 // Cost: O(d), d = depth of the chain.
 fn replace_leftmost(node: &RakuAstNode, replacement: &RakuAstNode) -> RakuAstNode {
-    if leading_operand(node).is_none() {
+    if leading_operand(node, true).is_none() {
         return replacement.clone();
     }
     let leading_field = match node.class {
         RakuAstClass::ApplyInfix => "left",
+        RakuAstClass::ApplyPostfix => "operand",
         _ => "operands",
     };
     let fields = node
@@ -117,7 +121,7 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
     let (sigil, name) = declared_variable(head)?;
     Some((|| {
         let converted = convert_expr(tail)?;
-        let (bottom, depth) = leftmost(&converted);
+        let (bottom, depth) = leftmost(&converted, true);
         // The tail must start with a re-read of the variable the head declares.
         if depth == 0 || *bottom != var_lexical(sigil, name) {
             return Err(unsupported_statement());
@@ -137,7 +141,7 @@ fn unsupported_statement() -> RuntimeError {
 /// to a variable, as the parser's `SyntheticBlock([declaration, Expr(tail)])`.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
-    let (bottom, depth) = leftmost(node);
+    let (bottom, depth) = leftmost(node, false);
     if depth == 0 || bottom.class != RakuAstClass::VarDeclarationSimple {
         return None;
     }

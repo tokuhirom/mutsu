@@ -136,6 +136,12 @@ pub(crate) fn compact_layers(layers: Vec<Layer>) -> Vec<Layer> {
     out
 }
 
+/// A declaration scope captured once and consulted later as a lookup tier: a
+/// role's scope at registration, which its attribute defaults resolve names
+/// through when a composing class is constructed (#13018). Shared, so cloning
+/// a role or an attribute list never copies the scope.
+pub(crate) type CapturedScope = Arc<CaptureView>;
+
 /// A closure capture as a stack of tiers, highest precedence first. Immutable
 /// once built. See the module docs.
 pub(crate) struct CaptureView {

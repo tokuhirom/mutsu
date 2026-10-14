@@ -1116,17 +1116,30 @@ impl Interpreter {
                         // The object may arrive wrapped in a Scalar container
                         // (a `$`-bound alias of the instance); read through it.
                         let obj = obj.clone().deref_container();
+                        let attr_name = attributes
+                            .as_map()
+                            .get("__mutsu_attr_name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        // An attribute a mixed-in role declares lives in the
+                        // mixin's own role cell, not in the wrapped object.
+                        if let ValueView::Mixin(_, mixins) = obj.view() {
+                            let owner = attributes
+                                .as_map()
+                                .get("__mutsu_attr_owner")
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
+                            if let Some(v) = mixins.role_attribute(&owner, bare) {
+                                return Ok(v.deref_container());
+                            }
+                        }
                         // A `$obj but Role` mixin keeps the object's attributes
                         // on the value it wraps.
                         let obj = match obj.view() {
                             ValueView::Mixin(inner, _) => Value::clone(inner),
                             _ => obj.clone(),
                         };
-                        let attr_name = attributes
-                            .as_map()
-                            .get("__mutsu_attr_name")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
                         if let ValueView::Instance {
                             attributes: obj_attrs,
                             ..
@@ -1166,6 +1179,21 @@ impl Interpreter {
                         // object's methods read (a silent no-op here loses e.g.
                         // OO::Monitors' lock installation).
                         let obj = args[0].clone().deref_container();
+                        // An attribute a mixed-in role declares lives in the
+                        // mixin's own role cell, not in the wrapped object.
+                        if let ValueView::Mixin(_, mixins) = obj.view() {
+                            let owner = attributes
+                                .as_map()
+                                .get("__mutsu_attr_owner")
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
+                            if mixins.role_attribute(&owner, bare).is_some()
+                                && mixins.set_role_attribute(&owner, bare, new_val.clone())
+                            {
+                                return Ok(new_val);
+                            }
+                        }
                         let obj = match obj.view() {
                             ValueView::Mixin(inner, _) => Value::clone(inner),
                             _ => obj.clone(),
@@ -2141,6 +2169,17 @@ impl Interpreter {
                 // X::Method::NotFound (Rakudo: `class C {}; C.new(x=>3).x` dies). A
                 // *built-in* class (exception types, ...) keeps its attributes only
                 // in the stored map (not collected), so still read them.
+                // `IO::Path.path` is the stored path text; a user subclass of
+                // `IO::Path` inherits it even though its own declared
+                // attributes (or none) are all the collected list holds.
+                if method == "path"
+                    && args.is_empty()
+                    && !class_attrs.iter().any(|attr| attr.name == method)
+                    && let Some(val) = attributes.as_map().get(method)
+                    && self.mro_readonly(&cn).iter().any(|c| c == "IO::Path")
+                {
+                    return Ok(val.clone());
+                }
                 if class_attrs.is_empty() {
                     if !self.types.user_declared_classes.contains(&cn)
                         && let Some(val) = attributes.as_map().get(method)
@@ -2736,8 +2775,14 @@ impl Interpreter {
                     }
                 }
 
-                // Try user-defined FALLBACK method
-                if method != "FALLBACK" && self.has_user_method(&class_name.resolve(), "FALLBACK") {
+                // Try user-defined FALLBACK method. `.REPR` is a universal
+                // (Mu) pseudo-method that every object answers itself, so a
+                // class's FALLBACK must never see it (Gnome::N's native-sub
+                // setup does `self.package.REPR` on a class with a FALLBACK).
+                if method != "FALLBACK"
+                    && !(method == "REPR" && args.is_empty())
+                    && self.has_user_method(&class_name.resolve(), "FALLBACK")
+                {
                     let mut fallback_args = vec![Value::str(method.to_string())];
                     fallback_args.extend(args);
                     return self.call_method_with_values(target, "FALLBACK", fallback_args);
@@ -3211,6 +3256,13 @@ impl Interpreter {
                         && self.str_subclass_stringy_payload(&target).is_some() =>
                 {
                     Ok(target.clone())
+                }
+                // `Method.Str` is `Code.Str`: the name, with the coercion warning.
+                ValueView::Instance { class_name, .. }
+                    if matches!(class_name.as_str(), "Method" | "Submethod")
+                        && !self.has_user_method(&class_name.resolve(), "Str") =>
+                {
+                    self.code_str(&target).unwrap_or_else(|| Ok(Value::str(target.to_string_value())))
                 }
                 ValueView::Instance { class_name, .. } => {
                     // Stringy defaults to Str, but Str does not default back to

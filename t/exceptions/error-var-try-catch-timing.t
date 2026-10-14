@@ -22,17 +22,17 @@ sub failing-try() { try { die "boom" }; $!.^name }
 is failing-try(), 'X::AdHoc', 'an untrapped die in a try leaves the exception';
 
 sub handled-try() { try { die "boom"; CATCH { default { } } }; $!.^name }
-is handled-try(), 'Nil', 'a handled CATCH restores the pre-try $!';
+is handled-try(), 'X::AdHoc', 'a handled CATCH leaves the exception in $!';
 
 sub handled-bare-block() { { die "boom"; CATCH { default { } } }; $!.^name }
-is handled-bare-block(), 'Nil', 'a handled CATCH in a bare block restores $! too';
+is handled-bare-block(), 'X::AdHoc', 'a handled CATCH in a bare block leaves it in $! too';
 
-sub handled-keeps-prior() {
+sub handled-replaces-prior() {
     try { die "first" };
     { die "second"; CATCH { default { } } };
     $!.message;
 }
-is handled-keeps-prior(), 'first', 'the restored $! is the prior exception, not the handled one';
+is handled-replaces-prior(), 'second', 'the handled exception replaces the prior one in $!';
 
 # --- inside the CATCH block ---------------------------------------------
 

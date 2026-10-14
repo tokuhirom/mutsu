@@ -339,14 +339,31 @@ impl Interpreter {
             && let ValueView::Seq(body) = source.view()
         {
             let body = std::sync::Arc::clone(&body);
-            if let Err(err) = self.reify_seq_body(&body) {
+            // Pulled one element at a time (the coroutine resumes where it
+            // stopped), so a body that dies keeps what it took first.
+            let mut want = 1usize;
+            let pulled = loop {
+                if !body.is_gather_source() {
+                    break Ok(());
+                }
+                if let Err(err) = self.reify_seq_body_prefix(&body, want) {
+                    break Err(err);
+                }
+                if body.len() < want {
+                    break Ok(());
+                }
+                want += 1;
+            };
+            if let Err(err) = pulled {
                 let reason = err
                     .exception
                     .as_deref()
                     .cloned()
                     .unwrap_or_else(|| Value::str(err.message.to_string()));
+                // The values taken before the `die` are emitted first, then
+                // the quit is delivered.
                 return Ok(Self::static_supply_from_stage(
-                    Vec::new(),
+                    body.to_vec(),
                     &AttrMap::default(),
                     Some(reason),
                 ));

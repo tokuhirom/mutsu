@@ -126,3 +126,23 @@ fn a_where_clause_runs_far_fewer_times_than_it_used_to() {
          resolution plus a redundant bind-time recheck): {out}{err}"
     );
 }
+
+#[test]
+fn an_inline_where_multi_takes_the_light_path_after_its_first_call() {
+    // ADR-12529 §2.4: once the generic path has light-bound a winner of a
+    // family whose value checks are inline `where`s, a call with the same
+    // argument types runs only the family's stage program
+    // (`vm_multi_plan_light_call.rs`), so the full resolution runs once for
+    // the whole loop, not once per call.
+    let src = "multi sub f(Int $x where * > 0) { $x }\n\
+               multi sub f(Int $x) { 0 }\n\
+               my $s = 0; for ^50 -> $i { $s += f($i + 1) }; say $s;";
+    let (out, err, ok) = run(src);
+    assert!(ok, "run failed: {err}");
+    assert_eq!(out, "1275\n");
+    assert_eq!(
+        full_resolves(&err, "f"),
+        1,
+        "fifty calls with one argument type must resolve once: {err}"
+    );
+}

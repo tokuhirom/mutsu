@@ -86,8 +86,48 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         nregs: c.nregs,
         has_code: c.has_code,
         has_call: c.has_call,
+        markless: false,
         ascii: std::sync::OnceLock::new(),
     })
+}
+
+/// Compile the mark-stripped body of a whole-`:m` rule (`strip_marks_pattern`)
+/// as a markless program ([`RxProgram::markless`]), or say why not. Only the
+/// ops whose every character test goes through a consuming atom are covered,
+/// a look-around whose body compiles markless in turn, and a backreference or
+/// capture marker (`CapAtom`: rakudo compares a backreference exactly, marks
+/// included, which the subject's own positions give), and `<.ws>` (a call,
+/// which does not inherit `:m`: it runs over the subject's own text). A
+/// construct that reads the subject another way (an interpolation or a nested
+/// `:m` group) declines, and the call keeps the eager `:m` path. A
+/// conjunction is covered when its other branches compile markless too.
+// Cost: O(t), t = the number of tokens in the pattern tree.
+pub(in crate::runtime::regex) fn compile_markless(
+    pattern: &RegexPattern,
+) -> Result<RxProgram, Decline> {
+    let mut program = compile(pattern)?;
+    let covered = program.ops.iter().all(|op| match op {
+        // The body runs as a markless nested run of its own (`Look`).
+        RxOp::Look(i) => matches!(
+            &program.atoms[*i as usize],
+            RegexAtom::Lookaround { pattern, .. }
+                if super::rx_entry::markless_program_for(pattern).is_some()
+        ),
+        // The other branches run as markless nested runs (`ConjTail`).
+        RxOp::ConjTail { tok, .. } => matches!(
+            &program.toks[*tok as usize].atom,
+            RegexAtom::Conjunction(branches)
+                if branches[1..]
+                    .iter()
+                    .all(|b| super::rx_entry::markless_program_for(b).is_some())
+        ),
+        op => !matches!(op, RxOp::InterpEnds(_) | RxOp::GroupEnds(_)),
+    });
+    if !covered {
+        return Err("markless-uncovered");
+    }
+    program.markless = true;
+    Ok(program)
 }
 
 /// A set of capture names interned, in name order, so the order they are

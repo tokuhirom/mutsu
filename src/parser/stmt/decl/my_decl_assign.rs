@@ -8,7 +8,7 @@ use super::my_decl::MyDeclState;
 use super::{
     consume_scalar_decl_trailing_comma, default_decl_expr, method_decl_body,
     parse_assign_expr_or_comma, parse_comma_chained_decls, parse_statement_modifier,
-    rewrite_decl_assignment_or_chain, wrap_with_will_leave,
+    rewrite_decl_assignment_or_chain, wrap_with_will_phasers,
 };
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
@@ -61,7 +61,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
 
     // Compound assignment
     if let Some((stripped, op)) = super::super::assign::parse_compound_assign_op(rest) {
-        return handle_compound_assign(stripped, s, |var_expr, rhs| {
+        return handle_compound_assign(stripped, s, Some(op.symbol()), |var_expr, rhs| {
             super::super::assign::compound_assigned_value_expr(var_expr, op, rhs)
         });
     }
@@ -77,14 +77,14 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         && meta == "Z"
         && op == "="
     {
-        return handle_compound_assign(stripped, s, |var_expr, rhs| Expr::Call {
+        return handle_compound_assign(stripped, s, None, |var_expr, rhs| Expr::Call {
             name: Symbol::intern("__mutsu_zip_assign"),
             args: vec![var_expr, rhs],
             listop: false,
         });
     }
     if let Some((stripped, op_name)) = super::super::assign::parse_custom_compound_assign_op(rest) {
-        return handle_compound_assign(stripped, s, |var_expr, rhs| Expr::InfixFunc {
+        return handle_compound_assign(stripped, s, None, |var_expr, rhs| Expr::InfixFunc {
             name: op_name,
             left: Box::new(var_expr),
             right: vec![rhs],
@@ -125,7 +125,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             || after_unspace.starts_with(".{")
             || after_unspace.starts_with(".<")
         {
-            let base = Expr::Var(s.name.clone());
+            let base = declared_var_expr(&s.name);
             let (r2, lhs) = super::super::super::expr::postfix_expr_continue(rest, base)?;
             let (r2, _) = ws(r2)?;
             let decl_expr = default_decl_expr(
@@ -180,7 +180,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 .next()
                 .is_some_and(|c| c.is_alphabetic() || c == '_')
         {
-            let base = Expr::Var(s.name.clone());
+            let base = declared_var_expr(&s.name);
             let (r2, call_expr) =
                 super::super::super::expr::postfix_expr_continue(after_unspace, base)?;
             let decl_expr = default_decl_expr(
@@ -286,7 +286,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                         None => (r2, None),
                     }
                 };
-                let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
+                let stmt = wrap_with_will_phasers(stmt, &s.name, s.will_phasers);
                 // Assign the initializer BEFORE mixing the role in: the `does`
                 // desugar mixes the role into the value currently held by the
                 // variable and writes it back, so a later assignment would drop
@@ -300,7 +300,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             }
         }
     }
-    let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
+    let stmt = wrap_with_will_phasers(stmt, &s.name, s.will_phasers);
     if s.apply_modifier {
         // A bare declaration followed by a loose word-logical (`my %h andthen
         // do { ... }`, `my $x orelse fail`): the word-logicals are looser than
@@ -316,10 +316,13 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
     Ok((rest, stmt))
 }
 
-/// Handle compound assignment operators (e.g. `my $x += expr`).
+/// Handle compound assignment operators (e.g. `my $x += expr`). `op` is the
+/// written operator of a built-in compound assignment, which a
+/// spelling-keeping parse records for RakuAST (`ast::decl_compound_assign`).
 fn handle_compound_assign<'a, F>(
     stripped: &'a str,
     s: MyDeclState,
+    op: Option<&str>,
     make_expr: F,
 ) -> PResult<'a, Stmt>
 where
@@ -351,13 +354,14 @@ where
         custom_traits: s.custom_traits.clone(),
         where_constraint: s.where_constraint.clone(),
     };
-    let assign_stmt = Stmt::Assign {
-        name: s.name.clone(),
-        expr: make_expr(Expr::Var(s.name.clone()), rhs),
-        op: AssignOp::Assign,
-        target_is_sigilless: false,
-    };
-    let stmt = Stmt::SyntheticBlock(vec![decl_stmt, assign_stmt]);
+    let source = op.filter(|_| crate::ast::spelled::keeping()).map(|op| {
+        crate::ast::decl_compound_assign::Source {
+            op: op.to_string(),
+            rhs: rhs.clone(),
+        }
+    });
+    let value = make_expr(Expr::Var(s.name.clone()), rhs);
+    let stmt = crate::ast::decl_compound_assign::expand(decl_stmt, s.name.clone(), value, source);
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);
     }
@@ -517,7 +521,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 }))),
                 right,
             });
-            let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers);
+            let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers);
             let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
             let (rest, stmt) = if s.apply_modifier {
                 consume_scalar_decl_trailing_comma(rest, stmt)?
@@ -571,7 +575,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 where_constraint: s.where_constraint.clone(),
             }));
         }
-        let stmt = wrap_with_will_leave(
+        let stmt = wrap_with_will_phasers(
             Stmt::Expr(feed),
             &var_name_for_leave,
             s.will_phasers.clone(),
@@ -613,7 +617,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         where_constraint: s.where_constraint.clone(),
     };
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
-        let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers.clone());
+        let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers.clone());
         let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
         // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
         // Only in statement context (apply_modifier=true). In expression context (e.g.,
@@ -655,7 +659,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
-    let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers.clone());
+    let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers.clone());
     let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
     // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
     // Only in statement context (apply_modifier=true). In expression context (e.g.,
@@ -717,7 +721,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         crate::parser::stmt::assign::parse_colon_args(rest)?
     } else if rest_ws.starts_with(':') && !rest_ws.starts_with("::") {
         // Fake-infix adverb form (space before ':'): .=method :key<val> :key2<val2>
-        parse_fake_infix_adverbs(rest_ws)?
+        super::helpers::parse_fake_infix_adverbs(rest_ws)?
     } else {
         (rest_ws, Vec::new())
     };
@@ -755,7 +759,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     {
         custom_traits.push(("__has_initializer".to_string(), None));
     }
-    let is_static_method = dynamic_name.is_none();
+    let source_callee = dynamic_name.clone();
     let source_args = args.clone();
     let expr = match dynamic_name {
         Some(name_expr) => Expr::DynamicMethodCall {
@@ -783,12 +787,14 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         .filter(|_| !s.name.starts_with(['@', '%', '&']));
     let (after_ws, _) = ws(rest)?;
     let has_trailing_comma = after_ws.starts_with(',') && !after_ws.starts_with(",,");
-    let stmt = if is_static_method
-        && s.apply_modifier
-        && s.shape_dims.is_none()
-        && chain_base.is_none()
-        && !has_trailing_comma
-    {
+    let (rest, chain) = match chain_base {
+        Some(base) => {
+            let (r, chained) = super::super::super::expr::postfix_expr_continue(rest, base)?;
+            (r, Some(chained))
+        }
+        None => (rest, None),
+    };
+    let stmt = if s.apply_modifier && !has_trailing_comma {
         crate::ast::method_assign_decl::expand(crate::ast::method_assign_decl::MethodAssignDecl {
             name: s.name,
             type_constraint: s.type_constraint,
@@ -800,11 +806,14 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             custom_traits: s.custom_traits,
             where_constraint: s.where_constraint,
             method: Symbol::intern(&method_name),
+            callee: source_callee.map(Box::new),
             args: source_args,
+            chain: chain.clone().map(Box::new),
+            shape: s.shape_dims.clone(),
             is_v6c: crate::parser::current_language_version_starts_with("6.c"),
         })
     } else {
-        Stmt::VarDecl {
+        let declaration = Stmt::VarDecl {
             name: s.name,
             expr,
             type_constraint: s.type_constraint,
@@ -815,15 +824,17 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             export_tags: s.export_tags.clone(),
             custom_traits,
             where_constraint: s.where_constraint.clone(),
+        };
+        match chain.clone() {
+            Some(chained) => Stmt::SyntheticBlock(vec![declaration, Stmt::Expr(chained)]),
+            None => declaration,
         }
     };
-    if let Some(base) = chain_base {
-        let (r, chained) = super::super::super::expr::postfix_expr_continue(rest, base)?;
-        let combined = Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(chained)]);
+    if chain.is_some() {
         if s.apply_modifier {
-            return parse_statement_modifier(r, combined);
+            return parse_statement_modifier(rest, stmt);
         }
-        return Ok((r, combined));
+        return Ok((rest, stmt));
     }
     // Handle trailing comma list
     let (rest, _) = ws(rest)?;
@@ -866,22 +877,6 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     Ok((rest, stmt))
-}
-
-/// Parse fake-infix adverb arguments: `:key<val> :key2<val2>`.
-pub(super) fn parse_fake_infix_adverbs(input: &str) -> PResult<'_, Vec<Expr>> {
-    let mut args = Vec::new();
-    let mut r = input;
-    while r.starts_with(':') && !r.starts_with("::") {
-        if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r) {
-            args.push(arg);
-            let (r3, _) = ws(r2)?;
-            r = r3;
-        } else {
-            break;
-        }
-    }
-    Ok((r, args))
 }
 
 /// Handle binding `:=` or `::=`.
@@ -971,4 +966,17 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     Ok((rest, stmt))
+}
+
+/// The expression that reads the variable a declaration named `name` (the
+/// parser's spelling: `x`, `@a`, `%h`, `&f`) declares, as the parser builds it
+/// for the same variable written on its own.
+// Cost: O(k), k = length of the name.
+fn declared_var_expr(name: &str) -> Expr {
+    match name.split_at_checked(1) {
+        Some(("@", rest)) => Expr::ArrayVar(rest.to_string()),
+        Some(("%", rest)) => Expr::HashVar(rest.to_string()),
+        Some(("&", rest)) => Expr::CodeVar(rest.to_string()),
+        _ => Expr::Var(name.to_string()),
+    }
 }

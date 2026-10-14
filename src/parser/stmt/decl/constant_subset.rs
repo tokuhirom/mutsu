@@ -150,7 +150,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
             crate::parser::stmt::assign::parse_colon_args(r_before_ws)?
         } else if r.starts_with(':') && !r.starts_with("::") {
-            super::my_decl_assign::parse_fake_infix_adverbs(r)?
+            super::helpers::parse_fake_infix_adverbs(r)?
         } else {
             (r, Vec::new())
         };

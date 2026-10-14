@@ -129,11 +129,9 @@ impl Interpreter {
     // Cost: O(m), m = key bytes (base-name reduction, intern, two hash probes).
     pub(crate) fn evict_fn_keys_base(&mut self, key: Symbol) -> bool {
         let base = function_key_base_name(key.as_str());
-        let evicted = self
-            .dispatch
-            .fn_keys_by_base
-            .remove(&Symbol::intern(base))
-            .is_some();
+        let base_sym = Symbol::intern(base);
+        self.dispatch.fn_family_gens.bump(base_sym);
+        let evicted = self.dispatch.fn_keys_by_base.remove(&base_sym).is_some();
         if self.dispatch.fn_keys_index.complete {
             self.dispatch.fn_keys_index.dirty.insert(base);
         }

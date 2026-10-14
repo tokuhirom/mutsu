@@ -29,16 +29,21 @@ use constructor_positional::single_positional_class;
 mod convert;
 mod core_term_names;
 mod core_type_names;
+mod decl_compound_assign;
 mod decl_tail;
 mod decl_traits;
+mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod dynamic_method;
+mod enum_term;
 mod feed_op;
 mod fields;
 mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
+mod hyper_prefix;
+mod immediate_call;
 mod infix_func;
 mod inherited_fields;
 mod keyed_hash;
@@ -88,6 +93,7 @@ mod type_lower;
 mod use_stmt;
 mod var_decl_constructor;
 mod var_does;
+mod var_will;
 mod word_quote;
 
 pub use formatter::formatter_ast;
@@ -274,6 +280,8 @@ pub enum RakuAstClass {
     CallQuotedMethod,
     // Phase 2 slice 26: hyper method calls.
     MetaPostfixHyper,
+    // Hyper prefix operators (`-« @a`).
+    MetaPrefixHyper,
     // Hyper infix operators (`@a >>+<< @b`).
     MetaInfixHyper,
     // Phase 2 slice 3: blocks & pointy blocks.
@@ -422,6 +430,8 @@ pub enum RakuAstClass {
     TraitIs,
     /// `handles TERM` on an attribute.
     TraitHandles,
+    /// `will PHASE { ... }` on a variable declaration.
+    TraitWill,
     TraitDoes,
     /// `class A hides B`.
     TraitHides,
@@ -633,6 +643,7 @@ impl RakuAstClass {
             CallMethod => "RakuAST::Call::Method",
             CallQuotedMethod => "RakuAST::Call::QuotedMethod",
             MetaPostfixHyper => "RakuAST::MetaPostfix::Hyper",
+            MetaPrefixHyper => "RakuAST::MetaPrefix::Hyper",
             MetaInfixHyper => "RakuAST::MetaInfix::Hyper",
             Block => "RakuAST::Block",
             Blockoid => "RakuAST::Blockoid",
@@ -730,6 +741,7 @@ impl RakuAstClass {
             StatementLoopRepeatUntil => "RakuAST::Statement::Loop::RepeatUntil",
             TraitIs => "RakuAST::Trait::Is",
             TraitHandles => "RakuAST::Trait::Handles",
+            TraitWill => "RakuAST::Trait::Will",
             TraitDoes => "RakuAST::Trait::Does",
             TraitHides => "RakuAST::Trait::Hides",
             StatementTrusts => "RakuAST::Statement::Trusts",
@@ -1345,6 +1357,8 @@ pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::StatementModifier::Loop"
             | "RakuAST::StatementPrefix"
             | "RakuAST::MetaPostfix"
+            | "RakuAST::MetaPrefix"
+            | "RakuAST::Prefixish"
             | "RakuAST::MetaInfix"
             | "RakuAST::Regex"
             | "RakuAST::Regex::Atom"
@@ -1511,6 +1525,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallMethod,
     RakuAstClass::CallQuotedMethod,
     RakuAstClass::MetaPostfixHyper,
+    RakuAstClass::MetaPrefixHyper,
     RakuAstClass::MetaInfixHyper,
     RakuAstClass::Block,
     RakuAstClass::Blockoid,
@@ -1602,6 +1617,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementLoopRepeatUntil,
     RakuAstClass::TraitIs,
     RakuAstClass::TraitHandles,
+    RakuAstClass::TraitWill,
     RakuAstClass::TraitDoes,
     RakuAstClass::TraitHides,
     RakuAstClass::StatementTrusts,
@@ -3413,6 +3429,22 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         && let Some(sigil) = s.chars().next()
     {
         return Some(Value::str(sigil.to_string()));
+    }
+    // `VarDeclaration::Simple.name`: the full spelling, sigil, twigil and
+    // `desigilname` together (`$x`, `$*x`, `@!a`), as rakudo derives it.
+    if method == "name"
+        && node.class == RakuAstClass::VarDeclarationSimple
+        && let Ok(sigil) = lower::leaf_str(node, "sigil")
+        && let Some(RakuAstFieldValue::Node(desigil)) = node
+            .fields
+            .iter()
+            .find(|f| f.name == Some("desigilname"))
+            .map(|f| &f.value)
+        && let Some(desigil) = lower::rakuast_node_of(desigil)
+        && let Some(name_parts::NameShape::Identifier(desigil)) = name_parts::name_shape(desigil)
+    {
+        let twigil = lower::leaf_str(node, "twigil").unwrap_or_default();
+        return Some(Value::str(format!("{sigil}{twigil}{desigil}")));
     }
     // `Name.from-identifier("a")` stores one identifier leaf; `.parts` answers
     // the one `Name::Part::Simple` it denotes (rakudo does not split on `::`).

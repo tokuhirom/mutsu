@@ -51,6 +51,10 @@ pub(crate) struct ModuleLoadFacts {
     /// Where the source's Pod blocks are (ADR-12026 §2.4), so `$=pod` is
     /// rebuilt from those ranges; none when they cannot be isolated.
     pub(crate) pod_ranges: Option<super::io_pod_blocks::PodRanges>,
+    /// The `my enum`s below the top level, registered ahead of the body
+    /// (#13010).
+    #[serde(default)]
+    pub(crate) routine_enums: Vec<super::routine_scoped_enums::RoutineEnum>,
 }
 
 impl ModuleLoadFacts {
@@ -82,6 +86,7 @@ impl ModuleLoadFacts {
             exported_type_names,
             our_routine_names: Interpreter::module_our_routine_names(stmts),
             pod_ranges: Interpreter::pod_ranges_of(pod_source),
+            routine_enums: super::routine_scoped_enums::RoutineEnumCollector::collect(stmts),
         }
     }
 }

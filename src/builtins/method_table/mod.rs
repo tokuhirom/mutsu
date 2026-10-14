@@ -46,9 +46,11 @@
 //! (`dispatch::debug_assert_matches_full_path`); CI's `debug-tap` job runs that
 //! over the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
+pub(crate) mod allomorph;
 mod collections;
 mod ctors_mop;
 mod dispatch;
+pub(crate) mod index_arg;
 mod instances;
 mod io_concurrency;
 mod mutating;
@@ -57,15 +59,15 @@ mod row;
 pub(crate) mod scalars;
 mod table;
 mod table_const;
+mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::{
     any_collection, any_list_hash as collection_any_list_hash, any_misc as collection_any_misc,
-    capture, clone as collection_clone, lazy, list, list_aggregate, list_transform, map, pair,
-    positional, quanthash, range, render as collection_render,
-    render_names as collection_render_names, rotate as collection_rotate, seq, subscript,
-    terminals,
+    capture, clone as collection_clone, lazy, list, list_aggregate, map, pair, positional,
+    quanthash, range, render as collection_render, render_names as collection_render_names,
+    rotate as collection_rotate, seq, subscript, terminals,
 };
 pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_of;
 #[cfg(test)]
@@ -76,10 +78,12 @@ pub(crate) use instances::{
     temporal_shift,
 };
 pub(crate) use scalars::{
-    blob, blob_read, coerce, complex_math, cool_real, math, numeric_base, numeric_coerce, numify,
-    real, real_misc, str, str_args, str_numeric, str_search, truth, uni, unicode,
+    blob, coerce, complex_math, math, numeric_base, numeric_coerce, numify, real, real_misc, str,
+    str_args, str_numeric, str_search, truth, uni, unicode,
 };
 
+pub(crate) use collections::accepts_open::accepts_by_smartmatch;
+pub(crate) use collections::any_subscript::at_pos as any_subscript_at_pos;
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 pub(crate) use dispatch::{
     admits, answer, answer_as, answer_shapeless, invoke, invoke_base, invoke_in, invoke_mut,
@@ -98,6 +102,7 @@ pub(crate) use table::names_a_mut_row;
 pub(crate) use table::{
     Receiver, RowId, base_row, names_a_row, owner_row, resolve, row, shape_has_row,
 };
+pub(crate) use unadmitted::invoke_unadmitted;
 
 #[cfg(test)]
 mod tests;

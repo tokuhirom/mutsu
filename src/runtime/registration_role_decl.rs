@@ -226,7 +226,10 @@ impl Interpreter {
             // role's module).
             || !role_def.deferred_body.is_empty();
         if has_expr_default {
-            let captured_env = std::sync::Arc::new(self.env.flatten());
+            // Held as a lookup tier, not a map: a default resolves a name the
+            // composing scope lacks through it, with nothing inserted into the
+            // live env per construction (#13018).
+            let captured_env = self.env.flattened().capture_view();
             let captured_unit = self.current_unit;
             // One shared copy for every attribute: a `ClassAttributeDef` is
             // cloned per consuming class and per construction plan, and a

@@ -231,6 +231,21 @@ impl Interpreter {
         } else {
             target
         };
+        // `$attr.get_value($obj) = $v`: `Attribute.get_value` hands back the
+        // attribute's container, so assigning to it stores into the object
+        // (`self.^get_attribute_for_usage('$!lazy').get_value(self) = $v`,
+        // AttrX::Mooish).
+        if method == "get_value"
+            && method_args.len() == 1
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Attribute")
+        {
+            self.call_method_with_values(
+                target,
+                "set_value",
+                vec![method_args[0].clone(), value.clone()],
+            )?;
+            return Ok(value);
+        }
         // IO::Path read-only accessors (`.SPEC`, `.CWD`) are not `rw`: assigning
         // to them raises X::Assignment::RO referencing the current value, matching
         // Raku (`'.'.IO.SPEC = ...` / `'.'.IO.CWD = ...`).
@@ -447,8 +462,9 @@ impl Interpreter {
             if let Some(cn) = class_name_for_lookup
                 && self.has_class_level_attr(&cn, method)
             {
-                self.set_class_level_attr(&cn, method, value.clone());
-                return Ok(value);
+                let stored = self.class_scoped_attr_store_value(&cn, method, value)?;
+                self.set_class_level_attr(&cn, method, stored.clone());
+                return Ok(stored);
             }
         }
         // Failure.handled = value: set the handled state via global registry

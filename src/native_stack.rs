@@ -87,6 +87,12 @@ pub(crate) fn headroom_exhausted() -> bool {
     floor != 0 && approx_stack_pointer() < floor
 }
 
+/// Whether this thread has a native stack floor to enforce.
+#[inline]
+pub(crate) fn stack_floor_armed() -> bool {
+    STACK_FLOOR.with(|c| c.get() != 0)
+}
+
 /// The message a user sees. rakudo has no dedicated `X::Recursion` to match
 /// (it grows its call stack on the heap and fails with an out-of-memory
 /// exception instead), so this rides `X::AdHoc`, which every generic handler

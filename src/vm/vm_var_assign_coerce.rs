@@ -340,6 +340,12 @@ impl Interpreter {
             ValueView::Hash(_) if value.hash_is_itemized() => value.with_hash_itemized(false),
             _ => value,
         };
+        // `%c = %x` walks the source's entries below (the cell probe, the
+        // object-key rebuild) and keeps the node as the copy. Another thread
+        // sharing `%x` can rehash it meanwhile (#13079), so take the entries
+        // under its stripe once, as ADR-0068 §16's snapshot reads do; the copy
+        // then belongs to this assignment alone.
+        let value = crate::value::container_read::shared_snapshot(&value).unwrap_or(value);
         // ADR-0042 slice 1: read the target hash's own embedded metadata via
         // `element_constraint_for` instead of the scope-blind name-keyed map.
         // Through the capture cell: a `%h is BagHash` an escaping closure
@@ -709,6 +715,9 @@ impl Interpreter {
             ValueView::Num(n) => Ok(MixWeight::Num(n)),
             ValueView::Rat(n, d) if d != 0 => Ok(MixWeight::Rat(n, d)),
             ValueView::Bool(flag) => Ok(MixWeight::Int(i64::from(flag))),
+            ValueView::BigInt(_) | ValueView::FatRat(..) | ValueView::BigRat(..) => {
+                Ok(MixWeight::from_value(value).unwrap_or_else(|| MixWeight::Num(value.to_f64())))
+            }
             ValueView::Str(s) => {
                 // Try to parse as numeric; throw X::Str::Numeric on failure
                 if let Ok(n) = s.parse::<f64>() {

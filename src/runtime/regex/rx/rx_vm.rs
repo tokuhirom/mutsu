@@ -317,16 +317,19 @@ impl Interpreter {
                         None => false,
                     },
                     // Cost: O(1) for every assertion Slice A compiles.
+                    // A markless program decides it on the mark-stripped view
+                    // (`MarklessView`): O(1) more for the published target,
+                    // O(n) to strip any other subject.
                     RxOp::Assert(i) => {
-                        let hit = self
-                            .regex_match_atom_in_pkg(
-                                &program.atoms[i as usize],
-                                chars,
-                                pos,
-                                pkg,
-                                program.atom_ic[i as usize],
-                            )
-                            .is_some();
+                        let atom = &program.atoms[i as usize];
+                        let ic = program.atom_ic[i as usize];
+                        let hit = if program.markless {
+                            let view = super::rx_ltm::MarklessView::of(chars);
+                            self.regex_match_atom_in_pkg(atom, view.chars(), view.at(pos), pkg, ic)
+                                .is_some()
+                        } else {
+                            self.regex_match_atom_in_pkg(atom, chars, pos, pkg, ic).is_some()
+                        };
                         pc += 1;
                         hit
                     }
@@ -514,7 +517,7 @@ impl Interpreter {
                         let name: &crate::runtime::regex_types::NamedAtom = called.as_deref().unwrap_or(declared);
                         let ic = program.atom_ic[atom as usize];
                         // `None`: an argument failed to evaluate, so no match.
-                        match self.rx_call_resolve(name, pkg, ic, levels.top().caps(), chars) {
+                        match self.rx_call_resolve(name, pkg, levels.top().caps(), chars) {
                             None => false,
                             Some(ResolvedCall {
                                 verdict,

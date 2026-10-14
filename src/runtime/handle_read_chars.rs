@@ -6,7 +6,7 @@ impl Interpreter {
         let mut first = [0u8; 1];
         let n = reader
             .read(&mut first)
-            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+            .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
         if n == 0 {
             return Ok(None);
         }
@@ -26,7 +26,7 @@ impl Interpreter {
             while total < rest.len() {
                 let read = reader
                     .read(&mut rest[total..])
-                    .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                    .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                 if read == 0 {
                     break;
                 }
@@ -45,7 +45,7 @@ impl Interpreter {
     fn read_utf8_c8_char<R: Read + std::io::Seek>(
         reader: &mut R,
     ) -> Result<Option<String>, RuntimeError> {
-        let io_err = |err| RuntimeError::new(format!("Failed to read: {}", err));
+        let io_err = |err| super::exit_aware_read::read_error(err, "Failed to read");
         let mut first = [0u8; 1];
         let n = reader.read(&mut first).map_err(io_err)?;
         if n == 0 {
@@ -94,7 +94,7 @@ impl Interpreter {
         let mut buf = [0u8; 2];
         let n = reader
             .read(&mut buf)
-            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+            .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
         if n == 0 {
             return Ok(None);
         }
@@ -113,7 +113,7 @@ impl Interpreter {
             let mut buf2 = [0u8; 2];
             let n2 = reader
                 .read(&mut buf2)
-                .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
             if n2 < 2 {
                 return Ok(Some("\u{FFFD}".to_string()));
             }
@@ -177,7 +177,7 @@ impl Interpreter {
                     Err(RuntimeError::new("Handle not readable"))
                 }
                 IoHandleTarget::Stdin => {
-                    let mut stdin = std::io::stdin().lock();
+                    let mut stdin = super::exit_aware_read::StdinReader::lock();
                     if let Some(limit) = count {
                         if limit == 0 {
                             return Ok(String::new());
@@ -195,7 +195,7 @@ impl Interpreter {
                         let mut bytes = Vec::new();
                         stdin
                             .read_to_end(&mut bytes)
-                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                            .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                         // Reading to the end consumed the whole stream.
                         state.stream_hit_eof = true;
                         crate::builtins::decode_utf8_handle_text(&bytes)
@@ -212,7 +212,7 @@ impl Interpreter {
                         if utf16_auto && state.utf16_detected_be.is_none() {
                             let mut bom_buf = [0u8; 2];
                             let n = file.read(&mut bom_buf).map_err(|err| {
-                                RuntimeError::new(format!("Failed to read: {}", err))
+                                super::exit_aware_read::read_error(err, "Failed to read")
                             })?;
                             if n >= 2 {
                                 if bom_buf[0] == 0xFE && bom_buf[1] == 0xFF {
@@ -246,7 +246,7 @@ impl Interpreter {
                         } else {
                             let mut bytes = Vec::new();
                             file.read_to_end(&mut bytes).map_err(|err| {
-                                RuntimeError::new(format!("Failed to read: {}", err))
+                                super::exit_aware_read::read_error(err, "Failed to read")
                             })?;
                             // Decode all bytes using the utf16 decoder
                             let units: Vec<u16> = bytes
@@ -288,12 +288,12 @@ impl Interpreter {
                     } else if encoding == "utf8-c8" {
                         let mut bytes = Vec::new();
                         file.read_to_end(&mut bytes)
-                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                            .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                         Ok(crate::runtime::utf8_c8::decode_utf8_c8(&bytes))
                     } else {
                         let mut bytes = Vec::new();
                         file.read_to_end(&mut bytes)
-                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                            .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                         crate::builtins::decode_utf8_handle_text(&bytes)
                     }
                 }
@@ -317,7 +317,7 @@ impl Interpreter {
                     } else {
                         let mut bytes = Vec::new();
                         sock.read_to_end(&mut bytes)
-                            .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                            .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
                         crate::builtins::decode_utf8_handle_text(&bytes)
                     }
                 }

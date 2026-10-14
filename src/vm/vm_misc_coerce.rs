@@ -183,7 +183,7 @@ impl Interpreter {
         // probe, each element's `.Str`), some running user code, so once a
         // second mutator thread exists it renders a snapshot taken under the
         // stripe, as `.Str` does (ADR-0068 §16, #13016).
-        let val = crate::value::container_lock::shared_snapshot(&val).unwrap_or(val);
+        let val = crate::value::container_read::shared_snapshot(&val).unwrap_or(val);
         // A user `^find_method` answers `.Stringy` (`find_method_intercept`).
         if let Some(r) = self.user_find_method_stringify(&val, "Stringy") {
             let caller_code = self.current_code;
@@ -243,7 +243,8 @@ impl Interpreter {
         }
         // `~/a/` warns and yields the empty string, like every other Str
         // coercion of a Regex -- see `regex_str_coercion`.
-        if let Some(coerced) = self.regex_str_coercion(&val) {
+        // A `Sub`/`Method` code object warns the same way (`code_str`).
+        if let Some(coerced) = self.code_str(&val) {
             let caller_code = self.current_code;
             let resumed = coerced?;
             self.reconcile_caller_after_internal_dispatch(caller_code);

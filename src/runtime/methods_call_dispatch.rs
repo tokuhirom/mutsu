@@ -101,29 +101,6 @@ impl Interpreter {
     ///
     /// Named-ness is a call-site property (ADR-0021): only the `Pair` flavour is a
     /// named argument, so a positional `Pair` (`%h.push((a => 1))`) is untouched.
-    /// Whether `method` structurally mutates its container receiver, i.e.
-    /// whether two threads running it on one container race on the backing
-    /// `Vec`/`HashMap`. Deliberately a small allowlist of the mutators, not a
-    /// blanket guard: every other method is a read and pays only the relaxed
-    /// load in the caller's gate.
-    fn method_mutates_container(method: &str) -> bool {
-        matches!(
-            method,
-            "push"
-                | "append"
-                | "prepend"
-                | "unshift"
-                | "pop"
-                | "shift"
-                | "splice"
-                | "STORE"
-                | "ASSIGN-POS"
-                | "ASSIGN-KEY"
-                | "DELETE-POS"
-                | "DELETE-KEY"
-        )
-    }
-
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -143,8 +120,9 @@ impl Interpreter {
         &mut self,
         target: Value,
         method: &str,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        self.coerce_assoc_key_arg(&target, method, &mut args)?;
         // Tagging the whole call, body included, is deliberate and costs
         // nothing in accuracy: a tick that fires while the method's *bytecode*
         // runs is consumed by that bytecode's own poll long before this guard
@@ -203,6 +181,16 @@ impl Interpreter {
         // (#7773). See `any_cool_method_gate` for the derivation of the set.
         if let Some(err) = super::any_cool_method_gate::cool_method_not_found(&target, method) {
             return Err(err);
+        }
+        // A buffer is not a `Cool` either (#13313): the by-name text
+        // dispatchers would stringify it (`Buf.new(1).contains(1)`).
+        if let Some(type_name) =
+            super::any_cool_method_gate::buffer_refuses_cool_method(&target, method)
+            && !self.buffer_class_answers(&target, method)
+        {
+            return Err(super::methods_signature_errors::make_method_not_found_error(
+                method, &type_name, false,
+            ));
         }
         // The `Cool`-subtype sibling: `Str.comb` / `Int.uc` refuse the
         // undefined invocant, `Str.uc` answers `""` with a warning (#9772).
@@ -286,8 +274,8 @@ impl Interpreter {
         // the same attribute container share. A no-op (one relaxed load) until
         // a VM mutator thread is spawned.
         let _mutating_guard = if crate::value::container_lock::multi_mutator_threads_live()
-            && (Self::method_mutates_container(method)
-                || crate::value::container_lock::is_leaf_structure_read(method))
+            && (crate::value::container_read::is_container_mutator(method)
+                || crate::value::container_read::is_leaf_structure_read(method))
         {
             crate::value::container_lock::ContainerStructGuard::acquire_for(None, &target)
         } else {
@@ -296,7 +284,7 @@ impl Interpreter {
         // #12456: a method that runs user code over the elements cannot hold the
         // stripe, so it runs on a snapshot taken under it (ADR-0068 §16).
         let target =
-            crate::value::container_lock::snapshot_read_receiver(method, &target).unwrap_or(target);
+            crate::value::container_read::snapshot_read_receiver(method, &target).unwrap_or(target);
         if !args.iter().any(|a| a.is_string_pair_value()) {
             return self.call_method_with_values_inner(target, method, args, true);
         }
@@ -674,29 +662,6 @@ impl Interpreter {
             let matched = self.smart_match(&args[0], &target);
             return Ok(Value::truth(matched));
         }
-        // `Mu.ACCEPTS`: every value can be smart-matched against, and `$x.ACCEPTS($y)` is
-        // just `$y ~~ $x`. The builtins carry their own ACCEPTS for the container types
-        // (Range, Set, Bag, Pair, ...) and a user class may define one, so this only backs
-        // the plain scalars, which otherwise threw X::Method::NotFound.
-        if method == "ACCEPTS"
-            && args.len() == 1
-            && (matches!(
-                target.view(),
-                ValueView::Int(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(..)
-                    | ValueView::Complex(..)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-            )
-            // A Blob/Buf too: `Blob.ACCEPTS` compares element-wise (ed25519's
-            // `method ACCEPTS { self.blob.ACCEPTS(.blob) }`).
-            || matches!(target.view(), ValueView::Instance { attributes, .. }
-                if crate::value::value_buf::has_buf_elems(&attributes)))
-        {
-            let matched = self.smart_match(&args[0], &target);
-            return Ok(Value::truth(matched));
-        }
         // `Int.ACCEPTS(5)` / `(Int:D).ACCEPTS(5)` — a TYPE OBJECT's `.ACCEPTS`
         // is the type check `$y ~~ $x`, smiley included. The smartmatch operator
         // already implements it; only the explicit method spelling threw
@@ -823,12 +788,12 @@ impl Interpreter {
             return self.call_method_with_values(Value::array(items), method, args);
         }
         // A `Match` answers `Any`'s list methods from its positional captures
-        // (see `is_capture_list_method`), unless the grammar defines the method.
-        if crate::value::match_view::is_capture_list_method(method)
-            && target.is_match_instance()
-            && !self.has_user_method(target.match_dispatch_class(), method)
-        {
-            let list = target.match_positional_list(method == "Array");
+        // (`Interpreter::match_list_receiver`), unless the grammar defines the
+        // method.
+        if let Some(list) = self.match_list_receiver(&target, method) {
+            if args.is_empty() && crate::value::match_view::match_list_answers_itself(method) {
+                return Ok(list);
+            }
             return self.call_method_with_values(list, method, args);
         }
         // A buffer-backed positional (upstream NativeCall's `CArray[T]`, a
@@ -2086,6 +2051,14 @@ impl Interpreter {
         {
             return self.native_io_special(&AttrMap::new(), "new", args);
         }
+        // A row that binds its own arguments (`Num.Rat($epsilon)` with an
+        // allomorph or a `Duration` as the epsilon): the table's own entry
+        // declined the argument, and no cascade arm answered it.
+        if let Some(result) =
+            crate::builtins::method_table::invoke_unadmitted(self, &target, method, &args)
+        {
+            return result;
+        }
         // `IO::Spec::*` class methods are rows of the method table. The table's
         // own entry declined this call (a named argument no row declares, an
         // argument it does not admit, a call with many arguments), so the row
@@ -2201,8 +2174,9 @@ impl Interpreter {
                 }
             }
         }
-        // Buf/Blob .chars throws X::Buf::AsStr
-        if (method == "chars" || method == "Str" || method == "chop" || method == "chomp")
+        // Buf/Blob .chars throws X::Buf::AsStr (`.Str` is the `Blob` row's,
+        // which decodes a `utf8`).
+        if (method == "chars" || method == "chop" || method == "chomp")
             && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.resolve();
@@ -3157,9 +3131,6 @@ impl Interpreter {
         }
         let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
-        // `$buf.subbuf(*-2)`: see `resolve_subbuf_callable_args`.
-        let subbuf_args = self.resolve_subbuf_callable_args(&target, method, cascade_args);
-        let cascade_args: &[Value] = subbuf_args.as_deref().unwrap_or(cascade_args);
         let inherited_adhoc = (!bypass_native_fastpath)
             .then(|| self.inherited_adhoc_method(&target, method, cascade_args))
             .flatten();
@@ -3209,7 +3180,15 @@ impl Interpreter {
                             )
                         },
                     ),
-                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
+                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b)
+                        .or_else(|| {
+                            crate::builtins::method_table::answer_shapeless(
+                                Some(self),
+                                &target,
+                                method_sym,
+                                cascade_args,
+                            )
+                        }),
                     _ => None,
                 }
             }
@@ -3397,40 +3376,6 @@ impl Interpreter {
             let str_match = target_str == arg_str;
 
             return Ok(Value::truth(numeric_match && str_match));
-        }
-
-        // Pair.ACCEPTS for Package/Instance: call method named by key, compare result
-        if method == "ACCEPTS"
-            && matches!(
-                target.view(),
-                ValueView::Pair(..) | ValueView::ValuePair(..)
-            )
-            && args.len() == 1
-            && matches!(
-                args[0].view(),
-                ValueView::Instance { .. } | ValueView::Package(_)
-            )
-        {
-            let (pair_key, pair_value) = match target.view() {
-                ValueView::Pair(k, v) => (k.to_string(), v.clone()),
-                ValueView::ValuePair(k, v) => (k.to_string_value(), v.clone()),
-                _ => unreachable!(),
-            };
-            let method_result = self.call_method_with_values(args[0].clone(), &pair_key, vec![])?;
-            // Use smartmatch semantics: pair_value.ACCEPTS(method_result)
-            let result = match pair_value.view() {
-                // Bool pair value: True matches any truthy result, False matches falsy
-                ValueView::Bool(expected) => {
-                    if expected {
-                        method_result.truthy()
-                    } else {
-                        !method_result.truthy()
-                    }
-                }
-                // Otherwise: use equality
-                _ => method_result == pair_value,
-            };
-            return Ok(Value::truth(result));
         }
 
         if let Some(result) = native_result {
@@ -4052,6 +3997,7 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => {
                     let class_name = class_name.resolve();
                     self.class_has_user_method(&class_name, method)
+                        || self.class_scoped_accessor_shadows(&class_name, method, &args)
                         // A Cool-only builtin (`.subst`, `.trans`, ...) is not
                         // resolvable on a plain Any-derived instance in raku, so
                         // a class declaring `handles *` / `FALLBACK` must be
@@ -4079,7 +4025,15 @@ impl Interpreter {
                     // receiver-blind sites are the correct granularity; this match arm's older
                     // `handles */FALLBACK` term above is unaffected.
                 }
-                ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
+                ValueView::Package(name) => {
+                    let name = name.resolve();
+                    self.class_has_user_method(&name, method)
+                        // A class-scoped `my $.elems` accessor shadows the
+                        // `Any` method of that name (see
+                        // `should_bypass_native_fastpath`); the by-name arms
+                        // would answer it, recursing on the type object.
+                        || self.class_scoped_accessor_shadows(&name, method, &args)
+                }
                 // `Foo.new but role {...}` keeps `Foo`'s own `$.elems` (#10232).
                 ValueView::Mixin(..) => self.mixin_wrapped_instance_has_method(&target, method),
                 _ => false,

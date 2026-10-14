@@ -284,10 +284,11 @@ fn a_new_shape_reaches_only_its_own_rows() {
         if shape.inherits() {
             continue;
         }
-        // A closed shape may have an `elems` row of its own (`Set.elems`),
+        // A closed shape may have an `elems` row of its own (`Set.elems`)
+        // or of an audited ancestor (`Match` reaches `Capture.elems`, §9.95),
         // never `Any`'s.
         assert!(
-            lookup(shape, elems, 0).is_none_or(|row| row.owner == shape.type_name()),
+            lookup(shape, elems, 0).is_none_or(|row| row.owner != "Any"),
             "{shape:?} is closed but reached Any.elems"
         );
     }

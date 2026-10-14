@@ -13,7 +13,7 @@ use std::sync::Arc;
 use super::super::regex_lr_state::lr_name_active;
 use super::super::regex_token_candidates::TokenCandidates;
 use super::RxProgram;
-use super::rx_entry::program_for;
+use super::rx_entry::{markless_program_for, program_for};
 use super::rx_scope::CallWindow;
 use crate::runtime::Interpreter;
 use crate::runtime::regex::regex_dynparams::{
@@ -27,11 +27,11 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 use crate::vm::vm_stats_regex_vm::record_regex_eager;
 
-/// (rule, caller package, caller `:i`) → (token generation, the call's target).
-type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallTarget)>;
+/// (rule, caller package) → (token generation, the call's target).
+type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol), (u64, CallTarget)>;
 
 thread_local! {
-    /// The verdict for a call, per (rule, caller package, caller `:i`),
+    /// The verdict for a call, per (rule, caller package),
     /// stamped with the token generation it was reached under — the inline
     /// cache of ADR-0135 D3. Kept only for a rule whose candidates the
     /// argument-less memo holds (a fully static one); anything else is
@@ -57,12 +57,19 @@ pub(super) enum CallTarget {
     /// One plain rule: its program and the package its body matches in (a rule
     /// is matched in the package that defines it).
     Plain(Arc<RxProgram>, Symbol),
-    /// A single plain `:m` rule: the program of its mark-stripped pattern, the
-    /// package, and the candidates. Over a subject that has no marks `:m`
-    /// changes nothing, so the call is a [`CallTarget::Plain`] frame
-    /// (`rx_call_resolve` turns it into one); otherwise it is evaluated
-    /// eagerly over the stripped subject, as any `:m` callee is.
-    PlainMarkless(Arc<RxProgram>, Symbol, Arc<TokenCandidates>),
+    /// A single plain `:m` rule: the program of its mark-stripped pattern, its
+    /// markless compile when the body allows one, the package, and the
+    /// candidates. Over a subject that has no marks `:m` changes nothing, so
+    /// the call is a [`CallTarget::Plain`] frame of the first program; over
+    /// one that has marks it is a frame of the markless program, whose atoms
+    /// compare each grapheme's base (`rx_call_resolve` settles which); with
+    /// neither, it is evaluated eagerly over the stripped subject.
+    PlainMarkless(
+        Arc<RxProgram>,
+        Option<Arc<RxProgram>>,
+        Symbol,
+        Arc<TokenCandidates>,
+    ),
     /// A proto: the `:sym<…>` candidates, ranked at the call by the walk's own
     /// LTM measurement (ADR-0046), of which the first that matches wins.
     Proto(Arc<TokenCandidates>),
@@ -129,7 +136,6 @@ impl Interpreter {
         &mut self,
         name: &NamedAtom,
         pkg: Symbol,
-        ic: bool,
         caps: &crate::runtime::regex_types::RegexCaptures,
         chars: &[char],
     ) -> Option<ResolvedCall> {
@@ -141,7 +147,7 @@ impl Interpreter {
         };
         let window = self.rx_call_window(name, pkg, args.as_deref().unwrap_or(&[]));
         let verdict = match &args {
-            None => self.rx_call_target_checked(name, pkg, ic),
+            None => self.rx_call_target_checked(name, pkg),
             Some(args) => {
                 let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, args);
                 // No candidate for these arguments: a grammar method runs with
@@ -155,14 +161,16 @@ impl Interpreter {
                         CallTarget::Single
                     }
                 } else {
-                    self.call_target_from_candidates(name, pkg, ic, candidates)
+                    self.call_target_from_candidates(name, pkg, candidates)
                 }
             }
         };
         let verdict = match verdict {
-            CallTarget::PlainMarkless(program, sub_pkg, candidates) => {
+            CallTarget::PlainMarkless(program, markless, sub_pkg, candidates) => {
                 if subject_has_no_marks(chars) {
                     CallTarget::Plain(program, sub_pkg)
+                } else if let Some(markless) = markless {
+                    CallTarget::Plain(markless, sub_pkg)
                 } else {
                     CallTarget::Eager(candidates, "ignoremark-callee")
                 }
@@ -299,21 +307,20 @@ impl Interpreter {
         })
     }
 
-    /// The shape `<name>` called from `pkg` runs as. `ic` is the caller's
-    /// `:i`, which is scoped over a proto candidate's body.
+    /// The shape `<name>` called from `pkg` runs as.
     // Cost: O(1) expected: one memoized candidate probe, plus the memoized
     // call-graph verdicts for the rule, per call; O(c) more for a proto of c
     // candidates (a program probe each).
-    fn rx_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
+    fn rx_call_target(&mut self, name: &NamedAtom, pkg: Symbol) -> CallTarget {
         let spec = name.spec();
         // `<&r>` may name a lexical Regex, a value of this call's scope: never
         // cached.
         if Self::may_name_lexical_regex(spec) {
-            return self.resolve_call_target(name, pkg, ic);
+            return self.resolve_call_target(name, pkg);
         }
         let generation =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        let key = (spec.lookup_sym, pkg, ic);
+        let key = (spec.lookup_sym, pkg);
         if let Some(hit) = TARGETS.with(|c| {
             c.borrow()
                 .get(&key)
@@ -322,7 +329,7 @@ impl Interpreter {
         }) {
             return hit;
         }
-        let target = self.resolve_call_target(name, pkg, ic);
+        let target = self.resolve_call_target(name, pkg);
         if Self::parsed_candidates_are_memoized(spec.lookup_sym, pkg) {
             TARGETS.with(|c| {
                 c.borrow_mut().insert(key, (generation, target.clone()));
@@ -335,8 +342,8 @@ impl Interpreter {
     /// change, and so is never cached: a call with no rule of its name that
     /// names a plain grammar METHOD calls the method.
     // Cost: O(1) expected.
-    fn rx_call_target_checked(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
-        let target = self.rx_call_target(name, pkg, ic);
+    fn rx_call_target_checked(&mut self, name: &NamedAtom, pkg: Symbol) -> CallTarget {
+        let target = self.rx_call_target(name, pkg);
         if matches!(target, CallTarget::Single) && self.subrule_names_user_method(name.spec(), pkg)
         {
             return CallTarget::Method;
@@ -346,13 +353,13 @@ impl Interpreter {
 
     /// [`Self::rx_call_target`]'s cache miss: resolve the rule's candidates and
     /// decide the shape of the call.
-    fn resolve_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
+    fn resolve_call_target(&mut self, name: &NamedAtom, pkg: Symbol) -> CallTarget {
         let spec = name.spec();
         let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
         if raw_empty {
             return CallTarget::Single;
         }
-        self.call_target_from_candidates(name, pkg, ic, candidates)
+        self.call_target_from_candidates(name, pkg, candidates)
     }
 
     /// The shape of a call to the resolved `candidates`: a plain rule, a proto,
@@ -361,7 +368,6 @@ impl Interpreter {
         &mut self,
         name: &NamedAtom,
         pkg: Symbol,
-        ic: bool,
         candidates: Arc<TokenCandidates>,
     ) -> CallTarget {
         let spec = name.spec();
@@ -377,15 +383,22 @@ impl Interpreter {
         }
         // `:m` remaps positions across the whole result set, which the all-ends
         // entry does over the mark-stripped subject. A single plain rule that
-        // could be a frame is offered one over a mark-free subject
-        // (`PlainMarkless`), because a frame enters its ends lazily.
+        // could be a frame is offered one (`PlainMarkless`), because a frame
+        // enters its ends lazily: over a mark-free subject as compiled, over
+        // one with marks as its markless compile.
         if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
             if let [(parsed, sub_pkg, None)] = &candidates[..]
                 && self.subrule_cannot_left_reenter(spec.lookup_sym, pkg)
                 && let stripped = strip_marks_pattern(parsed)
                 && let Some(program) = program_for(&stripped)
             {
-                return CallTarget::PlainMarkless(Arc::clone(program), *sub_pkg, candidates.clone());
+                let markless = markless_program_for(&stripped).cloned();
+                return CallTarget::PlainMarkless(
+                    Arc::clone(program),
+                    markless,
+                    *sub_pkg,
+                    candidates.clone(),
+                );
             }
             return CallTarget::Eager(candidates, "ignoremark-callee");
         }
@@ -406,13 +419,12 @@ impl Interpreter {
         {
             return CallTarget::Eager(candidates, "wrapped-candidate");
         }
-        // The caller's `:i` is scoped over a proto candidate's body
-        // (`subrule_candidate_ends`), which needs the body compiled under it:
-        // the growing-seed loop evaluates such a call. A plain call does not
-        // inherit `:i` — and neither does rakudo.
-        if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case) {
-            return CallTarget::Eager(candidates, "proto-inherited-i");
-        }
+        // The caller's `:i` is NOT lent to a proto candidate's body, any more
+        // than to a plain callee (rakudo: `token TOP { :i <t> }` over
+        // `token t:sym<a> { a b }` does not match "aB"). Entering the candidates
+        // as lazy frames also keeps the actions of `||` branches the match never
+        // reaches from firing: an eager call computed every end of the body up
+        // front.
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
             return CallTarget::Eager(candidates, "lr-seed");
         }

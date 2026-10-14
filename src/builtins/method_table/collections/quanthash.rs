@@ -71,10 +71,32 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("BagHash", "total", total),
     row!("Mix", "total", total),
     row!("MixHash", "total", total),
+    // `QuantHash`'s numeric coercions, composed into each: the total, as
+    // the type each coercion names.
+    row!("Set", "Numeric", total),
+    row!("SetHash", "Numeric", total),
     row!("Bag", "Numeric", total),
     row!("BagHash", "Numeric", total),
     row!("Mix", "Numeric", total),
     row!("MixHash", "Numeric", total),
+    row!("Set", "Real", total),
+    row!("SetHash", "Real", total),
+    row!("Bag", "Real", total),
+    row!("BagHash", "Real", total),
+    row!("Mix", "Real", total),
+    row!("MixHash", "Real", total),
+    row!("Set", "Int", total_int),
+    row!("SetHash", "Int", total_int),
+    row!("Bag", "Int", total_int),
+    row!("BagHash", "Int", total_int),
+    row!("Mix", "Int", total_int),
+    row!("MixHash", "Int", total_int),
+    row!("Set", "Num", total_num),
+    row!("SetHash", "Num", total_num),
+    row!("Bag", "Num", total_num),
+    row!("BagHash", "Num", total_num),
+    row!("Mix", "Num", total_num),
+    row!("MixHash", "Num", total_num),
     row!("Set", "elems", elems),
     row!("SetHash", "elems", elems),
     row!("Bag", "elems", elems),
@@ -119,7 +141,7 @@ pub(crate) fn values(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
     Some(Ok(Value::seq(match target.view() {
         ValueView::Set(s, _) => s.iter().map(|_| Value::TRUE).collect(),
         ValueView::Bag(b, _) => b.values().map(|v| Value::from_bigint(v.clone())).collect(),
-        ValueView::Mix(m, _) => m.values().map(|v| mix_weight_to_value(*v)).collect(),
+        ValueView::Mix(m, _) => m.values().map(|v| mix_weight_to_value(v.clone())).collect(),
         _ => return None,
     })))
 }
@@ -144,7 +166,7 @@ pub(crate) fn kv(target: &Value, _args: &[Value]) -> Option<Result<Value, Runtim
         ValueView::Mix(m, _) => {
             for (k, v) in m.iter() {
                 kv.push(m.typed_key(k));
-                kv.push(mix_weight_to_value(*v));
+                kv.push(mix_weight_to_value(v.clone()));
             }
         }
         _ => return None,
@@ -166,7 +188,7 @@ pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
             .collect(),
         ValueView::Mix(m, _) => m
             .iter()
-            .map(|(k, v)| quanthash_typed_pair(m.typed_key(k), mix_weight_to_value(*v)))
+            .map(|(k, v)| quanthash_typed_pair(m.typed_key(k), mix_weight_to_value(v.clone())))
             .collect(),
         _ => return None,
     })))
@@ -186,7 +208,7 @@ pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Option<Result<Value,
             .collect(),
         ValueView::Mix(m, _) => m
             .iter()
-            .map(|(k, v)| Value::value_pair(mix_weight_to_value(*v), m.typed_key(k)))
+            .map(|(k, v)| Value::value_pair(mix_weight_to_value(v.clone()), m.typed_key(k)))
             .collect(),
         _ => return None,
     })))
@@ -234,7 +256,7 @@ pub(crate) fn total(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
             // regardless of HashMap iteration order: a weight that only
             // decodes to `Num` still sums non-associatively (e.g.
             // 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
-            let mut vals: Vec<MixWeight> = m.values().copied().collect();
+            let mut vals: Vec<MixWeight> = m.values().cloned().collect();
             vals.sort_by(|a, b| a.to_f64().total_cmp(&b.to_f64()));
             // Sum under the numeric tower and decode the total the same way
             // every other weight read-out does, so `.total` is `Int` for a
@@ -245,6 +267,20 @@ pub(crate) fn total(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
         }
         _ => return None,
     }))
+}
+
+/// `QuantHash.Int`: the total, truncated (`(a => 1.5).Mix.Int` is `1`).
+// Cost: O(e), e = elements (the total).
+pub(crate) fn total_int(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let total = total(target, args)?.ok()?;
+    crate::builtins::method_table::scalars::coerce::int_of(&total).map(Ok)
+}
+
+/// `QuantHash.Num`: the total as a `Num`.
+// Cost: O(e), e = elements (the total).
+pub(crate) fn total_num(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let total = total(target, args)?.ok()?;
+    Some(Ok(Value::num(total.to_f64())))
 }
 
 /// `.elems`: the number of distinct elements.

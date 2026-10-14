@@ -193,9 +193,10 @@ impl Interpreter {
     /// rather than declaration order. `Ok(None)` when none applies.
     ///
     /// With the winner comes its deferral chain: the other captured
-    /// candidates that accept `args`, narrowest first, which `callsame` /
-    /// `nextsame` walk (a block's `multi` called through its binding after the
-    /// block exited, ADR-12529 phase 2).
+    /// candidates, narrowest first, which `callsame` / `nextsame` walk,
+    /// testing each against the arguments only when they reach it (a block's
+    /// `multi` called through its binding after the block exited, ADR-12529
+    /// phase 2).
     // Cost: O(c * a + c log c), c = captured candidates, a = parameters per candidate.
     pub(super) fn pick_captured_multi_candidate(
         &mut self,
@@ -234,16 +235,15 @@ impl Interpreter {
             return Ok(None);
         };
         self.sort_candidates_by_specificity(&mut ordered);
-        let winner_fp = winner.body_fingerprint();
-        let mut remaining = Vec::new();
-        for (_, cand) in ordered {
-            if cand.body_fingerprint() != winner_fp
-                && self.args_match_multi_candidate_in_scope(args, &cand)
-            {
-                remaining.push(cand);
-            }
-        }
-        Ok(Some((code, super::MultiRemaining::from_vec(remaining, None))))
+        // The chain is filtered lazily, as the by-name dispatch's is: the
+        // `callsame`/`nextsame` walk tests each candidate against the
+        // (possibly new) arguments when it reaches it. Testing them here
+        // would run a losing candidate's `where` on every call (#13183).
+        let remaining = ordered.into_iter().map(|(_, cand)| cand).collect();
+        Ok(Some((
+            code,
+            super::MultiRemaining::from_vec(remaining, Some(winner.body_fingerprint())),
+        )))
     }
 
     /// Run `candidate`, the winner [`Self::pick_captured_multi_candidate`]
@@ -261,12 +261,27 @@ impl Interpreter {
         args: Vec<Value>,
         dispatcher: Value,
     ) -> Result<Value, RuntimeError> {
-        let rw_params = match candidate.view() {
-            ValueView::Sub(data) => {
-                super::builtins_dispatch_next::rw_scalar_positional_params(&data.param_defs)
-            }
-            _ => Vec::new(),
+        // #13183: the winner's `where` clauses and subset predicates already
+        // ran against these exact arguments to make it the winner, so its
+        // bind may trust that verdict, as a by-name dispatch does (#8697).
+        // Armed only for an unwrapped candidate (a wrapper would bind first
+        // and consume the flag for its own signature), and only after the
+        // arguments are reified, so no user code runs between arming the
+        // flag and the candidate's bind taking it.
+        let (rw_params, trust_constraints) = match candidate.view() {
+            ValueView::Sub(data) => (
+                super::builtins_dispatch_next::rw_scalar_positional_params(&data.param_defs),
+                !self.dispatch.wrap_chains.contains_key(&data.id)
+                    && data
+                        .param_defs
+                        .iter()
+                        .any(|pd| self.param_runs_constraint_predicate(pd)),
+            ),
+            _ => (Vec::new(), false),
         };
+        if trust_constraints {
+            self.reify_map_grep_seq_args(&args)?;
+        }
         let dispatch_token = self.next_dispatch_token();
         self.dispatch.multi_dispatch_stack.push((
             family.to_string(),
@@ -276,7 +291,11 @@ impl Interpreter {
             dispatch_token,
         ));
         self.push_samewith_callable_context(dispatcher);
+        self.pending_skip_constraint_recheck = trust_constraints;
         let result = self.call_sub_value(candidate, args, false);
+        // Not consumed (the call took a path with no general bind): never let
+        // it reach an unrelated later bind.
+        self.pending_skip_constraint_recheck = false;
         self.pop_samewith_context();
         self.dispatch.multi_dispatch_stack.pop();
         result

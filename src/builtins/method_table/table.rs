@@ -71,19 +71,26 @@ impl Receiver {
         }
     }
 
-    /// [`Self::of`], and also a settled `Seq` (`DispatchShape::Seq`). For the entries
-    /// that run after the Seq consumption step (`reify_or_consume_seq_target`), which
-    /// has already decided what the call does to the body; the call-site lane and the
-    /// by-name mutating entry run before it and use [`Self::of`].
+    /// [`Self::of`], and also a settled `Seq` (`DispatchShape::Seq`) and an
+    /// instance of a user class over a buffer (`class B does Blob[uint8] is
+    /// repr('VMArray')`, [`super::blob::user_buffer_receiver`], §9.107). For the
+    /// entries that run after the Seq consumption step
+    /// (`reify_or_consume_seq_target`), which has already decided what the call
+    /// does to the body, and after the user's own methods were looked up; the
+    /// call-site lane and the by-name mutating entry run before them and use
+    /// [`Self::of`].
     // Cost: O(1), a tag probe; a `Seq` also reads its state, a `Package` looks its
-    // name up.
+    // name up, an instance of a user class asks the buffer-class registry.
     #[inline]
     pub(crate) fn of_settled(target: &Value) -> Option<Receiver> {
         match target.dispatch_shape() {
             Some(shape) => Some(Receiver::instance(shape)),
             None => match target.settled_seq_shape() {
                 Some(shape) => Some(Receiver::instance(shape)),
-                None => target.type_object_shape().map(Receiver::type_object),
+                None => target
+                    .type_object_shape()
+                    .map(Receiver::type_object)
+                    .or_else(|| super::blob::user_buffer_receiver(target)),
             },
         }
     }

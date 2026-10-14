@@ -6,8 +6,9 @@ use crate::token_kind::lookup_unicode_name_string;
 use super::helpers::literal_str;
 pub(crate) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '\'')?;
-    let start = input;
     let mut rest = input;
+    let mut parts = Vec::new();
+    let mut current = String::new();
     loop {
         if rest.is_empty() {
             return Err(PError::expected("closing '"));
@@ -18,11 +19,14 @@ pub(crate) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
             if let Some(next_ch) = after_quote.chars().next()
                 && unicode_normalization::char::is_combining_mark(next_ch)
             {
-                // Skip over the quote + combining mark(s) as content
+                // Keep the quote + combining mark(s) as content.
+                current.push('\'');
+                current.push(next_ch);
                 rest = &after_quote[next_ch.len_utf8()..];
                 // Skip any additional combining marks
                 while let Some(ch) = rest.chars().next() {
                     if unicode_normalization::char::is_combining_mark(ch) {
+                        current.push(ch);
                         rest = &rest[ch.len_utf8()..];
                     } else {
                         break;
@@ -30,16 +34,35 @@ pub(crate) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
                 }
                 continue;
             }
-            let content = &start[..start.len() - rest.len()];
-            return Ok((after_quote, parse_single_quote_qq(content)));
+            return Ok((
+                after_quote,
+                super::interp_content::finalize_interpolation(parts, current),
+            ));
+        }
+        if rest.starts_with("\\q")
+            && let Some(after_q) = crate::parser::primary::quote_adverbs::process_q_escape(
+                rest,
+                &mut parts,
+                &mut current,
+            )
+        {
+            rest = after_q;
+            continue;
         }
         if rest.starts_with('\\') && rest.len() > 1 {
             // Skip backslash + next character (which may be multi-byte)
             let after_backslash = &rest[1..];
             let next_ch = after_backslash.chars().next().unwrap();
+            if next_ch == '\'' || next_ch == '\\' {
+                current.push(next_ch);
+            } else {
+                current.push('\\');
+                current.push(next_ch);
+            }
             rest = &after_backslash[next_ch.len_utf8()..];
         } else {
             let ch = rest.chars().next().unwrap();
+            current.push(ch);
             rest = &rest[ch.len_utf8()..];
         }
     }

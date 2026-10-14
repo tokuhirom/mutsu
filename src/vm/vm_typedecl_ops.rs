@@ -397,7 +397,23 @@ impl Interpreter {
                     let p = if does_parents.contains(&p) {
                         p
                     } else {
-                        self.canonical_class_parent_name(&p)
+                        let mut canonical = self.canonical_class_parent_name(&p);
+                        // `also is Outer::Inner` names a type the body itself
+                        // declares and has not registered yet; the bare tail
+                        // `canonical` falls back to would be an unrelated
+                        // outer `Inner` (possibly package-qualified). Keep the spelling so registration
+                        // resolves it once the body has run.
+                        if body_parents.contains(&p)
+                            && crate::qualified::is_qualified_str(&p)
+                            && canonical != p
+                            && !self.has_type_direct(&p)
+                        {
+                            canonical = p.clone();
+                        }
+                        // `use A::Base; unit class A::Kid is Base`: the parent is
+                        // the compunit's imported short name for `A::Base`.
+                        self.child_package_type_alias(&qualified_name, &canonical)
+                            .unwrap_or(canonical)
                     };
                     (p, pre_args)
                 })
@@ -495,7 +511,7 @@ impl Interpreter {
             // own attributes and methods, as before.
             let declare_how_keyword = custom_traits
                 .iter()
-                .find(|(trait_name, _)| trait_name == "__mutsu_declare_how")
+                .find(|(trait_name, _)| trait_name == crate::parser::DECLARE_HOW_TRAIT)
                 .and_then(|(_, arg)| arg.as_ref())
                 .and_then(crate::opcode::DeclTraitArg::literal)
                 .map(|kw| kw.to_string_value());

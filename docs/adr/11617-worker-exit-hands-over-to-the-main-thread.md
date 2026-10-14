@@ -158,3 +158,15 @@ pending request. The child keeps running, as it would after a Raku `exit`. An `a
 completion is waited for on the `Proc::Async` waiter thread, not on the adopter, so it was never
 part of this gap. The remaining gap is blocking reads: stdin, and the pipe a `run :out` reads
 (#13100).
+
+## Amendment (2026-10-13, #13100): blocking reads give up
+
+A read of standard input, of a `run :out`/`:err` capture pipe, or of a live `Proc`'s output at
+finalization goes through `runtime::exit_aware_read`. On the adopter thread it waits for the fd
+to become readable with `poll(2)` in `POLL` steps before each `read(2)`, and fails once a request
+is pending; the error unwinds as `RuntimeError::exit_handover_pending()`. Standard input is read
+through std's process-wide buffer, so its fd is waited on only while that buffer is empty (a flag
+kept under the stdin lock by `StdinReader`): a line that is already buffered is returned even
+though the fd has nothing more. File and socket reads are not covered; a file never blocks, and
+a socket read is a separate gap if it is ever reported. The remaining gap is a long native
+computation that never polls.

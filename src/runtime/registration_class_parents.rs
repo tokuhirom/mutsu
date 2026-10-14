@@ -169,6 +169,21 @@ impl Interpreter {
             // Strip leading `::` for comparison (e.g., `is ::F` refers to `F`)
             let resolved_parent =
                 crate::qualified::type_capture_name(base_parent).unwrap_or(base_parent);
+            // `also is Outer::Inner` where the body itself declares `Inner`: the
+            // qualified name is not registered until the body has run, so the
+            // header resolution above fell back to an unrelated bare `Inner`
+            // (`resolve_declared_type_name`'s cross-package fallback). Wait for
+            // the body instead and resolve the exact spelling then.
+            if body_parents.contains(parent)
+                && crate::qualified::is_qualified_str(parent)
+                && resolved_parent != parent.as_str()
+                && !self.registry().classes.contains_key(parent.as_str())
+                && !self.registry().roles.contains_key(parent.as_str())
+                && !self.registry().enum_types.contains_key(parent.as_str())
+            {
+                deferred_body_parents.push(parent.clone());
+                continue;
+            }
             // A `does`-role of the class's own short name resolves to the like-named
             // CORE/existing role (a class cannot compose itself), so it is neither a
             // self-inheritance error nor a real inheritance parent.

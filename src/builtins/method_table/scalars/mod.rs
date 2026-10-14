@@ -4,10 +4,11 @@
 //! `Uni`, `Blob`, `Version`. A slice adds a family module here and lists it in
 //! [`FAMILIES`]; no other file names it.
 
-use super::{Handler, MethodRow, RowFlags};
+use super::{Handler, MethodRow, Named, RowFlags};
 
 pub(crate) mod blob;
 pub(crate) mod blob_decode;
+pub(crate) mod blob_pos;
 pub(crate) mod blob_read;
 mod capture_none;
 pub(crate) mod coerce;
@@ -22,6 +23,7 @@ mod num;
 pub(crate) mod numeric_base;
 pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_polymod;
+mod numeric_range;
 pub(crate) mod numify;
 mod rational;
 pub(crate) mod real;
@@ -52,6 +54,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     str_search::STR_SUBSTR_2,
     str_search::COOL_SUBSTR_2,
     stringify::ROWS,
+    stringify::INT_ROWS,
     str_numeric::STR_ROWS,
     str_numeric::COOL_ROWS,
     str_args::COOL_ROWS,
@@ -99,6 +102,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     blob_decode::ROWS,
     blob_read::READ_ROWS,
     blob_read::SUBBUF_ROWS,
+    blob_read::BITS_ROWS,
+    blob_pos::ROWS,
     math::INT_ROWS,
     math::NUM_ROWS,
     math::RAT_ROWS,
@@ -122,7 +127,10 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     numeric_base::INT_ROWS,
     numeric_base::NUM_ROWS,
     numeric_base::RAT_ROWS,
+    numeric_base::FAT_RAT_ROWS,
+    numeric_base::FAT_RAT_REPEATING_ROWS,
     numeric_polymod::ROWS,
+    numeric_range::ROWS,
     complex_real::ROWS,
     unicode::STR_ROWS,
     unicode::COOL_ROWS,

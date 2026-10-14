@@ -641,23 +641,9 @@ fn parse_variable_traits<'a>(
     while let Some(after_will) = keyword("will", rest) {
         let (r, _) = ws1(after_will)?;
         let (r, phaser_name) = ident(r)?;
-        let phaser_kind = match phaser_name.as_str() {
-            "begin" => crate::ast::PhaserKind::Begin,
-            "check" => crate::ast::PhaserKind::Check,
-            "init" => crate::ast::PhaserKind::Init,
-            "end" => crate::ast::PhaserKind::End,
-            "enter" => crate::ast::PhaserKind::Enter,
-            "leave" => crate::ast::PhaserKind::Leave,
-            "keep" => crate::ast::PhaserKind::Keep,
-            "undo" => crate::ast::PhaserKind::Undo,
-            "first" => crate::ast::PhaserKind::First,
-            "next" => crate::ast::PhaserKind::Next,
-            "last" => crate::ast::PhaserKind::Last,
-            "pre" => crate::ast::PhaserKind::Pre,
-            "post" => crate::ast::PhaserKind::Post,
-            "quit" => crate::ast::PhaserKind::Quit,
-            "close" => crate::ast::PhaserKind::Close,
-            _ => {
+        let phaser_kind = match crate::ast::var_will::phase_kind(&phaser_name) {
+            Some(kind) => kind,
+            None => {
                 // Unknown will trait — emit a fatal compile error.
                 // EVAL catches this as a runtime die, which is the expected behavior.
                 return Err(PError::fatal(format!(

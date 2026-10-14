@@ -551,11 +551,12 @@ pub(crate) mod buf_class_names;
 pub(crate) mod capture_text;
 pub(crate) mod compare;
 pub(crate) mod container_lock;
+pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) mod render_guard;
 pub(crate) use dispatch_shape::{
     ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
-    ROLES_WITH_ROWS, const_str_eq,
+    ROLES_WITH_ROWS, const_str_eq, cool_numeric_method,
 };
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
@@ -1781,6 +1782,25 @@ pub(crate) struct ParamNameSyms {
     /// (`-> $a, $b { … }`) have. Classified by
     /// [`crate::vm::light_def_params`]; see there for what is refused.
     pub(crate) light_def_params: Option<Box<[crate::vm::LightDefParam]>>,
+    /// How the light closure *call* (#13286, `vm_closure_light_call.rs`) may
+    /// bind a legacy-path signature [`Self::light_bindable`] refuses, settled
+    /// from the names alone. Only that call reads it: its body reaches no
+    /// name, so what the general binder does beyond storing the value -- the
+    /// twigil-less alias and readonly mark of a placeholder, the topic rules
+    /// of `_` -- has nothing to observe it.
+    pub(crate) light_call_legacy: Option<LightCallLegacy>,
+}
+
+/// A legacy-path signature the light closure call binds although the light
+/// closure bind does not (see [`ParamNameSyms::light_call_legacy`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LightCallLegacy {
+    /// Every parameter is a `$^name` placeholder (`{ $^a + $^b }`). The
+    /// binder stores them in sorted-name order, itemized like a plain `$x`.
+    Placeholders,
+    /// The one parameter is the topic `_` of a single-`*` WhateverCode
+    /// (`* + 1`), which binds the argument as it is (`name_is_itemize_exempt`).
+    Topic,
 }
 
 /// Whether a legacy-path parameter name is a bare identifier the light closure
@@ -1852,11 +1872,30 @@ impl SubData {
                 && self.param_defs.is_empty()
                 && self.params.iter().all(|p| is_light_bindable_param_name(p));
             let light_def_params = crate::vm::light_def_params(&self.param_defs);
+            let light_call_legacy = if light_bindable {
+                None
+            } else if self.param_defs.is_empty()
+                && matches!(self.params.as_slice(), [p] if p == "_")
+            {
+                Some(LightCallLegacy::Topic)
+            } else if self.param_defs.len() == self.params.len()
+                && self
+                    .param_defs
+                    .iter()
+                    .zip(self.params.iter())
+                    .all(|(pd, p)| pd.name == *p)
+                && crate::light_closure_shape::placeholder_defs_are_plain(&self.param_defs)
+            {
+                Some(LightCallLegacy::Placeholders)
+            } else {
+                None
+            };
             Arc::new(ParamNameSyms {
                 params,
                 call_local,
                 light_bindable,
                 light_def_params,
+                light_call_legacy,
             })
         })
     }
@@ -3807,10 +3846,11 @@ pub(crate) struct LazyList {
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under
-/// gist/Str/raku/perl, matching Rakudo: `...` for `.Str`, `[...]` for a list
+/// gist/Str/Stringy/raku/perl, matching Rakudo: `...` for `.Str` and
+/// `.Stringy`, `[...]` for a list
 /// held in `@` array context, `(...)` for a bare Seq.
 pub(crate) fn lazy_list_placeholder(method: &str, array_context: bool) -> String {
-    if method == "Str" {
+    if matches!(method, "Str" | "Stringy") {
         "...".to_string()
     } else if array_context {
         "[...]".to_string()

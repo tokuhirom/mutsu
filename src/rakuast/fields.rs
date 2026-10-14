@@ -224,6 +224,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         VarPositionalCapture => &[("index", Absent::Required)],
         VarNamedCapture => &[("index", Absent::Required), ("sigil", Absent::Required)],
         MetaPostfixHyper => &[("postfix", Absent::Required)],
+        MetaPrefixHyper => &[("prefix", Absent::Required)],
         TermCapture => &[("source", Absent::Required)],
         QuoteWordsAtom => &[("atom", Absent::Required)],
         MetaInfixReverse => &[("infix", Absent::Required)],
@@ -237,6 +238,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         TraitReturns | TraitOf | TraitDoes | TraitHides => &[("type", Absent::Required)],
         StatementTrusts => &[("type", Absent::Required)],
         TraitHandles => &[("term", Absent::Required)],
+        TraitWill => &[("phase", Absent::Required), ("block", Absent::Required)],
         TraitIs => &[
             ("name", Absent::TypeObject("RakuAST::Name")),
             ("argument", Absent::TypeObject("RakuAST::Expression")),
@@ -273,6 +275,14 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("where", EXPRESSION),
             ("scope", Absent::Str("my")),
         ],
+        // Rakudo answers `our` for a constant with no scope (measured on 2026.09).
+        VarDeclarationConstant => &[
+            ("type", Absent::TypeObject("RakuAST::Type")),
+            ("name", Absent::Required),
+            ("traits", Absent::EmptyList),
+            ("initializer", Absent::TypeObject("RakuAST::Initializer")),
+            ("scope", Absent::Str("our")),
+        ],
         VarDeclarationAnonymous => &[
             ("type", Absent::TypeObject("RakuAST::Type")),
             ("scope", Absent::Required),
@@ -280,12 +290,17 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
         InitializerAssign | InitializerBind => &[("expression", Absent::Required)],
+        InitializerCallAssign => &[("postfixish", Absent::Required)],
         VarDeclarationSignature => &[
             ("signature", Absent::Required),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
         TypeSimple | TypeSetting | TypeCapture => &[("name", Absent::Required)],
-        TypeEnum => &[("name", Absent::Required), ("term", Absent::Required)],
+        TypeEnum => &[
+            ("name", Absent::Required),
+            ("of", Absent::TypeObject("RakuAST::Type")),
+            ("term", Absent::Required),
+        ],
         QuotedRegex => &[
             ("match-immediately", Absent::False),
             ("body", Absent::Required),
@@ -357,8 +372,27 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         // A package declaration without a source name (`class { }`) has no
         // `name`: its accessor answers the undefined `Name`, as rakudo's.
-        Class | Role | Grammar => &[
+        // `parsed-declarator` is the keyword, set only for a registered
+        // `EXPORTHOW::DECLARE` declarator (`declare_how`).
+        Class => &[
             ("scope", Absent::Str("our")),
+            ("parsed-declarator", Absent::Str("class")),
+            ("name", NAME),
+            ("repr", Absent::TypeObject("Str")),
+            ("traits", Absent::EmptyList),
+            ("body", Absent::Required),
+        ],
+        Role => &[
+            ("scope", Absent::Str("our")),
+            ("parsed-declarator", Absent::Str("role")),
+            ("name", NAME),
+            ("repr", Absent::TypeObject("Str")),
+            ("traits", Absent::EmptyList),
+            ("body", Absent::Required),
+        ],
+        Grammar => &[
+            ("scope", Absent::Str("our")),
+            ("parsed-declarator", Absent::Str("grammar")),
             ("name", NAME),
             ("repr", Absent::TypeObject("Str")),
             ("traits", Absent::EmptyList),
@@ -440,6 +474,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         Blockoid => "statement-list",
         VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
         InitializerAssign | InitializerBind => "expression",
+        InitializerCallAssign => "postfixish",
         MetaInfixAssign => "infix",
         RegexSequentialConjunction => "branches",
         RegexConjunction => "branches",
@@ -449,6 +484,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         VarPositionalCapture => "index",
         VarNamedCapture => "index",
         MetaPostfixHyper => "postfix",
+        MetaPrefixHyper => "prefix",
         TermCapture => "source",
         QuoteWordsAtom => "atom",
         MetaInfixReverse => "infix",

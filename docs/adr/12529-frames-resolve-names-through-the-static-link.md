@@ -240,7 +240,8 @@ candidate, an `EVAL`ed one or a `wrap` retires the entries as they retire
 `func_multi_resolve_cache`'s. The repro of #10109 went from 13.3k to 8.7k Ir
 per call, against 9.8k for the plain sub. Value-dependent families (`where`,
 subsets) still take the generic path; #9967's `BareMultiPlan` is their
-equivalent.
+equivalent. Since phase 2 slice 7 the family's own generation backs the
+registry generation: an entry survives another family's registration (§3).
 
 ### 2.5 Cost contract
 
@@ -504,6 +505,74 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    Left on the registry: a multi family's generation is still the registry's
    `fn_resolve_gen`, a multi *method* call has no cache in front of the
    resolver, and value-dependent families take the generic path.
+
+   **Slice 7 done** (`perf/12529-multi-family-generation`): a multi family
+   has its own generation. The family memos (`multi_candidates_cache`,
+   `func_multi_type_cacheable`, `func_multi_argkey_cacheable`,
+   `func_multi_resolve_cache`, `multi_light_cache`, `bare_multi_plan_cache`)
+   are `FamilyGenCache`s (`runtime/family_gen_cache.rs`).
+
+   - Each base name of the functions map has a generation in
+     `DispatchState::fn_family_gens`, bumped by `evict_fn_keys_base`. That
+     eviction is the contract every functions-map write already keeps for the
+     key index, and the debug audit of the index catches a write that misses
+     it. A change that is not a key change (`wrap`, an import scope popping)
+     still goes through `invalidate_fn_resolution`, which clears the memos.
+   - An entry keeps `fn_resolve_gen` as its fast path, so a steady-state call
+     pays no family lookup. Only when the map generation moved does the probe
+     read the family's generation; an entry whose family is unchanged is
+     re-tagged with the running map generation and served.
+   - The case it fixes: a block that declares a routine of its own moves the
+     map generation on every entry and exit, which retired the multi caches
+     of every other family. `for ^3000 { { multi g(Int) {...}; f($i) + g(1) } }`
+     ran `f`'s full candidate walk 3000 times; it now runs it once
+     (`tests/multi_family_generation.rs`).
+   - A hit reads through a shared lookup and clones the answer; the re-tag
+     takes the mutable lookup on a cold path. A first cut that took the
+     mutable lookup on every hit, and read the family generation on every
+     miss, cost `bench-multi-dispatch` +0.5% Ir.
+
+   Release-build Ir against the merge base: that repro -40.4%,
+   `bench-multi-dispatch` +0.02% (+0.10% with the JIT), a plain multi call
+   loop +0.10%.
+
+   Left on the registry: the plain-routine memos (`fn_resolve_cache`,
+   `plain_fn_resolve_memo`, the light-call caches) are still tagged with the
+   map generation only; a multi *method* call has no cache in front of the
+   resolver; value-dependent families take the generic path.
+
+   Measured after slice 7 (release callgrind, Ir per call): the plain-routine
+   memos need no family generation, because their map version alternates
+   between two states `GenCache` keeps both of (`for ^3000 { { sub g {..};
+   f($i) } }` resolves `f` twice in all); a multi method call costs 24.1k
+   against 23.2k for a plain one, so a cache in front of its resolver buys
+   little; a `where` family cost 18.0k against 10.8k for a type-only one,
+   almost all of it the generic path around a cheap inline `where`.
+
+   **Slice 8 done** (`perf/12529-where-multi-light-call`): a value-dependent
+   family takes the light call path (`vm/vm_multi_plan_light_call.rs`).
+
+   - `multi_plan_light_cache`, keyed like `multi_light_cache`, holds the
+     family's keyed `BareMultiPlan` and the light body of every candidate its
+     stage program can pick, found by body fingerprint among the family's
+     keys when the generic path first light-binds a winner. A call with the
+     same argument types runs only the stage program and goes to the
+     winner's positional light bind, with the dispatch frame and samewith
+     context of the type-deterministic hit.
+   - The value checks are user code and must run once per call: every
+     candidate's light-bind admission is decided before the program runs, so
+     a winner it picks is always taken. Only "no winner" falls back, and the
+     generic path then raises the dispatch failure. Only a program whose
+     checks are all inline WhateverCode `where`s is taken (a `subset`
+     predicate may be any block); a refused family is remembered per
+     `(package, name)` (`multi_plan_light_refused`).
+   - `multi f(Int $x where * > 0)` + `multi f(Int $x)` called 3000 times:
+     -26% Ir, one full resolution instead of 3000. `bench-multi-dispatch`
+     +0.22% (+0.37% with the JIT): its `where` families use `subset`s and are
+     refused, and each of their generic light calls pays the refusal probe.
+     Other rows within ±0.06%.
+   - Found on the way: a block-declared multi runs its winner's `where`
+     twice per call on every path (#13183).
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay

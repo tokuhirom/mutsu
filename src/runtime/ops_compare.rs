@@ -29,16 +29,25 @@ impl Interpreter {
             {
                 Self::value_to_list(inner)
             }
-            ValueView::Array(items, ..) => items.items_with_default().into_owned(),
+            // Under the node's stripe, as in `utils::value_to_list` (ADR-0068 §20).
+            ValueView::Array(items, ..) => {
+                let _read =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, val);
+                items.items_with_default().into_owned()
+            }
             ValueView::Seq(items) => items.to_vec(),
             ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
             // An itemized hash (`$(%h)`, `%h.item`) is ONE list element, like the
             // itemized-Array arm above (mirrors `utils::value_to_list`).
             ValueView::Hash(_) if val.hash_is_itemized() => vec![val.clone()],
-            ValueView::Hash(items) => items
-                .iter()
-                .map(|(k, v)| items.typed_pair(k, v.clone()))
-                .collect(),
+            ValueView::Hash(items) => {
+                let _read =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, val);
+                items
+                    .iter()
+                    .map(|(k, v)| items.typed_pair(k, v.clone()))
+                    .collect()
+            }
             ValueView::Range(a, b) => {
                 let end = b.min(a + 1_000_000);
                 (a..=end).map(Value::int).collect()
@@ -78,7 +87,7 @@ impl Interpreter {
                 .map(|(k, v)| {
                     crate::runtime::utils::quanthash_typed_pair(
                         items.typed_key(k),
-                        crate::value::mix_weight_to_value(*v),
+                        crate::value::mix_weight_to_value(v.clone()),
                     )
                 })
                 .collect(),

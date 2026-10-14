@@ -394,6 +394,10 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
 
         // Hash ~~ Hash: structural equality
         (ValueView::Hash(lmap), ValueView::Hash(rmap)) => {
+            // A `Hash` and a `Map` are different types (`self eqv m`).
+            if left.is_immutable_map() != right.is_immutable_map() {
+                return Some(false);
+            }
             if lmap.len() != rmap.len() {
                 return Some(false);
             }

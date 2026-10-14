@@ -84,6 +84,10 @@ impl Interpreter {
             }
             _ => 0,
         };
+        // A `Callable` end is an index into the buffer (`subbuf`'s `&End`),
+        // not `substr`'s length.
+        let resolved = self.resolve_subbuf_callable_args(&buf, args);
+        let args = resolved.as_deref().unwrap_or(args);
         let (start, end) = self.resolve_substr_rw_range(args, elems)?;
         Ok(self.make_sub_rw_proxy(
             "subbuf",

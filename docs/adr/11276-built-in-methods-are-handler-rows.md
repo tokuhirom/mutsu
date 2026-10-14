@@ -2158,6 +2158,469 @@ Left in `dispatch_core_coerce.rs`: `Str`/`Stringy` (a deletion probe lost only `
 an unhandled `Failure`, but `Str` is the most common method there is, so it wants its own slice and a full debug run), the
 `Buf`/`Blob` reinterpret block (the `Blob`/`Buf` rows' implementation, reached by a buffer class with no shape) and `Complex.Complex`.
 
+### 9.93 Slice 5: `Mu.Str` and `Mu.Stringy` are rows (2026-10-13)
+
+`refactor/11276-mu-str-rows`. The `Str`/`Stringy` arm of `dispatch_core_coerce.rs` rendered every receiver no `Str` row reached, and
+`methods_0arg/mod.rs` kept a second `Str`/`Stringy` block for buffers. Rakudo declares both names on `Mu` (`Stringy` is `self.Str`)
+and `Str` again on most built-in types; every closed shape but the `IO::Spec` type objects has its own `Str` row already, and only
+`Str` (`Str.Stringy` is `self`), `Seq` and now `Blob`/`Buf` have their own `Stringy`. Decisions:
+
+1. **`Mu.Str` is a pure row** (`method_table::ctors_mop::mu_str`, `TYPE_OBJECT_OK`) with the arm's body: an unhandled `Failure`
+   throws, a lazy array is `...`, a collection holding a zero-denominator Rational dies, everything else with no shape (a
+   `Junction`, a `Promise`, a `Channel`, `Nil`) renders. A built-in type object warns and resumes with `""` through
+   `warn_signal_with_resume`, the mechanism `Mu.Numeric` uses (§9.92). It declines what needs the interpreter: an instance or a
+   mixin (a class or role may declare `Str` or `message`), a user type object, an enum, a lazy list, a list or quant hash with an
+   object element, a regex (it warns) and a code object (`Code.Str`).
+2. **`Mu.Stringy` is an interpreter row that calls `Str`** on the receiver, which is Rakudo's definition. A closed shape with no
+   `Stringy` (`Array`, `Hash`, `Date`, `IO::Path`, ...) reaches it through `MU_FOR_CLOSED_SHAPES`, so its `Stringy` is its `Str`.
+   It cannot answer a pure entry; no pure caller asks `Stringy` (the debug `prove t/` run over the whole suite agrees).
+3. **A subclass instance keeps the interpreter's answer.** `answer_shapeless`'s MRO walk would find a built-in ancestor's `Str` row
+   (`Exception.Str`, `Str.Str`), which reads the ancestor's state: an `Exception` subclass with its own `message` rendered "E with
+   no message" and a `Str` subclass lost its type. For `Str`/`Stringy` the walk answers only when it reaches `Mu`; a built-in
+   ancestor that declares the name declines to the interpreter, as before. (The first debug run found these four regressions.)
+4. **`Blob.Stringy`/`Buf.Stringy` are rows** (`str_or_stringy`, which names `Stringy` in `X::Buf::AsStr`'s message), and the
+   slow path's buffer guard no longer refuses `.Str`: `$u."Str"()` on a `utf8` variable threw `X::Buf::AsStr` where `$u.Str`
+   decoded, because the quoted call takes `call_method_with_values` and its guard ignored `utf8`.
+5. **`Stringy` of a lazy list renders `...`** like `Str`: the VM's lazy-placeholder intercepts named `gist`/`Str`/`raku`/`perl`,
+   so `@lazy.Stringy` and `(1..*).lazy.Stringy` forced the list and threw `X::Cannot::Lazy`.
+
+`method-rows-report.py --arms`: the pure arity cascades go from 149 to 148 arms (the `Str`/`Stringy` arm; the buffer block was a
+`method ==` test the report does not count). The probe (`Str`/`Stringy`/`gist` over 110 receivers) changed only toward Rakudo:
+`Stringy` of an `IO::Special`, an `IO::Handle`, an `Exception`, a `NumStr`, a `Signature`, `1/0` and a lazy array now agree with their
+`Str`. Pinned in `t/types/mu-str-rows.t`.
+
+Found, not fixed: an allomorph's `.Stringy` is a plain `Str` (#13108) and `Signature.Str` renders the source form (#13109).
+
+Left in `dispatch_core_coerce.rs`: the `Buf`/`Blob` reinterpret block, `Complex.Complex` and the `Any.serial` arm.
+
+### 9.94 Slice 5: `Complex.Complex`, `Any.serial` and the buffer reinterpretations; `dispatch_core_coerce.rs` has no arm left (2026-10-13)
+
+`refactor/11276-coerce-tail`. After §9.93 the file's `dispatch` kept three blocks. Deleting them and probing `Buf`/`Blob`/`Complex`/`serial`
+over 38 receivers (buffers of every width, their type objects, numbers, collections, code, a `Promise`, a lazy list) showed what each was
+still the only answer for:
+
+1. **`Complex.Complex` of the type object** (`method Complex() { self }`). The `Complex.Complex` row becomes `TYPE_OBJECT_OK` with a handler
+   that answers a type object itself (`numeric_coerce::complex_self`).
+2. **`serial` of almost everything.** The `Any.serial` row was reached only by receivers the cascade did not already answer. It becomes
+   `TYPE_OBJECT_OK` and joins `ANY_LIST_FOR_CLOSED_SHAPES`, so every closed shape and every receiver with no shape reaches it; `Mu.serial`
+   is `X::Method::NotFound`, as in Rakudo (`shapeless_row` refuses `Mu` for `Any`'s methods).
+3. **`.Blob` of a `Blob`, a `utf8` or a `blobN`.** Rakudo's `Blob` declares `Buf` but not `Blob` (`Buf` declares both; §9.86's
+   `COERCE_ROWS`), so the block answered calls Rakudo refuses. With it gone they are `X::Method::NotFound`; `.Buf` of every buffer and
+   `.Blob` of a `Buf` still answer from the rows. `t/vm/codegen/create-slots-resources-buf-strict-escape.t` pinned the old answer for
+   `"ab".encode.Blob` and now pins Rakudo's.
+
+The `dispatch` function and its `try_dispatch!` entry are deleted; the file keeps the exception builders the coercion rows share
+(`X::Str::Numeric`, `X::Numeric::Real`). `method-rows-report.py --arms`: the pure arity cascades go from 148 to 147 arms. Pinned in
+`t/oo/method/coerce-tail-method-rows.t`.
+
+Found, not fixed: `.Buf`/`.Blob` of a wide buffer drop its element type (#13115); `.Complex` of a non-`Cool` receiver, a concrete-only
+type object or a lazy list answers `0+0i` (#13116).
+
+### 9.95 Slice 5: a `Match` reaches `Capture`'s rows (2026-10-13)
+
+`refactor/11276-match-0arg`. The `Match` block of `methods_0arg/mod.rs` answered `keys`, `values`, `kv`, `pairs`, `hash` and `elems`
+by name, and every other name it did not know on the matched string, so `Match.antipairs` was `"ab".antipairs` and `Match.serial`
+a `Str`. Rakudo's `Match` is a `Capture` and declares none of them. Decisions:
+
+1. **The `Match` shape reaches `Capture`'s rows per name** (`CAPTURE_FOR_MATCH`: `keys`, `values`, `kv`, `pairs`, `antipairs`,
+   `hash`, `elems`; `may_reach_audited` admits the `Capture` owner for `Match`), and `Any.serial` (§9.94) next to `join`.
+2. **The `Capture` handlers read a `Match`** through one `parts` reader: its positional captures (an unbound one as `Mu`) and its
+   named captures in key order. A `Match` is asked first, so a lazy one (a grammar cursor, reached through `match_owner_row`) is
+   read from its capture node. `elems` counts the positional captures without collecting them.
+3. **`values` and `kv` flatten a list or array value** that is not itemized, which the `Match` block did for a quantified capture
+   and Rakudo does for a plain `Capture` too (`\([1, 2], 3).values` is `(1, 2, 3)`; `\($[1, 2]).values` keeps it whole). The
+   `Capture` rows did not; they now do, a behaviour change toward Rakudo.
+4. The guard test `a_new_shape_reaches_only_its_own_rows` allowed only a closed shape's own `elems`; it now allows an audited
+   ancestor's, still never `Any`'s.
+
+Left in the block: `list` (a live view of the positional captures), the positional coercions (`Array`, `List`, `Slip`, `Seq`, `flat`,
+`cache`, `eager`, `reverse`), `Hash`, `Capture` and the fallback that answers any other name on the matched string. That fallback is
+the next remainder: each name it serves is a `Cool` method Rakudo reaches through `Match`'s `Str` coercion only where `Cool`
+declares it, and the audit lists (`COOL_TEXT_FOR_MATCH`) already name most of them. `method-rows-report.py --arms`: the pure arity
+cascades go from 147 to 142 arms. Pinned in `t/regex/match/match-capture-method-rows.t`.
+
+### 9.96 Slice 5: a `Match` answers the names it does not declare on itself, not on its matched text (2026-10-13)
+
+`refactor/11276-match-fallback`. After §9.95 the `Match` block of `methods_0arg/mod.rs` still answered every name it did not
+know on the matched string (`native_method_0arg(&str_val, ...)`), so `$m.head` was the whole text, `$m.pick` a `Str`,
+`$m.naive-word-wrapper` (a `Str` method) answered, and `$m.pairup` failed on an odd one-element list. Probed: every name declared
+on `Cool`, `Str`, `Any`, `Mu` and `List`, over a plain match and a grammar match, on the pre-change binary, the new one and
+`raku`. Decisions:
+
+1. **The fallback falls through**: a name the block does not answer reaches the rows and the generic arms below, on the `Match`
+   itself. `head`, `pick`, `roll`, `pairup`, `permutations`, `combinations`, `tree` and the grammar match's `minmax` now give
+   Rakudo's answers; `naive-word-wrapper` is `X::Method::NotFound`.
+2. **The `Match` shape reaches `Cool`'s numeric methods** (`COOL_NUMERIC_FOR_COLLECTIONS`) and `COOL_COERCE_FOR_MATCH`
+   (`Rat`, `FatRat`, `Failure`, `parse-names`, `uniparse`, `AST`), which the fallback used to serve on the string. `numify` reads a
+   `Match` as its text (`Match.Numeric` is `self.Str.Numeric`), and so does `Cool.Real`.
+3. **`Cool.FatRat` and `Cool.AST` are rows** (Rakudo declares both on `Cool`; the recognition table gains them). `FatRat` reads its
+   receiver as `Cool.Rat` does, `AST` (an interpreter row: the parse scans `use`d modules with the interpreter's paths) parses
+   the receiver's string form.
+4. **`Any.end` reaches a `Match`** and counts its positional captures (`1` for two, `-1` for a grammar match with none).
+5. **`list` and `Capture` are `Capture`'s rows** (`CAPTURE_FOR_MATCH`): `Capture.list` returns a `Match`'s live positional view
+   (`match_list_view`), `Capture.Capture` the `Match` itself. `reaches_audited_ancestor`, the fallback's only reader, is gone.
+
+Left in the block: the positional coercions (`Array`, `List`, `Slip`, `Seq`, `flat`, `cache`, `eager`, `reverse`) and `Hash`,
+which are `Any`'s methods in Rakudo and have no `Any` row yet. Found and filed: #13160 (`+` and `.sum` read a non-numeric `Match` as
+`0`), #13161 (`min`/`max`/`minmax`/`sort`/`unique`/`combinations`/`chrs` of a `Match` do not read its positional captures; they were
+wrong on the string before too). `method-rows-report.py --arms`: the pure arity cascades go from 142 to 140 arms. Pinned in
+`t/regex/match/match-cool-method-rows.t`.
+
+### 9.97 Slice 5: the numeric type objects' `.Range` are rows (2026-10-13)
+
+`refactor/11276-type-object-range`. The block after the `Match` block of `methods_0arg/mod.rs` answered `.Range` for the type objects
+`Real`, `Num`, `Rational`, `Rat`, `FatRat` and `BigRat` (`-Inf..Inf`), `Int` (`-Inf^..^Inf`) and the native integer types (their
+bounds) by name. Rakudo declares `Range` on `Int` (native integer types inherit it, and its body reads their bounds), on `Num` and on
+the `Rational` role, which `Rat` and `FatRat` compose. Decisions:
+
+1. **Five rows** (`scalars::numeric_range`, `TYPE_OBJECT_OK`): `Int`, `Num`, `Rat`, `FatRat` and `Rational`. The recognition table
+   gains `Int`, `Num`, `Rat` (declared `only`) and `Rational` (a role, like `Positional`). `Rational`'s row is `OWNER_ONLY`: no shape is
+   the role, so only its type object reaches it, as `Callable.of` does.
+2. **The type-object walk (`type_object_row`) answers `Range`**: a native integer type object (`int8`) walks its catalog MRO to `Int`.
+   A native integer type the catalog does not list (NativeCall's `long`) is an `Int`. A role with no catalog MRO (`Rational`) answers
+   its own rows.
+3. **Behaviour changes toward Rakudo**: `Real.Range` is `X::Method::NotFound` (the block answered it). An instance's `.Range`
+   (`5.Range`, `2.5.Range`) throws `X::Parameter::InvalidConcreteness` naming its type, where it was `X::Method::NotFound`.
+
+Not done: `UInt.Range` (`0..^Inf` in Rakudo) stays `X::Method::NotFound`, because the catalog gives `UInt` the MRO `(UInt Any Mu)`, not
+`Int`'s (#13178). `method-rows-report.py --arms` is unchanged (the block was `if` chains, which it does not count). Pinned in
+`t/types/numeric/numeric-type-object-range-rows.t`.
+
+### 9.98 Slice 5: a `Match` answers `Any`'s `self.list.METHOD` methods on its positional captures (2026-10-13)
+
+`refactor/11276-match-positional`, with #13161. After §9.96 the `Match` block of `methods_0arg/mod.rs` still answered the
+positional coercions (`Array`, `List`, `Slip`, `Seq`, `flat`, `cache`, `eager`, `reverse`) on the positional captures and `Hash` on
+the named ones, while `min`, `max`, `minmax`, `unique`, `squish`, `combinations`, `permutations`, `chrs`, `Set`/`Bag`/`Mix` and the
+rest of `Any`'s list methods answered on the `Match` as one element (#13161). The interpreter path carried a twin
+(`is_capture_list_method` in `call_method_with_values`) for `grep`/`map`/`first`/`head`/`tail`/`sort`/`pick`/`roll`. Decisions:
+
+1. **One receiver rewrite, not rows.** Rakudo declares these on `Any` as `self.list.METHOD` (`Cool.chrs` too), and `Capture.list`
+   is the positional captures, so the answer is the *list's* method, not an `Any` handler reading a `Match`. Both native entries
+   (`try_native_method` and `call_method_with_values`) swap the receiver for its positional list
+   (`Interpreter::match_list_receiver`, over `Value::match_list_receiver` and `match_view::is_capture_list_method`) before
+   anything answers the call, as they already do for a user subclass of `IO::Path` (#12149) and an `Array` enum's base. A
+   grammar that declares the method keeps its own (the memoized `has_user_method` probe). `Hash` reads the named captures
+   (`self.hash`); for `List` and `Hash` the swapped-in value is the answer itself (`match_list_answers_itself`), so an unbound capture's hole is not read as `Nil` by `List.List`. The pure entry `native_method_0arg` applies the same rewrite (without the grammar probe), so the recognition rows `Match.Array`/`Match.Hash` stay recognized.
+2. **The `Match` shape still reaches only `join`, `end` and `serial` of `Any`'s rows** (§9.96): the rewrite runs first, so no
+   call-site lane caches a `Match` for the other names.
+3. **`minpairs`/`maxpairs` are not in the set**: Rakudo reads them through `self.pairs`, named captures included.
+
+The two quoted-name arms of the block are gone; what is left of it is the `match_owner_row` call for a match with no shape.
+`method-rows-report.py --arms`: the pure arity cascades go from 140 to 138 arms. Pinned in
+`t/regex/match/match-any-list-methods.t`. The remaining differences from Rakudo are `List`'s own over a list of `Match`es
+(#13195): `minmax` and `sum` do not numify the elements, `chrs` does not refuse them, `minpairs`/`maxpairs` answer a `Seq`, and
+`iterator`/`batch()`/`rotor()` differ.
+
+### 9.99 Slice 5: the 1-arg `Rat`/`FatRat` arms are gone; `Cool.Rat` takes no epsilon (2026-10-13)
+
+`refactor/11276-rat-epsilon-arms`. `methods_narg/dispatch_1arg.rs` kept three arms for `.Rat($epsilon)` and `.FatRat($epsilon)`:
+one that re-asked an allomorph's numeric value, and one per name that answered a `Str` (parsed, then rationalized with the
+epsilon), an aggregate or any other receiver (`0`), and declined a `Complex`, `Instant` and `Duration`. Every receiver Rakudo
+answers already has a row: `Int`/`Num`/`Rat` (`numeric_coerce`'s `with_epsilon` rows, §9.70), `Complex` (`complex_real`),
+`Instant`/`Duration` (§9.18), and an allomorph through its numeric value. Rakudo's `Cool.Rat` and `Cool.FatRat` take no epsilon
+(`"1".Rat(0.1)` is "Too many positionals passed"), so the receivers only the arms answered were answering wrongly. Decisions:
+
+1. **The three arms are deleted**, with no new row. A `Str`, a `List`, a `Match` or a `Str` type object refuses the epsilon.
+   mutsu raises `X::Method::NotFound` where Rakudo raises the bind failure; that is general to every built-in method called
+   with too many positionals and is filed as #13203.
+2. **The recognition table follows**: `Str`, `Match` and `Cool`'s `Rat`/`FatRat` rows claim arity 0 only.
+3. **A declined argument reaches an `ANY_ARGS` row** (`method_table::invoke_unadmitted`). The arms also answered a number whose
+   epsilon the guard step does not admit (an allomorph `<1>`, a `Duration`), which `t/types/numeric/rat-fatrat-epsilon-real-check.t`
+   pins. A row flagged `ANY_ARGS` binds its own arguments, so `call_method_with_values`, once the cascades have declined, asks the
+   row the receiver's shape resolves when every declined argument is a built-in value (an allomorph, a `Duration` or an `Instant`). A user object stays the slow path's (`"3".exp(NotComplex.new)` calls its `.Numeric`; `roast/S32-num/cool-num.t` caught a first version that admitted it), as do a named argument, a `Junction` and a `Failure`. It is
+   the shape counterpart of `invoke_owner`, and it serves every `ANY_ARGS` row, not only these two.
+
+`method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 29 to 27 arms (the allomorph arm was a guarded `|` arm the report
+counts once with the `Rat` arm). Pinned in `t/types/coercion/coerce-rat-epsilon-rows.t`.
+
+### 9.100 Slice 5: `Any.combinations` and `Any.batch` reach the closed shapes; three 1-arg arms are gone (2026-10-13)
+
+`refactor/11276-shapeless-1arg`. Three arms of `methods_narg/dispatch_1arg.rs` called a row's handler "for the receivers the
+table has no shape for": `combinations` (`List.combinations`' `combinations_of`), `batch` (`Any.batch`) and `round` (`Cool.round`'s
+`round_to`, for an allomorph). They answered a `Seq`, a `Range`, a `Str`, a `Pair` or a quant hash, whose closed shapes did not
+reach `Any`'s rows for these names, and `batch(:elems(N))`, whose named argument the arity-1 row could not take. Decisions:
+
+1. **`Any.combinations($of)` is a row** (Rakudo declares it `only` on `Any`; the recognition table gains it), `TYPE_OBJECT_OK`
+   (`Str.combinations(1)` is `(((Str)))` in Rakudo too). Its handler counts the list first, so an infinite `Range` or a lazy list
+   is `X::Cannot::Lazy` where the arm hung.
+2. **`combinations` and `batch` join `ANY_LIST_FOR_CLOSED_SHAPES`**: their handlers read any receiver through
+   `value_to_list_for_receiver`, so every closed shape with instances reaches them, and so does a receiver with no shape
+   (`shapeless_row` takes them with one argument).
+3. **`Any.batch(:$elems!)` is an arity-0 `Handler::Named` row**, Rakudo's named candidate. Without `:elems` it raises
+   `X::Multi::NoMatch`, as Rakudo does (`.batch()` used to be `X::Method::NotFound`).
+4. **`round` needed nothing**: an allomorph already reaches `Cool.round($scale)` through its numeric value.
+5. **The sub form calls the handler**: `combinations($n, $k)` asked the method entry on its list, which the guard step declines
+   for an allomorph `$k` (`roast/S32-list/combinations.t`: `combinations(|<3.5 2e0>)`); it now calls `combinations_of`, the
+   rows' one implementation. The handler reads an itemized `$k` (`my $k = 1..2`) as its value, and `invoke_unadmitted` (§9.99)
+   hands an `ANY_ARGS` row an itemized plain argument without its `Scalar`, so `$seq.combinations($k)` answers too.
+
+`method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 27 to 24 arms. Pinned in `t/types/any-combinations-batch-rows.t`.
+
+### 9.101 Slice 5: an allomorph is answered by the rows, on the part each reads (2026-10-13)
+
+`refactor/11276-allomorph-shape`. An allomorph (`IntStr`, `RatStr`, `NumStr`, `ComplexStr`) is its number with the source string
+mixed in (`Value::Mixin`), which has no dispatch shape, so the `Mixin` block of `methods_0arg/mod.rs` answered it by name: a ~30-name
+list of string methods on the `Str` part, then every other name on the number (`native_method_0arg(inner, ...)`), and the 1-arg
+cascade kept a twin for `uniprop`/`uniprops`/`unimatch`/`samemark`/`samecase`/`indent`. Probed: every name declared on `Str`, `Int`,
+`Rat`, `Num`, `Complex`, `Cool`, `Allomorph`, `Any`, `Mu`, `Real`, `Numeric`, `Stringy` and `Rational` (283 after dropping the I/O and
+effectful ones), with no argument, on `<1>`, `<1.5>`, `<1e0>`, `<1+2i>`, `IntStr.new(5, "zero")` and `<0x10>`, plus 45 one-argument
+calls, on `raku`, the pre-change binary and the new one. Decisions:
+
+1. **No new shape: a receiver redirect** (`method_table::allomorph`, called by the guard step after the native-base redirect of
+   §9.79). Rakudo's MRO is `IntStr Allomorph Str Int Cool Any Mu`, so the row is looked up along it: `Str`'s own rows first, invoked on
+   the string part; then the numeric type's shape (open, so it reaches `Cool`, `Any` and `Mu`), whose own rows (`Int`, `Real`,
+   `Rational`, `Num`, `Complex`, `Numeric`) are invoked on the number. A `Cool` row reads the number when it is one of `Cool`'s
+   numeric methods (`self.Numeric.METHOD`, `COOL_NUMERIC_FOR_COLLECTIONS`) and the string otherwise (`self.Str.METHOD`); an `Any`
+   row in `ANY_LIST_FOR_CLOSED_SHAPES` reads the allomorph itself as its one element; a `Mu` row declines. `Allomorph`'s own
+   numeric overrides (`Bool`, the numeric coercions, `Bridge`, `succ`, `pred`, `narrow`) skip `Str`'s rows.
+2. **What an allomorph answers about itself stays in the block**: `raku`/`perl`, `gist`, `Str`, `Stringy`, `WHICH`, `clone`,
+   `Capture`, `VAR`, `wordcase` (Rakudo re-allomorphs its result) and `ACCEPTS` (a `Str` argument compares the string, anything
+   else the number: `methods_narg::allomorph`). These are `Allomorph`'s methods, which neither part's row can answer.
+3. **Only a plain allomorph is redirected**: one carrying a role (`<42> but R`) or a value mixed with a `Str` (`5 but "x"`) keeps the
+   mixin dispatch.
+4. **The cascades decline what the table answers** (`allomorph::answers`, asked at the top of the `Mixin` block and in the 1-arg
+   cascade), so the debug cross-check compares a row with a declining cascade, as for every migrated name.
+5. **`Any.join` reads an allomorph** as the one element it is, stringified to its string part (`<1e0>.join` is `"1e0"`; it was `"1"`).
+
+Behaviour changes toward Rakudo: `Any`'s list methods (`head`, `tail`, `pick`, `roll`, `min`, `max`, `minmax`, `sort`, `serial`,
+`unique`) keep the allomorph where they answered the bare number; `Str.Version` parses the string (`<1e0>.Version` is `v1.e.0`, was
+`v1`); `Str.Date`/`DateTime` parse the string (`X::Temporal::InvalidFormat`, was `X::Method::NotFound`); `naive-word-wrapper` answers.
+Not changed: a numeric row that returns its invocant answers the bare number where Rakudo returns the allomorph (`<1>.floor`,
+`<1.5>.abs`, #13236); `.unique` on any scalar answers the scalar, not a one-element `Seq` (#13235). `method-rows-report.py --arms`:
+the pure arity cascades go from 133 to 132 arms (the string list was one `match` arm). Pinned in `t/oo/method/allomorph-method-rows.t`.
+
+### 9.102 Slice 5: `words($limit)`, `lines($limit)` and `chop($n)` are rows (2026-10-13)
+
+`refactor/11276-text-count-args`, stacked on §9.101. `methods_narg/dispatch_1arg.rs` answered `chop($n)`, `lines($limit)`,
+`lines(:chomp)`/`lines(:count)` and `words($limit)` for any receiver by its string form. Rakudo declares each on `Str` and again on
+`Cool` (`self.Str.METHOD`). Probed: the three names on thirteen receivers (`Str`s, `Int`, `Rat`, a `List`, an `Array`, an allomorph,
+a `Range`, the `Str` type object, a `Pair`, a `Hash`, an `IO::Path`) with eleven arguments each, on `raku`, the pre-change binary and the
+new one. Decisions:
+
+1. **Rows on `Str` and `Cool`**: `words` at arity 1, `lines` at arity 0 (now `Handler::Named`, declaring `chomp` and `count`) and 1
+   (declaring `chomp`), and `chop` at arity 1. The arity-1 rows are `ANY_ARGS`. A receiver with no shape reaches them through
+   `shapeless_row`, which now takes these three names with one argument.
+2. **The count is read as `.Int`** (`value::str_iter::parse_limit`, the one reader, and `chop`'s own): a `Str` parses, a `Rat`
+   truncates, an allomorph reads its number, a negative count is `0`; `*` and `Inf` cap nothing. Before, a `Rat`, `Str` or allomorph
+   limit was `X::Method::NotFound`.
+3. **An allomorph receiver with an argument the guard step declines** (`<1e0>.words(<1>)`) is answered by `invoke_unadmitted`, which now
+   redirects an allomorph as the guard step does (§9.101); the mixin dispatch asks it before delegating the call to the number, which
+   answered `("1",)`.
+
+Behaviour changes toward Rakudo: a `Pair` (not a `Cool`) refuses `words`/`lines`/`chop` with `X::Method::NotFound` (they answered on its
+`.Str`); the limits above. Not changed: `chop(*)`/`chop(Inf)` answer where Rakudo raises a bind failure, and a positional `Pair` argument
+is read as a named one (ADR-0021). `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 24 to 21 arms. Pinned in
+`t/types/string/str-count-arg-rows.t`.
+
+### 9.103 Slice 5: the 1-arg `parse-base` and `in-range` arms are gone (2026-10-13)
+
+`refactor/11276-parse-base-in-range`, stacked on §9.102. Both arms called a row's handler (`str_args::parse_base`,
+`range::in_range_value`) for the receivers the table did not reach. After §9.101 an allomorph reaches `Str.parse-base` on its string,
+and `Range.in-range` is `ANY_ARGS`, so `invoke_unadmitted` hands it the arguments the guard step declines; probed on twelve receivers
+and two radixes against `raku`, only `parse-base` needed more:
+
+1. **`Str.parse-base` is `ANY_ARGS` and `TYPE_OBJECT_OK`**: an `IntStr` radix binds `Int:D` (`"ff".parse-base(<16>)` is 255; it was
+   `X::Multi::NoMatch`), and the `Str` type object raises Rakudo's `Cannot resolve caller parse-base(Str:U: Int:D)` (the arm answered
+   `X::Str::Numeric`). Any other argument is the bind failure the handler already raised.
+
+`method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 21 to 19 arms. Pinned in `t/types/string/str-parse-base-rows.t` and
+`t/collections/range-pair/range-in-range-rows.t`.
+
+### 9.104 Slice 5: `flat($levels)`, `Int.Str(:superscript)`, `Mu.isa` and `FatRat.base` are rows; five 1-arg arms are gone (2026-10-13)
+
+`refactor/11276-dispatch-1arg-rest`, one commit per family, each probed on receivers × arguments against `raku` and the binary
+before the slice:
+
+1. **`flat($levels, :hammer)`** is a `Named` row on `List`, `Array`, `Seq` and `Map` (Rakudo declares it on `Iterable` and again
+   on `Array`; `Any` and `Range` declare only `flat()`). A negative level, `Inf` and `*` flatten every level, a `Str` level
+   numifies (a non-numeric one dies), an `Array` without `:hammer` never reads the level, and a `Hash` flattens as its pairs (also
+   for `flat(:hammer)`, which answered `({...},)`). `5.flat(1)`, `"ab".flat(1)` and `(1..3).flat(1)` now die as in Rakudo (the
+   arm answered a one-element list). The 2-arg `flat` arm of `dispatch_2arg.rs` goes too. A `Slip` or an unsettled `Seq` reaches
+   the row through `answer_shapeless`, which now **splits named arguments for a row that declares them** and is asked for 2-arg
+   calls as well (both callers), so `$slip.flat(1, :hammer)` binds `:hammer` instead of reading it as a second positional.
+2. **`Int.Str(:superscript, :subscript)`** is a named row (a big `Int` too; `:superscript` wins). Every `Str` row takes `*%_`
+   (`ANY_NAMED`), as Rakudo's candidates do, so `1e3.Str(:superscript)`, `True.Str(:subscript)` and `"12".Str(:superscript)`
+   ignore the adverb (the arm rendered the numified receiver raised). `<5>.Str(:superscript)` still answers the `Int` part (#13259).
+3. **`zprintf` has no method form.** Rakudo declares neither the method nor the routine; the routine is a mutsu extension with its
+   own tests and stays, but the 1-arg cascade arm and the runtime's by-name arm (`methods_dispatch_match.rs`) are deleted.
+4. **`Mu.isa`** is a row (`ctors_mop/mu_isa.rs`), reached by every shape through its owners or `MU_FOR_CLOSED_SHAPES` and by a
+   shapeless receiver through `answer_shapeless`. An instance, a type object and a mixin over an instance decline to the
+   interpreter (user hierarchies, roles, subsets). No behaviour change (`Int.isa(3)` stays wrong: #13260).
+5. **`FatRat` has the `base` rows** (Rakudo declares `base` on `Rational`); the 1-arg `base` arm, which re-called the rows'
+   implementation, is deleted. A user object as the radix now has no candidate (`X::Method::NotFound`; Rakudo raises
+   `X::Multi::NoMatch`) where the arm answered a `Failure`. `FatRat.base-repeating` is still missing (#13258).
+
+**Not done, and why.** The `ACCEPTS` arms of the quant hashes, `Pair` and `Range` and the `AT-POS`/`EXISTS-POS` arms of `Uni` and
+`Capture` re-call their rows' handlers, but they also answer an argument the guard step does not admit (a user object): deleting
+them turned `set(1,2).ACCEPTS(P.new)` from `False` into `X::Method::NotFound`, and `\(1,2).AT-POS(1..2)` from an error into `Nil`
+(the generic `AT-POS` arm claims it). They go when a row can bind a user-object argument (an `Interp` handler that calls its
+`.Numeric`). `subbuf` and the `read-*` arms serve a user class composing a buffer role over a `VMArray` body, which has no shape;
+they go with the `Blob`/`Buf` user-instance mechanism (the same one `methods_narg/buf.rs`'s ten arms need).
+
+`method-rows-report.py --arms`: pure cascades 127 -> 121 arms (`dispatch_1arg.rs` 19 -> 13; `dispatch_2arg.rs` loses `flat`).
+Pinned in `t/oo/method/{flat-levels,int-str-script,mu-isa,fatrat-base}-method-rows.t` and `t/oo/method/zprintf-no-method.t`.
+
+### 9.105 Slice 5: a positional index and an `ACCEPTS` topic bind like Rakudo's candidates; four 1-arg arms are gone (2026-10-13)
+
+`refactor/11276-user-object-args`. The `AT-POS`/`EXISTS-POS` arms of `Uni` and `Capture` and the `ACCEPTS` arms of the quant
+hashes, `Pair` and `Range` in `methods_narg/dispatch_1arg.rs` only re-called their rows' handlers, but they also answered the
+arguments the guard step does not admit (a user object, a collection), so deleting them needed a way for a row to bind such an
+argument (§9.104, "Not done"). Probed: seven receivers × nine arguments (a user object, one with `.Int`/`.Numeric`/`.Str`, a type
+object, a `Range`, an `Int`, a `Str`, a `Set`, a `List`, a `Hash`) for the three names, then the edge cases (`Bool`, an enum, an
+`Int` subclass, a negative index, `Nil`), on `raku`, the binary before the slice and the new one. Decisions:
+
+1. **`RowFlags::INDEX_ARG`: a positional index is bound by Rakudo's candidates' rules** (`method_table::index_arg`). Rakudo's
+   `Range`, `Uni` and `List` declare `AT-POS`/`EXISTS-POS` for `Int:D` only; any other index reaches `Any`'s candidates, where
+   `AT-POS(Any:D \pos)` re-dispatches on `pos.Int`, `EXISTS-POS(Any:D \pos)` is `pos.Int == 0` (a non-`Int` index addresses the
+   one-element list `Any` is: `(1, 2).EXISTS-POS("1")` is `False`), and a type object is `Cannot use 'T' as an index`. `Capture`
+   declares `Int(Any) $pos` instead (`RowFlags::INDEX_COERCES`): everything is coerced, a type object to `0` with the warning. The
+   guard step admits only an `Int` to such a row; `invoke_unadmitted` binds every other argument, calling its `.Int` through the
+   interpreter (user code for a user object). A `Bool`, an `Int`-valued enum and an instance of an `Int` subclass are `Int:D` and
+   bind the row's own candidate. The flag is on the `Range` and `Uni` rows of both names, `Capture`'s, and `List.EXISTS-POS`;
+   `List.AT-POS`/`Array.AT-POS` stay `builtin_at_pos`'s (the subscript opcode's own binding). The cascade declines a call such a
+   row resolves (`index_arg::binds`), so the generic `AT-POS` arm no longer answers `\(1, 2).AT-POS(1..2)` with `Nil`.
+2. **`RowFlags::OBJECT_ARGS`: a row that binds `Mu \topic`** takes any argument from `invoke_unadmitted` but a `Junction`, a
+   `Failure` and a named argument. The `ACCEPTS` rows of the six quant hashes, `Pair` and `Range` are now `Handler::Interp` rows
+   with it (`collections/accepts.rs`): a quant hash coerces a topic of another kind to its own (`.Set`/`.Bag`/`.Mix`, so
+   `set(1, 2).ACCEPTS(1..2)` and `bag(1, 2).ACCEPTS(set(1, 2))` are `True`; both were `False`); `Pair` follows
+   `Type/Pair.rakudoc` (an `Associative` topic is looked up and smartmatched, any other topic is called the method the key names
+   and the truths compared, so `(abs => 5).ACCEPTS(-5)` is `True` and `(a => 1).ACCEPTS(5)` is `X::Method::NotFound`; the arm
+   compared values with `==`); `Range` compares a user object with the ends by `cmp` on its `.Stringy`, as Rakudo's
+   `(topic cmp $!min)` does. The runtime's `Pair.ACCEPTS` arm for an instance topic (`methods_call_dispatch.rs`) is deleted too.
+
+Not changed: `Set` has no `Int`/`Numeric` (#13281), so `(1..5).AT-POS(set(1, 2))` stays `X::Method::NotFound` (Rakudo: `3`) and
+`(1..5).ACCEPTS(set(1, 2))` `False` (Rakudo: `True`); `Capture.ACCEPTS` and `Uni.ACCEPTS` are still missing (#13282); a positional
+`Pair` argument is read as a named one (ADR-0021), so `(a => 1).ACCEPTS(a => 1)` is `X::Method::NotFound` where Rakudo's is
+`X::Multi::NoMatch` (it answered `True`); `\(1, 2, 3).AT-POS("x")` raises `X::Str::Numeric` where Rakudo fails to unbox.
+`method-rows-report.py --arms`: pure cascades 121 -> 116 arms (`dispatch_1arg.rs` 13 -> 8; the report counts the three guarded
+`ACCEPTS` arms once). Pinned in `t/collections/subscript/at-pos-index-arg-rows.t` and `t/oo/method/accepts-method-rows.t`.
+
+### 9.106 Slice 5: `Any`'s subscript protocol is a row (2026-10-13)
+
+`refactor/11276-any-subscript-rows`, on §9.105's `INDEX_ARG`. The generic `AT-POS`, `EXISTS-POS`, `AT-KEY` and `EXISTS-KEY` arms
+of `methods_narg/dispatch_1arg.rs` answered every receiver no row took: a `Str`, a `Match`, an instance, a value that is not
+`Positional` (`is_one_element_under_positional_subscript`), the `Any`/`Mu` type objects and any other value failing the associative
+subscript. Probed: forty receiver × argument pairs (scalars, type objects, user instances and their type objects, `Hash`, `Set`,
+`Pair`, a `Match`, a lazy `Seq`, a shaped array, `Nil`, a buffer, `IO::Path::Parts`) on `raku`, the binary before the slice and the
+new one. Decisions:
+
+1. **Four `Any` rows** (`collections/any_subscript.rs`, `TYPE_OBJECT_OK`; the recognition table gains them): `AT-POS(Int:D)` is the
+   receiver at 0 and an `X::OutOfRange` failure (`0..0`) elsewhere; `EXISTS-POS(Int:D)` is `pos == 0` for a defined receiver and
+   `False` for a type object; `AT-KEY` fails the associative subscript for a defined receiver (naming an instance's class) and is
+   `Any` for a type object; `EXISTS-KEY` is `False`. The positional pair is `INDEX_ARG`, so `index_arg` binds any other index, and
+   now also for a receiver with no shape (through `shapeless_row`) and a type object (`Int.EXISTS-POS("0")` is `False`).
+2. **Reach**: the open shapes by their MRO; the closed ones through `ANY_LIST_FOR_CLOSED_SHAPES` (a `Hash`, a quant hash, a `Pair`
+   are not `Positional`), except `Blob`/`Buf`, which are and keep their cascade arms until their rows land; a receiver with no shape
+   through `answer_shapeless` (an instance by its MRO, which declines at a built-in class such as `Map` or `Array`; a type object; an
+   enum; a code object). `answer_shapeless` leaves to the interpreter a list with no settled shape (a lazy or shaped array, a `Seq`,
+   a `Slip`, a buffer storage) for the positional pair, a `Junction`, a `Proxy`, `Nil` and a mixin for all four, and for the
+   associative pair a package (its stash is `Associative`: `CORE::<&say>`), an instance (its `{ }` may be a user
+   `postcircumfix:<{ }>` or a tied store, resolved first) and a hash with no settled shape (a `Map` subclass's raw storage, which
+   keeps the associative rows' implementation in the cascade).
+3. **A `Match` reaches `Capture`'s `AT-POS`/`EXISTS-POS`** (`CAPTURE_FOR_MATCH`): the handlers read its positional captures, and an
+   optional group that did not match does not exist. The `Match` branch of the cascade arm goes.
+4. **The associative rows of the collections take a user-object key** (`OBJECT_ARGS` on `subscript.rs`'s rows); their delegation
+   from the cascade arm goes for every settled shape.
+5. **The subscript opcode keeps the cascade's instance branch of `AT-POS`** (`$obj[0]` of a `Positional` class with no `AT-POS`),
+   which now calls the row's handler: the opcode asks the cascade without an interpreter, so it cannot walk the instance's MRO to
+   the row (a `TODO` in the arm).
+
+Behaviour changes toward Rakudo: `Int.AT-POS(0)`, `C.AT-POS(0)`, `Int.EXISTS-POS(0)`, `Int.AT-KEY("x")` and
+`C.new.EXISTS-POS(0)` answer (all were `X::Method::NotFound`); `5.AT-POS(N.new)`
+reads the index's `.Int` (was `Nil`); `5.EXISTS-POS("0")` is `True`; `5.AT-POS(-1)` names `0..0`. Not changed: `Nil.EXISTS-POS` and
+`Nil.EXISTS-KEY` answer `Nil` (Rakudo: `False`; the interpreter answers a method on `Nil` before the table); `Buf.EXISTS-POS` is still
+missing (#13294, with the `Nil` answers); `C.AT-KEY("x")`, `C.new.AT-KEY("x")` and `C.new.EXISTS-KEY("x")` stay
+`X::Method::NotFound` (Rakudo: `Any`, a failure, `False`; point 2); `%h.AT-KEY($obj)` keys a `Str`-keyed hash by the object's own string form, not its `.Str` (#13293). The arms stay
+counted by `method-rows-report.py`: what is left of them is the list, buffer-instance, `IO::Path::Parts` and `Nil` branches. Pinned in
+`t/collections/subscript/any-subscript-rows.t`.
+
+### 9.107 Slice 5: a user class over a buffer reaches the `Blob`/`Buf` rows; the buffer arms are gone (2026-10-13)
+
+`refactor/11276-buffer-instance-rows`. `subbuf`, the `read-*` arms (1- and 2-arg), `read-ubits`/`read-bits`, `subbuf-rw`, the
+buffer branch of the `AT-POS` arm and `methods_narg/buf.rs`'s name table (`read_int_method_info`, ten quoted names) served a
+receiver no row took: a user class composing a buffer role over a `VMArray` body (`class B does Blob[uint8] is repr('VMArray')`,
+#9438), which has no shape. Probed: six receivers (two user classes, `Buf`, `buf8`, `blob8`, `utf8`) × thirty-eight calls, then
+each method's argument edge cases, on `raku`, the binary before the slice and the new one. Decisions:
+
+1. **`Receiver::of_settled` answers such an instance with the shape of the buffer type it composes**
+   (`blob::user_buffer_receiver`: the buffer-class registry names `Blob[..]` or `Buf[..]`), and so does a built-in buffer under
+   an alias class name, which has no shape either (`blob8.allocate(20)` is a `blob8`: OpenSSL's `sha1` digests, which lost
+   `.raku`/`.bytes` when the cascade's buffer branches went; the names are matched exactly, not by the `buf`/`blob` prefix
+   predicates, so a user `class buffer` is not a buffer). The instance stays the invocant;
+   every handler keeps its class (`B.new(1, 2).subbuf(1)` is a `B`). The entries that read `of_settled` run after the user's own
+   methods were looked up, so a method the class declares still answers first; the call-site lane reads `Receiver::of` and does
+   not see it. Every `Blob`/`Buf` row now answers it: `Str` raises `X::Buf::AsStr` (it rendered the gist), `of`, `Blob`/`Buf`
+   and `join` answer (all were `X::Method::NotFound` or the gist).
+2. **`read-ubits`/`read-bits` are rows** on the `buf_bits::read_bits` implementation (the cascade's second copy is deleted, and
+   so is the runtime's by-name arm in `methods_mut_dispatch.rs`); they bind `int $pos, uint $bits` and raise Rakudo's messages
+   (`Can only read 1..N bits from position P in buffer, you tried: B`, without the receiver's variable name, which a method does
+   not know). The `read-*` rows take the width and signedness from their table (`Reads`), bind `int $offset` (a `Str`, `Num` or
+   `Rat` offset, a type object and a big integer raise Rakudo's unboxing errors; all were read through `.Int` or declined) and
+   `Endian $endian` (an `Int` is `X::TypeCheck::Binding::Parameter`; it was read as the enum's value), and report a negative
+   offset as given (`offset -1`; the message read `offset 0`).
+3. **`subbuf` binds Rakudo's candidates**: `Range:D` (integer bounds, else `Must specify a Range with integer bounds to subbuf`;
+   `1^..^4` excludes both ends, it answered the whole buffer, and `1..*` panicked), `Int:D`, `(Int:D, Int:D)`, `(\from,
+   Whatever)`, `(\from, Numeric)` (truncated), `&From`/`&End`, and `X::Multi::NoMatch` for anything else (a `Str` or `Rat`
+   start was read as a number); the out-of-range messages are Rakudo's (`"From argument to subbuf ...`, `Len element to subbuf
+   ...`). The rows are `Handler::Interp`: a `Callable` bound is called with the length by the handler
+   (`resolve_subbuf_callable_args`, no longer called by the two native entries before the cascade). The runtime's
+   `dispatch_subbuf` (a third copy, which clamped a negative start) is deleted.
+4. **`subbuf-rw` is `Buf`'s** (rows at arities 0-2 for its rvalue; the lvalue proxy is unchanged and now resolves a `Callable`
+   end as `subbuf`'s end index, not `substr`'s length): `Blob.new.subbuf-rw(...)` and `utf8`'s are `X::Method::NotFound` as in
+   Rakudo (the cascade arm answered them), `Buf.subbuf-rw(1)` and `subbuf-rw()` answer (they were `X::Method::NotFound`).
+5. **`AT-POS`/`EXISTS-POS` rows on `Blob` and `Buf`** (`blob_pos.rs`, `INDEX_ARG`), and `reaches_audited_any_method` no longer
+   withholds `Any`'s subscript rows from the two shapes, so a buffer type object answers `Any`'s (`Buf.AT-POS(0)` is `Buf`). A
+   `Buf` reads `0` past its end, a `Blob` (and `utf8`, `blob16`) raises `X::OutOfRange` (it read `0`), a negative position is
+   out of range `0..elems-1` (it named `0..^Inf`), a big integer raises the unboxing error, and `EXISTS-POS` answers (it was
+   missing, #13294's `Buf` half). The cascade's `AT-POS` branch keeps the native-backed `CArray` only.
+6. **`.Blob`/`.Buf` keep the element type** (`buf16.new(1).Blob` is a `Blob[uint16]`; it was a `Blob`, #13115), and refuse a
+   type object with `X::Parameter::InvalidConcreteness` (they were `X::Method::NotFound`). For that, `user_buffer_receiver` also
+   answers a buffer type object with no shape of its own (`buf16`, `Blob[uint32]`, a user buffer class) with its shape's type
+   object, so it reaches the `TYPE_OBJECT_OK` rows (`of`, the coercions, `Any`'s and `Mu`'s).
+7. The 0-arg cascade's buffer branches for `gist`/`raku`, `bytes` and `list` are deleted (the rows answer every buffer now);
+   `perl` (Mu's, which Rakudo's `Blob` does not declare) and `values` (`Any`'s `self.list`) keep a one-line branch each.
+
+Not changed: `Blob.new(1, 2)[5]` (the subscript opcode's own read) answers `0` where Rakudo raises `X::OutOfRange`; a buffer
+answers `contains`/`starts-with` and the method form of `unpack` where Rakudo has none (see the PR's findings).
+`method-rows-report.py --arms`: pure cascades 116 -> 102 arms (`buf.rs` 10 -> 0, `dispatch_1arg.rs` 8 -> 7, `dispatch_2arg.rs`
+7 -> 4), runtime slow path 542 -> 541. Pinned in `t/oo/method/buffer-instance-method-rows.t`.
+
+### 9.108 Slice 5: `ACCEPTS` of the open shapes, `Uni`, the buffers, `Match` and `Any` are rows (2026-10-13)
+
+`refactor/13282-accepts-rows`, #13282. The runtime's generic `Mu.ACCEPTS` arm (`methods_call_dispatch.rs`) answered
+`$x.ACCEPTS($y)` with `$y ~~ $x` for the plain scalars and the buffers only; every other receiver without a row of its own (a
+`List`, a `Hash`, a `Date`, a `Duration`, a `FatRat`, a `Capture`, a `Uni`, a `Seq`, a `Match`, a user instance) was
+`X::Method::NotFound`. Probed: 28 receivers × 20 topics, then the edge cases (junction topics, type objects, user `ACCEPTS` in a
+class and a role, subclasses), on `raku` and the new binary; Rakudo's owners read from
+`.^find_method('ACCEPTS').candidates`. Decisions:
+
+1. **Rows on the owners Rakudo declares**, in `collections/accepts_open.rs`: `Numeric` (a role, added to `ROLES_WITH_ROWS`: it
+   reaches `Int`, `Num`, `Rat`, `FatRat`, `Complex`, `Duration` and `Instant`; Rakudo's `Int.ACCEPTS(Int:D)` agrees with it),
+   `Str`, `List` (and `Array`), `Map` (and `Hash`), `Date`, `DateTime`, `Seq` and `IO::Path` answer the smartmatch operator
+   (`$topic ~~ self`, the one implementation of both); `Bool` is the receiver whatever the topic; `Uni` compares codepoints,
+   whatever the normalization form (`"ab".NFC.ACCEPTS("ab".NFKC)` is `True`, a `Str` topic `False`); `Blob`/`Buf` compare a
+   buffer topic's elements and are `False` for anything else; `Match` is the match itself (`Match:D: Mu $`). All bind
+   `Mu \topic` (`OBJECT_ARGS`), so a `Junction` topic still autothreads.
+2. **`Any.ACCEPTS` is `self === topic`** (`values_identical`), reaching a `Capture` through `ANY_LIST_FOR_CLOSED_SHAPES` (only
+   it: `reaches_audited_any_method` withholds `ACCEPTS` from the other closed shapes) and an instance of a user class through
+   `answer_shapeless`, which admits `ACCEPTS` at arity 1 for an `Instance` alone (a code object, a regex, an enum and a mixin
+   keep the interpreter's). A class or role that declares `ACCEPTS` still answers first. `Capture` and `Uni` do not delegate to
+   the operator, which disagrees with Rakudo there (`1 ~~ \(1)` is `True` in mutsu).
+3. **The recognition table** gains the rows; `Map.ACCEPTS` and `Any.ACCEPTS` are `SPECIAL` (a `Map` has no shape, and a type
+   object's `ACCEPTS` is `Mu`'s type check, which the runtime's `Package` arm answers), so the cascade-backing tests do not
+   expect a pure answer for their samples.
+4. The runtime's scalar/buffer `Mu.ACCEPTS` arm is deleted.
+
+Not changed: the operator's own disagreements with Rakudo, which the rows now share (`Duration` against a number, a numeric
+`Str` against a `Complex`, a `Hash` against a `Map`, a `Str` against a buffer; #13332); an enum value, an `Exception`
+instance and a subclass of a built-in class with its own row (`class DD is Date`) (#13333); the allomorphs keep
+`allomorph.rs`'s path. Pinned in `t/oo/method/accepts-method-open-rows.t`.
+
+Addendum (#13333): an instance whose class MRO ends at a built-in class (`class X2 is Exception`) reaches `Any`'s rows through
+the catalog chain of that class (the MRO spells out `Exception` but not `Any`), and a subclass of a built-in class with its
+own `ACCEPTS` row (`class DD is Date`) answers from that row, with the interpreter (`shapeless_row`). Pinned in
+`t/oo/method/accepts-method-builtin-instances.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

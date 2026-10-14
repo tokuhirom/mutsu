@@ -63,6 +63,7 @@
 //! - it reads a `state`, `constant` or group-declared inner lexical.
 
 mod cell_ast;
+mod code_uses;
 pub(super) use cell_ast::slot_read;
 mod decl_regex;
 mod decls;
@@ -72,6 +73,7 @@ mod pragmas;
 mod routine_copy;
 mod routines;
 mod scan;
+mod token_reads;
 pub(super) mod var_traits;
 mod walk;
 

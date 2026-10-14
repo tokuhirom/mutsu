@@ -274,13 +274,10 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
         r = after;
         // `::CALLERS::<$*x>` is the same pseudo-stash term as `CALLERS::<$*x>`,
         // so a pseudo-package stash keeps its `PseudoStash` form (the compiler
-        // routes the keyed read on it to the caller-frame walk).
-        if full_name
-            .split("::")
-            .all(crate::parser::primary::var::is_pseudo_package)
-        {
-            return Ok((r, Expr::PseudoStash(format!("{full_name}::"))));
-        }
+        // routes the keyed read on it to the caller-frame walk). Any other
+        // `::Foo::` is the stash of `Foo` just like `Foo::` (`(::Int::).^name`
+        // is `Stash`).
+        return Ok((r, Expr::PseudoStash(format!("{full_name}::"))));
     }
     // Type smileys: ::Foo:U, ::Foo:D, ::Foo:_
     if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
@@ -369,6 +366,7 @@ fn starts_with_type_smiley(rest: &str) -> bool {
 pub(super) fn can_name_type_smiley(name: &str) -> bool {
     name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
         || crate::native_types::is_native_type_name(name)
+        || crate::parser::stmt::simple::is_user_declared_type(name)
 }
 
 /// Hand a just-parsed CORE term keyword to the run-time resolver when the

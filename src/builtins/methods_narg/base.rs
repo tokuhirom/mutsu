@@ -292,74 +292,73 @@ fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
     a
 }
 
-/// Compute base-repeating for a rational number.
-/// Returns (non_repeating_part, repeating_part) as strings.
-pub(crate) fn rat_base_repeating(n: i64, d: i64, radix: u32) -> (String, String) {
+/// `Rational.base-repeating`: the digits of `n / d` in `radix` before the
+/// repeating part, and the repeating part. One implementation for `Rat` and
+/// `FatRat` (whose parts may be big integers).
+// Cost: O(k * m), k = fraction digits until a remainder repeats (at most `d`),
+// m = the size of the integers.
+pub(crate) fn rat_base_repeating(
+    n: &num_bigint::BigInt,
+    d: &num_bigint::BigInt,
+    radix: u32,
+) -> (String, String) {
+    use num_bigint::BigInt;
+    use num_traits::{Signed, ToPrimitive, Zero};
     use std::collections::HashMap;
 
-    if d == 0 {
-        return (
-            if n > 0 {
-                "Inf".to_string()
-            } else if n < 0 {
-                "-Inf".to_string()
-            } else {
-                "NaN".to_string()
-            },
-            String::new(),
-        );
+    if d.is_zero() {
+        let text = if n.is_positive() {
+            "Inf"
+        } else if n.is_negative() {
+            "-Inf"
+        } else {
+            "NaN"
+        };
+        return (text.to_string(), String::new());
     }
-    let negative = (n < 0) != (d < 0);
-    let mut num = (n as i128).unsigned_abs();
-    let den = (d as i128).unsigned_abs();
-    let radix128 = radix as u128;
-
-    let int_part = num / den;
-    num %= den;
+    // An integral value is its decimal `Str` in any radix, as Rakudo's
+    // `~self` for a denominator of 1 (`(10/1).base-repeating(16)` is `10`).
+    if d.abs() == BigInt::from(1) {
+        return ((n * d.signum()).to_string(), String::new());
+    }
+    let negative = n.is_negative() != d.is_negative();
+    let den = d.abs();
+    let mut num = n.abs();
+    let int_part = &num / &den;
+    num %= &den;
 
     let mut prefix = if negative {
         "-".to_string()
     } else {
         String::new()
     };
-    prefix.push_str(&int_to_base(int_part as u64, radix));
-
-    if num == 0 {
+    prefix.push_str(&int_part.to_str_radix(radix).to_uppercase());
+    if num.is_zero() {
         return (prefix, String::new());
     }
-
     prefix.push('.');
     let digit_chars = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-    // Track remainders to find the cycle
-    let mut remainder_positions: HashMap<u128, usize> = HashMap::new();
+    let radix = BigInt::from(radix);
+    let render =
+        |digits: &[usize]| -> String { digits.iter().map(|&d| digit_chars[d] as char).collect() };
+    // The position of each remainder seen: a remainder seen before starts the
+    // cycle.
+    let mut remainder_positions: HashMap<BigInt, usize> = HashMap::new();
     let mut frac_digits = Vec::new();
-
     loop {
-        if num == 0 {
-            // Exact representation, no repeating part
-            let non_rep: String = frac_digits
-                .iter()
-                .map(|&d| digit_chars[d] as char)
-                .collect();
-            return (format!("{}{}", prefix, non_rep), String::new());
+        if num.is_zero() {
+            return (format!("{}{}", prefix, render(&frac_digits)), String::new());
         }
         if let Some(&pos) = remainder_positions.get(&num) {
-            // Found a cycle
-            let non_rep: String = frac_digits[..pos]
-                .iter()
-                .map(|&d| digit_chars[d] as char)
-                .collect();
-            let rep: String = frac_digits[pos..]
-                .iter()
-                .map(|&d| digit_chars[d] as char)
-                .collect();
-            return (format!("{}{}", prefix, non_rep), rep);
+            return (
+                format!("{}{}", prefix, render(&frac_digits[..pos])),
+                render(&frac_digits[pos..]),
+            );
         }
-        remainder_positions.insert(num, frac_digits.len());
-        num *= radix128;
-        let digit = (num / den) as usize;
+        remainder_positions.insert(num.clone(), frac_digits.len());
+        num *= &radix;
+        let digit = (&num / &den).to_usize().unwrap_or(0);
         frac_digits.push(digit);
-        num %= den;
+        num %= &den;
     }
 }

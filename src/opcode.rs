@@ -5413,6 +5413,9 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
             Stmt::SubsetDecl { is_my: true, .. } => None,
             Stmt::SubsetDecl { .. } => Some("subset"),
             Stmt::EnumDecl { is_my: true, .. } => None,
+            // An anonymous `enum <A B>` installs no package symbol, so there is
+            // nothing ambiguous to complain about (rakudo accepts it).
+            Stmt::EnumDecl { name, .. } if name.as_str().is_empty() => None,
             Stmt::EnumDecl { .. } => Some("enum"),
             Stmt::RoleDecl { custom_traits, .. }
                 if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
@@ -6717,6 +6720,13 @@ pub(crate) struct CompiledCode {
     /// `reads_topic` one shadow write. Computed once in
     /// `compute_needs_env_sync`.
     pub(crate) mentions_native_scalar_type_name: bool,
+    /// Whether this body or a closure nested in it names the `.VAR` method,
+    /// the only reader of a parameter's `__mutsu_var_source_name::` record
+    /// (the container's `.VAR.name`). The light bind of a plain `@x`/`%x`
+    /// parameter writes that record only when this is set (#12526). A stray
+    /// `"VAR"` constant costs one harmless record. Computed once in
+    /// `compute_needs_env_sync`.
+    pub(crate) names_var_method: bool,
     /// Whether the body touches a routine-owned implicit (`$/`, `$0`,
     /// `$<name>`, `$!`): it sets one ([`Self::sets_routine_state`]), or its
     /// constant pool names one of those variables or `make` -- the sound
@@ -6736,6 +6746,11 @@ pub(crate) struct CompiledCode {
     /// Pointy blocks are NOT routine boundaries — `return` propagates through
     /// them to the enclosing routine, and `&?ROUTINE` sees the enclosing routine.
     pub(crate) is_pointy_block: bool,
+    /// Whether this compiled code is a WhateverCode body (`* + 1`, `* + *`),
+    /// built by Whatever-currying. Like a pointy block it is no routine
+    /// boundary, but its call frame is named after the code object rather than
+    /// the pointy-block marker. Read by the light closure call (#13286).
+    pub(crate) is_whatever_code: bool,
     /// Whether this is a single-`$`-sigiled-parameter pointy block (`-> $v {
     /// }`, compiled via `Expr::Lambda`) whose one parameter must be marked
     /// readonly (`ReadonlyKind::Alias`) at the call site. Set only for the
@@ -7595,6 +7610,10 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Whether the light closure call can run this body, and what it needs
+    /// (#8335, `light_closure_shape`); settled on the first call.
+    pub(crate) light_closure_shape:
+        std::sync::OnceLock<Option<crate::light_closure_shape::LightClosureShape>>,
     /// Memo of [`Self::capture_hidden_set`].
     pub(crate) capture_hidden_set: std::sync::OnceLock<Option<Arc<rustc_hash::FxHashSet<Symbol>>>>,
     /// Lazily-built list of the env keys a closure capture probes by name
@@ -8060,6 +8079,7 @@ impl CompiledCode {
             uses_routine_state: false,
             sets_routine_state: false,
             mentions_native_scalar_type_name: false,
+            names_var_method: false,
             has_once: false,
             uses_callframe: false,
             uses_capture: false,
@@ -8070,6 +8090,7 @@ impl CompiledCode {
             may_observe_named_slurpy: false,
             source_line: None,
             is_pointy_block: false,
+            is_whatever_code: false,
             pointy_alias_param: false,
             immutable_topic: false,
             declarator_doc: None,
@@ -8155,6 +8176,7 @@ impl CompiledCode {
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            light_closure_shape: std::sync::OnceLock::new(),
             capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
             free_enum_bare_keys: std::sync::OnceLock::new(),
@@ -8434,9 +8456,11 @@ impl CompiledCode {
                     continue;
                 }
                 keys.push(sym);
-                for prefix in crate::symbol::SHADOW_META_PREFIXES {
-                    keys.push(sym.with_str(|name| Symbol::intern(&format!("{prefix}{name}"))));
-                }
+                sym.with_str(|name| {
+                    for prefix in crate::symbol::shadow_meta_prefixes_for(name) {
+                        keys.push(Symbol::intern(&format!("{prefix}{name}")));
+                    }
+                });
             }
             keys.into_boxed_slice()
         })
@@ -8480,11 +8504,11 @@ impl CompiledCode {
                         continue;
                     }
                     hidden.insert(sym);
-                    for prefix in crate::symbol::SHADOW_META_PREFIXES {
-                        hidden.insert(
-                            sym.with_str(|name| Symbol::intern(&format!("{prefix}{name}"))),
-                        );
-                    }
+                    sym.with_str(|name| {
+                        for prefix in crate::symbol::shadow_meta_prefixes_for(name) {
+                            hidden.insert(Symbol::intern(&format!("{prefix}{name}")));
+                        }
+                    });
                 }
                 (!hidden.is_empty()).then(|| Arc::new(hidden))
             })
@@ -8928,6 +8952,13 @@ impl CompiledCode {
             matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
                 || crate::native_types::is_native_int_type(s.as_str()))
         });
+        self.names_var_method =
+            self.constants.iter().any(
+                |c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "VAR"),
+            ) || self
+                .closure_compiled_codes
+                .iter()
+                .any(|c| c.names_var_method);
         (self.uses_routine_state, self.sets_routine_state) = self.scan_routine_state();
         self.compute_const_syms();
         self.compute_locals_sym();
@@ -9173,6 +9204,24 @@ impl CompiledCode {
             if let Some(idx) = name_idx
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(idx as usize).map(Value::view)
+                && let Some(&slot) = locals_map.get(name.as_str())
+            {
+                self.needs_env_sync[slot] = true;
+            }
+            // An op that resolves a `@`/`%` container by name to store into it
+            // or call a method on it (`@x.push`, `%h{$k} = v`, `@a[$i]++`)
+            // reads that name from env (#12526). Only aggregates: a scalar
+            // `$x.method` target is read from its slot.
+            let container_idx = match op {
+                OpCode::CallMethodMut {
+                    target_name_idx, ..
+                } => Some(*target_name_idx),
+                _ => self.op_container_mutate_const_idx(op),
+            };
+            if let Some(idx) = container_idx
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
+                && name.starts_with(['@', '%'])
                 && let Some(&slot) = locals_map.get(name.as_str())
             {
                 self.needs_env_sync[slot] = true;
@@ -9836,7 +9885,10 @@ impl CompiledCode {
         while i < bytes.len() {
             let c = bytes[i];
             if matches!(c, b'$' | b'@' | b'%' | b'&') {
-                let start_ident = i + 1;
+                // A placeholder (`$^a`) is keyed with its `^` twigil, the way
+                // the block's implicit signature names it.
+                let twigil = usize::from(bytes.get(i + 1) == Some(&b'^'));
+                let start_ident = i + 1 + twigil;
                 if start_ident < bytes.len()
                     && (bytes[start_ident].is_ascii_alphabetic() || bytes[start_ident] == b'_')
                 {
@@ -9849,7 +9901,7 @@ impl CompiledCode {
                     // while @/%/& lexicals keep their sigil. Match that convention
                     // so the free-var name lines up with the local slot / env key.
                     let name = if c == b'$' {
-                        pattern[start_ident..j].to_string()
+                        pattern[i + 1..j].to_string()
                     } else {
                         pattern[i..j].to_string()
                     };
@@ -13012,6 +13064,41 @@ impl FastParamCheck {
         Self::of(pd.type_constraint.as_ref())
     }
 
+    /// The sigil (`@` or `%`) of a plain positional aggregate parameter the
+    /// positional-light paths may bind, or `None` for every other parameter.
+    ///
+    /// Plain means: untyped, no trait, no default, `where`, shape or
+    /// sub-signature, and a bare identifier after the sigil (no twigil, not
+    /// the implicit `@_`/`%_`). Such a parameter binds the caller's container
+    /// itself: mutsu's `Array`/`Hash` are shared by reference and assignment
+    /// to one stores in place, so element writes, `.push` and a whole `=`
+    /// all reach the caller with no writeback. Whether a given *argument* may
+    /// take that bind is decided per call
+    /// (`Interpreter::positional_light_aggregate_args_admitted`).
+    pub(crate) fn light_aggregate_sigil(pd: &ParamDef) -> Option<char> {
+        let mut chars = pd.name.chars();
+        let sigil = chars.next().filter(|c| matches!(c, '@' | '%'))?;
+        let plain = chars.next().is_some_and(|c| c.is_alphabetic())
+            && !pd.named
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && !pd.onearg
+            && !pd.sigilless
+            && !pd.is_invocant
+            && !pd.optional_marker
+            && pd.default.is_none()
+            && pd.type_constraint.is_none()
+            && pd.type_capture.is_none()
+            && pd.where_constraint.is_none()
+            && pd.traits.is_empty()
+            && pd.literal_value.is_none()
+            && pd.sub_signature.is_none()
+            && pd.outer_sub_signature.is_none()
+            && pd.code_signature.is_none()
+            && pd.shape_constraints.is_none();
+        plain.then_some(sigil)
+    }
+
     /// Is `pd` an untyped parameter whose implicit nominal type is `Any`? The
     /// general binder's rule (`bind_function_args_values`): a routine's `$x` /
     /// `\x` / `:$x`, but not a block's (implicitly `Mu`), and not one whose
@@ -13070,6 +13157,15 @@ pub(crate) struct CompiledFunction {
     /// no `is rw` parameter — the overwhelming majority — pays no per-call
     /// scan for one. Computed once in `precompute_param_name_syms`.
     pub(crate) has_rw_positional_param: bool,
+    /// Bit `i` is set when parameter `i` is a plain `@x`/`%x` the
+    /// positional-light paths may bind
+    /// ([`FastParamCheck::light_aggregate_sigil`]), so neither the eligibility
+    /// test nor the per-call argument shape check
+    /// (`positional_light_aggregate_args_admitted`) re-derives it per call
+    /// (#12526); zero means a routine pays nothing for the check. A plain
+    /// aggregate past index 63 sets no bit and keeps the general binder.
+    /// Computed once in `precompute_param_name_syms`.
+    pub(crate) aggregate_positional_params: u64,
     /// Pre-computed mapping from positional parameter index to locals slot index.
     /// Used by the positional light call fast path to avoid name-based lookup per call.
     pub(crate) param_local_slots: Option<Vec<usize>>,
@@ -13683,6 +13779,13 @@ impl CompiledFunction {
             .param_defs
             .iter()
             .any(|pd| !pd.named && pd.traits.iter().any(|t| t == "rw"));
+        self.aggregate_positional_params = self
+            .param_defs
+            .iter()
+            .take(64)
+            .enumerate()
+            .filter(|(_, pd)| FastParamCheck::light_aggregate_sigil(pd).is_some())
+            .fold(0, |mask, (i, _)| mask | (1u64 << i));
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -13798,6 +13901,7 @@ mod compiled_fns_identity {
             is_raw: false,
             uses_return_rw: false,
             has_rw_positional_param: false,
+            aggregate_positional_params: 0,
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,

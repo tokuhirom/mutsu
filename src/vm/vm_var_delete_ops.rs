@@ -213,6 +213,18 @@ impl Interpreter {
         // map (#11701). Held for the whole op: the region below runs no user
         // Raku code beyond the key sequence's own evaluation.
         let _struct_guard = self.named_root_struct_guard(code, slot, &var_name);
+        // A user object key of a `Str`-keyed hash is deleted under its `.Str`
+        // (#13293).
+        if let Some(last) = self.stack.last()
+            && matches!(last.view(), ValueView::Instance { .. })
+            && let Some(hash) = slot
+                .and_then(|s| self.locals.get(s as usize).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
+        {
+            let key = self.stack.pop().unwrap_or(Value::NIL);
+            let key = self.hash_key_through_user_str(&hash, key)?;
+            self.stack.push(key);
+        }
         // Materialize a lazy key sequence before refreshing a scalar-held
         // target from its local slot.  The sequence may close over that same
         // target (`$store.pairs.grep(...).map(*.key)`); replacing the env

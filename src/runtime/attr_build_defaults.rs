@@ -41,7 +41,7 @@ use crate::value::{AttrMap, Value, ValueView};
 #[derive(Clone, Copy, Default)]
 pub(crate) struct AttrDeclScope<'a> {
     /// Lexicals captured where a role attribute default was declared.
-    pub(crate) env: Option<&'a ValueMap>,
+    pub(crate) env: Option<&'a crate::env_capture_view::CapturedScope>,
     /// Compunit whose imports were visible at the declaration.
     pub(crate) unit: Option<Symbol>,
     /// The class or role body the declaration appears in.
@@ -52,7 +52,7 @@ impl<'a> AttrDeclScope<'a> {
     /// The scope one registered attribute declaration carries.
     pub(crate) fn of(attr: &'a crate::runtime::ClassAttributeDef) -> Self {
         Self {
-            env: attr.captured_env.as_deref(),
+            env: attr.captured_env.as_ref(),
             unit: attr.captured_unit,
             package: attr.declaring_package.map(|p| p.as_str()),
         }
@@ -66,7 +66,7 @@ pub(crate) struct DeferredAttrDefault {
     /// The `has $.x = <expr>` initializer, when the attribute has one.
     pub(crate) default: Option<DeclTraitArg>,
     /// Lexicals captured where a role-composed attribute default was declared.
-    pub(crate) captured_env: Option<std::sync::Arc<ValueMap>>,
+    pub(crate) captured_env: Option<crate::env_capture_view::CapturedScope>,
     /// Compunit whose imports were visible where that default was declared.
     pub(crate) captured_unit: Option<crate::symbol::Symbol>,
     /// The class or role body that default was declared in (#8842).
@@ -183,7 +183,7 @@ impl Interpreter {
                         inv,
                         &attrs,
                         AttrDeclScope {
-                            env: d.captured_env.as_deref(),
+                            env: d.captured_env.as_ref(),
                             unit: d.captured_unit,
                             package: d.declaring_package.map(|p| p.as_str()),
                         },
@@ -497,23 +497,96 @@ impl Interpreter {
     /// Evaluate a declaration expression with names captured where a role
     /// attribute default was declared. Names already visible in the consuming
     /// class remain authoritative; role-only names are scoped to this eval.
+    ///
+    /// The captured scope is not copied into the env: the expression runs over
+    /// a block tier whose capture fallback is that scope, so a name the running
+    /// scope lacks resolves through it, below everything already visible --
+    /// the precedence the per-key insertion this replaces built by hand, at
+    /// O(1) instead of O(captured scope) env writes per evaluation (#13018).
+    /// What the expression writes by name lands in the tier and is merged
+    /// back afterwards, except a write to a role-only name: as before, that
+    /// stays scoped to this evaluation.
+    // Cost: O(w), w = names the expression writes by name.
     pub(crate) fn eval_decl_trait_arg_with_captured_env(
         &mut self,
         arg: &DeclTraitArg,
-        captured_env: Option<&ValueMap>,
+        captured_env: Option<&crate::env_capture_view::CapturedScope>,
+    ) -> Result<Value, RuntimeError> {
+        let Some(captured) = captured_env else {
+            return self.eval_decl_trait_arg(arg);
+        };
+        use crate::vm::vm_block_env::{BlockEnvSave, ClosedBlockEnv};
+        let save = match self.open_block_env_tier() {
+            save @ BlockEnvSave::Tier(_) => save,
+            // The chain is at its depth cap and no tier could be opened.
+            // TODO: this rare path still inserts the captured names one by
+            // one; it goes away once the default is compiled as a closure
+            // over the role body's scope (ADR-12529 static link).
+            BlockEnvSave::Whole(_) => return self.eval_decl_trait_arg_inserting_scope(arg, captured),
+        };
+        self.env_mut().set_capture_fallback(captured.clone());
+        let cells = captured_lexical_cells(arg, captured);
+        for (key, cell) in &cells {
+            self.env_mut().insert_sym(*key, cell.clone());
+        }
+        let result = self.eval_decl_trait_arg(arg);
+        self.env_mut().clear_capture_fallback();
+        let ClosedBlockEnv {
+            mut base,
+            writes,
+            removed,
+        } = self.close_block_env_tier(save);
+        for (key, value) in writes.iter() {
+            // A lexical bound to its declaring scope's cell is not the
+            // running scope's name, even when it spells the same.
+            if cells.iter().any(|(k, _)| k == key) {
+                continue;
+            }
+            if base.contains_key_sym(*key) || captured.get(key).is_none() {
+                base.insert_sym(*key, value.clone());
+            }
+        }
+        for key in removed.into_iter().flatten() {
+            base.remove_sym(key);
+        }
+        *self.env_mut() = base;
+        result
+    }
+
+    /// [`Self::eval_decl_trait_arg_with_captured_env`] when no block tier can
+    /// be opened: every captured name the running scope lacks is inserted for
+    /// the evaluation and removed again.
+    // Cost: O(c), c = names in the captured scope.
+    fn eval_decl_trait_arg_inserting_scope(
+        &mut self,
+        arg: &DeclTraitArg,
+        captured: &crate::env_capture_view::CapturedScope,
     ) -> Result<Value, RuntimeError> {
         let mut inserted = Vec::new();
-        if let Some(captured_env) = captured_env {
-            for (key, value) in captured_env {
-                if !self.env.contains_key(key) {
-                    self.env.insert(key.clone(), value.clone());
-                    inserted.push(key.clone());
+        for (key, value) in captured.iter() {
+            if !self.env.contains_key_sym(*key) {
+                self.env.insert_sym(*key, value.clone());
+                inserted.push(*key);
+            }
+        }
+        let mut shadowed = Vec::new();
+        for (key, cell) in captured_lexical_cells(arg, captured) {
+            shadowed.push((key, self.env.get_sym(key).cloned()));
+            self.env.insert_sym(key, cell);
+        }
+        let result = self.eval_decl_trait_arg(arg);
+        for (key, old) in shadowed.into_iter().rev() {
+            match old {
+                Some(old) => {
+                    self.env.insert_sym(key, old);
+                }
+                None => {
+                    self.env.remove_sym(key);
                 }
             }
         }
-        let result = self.eval_decl_trait_arg(arg);
         for key in inserted {
-            self.env.remove(&key);
+            self.env.remove_sym(key);
         }
         result
     }
@@ -521,7 +594,7 @@ impl Interpreter {
     pub(crate) fn eval_decl_trait_arg_with_captured_context(
         &mut self,
         arg: &DeclTraitArg,
-        captured_env: Option<&ValueMap>,
+        captured_env: Option<&crate::env_capture_view::CapturedScope>,
         captured_unit: Option<crate::symbol::Symbol>,
     ) -> Result<Value, RuntimeError> {
         let saved_unit = self.current_unit;
@@ -531,5 +604,69 @@ impl Interpreter {
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
         self.current_unit = saved_unit;
         result
+    }
+}
+
+/// The plain lexicals a declaration expression names, each paired with the
+/// shared cell `captured` (its declaring scope) binds it to. These resolve
+/// ahead of the running scope -- a default's `$x` is the `$x` of the scope
+/// the declaration was written in, whatever the constructing frame calls
+/// `$x` (#13340). A name captured as a plain value is left out: a copy is
+/// not the binding, so it keeps resolving the way it did before.
+// Cost: O(f), f = free variables of the expression's chunk.
+fn captured_lexical_cells(
+    arg: &DeclTraitArg,
+    captured: &crate::env_capture_view::CapturedScope,
+) -> Vec<(Symbol, Value)> {
+    let DeclTraitArg::Compiled(chunk) = arg else {
+        return Vec::new();
+    };
+    chunk
+        .code
+        .free_var_syms
+        .iter()
+        .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
+        .filter_map(|sym| {
+            captured
+                .get(sym)
+                .filter(|value| value.is_container_ref())
+                .map(|cell| (*sym, cell.clone()))
+        })
+        .collect()
+}
+
+impl Interpreter {
+    /// The bindings, in the running (declaring) scope, of the plain lexicals
+    /// a class attribute's default names, captured at registration so the
+    /// default resolves them through its declaring scope however long after
+    /// and from wherever the class is constructed (#13340). Only a shared
+    /// cell is captured: the compiler boxes each such lexical at its
+    /// declaration (`Compiler::bubble_attr_decl_captures`), and a name it
+    /// could not box keeps resolving by name at construction.
+    // Cost: O(f * d), f = free variables of the default's chunk, d = env tiers.
+    pub(crate) fn capture_attr_decl_lexicals(
+        &self,
+        default: Option<&DeclTraitArg>,
+    ) -> Option<crate::env_capture_view::CapturedScope> {
+        let Some(DeclTraitArg::Compiled(chunk)) = default else {
+            return None;
+        };
+        let mut cells = crate::env_tier::SymMap::default();
+        for sym in chunk.code.free_var_syms.iter() {
+            if !sym.with_str(crate::env::is_plain_user_lexical) {
+                continue;
+            }
+            if let Some(value) = self.env.get_sym(*sym)
+                && value.is_container_ref()
+            {
+                cells.insert(*sym, value.clone());
+            }
+        }
+        if cells.is_empty() {
+            return None;
+        }
+        Some(std::sync::Arc::new(crate::env_capture_view::CaptureView::single(
+            std::sync::Arc::new(crate::env_tier::Tier::new(cells)),
+        )))
     }
 }

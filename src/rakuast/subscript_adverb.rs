@@ -140,6 +140,8 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
             dimensions,
             is_positional,
         } => (target, dimensions.as_slice(), *is_positional),
+        // `@a[]:adverb` / `%h{}:adverb`: no dimension at all.
+        Expr::ZenSlice(target) => (target, &[][..], !matches!(&**target, Expr::HashVar(_))),
         _ => return None,
     };
     Some(
@@ -369,4 +371,25 @@ pub(super) fn construct(class_name: &str, args: &[Value]) -> Option<Result<Value
         Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
     };
     Some(build())
+}
+
+/// Whether the postcircumfix's first colonpair is `:exists` / `:!exists`.
+// Cost: O(1).
+pub(super) fn leads_with_exists(postfix: &RakuAstNode) -> bool {
+    let Ok(colonpairs) = list_field(postfix, "colonpairs") else {
+        return false;
+    };
+    let Some(first) = colonpairs.first() else {
+        return false;
+    };
+    let ValueView::RakuAst(node) = first.view() else {
+        return false;
+    };
+    matches!(
+        node.class,
+        RakuAstClass::ColonPairTrue | RakuAstClass::ColonPairFalse
+    ) && matches!(
+        node.fields.first().map(|f| &f.value),
+        Some(RakuAstFieldValue::Node(key)) if matches!(key.view(), ValueView::Str(k) if k.as_str() == "exists")
+    )
 }

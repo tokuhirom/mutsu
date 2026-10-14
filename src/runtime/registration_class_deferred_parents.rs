@@ -74,7 +74,19 @@ impl Interpreter {
     fn resolve_deferred_body_parent(&self, class_name: &str, parent: &str) -> Option<String> {
         let user_facing = crate::value::user_facing_type_name(class_name);
         let own_scope = if crate::qualified::is_qualified_str(parent) {
-            None
+            // The parser spells a body-declared type `Short::Inner`
+            // (`Short` being this class's own last segment); inside a nested
+            // package the registered name is `Enclosing::Short::Inner`.
+            let short = crate::qualified::last_segment(crate::qualified::known_symbol(&user_facing))
+                .as_str()
+                .to_string();
+            crate::qualified::split_first(crate::qualified::known_symbol(parent))
+                .filter(|(head, rest)| *head == short.as_str() && !rest.is_empty())
+                .map(|(_, rest)| {
+                    crate::qualified::qualified_text(&user_facing, rest)
+                        .as_str()
+                        .to_string()
+                })
         } else {
             Some(
                 crate::qualified::qualified_text(&user_facing, parent)

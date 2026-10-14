@@ -570,6 +570,123 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   type of any other kind that runs code, or a user trait at any level, still
   keeps the BEGIN in place.
 
+**Slice 2 follow-up — a token, rule or regex declared ahead, implemented**
+(`src/runtime/begin_prologue/nested/routine_copy.rs`,
+`t/control/begin-prologue-inner-calls.t`; #13096).
+
+- A `token`, `rule` or `regex` of an inner scope used to block the scope, so a
+  BEGIN after it stayed in place, and through `Lifted::halted` so did every
+  later nested BEGIN of the unit.
+- A regex reaches one as a subrule (`/<t>/`), which a scan of the called names
+  need not see, so every such declaration of the scopes is copied into the
+  lifted block, as operator routines are (`Routine::always`). The copy is
+  lexical only (`our` and `is export` dropped).
+- Only a pattern that runs no code and reads no variable is copied: no code
+  block, no `$`/`@`/`%`/`&` interpolation, no `:my`/`:our`, no parameters, not
+  a multi. Such a code block could read a lexical of the scope, which the scan
+  of the compiled declaration does not see. Any other still blocks the scope;
+  `t/control/begin-time-region-unwind.t` now uses a token with a code block as
+  its in-place device.
+
+**Slice 2 follow-up — a token that runs code or interpolates, implemented**
+(`src/runtime/begin_prologue/nested/token_reads.rs`,
+`t/control/begin-prologue-inner-calls.t`; #13096).
+
+- A token's pattern reads the scope through its code blocks, predicates,
+  interpolated blocks, quantifier blocks, subrule/callable arguments and
+  interpolated variables (`$x`, `@alts`, `<@alts>`, `<&r>`). None of that is in
+  the compiled declaration, but all of it is in the pattern's static regex
+  tree, so `TokenReads` collects it there and the token's dependencies are
+  scanned from it instead of from the declaration (`Routine::reads`). The
+  variables are then supplied like a routine's: the token closes over the
+  static cells of the bindings declared ahead of it.
+- Still refused, and so still blocking the scope: a pattern without a static
+  regex tree, one that declares a variable (`:my`/`:our`/`:state`, which the
+  scan of a code block cannot tell from a read of the scope's), a token with
+  parameters, and a multi token. `t/control/begin-time-region-unwind.t` now
+  uses a `:my` token as its in-place device.
+
+**Slice 2 follow-up — a literal `EVAL` in a scope that declares a type,
+implemented** (`src/runtime/begin_prologue/nested/mentions.rs`,
+`t/control/begin-prologue-eval-type.t`; #13096).
+
+- An `EVAL` counted as naming every type and as changing one through its
+  metaobject, so a body using one in a scope that declares a type was not
+  lifted (`sub f { my class K { }; BEGIN say EVAL q[K.^name] }`), and halted
+  every later nested BEGIN. When the text is a string literal (`EVAL '...'`,
+  `EVAL q[...]`, `q[...].EVAL`) that parses on its own, `Mentions` now reads
+  the names and metaobject calls from the parsed tree instead, recursively for
+  a literal `EVAL` inside it. A read-only metamethod (`.^name`) lifts; a
+  changing one (`.^add_method`) still keeps the BEGIN in place, as written
+  outside an `EVAL`.
+- Unchanged: a text that is not a literal, or that does not parse alone (it
+  uses an operator or slang of the scope), and `EVALFILE`, still count as
+  naming and changing every type. The body's routines and variables are
+  supplied as before: the compiled body is still reflective, so it gets the
+  whole of its scopes.
+
+**Slice 2 follow-up — a literal computed name, a lexical method and a
+method-level proto outside a package, implemented**
+(`src/runtime/begin_prologue/nested/routine_copy.rs`,
+`t/control/begin-prologue-computed-sub-name.t`; #13096).
+
+- These declarations blocked their scope, so a BEGIN of it, and every later
+  nested BEGIN, kept its place. Each is now copied into the lifted block like a
+  `my sub`:
+  - a routine whose computed name is a string literal (`sub ::("h") { }`),
+    which the parser already takes as its name; any other computed name still
+    blocks (rakudo needs it at compile time, and a scan cannot know it);
+  - a lexical method outside a package (`my method m { }`, `my multi
+    method`), reached as `$x.&m`; a has-scoped `method` there belongs to no
+    package and still blocks;
+  - a method-level proto outside a package (`my proto method p(|) {*}`),
+    copied like a sub-level proto.
+- Compared against `raku`: `sub f { sub ::("helper") { 'h' }; BEGIN say
+  helper() }`, `sub f { my method mm() { }; BEGIN say "a" }` and `sub f { my
+  proto method pm(|) {*}; BEGIN say "a" }` followed by `sub g { BEGIN say "b"
+  }; say "m"` print the BEGINs' output before `m` on both now.
+- Left: a `supersede` routine (rakudo: `"supersede" not yet implemented`).
+
+**Slice 2 follow-up — a pseudo-package qualified call, implemented**
+(`src/runtime/begin_prologue/nested/routines.rs`,
+`t/control/begin-prologue-inner-calls.t`; #13096).
+
+- A call qualified by a pseudo-package (`MY::h()`, `OUTER::h()`,
+  `GLOBAL::h()`, `CORE::uc(...)`) already made the body reflective, so it is
+  supplied the whole of the scopes it sees. Its callee is not a routine the
+  scan can select, and the rule "a body calling a routine it does not know is
+  not lifted from a scope that declares routines" refused the lift. That rule
+  exists because such a routine may evaluate a string where it was called
+  from; a reflective body already has every name of its scopes, so the rule
+  no longer applies to a pseudo-qualified callee.
+- Compared against `raku`: `MY::h()` and `OUTER::h()` find no routine on
+  rakudo, at BEGIN time or not (they look up `h`, not `&h`), and fail in both
+  (with different messages, the same as at run time); `OUTER::<&h>()` was
+  already lifted and fails the same way on both; `GLOBAL::h()` reaches an
+  `our` routine of the scope on both.
+
+**Slice 2 follow-up — a multi read as `&name` without changing it, implemented**
+(`src/runtime/begin_prologue/nested/code_uses.rs`,
+`t/control/begin-prologue-inner-calls.t`; #13096).
+
+- A body (or copied routine) that reads a multi as `&name` was never lifted,
+  since it may change the proto object and a change to the copy would be lost.
+  Now the AST says how each `&name` is used (`CodeUses`): a method from a
+  read-only list (`.candidates`, `.signature`, `.name`, `.assuming`, ...) or a
+  call through it (`&p(...)`, `&p.(...)`) changes nothing, and the body is
+  lifted. Any other use (another method, a `.^` metamethod, handing `&p` on
+  as an argument or binding it) still keeps the BEGIN in place.
+- Measured on the way: `&p.add_dispatchee(...)` on a lifted copy is really
+  lost (the real proto never sees the candidate), so the rule is needed. A
+  plain routine's `&h.wrap(...)` is not lost — the lifted BEGIN's wrap reaches
+  the real routine, as on rakudo — so plain routines keep being lifted
+  whatever the body does with `&h`.
+- A re-dispatcher (`callsame`, `nextwith`, `samewith`, ...) counts as a core
+  call. The parser leaves one as a bare word, but the RakuAST frontend lowers
+  it to a call, which the scan took for an unknown routine and so refused the
+  lift (`sub f { sub h { }; BEGIN { -> { callsame } } }` was lifted only under
+  the default frontend).
+
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
 `t/modules/import-export/use-if-begin-time.t`,

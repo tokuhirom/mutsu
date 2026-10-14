@@ -16,8 +16,9 @@ pub(crate) mod token_body;
 
 // Shared attribute / body validation helpers used across submodules.
 pub(crate) use attr_checks::{
-    null_regex_error, push_also_is_parent, reject_no_self_in_attr_where, reject_no_self_in_subs,
-    reject_no_twigil_attr_at_body_level, stmt_also_is_parent, stmt_is_also_is_rw,
+    nested_type_names, null_regex_error, push_also_is_parent, reject_no_self_in_attr_where,
+    reject_no_self_in_subs, reject_no_twigil_attr_at_body_level, stmt_also_is_parent,
+    stmt_is_also_is_rw,
 };
 
 // Shared token / braced-body helpers used across submodules.
@@ -29,9 +30,9 @@ pub(crate) use token_body::{
 
 // Shared declarator helpers used across submodules.
 pub(crate) use class_decl::{
-    EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, export_type_marker, meta_setter_stmt,
-    parse_bracket_arg_exprs, parse_declarator_traits, parse_optional_bracket_suffix,
-    reject_trailing_postfix,
+    DECLARE_HOW_TRAIT, EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, declare_how_keyword,
+    declare_how_marker, export_type_marker, meta_setter_stmt, parse_bracket_arg_exprs,
+    parse_declarator_traits, parse_optional_bracket_suffix, reject_trailing_postfix,
 };
 pub(crate) use export_scan::{extract_exported_subs, find_export_name_clash};
 pub(crate) use package_decl::{check_pseudo_package_in_decl, export_name_clash_error};

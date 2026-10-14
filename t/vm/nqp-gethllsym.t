@@ -8,7 +8,7 @@ use nqp;
 # `nqp::gethllsym("default","SysConfig").rakudo-build-config<version>` before
 # any Raku-level class is even composed. Issue #8775.
 
-plan 6;
+plan 7;
 
 # Real Rakudo installs `Perl6::SysConfig` under `("default", "SysConfig")`
 # during its own compiler bootstrap; mutsu seeds the same binding so this
@@ -21,6 +21,10 @@ is $sys-config.^name, 'Perl6::SysConfig',
 my $build-config := $sys-config.rakudo-build-config;
 isa-ok $build-config, Map, '.rakudo-build-config is Map-shaped';
 ok $build-config<version>.defined, '.rakudo-build-config<version> is defined';
+# Rakudo's build config version is the compiler's release (here the coordinate
+# `$*RAKU.compiler.version` reports, ADR-0104), not an unrelated package version.
+is $build-config<version>, $*RAKU.compiler.version.Str,
+    '.rakudo-build-config<version> is the compiler version';
 
 # Genuinely general, not a special case for "default"/"SysConfig": a value
 # bound under an arbitrary HLL/name pair round-trips.

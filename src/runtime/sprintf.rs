@@ -40,13 +40,6 @@ pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
     }
 }
 
-pub(crate) fn format_zprintf(fmt: &str, arg: Option<&Value>) -> String {
-    match arg {
-        Some(value) => format_sprintf_impl(fmt, std::slice::from_ref(value), true),
-        None => format_sprintf_impl(fmt, &[], true),
-    }
-}
-
 pub(crate) fn format_sprintf_args(fmt: &str, args: &[Value]) -> String {
     format_sprintf_impl(fmt, args, false)
 }

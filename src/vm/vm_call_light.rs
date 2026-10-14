@@ -475,7 +475,14 @@ impl Interpreter {
         // journaled by the readonly frame, so it is restored on return — before
         // the param loop below, which re-marks `_` if the routine has an
         // explicit (readonly) `$_` parameter.
-        if cf.code.is_routine {
+        //
+        // A body that never names `$_` cannot observe the mark, and the
+        // readonly frame restores it on return, so the unmark (and its journal
+        // replay on every call from inside a caller's `for`) is skipped there
+        // (#12526).
+        if cf.code.is_routine
+            && (cf.code.reads_topic || crate::opcode::reflective_name_access_possible())
+        {
             self.unmark_readonly_topic();
         }
         // Bind params to slots. Also write the param into the overlay when a
@@ -691,12 +698,51 @@ impl Interpreter {
                 // `Nil` left behind) rather than cloning it and dropping the
                 // original.
                 let val = std::mem::replace(&mut self.stack[args_base + param_idx], Value::NIL);
-                let val = crate::runtime::types::unwrap_varref_value(val);
-                // Whether this parameter itemizes its bound value depends only
-                // on its declaration, so it was settled at registration time
-                // (`param_itemize_on_bind`). Re-deriving it per bind scanned the
-                // parameter's `traits: Vec<String>` twice with string compares.
-                Self::bind_itemize_param(cf, param_idx, val)
+                // A plain `@x`/`%x` (the only `@`/`%` shape eligibility lets
+                // through, with an untyped Array/Hash argument) binds the
+                // caller's container itself, de-itemized like the general
+                // binder's `@`/`%` bind.
+                if cf.aggregate_positional_params != 0
+                    && cf.param_defs[param_idx].name.starts_with(['@', '%'])
+                {
+                    // The caller's variable, when the argument names one
+                    // (not an element of one): the container's `.VAR.name`.
+                    let source = val
+                        .as_varref()
+                        .filter(|(_, _, index)| index.is_none())
+                        .map(|(name, _, _)| name);
+                    let val = crate::runtime::types::unwrap_varref_value(val);
+                    let val = val.deitemize_for_sigil_bind();
+                    let name = &cf.param_defs[param_idx].name;
+                    // Read when a thread spawns from a block this frame made
+                    // (`clone_for_thread_for_block`, even the first spawn,
+                    // before any thread exists), and while threads share
+                    // names (`container_name_is_redeclared`). A body that
+                    // makes no closure, outside a threaded run, has no reader
+                    // (#12526).
+                    if !cf.code.closure_compiled_codes.is_empty() || self.threads.shared_vars_active
+                    {
+                        self.note_param_bound_aggregate(name, &val);
+                    }
+                    let sym = match cf.param_name_syms.get(param_idx) {
+                        Some(&sym) => sym,
+                        None => Symbol::intern(name),
+                    };
+                    self.bind_light_aggregate_constraint(name, sym, &val);
+                    // `.VAR.name` is the record's only reader (#12526).
+                    if cf.code.names_var_method || write_all_params {
+                        self.bind_light_aggregate_source(sym, source.map(|s| s.as_str()));
+                    }
+                    val
+                } else {
+                    let val = crate::runtime::types::unwrap_varref_value(val);
+                    // Whether this parameter itemizes its bound value depends
+                    // only on its declaration, so it was settled at
+                    // registration time (`param_itemize_on_bind`). Re-deriving
+                    // it per bind scanned the parameter's `traits:
+                    // Vec<String>` twice with string compares.
+                    Self::bind_itemize_param(cf, param_idx, val)
+                }
             } else {
                 // Omitted: bind the constant the precompute reduced this
                 // parameter's default (or bare `?`) to. `required_count` above
@@ -722,6 +768,9 @@ impl Interpreter {
                 }
             };
             let param_name = &cf.param_defs[param_idx].name;
+            // A plain `@x`/`%x` is mirrored like a scalar: only when the body
+            // reads it by name, which includes a method call on it (`@a.push`)
+            // and a named element store (`compute_needs_env_sync`, #12526).
             let needs_env = write_all_params
                 || val.is_nil()
                 || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
@@ -798,10 +847,16 @@ impl Interpreter {
             // same way the general binder's `check_and_bind_signature` does;
             // the surrounding call path restores whatever was marked before
             // this call once it returns.
+            //
+            // A plain `@x`/`%x` stays writable for the same reason: it is the
+            // caller's container, which the body may store into (`%h<k> = v`,
+            // `@a = ...`), and the general binder never marks one readonly.
+            let writable = is_rw_param
+                || (cf.aggregate_positional_params != 0 && param_name.starts_with(['@', '%']));
             match cf.param_name_syms.get(param_idx) {
-                Some(sym) if is_rw_param => self.unmark_readonly_sym(*sym),
+                Some(sym) if writable => self.unmark_readonly_sym(*sym),
                 Some(sym) => self.mark_readonly_sym(*sym),
-                None if is_rw_param => self.unmark_readonly(&cf.param_defs[param_idx].name),
+                None if writable => self.unmark_readonly(&cf.param_defs[param_idx].name),
                 None => self.mark_readonly(&cf.param_defs[param_idx].name),
             }
         }

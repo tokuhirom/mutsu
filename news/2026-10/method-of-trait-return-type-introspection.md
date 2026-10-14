@@ -1,0 +1,1 @@
+Method objects returned by `.^find_method` now retain a return type set by a custom `trait_mod:<is>` handler through `trait_mod:<of>` or `trait_mod:<returns>`. Their `returns`, `of`, and signature return type all reflect the shared routine metadata.

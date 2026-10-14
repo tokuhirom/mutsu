@@ -82,19 +82,20 @@ impl Interpreter {
                 // ADR-0021 I2: data-minted pairs default positional.
                 Some(Ok(Value::value_pair(Value::str(key.resolve()), val)))
             }
+            // An enum member is its base type's value, so it answers that
+            // type's `ACCEPTS` (`Less.ACCEPTS(-1)` is `Int`'s, `True`; a
+            // `Str`-valued member's is `Str`'s): the smartmatch of the topic
+            // against the member, which compares by value (#13333).
+            // Cost: the smartmatch's, O(1) for a numeric member.
             "ACCEPTS" => {
                 if args.is_empty() {
                     return Some(Err(RuntimeError::new("ACCEPTS requires an argument")));
                 }
-                let other = &args[0];
-                Some(Ok(Value::truth(match other.view() {
-                    ValueView::Enum {
-                        enum_type: other_type,
-                        key: other_key,
-                        ..
-                    } => enum_type == other_type && key == other_key,
-                    _ => false,
-                })))
+                Some(Ok(Value::truth(
+                    crate::builtins::method_table::accepts_by_smartmatch(
+                        self, &args[0], target,
+                    ),
+                )))
             }
             "pred" => {
                 if index == 0 {

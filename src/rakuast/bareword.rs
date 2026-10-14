@@ -29,6 +29,11 @@ fn setting_type(name: &str) -> bool {
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+mod caller_names;
+mod package_alias;
+
+pub(super) use caller_names::CallerNames;
+
 /// What a bareword naming something the same compilation unit declared means.
 ///
 /// raku resolves such a name at parse time, so `class C { }; C.new` renders `C`
@@ -84,33 +89,6 @@ impl Drop for DeclaredNames {
     }
 }
 
-thread_local! {
-    /// The names an `EVAL` string's calling scope declares: the unit being
-    /// converted is only the string, so its own declarations cannot say what
-    /// `aa` of `enum E <aa bb>; EVAL "aa"` is. Empty outside such a conversion.
-    static CALLER_NAMES: RefCell<HashMap<String, DeclaredKind>> =
-        RefCell::new(HashMap::new());
-}
-
-/// RAII guard installing an `EVAL` string's caller names (see [`CALLER_NAMES`]).
-pub(super) struct CallerNames(HashMap<String, DeclaredKind>);
-
-impl CallerNames {
-    // Cost: O(n), n = number of caller names.
-    pub(super) fn install(types: Vec<String>, terms: Vec<String>) -> Self {
-        let mut names = HashMap::new();
-        names.extend(types.into_iter().map(|n| (n, DeclaredKind::Type)));
-        names.extend(terms.into_iter().map(|n| (n, DeclaredKind::Term)));
-        Self(CALLER_NAMES.with(|c| std::mem::replace(&mut *c.borrow_mut(), names)))
-    }
-}
-
-impl Drop for CallerNames {
-    fn drop(&mut self) {
-        CALLER_NAMES.with(|c| *c.borrow_mut() = std::mem::take(&mut self.0));
-    }
-}
-
 /// What a `constant` renders as when named later. Rakudo evaluates the
 /// initializer at compile time, so a constant holding a type object is a type
 /// (`my constant E = Metamodel::EnumHOW.new_type(...)`, `constant T = Int`) and
@@ -118,7 +96,9 @@ impl Drop for CallerNames {
 /// type object are recognised: a type name, or the MOP `new_type` constructor.
 fn constant_kind(init: &Expr) -> DeclaredKind {
     let type_valued = match init {
-        Expr::BareWord(n) => setting_type(n),
+        // A type the unit declares too (`constant E = Outer::Inner`); while
+        // the unit's own scan runs, `package_alias` settles those instead.
+        Expr::BareWord(n) => setting_type(n) || declared_kind(n) == Some(DeclaredKind::Type),
         Expr::MethodCall { name, target, .. } => {
             name.resolve() == "new_type"
                 && matches!(target.as_ref(), Expr::BareWord(n)
@@ -155,8 +135,8 @@ impl BlockScope {
             match stmt {
                 Stmt::EnumDecl { name, variants, .. } => {
                     own.insert(name.resolve(), DeclaredKind::Type);
-                    for (variant, _) in variants {
-                        own.insert(variant.clone(), DeclaredKind::Term);
+                    for variant in crate::parser::enum_value_names(variants) {
+                        own.insert(variant, DeclaredKind::Term);
                     }
                 }
                 Stmt::ClassDecl { name, .. }
@@ -196,7 +176,7 @@ fn scoped_kind(name: &str) -> Option<DeclaredKind> {
 fn declared_kind(name: &str) -> Option<DeclaredKind> {
     scoped_kind(name)
         .or_else(|| DECLARED_NAMES.with(|d| d.borrow().get(name).copied()))
-        .or_else(|| CALLER_NAMES.with(|c| c.borrow().get(name).copied()))
+        .or_else(|| caller_names::kind(name))
 }
 
 /// Whether `name` names a type at parse time: a builtin type or one the unit
@@ -253,7 +233,11 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
     /// The names collected so far, and the packages whose body is being scanned
     /// (outermost first): a declaration nested in `class Outer { class Inner }`
     /// is also `Outer::Inner`.
-    struct Scan<'o>(&'o mut HashMap<String, DeclaredKind>, Vec<Symbol>);
+    struct Scan<'o>(
+        &'o mut HashMap<String, DeclaredKind>,
+        Vec<Symbol>,
+        Vec<package_alias::PackageAlias>,
+    );
 
     impl Scan<'_> {
         /// Register `name` under every spelling a reference inside or outside
@@ -293,13 +277,33 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     label: Some(name), ..
                 } => insert_term(self.0, name.clone()),
                 // An enum's values are terms of their own, bare and qualified
-                // by the enum's name (`Red`, `Color::Red`).
-                Stmt::EnumDecl { name, variants, .. } => {
+                // by the enum's name (`Red`, `Color::Red`). An `our` enum also
+                // installs them in the enclosing packages (`module M { enum E
+                // <a> }; M::a`).
+                Stmt::EnumDecl {
+                    name,
+                    variants,
+                    is_my,
+                    ..
+                } => {
+                    if !is_my {
+                        for variant in crate::parser::enum_value_names(variants) {
+                            for composed in self
+                                .compositions(Symbol::intern(&variant))
+                                .into_iter()
+                                .skip(1)
+                            {
+                                self.0
+                                    .entry(composed.resolve())
+                                    .or_insert(DeclaredKind::Term);
+                            }
+                        }
+                    }
                     for composed in self.compositions(*name) {
                         insert_declared_type(composed, self.0);
-                        for (variant, _) in variants {
-                            self.0.entry(variant.clone()).or_insert(DeclaredKind::Term);
-                            let qualified = qualified(composed, Symbol::intern(variant));
+                        for variant in crate::parser::enum_value_names(variants) {
+                            let qualified = qualified(composed, Symbol::intern(&variant));
+                            self.0.entry(variant).or_insert(DeclaredKind::Term);
                             self.0
                                 .entry(qualified.resolve())
                                 .or_insert(DeclaredKind::Term);
@@ -357,9 +361,27 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     ..
                 } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
                     self.0.insert(name.clone(), constant_kind(expr));
+                    if let Expr::BareWord(target) = expr {
+                        self.2.push(package_alias::PackageAlias {
+                            spellings: self.compositions(Symbol::intern(name)),
+                            target: target.clone(),
+                        });
+                    }
                     // A `constant` is `our`-scoped: `M::c` reaches it too.
                     for composed in self.compositions(Symbol::intern(name)).into_iter().skip(1) {
                         self.0.insert(composed.resolve(), DeclaredKind::Term);
+                    }
+                }
+                // `my $pkg::x` creates the stub package `pkg`, which a later
+                // bareword (`OUR::pkg`) names as a type (measured on 2026.09).
+                Stmt::VarDecl { name, .. }
+                    if crate::qualified::is_qualified_str(
+                        name.trim_start_matches(['@', '%', '&', '*']),
+                    ) =>
+                {
+                    let bare = Symbol::intern(name.trim_start_matches(['@', '%', '&', '*']));
+                    for stub in crate::qualified::package_ancestors(bare).skip(1) {
+                        self.0.entry(stub.resolve()).or_insert(DeclaredKind::Type);
                     }
                 }
                 // An `our sub` of a package is reached by its qualified name.
@@ -446,7 +468,9 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
         }
     }
 
-    walk_stmts(&mut Scan(out, Vec::new()), stmts);
+    let mut scan = Scan(out, Vec::new(), Vec::new());
+    walk_stmts(&mut scan, stmts);
+    package_alias::apply(&scan.2, scan.0);
 }
 
 /// Core routines which are meaningful as bare calls without parentheses.
@@ -518,6 +542,20 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
             RakuAstClass::TermName => return Some(term_name(name)),
             _ => {}
         }
+    }
+    // `OUR::A` / `MY::A` over a name that resolves: a `Term::Name` of the
+    // qualified name, whether `A` is a type or a term (measured on 2026.09).
+    if let Some(rest) = name
+        .strip_prefix("OUR::")
+        .or_else(|| name.strip_prefix("MY::"))
+        && convert(rest).is_some_and(|node| {
+            matches!(
+                node.class,
+                RakuAstClass::TypeSimple | RakuAstClass::TermName
+            )
+        })
+    {
+        return Some(term_name(name));
     }
     // A name a `use` brought in, which the unit's own declarations do not
     // list: what the parse's scope tables resolved it to.

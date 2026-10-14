@@ -77,7 +77,15 @@ pub(super) static RAT_ROWS: &[MethodRow] = &[
 ];
 pub(super) static COMPLEX_ROWS: &[MethodRow] = &[
     pure!("Complex", "Numeric", numeric),
-    pure!("Complex", "Complex", complex),
+    // `method Complex() { self }`, so the type object answers itself.
+    MethodRow {
+        owner: "Complex",
+        name: "Complex",
+        arity: 0,
+        handler: Handler::Pure(complex_self),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
 ];
 
 fn not_numeric(method: &str) -> RuntimeError {
@@ -96,6 +104,15 @@ fn rat(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 fn fat_rat(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     fat_rat_of(target).ok_or_else(|| not_numeric("FatRat"))
 }
+/// `Complex.Complex`: the receiver, a type object included.
+// Cost: O(1).
+fn complex_self(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    if let ValueView::Package(_) = target.view() {
+        return Ok(target.clone());
+    }
+    complex(target, args)
+}
+
 fn complex(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     complex_of(target).ok_or_else(|| not_numeric("Complex"))
 }

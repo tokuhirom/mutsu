@@ -1,4 +1,14 @@
 use super::*;
+
+/// What a call site's argument descriptor says about its arguments
+/// ([`Interpreter::stack_arg_kinds`]).
+#[derive(Clone, Copy, Default)]
+pub(super) struct CallArgKinds {
+    /// A syntactically named argument (ADR-0021).
+    pub(super) named: bool,
+    /// A `|EXPR` argument-list interpolation (ADR-0054).
+    pub(super) slip: bool,
+}
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -75,7 +85,9 @@ impl Interpreter {
         Self::decode_arg_slip_positions(code, arg_sources_idx).is_some()
     }
 
-    /// Does this call site contain a syntactically named argument?
+    /// Whether this call site contains a syntactically named argument, and
+    /// whether it contains a `|EXPR` one ([`Self::stack_args_have_slip`]), in
+    /// one pass over the call site's descriptor (#12526).
     ///
     /// ADR-0021 makes namedness a call-site property. `FALSE` is the compact
     /// descriptor for a named argument without an rw source; an array whose
@@ -83,15 +95,24 @@ impl Interpreter {
     /// its second element. This is deliberately separate from the runtime
     /// Pair flavour, which cannot distinguish `f(:x)` from a positional Pair
     /// by the time the positional-light binder sees the value.
+    // Cost: O(a), a = the call's compiled arguments.
     #[inline]
-    pub(super) fn stack_args_have_named(code: &CompiledCode, arg_sources_idx: Option<u32>) -> bool {
+    pub(super) fn stack_arg_kinds(
+        code: &CompiledCode,
+        arg_sources_idx: Option<u32>,
+    ) -> CallArgKinds {
+        let mut kinds = CallArgKinds::default();
         let Some(idx) = arg_sources_idx else {
-            return false;
+            return kinds;
         };
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
-            return false;
+            return kinds;
         };
-        items.iter().any(Self::arg_source_entry_is_named)
+        for item in items.iter() {
+            kinds.named |= Self::arg_source_entry_is_named(item);
+            kinds.slip |= matches!(item.view(), ValueView::Bool(true));
+        }
+        kinds
     }
 
     #[inline]
@@ -309,6 +330,37 @@ impl Interpreter {
     /// Decode the source half of an argument descriptor. Named arguments use
     /// `[FALSE, source]` so this helper keeps their source name/slot visible
     /// to rw writeback and container-sharing checks.
+    /// Whether any argument of the call site names a source variable, which is
+    /// what `decode_arg_sources` would report as a `Some` -- answered from the
+    /// descriptor without decoding (allocating) the names.
+    // Cost: O(a), a = arguments of the call site.
+    pub(super) fn arg_sources_name_any(code: &CompiledCode, arg_sources_idx: Option<u32>) -> bool {
+        let Some(idx) = arg_sources_idx else {
+            return false;
+        };
+        let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
+            return false;
+        };
+        items.iter().any(Self::arg_source_entry_names_source)
+    }
+
+    /// [`Self::decode_arg_source_entry`]'s `is_some()`, without the decode.
+    fn arg_source_entry_names_source(item: &Value) -> bool {
+        match item.view() {
+            ValueView::Str(_) | ValueView::Pair(..) => true,
+            ValueView::Array(items, ..)
+                if items
+                    .first()
+                    .is_some_and(|marker| matches!(marker.view(), ValueView::Bool(false))) =>
+            {
+                items
+                    .get(1)
+                    .is_some_and(Self::arg_source_entry_names_source)
+            }
+            _ => false,
+        }
+    }
+
     fn decode_arg_source_entry(item: &Value) -> Option<(String, Option<u32>)> {
         match item.view() {
             ValueView::Str(name) => Some((name.to_string(), None)),
@@ -356,6 +408,12 @@ impl Interpreter {
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
             return None;
         };
+        // A call site with an argument-source table but no `|` argument (any
+        // call passing a named variable) allocates nothing (#12526).
+        let is_slip = |item: &Value| matches!(item.view(), ValueView::Bool(true));
+        if !items.iter().any(is_slip) {
+            return None;
+        }
         let positions: Vec<usize> = items
             .iter()
             .enumerate()

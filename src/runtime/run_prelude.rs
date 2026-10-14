@@ -1,6 +1,6 @@
 use super::run::{
     ENUMERATION_ROLE_PRELUDE, IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE,
-    RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_IS_DEFAULT_PRELUDE,
+    RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_OF_PRELUDE, TRAIT_MOD_IS_DEFAULT_PRELUDE,
     X_WRAPPER_ROLE_PRELUDE,
 };
 use super::source_code_text::CodeText;
@@ -108,6 +108,35 @@ impl Interpreter {
         let prelude = TRAIT_MOD_IS_DEFAULT_STMTS.get_or_init(|| {
             let mut stmts =
                 crate::runtime::prelude_source::parse_prelude_source(TRAIT_MOD_IS_DEFAULT_PRELUDE)
+                    .map(|(s, _)| s)
+                    .unwrap_or_default();
+            Self::mark_prelude_subs(&mut stmts);
+            stmts
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend [`TRAIT_MOD_OF_PRELUDE`] to a compunit that calls
+    /// `trait_mod:<of>` or `trait_mod:<returns>` itself.
+    pub(super) fn inject_trait_mod_of_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        if !source.contains("trait_mod:<of>") && !source.contains("trait_mod:<returns>") {
+            return;
+        }
+        // A compunit declaring its own handler keeps it: a prelude candidate
+        // would collide with a plain `sub` of the same name.
+        if source.contains("sub trait_mod:<of>") || source.contains("sub trait_mod:<returns>") {
+            return;
+        }
+        use std::sync::OnceLock;
+        static TRAIT_MOD_OF_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = TRAIT_MOD_OF_STMTS.get_or_init(|| {
+            let mut stmts =
+                crate::runtime::prelude_source::parse_prelude_source(TRAIT_MOD_OF_PRELUDE)
                     .map(|(s, _)| s)
                     .unwrap_or_default();
             Self::mark_prelude_subs(&mut stmts);

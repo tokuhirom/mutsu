@@ -7,7 +7,7 @@ use Test;
 # how CSS::Grammar spells every case-insensitive CSS keyword — left the adverb
 # unrecognized and the whole pattern failed to match.
 
-plan 11;
+plan 12;
 
 ok 'abc' ~~ /:i'abc'/,   ":i'...' with no space";
 ok 'ABC' ~~ /:i'abc'/,   ":i'...' still ignores case";
@@ -17,6 +17,7 @@ ok 'a c' ~~ /:i 'a c'/,  'the spaced spelling still works';
 
 ok "x\ny" ~~ /:i"x\ny"/, 'a newline between the adverb and its atom is fine';
 ok 'AB' ~~ /:i<[ab]>+/,  ':i before a character class';
+is ~('xA' ~~ /x:i<[ab]>/), 'xA', 'an adverb right after an atom is not its backtrack control';
 
 # Longer adverbs must NOT be mistaken for a short one plus text.
 grammar G {

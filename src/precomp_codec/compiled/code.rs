@@ -58,10 +58,12 @@ impl Encode for CompiledCode {
             succeed_passes_through,
             reads_topic,
             mentions_native_scalar_type_name,
+            names_var_method,
             uses_routine_state,
             sets_routine_state,
             source_line,
             is_pointy_block,
+            is_whatever_code,
             pointy_alias_param,
             immutable_topic,
             declarator_doc,
@@ -155,6 +157,7 @@ impl Encode for CompiledCode {
             free_var_rebinds,
             free_var_sym_set: _,
             local_sym_set: _,
+            light_closure_shape: _,
             capture_hidden_set: _,
             capture_probe_keys: _,
             free_enum_bare_keys: _,
@@ -209,10 +212,12 @@ impl Encode for CompiledCode {
         succeed_passes_through.encode(encoder)?;
         reads_topic.encode(encoder)?;
         mentions_native_scalar_type_name.encode(encoder)?;
+        names_var_method.encode(encoder)?;
         uses_routine_state.encode(encoder)?;
         sets_routine_state.encode(encoder)?;
         source_line.encode(encoder)?;
         is_pointy_block.encode(encoder)?;
+        is_whatever_code.encode(encoder)?;
         pointy_alias_param.encode(encoder)?;
         immutable_topic.encode(encoder)?;
         Compat(declarator_doc.as_deref()).encode(encoder)?;
@@ -348,10 +353,12 @@ impl Decode<DecodeCtx> for CompiledCode {
             succeed_passes_through: Decode::decode(decoder)?,
             reads_topic: Decode::decode(decoder)?,
             mentions_native_scalar_type_name: Decode::decode(decoder)?,
+            names_var_method: Decode::decode(decoder)?,
             uses_routine_state: Decode::decode(decoder)?,
             sets_routine_state: Decode::decode(decoder)?,
             source_line: Decode::decode(decoder)?,
             is_pointy_block: Decode::decode(decoder)?,
+            is_whatever_code: Decode::decode(decoder)?,
             pointy_alias_param: Decode::decode(decoder)?,
             immutable_topic: Decode::decode(decoder)?,
             declarator_doc: decode_serde::<Option<crate::decl_doc::DeclDoc>, _>(decoder)?
@@ -446,6 +453,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             free_var_rebinds: Decode::decode(decoder)?,
             free_var_sym_set: Default::default(),
             local_sym_set: Default::default(),
+            light_closure_shape: Default::default(),
             capture_hidden_set: Default::default(),
             capture_probe_keys: Default::default(),
             free_enum_bare_keys: Default::default(),

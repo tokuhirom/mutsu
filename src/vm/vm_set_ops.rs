@@ -296,7 +296,13 @@ impl Interpreter {
                 self.reify_seq_body(&body)?;
             }
         }
-        Ok((left, right))
+        // Every set operator walks its operands, and may run user code over
+        // them (an element's `.WHICH`), so a shared Array/Hash operand is read
+        // as a snapshot (ADR-0068 §20).
+        Ok((
+            crate::value::container_read::read_operand(left),
+            crate::value::container_read::read_operand(right),
+        ))
     }
 
     /// Cost: see `set_contains` -- O(e) on a list RHS, O(1) on a Set/Bag/Mix/Hash.

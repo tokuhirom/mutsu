@@ -201,12 +201,6 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         site: TopicArgSite,
     ) -> Result<Value, RuntimeError> {
-        // ADR-0058: a slurpy/`@_` parameter FLATTENS a `Seq` argument
-        // (`{ [+] @_ } o *.map(* * 2)` sums the mapped elements), and the
-        // binder reads them through pure code -- so pull a still-deferred
-        // `.map`/`.grep` argument before binding. A `MapGrep` source is always
-        // finite, so this cannot hang.
-        self.reify_map_grep_seq_args(&args)?;
         // RAII (`PragmaGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores pragma state on drop -- including on a Rust panic unwind
         // through `call_compiled_closure_with_topic` below -- rather than a
@@ -312,6 +306,13 @@ impl Interpreter {
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance =
             std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
+        // A body that can observe nothing below runs light (#8335).
+        if explicit_topic.is_none()
+            && !capture_rw_topic
+            && let Some(out) = self.try_call_closure_light(data, cc, &args, compiled_fns)
+        {
+            return out;
+        }
         // What the call site knew about the argument (see [`TopicArgSite`]).
         let topic_arg_is_bare = site.bare;
         let topic_alias_source = site

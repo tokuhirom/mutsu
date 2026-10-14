@@ -49,6 +49,16 @@ impl BlockWrites {
             BlockWrites::Whole(env) => env.iter(),
         }
     }
+
+    /// Whether the block wrote `key`; on the fallback path, whether the whole
+    /// current env binds it.
+    // Cost: O(1) for a tier; a chain walk on the fallback path.
+    pub(crate) fn contains_key(&self, key: Symbol) -> bool {
+        match self {
+            BlockWrites::Tier(tier) => tier.contains_key(&key),
+            BlockWrites::Whole(env) => env.contains_key_sym(key),
+        }
+    }
 }
 
 impl Interpreter {

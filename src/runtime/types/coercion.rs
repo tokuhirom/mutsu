@@ -161,6 +161,38 @@ fn gcd_i64(a: i64, b: i64) -> i64 {
 }
 
 impl Interpreter {
+    /// The method of user class `class` that coerces into `target`, as
+    /// Rakudo names it: the target type's full name (`method
+    /// NativeCall::Types::Pointer { ... }` answers `Pointer()`, as
+    /// Font::FreeType's `Face` does; `method M::T` answers `M::T()`), with a
+    /// written name that aliases another type (`constant Pointer = ...`)
+    /// resolved first. The name as written is the fallback. `None` when the
+    /// class declares neither.
+    // Cost: O(m), m = the class's MRO, per name probed.
+    fn user_coercion_method(&mut self, class: &str, target: &str) -> Option<String> {
+        if let Some(full) = self.resolve_type_alias_chain(target)
+            && full != target
+            && self.class_has_user_method(class, &full)
+        {
+            return Some(full);
+        }
+        self.class_has_user_method(class, target)
+            .then(|| target.to_string())
+    }
+
+    /// Call coercion method `method` on `value`. A qualified name (`M::T`)
+    /// names the method literally, so it goes through the VM's dispatch by
+    /// name: `call_method_with_values` would read it as a qualified call to
+    /// `M`'s `T`.
+    // Cost: one method dispatch.
+    fn call_coercion_method(&mut self, value: Value, method: &str) -> Result<Value, RuntimeError> {
+        if crate::qualified::is_qualified_str(method) {
+            self.try_compiled_method_or_interpret_sym(value, Symbol::intern(method), vec![])
+        } else {
+            self.call_method_with_values(value, method, vec![])
+        }
+    }
+
     /// Coerce a value to the target type, trying built-in coercions first,
     /// then falling back to target class COERCE when available.
     pub(in crate::runtime) fn try_coerce_value_with_method(
@@ -199,9 +231,9 @@ impl Interpreter {
             return Ok(value);
         }
         if let ValueView::Instance { class_name, .. } = value.view()
-            && self.class_has_user_method(&class_name.resolve(), base_target)
+            && let Some(method) = self.user_coercion_method(&class_name.resolve(), base_target)
         {
-            let coerced = self.call_method_with_values(value.clone(), base_target, vec![])?;
+            let coerced = self.call_coercion_method(value.clone(), &method)?;
             if self.type_matches_value(base_target, &coerced) {
                 return Ok(coerced);
             }
@@ -215,9 +247,9 @@ impl Interpreter {
         // type object falls through to the ordinary coercion below (`Str(Int)`
         // stays ""), which is what rakudo does.
         if let ValueView::Package(class_name) = value.view()
-            && self.class_has_user_method(&class_name.resolve(), base_target)
+            && let Some(method) = self.user_coercion_method(&class_name.resolve(), base_target)
         {
-            let coerced = self.call_method_with_values(value.clone(), base_target, vec![])?;
+            let coerced = self.call_coercion_method(value.clone(), &method)?;
             if self.type_matches_value(base_target, &coerced) {
                 return Ok(coerced);
             }
@@ -322,15 +354,21 @@ impl Interpreter {
                 _ => value.clone(),
             };
             // Try COERCE method first
-            if let Ok(coerced) = self.call_method_with_values(
+            match self.call_method_with_values(
                 Value::package(Symbol::intern(&remapped_base_target)),
                 "COERCE",
                 vec![coerce_arg.clone()],
             ) {
-                if self.type_matches_value(&remapped_base_target, &coerced) {
-                    return Ok(coerced);
+                Ok(coerced) => {
+                    if self.type_matches_value(&remapped_base_target, &coerced) {
+                        return Ok(coerced);
+                    }
+                    return Err(coerce_impossible_error(target, &value));
                 }
-                return Err(coerce_impossible_error(target, &value));
+                // An exception the method itself throws propagates (#13077);
+                // only "no such COERCE / no matching candidate" falls through.
+                Err(err) if !coerce_method_absent(&err) => return Err(err),
+                Err(_) => {}
             }
             // Fallback: try calling `new` on the target class with the value,
             // but only if there's an explicit `new` variant that accepts a
@@ -369,19 +407,14 @@ impl Interpreter {
         if self.has_role(&remapped_base_target)
             && self.role_or_parent_has_method(&remapped_base_target, "COERCE")
         {
-            // A failing call is an impossible coercion, as for a class target
-            // above.
-            // TODO: an exception the COERCE method itself throws should
-            // propagate (Rakudo asks `.cando` first and only reports "no
-            // acceptable coercion method" for a no-match); today the binder
-            // re-runs a call whose coercion died, so propagating it runs the
-            // caller twice (#13077).
-            let Ok(coerced) = self.call_method_with_values(
+            let coerced = match self.call_method_with_values(
                 Value::package(Symbol::intern(&remapped_base_target)),
                 "COERCE",
                 vec![value.clone()],
-            ) else {
-                return Err(coerce_impossible_error(target, &value));
+            ) {
+                Ok(coerced) => coerced,
+                Err(err) if !coerce_method_absent(&err) => return Err(err),
+                Err(_) => return Err(coerce_impossible_error(target, &value)),
             };
             if self.type_matches_value(&remapped_base_target, &coerced) {
                 return Ok(coerced);
@@ -510,4 +543,24 @@ impl Interpreter {
         }
         Ok(value)
     }
+}
+
+/// Whether `err` says the `COERCE` method has no candidate for the value (or
+/// does not exist), as opposed to an exception the method body threw.
+fn coerce_method_absent(err: &RuntimeError) -> bool {
+    if err.is_multi_no_match() {
+        return true;
+    }
+    if let Some(ex) = err.exception.as_deref()
+        && let ValueView::Instance { class_name, .. } = ex.view()
+    {
+        // A binding failure is the COERCE call's own signature rejecting the
+        // value (a submethod `COERCE(Numeric:D $v)` given an Array): no
+        // acceptable candidate, not an exception the body threw.
+        return matches!(
+            class_name.resolve().as_str(),
+            "X::Method::NotFound" | "X::TypeCheck::Binding::Parameter"
+        );
+    }
+    err.message.contains("No such method")
 }

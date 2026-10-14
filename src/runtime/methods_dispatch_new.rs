@@ -812,34 +812,25 @@ impl Interpreter {
                 attributes.insert("__mutsu_array_storage", storage);
             }
         }
-        // Hash-subclass construction: an `is Hash`/`is Map` subclass reaches
-        // the base Hash.new semantics through `bless`. Named Pairs become
-        // hash entries, while bare positional args are folded as alternating
-        // key/value entries. A pair naming a DECLARED attribute is left as a
-        // real attribute instead (already inserted above) and excluded from
-        // storage.
+        // Hash-subclass construction: an `is Hash`/`is Map` subclass gets its
+        // backing storage here. `bless`'s named arguments only initialize
+        // attributes and feed BUILD/TWEAK (Rakudo's `bless(*%attrinit)`), so
+        // they never become hash entries: PDF's `PDF::COS::Dict.new` calls
+        // `self.bless(:$dict, :$seen-lock, |c)`, and every Dict carried
+        // `dict` and `seen-lock` keys (#13087). `Hash.new(a => 1)` on a
+        // subclass stores its pairs through `dispatch_new` instead.
+        // Bare positional args are folded as alternating key/value entries.
         if self
             .class_mro(cn_resolved)
             .iter()
             .any(|n| *n == "Hash" || *n == "Map")
         {
-            let declared: std::collections::HashSet<&str> =
-                plan.class_attrs.iter().map(|a| a.name.as_str()).collect();
-            let has_positional = args.iter().any(|a| !a.is_string_pair_value());
             let hash_args: Vec<Value> = args
                 .iter()
-                .filter(|a| match a.view() {
-                    ValueView::Pair(k, _) => !has_positional && !declared.contains(k.as_str()),
-                    _ => true,
-                })
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                 .cloned()
                 .collect();
             if !hash_args.is_empty() || !attributes.contains_key("__mutsu_hash_storage") {
-                for pair in &hash_args {
-                    if let ValueView::Pair(k, _) = pair.view() {
-                        attributes.remove(k.as_str());
-                    }
-                }
                 let storage = self.associative_base_storage(cn_resolved, hash_args);
                 attributes.insert("__mutsu_hash_storage", storage);
             }

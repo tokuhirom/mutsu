@@ -290,6 +290,16 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_cache(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `cache(gather {...})` is the gather's own `.cache`: a List over the
+        // cached Seq that pulls the body only as far as it is read, so an
+        // infinite gather works (ADR-11678). The Seq stays readable.
+        if let [arg] = args
+            && Self::is_gather_seq(arg)
+            && let ValueView::Seq(body) = arg.view()
+        {
+            body.mark_cache_requested();
+            return Ok(Value::seq_list_view(&body));
+        }
         // `cache` eagerly evaluates and caches the values into a List
         let mut result = Vec::new();
         for arg in args {
@@ -303,7 +313,7 @@ impl Interpreter {
     /// elements are themselves unread `map` Seqs). The shared `flat_val`
     /// helper is pure and only sees a deferred body as empty.
     // Cost: O(n), n = elements reached through the descended Seqs and Lists.
-    fn touch_flat_operand(&mut self, v: &Value) -> Result<(), RuntimeError> {
+    pub(crate) fn touch_flat_operand(&mut self, v: &Value) -> Result<(), RuntimeError> {
         match v.view() {
             ValueView::Seq(body) | ValueView::HyperSeq(body) | ValueView::RaceSeq(body) => {
                 if matches!(
@@ -345,6 +355,15 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_flat(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // A plain gather's coroutine list is flattened as it is pulled
+        // (ADR-11678), so an infinite gather works.
+        if let [arg] = args
+            && let ValueView::LazyList(ll) = arg.view()
+            && ll.is_gather_coroutine()
+            && !ll.is_genuinely_lazy()
+        {
+            return Ok(Self::lazy_flat_gather(arg.clone()));
+        }
         for arg in args {
             // The sole operand is un-itemized before it is flattened (see
             // below), so a `$`-held Seq is read too.

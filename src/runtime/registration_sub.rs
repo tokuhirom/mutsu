@@ -2258,12 +2258,17 @@ impl Interpreter {
         // those candidates when the proto clears stale entries; the ordinary
         // RegisterDecl opcodes will recognize their pre-registration markers
         // and skip the duplicate install later.
-        let inline_marker_prefix =
-            MetaNs::InlinePackageSub.owned_key_from_parts(&[&self.current_package(), name, ""]);
+        // The prepass writes the empty-site marker beside each per-site one,
+        // so this is a lookup through the whole chain, not a scan of the
+        // running tier's keys (which would miss a marker below a block tier).
         let has_inline_markers = self
             .env
-            .keys()
-            .any(|marker| marker.as_str().starts_with(&inline_marker_prefix));
+            .get(&MetaNs::InlinePackageSub.owned_key_from_parts(&[
+                &self.current_package(),
+                name,
+                "",
+            ]))
+            .is_some();
         self.registry_mut()
             .functions_mut()
             .retain(|existing, _def| {

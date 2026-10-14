@@ -13,7 +13,7 @@
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::grapheme_index::with_str;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Zero-argument rows owned by `$owner`.
 macro_rules! rows {
@@ -52,9 +52,30 @@ macro_rules! text_rows {
     };
 }
 
-pub(super) static ROWS: &[MethodRow] = rows!["Str":
-    "Bool" => bool,
+pub(super) static ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "Str",
+        name: "Bool",
+        arity: 0,
+        handler: Handler::Pure(bool),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    chop_n_row("Str"),
+    chop_n_row("Cool"),
 ];
+
+/// `chop($n)`, which `Str` and `Cool` both declare.
+const fn chop_n_row(owner: &'static str) -> MethodRow {
+    MethodRow {
+        owner,
+        name: "chop",
+        arity: 1,
+        handler: Handler::Narrow(chop_n),
+        flags: RowFlags::ANY_ARGS,
+        named: &[],
+    }
+}
 pub(super) static STR_TEXT_ROWS: &[MethodRow] = text_rows!("Str");
 pub(super) static COOL_TEXT_ROWS: &[MethodRow] = text_rows!("Cool");
 
@@ -163,6 +184,45 @@ pub(crate) fn trim_trailing(target: &Value, _args: &[Value]) -> Result<Value, Ru
 // otherwise, n = chars of the invocant.
 pub(crate) fn chomp(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(crate::builtins::chomp_value(target))
+}
+
+/// `Str.chop(Int() $n)`: drops the last `$n` characters (all of them when
+/// `$n` is at least the length; none when it is not positive). `$n` is
+/// coerced as `.Int` does: a `Str` is parsed, any other number truncated.
+// Cost: O(n), n = chars of the invocant (result copied).
+fn chop_n(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let mut arg = args.first()?;
+    // An allomorph count reads its number.
+    if let ValueView::Mixin(inner, _) = arg.view() {
+        arg = inner;
+    }
+    let n = match arg.view() {
+        ValueView::Int(i) => i.max(0) as usize,
+        ValueView::BigInt(bi) => {
+            use num_traits::{Signed, ToPrimitive};
+            if bi.is_negative() {
+                0
+            } else {
+                bi.to_usize().unwrap_or(usize::MAX)
+            }
+        }
+        // A plain string coerces like `.Int` (parse an integer literal).
+        ValueView::Str(s) => s.trim().parse::<usize>().unwrap_or(1),
+        // Any other number (Num/Rat/FatRat/allomorph) truncates toward zero:
+        // `.chop(3.6)` chops 3.
+        _ => {
+            let f = arg.to_f64();
+            if f.is_finite() && f > 0.0 {
+                f.trunc() as usize
+            } else {
+                0
+            }
+        }
+    };
+    Some(Ok(with_str(target, |s| {
+        let keep = s.chars().count().saturating_sub(n);
+        Value::str(s.chars().take(keep).collect())
+    })))
 }
 
 /// `Str.chop`: drops the last character.

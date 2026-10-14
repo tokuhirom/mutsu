@@ -38,9 +38,15 @@ impl Interpreter {
             ));
         }
         let original = value.clone();
-        let value = self
-            .try_coerce_value_for_constraint(constraint, value)
-            .map_err(CoercionBindError::Coerce)?;
+        let value = match self.try_coerce_value_for_constraint(constraint, value) {
+            Ok(value) => value,
+            // An exception the target's own `COERCE` threw is that exception,
+            // not a failure to bind the parameter (#13077).
+            Err(err) if self.is_user_coerce_exception(target, &err) => {
+                return Err(CoercionBindError::Impossible(err));
+            }
+            Err(err) => return Err(CoercionBindError::Coerce(err)),
+        };
         if !matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Failure")
             && !self.type_matches_value(target, &value)
         {
@@ -49,5 +55,25 @@ impl Interpreter {
             )));
         }
         Ok(value)
+    }
+
+    /// Whether `err` is an exception thrown by a user `COERCE` method of
+    /// `target`, as opposed to the coercion protocol's own failure.
+    fn is_user_coerce_exception(&mut self, target: &str, err: &RuntimeError) -> bool {
+        if err.control.is_some() {
+            return false;
+        }
+        let Some(ex) = err.exception.as_deref() else {
+            return false;
+        };
+        let ValueView::Instance { class_name, .. } = ex.view() else {
+            return false;
+        };
+        let class_name = class_name.resolve();
+        if class_name.starts_with("X::Coerce::") || class_name.starts_with("X::TypeCheck::Binding") {
+            return false;
+        }
+        let target = self.lexical_env_remap_name(target);
+        self.has_user_method_including_role(&target, "COERCE")
     }
 }

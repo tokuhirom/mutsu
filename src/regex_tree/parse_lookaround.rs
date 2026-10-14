@@ -61,10 +61,31 @@ impl Parser {
 
         // `<|w>` is rakudo's spelling of the word boundary `<.wb>`, and the
         // same node in RakuAST.
-        if !explicit && self.chars[start..].starts_with(&['<', '|', 'w', '>']) {
-            let node = RegexTree::parse_lookaround_body("<.wb>", self.in_unit_parse)?.body;
-            self.pos = start + 4;
-            return Some(node);
+        // `<|b>` / `<|c>` / `<|g>` (grapheme and codepoint boundaries) hold
+        // at every position of an NFG string: rakudo models them as
+        // `Assertion::Pass`. `<?|x>` / `<!|x>` wrap either in a lookahead.
+        if (explicit || self.pos == start + 1) && self.chars.get(self.pos) == Some(&'|') {
+            let boundary = match self.chars.get(self.pos + 1) {
+                Some('w') => RegexTree::parse_lookaround_body("<.wb>", self.in_unit_parse)?.body,
+                Some('b' | 'c' | 'g') => RegexNode::AssertionPass,
+                _ => {
+                    self.pos = start;
+                    return None;
+                }
+            };
+            if self.chars.get(self.pos + 2) != Some(&'>') {
+                self.pos = start;
+                return None;
+            }
+            self.pos += 3;
+            return Some(if explicit {
+                RegexNode::Extension(RegexExtension::Lookahead {
+                    negated,
+                    assertion: Box::new(boundary),
+                })
+            } else {
+                boundary
+            });
         }
 
         // `<?>` / `<!>`: the bare assertions that always pass / fail.
@@ -112,10 +133,19 @@ impl Parser {
         {
             let sigil = self.chars[self.pos];
             self.pos += 1;
-            let Some(name) = self.parse_twigil_variable_name() else {
+            let Some(mut name) = self.parse_twigil_variable_name() else {
                 self.pos = start;
                 return None;
             };
+            // `<@Pkg::name>`: a package-qualified variable.
+            while self.chars[self.pos..].starts_with(&[':', ':']) {
+                self.pos += 2;
+                let Some(part) = self.parse_variable_name() else {
+                    self.pos = start;
+                    return None;
+                };
+                name = crate::qualified::qualified_text(name.as_str(), part.as_str()).to_string();
+            }
             if !self.consume_if('>') {
                 self.pos = start;
                 return None;
@@ -203,6 +233,19 @@ impl Parser {
                 continue;
             }
             match ch {
+                // A quote character inside an enumeration (`<-["]>`) is a
+                // member of the class, not the start of a quote.
+                '[' if nested_assertions > 0
+                    && matches!(self.chars.get(self.pos - 1), Some('<' | '-' | '+')) =>
+                {
+                    self.pos += 1;
+                    while let Some(&inner) = self.chars.get(self.pos) {
+                        self.pos += if inner == '\\' { 2 } else { 1 };
+                        if inner == ']' {
+                            break;
+                        }
+                    }
+                }
                 '\\' => {
                     // Skip the escaped character while looking for the
                     // closing angle bracket. The nested parser will decide

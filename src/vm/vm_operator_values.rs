@@ -155,6 +155,19 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // A lazy list is compared by its own identity, never forced: forcing an
+        // infinite one (`1...*`) died before `===` could answer (#12972).
+        {
+            let (l, r) = (left.descalarize(), right.descalarize());
+            let lazy = matches!(l.view(), ValueView::LazyList(_))
+                || matches!(r.view(), ValueView::LazyList(_));
+            let junction = matches!(l.view(), ValueView::Junction { .. })
+                || matches!(r.view(), ValueView::Junction { .. });
+            if lazy && !junction {
+                let same = runtime::values_identical(l, r);
+                return Ok(Value::truth(same != negate));
+            }
+        }
         self.warm_which_identity_for_identity(&left);
         self.warm_which_identity_for_identity(&right);
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {

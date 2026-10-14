@@ -82,6 +82,7 @@ use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, ReadonlyKind, Stmt};
 use crate::env::Env;
 use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
 use crate::parse_dispatch;
+use crate::runtime::family_gen_cache::FamilyGenCache;
 use crate::runtime::gen_cache::GenCache;
 use crate::value::ValueView;
 use crate::value::{
@@ -616,7 +617,7 @@ pub(crate) struct ClassAttributeDef {
     /// Lexicals visible where a role attribute default was declared. A role's
     /// default is copied onto each consuming class, but its compiled chunk must
     /// still resolve imported names in the role's own scope.
-    pub(crate) captured_env: Option<std::sync::Arc<ValueMap>>,
+    pub(crate) captured_env: Option<crate::env_capture_view::CapturedScope>,
     /// Compunit whose imports were visible where a role attribute default was
     /// declared. Composed defaults run during construction, after the role's
     /// compunit has finished loading, so they must restore that visibility.

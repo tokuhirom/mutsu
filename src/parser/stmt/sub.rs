@@ -44,7 +44,7 @@ pub(super) use sub_decl::{
     sub_decl_body, sub_decl_with_semicolon_mode, top_level_main_semicolon_decl,
 };
 
-pub(crate) use sub_decl::op_prec_trait;
+pub(crate) use sub_decl::{INDIRECT_DECL_NAME, op_prec_trait};
 
 // Trait parsing (traits.rs).
 pub(crate) use traits::SubTraits;

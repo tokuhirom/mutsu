@@ -288,28 +288,15 @@ impl Interpreter {
                 }
 
                 let captured_out = if let Some(reader) = merged_output_reader.as_mut() {
-                    let mut buf = String::new();
-                    use std::io::Read;
-                    let _ = reader.read_to_string(&mut buf);
-                    Some(buf)
+                    Some(super::exit_aware_read::slurp_pipe(reader)?)
                 } else if opts.capture_out {
-                    child.stdout.take().map(|mut s| {
-                        let mut buf = String::new();
-                        use std::io::Read;
-                        let _ = s.read_to_string(&mut buf);
-                        buf
-                    })
+                    child.stdout.take().map(super::exit_aware_read::slurp_pipe).transpose()?
                 } else {
                     None
                 };
                 let captured_err =
                     if opts.capture_err || (merge_to_capture && merged_output_reader.is_none()) {
-                        child.stderr.take().map(|mut s| {
-                            let mut buf = String::new();
-                            use std::io::Read;
-                            let _ = s.read_to_string(&mut buf);
-                            buf
-                        })
+                        child.stderr.take().map(super::exit_aware_read::slurp_pipe).transpose()?
                     } else {
                         None
                     };
@@ -384,22 +371,12 @@ impl Interpreter {
                         if let Ok(mut child) = retry.spawn() {
                             let pid = child.id() as i64;
                             let captured_out = if opts.capture_out {
-                                child.stdout.take().map(|mut s| {
-                                    let mut buf = String::new();
-                                    use std::io::Read;
-                                    let _ = s.read_to_string(&mut buf);
-                                    buf
-                                })
+                                child.stdout.take().map(super::exit_aware_read::slurp_pipe).transpose()?
                             } else {
                                 None
                             };
                             let captured_err = if opts.capture_err {
-                                child.stderr.take().map(|mut s| {
-                                    let mut buf = String::new();
-                                    use std::io::Read;
-                                    let _ = s.read_to_string(&mut buf);
-                                    buf
-                                })
+                                child.stderr.take().map(super::exit_aware_read::slurp_pipe).transpose()?
                             } else {
                                 None
                             };
@@ -524,22 +501,12 @@ impl Interpreter {
             Ok(mut child) => {
                 let pid = child.id() as i64;
                 let captured_out = if opts.capture_out {
-                    child.stdout.take().map(|mut s| {
-                        let mut buf = String::new();
-                        use std::io::Read;
-                        let _ = s.read_to_string(&mut buf);
-                        buf
-                    })
+                    child.stdout.take().map(super::exit_aware_read::slurp_pipe).transpose()?
                 } else {
                     None
                 };
                 let captured_err = if opts.capture_err {
-                    child.stderr.take().map(|mut s| {
-                        let mut buf = String::new();
-                        use std::io::Read;
-                        let _ = s.read_to_string(&mut buf);
-                        buf
-                    })
+                    child.stderr.take().map(super::exit_aware_read::slurp_pipe).transpose()?
                 } else {
                     None
                 };

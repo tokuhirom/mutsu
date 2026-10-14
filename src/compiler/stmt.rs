@@ -1854,8 +1854,20 @@ impl Compiler {
                     };
                     let var_name_idx = self.code.add_constant(Value::str(display_name));
                     // A `:=` bind to a typed scalar reports X::TypeCheck::Binding
-                    // on mismatch (e.g. `my Str $x := 3`), not Assignment.
-                    if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%') {
+                    // on mismatch (e.g. `my Str $x := 3`), not Assignment. So
+                    // does a typed sigilless declaration, which binds its
+                    // initializer whether it is spelled `=` or `:=`
+                    // (`my UInt \x = $o`); its right-hand side reaches the
+                    // check wrapped in a VarRef, which only the bind check
+                    // looks through. A sigilless name in a list declaration
+                    // (`my (\b where "x") = ...`) is assigned, not bound.
+                    if sigilless_bind_vardecl
+                        || custom_traits.iter().any(|(t, _)| t == "__sigilless_decl")
+                    {
+                        self.code
+                            .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
+                    } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')
+                    {
                         if *is_state {
                             self.code
                                 .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
@@ -4741,7 +4753,9 @@ impl Compiler {
                 // redeclares (the current-scope set is reset on block entry).
                 // An `anon class NAME { ... }` installs no symbol at all, so it
                 // neither claims the name nor collides with a previous claim.
-                let is_anon_decl = custom_traits.iter().any(|(t, _)| t == "__anon_decl");
+                let is_anon_decl = custom_traits
+                    .iter()
+                    .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT);
                 if !is_anon_decl && !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
                     // Package blocks share this compiler scope, so key the

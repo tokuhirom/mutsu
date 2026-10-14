@@ -1761,7 +1761,7 @@ impl Interpreter {
                                 &inv,
                                 &attrs,
                                 super::attr_build_defaults::AttrDeclScope {
-                                    env: captured_env.as_deref(),
+                                    env: captured_env.as_ref(),
                                     unit: captured_unit,
                                     package: declaring_package.map(|p| p.as_str()),
                                 },
@@ -1990,7 +1990,7 @@ impl Interpreter {
                             self.env.insert("self".to_string(), inv.clone());
                             let result = self.eval_decl_trait_arg_with_captured_context(
                                 &arg,
-                                captured_env.as_deref(),
+                                captured_env.as_ref(),
                                 captured_unit.or_else(|| {
                                     declaring_package
                                         .and_then(|p| {
@@ -2084,21 +2084,35 @@ impl Interpreter {
                     .any(|n| *n == "Hash" || *n == "Map")
                     && !attrs.contains_key("__mutsu_hash_storage")
                 {
-                    let declared: std::collections::HashSet<&str> =
-                        class_attrs_info.iter().map(|a| a.name.as_str()).collect();
                     let has_positional = args.iter().any(|a| !a.is_string_pair_value());
                     let hash_args: Vec<Value> = args
                         .iter()
                         .filter(|a| match a.view() {
-                            ValueView::Pair(k, _) => {
-                                !has_positional && !declared.contains(k.as_str())
-                            }
+                            ValueView::Pair(..) => !has_positional,
                             _ => true,
                         })
                         .cloned()
                         .collect();
+                    // `Hash.new(*%)` stores every pair as an entry and never
+                    // initializes an attribute from it, even one the subclass
+                    // declares (#13182).
                     for pair in &hash_args {
-                        if let ValueView::Pair(k, _) = pair.view() {
+                        let ValueView::Pair(k, _) = pair.view() else {
+                            continue;
+                        };
+                        // A declared attribute keeps its uninitialized seed
+                        // (no default runs: `Hash.new` does not `bless`).
+                        if let Some(attr) = class_attrs_info.iter().find(|a| a.name == k.as_str()) {
+                            let key =
+                                super::attribute_storage_key(&class_attrs_info, &attr.name, attr.sigil);
+                            let seed = self.seed_attr_value(
+                                class_key,
+                                &attr.name,
+                                attr.sigil,
+                                &attr_type_constraints,
+                            );
+                            attrs.insert_seed(key, seed);
+                        } else {
                             attrs.remove(k.as_str());
                         }
                     }

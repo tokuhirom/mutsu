@@ -120,6 +120,15 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let mut sub_params = Vec::new();
             if !r.starts_with(']') {
                 loop {
+                    // A `|c` capture takes everything left, so it ends the list;
+                    // the general parameter parser knows the form.
+                    if r.starts_with('|') {
+                        let (r2, rest_params) = super::super::parse_param_list_pub(r)?;
+                        sub_params.extend(rest_params);
+                        let (r2, _) = ws(r2)?;
+                        r = r2;
+                        break;
+                    }
                     let (r2, param_def) = parse_for_pointy_param(r)?;
                     sub_params.push(param_def);
                     let (r2, _) = ws(r2)?;

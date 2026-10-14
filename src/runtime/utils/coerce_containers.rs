@@ -293,7 +293,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             for (key, weight) in items.iter() {
                 let typed = items.typed_key(key);
                 let display = typed.to_string_value();
-                map.insert(display.clone(), mix_weight_value(*weight));
+                map.insert(display.clone(), mix_weight_value(weight.clone()));
                 if !matches!(typed.view(), ValueView::Str(_)) {
                     has_typed = true;
                     original_keys.insert(display, typed);
