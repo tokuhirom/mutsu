@@ -49,6 +49,9 @@ pub(super) struct Compiler {
     /// matches those bodies with `IN_QUANTIFIED_ALTERNATION_MATCH` set, which
     /// turns off a `||` branch's positional padding.
     pub(super) quant_alt_depth: usize,
+    /// Inside a ratcheted `~` inner pattern, alternation follows source order
+    /// before the goal is tested, rather than LTM branch ranking.
+    pub(super) goal_inner_source_order: bool,
 }
 
 /// Compile `pattern`, or say why not.
@@ -68,6 +71,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         has_code: false,
         has_call: false,
         quant_alt_depth: 0,
+        goal_inner_source_order: false,
     };
     c.pattern(pattern)?;
     c.ops.push(RxOp::Match);
@@ -518,6 +522,9 @@ impl Compiler {
                 // The callee may run code, read lexicals or capture: the
                 // position-only matcher must not run this program.
                 self.has_code = true;
+            }
+            RegexAtom::Alternation(alts) if self.goal_inner_source_order => {
+                self.seq_alternation(token, alts)?
             }
             RegexAtom::Alternation(alts) => self.ltm_alternation(token, alts)?,
             RegexAtom::SequentialAlternation(alts) => self.seq_alternation(token, alts)?,
