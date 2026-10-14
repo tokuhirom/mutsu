@@ -2772,7 +2772,7 @@ fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKin
 /// of the enclosing block: with an empty argument list this is the plain
 /// control transfer; a non-empty one has no candidate, so it is rejected
 /// rather than silently dropped.
-pub(in crate::parser) fn slipped_control_stmt(name: &str, slip: Expr, flow: Stmt) -> Stmt {
+pub(crate) fn slipped_control_stmt(name: &str, slip: Expr, flow: Stmt) -> Stmt {
     Stmt::If {
         cond: slip_arg_count(slip),
         then_branch: vec![reject_slipped_args(name)],

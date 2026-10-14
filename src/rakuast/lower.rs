@@ -737,6 +737,18 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 // `proceed |c` / `succeed EXPR` stay calls, as the parser has them.
                 "proceed" if args.is_empty() => Ok(Stmt::Proceed),
                 "succeed" if args.is_empty() => Ok(Stmt::Succeed),
+                // `proceed |c` / `succeed |c`: the parser's guarded transfer.
+                "proceed" | "succeed"
+                    if matches!(args.as_slice(), [Expr::Unary { op: crate::token_kind::TokenKind::Pipe, .. }]) =>
+                {
+                    let slip = args.into_iter().next().expect("one slip argument");
+                    let flow = if name == "proceed" {
+                        Stmt::Proceed
+                    } else {
+                        Stmt::Succeed
+                    };
+                    Ok(crate::parser::slipped_control_stmt(&name, slip, flow))
+                }
                 _ => Ok(Stmt::Expr(lower_expr(node)?)),
             }
         }
