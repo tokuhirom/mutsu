@@ -41,13 +41,18 @@ pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
         // Exactly one level, no recursion past the cell: the bind puts the
         // Proxy directly behind it, whereas a cell holding a structure may be a
         // self-reference and following it walks the cycle forever.
+        // An object behind the cell (`@objs.reverse` hands back the array's own
+        // cells) may carry a user `.Str` only the interpreter can run.
         ValueView::ContainerRef(_) | ValueView::ContainerView(_) => {
-            v.deref_container().is_proxy_value()
+            let inner = v.deref_container();
+            inner.is_proxy_value()
+                || matches!(inner.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
         }
         ValueView::Array(items, kind) if !kind.is_itemized() => {
             items.iter().any(join_needs_interpreter)
         }
         ValueView::Seq(items) => items.iter().any(join_needs_interpreter),
+        ValueView::Slip(items) => items.iter().any(join_needs_interpreter),
         _ => false,
     }
 }

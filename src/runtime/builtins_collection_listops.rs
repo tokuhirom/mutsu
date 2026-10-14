@@ -214,8 +214,37 @@ impl Interpreter {
         value: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
         match value.view() {
+            // An element still inside its container cell (`@a.reverse` hands
+            // back the array's own cells) renders as the value it holds.
+            ValueView::ContainerRef(_) => {
+                let inner = value.deref_container();
+                self.join_prerender_user_stringifier(&inner)
+            }
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 let originals: Vec<Value> = items.iter().cloned().collect();
+                let mut mapped = Vec::with_capacity(originals.len());
+                let mut changed = false;
+                for v in &originals {
+                    match self.join_prerender_user_stringifier(v)? {
+                        Some(replacement) => {
+                            changed = true;
+                            mapped.push(replacement);
+                        }
+                        None => mapped.push(v.clone()),
+                    }
+                }
+                Ok(changed.then(|| Value::array(mapped)))
+            }
+            // A Seq / Slip flattens into `join` like a List, so its elements
+            // need the same user-`.Str` pre-render (`join "|", @objs.sort(...)`
+            // handed the sort's Seq to `join_flat`, which stringified the
+            // objects natively).
+            ValueView::Seq(_) | ValueView::Slip(_) => {
+                let originals: Vec<Value> = match value.view() {
+                    ValueView::Seq(items) => items.iter().cloned().collect(),
+                    ValueView::Slip(items) => items.iter().cloned().collect(),
+                    _ => Vec::new(),
+                };
                 let mut mapped = Vec::with_capacity(originals.len());
                 let mut changed = false;
                 for v in &originals {
