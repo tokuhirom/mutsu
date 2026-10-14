@@ -366,7 +366,24 @@ impl Interpreter {
         target: &Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let instance = self.dispatch_bless_unallocated(target, args)?;
+        let mut instance = self.dispatch_bless_unallocated(target, args)?;
+        // `self.bless` inside a role's method, called on the role's type
+        // object: the pun class already exists (the method call made it), so
+        // the pun branch below is skipped and the instance is a bare class
+        // instance without the role markers -- it would not match the roles
+        // the role itself does (`R ~~ Key` for `role R does Key[...]`).
+        if let ValueView::Package(name) = target.view() {
+            let cn = name.resolve();
+            let is_pun = self.registry().roles.contains_key(cn.as_str())
+                && self
+                    .registry()
+                    .class_composed_roles
+                    .get(cn.as_str())
+                    .is_some_and(|composed| composed.iter().any(|r| *r == cn));
+            if is_pun {
+                instance = self.mark_punned_role_instance(name, instance, ValueMap::default());
+            }
+        }
         // `bless` allocates through the REPR, as `nqp::create` does: an
         // `is repr('CArray')` instance gets its element storage, typed by the
         // blessed type -- a mixin's roles included (#11209).
