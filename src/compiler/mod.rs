@@ -1451,6 +1451,12 @@ pub(crate) struct Compiler {
     /// runs in the env it captured from the enclosing scope, so a `SetTopic`
     /// there overwrote the enclosing `$_` with the body's last value.
     pub(crate) unit_tail_discards: bool,
+    /// Whether a compilation unit's tail value stays on the VM stack as the
+    /// unit's result instead of travelling through `$_`. Set for an `EVAL`
+    /// unit, which runs in its caller's scope: delivering the tail through
+    /// `$_` clobbered the caller's topic (`EVAL '$_ = "b"'` was undone by
+    /// the tail `SetTopic`, and `EVAL '1 + 2'` replaced `$_` with `3`).
+    pub(crate) unit_tail_on_stack: bool,
     /// Whether a compilation unit's final expression or call statement is in
     /// sink context, like every other statement (#9766). Set for a program's
     /// mainline: Raku sinks its last statement, so an unhandled `Failure`
@@ -2040,6 +2046,7 @@ impl Compiler {
             callframe_block_depth: 0,
             is_routine: false,
             unit_tail_discards: false,
+            unit_tail_on_stack: false,
             unit_tail_sinks: false,
             in_closure_body: false,
             lexically_in_routine: false,
@@ -3015,6 +3022,7 @@ impl Compiler {
     /// This is the lexical-axis twin of [`Interpreter::push_eval_caller_frames`](crate::runtime::Interpreter::push_eval_caller_frames),
     /// which already models the same layout on the caller axis for `CALLER::`.
     pub(crate) fn mark_as_eval_unit(&mut self) {
+        self.unit_tail_on_stack = true;
         self.push_local_scope();
         // The EVAL'd unit's declarations now land in this freshly-pushed frame,
         // so it — not the empty wrapper below it — is the unit's `UNIT::` root.
@@ -4858,6 +4866,8 @@ impl Compiler {
     fn emit_unit_tail_result(&mut self) {
         if self.unit_tail_discards {
             self.code.emit(OpCode::Pop);
+        } else if self.unit_tail_on_stack {
+            // The value stays on the stack: `run_nested` returns it.
         } else {
             self.code.emit(OpCode::SetTopic);
         }
