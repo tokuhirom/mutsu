@@ -102,10 +102,13 @@ impl Interpreter {
             nominal: (literals, typed),
             distance,
             refinement: [n.0, n.1, n.2, n.3],
+            constrained_slot: 1,
             non_slurpy: !multi_rank::has_slurpy_positional(&params),
             arity: multi_rank::positional_arity(&params),
-            bind_check: multi_rank::needs_named_bind_check(&params),
-            optional: multi_rank::has_optional_positional(&params),
+            // A refined candidate (`where`, `subset`) carries rakudo's
+            // bind-check flag, as for subs (see `candidate_rank_key`).
+            bind_check: n.1 > 0 || multi_rank::needs_named_bind_check(&params),
+            optional: n.1 == 0 && multi_rank::has_optional_positional(&params),
             decl_order,
             profile,
             invocant: Some(owner),
