@@ -140,7 +140,11 @@ pub(crate) fn bind_origin_code_var_upvalues(target: &mut CompiledCode, origin: &
         return;
     }
     let index_of = |name: &str| -> Option<u32> {
-        if target.locals.iter().any(|l| l.strip_prefix('&') == Some(name)) {
+        if target
+            .locals
+            .iter()
+            .any(|l| l.strip_prefix('&') == Some(name))
+        {
             return None;
         }
         let i = origin
@@ -166,7 +170,7 @@ pub(crate) fn bind_origin_code_var_upvalues(target: &mut CompiledCode, origin: &
                 .constants
                 .get(*name_idx as usize)
                 .and_then(crate::value::Value::as_str)
-                .and_then(|name| index_of(&name))
+                .and_then(index_of)
                 .map(|i| (pos, i)),
             _ => None,
         })
