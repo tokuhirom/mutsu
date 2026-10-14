@@ -5592,7 +5592,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         Some("non-scalar invocant parameter")
     } else if pd.shape_constraints.is_some() {
         Some("shaped array parameter")
-    } else if pd.outer_sub_signature.is_some() {
+    } else if pd.outer_sub_signature.is_some() && !(pd.named && pd.named_alias) {
         Some("parameter with an outer sub-signature")
     } else {
         None
@@ -5799,7 +5799,13 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     if pd.name == TYPE_ONLY_PARAM && !pd.is_invocant {
         node.fields.retain(|field| field.name != Some("target"));
     }
-    if let Some(sub_params) = super::named_param::destructuring_sub_signature(pd) {
+    // `:x($r) ($a, $b)`: the trailing signature is the parameter's own
+    // `sub-signature`, next to the alias chain's `names` and `target`.
+    if let Some(sub_params) = pd
+        .outer_sub_signature
+        .as_deref()
+        .or_else(|| super::named_param::destructuring_sub_signature(pd))
+    {
         node.fields.push(node_field(
             Some("sub-signature"),
             signature(
