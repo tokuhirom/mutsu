@@ -8,7 +8,7 @@
 use super::{Handler, MethodRow, RowFlags};
 
 mod accepts;
-mod accepts_open;
+pub(crate) mod accepts_open;
 pub(crate) mod any_collection;
 mod any_interp;
 pub(crate) mod any_list_hash;
