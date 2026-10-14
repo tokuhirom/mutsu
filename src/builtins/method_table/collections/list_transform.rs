@@ -391,7 +391,9 @@ pub(crate) fn unique(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
         ValueView::Bool(_) => Some(Ok(Value::seq(vec![target.clone()]))),
         ValueView::LazyList(_) => None,
         ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
-        _ => Some(Ok(target.clone())),
+        // A scalar (Int, Str, an allomorph, ...) reads as its one-element
+        // list: `Any.unique` is `self.list.unique`. `dispatch_unique` does that.
+        _ => None,
     }
 }
 
