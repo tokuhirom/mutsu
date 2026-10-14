@@ -559,14 +559,42 @@ impl Interpreter {
         {
             return true;
         }
-        if let Some(&hit) = self.caches.native_lever_a_override_cache.get(&key) {
-            return hit;
-        }
-        let answer = self.has_user_method(type_name, method_sym.as_str());
-        self.caches
-            .native_lever_a_override_cache
-            .insert(key, answer);
-        answer
+        let answer = match self.caches.native_lever_a_override_cache.get(&key) {
+            Some(&hit) => hit,
+            None => {
+                let answer = self.has_user_method(type_name, method_sym.as_str());
+                self.caches
+                    .native_lever_a_override_cache
+                    .insert(key, answer);
+                answer
+            }
+        };
+        answer && !self.user_override_outranked_by_builtin(target, type_name, method_sym.as_str())
+    }
+
+    /// An `augment`ed `multi` joins the built-in method's candidates and is
+    /// ranked with them. A candidate that is only a capture or slurpies
+    /// (`multi method map(|c)`) ranks after every candidate with a positional
+    /// parameter, and a core-type receiver has a built-in one, so such an
+    /// augmentation wins no call of its own (#12751). It stays reachable
+    /// through the built-in's `nextsame` / `callsame`.
+    ///
+    /// Approximation: "the built-in has a positional candidate" is "the
+    /// receiver's MRO has a built-in method of that name", because the row
+    /// table has no signatures. The shapes only the built-in's own catch-all
+    /// accepts (`map()` is ambiguous in Rakudo, `grep()` picks the user
+    /// candidate) therefore answer the built-in's error.
+    // TODO: a user-class instance (`C.new.map(*.so)`) still takes the
+    // augmented candidate: its dispatch has no built-in leg to fall through to.
+    // Cost: O(m * c), m = MRO depth, c = candidates per level.
+    pub(crate) fn user_override_outranked_by_builtin(
+        &mut self,
+        target: &Value,
+        type_name: &str,
+        method: &str,
+    ) -> bool {
+        Self::is_core_type_receiver(target)
+            && self.user_candidates_all_outranked_by_builtin(type_name, method)
     }
 
     /// Resolve a method, consulting the sound multi-resolution cache for a
