@@ -459,8 +459,11 @@ pub(crate) fn answer_shapeless(
     // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91) and
     // `Cool.UInt` reads `$*TOLERANCE` for a `Complex` (§9.92); the other rows
     // found here are pure.
-    let interp = interp
-        .filter(|_| row(id).owner == "Mu" || COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()));
+    let interp = interp.filter(|_| {
+        row(id).owner == "Mu"
+            || method == "ACCEPTS"
+            || COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str())
+    });
     call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result)
 }
 
@@ -623,7 +626,9 @@ pub(crate) fn shapeless_row(
                 method.as_str(),
                 "AT-POS" | "EXISTS-POS" | "AT-KEY" | "EXISTS-KEY"
             );
-            for &class in interp?.class_mro(class_name.as_str()).iter() {
+            let mro = interp?.class_mro(class_name.as_str());
+            let mut exhausted = true;
+            for &class in mro.iter() {
                 if (class == cool && text) || (class == any && list) {
                     owner = Some(class);
                     break;
@@ -636,10 +641,29 @@ pub(crate) fn shapeless_row(
                     && crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
                         .is_some()
                 {
+                    exhausted = false;
                     break;
                 }
                 if super::owner_row(class, method, arity).is_some() {
+                    exhausted = false;
+                    // A subclass of a built-in class that declares its own
+                    // `ACCEPTS` (`class DD is Date`) answers from that row.
+                    if method == "ACCEPTS" {
+                        owner = Some(class);
+                    }
                     break;
+                }
+            }
+            // An `Exception` subclass's MRO ends at `Exception`, whose
+            // catalog chain (`Any`, `Mu`) is not spelled out in it: `Any`
+            // answers what no closer class declared.
+            if owner.is_none() && exhausted && list && !coerce {
+                let is_any = |class: &Symbol| {
+                    crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
+                        .is_some_and(|chain| chain.contains(&"Any"))
+                };
+                if mro.iter().any(is_any) {
+                    owner = Some(any);
                 }
             }
             // A coercion falls back to the `Cool`/`Mu` rows, which answer the
