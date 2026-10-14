@@ -1755,6 +1755,12 @@ impl Registry {
         transitions.install(&mut self.functions, key, def);
     }
 
+    /// Return the exact function declaration installed under `key`.
+    #[inline]
+    pub(crate) fn function_def(&self, key: Symbol) -> Option<std::sync::Arc<FunctionDef>> {
+        self.functions.get(&key).cloned()
+    }
+
     /// Give [`Registry::functions`] a version it has never had before, without
     /// changing its content.
     ///
