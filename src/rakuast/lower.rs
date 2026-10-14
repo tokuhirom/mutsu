@@ -2908,7 +2908,7 @@ pub(super) fn arg_list_exprs(arglist: &RakuAstNode) -> Result<Vec<Expr>, Runtime
 pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `my %h does R`: the role is a trait the parser expands separately. An
     // attribute (`has $.x does R`) reads its own traits.
-    let is_attribute = matches!(leaf_str(node, "scope").as_deref(), Ok("has"))
+    let is_attribute = matches!(leaf_str(node, "scope").as_deref(), Ok("has" | "HAS"))
         || matches!(leaf_str(node, "twigil").as_deref(), Ok("." | "!"));
     // `my $x will begin { ... }`: the parser's phasers after the declaration.
     if !is_attribute && let Some((stripped, phasers)) = super::var_will::split(node)? {
@@ -2935,7 +2935,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // the only scope that lowers (the converter renders no other).
     // `our $.x` / `my $.x` (a public or private class-level attribute) is one
     // too, by its twigil.
-    if matches!(leaf_str(node, "scope").as_deref(), Ok("has"))
+    if matches!(leaf_str(node, "scope").as_deref(), Ok("has" | "HAS"))
         || matches!(leaf_str(node, "twigil").as_deref(), Ok("." | "!"))
     {
         return super::attribute_decl::lower(node);

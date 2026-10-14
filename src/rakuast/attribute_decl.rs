@@ -39,6 +39,7 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
         default_is_bind,
         handles_terms,
         trait_order,
+        is_embedded,
         ..
     } = stmt
     else {
@@ -73,10 +74,12 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
         (false, true) => Some("."),
         (false, false) => Some("!"),
     };
-    let scope = match (*is_our, *is_my) {
-        (true, _) => Some("our"),
-        (false, true) => None,
-        (false, false) => Some("has"),
+    // NativeCall's `HAS` (an attribute stored by value) is its own scope.
+    let scope = match (*is_embedded, *is_our, *is_my) {
+        (true, _, _) => Some("HAS"),
+        (false, true, _) => Some("our"),
+        (false, false, true) => None,
+        (false, false, false) => Some("has"),
     };
     let full_name = if *sigil == '$' {
         name.resolve()
@@ -161,10 +164,16 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     // The scope: `has` is the per-instance attribute; `our` and the default
     // `my` are class-level ones (the parser makes those `is rw`).
+    // `HAS` is NativeCall's by-value `has`.
+    let mut is_embedded = false;
     let (is_our, is_my, is_has) = match node.fields.iter().find(|f| f.name == Some("scope")) {
         None => (false, true, false),
         Some(_) => match leaf_str(node, "scope")?.as_str() {
             "has" => (false, false, true),
+            "HAS" => {
+                is_embedded = true;
+                (false, false, true)
+            }
             "our" => (true, false, false),
             _ => return Err(unsupported(node)),
         },
@@ -245,7 +254,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         sigil: sigil_char,
         where_constraint,
         is_alias,
-        is_embedded: false,
+        is_embedded,
         is_our,
         is_my,
         is_default: traits.is_default,
