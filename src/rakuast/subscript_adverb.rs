@@ -19,13 +19,14 @@
 
 use super::convert::{
     angle_key_text, angle_subscript_node, colonpair_value_expr, convert_expr, leaf_field,
-    subscript_dims_node, unsupported as convert_unsupported,
+    splat_dimensions, subscript_dims_node, unsupported as convert_unsupported,
 };
 use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::subscript_adverb::{self, Adverb};
 use crate::value::{RuntimeError, Value, ValueView};
+use std::borrow::Cow;
 
 /// The postcircumfix node for `expr` when it is a subscript with adverbs;
 /// `None` when it is not one.
@@ -127,21 +128,29 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
             // The parser uses a literal Whatever for `[]:adverb`; a written
             // `[*]:adverb` uses Expr::Whatever. Rakudo keeps the former index
             // as an empty SemiList, even though both execute as a slice.
-            (target, &[][..], *is_positional)
+            (target, Cow::Borrowed(&[][..]), *is_positional)
         }
         Expr::Index {
             target,
             index,
             is_positional,
             ..
-        } => (target, std::slice::from_ref(&**index), *is_positional),
+        } => (
+            target,
+            Cow::Borrowed(std::slice::from_ref(&**index)),
+            *is_positional,
+        ),
         Expr::MultiDimIndex {
             target,
             dimensions,
             is_positional,
-        } => (target, dimensions.as_slice(), *is_positional),
+        } => (target, splat_dimensions(dimensions), *is_positional),
         // `@a[]:adverb` / `%h{}:adverb`: no dimension at all.
-        Expr::ZenSlice(target) => (target, &[][..], !matches!(&**target, Expr::HashVar(_))),
+        Expr::ZenSlice(target) => (
+            target,
+            Cow::Borrowed(&[][..]),
+            !matches!(&**target, Expr::HashVar(_)),
+        ),
         _ => return None,
     };
     Some(
@@ -150,7 +159,7 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
             .map(colonpair)
             .collect::<Result<Vec<_>, _>>()
             .and_then(|colonpairs| {
-                subscript_dims_node(target, dims, is_positional, None, colonpairs)
+                subscript_dims_node(target, &dims, is_positional, None, colonpairs)
             }),
     )
 }
@@ -188,7 +197,13 @@ fn convert_named_subscript(subscript: &Expr, pairs: &[Expr]) -> Result<RakuAstNo
             target,
             dimensions,
             is_positional,
-        } => subscript_dims_node(target, dimensions, *is_positional, None, colonpairs),
+        } => subscript_dims_node(
+            target,
+            &splat_dimensions(dimensions),
+            *is_positional,
+            None,
+            colonpairs,
+        ),
         _ => Err(convert_unsupported("named subscript source form")),
     }
 }

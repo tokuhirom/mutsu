@@ -4744,6 +4744,7 @@ t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
 t/rakuast/rakuast-module-names.t
 t/rakuast/rakuast-multidim-delete.t
+t/rakuast/rakuast-multidim-splat.t
 t/rakuast/rakuast-name-part-empty.t
 t/rakuast/rakuast-named-anon-declarations.t
 t/rakuast/rakuast-named-param-outer-signature.t
@@ -5795,7 +5796,9 @@ t/routines/dispatch/multidim-index-through-itemized-seq.t
 t/routines/dispatch/multidim-indexing.t
 t/routines/dispatch/multidim-list-assign-no-alias.t
 t/routines/dispatch/multidim-shaped-delete-bounds.t
+t/routines/dispatch/multidim-slice-lvalue.t
 t/routines/dispatch/multidim-slice-scalar-leaf.t
+t/routines/dispatch/multidim-splat-lazy.t
 t/routines/dispatch/multidim-whatevercode-dimension-list.t
 t/routines/dispatch/multiframe-sigilless-for-rebind-coherence.t
 t/routines/dispatch/multiline-pod-declarator.t

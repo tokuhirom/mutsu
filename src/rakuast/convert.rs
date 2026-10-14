@@ -2873,6 +2873,23 @@ pub(super) fn angle_subscript_node(
 /// [`subscript_node`] over the dimensions of `@a[0;1]`: one statement of the
 /// `SemiList` per dimension.
 // Cost: O(n), n = nodes of the target and dimensions.
+/// The dimensions of an `Expr::MultiDimIndex` as its subscript spells them.
+/// The parser keeps `@a[|| @i]` (6.e: the list `@i` spread over the
+/// dimensions) as the one dimension `@i`; rakudo 2026.09 spells it with the
+/// `||` prefix, `SemiList(ApplyPrefix(Prefix::Multislice, @i))`. Several
+/// dimensions are spelled as written.
+// Cost: O(d), d = dimensions.
+pub(super) fn splat_dimensions(dimensions: &[Expr]) -> std::borrow::Cow<'_, [Expr]> {
+    match dimensions {
+        [only] => std::borrow::Cow::Owned(vec![Expr::Unary {
+            op: crate::token_kind::TokenKind::OrOr,
+            expr: Box::new(only.clone()),
+            word: false,
+        }]),
+        _ => std::borrow::Cow::Borrowed(dimensions),
+    }
+}
+
 pub(super) fn subscript_dims_node(
     target: &Expr,
     dims: &[Expr],
@@ -3930,6 +3947,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                             class: RakuAstClass::Prefix,
                             fields: vec![leaf_field(None, Value::str("not".to_string()))],
                         },
+                        // `||` only ever prefixes a subscript dimension
+                        // (`splat_dimensions`).
+                        (false, crate::token_kind::TokenKind::OrOr) => RakuAstNode {
+                            class: RakuAstClass::PrefixMultislice,
+                            fields: Vec::new(),
+                        },
                         _ => operator_node(RakuAstClass::Prefix, op),
                     },
                 ),
@@ -4142,13 +4165,33 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             target,
             dimensions,
             is_positional,
-        } => subscript_dims_node(target, dimensions, *is_positional, None, Vec::new()),
+        } => subscript_dims_node(
+            target,
+            &splat_dimensions(dimensions),
+            *is_positional,
+            None,
+            Vec::new(),
+        ),
         // `@a[]` / `%h{}`: a subscript with no dimension at all.
         Expr::ZenSlice(target) => subscript_dims_node(
             target,
             &[],
             !matches!(&**target, Expr::HashVar(_)),
             None,
+            Vec::new(),
+        ),
+        // `@a[|| @i] = 5`: like `@a[0] = 5`, a one-statement subscript takes
+        // the value as its `assignee`.
+        Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value,
+            is_positional,
+        } if dimensions.len() == 1 => subscript_dims_node(
+            target,
+            &splat_dimensions(dimensions),
+            *is_positional,
+            Some(value),
             Vec::new(),
         ),
         // `@a[0;1] = 5` keeps an `Assignment` infix over the subscript.
@@ -4162,7 +4205,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             fields: vec![
                 node_field(
                     Some("left"),
-                    subscript_dims_node(target, dimensions, *is_positional, None, Vec::new())?,
+                    subscript_dims_node(
+                        target,
+                        &splat_dimensions(dimensions),
+                        *is_positional,
+                        None,
+                        Vec::new(),
+                    )?,
                 ),
                 node_field(
                     Some("infix"),
