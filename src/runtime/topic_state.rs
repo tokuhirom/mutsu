@@ -146,6 +146,16 @@ impl TopicState {
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self::default()
     }
+
+    /// Whether a `for` loop of the running call binds `name` as its parameter
+    /// right now. A callee does not see its caller's loops (`ScopeStack`
+    /// hides them).
+    // Cost: O(l), l = loops of the running call that are executing.
+    pub(crate) fn name_bound_by_loop_param(&self, name: &str) -> bool {
+        self.active_loop_param_names
+            .iter()
+            .any(|names| names.contains(name))
+    }
 }
 
 /// A named for-loop parameter's prior binding, saved when the loop starts and

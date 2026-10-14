@@ -867,6 +867,12 @@ impl Interpreter {
                 .get(bucket)
                 .and_then(|m| m.get(name))
         {
+            // A by-name `for` parameter of the running routine shadows the
+            // captured cell while its loop runs (#13420): the parameter is
+            // the env binding.
+            if self.topic_state.name_bound_by_loop_param(name) {
+                return None;
+            }
             crate::vm::vm_stats::record_mainline_lexical_hit();
             return Some(found);
         }
@@ -986,6 +992,11 @@ impl Interpreter {
                 .map(str::to_string)
         };
         if let Some(bucket) = own_bucket {
+            // See `unit_lexical_slot`: a running loop's by-name parameter
+            // shadows the captured cell (#13420).
+            if self.topic_state.name_bound_by_loop_param(name) {
+                return None;
+            }
             crate::vm::vm_stats::record_mainline_lexical_hit();
             // `get_value_mut` keeps the table's name filter: the entry was
             // proved to exist above and only its value is handed out, so
