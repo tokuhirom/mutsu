@@ -201,44 +201,27 @@ produced a `todo:ticket`, a `todo:deep` and a `todo:perf` this way
 [#7613](https://github.com/tokuhirom/mutsu/issues/7613)) — and get named in the ADR section and the
 issue comment so they are not lost.
 
-### Stopping mid-campaign: end with a next-session prompt
+### Stopping mid-campaign: leave a short status note
 
 A campaign issue, or a single deep problem that needs more than one slice, is often still open when
 the session stops — the run cap is reached, the context is used up, or the user ends the session.
-That is expected. What is not acceptable is stopping in a way that makes the next session
-rediscover everything. So whenever you stop with work remaining on such an issue (user decision,
-2026-10-11), **finish by writing a prompt that a fresh session can be started with**:
+That is expected. Composing a full handoff prompt for the next session costs more than it saves
+(user decision, 2026-10-14, superseding 2026-10-11): the next session reads the issue, its ADR and
+`git log` itself. So whenever you stop with work remaining on such an issue:
 
-1. Write it as one self-contained block a cold session can act on without this transcript:
-   - the issue number and, if any, the owning ADR and its section;
-   - what this session landed (PR numbers, merged or still open — an open PR is named with its
-     branch and what it still waits on);
-   - **the next remainder to take**, concretely: the file/function, the failing test or repro
-     command, and the approach you would try first;
-   - what you ruled out and why (dead ends are information), plus any recipe you found stale;
-   - the decisions the user still owes, if any.
-   It is a prompt, not a report: write it in the imperative ("Work #NNNN. Take remainder …"), and
-   in English like every repository artifact.
-2. **Post it as a comment on the issue**, headed `Next-session prompt`, so it survives the
-   ephemeral container. A later prompt supersedes an earlier one; say so in its first line when
-   one already exists.
-3. **Repeat it verbatim at the end of your final report to the user** in a fenced block they can
-   copy straight into a new session.
-4. **In a remote container, offer to start that session for them** (user decision, 2026-10-11).
-   Where the `claude-code-remote` MCP tool `create_session` is available (`command -v gh || echo
-   remote` says remote), do not leave the copy-paste to the user: ask whether to start the next
-   session now (`AskUserQuestion`; the question is the one decision genuinely theirs, so asking
-   is not a violation of "never ask back" for queue requests). On yes, call `create_session` with
-   the prompt from step 1 as `prompt`, the repository as `source_url`
-   (`https://github.com/tokuhirom/mutsu`), a short `title` naming the issue, and the other
-   arguments omitted so the new session inherits this session's environment and model; then report
-   the new session's ID. On no, or when `create_session` is unavailable (local dev box), the fenced
-   block from step 3 is the handoff. Steps 2 and 3 still happen first: the comment is the durable
-   record, and the new session may fail to start.
+1. **Post a short status note as a comment on the issue**, headed `Status`, so it survives the
+   ephemeral container. A few lines in English, not a prompt:
+   - what this session landed (PR numbers; an open PR is named with its branch and what it still
+     waits on);
+   - the next remainder, in one line (file/function or failing repro);
+   - dead ends worth not repeating, and any decision the user still owes.
+2. **Do not start the next session yourself.** Never call `create_session` to continue your own
+   work and never ask the user whether to; the parent session or the user launches follow-ups.
+   Mention the note in your final report to the user, and do not repeat it as a copy-paste block.
 
-This replaces, not adds to, the "say what comes next" line of the issue comment in step 5 of the
-slice loop above: the prompt *is* that record. It does not excuse stopping early — "It is too hard"
-is still not an outcome; the prompt records where a real attempt stopped.
+This replaces the "say what comes next" line of the issue comment in step 5 of the slice loop
+above. It does not excuse stopping early — "It is too hard" is still not an outcome; the note
+records where a real attempt stopped.
 
 ### Closing a campaign issue
 
