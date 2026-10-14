@@ -1177,3 +1177,14 @@ with that head in `.AST`, and reconstructs the same parser shape in `lower`.
 This pins the compound assignment as the value that seeds the short-circuit
 tail and preserves its single evaluation. Other `SyntheticBlock` first
 refusals remain for separate measured slices.
+
+### 6.57 S10: grouped declaration with a loose word-logical tail (2026-10-15)
+
+For `my ($a, $b) andthen "y"`, the parser stores the `SignatureDecl` expansion
+inside the first statement of the loose-tail `SyntheticBlock`; the tail reads
+the declared variables as an `ArrayLiteral`. Rakudo renders the declaration
+itself as the first operand of `ApplyListInfix`. The converter now replaces
+that comma-list seed with `VarDeclaration::Signature`, and lowering restores
+the same declaration expansion and array seed. This record covers bare groups
+of plain variables; initialized, nested, named and typed groups remain on their
+existing paths or boundaries.

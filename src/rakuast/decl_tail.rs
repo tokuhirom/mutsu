@@ -15,8 +15,8 @@
 use super::convert::{convert_expr, convert_stmt, split_sigil, var_lexical};
 use super::lower::{lower_expr, lower_stmt, named_child, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::Stmt;
-use crate::value::{RuntimeError, Value};
+use crate::ast::{Expr, Stmt};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// The operand an expression node starts with: the left of an infix, the first
 /// operand of a list infix, and (with `postfix`) the operand of a postfix.
@@ -118,22 +118,105 @@ fn declared_variable(head: &Stmt) -> Option<(&str, &str)> {
 // Cost: O(n), n = size of the statement.
 pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> {
     let (head, tail) = crate::ast::decl_tail::recognize(stmt)?;
-    let (sigil, name) = declared_variable(head)?;
     Some((|| {
         let converted = convert_expr(tail)?;
-        let (bottom, depth) = leftmost(&converted, true);
-        // The tail must start with a re-read of the variable the head declares.
-        if depth == 0 || *bottom != var_lexical(sigil, name) {
-            return Err(unsupported_statement());
+        if let Some((sigil, name)) = declared_variable(head) {
+            let (bottom, depth) = leftmost(&converted, true);
+            // The tail must start with a re-read of the variable the head declares.
+            if depth == 0 || *bottom != var_lexical(sigil, name) {
+                return Err(unsupported_statement());
+            }
+            let operand = if let Some(expr) = compound_assignment_expr(head) {
+                convert_expr(expr)?
+            } else {
+                let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
+                super::convert::expression_of(&statement).ok_or_else(unsupported_statement)?
+            };
+            return Ok(replace_leftmost(&converted, &operand));
         }
-        let operand = if let Some(expr) = compound_assignment_expr(head) {
-            convert_expr(expr)?
-        } else {
-            let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
-            super::convert::expression_of(&statement).ok_or_else(unsupported_statement)?
-        };
-        Ok(replace_leftmost(&converted, &operand))
+
+        let decl =
+            crate::ast::decl_tail::signature_declaration(head).ok_or_else(unsupported_statement)?;
+        let declaration = super::signature_decl::convert(decl)?;
+        replace_group_seed(&converted, &declaration).ok_or_else(unsupported_statement)
     })())
+}
+
+// Cost: O(d), d = depth of the left operand chain.
+fn replace_group_seed(node: &RakuAstNode, declaration: &RakuAstNode) -> Option<RakuAstNode> {
+    let leading = leading_operand(node, false)?;
+    if is_comma_list(leading) {
+        return replace_leading(node, declaration);
+    }
+    let replaced = replace_group_seed(leading, declaration)?;
+    replace_leading(node, &replaced)
+}
+
+// Cost: O(d), d = depth of the left operand chain.
+fn replace_signature_operand(node: &RakuAstNode, seed: &RakuAstNode) -> Option<RakuAstNode> {
+    let leading = leading_operand(node, false)?;
+    if leading.class == RakuAstClass::VarDeclarationSignature {
+        return replace_leading(node, seed);
+    }
+    let replaced = replace_signature_operand(leading, seed)?;
+    replace_leading(node, &replaced)
+}
+
+// Cost: O(n), n = number of operands in the list node.
+fn replace_leading(node: &RakuAstNode, replacement: &RakuAstNode) -> Option<RakuAstNode> {
+    let field_name = match node.class {
+        RakuAstClass::ApplyInfix => "left",
+        RakuAstClass::ApplyListInfix => "operands",
+        _ => return None,
+    };
+    let fields = node
+        .fields
+        .iter()
+        .map(|field| {
+            if field.name != Some(field_name) {
+                return Some(field.clone());
+            }
+            let value = match (&field.value, node.class) {
+                (RakuAstFieldValue::Node(_), RakuAstClass::ApplyInfix) => {
+                    RakuAstFieldValue::Node(Value::rakuast(Box::new(replacement.clone())))
+                }
+                (RakuAstFieldValue::List(items), RakuAstClass::ApplyListInfix) => {
+                    let mut items = items.clone();
+                    let first = items.first_mut()?;
+                    *first = Value::rakuast(Box::new(replacement.clone()));
+                    RakuAstFieldValue::List(items)
+                }
+                _ => return None,
+            };
+            Some(RakuAstField {
+                name: field.name,
+                value,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(RakuAstNode {
+        class: node.class,
+        fields,
+    })
+}
+
+// Cost: O(1).
+fn is_comma_list(node: &RakuAstNode) -> bool {
+    if node.class != RakuAstClass::ApplyListInfix {
+        return false;
+    }
+    let Some(infix) = node.fields.iter().find(|field| field.name == Some("infix")) else {
+        return false;
+    };
+    let RakuAstFieldValue::Node(value) = &infix.value else {
+        return false;
+    };
+    let ValueView::RakuAst(infix) = value.view() else {
+        return false;
+    };
+    matches!(infix.fields.first(), Some(RakuAstField {
+        value: RakuAstFieldValue::Node(value), ..
+    }) if matches!(value.view(), ValueView::Str(op) if op.as_str() == ","))
 }
 
 // Cost: O(1).
@@ -156,10 +239,11 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
     let is_declaration = bottom.class == RakuAstClass::VarDeclarationSimple;
     let is_compound_assignment = bottom.class == RakuAstClass::ApplyInfix
         && super::lower::infix_is_compound_assignment(bottom);
-    if depth == 0 || (!is_declaration && !is_compound_assignment) {
+    let is_signature_declaration = bottom.class == RakuAstClass::VarDeclarationSignature;
+    if depth == 0 || (!is_declaration && !is_compound_assignment && !is_signature_declaration) {
         return None;
     }
-    let head = if is_declaration {
+    let head = if is_declaration || is_signature_declaration {
         match lower_stmt(bottom) {
             Ok(head) => head,
             Err(error) => return Some(Err(error)),
@@ -170,6 +254,21 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
             Err(error) => return Some(Err(error)),
         }
     };
+    if is_signature_declaration {
+        let seed = signature_seed(&head)?;
+        let seed_node = match convert_expr(&seed) {
+            Ok(node) => node,
+            Err(error) => return Some(Err(error)),
+        };
+        let Some(tail_node) = replace_signature_operand(node, &seed_node) else {
+            return Some(Err(unsupported_statement()));
+        };
+        let tail = match lower_expr(&tail_node) {
+            Ok(tail) => tail,
+            Err(error) => return Some(Err(error)),
+        };
+        return Some(Ok(crate::ast::decl_tail::expand(head, tail)));
+    }
     let (sigil, name) = declared_variable(&head)?;
     let seed = var_lexical(sigil, name);
     let tail = match lower_expr(&replace_leftmost(node, &seed)) {
@@ -177,4 +276,40 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Stmt, RuntimeError>> {
         Err(error) => return Some(Err(error)),
     };
     Some(Ok(crate::ast::decl_tail::expand(head, tail)))
+}
+
+// Cost: O(v), v = number of variables in the grouped declaration.
+fn signature_seed(head: &Stmt) -> Option<Expr> {
+    let decl = crate::ast::decl_tail::signature_declaration(head)?;
+    if decl.is_state || decl.is_our || decl.type_constraint.is_some() || decl.vars.is_empty() {
+        return None;
+    }
+    let vars = decl
+        .vars
+        .iter()
+        .map(|var| {
+            if var.is_slurpy
+                || var.is_optional
+                || var.is_named
+                || var.default.is_some()
+                || var.per_var_type_constraint.is_some()
+                || var.where_constraint.is_some()
+                || var.sigilless
+                || var.literal_value.is_some()
+                || var.param_trait.is_some()
+            {
+                return None;
+            }
+            Some(if let Some(name) = var.name.strip_prefix('@') {
+                Expr::ArrayVar(name.to_string())
+            } else if let Some(name) = var.name.strip_prefix('%') {
+                Expr::HashVar(name.to_string())
+            } else if var.name.starts_with('&') {
+                return None;
+            } else {
+                Expr::Var(var.name.clone())
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(Expr::ArrayLiteral(vars))
 }
