@@ -432,7 +432,7 @@ impl Interpreter {
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
         crate::alloc_scope_named!(_sc_cmm_dec, "cmm:decode-sources");
-        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let decoded_sources = self.decode_arg_sources_shared(code, arg_sources_idx);
         crate::alloc_scope_end!(_sc_cmm_dec);
         crate::alloc_scope_named!(_sc_cmm_names, "cmm:names");
         let method_raw = name.raw;
@@ -469,12 +469,15 @@ impl Interpreter {
         // ADR-0054 S3: spread only the positions the caller wrote as `|EXPR`
         // -- decided by call-site syntax, not by a value merely evaluating to
         // a Slip (`.method(@a.Slip)` stays one argument).
-        let (args, arg_sources) =
-            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
+        let (args, arg_sources) = Self::spread_call_args_by_syntax_shared(
+            code,
+            raw_args,
+            arg_sources_idx,
+            decoded_sources,
+        );
         let args = Self::hllize_call_args(args);
         // The callee reads the same names this op keeps using below: share
         // one allocation rather than cloning the vector and every name in it.
-        let arg_sources = arg_sources.map(std::sync::Arc::new);
         self.set_pending_call_arg_sources_shared(arg_sources.clone());
         // Elements appended to a NATIVE integer array store through the native
         // slot, so each one wraps to the element width exactly as an assignment

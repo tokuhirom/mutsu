@@ -159,6 +159,27 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::spread_call_args_by_syntax`] for a caller that keeps the names
+    /// shared: a call site with no `|` argument (the common one) hands the
+    /// shared names straight back.
+    pub(super) fn spread_call_args_by_syntax_shared(
+        code: &CompiledCode,
+        raw_args: Vec<Value>,
+        arg_sources_idx: Option<u32>,
+        decoded_sources: Option<std::sync::Arc<Vec<Option<String>>>>,
+    ) -> (Vec<Value>, Option<std::sync::Arc<Vec<Option<String>>>>) {
+        if Self::decode_arg_slip_positions(code, arg_sources_idx).is_none() {
+            return (raw_args, decoded_sources);
+        }
+        let (args, sources) = Self::spread_call_args_by_syntax(
+            code,
+            raw_args,
+            arg_sources_idx,
+            decoded_sources.map(|names| (*names).clone()),
+        );
+        (args, sources.map(std::sync::Arc::new))
+    }
+
     pub(super) fn spread_call_args_by_syntax(
         code: &CompiledCode,
         raw_args: Vec<Value>,
@@ -301,24 +322,50 @@ impl Interpreter {
         code: &CompiledCode,
         arg_sources_idx: Option<u32>,
     ) -> Option<Vec<Option<String>>> {
+        self.decode_arg_sources_shared(code, arg_sources_idx)
+            .map(|names| (*names).clone())
+    }
+
+    /// [`Self::decode_arg_sources`] sharing the call site's names: they are
+    /// decoded once per site (`CompiledCode::arg_source_decode`) and handed
+    /// out as one `Arc`, instead of allocating the vector and every name on
+    /// each execution. The slot map is still repopulated per call.
+    // Cost: O(s) for the s slotted sources, O(1) otherwise (the names are shared).
+    pub(super) fn decode_arg_sources_shared(
+        &mut self,
+        code: &CompiledCode,
+        arg_sources_idx: Option<u32>,
+    ) -> Option<std::sync::Arc<Vec<Option<String>>>> {
         // §1.4/§1.5: repopulate the companion `name -> slot` map for this call from
         // the `Pair(name, Int(slot))` arg-source entries. Cleared first so a call
         // with no slotted sources leaves it empty (no stale slot from a prior call).
         self.pending_call_arg_source_slots.clear();
         let idx = arg_sources_idx?;
-        let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
-            return None;
-        };
-        let mut names: Vec<Option<String>> = Vec::with_capacity(items.len());
-        for item in items.iter() {
-            names.push(Self::decode_arg_source_entry(item).map(|(name, slot)| {
-                if let Some(slot) = slot {
-                    self.pending_call_arg_source_slots.insert(name.clone(), slot);
-                }
-                name
-            }));
+        let decode = code.arg_source_decode(idx as usize, || {
+            let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
+                return None;
+            };
+            let mut slots: Vec<(String, u32)> = Vec::new();
+            let names: Vec<Option<String>> = items
+                .iter()
+                .map(|item| {
+                    Self::decode_arg_source_entry(item).map(|(name, slot)| {
+                        if let Some(slot) = slot {
+                            slots.push((name.clone(), slot));
+                        }
+                        name
+                    })
+                })
+                .collect();
+            Some(crate::opcode::ArgSourceDecode {
+                names: std::sync::Arc::new(names),
+                slots,
+            })
+        })?;
+        for (name, slot) in &decode.slots {
+            self.pending_call_arg_source_slots.insert(name.clone(), *slot);
         }
-        Some(names)
+        Some(decode.names.clone())
     }
 
     /// Decode the source half of an argument descriptor. Named arguments use
