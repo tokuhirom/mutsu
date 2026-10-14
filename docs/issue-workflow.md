@@ -69,6 +69,16 @@ across the kind queues; it never replaces `todo:*`, and it is unrelated to the `
 label, which marks the lock board and nothing else. The filer sets it (no triage needed); anyone
 may add it later to an older issue that turns out to qualify.
 
+### `roast` — the issue moves a roast test
+
+Like `ecosystem`, an **independent** label added on top of the kind/tier labels: put `roast` on
+every issue whose fix makes a `roast/*.t` file pass more subtests or stop aborting — a blocker
+named in `TODO_roast/BLOCKERS.md`, a regression found by re-measuring that ledger, a finding
+filed while running the `roast-triage` skill (user decision, 2026-10-14). The test is "would
+closing this move a roast file?", and the issue body names the file. It is how the roast work is
+listed (`label:roast`); it never replaces `todo:*`. The filer sets it; anyone may add it later to
+an older issue that turns out to qualify.
+
 ### A `todo:perf` issue states its goal, and closes when the goal is met
 
 "Faster" has no end, so a perf issue without a stated goal can never be closed
@@ -350,7 +360,7 @@ Body, in prose (the templates carry these headings):
 - **Repro** — a minimal script or roast path that exhibits it, with mutsu's
   output and `raku`'s side by side.
 
-Label it with its kind (`todo:*`), `ecosystem` where that applies, and one `lane:*`
+Label it with its kind (`todo:*`), `ecosystem` / `roast` where they apply, and one `lane:*`
 (see [lanes.md](lanes.md)). Leave `tier:*` to triage.
 
 A `todo:deep` issue naturally carries more analysis than a `todo:ticket` one.
