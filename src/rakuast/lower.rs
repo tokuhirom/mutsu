@@ -4259,7 +4259,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         is_rw: false,
                         is_raw: false,
                         is_block: true,
-                        doc: Default::default(),
+                        doc: super::declarator_docs::slot(node).unwrap_or_default(),
                     })
                 }
             } else {
@@ -4304,14 +4304,19 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let mut body =
                 lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
             super::routine_source::retain(node, &mut body)?;
+            let doc = super::declarator_docs::slot(node);
             if params.is_empty() && return_type.is_none() && custom_traits.is_empty() {
                 return Ok(Expr::AnonSub {
                     body,
                     is_rw: flags.is_rw,
                     is_raw: flags.is_raw,
                     is_block: false,
-                    doc: Default::default(),
+                    doc: doc.unwrap_or_default(),
                 });
+            }
+            let mut custom_traits = crate::ast::AnonSubTraits::from(custom_traits);
+            if let Some(doc) = doc {
+                custom_traits.set_doc_slot(doc);
             }
             Ok(Expr::AnonSubParams {
                 params,
@@ -4320,7 +4325,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 body,
                 is_rw: flags.is_rw,
                 is_raw: flags.is_raw,
-                custom_traits: custom_traits.into(),
+                custom_traits,
                 is_whatever_code: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,
             })
