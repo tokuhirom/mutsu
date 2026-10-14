@@ -3992,11 +3992,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             target,
             name_expr,
             args,
-            modifier: None,
+            modifier,
             quoted: true,
-        } => super::postfix_grouping::convert(
+        } if matches!(modifier, None | Some('?' | '+' | '*')) => super::postfix_grouping::convert(
             target,
-            call_quoted_method_expr(convert_expr(name_expr)?, args)?,
+            call_quoted_method_expr(convert_expr(name_expr)?, args, *modifier)?,
         ),
         // `$o.$name(1)` / `$o.&f(1)` -> `Call::TermAsMethod` / `Call::NameAsMethod`.
         Expr::DynamicMethodCall {
@@ -6114,10 +6114,10 @@ fn method_call_postfix(
     quoted: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     if quoted {
-        if modifier.is_some() {
+        if !matches!(modifier, None | Some('?' | '+' | '*')) {
             return Err(unsupported("quoted method name with a modifier"));
         }
-        return call_quoted_method(name, args);
+        return call_quoted_method(name, args, modifier);
     }
     // `.^name` is a *metamethod* call, not an ordinary call with a dispatch
     // modifier: raku gives it its own `Call::MetaMethod` class whose `name` is a
@@ -6138,8 +6138,12 @@ fn method_call_postfix(
 /// `."foo"` / `."foo"(args)` -> `Call::QuotedMethod(name => QuotedString,
 /// [args => ArgList])`. Unlike `Call::Method`, the name is a QuotedString
 /// (a string literal) rather than a `Name.from-identifier`.
-fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
-    call_quoted_method_expr(quoted_string(Value::str(name.to_string())), args)
+fn call_quoted_method(
+    name: &str,
+    args: &[Expr],
+    modifier: Option<char>,
+) -> Result<RakuAstNode, RuntimeError> {
+    call_quoted_method_expr(quoted_string(Value::str(name.to_string())), args, modifier)
 }
 
 /// Construct `Call::QuotedMethod` from the quoted-string expression that names
@@ -6148,10 +6152,15 @@ fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeE
 pub(super) fn call_quoted_method_expr(
     name: RakuAstNode,
     args: &[Expr],
+    modifier: Option<char>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = vec![node_field(Some("name"), name)];
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));
+    }
+    // `.?"name"` / `.+"name"` / `.*"name"` keep the dispatch string.
+    if let Some(m) = modifier {
+        fields.push(leaf_field(Some("dispatch"), Value::str(format!(".{m}"))));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::CallQuotedMethod,

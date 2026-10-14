@@ -99,7 +99,7 @@ pub(super) fn call_assign_postfix(call: &Expr) -> Result<RakuAstNode, RuntimeErr
             modifier: None,
             quoted: true,
             ..
-        } => super::convert::call_quoted_method_expr(convert_expr(name_expr)?, args),
+        } => super::convert::call_quoted_method_expr(convert_expr(name_expr)?, args, None),
         _ => Err(unsupported_expr(
             "`.=` with a call that is not a method call",
         )),

@@ -4993,11 +4993,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         target: Box::new(operand),
                         name: crate::symbol::Symbol::intern(&name),
                         args: arg_exprs(inner)?,
-                        modifier: if quoted {
-                            None
-                        } else {
-                            dispatch_modifier(inner)?
-                        },
+                        modifier: dispatch_modifier(inner)?,
                         quoted,
                     })
                 }
@@ -5160,6 +5156,7 @@ fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Ru
         // rather than a Name. An interpolated name lowers to the existing
         // DynamicMethodCall execution path.
         RakuAstClass::CallQuotedMethod => {
+            let modifier = dispatch_modifier(postfix)?;
             let name_expr = lower_expr(named_child(postfix, "name")?)?;
             match name_expr {
                 Expr::Literal(value) if matches!(value.view(), ValueView::Str(_)) => {
@@ -5167,7 +5164,7 @@ fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Ru
                         target: Box::new(operand),
                         name: crate::symbol::Symbol::intern(&value.to_string_value()),
                         args: arg_exprs(postfix)?,
-                        modifier: None,
+                        modifier,
                         quoted: true,
                         sugar: false,
                     })
@@ -5176,7 +5173,7 @@ fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Ru
                     target: Box::new(operand),
                     name_expr: Box::new(name_expr),
                     args: arg_exprs(postfix)?,
-                    modifier: None,
+                    modifier,
                     quoted: true,
                 }),
             }
