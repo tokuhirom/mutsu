@@ -6,7 +6,7 @@ use Test;
 # A declaration followed by a loose operator is one expression with the
 # declaration as its leftmost operand: `my $x = 1 and 2` is `(my $x = 1) and 2`,
 # and `my $x = 1, 2, 3` is a comma list whose first element is the declaration.
-plan 17;
+plan 21;
 
 # --- my $x = 1 and 2 ---------------------------------------------------------
 my $and = Q[my $x = 1 and 2].AST;
@@ -37,3 +37,10 @@ my $plain = Q[my $z; $z = 0 or 9].AST.statements[1].expression;
 is $plain.^name, 'RakuAST::ApplyInfix', 'a plain assignment takes a tail as well';
 is EVAL(Q[my $z; $z = 0 or 9; $z].AST), 0, 'and keeps the assigned value';
 is EVAL(Q[my $x = 5, 6, 7; $x].AST), 5, 'the comma tail does not extend the initializer';
+
+# --- a compound assignment followed by a loose tail --------------------------
+my $compound = Q[my $x = 0; $x += 1 andthen 42].AST.statements[1].expression;
+is $compound.^name, 'RakuAST::ApplyListInfix', 'a compound assignment keeps its word-logical tail';
+is $compound.operands[0].^name, 'RakuAST::ApplyInfix', 'with the compound assignment as the first operand';
+is $compound.operands[0].left.^name, 'RakuAST::Var::Lexical', 'and its variable target';
+is EVAL(Q[my $x = 0; $x += 1 andthen 42; $x].AST), 1, 'the assigned value seeds the tail and is stored once';

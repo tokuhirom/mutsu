@@ -1,5 +1,5 @@
 //! A declaration or assignment with a loose tail: `my $x = 1 and 2`,
-//! `my $x = 1, 2, 3`.
+//! `my $x = 1, 2, 3`, or `$x += 1 andthen 2`.
 //!
 //! The parser parses the declaration first and re-attaches what follows it at
 //! its own, looser precedence, as a scopeless
@@ -28,7 +28,9 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<(&Stmt, &Expr)> {
     let [head, Stmt::Expr(tail)] = stmts.as_slice() else {
         return None;
     };
-    matches!(head, Stmt::VarDecl { .. } | Stmt::Assign { .. }).then_some((head, tail))
+    let variable_head = matches!(head, Stmt::VarDecl { .. } | Stmt::Assign { .. })
+        || matches!(head, Stmt::Expr(Expr::CompoundAssign { target, .. }) if variable_name(target).is_some());
+    variable_head.then_some((head, tail))
 }
 
 /// The name a [`recognize`]d head declares or assigns.
@@ -36,6 +38,15 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<(&Stmt, &Expr)> {
 pub(crate) fn head_name(head: &Stmt) -> Option<&str> {
     match head {
         Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name),
+        Stmt::Expr(Expr::CompoundAssign { target, .. }) => variable_name(target),
+        _ => None,
+    }
+}
+
+// Cost: O(1).
+fn variable_name(target: &Expr) -> Option<&str> {
+    match target {
+        Expr::Var(name) => Some(name),
         _ => None,
     }
 }
