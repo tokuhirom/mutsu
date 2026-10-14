@@ -144,6 +144,17 @@ pub(super) fn parse_sigilless_decl_name(input: &str) -> PResult<'_, String> {
 pub(in crate::parser::stmt) fn parse_array_shape_suffix(input: &str) -> PResult<'_, Vec<Expr>> {
     let (rest, _) = parse_char(input, '[')?;
     let (rest, _) = ws(rest)?;
+    if let Some(after_empty_dim) = rest.strip_prefix(';') {
+        let (after_empty_dim, _) = ws(after_empty_dim)?;
+        if after_empty_dim.starts_with(']') {
+            let (rest, _) = parse_char(after_empty_dim, ']')?;
+            crate::parser::add_parse_warning(
+                "Ignoring [Nil] as shape specification, did you mean 'my Nil @foo' ?".into(),
+                crate::parser::primary::current_line_number(input),
+            );
+            return Ok((rest, Vec::new()));
+        }
+    }
     let mut dims = Vec::new();
     let mut rest = rest;
 

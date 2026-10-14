@@ -545,7 +545,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     let mut shape_constraints = None;
     let r = if for_original_sigil == b'@' && r.starts_with('[') {
         let (r2, dims) = parse_array_shape_suffix(r)?;
-        shape_constraints = Some(dims);
+        shape_constraints = (!dims.is_empty()).then_some(dims);
         r2
     } else {
         r

@@ -532,7 +532,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // Optional shaped-array declaration suffix: has @.a[3, 3]
     let (rest, shape_dims) = if sigil == b'@' && rest.starts_with('[') {
         let (r, dims) = parse_array_shape_suffix(rest)?;
-        (r, Some(dims))
+        (r, (!dims.is_empty()).then_some(dims))
     } else {
         (rest, None)
     };
