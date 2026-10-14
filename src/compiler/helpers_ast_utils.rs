@@ -545,13 +545,24 @@ impl Compiler {
         // placeholders of its statically named `require`s (see
         // `require_stubs`): both are compile-time declarations of the scope.
         self.hoist_require_stubs(stmts);
+        self.note_predeclared_vars(stmts);
+        for stmt in stmts {
+            if let Stmt::SubDecl { .. } = stmt {
+                self.hoist_one_sub_decl(stmt, lexical_hoist);
+            }
+        }
+    }
+
+    /// Note, at a scope's entry, every variable its statement list declares:
+    /// the scope's pad holds them from its entry (#10511). Each scope-entry
+    /// hoist (`hoist_sub_decls`, `hoist_typed_var_decls`) calls it; the notes
+    /// are a set, so a scope reached by both is noted once.
+    // Cost: O(s), s = statements in `stmts`.
+    pub(super) fn note_predeclared_vars(&mut self, stmts: &[Stmt]) {
         let scope = self.local_scopes.len() - 1;
         for stmt in stmts {
-            match stmt {
-                Stmt::SubDecl { .. } => self.hoist_one_sub_decl(stmt, lexical_hoist),
-                // The scope's pad holds its variables from its entry (#10511).
-                Stmt::VarDecl { name, .. } => self.local_scopes[scope].note_predeclared(name),
-                _ => {}
+            if let Stmt::VarDecl { name, .. } = stmt {
+                self.local_scopes[scope].note_predeclared(name);
             }
         }
     }
@@ -639,6 +650,7 @@ impl Compiler {
     /// real `VarDecl` later in sequence is an idempotent no-op for the type and
     /// still performs the actual (re-)initialization.
     pub(super) fn hoist_typed_var_decls(&mut self, stmts: &[Stmt]) {
+        self.note_predeclared_vars(stmts);
         // Pre-register each declaration with the constraint its own compile
         // will persist, `use variables :D/:U`'s implicit smiley included: the
         // pragma statements of this block are tracked in order, then the

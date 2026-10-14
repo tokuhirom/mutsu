@@ -33,8 +33,20 @@ pub(super) type Undeclared = (&'static str, String, Vec<String>);
 // Cost: O(n * d), n = size of the snippet's AST, d = depth of the scope
 // stack.
 pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Option<Undeclared> {
+    // A placeholder (`$^b`, `$:b`) declares its bare name in its block; a
+    // bare use of that name before the placeholder is the placeholder check's
+    // own error (`check_placeholder_*`, with rakudo's "Perhaps you forgot a
+    // 'sub'" message), not this scan's.
+    let mut refs = VarRefs::default();
+    walk_stmts(&mut refs, stmts);
+    let placeholder_names = refs
+        .names
+        .iter()
+        .filter_map(|n| n.strip_prefix(['^', ':']).map(str::to_string))
+        .collect();
     let mut scan = UndeclaredVars {
         interp,
+        placeholder_names,
         scopes: vec![HashSet::new()],
         strict: true,
         judged_stmt: true,
@@ -92,6 +104,9 @@ fn is_exempt(name: &str) -> bool {
 
 struct UndeclaredVars<'a> {
     interp: &'a Interpreter,
+    /// Bare names of the snippet's placeholder variables (see
+    /// `first_undeclared_var`).
+    placeholder_names: HashSet<String>,
     /// Lexical scopes, innermost last, of names in `declared_var_name` form.
     scopes: Vec<HashSet<String>>,
     /// `no strict` is in effect: an assignment declares its target and no
@@ -159,7 +174,11 @@ impl UndeclaredVars<'_> {
     }
 
     fn undeclared_scalar(&self, name: &str) -> Option<Undeclared> {
-        if is_exempt(name) || self.is_declared(name) || self.caller_scope_declares(name) {
+        if is_exempt(name)
+            || self.is_declared(name)
+            || self.placeholder_names.contains(name)
+            || self.caller_scope_declares(name)
+        {
             return None;
         }
         let env = self.interp.env();
@@ -171,7 +190,10 @@ impl UndeclaredVars<'_> {
         // is an actual variable. A class/sub named `Foo` is stored bare (as a
         // type object), but does NOT declare the scalar `$Foo` -- in Raku
         // `$Foo` is its own (undeclared) symbol.
-        if env.contains_key(name)
+        // A file-scope lexical of the running routine's own compunit (an
+        // imported `our $x is export` among them) is not in `env`: the by-name
+        // read chokepoint redirects to the unit's store, and so does this.
+        if (env.contains_key(name) || self.interp.get_env_with_main_alias(name).is_some())
             && !self.interp.registry().classes.contains_key(name)
             && !self.interp.has_function(name)
         {
@@ -203,12 +225,16 @@ impl UndeclaredVars<'_> {
         if is_exempt(name)
             || self.is_declared(name)
             || self.is_declared(&sigiled)
+            || self.placeholder_names.contains(name)
             || self.caller_scope_declares(&sigiled)
         {
             return None;
         }
         let env = self.interp.env();
-        if env.contains_key(&sigiled) || env.contains_key(name) {
+        if env.contains_key(&sigiled)
+            || env.contains_key(name)
+            || self.interp.get_env_with_main_alias(&sigiled).is_some()
+        {
             return None;
         }
         let suggestions = Interpreter::suggest_declared_vars(&sigiled, &self.all_declared());
@@ -367,6 +393,14 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             }
             Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
                 self.type_body(body, stmt)
+            }
+            // A statement-form phaser (`BEGIN my $c = ...`) declares into the
+            // enclosing scope; its block form (`BEGIN { my $c }`, whose body
+            // starts with a `SetLine`) is a scope of its own, below.
+            Stmt::Phaser { body, .. }
+                if matches!(body.as_slice(), [Stmt::VarDecl { .. }]) =>
+            {
+                self.judging(true, Mode::Ordered, |v| walk_stmts(v, body))
             }
             // A block's statements are judged as the snippet's are.
             Stmt::Block(_) => {
