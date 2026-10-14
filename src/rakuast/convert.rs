@@ -3994,10 +3994,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             args,
             modifier,
             quoted: true,
-        } if matches!(modifier, None | Some('?' | '+' | '*' | '!')) => super::postfix_grouping::convert(
-            target,
-            call_quoted_method_expr(convert_expr(name_expr)?, args, *modifier)?,
-        ),
+        } if matches!(modifier, None | Some('?' | '+' | '*' | '!')) => {
+            super::postfix_grouping::convert(
+                target,
+                call_quoted_method_expr(convert_expr(name_expr)?, args, *modifier)?,
+            )
+        }
         // `$o.$name(1)` / `$o.&f(1)` -> `Call::TermAsMethod` / `Call::NameAsMethod`.
         Expr::DynamicMethodCall {
             target,
