@@ -24,9 +24,9 @@ use super::convert::{
 use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
-use std::borrow::Cow;
 use crate::ast::subscript_adverb::{self, Adverb};
 use crate::value::{RuntimeError, Value, ValueView};
+use std::borrow::Cow;
 
 /// The postcircumfix node for `expr` when it is a subscript with adverbs;
 /// `None` when it is not one.
@@ -135,7 +135,11 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
             index,
             is_positional,
             ..
-        } => (target, Cow::Borrowed(std::slice::from_ref(&**index)), *is_positional),
+        } => (
+            target,
+            Cow::Borrowed(std::slice::from_ref(&**index)),
+            *is_positional,
+        ),
         Expr::MultiDimIndex {
             target,
             dimensions,
