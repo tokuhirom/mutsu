@@ -11,8 +11,12 @@ sub w { say $b; { my $b = 3 }; say $b }
 w();   # was (Any) (Any), now 99 99
 ```
 
-Declaring such a block-local `my` now forces the capture of the enclosing
-lexical. A loop or pointy parameter binding is excluded, because it binds by
-name and would write through the captured cell. A routine hoisted to its
-scope's entry also counts the scope's later declarations as enclosing
-lexicals (#13391).
+A by-name read or write of the enclosing lexical in a named routine now forces
+its capture. A routine hoisted to its scope's entry also counts the scope's
+later declarations as enclosing lexicals (#13391).
+
+Closure bodies are not covered yet. A closure's exit writes a captured name
+back to its caller from the chunk's local slot of that name, which here is
+the nested block's own `my`. A forced capture there would clobber the outer
+variable, so the old `(Any)` remains until that writeback can tell the two
+apart.
