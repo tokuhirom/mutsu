@@ -280,8 +280,21 @@ fn is_block_ending_stmt(stmt: &Stmt) -> bool {
         // modifiers. So `when 1 { } when 2 { }` on one line (no `;`) is a
         // "Strange text after block" error in Raku, matching `given $x { ... }`.
         Stmt::When { .. } | Stmt::Default(_) => true,
-        // Note: MethodDecl is excluded because it can arrive via my_decl which calls
-        // parse_statement_modifier, consuming the trailing separator before we see it.
+        // A direct method declaration ends with its body. Lexical and
+        // package-qualified methods are excluded because `my_decl` parses their
+        // trailing statement modifier before returning them here. The `is_my`
+        // flag also marks direct submethods, which the declaration parser handles
+        // without `my_decl`.
+        Stmt::MethodDecl {
+            is_my: false,
+            is_our: false,
+            ..
+        }
+        | Stmt::MethodDecl {
+            is_submethod: true,
+            is_our: false,
+            ..
+        } => true,
         // Stmt::Block, Stmt::If, Stmt::For, ClassDecl, RoleDecl, Package, etc. are
         // also excluded for similar reasons -- they may go through paths that consume
         // trailing separators before returning to stmt_list_with_mode.
