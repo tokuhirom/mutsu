@@ -144,7 +144,15 @@ pub(super) fn parse_for_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str,
                 // got bound (`{ $^a ~ $^b } for (1,2),(3,4)` yielded `True/True`).
                 Stmt::Block(_) => {
                     let (param, params) = for_modifier_loop_params(&stmt);
-                    (param, Box::new(None), params, Vec::new(), false, false, vec![stmt])
+                    (
+                        param,
+                        Box::new(None),
+                        params,
+                        Vec::new(),
+                        false,
+                        false,
+                        vec![stmt],
+                    )
                 }
                 // A Whatever-curried statement (`* + 1 for @a`) is an ordinary
                 // expression evaluated once per iteration, so the loop yields one
@@ -155,12 +163,25 @@ pub(super) fn parse_for_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str,
                 // The single-param pointy block form (`-> $x { ... }`) is
                 // already exactly arity 1 under a plain call with the topic, so
                 // it keeps working unchanged.
-                Stmt::Expr(expr @ Expr::Lambda { is_whatever_code: false, .. }) => {
+                Stmt::Expr(
+                    expr @ Expr::Lambda {
+                        is_whatever_code: false,
+                        ..
+                    },
+                ) => {
                     let target = Expr::CallOn {
                         target: Box::new(expr),
                         args: vec![Expr::Var("_".to_string())],
                     };
-                    (None, Box::new(None), Vec::new(), Vec::new(), false, false, vec![Stmt::Expr(target)])
+                    (
+                        None,
+                        Box::new(None),
+                        Vec::new(),
+                        Vec::new(),
+                        false,
+                        false,
+                        vec![Stmt::Expr(target)],
+                    )
                 }
                 // A genuine multi-/zero-/slurpy-param signature written as a
                 // pointy block or `sub (...) { ... }`: make the closure's own
@@ -202,9 +223,25 @@ pub(super) fn parse_for_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str,
                         target: Box::new(expr),
                         args: vec![Expr::Var("_".to_string())],
                     };
-                    (None, Box::new(None), Vec::new(), Vec::new(), false, false, vec![Stmt::Expr(target)])
+                    (
+                        None,
+                        Box::new(None),
+                        Vec::new(),
+                        Vec::new(),
+                        false,
+                        false,
+                        vec![Stmt::Expr(target)],
+                    )
                 }
-                other => (None, Box::new(None), Vec::new(), Vec::new(), false, false, vec![other]),
+                other => (
+                    None,
+                    Box::new(None),
+                    Vec::new(),
+                    Vec::new(),
+                    false,
+                    false,
+                    vec![other],
+                ),
             };
         let loop_stmt = Stmt::For {
             iterable,
