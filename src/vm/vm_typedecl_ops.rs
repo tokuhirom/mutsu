@@ -36,6 +36,8 @@ fn parent_spelling<'a>(
 }
 
 impl Interpreter {
+    // Cost: O(n + h), n = declarations and metadata in the selected plan, h = user-defined hooks
+    // run during registration.
     pub(super) fn exec_register_decl_op(
         &mut self,
         code: &CompiledCode,
@@ -517,8 +519,20 @@ impl Interpreter {
                 .map(|kw| kw.to_string_value());
             let (declare_how_installed, declare_how_has_compose) =
                 if let Some(keyword) = declare_how_keyword {
+                    let how_name = crate::qualified::qualified(
+                        Symbol::intern("EXPORTHOW::DECLARE"),
+                        Symbol::intern(&keyword),
+                    );
+                    // The HOW can be either a constant in the env or a class
+                    // registered at this name in the type registry.
                     let how_type = self
-                        .get_env_with_main_alias(&format!("EXPORTHOW::DECLARE::{keyword}"))
+                        .get_env_with_main_alias_sym(how_name.as_str(), how_name)
+                        .or_else(|| {
+                            self.registry()
+                                .classes
+                                .contains_key(how_name.as_str())
+                                .then(|| Value::package(how_name))
+                        })
                         .or_else(|| self.slang_declarator_how(&keyword));
                     if let Some(how_type) = how_type {
                         (
