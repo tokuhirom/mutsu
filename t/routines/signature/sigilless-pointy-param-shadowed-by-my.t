@@ -9,7 +9,7 @@ for [[1, 2],] -> \a {
     is $a, 45, 'the scalar is its own variable';
 }
 
-for [[1, 2],], Any -> \a, \T {
+for ([1, 2], Any) -> \a, \T {
     my $a = 45;
     is a.elems, 2, 'multi-param sigilless loop param survives a later my';
 }
