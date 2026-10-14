@@ -123,8 +123,11 @@ impl Interpreter {
             } else {
                 multi_rank::positional_arity(&params)
             },
-            bind_check: capture || multi_rank::needs_named_bind_check(&params),
-            optional: multi_rank::has_optional_positional(&params),
+            bind_check: capture || constrained > 0 || multi_rank::needs_named_bind_check(&params),
+            // A refined candidate (`where`, `subset`) carries rakudo's bind-check
+            // flag, so its omitted optional positional no longer ranks it wider
+            // (`multi f(UInt $s = 1, :$a)` ties `multi f(:$a)` for `f()`).
+            optional: constrained == 0 && multi_rank::has_optional_positional(&params),
             decl_order: def.decl_order,
             profile,
             invocant: None,
@@ -468,7 +471,12 @@ impl Interpreter {
             // Two purely *positional* ties stay ambiguous —
             // `roast/integration/advent2011-day24.t` pins two verbatim
             // duplicate `multi sub Slurp($filename) {...}` with no named param.
-            if multi_rank::needs_named_bind_check(&Self::dispatch_visible_params(&matches[0])) {
+            //
+            // A refined candidate (`where`, `subset`) is trial-bound the same
+            // way: `multi g(UInt $x)` twice is not ambiguous either.
+            if multi_rank::needs_named_bind_check(&Self::dispatch_visible_params(&matches[0]))
+                || self.candidate_rank_key(&matches[0], args).refinement[0] > 0
+            {
                 return Ok(Some(matches.remove(0)));
             }
             return Err(self.ambiguous_multi_dispatch_error(name, args, &tied));

@@ -96,6 +96,16 @@ impl RankProfile {
         }
     }
 
+    /// How many of the first `n` positional slots carry a refinement.
+    // Cost: O(1) (at most `PROFILE_LEN` slots).
+    fn refined_below(&self, n: usize) -> usize {
+        self.scores
+            .iter()
+            .take(n)
+            .filter(|&&score| score != u16::MAX && score % 2 == 0)
+            .count()
+    }
+
     /// Record that some positional argument is unrelated to its parameter's
     /// type (the type-distance walk scored the "unrelated" distance).
     // Cost: O(1).
@@ -293,9 +303,34 @@ impl MultiRank {
             .nominal
             .cmp(&self.nominal)
             .then(self.distance.cmp(&other.distance))
-            .then(other.refinement.cmp(&self.refinement))
+            .then(self.refinement_cmp(other))
             .then((other.non_slurpy, other.bind_check).cmp(&(self.non_slurpy, self.bind_check)))
             .then(self.optional.cmp(&other.optional))
+    }
+
+    /// The refinement tier of [`Self::rank_cmp`]: the candidate with more
+    /// refined parameters (`where`, `subset`) is narrower, except that a
+    /// refinement on a positional the other candidate does not declare is
+    /// no evidence against a candidate that carries a bind check of its own.
+    /// Rakudo compares the constraints of the positionals two candidates
+    /// share, and a refined candidate and a named-parameter one both carry
+    /// its bind-check flag: `multi f(UInt $s = 1, :$a)` ties `multi f(:$a)`
+    /// for `f()` (declaration order decides), while `multi f(UInt $s = 1)`
+    /// still beats a bare `multi f()`.
+    // Cost: O(1).
+    fn refinement_cmp(&self, other: &MultiRank) -> Ordering {
+        let ord = other.refinement.cmp(&self.refinement);
+        if ord == Ordering::Equal || self.refinement[1..] != other.refinement[1..] {
+            return ord;
+        }
+        let less = if ord == Ordering::Less { other } else { self };
+        let shared = self.arity.0.min(other.arity.0);
+        if less.bind_check
+            && self.profile.refined_below(shared) == other.profile.refined_below(shared)
+        {
+            return Ordering::Equal;
+        }
+        ord
     }
 
     /// [`Self::tier_cmp`], then declaration order: the total order a winner is
