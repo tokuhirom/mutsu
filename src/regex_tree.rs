@@ -1586,6 +1586,32 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             expression_source(expr)?,
             crate::compiler::helpers_ops::token_kind_to_op_name(op)
         )),
+        // `-> { ... }`: a pointy block with an empty signature.
+        crate::ast::Expr::AnonSubParams {
+            params,
+            param_defs,
+            body,
+            return_type: None,
+            is_rw: false,
+            is_raw: false,
+            is_whatever_code: false,
+            declarator: crate::ast::RoutineDeclarator::Block,
+            ..
+        } if params.is_empty() && param_defs.is_empty() => {
+            Some(format!("-> {}", closure_body_source(body)?))
+        }
+        // A placeholder block (`{ $^n * 2 }`, `{ @_ }`, `{ %_ }`): its source is
+        // the braces over the body, which declares the placeholders again.
+        crate::ast::Expr::AnonSubParams { body, .. }
+            if is_scalar_placeholder_block(expr)
+                || is_array_slurpy_placeholder_block(expr)
+                || is_hash_slurpy_placeholder_block(expr) =>
+        {
+            closure_body_source(body)
+        }
+        // A WhateverCode (`* + 1`) is spelled as the expression over its `*`s.
+        crate::ast::Expr::WhateverCurry(inner) => expression_source(inner),
+        crate::ast::Expr::WhateverArg => Some("*".to_string()),
         crate::ast::Expr::Grouped(inner) => Some(format!("({})", expression_source(inner)?)),
         crate::ast::Expr::CaptureVar(name) => Some(format!("${name}")),
         crate::ast::Expr::Var(_) | crate::ast::Expr::ArrayVar(_) | crate::ast::Expr::HashVar(_) => {
