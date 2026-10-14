@@ -15,8 +15,7 @@
 //! for the lexical's static value:
 //!
 //! - The lifted body runs in a block that declares the inner name, initialized
-//!   from the cell. After the body, the block copies a scalar's value back to
-//!   the cell.
+//!   from the cell. After the body, the block copies the value back to the cell.
 //! - The inner declaration moves to the head of its scope and starts from the
 //!   cell on every entry. Its initializer, if any, stays at the declaration's
 //!   position as an assignment.
@@ -407,7 +406,7 @@ impl Walker<'_> {
                 Access::Cell => {
                     let (decl, back) = self.cell_access(frame, binding);
                     block.copy_in.push(decl);
-                    block.copy_out.extend(back);
+                    block.copy_out.push(back);
                 }
             }
         }
@@ -415,16 +414,28 @@ impl Walker<'_> {
 
     /// The copy-in declaration and copy-out assignment for an inner lexical,
     /// allocating its static cell on first use. An `@`/`%` lexical binds its
-    /// cell instead (see [`decl_from_cell`]), so it needs no copy-out. One
-    /// whose cell is untyped is still copied, since binding the untyped
-    /// container would drop the variable's element type.
-    fn cell_access(&mut self, frame: usize, binding: usize) -> (Stmt, Option<Stmt>) {
+    /// cell instead of copying it in (see [`decl_from_cell`]). One whose cell
+    /// is untyped is still copied, since binding the untyped container would
+    /// drop the variable's element type, and so is one with a trait.
+    fn cell_access(&mut self, frame: usize, binding: usize) -> (Stmt, Stmt) {
         let name = self.frames[frame].bindings[binding].name.clone();
         let untyped = matches!(
             &self.frames[frame].bindings[binding].kind,
             BindingKind::Local { static_decl, .. } if self.cell_names_inner_type(static_decl)
         );
-        let bind = !untyped && matches!(sigil_of(&name), "@" | "%");
+        // A declaration with a trait (`is default(...)`, or a user trait the
+        // prologue applies to the cell, which leaves the `VAR_TRAIT_SEEDED`
+        // marker) keeps the copy: those are applied around the declaration's
+        // own store, which a bind does not go through.
+        let has_trait = matches!(
+            &self.frames[frame].bindings[binding].kind,
+            BindingKind::Local { static_decl, .. }
+                if matches!(&**static_decl, Stmt::VarDecl { custom_traits, .. }
+                    if custom_traits.iter().any(|(t, _)| {
+                        !t.starts_with("__") || t == var_traits::VAR_TRAIT_SEEDED
+                    }))
+        );
+        let bind = !untyped && !has_trait && matches!(sigil_of(&name), "@" | "%");
         let BindingKind::Local {
             index,
             static_decl,
@@ -467,12 +478,16 @@ impl Walker<'_> {
             unreachable!()
         };
         let copy_in = decl_from_cell(static_decl, &cell_name, bind);
-        let copy_out = (!bind).then(|| Stmt::Assign {
+        // A bound container still copies back: the body may have rebound the
+        // name (a variable trait's `$v.var = …`), and then only an assignment
+        // carries the new content into the cell. While the name is still
+        // bound, the assignment is a no-op self-assignment.
+        let copy_out = Stmt::Assign {
             name: cell_name,
             expr: read_var(&name),
             op: crate::ast::AssignOp::Assign,
             target_is_sigilless: false,
-        });
+        };
         (copy_in, copy_out)
     }
 }
