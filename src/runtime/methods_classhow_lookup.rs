@@ -748,6 +748,7 @@ impl Interpreter {
                 | "find_method"
                 | "add_attribute"
                 | "add_method"
+                | "add_private_method"
                 | "add_multi_method"
                 | "add_fallback"
                 | "set_body_block"

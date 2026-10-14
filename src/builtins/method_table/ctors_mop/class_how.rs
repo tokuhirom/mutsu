@@ -288,6 +288,13 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "Metamodel::ClassHOW",
+        "add_private_method",
+        3,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_add_private_method(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::ClassHOW",
         "add_multi_method",
         3,
         true,

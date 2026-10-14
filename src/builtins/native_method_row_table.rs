@@ -2280,6 +2280,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Metamodel::ClassHOW", "add_method", 8, 57),
     ("Metamodel::ClassHOW", "add_multi_method", 8, 57),
     ("Metamodel::ClassHOW", "add_parent", 8, 57),
+    ("Metamodel::ClassHOW", "add_private_method", 8, 57),
     ("Metamodel::ClassHOW", "add_role", 8, 57),
     ("Metamodel::ClassHOW", "api", 8, 57),
     ("Metamodel::ClassHOW", "archetypes", 8, 57),
