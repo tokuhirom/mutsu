@@ -1740,6 +1740,7 @@ t/exceptions/typed-exceptions.t
 t/exceptions/undeclared-array-hash-default.t
 t/exceptions/undeclared-bare-var-before-placeholder-typed-exception.t
 t/exceptions/undeclared-bareword-expr.t
+t/exceptions/undeclared-bareword-name.t
 t/exceptions/undeclared-infix-word-eval.t
 t/exceptions/undeclared-qualified-type-new.t
 t/exceptions/undeclared-symbol-exception-class.t
@@ -2320,6 +2321,7 @@ t/lang/operators/sequence-op-endpoint-arity.t
 t/lang/operators/sequence-op-in-call-args.t
 t/lang/operators/short-circuit-compound-assign.t
 t/lang/operators/stacked-prefix-operators.t
+t/lang/operators/term-operator-overloading.t
 t/lang/operators/user-infix-across-newline.t
 t/lang/operators/user-infix-core-rank-memo.t
 t/lang/operators/user-infix-escaped-symbol-name.t
@@ -2357,6 +2359,7 @@ t/lang/parsing/bare-zero-arg-builtin-call.t
 t/lang/parsing/bareword-array-not-reduction.t
 t/lang/parsing/bareword-assign-expr.t
 t/lang/parsing/bareword-core-type-objects.t
+t/lang/parsing/bareword-scalar-shadow.t
 t/lang/parsing/bom-stripping.t
 t/lang/parsing/bracket-metaop-assign-indexed.t
 t/lang/parsing/bracketed-meta-op-code-ref.t
@@ -2851,6 +2854,7 @@ t/modules/import-export/use-lib-file-relative-parse-time.t
 t/modules/import-export/use-lib-in-routine-is-begin-time.t
 t/modules/import-export/use-module-parse-error-location.t
 t/modules/import-export/use-multiple-export-args.t
+t/modules/import-export/use-nested-module-merges-outer-package.t
 t/modules/import-export/use-newline.t
 t/modules/import-export/use-ok-real-load.t
 t/modules/import-export/use-tag-variable-colonpair.t
@@ -2878,6 +2882,8 @@ t/modules/module-file-var-and-callframe.t
 t/modules/module-finish-data-section.t
 t/modules/module-first-loaded-in-eval-keeps-own-package-name.t
 t/modules/module-global-merge-is-lexical.t
+t/modules/module-import-alias-scope-paths.t
+t/modules/module-import-alias-scope.t
 t/modules/module-lexical-rw-arg.t
 t/modules/module-lexical-writeback-shadow.t
 t/modules/module-load-writes-caller-dynamic.t
@@ -2994,6 +3000,7 @@ t/modules/package-relative-type-name.t
 t/modules/package-rw-method-index-assign.t
 t/modules/package-scalar-push-vivify.t
 t/modules/package-scope-outer-lexical-preserved.t
+t/modules/package-short-name-alias-scope.t
 t/modules/package-stash-keyed-read.t
 t/modules/package-stash-missing-package.t
 t/modules/package-stash-routine-identity.t
@@ -3184,6 +3191,7 @@ t/nativecall/native-method-implicit-slurpy-named.t
 t/nativecall/native-method-proxy-argument-fetch.t
 t/nativecall/native-method-short-name-collision.t
 t/nativecall/native-method-user-shadow.t
+t/nativecall/native-misc-ctor.t
 t/nativecall/native-mixhash-coerce.t
 t/nativecall/native-multi-candidates.t
 t/nativecall/native-namespaced-and-exception-ctor.t
@@ -4872,6 +4880,7 @@ t/rakuast/rakuast-typed-container-attribute.t
 t/rakuast/rakuast-underscore-operator-name.t
 t/rakuast/rakuast-uninitialized-decl-default.t
 t/rakuast/rakuast-unless.t
+t/rakuast/rakuast-unresolved-bareword.t
 t/rakuast/rakuast-unresolved-qualified-name.t
 t/rakuast/rakuast-until-loop.t
 t/rakuast/rakuast-use-empty-import.t
@@ -6337,6 +6346,7 @@ t/routines/whatever-curry-list-infix-operator.t
 t/routines/with-statement-modifier-placeholder-scope.t
 t/tooling/bail-out-exit-status.t
 t/tooling/cli-lib-repo-chain.t
+t/tooling/cli-lines-regressions.t
 t/tooling/cli-option-errors.t
 t/tooling/cli-rakudo-internals-include.t
 t/tooling/cmp-ok-string-ops.t
@@ -7016,6 +7026,7 @@ t/vm/binding/has-decl-trailing-terms.t
 t/vm/binding/hash-element-store-early-lane.t
 t/vm/binding/indirect-code-lookup.t
 t/vm/binding/indirect-declaration.t
+t/vm/binding/indirect-declarator-names.t
 t/vm/binding/indirect-lookup-core-terms.t
 t/vm/binding/indirect-name-static-tail.t
 t/vm/binding/lvalue-sub-plan-tail.t

@@ -2834,6 +2834,9 @@ pub(super) fn call_name_str(node: &RakuAstNode) -> Result<String, RuntimeError> 
 // Cost: O(n), n = size of the call's arguments.
 fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let name = call_name_str(node)?;
+    if super::declared_routines::is_source_bareword(node) {
+        return Ok(Expr::BareWord(name));
+    }
     let mut args = arg_exprs(node)?;
     // `last` / `next` / `redo` in expression position are the parser's
     // `ControlFlow` unless the unit declares a routine of that name.

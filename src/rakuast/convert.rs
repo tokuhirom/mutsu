@@ -3466,6 +3466,19 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::BareWord(name) if name_parts::is_qualified_identifier(name) => {
             call_name(name, &[], false)
         }
+        // Any other unresolved word: rakudo's `.AST` refuses it, and an
+        // argument-less call renders the same as `foo()`, so a hidden field
+        // keeps lowering from mistaking one for the other.
+        Expr::BareWord(name) if !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+            && name.starts_with(|c: char| c.is_alphabetic() || c == '_') =>
+        {
+            let mut node = call_name(name, &[], false)?;
+            node.fields.push(super::declared_routines::bareword_field());
+            Ok(node)
+        }
         // `my $x = BEGIN { 1 }`: the phaser block as an expression is the same
         // `StatementPrefix::Phaser::*` node a phaser statement wraps.
         Expr::PhaserExpr { kind, body } => {
