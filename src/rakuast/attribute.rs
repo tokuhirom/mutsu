@@ -173,7 +173,29 @@ impl AttributeTraits {
                             class: RakuAstClass::TraitDoes,
                             fields: vec![node_field(None, super::bareword::simple_type_node(name))],
                         })),
-                        _ => return Err(unsupported("attribute with a `will` trait")),
+                        "will" => match argument {
+                            Some(Expr::AnonSub {
+                                body,
+                                is_block: true,
+                                is_rw: false,
+                                is_raw: false,
+                                ..
+                            }) => Value::rakuast(Box::new(RakuAstNode {
+                                class: RakuAstClass::TraitWill,
+                                fields: vec![
+                                    super::convert::leaf_field(
+                                        Some("phase"),
+                                        Value::str_from(name.as_str()),
+                                    ),
+                                    node_field(
+                                        Some("block"),
+                                        super::convert::signature_block_node(body)?,
+                                    ),
+                                ],
+                            })),
+                            _ => return Err(unsupported("attribute `will` trait without a block")),
+                        },
+                        _ => return Err(unsupported("attribute with an unknown trait kind")),
                     }
                 }
                 AttrTrait::Handles => {
@@ -339,6 +361,24 @@ pub(super) fn lower_traits(node: &RakuAstNode) -> Result<AttributeTraits, Runtim
             RakuAstClass::TraitDoes => {
                 let role = super::lower::simple_type_name(node, named_child_or_positional(t)?)?;
                 traits.unknown_traits.push(("does".to_string(), role, None));
+                traits.order.push(AttrTrait::Custom);
+            }
+            // `will PHASE BLOCK`: the block is trait_mod:<will>'s positional
+            // Callable, as the parser keeps it.
+            RakuAstClass::TraitWill => {
+                let phase = super::lower::leaf_str(t, "phase")?;
+                let body = super::lower::lower_block(named_child(t, "block")?)?;
+                traits.unknown_traits.push((
+                    "will".to_string(),
+                    phase,
+                    Some(Expr::AnonSub {
+                        body,
+                        is_rw: false,
+                        is_raw: false,
+                        is_block: true,
+                        doc: Default::default(),
+                    }),
+                ));
                 traits.order.push(AttrTrait::Custom);
             }
             RakuAstClass::TraitIs => lower_trait_is(node, t, is_aggregate, &mut traits)?,

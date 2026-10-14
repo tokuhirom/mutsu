@@ -3341,6 +3341,7 @@ t/oo/attribute/attribute-lowercase-subset-checked-at-construction.t
 t/oo/attribute/attribute-meta-object-identity.t
 t/oo/attribute/attribute-nil-argument-default.t
 t/oo/attribute/attribute-of-trait-order.t
+t/oo/attribute/attribute-own-compose-hook.t
 t/oo/attribute/attribute-required-reason.t
 t/oo/attribute/attribute-required.t
 t/oo/attribute/attribute-seed-default-memo.t
@@ -3353,6 +3354,7 @@ t/oo/attribute/attribute-trait-arg-declared-later-in-composing-class.t
 t/oo/attribute/attribute-trait-compose-sees-later-methods.t
 t/oo/attribute/attribute-trait-core-candidate-redispatch.t
 t/oo/attribute/attribute-trait-mixin-visible-to-compose-hook.t
+t/oo/attribute/attribute-trait-mod-will-block.t
 t/oo/attribute/attribute-trait-mod.t
 t/oo/attribute/attribute-type-check-in-method.t
 t/oo/attribute/attribute-type-lexical-class-introspection.t
@@ -4513,6 +4515,7 @@ t/rakuast/rakuast-attribute-handles.t
 t/rakuast/rakuast-attribute-smiley-default-built.t
 t/rakuast/rakuast-attribute-statement-modifier.t
 t/rakuast/rakuast-attribute-traits.t
+t/rakuast/rakuast-attribute-will-trait.t
 t/rakuast/rakuast-attribute.t
 t/rakuast/rakuast-bare-loop-term.t
 t/rakuast/rakuast-bare-prefix.t
@@ -4701,10 +4704,12 @@ t/rakuast/rakuast-postfix-frozen-whatever.t
 t/rakuast/rakuast-postfix-grouping.t
 t/rakuast/rakuast-pre-post-phasers.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
+t/rakuast/rakuast-private-quoted-method.t
 t/rakuast/rakuast-proto-onlystar-coercion.t
 t/rakuast/rakuast-qualified-decl-name.t
 t/rakuast/rakuast-qualified-module-constants.t
 t/rakuast/rakuast-qualified-variable-declaration.t
+t/rakuast/rakuast-quoted-method-dispatch.t
 t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-react-whenever-done.t
 t/rakuast/rakuast-reduction.t
@@ -4748,6 +4753,7 @@ t/rakuast/rakuast-signature-decl.t
 t/rakuast/rakuast-signature-literal.t
 t/rakuast/rakuast-signature-members.t
 t/rakuast/rakuast-signature-type-cohort.t
+t/rakuast/rakuast-slipped-control-call.t
 t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
 t/rakuast/rakuast-smiley-pragma.t
@@ -4756,6 +4762,7 @@ t/rakuast/rakuast-statement-origin.t
 t/rakuast/rakuast-statement-prefix-binding.t
 t/rakuast/rakuast-statement-prefix-blorst.t
 t/rakuast/rakuast-string-item-segment.t
+t/rakuast/rakuast-string-return-literal.t
 t/rakuast/rakuast-sub-custom-traits.t
 t/rakuast/rakuast-sub-traits.t
 t/rakuast/rakuast-sub.t
@@ -4775,6 +4782,7 @@ t/rakuast/rakuast-term-name-math-constants.t
 t/rakuast/rakuast-ternary.t
 t/rakuast/rakuast-topic-call.t
 t/rakuast/rakuast-trait-does-new-name-parts.t
+t/rakuast/rakuast-trait-is-new.t
 t/rakuast/rakuast-type-attributes.t
 t/rakuast/rakuast-type-can.t
 t/rakuast/rakuast-type-capture.t
