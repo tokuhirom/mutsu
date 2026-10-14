@@ -4650,6 +4650,7 @@ t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
 t/rakuast/rakuast-indirect-declarator-name.t
 t/rakuast/rakuast-indirect-name.t
+t/rakuast/rakuast-indirect-type-capture.t
 t/rakuast/rakuast-infix-adverbs.t
 t/rakuast/rakuast-internal-arg-and-range-ops.t
 t/rakuast/rakuast-interp-code-block.t
@@ -5979,6 +5980,7 @@ t/routines/signature/if-pointy-array-param-seq.t
 t/routines/signature/if-pointy-container-param.t
 t/routines/signature/implicit-any-param-rejects-mu.t
 t/routines/signature/implicit-topic-block-signature-gist.t
+t/routines/signature/indirect-type-param.t
 t/routines/signature/invocant-marker-detached-from-type.t
 t/routines/signature/invocant-marker.t
 t/routines/signature/invocant-type-capture-param.t

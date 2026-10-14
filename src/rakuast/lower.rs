@@ -1941,11 +1941,15 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
             return Err(unsupported(owner));
         }
         let name_node = named_child_or_positional(type_capture)?;
-        let name_value = positional_leaf(name_node)?;
-        let ValueView::Str(name) = name_value.view() else {
-            return Err(unsupported(owner));
-        };
-        Some(name.to_string())
+        if let Some(indirect) = super::type_capture_indirect::lowered_name(name_node) {
+            Some(indirect)
+        } else {
+            let name_value = positional_leaf(name_node)?;
+            let ValueView::Str(name) = name_value.view() else {
+                return Err(unsupported(owner));
+            };
+            Some(name.to_string())
+        }
     } else {
         None
     };
@@ -2172,7 +2176,12 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         }
     }
     if let Some(type_capture) = type_capture {
-        def.type_capture = Some(type_capture);
+        if super::type_capture_indirect::is_indirect(&type_capture) {
+            // `::(EXPR)` is kept by the parser as the constraint text.
+            def.type_constraint = Some(format!("::{type_capture}"));
+        } else {
+            def.type_capture = Some(type_capture);
+        }
     }
     // `$y = EXPR` -> an optional positional with a default value.
     if let Some(d) = parameter.fields.iter().find(|f| f.name == Some("default")) {

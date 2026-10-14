@@ -5944,6 +5944,9 @@ pub(super) const LITERAL_PARAM: &str = "__literal__";
 /// than by the parameter's ordinary `type` node. Smiley-constrained and other
 /// richer capture spellings need more internal metadata and remain deferred.
 pub(super) fn type_capture_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
+    if super::type_capture_indirect::is_indirect(name) {
+        return super::type_capture_indirect::capture_node(name);
+    }
     if name.is_empty()
         || !name
             .chars()
