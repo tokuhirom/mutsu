@@ -248,6 +248,7 @@ pub enum RakuAstClass {
     FunctionInfix,
     ApplyPrefix,
     Prefix,
+    PrefixMultislice,
     ApplyPostfix,
     Postfix,
     Assignment,
@@ -615,6 +616,7 @@ impl RakuAstClass {
             FunctionInfix => "RakuAST::FunctionInfix",
             ApplyPrefix => "RakuAST::ApplyPrefix",
             Prefix => "RakuAST::Prefix",
+            PrefixMultislice => "RakuAST::Prefix::Multislice",
             ApplyPostfix => "RakuAST::ApplyPostfix",
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
@@ -808,6 +810,7 @@ impl RakuAstClass {
                 | RakuAstClass::CallTerm
                 | RakuAstClass::DottyInfixCallAssign
                 | RakuAstClass::TermWhatever
+                | RakuAstClass::PrefixMultislice
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
                 | RakuAstClass::TermSelf
@@ -1077,6 +1080,7 @@ impl RakuAstClass {
                 "RakuAST::Expression",
             ],
             Mixin => &["RakuAST::Infix", "RakuAST::Infixish"],
+            PrefixMultislice => &["RakuAST::Prefix", "RakuAST::Prefixish"],
             Nqp | NqpConst => EXPR,
             VarAttribute => &[
                 "RakuAST::Var",
@@ -1604,6 +1608,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ContextualizerList,
     RakuAstClass::StatementSequence,
     RakuAstClass::TermWhatever,
+    RakuAstClass::PrefixMultislice,
     RakuAstClass::WhateverCodeArgument,
     RakuAstClass::TermHyperWhatever,
     RakuAstClass::FatArrow,
@@ -3324,6 +3329,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::OnlyStar", "new") => RakuAstClass::OnlyStar,
         ("RakuAST::Regex::MatchTo", "new") => RakuAstClass::RegexMatchTo,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
+        ("RakuAST::Prefix::Multislice", "new") => RakuAstClass::PrefixMultislice,
         ("RakuAST::Term::HyperWhatever", "new") => RakuAstClass::TermHyperWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
