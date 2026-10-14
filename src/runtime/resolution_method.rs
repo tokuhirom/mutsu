@@ -2,13 +2,18 @@ use super::multi_rank::RankProfile;
 use super::*;
 
 impl Interpreter {
+    /// Resolve `method_name` for `invocant`. The invocant must be passed: a
+    /// candidate's `where` clause can read `self` / `$!attr` (CSS::Module's
+    /// `multi method parse-property(Str:D $n where (%!coerce{.lc}:exists), ...)`),
+    /// and matching without it records an `X::Syntax::NoSelf` for the call.
     pub(super) fn resolve_method(
         &mut self,
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
+        invocant: &Value,
     ) -> Option<MethodDef> {
-        self.resolve_method_with_owner(class_name, method_name, arg_values)
+        self.resolve_method_with_owner_invocant(class_name, method_name, arg_values, invocant)
             .map(|(_, def)| def)
     }
 

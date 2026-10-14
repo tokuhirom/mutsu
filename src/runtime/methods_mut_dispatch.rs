@@ -1193,7 +1193,7 @@ impl Interpreter {
             }
 
             // Handle delegation methods: forward the call to the delegate
-            if let Some(method_def) = self.resolve_method(&class_name.resolve(), method, &args)
+            if let Some(method_def) = self.resolve_method(&class_name.resolve(), method, &args, &target)
                 && method_def.delegation.is_some()
             {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
@@ -1279,7 +1279,7 @@ impl Interpreter {
                 if is_public_rw_accessor {
                     // User-defined rw method takes priority over simple accessor
                     let has_rw_method = self
-                        .resolve_method(&class_name.resolve(), method, &[])
+                        .resolve_method(&class_name.resolve(), method, &[], &target)
                         .is_some_and(|m| m.is_rw);
                     if !has_rw_method {
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
@@ -1344,7 +1344,7 @@ impl Interpreter {
                 } else {
                     // Check if there's a user-defined method with is_rw
                     let has_rw_method = self
-                        .resolve_method(&class_name.resolve(), method, &[])
+                        .resolve_method(&class_name.resolve(), method, &[], &target)
                         .is_some_and(|m| m.is_rw);
                     if has_rw_method {
                         // Signal to assign_method_lvalue to handle via Proxy
