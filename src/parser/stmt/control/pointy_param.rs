@@ -580,7 +580,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     let mut shape_constraints = None;
     let rest = if original_sigil == b'@' && rest.starts_with('[') {
         let (r, dims) = parse_array_shape_suffix(rest)?;
-        shape_constraints = Some(dims);
+        shape_constraints = (!dims.is_empty()).then_some(dims);
         r
     } else {
         rest

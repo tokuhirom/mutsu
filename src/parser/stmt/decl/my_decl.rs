@@ -378,7 +378,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     let (rest, shape_dims) = if is_array && rest.starts_with('[') {
         let (rest, dims) = parse_array_shape_suffix(rest)?;
         let (rest, _) = ws(rest)?;
-        (rest, Some(dims))
+        (rest, (!dims.is_empty()).then_some(dims))
     } else {
         (rest, None)
     };
