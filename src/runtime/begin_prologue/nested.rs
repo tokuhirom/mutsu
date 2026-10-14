@@ -15,14 +15,16 @@
 //! for the lexical's static value:
 //!
 //! - The lifted body runs in a block that declares the inner name, initialized
-//!   from the cell. After the body, the block copies the value back to the cell.
+//!   from the cell. After the body, the block copies a scalar's value back to
+//!   the cell.
 //! - The inner declaration moves to the head of its scope and starts from the
 //!   cell on every entry. Its initializer, if any, stays at the declaration's
 //!   position as an assignment.
 //!
-//! The resulting value per entry is what rakudo's pad clone gives. One case
-//! differs: an `@`/`%` lexical is copied from the cell on each entry, where
-//! rakudo shares the same object (ADR-0134 §7).
+//! The resulting value per entry is what rakudo's pad clone gives. An `@`/`%`
+//! lexical binds its cell rather than copying it, both in the lifted body and
+//! at the head of its scope, so every entry shares the static pad's object as
+//! on rakudo (#10333).
 //!
 //! A parameter of an enclosing routine or block is unbound at BEGIN time. The
 //! body sees a fresh, empty declaration of that name, as it does on rakudo.
@@ -405,20 +407,24 @@ impl Walker<'_> {
                 Access::Cell => {
                     let (decl, back) = self.cell_access(frame, binding);
                     block.copy_in.push(decl);
-                    block.copy_out.push(back);
+                    block.copy_out.extend(back);
                 }
             }
         }
     }
 
     /// The copy-in declaration and copy-out assignment for an inner lexical,
-    /// allocating its static cell on first use.
-    fn cell_access(&mut self, frame: usize, binding: usize) -> (Stmt, Stmt) {
+    /// allocating its static cell on first use. An `@`/`%` lexical binds its
+    /// cell instead (see [`decl_from_cell`]), so it needs no copy-out. One
+    /// whose cell is untyped is still copied, since binding the untyped
+    /// container would drop the variable's element type.
+    fn cell_access(&mut self, frame: usize, binding: usize) -> (Stmt, Option<Stmt>) {
         let name = self.frames[frame].bindings[binding].name.clone();
         let untyped = matches!(
             &self.frames[frame].bindings[binding].kind,
             BindingKind::Local { static_decl, .. } if self.cell_names_inner_type(static_decl)
         );
+        let bind = !untyped && matches!(sigil_of(&name), "@" | "%");
         let BindingKind::Local {
             index,
             static_decl,
@@ -437,7 +443,7 @@ impl Walker<'_> {
                     cell_decl = untyped_cell_decl(cell_decl);
                 }
                 self.lifted.decls.push(cell_decl);
-                let head = decl_from_cell(static_decl, &cell_name);
+                let head = decl_from_cell(static_decl, &cell_name, bind);
                 let edit = if untyped {
                     // The declaration names a type of an inner scope, which
                     // the scope's head precedes, so it stays in place.
@@ -460,13 +466,13 @@ impl Walker<'_> {
         else {
             unreachable!()
         };
-        let copy_in = decl_from_cell(static_decl, &cell_name);
-        let copy_out = Stmt::Assign {
+        let copy_in = decl_from_cell(static_decl, &cell_name, bind);
+        let copy_out = (!bind).then(|| Stmt::Assign {
             name: cell_name,
             expr: read_var(&name),
             op: crate::ast::AssignOp::Assign,
             target_is_sigilless: false,
-        };
+        });
         (copy_in, copy_out)
     }
 }
