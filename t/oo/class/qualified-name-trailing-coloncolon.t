@@ -7,7 +7,7 @@ use Test;
 #   sub EXPORT { (|::EXPORT::DEFAULT::, |Test::EXPORT::DEFAULT::).Map }
 # failed to parse. The trailing `::` is now consumed so the name is a single term.
 
-plan 5;
+plan 9;
 
 # The exact Test::Class re-export idiom must parse.
 lives-ok { EVAL 'sub EXPORT { (|::EXPORT::DEFAULT::, |Test::EXPORT::DEFAULT::).Map }' },
@@ -28,3 +28,13 @@ lives-ok { EVAL 'my $x = (Test::EXPORT::DEFAULT)' },
 # No regression: an indirect lookup still parses.
 lives-ok { EVAL 'my $name = "Int"; my $x = (::($name))' },
     'an indirect name lookup still parses inside parens';
+
+# A leading `::` does not change a stash term: `::Int::` is the stash of Int,
+# like `Int::`, and so is a qualified name.
+is (::Int::).^name, 'Stash', '::Int:: is a Stash';
+is (Int::).^name, 'Stash', 'Int:: is a Stash';
+is (::EXPORT::DEFAULT::).^name, 'Stash', 'a qualified ::A::B:: is a Stash';
+{
+    my $x = (::EXPORT::DEFAULT::);
+    is $x.^name, 'Stash', 'the stash can be assigned';
+}
