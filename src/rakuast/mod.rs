@@ -52,6 +52,7 @@ mod label_context;
 mod lower;
 mod match_vars;
 mod meta_infix;
+mod multidim_splat;
 mod method_assign_decl;
 mod name_parts;
 mod named_param;

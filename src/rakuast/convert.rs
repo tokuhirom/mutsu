@@ -2873,6 +2873,26 @@ pub(super) fn angle_subscript_node(
 /// [`subscript_node`] over the dimensions of `@a[0;1]`: one statement of the
 /// `SemiList` per dimension.
 // Cost: O(n), n = nodes of the target and dimensions.
+/// The dimensions of an `Expr::MultiDimIndex` as its subscript spells them.
+/// The parser keeps `@a[|| @i]` (the list `@i` spread over the dimensions) as
+/// the one dimension `@i`, which rakudo 2026.09 models as two `|` prefixes:
+/// `SemiList(ApplyPrefix(|, ApplyPrefix(|, @i)))`. Several dimensions are
+/// spelled as written.
+// Cost: O(d), d = dimensions.
+pub(super) fn splat_dimensions(dimensions: &[Expr]) -> std::borrow::Cow<'_, [Expr]> {
+    match dimensions {
+        [only] => {
+            let slip = |expr: Expr| Expr::Unary {
+                op: crate::token_kind::TokenKind::Pipe,
+                expr: Box::new(expr),
+                word: false,
+            };
+            std::borrow::Cow::Owned(vec![slip(slip(only.clone()))])
+        }
+        _ => std::borrow::Cow::Borrowed(dimensions),
+    }
+}
+
 pub(super) fn subscript_dims_node(
     target: &Expr,
     dims: &[Expr],
@@ -4142,7 +4162,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             target,
             dimensions,
             is_positional,
-        } => subscript_dims_node(target, dimensions, *is_positional, None, Vec::new()),
+        } => subscript_dims_node(
+            target,
+            &splat_dimensions(dimensions),
+            *is_positional,
+            None,
+            Vec::new(),
+        ),
         // `@a[]` / `%h{}`: a subscript with no dimension at all.
         Expr::ZenSlice(target) => subscript_dims_node(
             target,
@@ -4162,7 +4188,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             fields: vec![
                 node_field(
                     Some("left"),
-                    subscript_dims_node(target, dimensions, *is_positional, None, Vec::new())?,
+                    subscript_dims_node(
+                        target,
+                        &splat_dimensions(dimensions),
+                        *is_positional,
+                        None,
+                        Vec::new(),
+                    )?,
                 ),
                 node_field(
                     Some("infix"),

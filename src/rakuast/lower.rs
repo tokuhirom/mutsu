@@ -5183,6 +5183,32 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             postfix,
                         );
                     }
+                    // `@a[|| @i]`: `@i` spread over the dimensions.
+                    if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
+                        && let [field] = index_node.fields.as_slice()
+                        && let Some(spread) =
+                            super::multidim_splat::spread_operand(child_node(&field.value)?)
+                    {
+                        let dimensions = vec![lower_expr(spread)?];
+                        // rakudo folds `@a[|| @i] = v` into the subscript's
+                        // `assignee`.
+                        if let Ok(value) = named_child(postfix, "assignee") {
+                            return Ok(Expr::MultiDimIndexAssign {
+                                target: Box::new(operand),
+                                dimensions,
+                                value: Box::new(lower_expr(value)?),
+                                is_positional,
+                            });
+                        }
+                        return super::subscript_adverb::lower(
+                            Expr::MultiDimIndex {
+                                target: Box::new(operand),
+                                dimensions,
+                                is_positional,
+                            },
+                            postfix,
+                        );
+                    }
                     let index = if postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex {
                         lower_expr(index_node)?
                     } else {
