@@ -4002,6 +4002,7 @@ impl Interpreter {
             let type_name = self.dispatch_owner_name(&target);
             if self.has_user_method(type_name, method)
                 && !self.native_base_bypass_hit(&target, Symbol::intern(method))
+                && !self.user_override_outranked_by_builtin(&target, type_name, method)
             {
                 return self.dispatch_instance_and_fallback(target, method, args);
             }
