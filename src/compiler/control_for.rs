@@ -580,6 +580,7 @@ impl Compiler {
             let bare = p.strip_prefix('\\').unwrap_or(p);
             if !self.local_map.contains_key(bare) {
                 self.by_name_for_params.push(bare.to_string());
+                self.by_name_param_names.insert(bare.to_string());
             }
         }
         // Hand the declarations to the body's frame without restoring anything
