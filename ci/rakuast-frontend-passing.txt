@@ -4569,6 +4569,7 @@ t/oo/type-decl-does-not-set-topic.t
 t/oo/user-group-dynamic-vars.t
 t/oo/user-infix-symbol-does-not-shadow-longer-builtin.t
 t/oo/user-prefix-does-not-shadow-pointy-lambda.t
+t/oo/user-type-shadows-term.t
 t/oo/when-in-routine-does-not-leak-to-given.t
 t/oo/wrap-does-not-leak-to-same-named-routine.t
 t/rakuast/paren-recorded-in-ast.t
@@ -4648,6 +4649,7 @@ t/rakuast/rakuast-declarations-as-terms.t
 t/rakuast/rakuast-declare-how-declarator.t
 t/rakuast/rakuast-declared-name-nested.t
 t/rakuast/rakuast-declared-name.t
+t/rakuast/rakuast-declared-nil-and-grouped-decl.t
 t/rakuast/rakuast-declared-sub-bareword.t
 t/rakuast/rakuast-desugar-boundary.t
 t/rakuast/rakuast-do-whenever.t
@@ -6110,6 +6112,7 @@ t/routines/signature/invocant-marker.t
 t/routines/signature/invocant-type-capture-param.t
 t/routines/signature/is-copy-array-param-untyped.t
 t/routines/signature/is-copy-param-ignores-caller-variable-constraint.t
+t/routines/signature/is-default-where-expr.t
 t/routines/signature/is-default.t
 t/routines/signature/is-raw-param-container-identity.t
 t/routines/signature/is-rw-traits.t
