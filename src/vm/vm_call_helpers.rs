@@ -309,20 +309,14 @@ impl Interpreter {
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
             return None;
         };
-        let mut slots: Vec<(String, u32)> = Vec::new();
-        let names: Vec<Option<String>> = items
-            .iter()
-            .map(|item| {
-                Self::decode_arg_source_entry(item).map(|(name, slot)| {
-                    if let Some(slot) = slot {
-                        slots.push((name.clone(), slot));
-                    }
-                    name
-                })
-            })
-            .collect();
-        for (name, slot) in slots {
-            self.pending_call_arg_source_slots.insert(name, slot);
+        let mut names: Vec<Option<String>> = Vec::with_capacity(items.len());
+        for item in items.iter() {
+            names.push(Self::decode_arg_source_entry(item).map(|(name, slot)| {
+                if let Some(slot) = slot {
+                    self.pending_call_arg_source_slots.insert(name.clone(), slot);
+                }
+                name
+            }));
         }
         Some(names)
     }

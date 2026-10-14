@@ -514,7 +514,7 @@ impl Interpreter {
     fn fold_rw_writeback_slots(
         &mut self,
         rw_bindings: &[(String, String)],
-        arg_source_slots: &std::collections::HashMap<String, u32>,
+        arg_source_slots: &rustc_hash::FxHashMap<String, u32>,
     ) {
         if arg_source_slots.is_empty() {
             return;

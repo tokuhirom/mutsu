@@ -1888,7 +1888,7 @@ pub struct Interpreter {
     current_package_sym: Arc<AtomicU32>,
     routine_stack: routine_stack::RoutineStack,
     callframe_stack: Vec<CallFrameEntry>,
-    pending_call_arg_sources: Option<Vec<Option<String>>>,
+    pending_call_arg_sources: Option<std::sync::Arc<Vec<Option<String>>>>,
     /// An exception thrown while *evaluating a `where` constraint* during
     /// candidate matching. Raku propagates such an exception out of the whole
     /// dispatch (the `where` block is ordinary code); mutsu's matchers are
@@ -1925,7 +1925,7 @@ pub struct Interpreter {
     /// `arg-source name -> caller local slot` for the current call, decoded from the
     /// `Pair(name, Int(slot))` arg-source entries. Set alongside the names by
     /// `decode_arg_sources`, taken with them by `bind_function_args_values`.
-    pub(crate) pending_call_arg_source_slots: std::collections::HashMap<String, u32>,
+    pub(crate) pending_call_arg_source_slots: rustc_hash::FxHashMap<String, u32>,
     /// Bitmask of the CURRENT call's argument positions that were written as a
     /// literal, published by `exec_call_func_op` from the call opcode's
     /// `literal_native_args` and restored when that call returns. Multi

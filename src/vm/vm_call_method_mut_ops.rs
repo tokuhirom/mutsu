@@ -472,7 +472,10 @@ impl Interpreter {
         let (args, arg_sources) =
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
         let args = Self::hllize_call_args(args);
-        self.set_pending_call_arg_sources(arg_sources.clone());
+        // The callee reads the same names this op keeps using below: share
+        // one allocation rather than cloning the vector and every name in it.
+        let arg_sources = arg_sources.map(std::sync::Arc::new);
+        self.set_pending_call_arg_sources_shared(arg_sources.clone());
         // Elements appended to a NATIVE integer array store through the native
         // slot, so each one wraps to the element width exactly as an assignment
         // does (`my uint8 @e; @e.push(1, 300, 2)` stores 1, 44, 2). Done here,
@@ -1215,7 +1218,7 @@ impl Interpreter {
         {
             let mut place =
                 crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code)
-                    .with_arg_sources(arg_sources.as_deref().unwrap_or(&[]));
+                    .with_arg_sources(arg_sources.as_ref().map_or(&[], |sources| sources.as_slice()));
             if let Some(result) =
                 crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
             {
@@ -2249,7 +2252,7 @@ impl Interpreter {
                         &target,
                         code,
                     )
-                    .with_arg_sources(arg_sources.as_deref().unwrap_or(&[]));
+                    .with_arg_sources(arg_sources.as_ref().map_or(&[], |sources| sources.as_slice()));
                     if let Some(result) = crate::builtins::method_table::invoke_mut(
                         self, &mut place, method_sym, &args,
                     ) {
