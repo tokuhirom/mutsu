@@ -5494,7 +5494,7 @@ impl Interpreter {
                 self.exec_multi_dim_index_op(*ndims, *is_positional)?;
                 *ip += 1;
             }
-            // Cost: O(d), d = indices (see assign_array_multidim).
+            // Cost: O(d + E), d = dimensions, E = selected leaves for slice assignment.
             OpCode::MultiDimIndexAssign {
                 name_idx,
                 ndims,
@@ -5505,7 +5505,7 @@ impl Interpreter {
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
-            // Cost: O(p + d), p = prefix depth, d = indices.
+            // Cost: O(p + d + E), p = prefix depth, d = dimensions, E = selected slice leaves.
             OpCode::MultiDimIndexAssignNested {
                 name_idx,
                 prefix_depth,
@@ -5525,7 +5525,7 @@ impl Interpreter {
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
-            // Cost: O(d), d = indices.
+            // Cost: O(d + E), d = dimensions, E = selected leaves for slice assignment.
             OpCode::MultiDimIndexAssignGeneric {
                 ndims,
                 is_positional,
