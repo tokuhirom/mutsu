@@ -297,6 +297,22 @@ pub(crate) fn augment_core_method_conflict(
     }
 }
 
+/// The names Rakudo declares directly on `owner` (the rows carrying
+/// [`NativeRowFlags::DECLARED`]), in table order. `owner` is the exact catalog
+/// type, never folded. `.^methods` lists these for the classes whose
+/// introspectable triage ([`introspectable_names_for_owner`]) is incomplete
+/// (`Map`, `Pair`, `Set`, ...): the class's own method table.
+// Cost: O(r), r = rows in the catalog (a scan; introspection only).
+pub(crate) fn declared_names_for_owner(owner: &str) -> Vec<&'static str> {
+    rows()
+        .iter()
+        .filter(|&&(o, _, _, flags)| {
+            o == owner && NativeRowFlags(flags).contains(NativeRowFlags::DECLARED)
+        })
+        .map(|&(_, name, _, _)| name)
+        .collect()
+}
+
 /// ADR-0019 Phase F box F3 step 3: the `.^methods` name list for a *folded*
 /// built-in owner (already run through `canonical_builtin_owner`), read
 /// straight off [`rows`] in table order. This is what
