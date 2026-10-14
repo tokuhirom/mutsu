@@ -864,9 +864,12 @@ impl Interpreter {
                     return Ok(());
                 }
                 let val = self
+                    // A package-block `my @a` read by the package's own subs,
+                    // ahead of a same-named enclosing lexical (as `GetGlobal`).
+                    .package_scope_lexical(name)
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every array read.
-                    .get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
+                    .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
                     // A qualified package array created in another frame
                     // outlives that frame in our_vars, like scalar GetGlobal.
                     .or_else(|| {
@@ -1059,6 +1062,9 @@ impl Interpreter {
                     None
                 };
                 let val = package_val
+                    // A package-block `my %h` read by the package's own subs,
+                    // ahead of a same-named enclosing lexical (as `GetGlobal`).
+                    .or_else(|| self.package_scope_lexical(name))
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every hash read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
@@ -6607,19 +6613,21 @@ impl Interpreter {
             // Cost: O(L + w + k) plus the body, L = locals (copied by `locals.to_vec()` and
             // re-synced at exit), w = names the body wrote by name (its block tier's overlay;
             // the whole env only when no tier could be opened), k = body lexicals re-bound for
-            // a split-off run-time body (`lexicals_idx`). One-shot per `package` block.
+            // a split-off run-time body (`lexicals_idx`), plus O(w * m), m = names the body
+            // declares (`decls_idx`, matched per written name). One-shot per `package` block.
             // Rakudo: O(1) plus the body -- see #9171.
             OpCode::PackageScope {
                 name_idx,
                 body_end,
                 lexicals_idx,
+                decls_idx,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_package_scope_op(
                     code,
                     *name_idx,
                     *body_end,
-                    *lexicals_idx,
+                    (*lexicals_idx, *decls_idx),
                     ip,
                     compiled_fns,
                 )?;

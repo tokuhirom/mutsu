@@ -43,6 +43,7 @@ impl Compiler {
             name_idx,
             body_end: 0,
             lexicals_idx,
+            decls_idx: u32::MAX,
         });
         let saved_package = std::mem::replace(&mut self.current_package, qualified_name);
         let saved_in_unit = std::mem::replace(&mut self.in_unit_package, false);
