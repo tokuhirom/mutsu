@@ -111,3 +111,37 @@ pub(super) fn redirect(target: &Value, method: Symbol, arity: usize) -> Option<(
 pub(crate) fn answers(target: &Value, method: Symbol, args: &[Value]) -> bool {
     redirect(target, method, args.len()).is_some_and(|(_, id)| super::admits(id, args))
 }
+
+/// The numeric methods that hand their invocant back unchanged
+/// (`Int.floor`, `Real.abs` of a non-negative number, `conj`, `Num.Bridge`).
+const ALLOMORPH_RETURNS_SELF: [&str; 7] = [
+    "floor", "ceiling", "round", "truncate", "abs", "conj", "Bridge",
+];
+
+/// An allomorph's answer from a numeric-part row (`part` was the invocant):
+/// when the row handed `part` back unchanged, Rakudo's method returned its own
+/// invocant, which is the allomorph (`<1>.floor` is the `IntStr`).
+// Cost: O(1), a name probe and one equality test of two scalars.
+pub(super) fn keep_allomorph<F>(
+    allomorph: &Value,
+    part: &Value,
+    method: Symbol,
+    arity: usize,
+    answer: Option<(Result<Value, crate::value::RuntimeError>, F)>,
+) -> Option<(Result<Value, crate::value::RuntimeError>, F)> {
+    match answer {
+        Some((Ok(value), flag))
+            if !std::ptr::eq(allomorph, part)
+                // `round($scale)` and `Int.abs` build a new number even when equal.
+                && arity == 0
+                && !(method.as_str() == "abs"
+                    && matches!(part.dispatch_shape(), Some(DispatchShape::Int)))
+                && ALLOMORPH_RETURNS_SELF.contains(&method.as_str())
+                && value.dispatch_shape() == part.dispatch_shape()
+                && value == *part =>
+        {
+            Some((Ok(allomorph.clone()), flag))
+        }
+        other => other,
+    }
+}

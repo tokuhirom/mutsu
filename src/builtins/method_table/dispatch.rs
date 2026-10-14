@@ -334,6 +334,7 @@ fn dispatch(
         return None;
     }
     let payload;
+    let allomorph = target;
     let (target, id) = match Receiver::of_settled(target) {
         Some(receiver) => (target, super::resolve(receiver, method, arity)?),
         // The native-base resolution (§9.79): an instance of a user class
@@ -367,7 +368,8 @@ fn dispatch(
         if !admits_row(row, args) {
             return None;
         }
-        return call(row, interp, target, args, Named::NONE);
+        let answer = call(row, interp, target, args, Named::NONE);
+        return super::allomorph::keep_allomorph(allomorph, target, method, args.len(), answer);
     }
     let (named, positional): (Vec<Value>, Vec<Value>) = args
         .iter()
