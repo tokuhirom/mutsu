@@ -392,6 +392,16 @@ impl<'ast> Visit<'ast> for MapBodyClassifier {
             Expr::Call { name, .. } if name.resolve() == "__mutsu_topic_dotassign" => {
                 self.mutates_topic = true
             }
+            // An assignment expression (`* += 1` expands to `$_ = $_ + 1`)
+            // classifies like the statement form above.
+            Expr::AssignExpr {
+                name,
+                is_bind: false,
+                ..
+            } => {
+                self.mutates_topic |= name == "_";
+                walk_expr(self, expr);
+            }
             Expr::Unary { .. }
             | Expr::PostfixOp { .. }
             | Expr::Reduction { .. }
