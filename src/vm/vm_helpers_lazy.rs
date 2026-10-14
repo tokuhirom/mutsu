@@ -491,6 +491,41 @@ impl Interpreter {
         Ok(target)
     }
 
+    /// [`Self::reify_or_consume_seq_target`] (or its `authoritative` twin) for
+    /// a whole call. `Seq.ACCEPTS` against a list-like topic walks both sides,
+    /// so it consumes the receiver and a `Seq` topic like `.List`; against any
+    /// other topic it is an identity test and touches nothing (measured
+    /// against raku: `$s.ACCEPTS(5)` twice answers `False` twice, while
+    /// `$s.ACCEPTS((1,2,3))` leaves `$s` consumed).
+    // Cost: O(1) unless the call consumes the Seq, then O(n), n = its length.
+    pub(crate) fn consume_seq_for_call(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: &mut [Value],
+        authoritative: bool,
+    ) -> Result<Value, RuntimeError> {
+        let mut consume_as = method;
+        if method == "ACCEPTS"
+            && matches!(target.view(), ValueView::Seq(_))
+            && let [topic] = args
+            && matches!(
+                topic.view(),
+                ValueView::Seq(_) | ValueView::Array(..) | ValueView::LazyList(_)
+            )
+        {
+            if matches!(topic.view(), ValueView::Seq(_)) {
+                *topic = self.reify_or_consume_seq_target_inner(topic.clone(), "List", false)?;
+            }
+            consume_as = "List";
+        }
+        if authoritative {
+            self.reify_or_consume_seq_target_authoritative(target, consume_as)
+        } else {
+            self.reify_or_consume_seq_target(target, consume_as)
+        }
+    }
+
     /// The ONE call site allowed to actually consume `.iterator` — see
     /// [`Self::reify_or_consume_seq_target_inner`]'s `.iterator` arm for the
     /// full reasoning. Only `methods_call_dispatch::call_method_with_values`

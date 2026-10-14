@@ -667,7 +667,7 @@ impl Interpreter {
         // the fat-arrow `MakePair` path performs). Any other receiver (a
         // shadowing user class, a rebound name) unwraps to the plain value —
         // identical to an untagged compile.
-        let args = if has_varref {
+        let mut args = if has_varref {
             let native_pair_new = method == "new"
                 && matches!(target.view(), ValueView::Package(cn) if cn == "Pair")
                 && !self.has_user_method("Pair", "new");
@@ -727,7 +727,7 @@ impl Interpreter {
             Some(prefix) => prefix,
             None => target,
         };
-        let target = self.reify_or_consume_seq_target(target, method)?;
+        let target = self.consume_seq_for_call(target, method, &mut args, false)?;
         // A `does Sequence` class with its own `iterator`: see
         // `vm_sequence_role_delegate.rs`.
         if let Some(result) = self.try_sequence_role_delegate(&target, method_sym, &args) {
