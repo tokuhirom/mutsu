@@ -4382,6 +4382,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     lowered,
                 )))));
             }
+            // `~~ ($_)` differs from `~~ $_`: only the bare spelling reads the
+            // enclosing topic, so the compiler needs the parser's `Grouped`.
+            if matches!(&lowered, Expr::Var(n) if n == "_") {
+                return Ok(Expr::Grouped(Box::new(lowered)));
+            }
             Ok(lowered)
         }
         RakuAstClass::CircumfixHashComposer => super::hash_literal::lower_composer(node),

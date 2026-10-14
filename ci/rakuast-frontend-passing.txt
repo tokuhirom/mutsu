@@ -1397,6 +1397,7 @@ t/control/enter-expr-inside-leave-phaser.t
 t/control/enter-phaser-our-later.t
 t/control/enter-phaser-rvalue.t
 t/control/eval-begin-phaser.t
+t/control/eval-topic-write-through.t
 t/control/eval-type-decl-and-phaser-message.t
 t/control/for-array-destructure.t
 t/control/for-bind-typed-array-deitemize.t
@@ -1741,6 +1742,7 @@ t/exceptions/undeclared-array-hash-default.t
 t/exceptions/undeclared-bare-var-before-placeholder-typed-exception.t
 t/exceptions/undeclared-bareword-expr.t
 t/exceptions/undeclared-bareword-name.t
+t/exceptions/undeclared-constant-init.t
 t/exceptions/undeclared-infix-word-eval.t
 t/exceptions/undeclared-qualified-type-new.t
 t/exceptions/undeclared-symbol-exception-class.t
@@ -1922,9 +1924,11 @@ t/grammar/proto-token-dynamic-param.t
 t/grammar/proto-token-ltm-tiebreak.t
 t/grammar/regex-charclass-token-fold.t
 t/grammar/regex-classitem-token-fallback.t
+t/grammar/regex-code-interp-rule-lazy.t
 t/grammar/regex-crosspkg-charclass-token.t
 t/grammar/regex-grammar-method-leaf.t
 t/grammar/regex-lookbehind-through-rule-call.t
+t/grammar/regex-my-dynvar-nested-rule-write.t
 t/grammar/regex-negated-token-class-multichar.t
 t/grammar/regex-rule-separated-quantifier-backtrack.t
 t/grammar/role-proto-regex-reinstantiate.t
@@ -2169,10 +2173,12 @@ t/lang/eval-nosuchlang.t
 t/lang/eval-parse-failure-propagates-through-block-call.t
 t/lang/eval-private-and-stubs.t
 t/lang/eval-smiley-type-object-term.t
+t/lang/eval-tail-output-statement-value.t
 t/lang/eval-trailing-begin-unit-value.t
 t/lang/eval-trailing-constant-unit-value.t
 t/lang/eval-undeclared-block-assign.t
 t/lang/eval-unit-trailing-constant-value.t
+t/lang/eval-will-leave-nested-block.t
 t/lang/exec-call-mixed-block.t
 t/lang/exec-call-pairs.t
 t/lang/fatal-mode-call-argument-failure.t
@@ -2555,6 +2561,7 @@ t/modules/compunit/compunit-repository-distribution.t
 t/modules/compunit/compunit-repository-filesystem.t
 t/modules/compunit/compunit-repository-for-name.t
 t/modules/compunit/compunit-repository-required-methods.t
+t/modules/compunit/compunit-resources-object-type.t
 t/modules/compunit/compunit.t
 t/modules/compunit/cross-compunit-multi-vs-plain-sub-name-collision.t
 t/modules/compunit/cur-install-content-api.t
@@ -2606,6 +2613,7 @@ t/modules/enum-member-nested-module-load.t
 t/modules/enum-param-in-package.t
 t/modules/eval-context-package.t
 t/modules/eval-module-lexical-subs.t
+t/modules/eval-our-sub-package-stash.t
 t/modules/eval-package-enum-result.t
 t/modules/eval-package-tail-value.t
 t/modules/eval-pod-in-module-closure.t
@@ -2701,6 +2709,7 @@ t/modules/import-export/exporthow-invalid-directive.t
 t/modules/import-export/import-constant-writeback-coherence.t
 t/modules/import-export/import-only-sub-hides-outer-family.t
 t/modules/import-export/import-operator-method.t
+t/modules/import-export/import-scope-rollback-in-loop.t
 t/modules/import-export/import-statement.t
 t/modules/import-export/import-then-local-class-shadows-short-name.t
 t/modules/import-export/imported-attribute-trait-role-composition.t
@@ -2979,6 +2988,7 @@ t/modules/package-as-type-badtype.t
 t/modules/package-block-aggregate-mutated-by-routine.t
 t/modules/package-block-exit-writes.t
 t/modules/package-block-lexical-capture.t
+t/modules/package-block-locals-restore.t
 t/modules/package-block-my-keeps-outer-lexical.t
 t/modules/package-block-my-sub-hoist.t
 t/modules/package-body-routine-family-is-lexical.t
@@ -3002,6 +3012,7 @@ t/modules/package-scalar-push-vivify.t
 t/modules/package-scope-outer-lexical-preserved.t
 t/modules/package-short-name-alias-scope.t
 t/modules/package-stash-keyed-read.t
+t/modules/package-stash-members-from-index.t
 t/modules/package-stash-missing-package.t
 t/modules/package-stash-routine-identity.t
 t/modules/package-stash-sigiled-entry-not-itemized.t
@@ -3857,6 +3868,7 @@ t/oo/method/method-captured-var-writeback-coherence.t
 t/oo/method/method-captures-enclosing-lexical-type.t
 t/oo/method/method-captures-sigilless-param.t
 t/oo/method/method-closure-env-write-merge.t
+t/oo/method/method-declarations-require-block-separator.t
 t/oo/method/method-declared-in-closure-body.t
 t/oo/method/method-declared-in-routine-body.t
 t/oo/method/method-deferral-tail-lazy.t
@@ -4174,6 +4186,7 @@ t/oo/role/but-role-list.t
 t/oo/role/but-role-on-list-array-name-and-join-flatten.t
 t/oo/role/but-role-type-object-new.t
 t/oo/role/callsame-punned-role-and-hyper-infix-sub.t
+t/oo/role/can-role-declared-methods.t
 t/oo/role/class-does-enumeration-role.t
 t/oo/role/class-does-self-named-role.t
 t/oo/role/class-multi-method-outranks-role-multi-on-tie.t
@@ -4274,6 +4287,7 @@ t/oo/role/punned-role-name.t
 t/oo/role/punned-role-raku-attributes.t
 t/oo/role/punned-role-ud-multi-dispatch.t
 t/oo/role/punned-role-user-new.t
+t/oo/role/qualified-call-me-role-dispatch.t
 t/oo/role/qualified-parameterized-role.t
 t/oo/role/qualified-role-does-not-shadow-builtin.t
 t/oo/role/qualified-role-multi-concretization.t
@@ -4602,6 +4616,7 @@ t/rakuast/rakuast-colonpair-allomorph.t
 t/rakuast/rakuast-colonpair-literal.t
 t/rakuast/rakuast-compound-assign.t
 t/rakuast/rakuast-compunit.t
+t/rakuast/rakuast-constant-initializer-terms.t
 t/rakuast/rakuast-constant-smiley-term.t
 t/rakuast/rakuast-construct-block.t
 t/rakuast/rakuast-construct-more.t
@@ -4976,6 +4991,7 @@ t/regex/match/match-raku-in-collection.t
 t/regex/match/match-raku-list-parens.t
 t/regex/match/match-raku-nested-escape.t
 t/regex/match/match-replace-with.t
+t/regex/match/match-smartmatch-quantified-capture.t
 t/regex/match/match-smartmatch-str.t
 t/regex/match/match-subject-shared-target.t
 t/regex/match/match-truthiness.t
@@ -5056,6 +5072,7 @@ t/regex/match/signature-where-smartmatch.t
 t/regex/match/slash-param-survives-smartmatch.t
 t/regex/match/smartmatch-accepts-duration-complex-map-blob.t
 t/regex/match/smartmatch-bare-topic-rhs-no-writeback.t
+t/regex/match/smartmatch-bare-topic-rhs.t
 t/regex/match/smartmatch-bool-type-object.t
 t/regex/match/smartmatch-closure-array-capture.t
 t/regex/match/smartmatch-code-bearing-sync.t
@@ -5155,6 +5172,7 @@ t/regex/regex-ignorecase-named-builtin-no-fold.t
 t/regex/regex-ignoremark-backref.t
 t/regex/regex-ignoremark-callee-lazy.t
 t/regex/regex-ignoremark-group-compiled.t
+t/regex/regex-ignoremark-group-lazy.t
 t/regex/regex-ignoremark-scaling.t
 t/regex/regex-inline-code-block.t
 t/regex/regex-inline-code-compile-cache.t
@@ -5196,6 +5214,7 @@ t/regex/regex-ltm.t
 t/regex/regex-m-s.t
 t/regex/regex-make.t
 t/regex/regex-modifier-only.t
+t/regex/regex-my-decl-once-per-invocation.t
 t/regex/regex-my-embedded-block-persist.t
 t/regex/regex-my-initializer-and-escaping-sub.t
 t/regex/regex-my-lexical-in-make-block.t
@@ -5550,6 +5569,7 @@ t/routines/closure/anon-sub-raw-lvalue-return.t
 t/routines/closure/anon-var-eval.t
 t/routines/closure/assuming-named-currying.t
 t/routines/closure/assuming-type-capture.t
+t/routines/closure/block-sub-closure-binding-calls.t
 t/routines/closure/block-sub-closure-binding.t
 t/routines/closure/closure-arg-shares-its-captured-container.t
 t/routines/closure/closure-attr-element-write.t
@@ -5692,6 +5712,7 @@ t/routines/dispatch/hash-multislice-container.t
 t/routines/dispatch/heredoc-multibyte-terminator.t
 t/routines/dispatch/increment-requires-mutable-candidates.t
 t/routines/dispatch/indexed-multidim-bind.t
+t/routines/dispatch/junction-in-mu-variable-multi-dispatch.t
 t/routines/dispatch/lastcall-in-wrapper-callsame-dies.t
 t/routines/dispatch/lastcall-then-nextsame.t
 t/routines/dispatch/lexical-sub-dispatch-cache-survival.t
@@ -6217,6 +6238,7 @@ t/routines/signature/positional-light-call-rw-param-alias.t
 t/routines/signature/positional-param-copy-and-alias.t
 t/routines/signature/positional-param-deitemizes.t
 t/routines/signature/proto-dispatcher-signature-eqv.t
+t/routines/signature/proto-onlystar-skips-own-signature.t
 t/routines/signature/proxy-argument-typed-param-fetch.t
 t/routines/signature/proxy-raw-param-direct-call.t
 t/routines/signature/quanthash-parameterize-values-write-through.t
@@ -6283,6 +6305,7 @@ t/routines/signature/signature-pseudo-type-anon-param.t
 t/routines/signature/signature-return-only-space.t
 t/routines/signature/signature-return-type-comment.t
 t/routines/signature/signature-returns.t
+t/routines/signature/signature-str-form.t
 t/routines/signature/signature-type-alias-constant.t
 t/routines/signature/signature-type-only-invocant-anonymous.t
 t/routines/signature/signature-unpack-object.t
@@ -6696,6 +6719,7 @@ t/types/numeric/bitwise.t
 t/types/numeric/complex-cool-coercion.t
 t/types/numeric/complex-int-rat-coerce.t
 t/types/numeric/complex-integer-power.t
+t/types/numeric/complex-non-cool-receiver.t
 t/types/numeric/complex-round-scale.t
 t/types/numeric/complex-uint-coerce.t
 t/types/numeric/complex.t
@@ -6713,6 +6737,7 @@ t/types/numeric/int-add-sub-mul-operator-forms.t
 t/types/numeric/int-bigint-div-subnormal-num.t
 t/types/numeric/int-bit-methods.t
 t/types/numeric/int-bitop-object-numeric.t
+t/types/numeric/int-enum-type-object-is-int.t
 t/types/numeric/int-eq-fast-path.t
 t/types/numeric/int-modulo-operator-forms.t
 t/types/numeric/int-num-coerce-bad-string.t
@@ -6841,11 +6866,13 @@ t/types/string/str-per-call-bounds.t
 t/types/string/str-positional-grapheme-index.t
 t/types/string/str-positioned-search-graphemes.t
 t/types/string/str-raku-combining-mark.t
+t/types/string/str-search-non-cool-receivers.t
 t/types/string/str-strand-bind-not-materialized.t
 t/types/string/str-strands.t
 t/types/string/str-subclass-stringy-payload.t
 t/types/string/str-systemic-context.t
 t/types/string/str-to-rat-bigint.t
+t/types/string/str-type-object-refusals.t
 t/types/string/strdistance-numeric.t
 t/types/string/streaming-decoder-encoding.t
 t/types/string/stringy-numeric-object.t
