@@ -584,6 +584,13 @@ impl Interpreter {
             // `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 4".
             if let Some((owner_class, method_def)) =
                 self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)
+                // An augmented slurpy-only `multi` on a built-in ancestor
+                // (`augment class Any { multi method map(|c) }`) ranks after the
+                // built-in method for a user-class instance too: leave it to
+                // the built-in dispatch below (#13509).
+                && !(method_def.is_multi
+                    && Self::candidate_is_slurpy_only(&method_def)
+                    && self.user_candidates_all_outranked_by_builtin(cn, method))
             {
                 // A public attribute accessor can win over the method that
                 // resolution picked: a child class's accessor shadows a
