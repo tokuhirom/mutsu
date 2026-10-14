@@ -5241,6 +5241,10 @@ pub(super) fn dispatch_modifier(node: &RakuAstNode) -> Result<Option<char>, Runt
     let ValueView::Str(s) = v.view() else {
         return Err(unsupported(node));
     };
+    // `self!"name"` renders its dispatch as a bare `!`.
+    if &**s == "!" {
+        return Ok(Some('!'));
+    }
     // The rendered form is `.?` / `.+` / `.*`; mutsu keeps only the modifier.
     match s.strip_prefix('.').and_then(|rest| {
         let mut chars = rest.chars();
