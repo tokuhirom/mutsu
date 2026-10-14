@@ -545,11 +545,30 @@ impl Compiler {
         // placeholders of its statically named `require`s (see
         // `require_stubs`): both are compile-time declarations of the scope.
         self.hoist_require_stubs(stmts);
+        let scope = self.local_scopes.len() - 1;
         for stmt in stmts {
-            if let Stmt::SubDecl { .. } = stmt {
-                self.hoist_one_sub_decl(stmt, lexical_hoist);
+            match stmt {
+                Stmt::SubDecl { .. } => self.hoist_one_sub_decl(stmt, lexical_hoist),
+                // The scope's pad holds its variables from its entry (#10511).
+                Stmt::VarDecl { name, .. } => self.local_scopes[scope].note_predeclared(name),
+                _ => {}
             }
         }
+    }
+
+    /// Record, for this chunk's `EVAL` undeclared-variable check, every
+    /// lexical the static scopes around this call site declare -- including
+    /// those declared later in the source (`CompiledCode::eval_scope_names`).
+    // Cost: O(n), n = names declared in the enclosing scope chain.
+    pub(super) fn note_eval_scope_names(&mut self) {
+        let names: Vec<String> = self
+            .enclosing_scopes
+            .iter()
+            .chain(self.local_scopes.iter())
+            .flat_map(|frame| frame.all_declared_names())
+            .cloned()
+            .collect();
+        self.code.eval_scope_names.extend(names);
     }
 
     /// Emit the hoist-pass registration of one `Stmt::SubDecl`: a plan-only

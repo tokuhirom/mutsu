@@ -7365,6 +7365,13 @@ pub(crate) struct CompiledCode {
     /// (a per-call `free_at_entry` cost), so only names matching a declared
     /// `&`-lexical count.
     pub(crate) outer_code_var_names: std::collections::HashSet<String>,
+    /// The lexicals the static scopes around this chunk's `EVAL` calls
+    /// declare, including those declared later in the source (#10511):
+    /// rakudo's pads are static, so `EVAL '$y'` before `my $y` in the same
+    /// block names a declared variable. The `EVAL` undeclared-variable check
+    /// consults it; the run-time env only knows names already declared.
+    /// Empty unless the chunk calls `EVAL`.
+    pub(crate) eval_scope_names: std::collections::HashSet<String>,
     /// Bare words naming an ENCLOSING sigilless binding (`\attr`) that this
     /// code also declares as a same-keyed `$` local (`my $attr = attr`). The
     /// shared local key would hide the capture from `compute_free_vars`, so the
@@ -8155,6 +8162,7 @@ impl CompiledCode {
             self_capture_decl_locals: Vec::new(),
             captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
+            eval_scope_names: std::collections::HashSet::new(),
             shadowed_sigilless_reads: Vec::new(),
             unscoped_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),

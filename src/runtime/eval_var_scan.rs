@@ -113,6 +113,21 @@ impl UndeclaredVars<'_> {
         self.scopes.iter().any(|s| s.contains(name))
     }
 
+    /// Whether a static scope around the `EVAL` call declares `name`, here or
+    /// later in its source (`CompiledCode::eval_scope_names`): the run-time
+    /// env does not hold a lexical declared after the call yet (#10511).
+    // Cost: O(|name|).
+    fn caller_scope_declares(&self, name: &str) -> bool {
+        if self.interp.current_code == 0 {
+            return false;
+        }
+        // SAFETY: `current_code` is the address of the live bytecode frame's
+        // `CompiledCode` (the frame calling `EVAL`), kept alive for the whole
+        // frame by `vm_call_*`.
+        let code = unsafe { &*(self.interp.current_code as *const crate::opcode::CompiledCode) };
+        code.eval_scope_names.contains(name)
+    }
+
     /// Runs `f` with the given judging state, restoring the current one.
     fn judging(&mut self, judged_stmt: bool, mode: Mode, f: impl FnOnce(&mut Self)) {
         let saved = (self.judged_stmt, self.mode);
@@ -144,7 +159,7 @@ impl UndeclaredVars<'_> {
     }
 
     fn undeclared_scalar(&self, name: &str) -> Option<Undeclared> {
-        if is_exempt(name) || self.is_declared(name) {
+        if is_exempt(name) || self.is_declared(name) || self.caller_scope_declares(name) {
             return None;
         }
         let env = self.interp.env();
@@ -185,7 +200,11 @@ impl UndeclaredVars<'_> {
 
     fn undeclared_container(&self, sigil: &'static str, name: &str) -> Option<Undeclared> {
         let sigiled = format!("{}{}", sigil, name);
-        if is_exempt(name) || self.is_declared(name) || self.is_declared(&sigiled) {
+        if is_exempt(name)
+            || self.is_declared(name)
+            || self.is_declared(&sigiled)
+            || self.caller_scope_declares(&sigiled)
+        {
             return None;
         }
         let env = self.interp.env();

@@ -203,6 +203,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         for_loop_param_syms,
         expr_declared_syms,
         outer_code_var_names,
+        eval_scope_names,
         block_scope_protected_slots,
     );
     None

@@ -681,6 +681,9 @@ impl Compiler {
                 });
             }
             Expr::Call { name, args, .. } => {
+                if name.with_str(|n| n == "EVAL") {
+                    self.note_eval_scope_names();
+                }
                 // `f(@a.AT-POS($i))` hands the callee the element's container
                 // exactly as `f(@a[$i])` does (List::MoreUtils `pairwise`
                 // binds `is rw` parameters this way), so spell it as the

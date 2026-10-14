@@ -34,6 +34,11 @@ pub(crate) struct ScopeFrame {
     /// declares (`None` when it is untyped). Compile-time only: it is not part
     /// of a baked [`LexScopeChain`]'s encoding.
     scalar_types: HashMap<String, Option<String>>,
+    /// Every variable this scope's statement list declares, noted at scope
+    /// entry, before any of them is compiled: a static pad holds a lexical
+    /// from the scope's start (`EVAL` before `my $y` names it, #10511).
+    /// Compile-time only, like `scalar_types`.
+    predeclared: std::collections::HashSet<String>,
 }
 
 impl ScopeFrame {
@@ -55,6 +60,19 @@ impl ScopeFrame {
     pub(crate) fn scalar_type(&self, name: &str) -> Option<Option<&str>> {
         self.scalar_types.get(name).map(Option::as_deref)
     }
+
+    /// Note that this scope's statement list declares `name` somewhere.
+    // Cost: O(|name|).
+    pub(crate) fn note_predeclared(&mut self, name: &str) {
+        self.predeclared.insert(name.to_string());
+    }
+
+    /// The names this scope declares: those compiled so far and those its
+    /// statement list declares later.
+    // Cost: O(1) to build the iterator.
+    pub(crate) fn all_declared_names(&self) -> impl Iterator<Item = &String> {
+        self.slots.keys().chain(self.predeclared.iter())
+    }
 }
 
 impl Deref for ScopeFrame {
@@ -75,6 +93,7 @@ impl FromIterator<(String, Option<u32>)> for ScopeFrame {
         Self {
             slots: iter.into_iter().collect(),
             scalar_types: HashMap::new(),
+            predeclared: std::collections::HashSet::new(),
         }
     }
 }
