@@ -3138,6 +3138,30 @@ fn require_any_rakuast(
     }
 }
 
+/// A constructor's list-of-nodes argument (`traits => ($t,)`): each item's
+/// content, which must be a RakuAST node. An item held in a variable arrives
+/// as its container.
+// Cost: O(n), n = list items.
+fn rakuast_node_list(
+    value: &Value,
+    constructor: &str,
+    argument: &str,
+) -> Result<Vec<Value>, RuntimeError> {
+    let items = value.as_list_items().ok_or_else(|| {
+        RuntimeError::new(format!("{constructor} expects `{argument}` to be a list"))
+    })?;
+    let mut nodes = Vec::new();
+    nodes
+        .try_reserve(items.len())
+        .map_err(|_| RuntimeError::new(format!("{constructor} `{argument}` list is too large")))?;
+    for item in items {
+        let node = item.with_deref(|v| v.descalarize().clone());
+        require_any_rakuast(&node, constructor, argument)?;
+        nodes.push(node);
+    }
+    Ok(nodes)
+}
+
 fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeError> {
     match value.view() {
         ValueView::RakuAst(node)
