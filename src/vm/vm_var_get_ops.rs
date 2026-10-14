@@ -855,6 +855,13 @@ impl Interpreter {
                 && let Some(our_val) = self.get_our_var(name).cloned()
             {
                 our_val
+            // `Fac::make` where `Fac` is the short name a `use` of
+            // `unit module A::B::Fac is export` installed: the sub lives under
+            // the full package name.
+            } else if let Some(real) = self.resolve_package_alias_prefix(name)
+                && self.has_function(&real)
+            {
+                self.call_function_compiled_first(&real, Vec::new(), compiled_fns)?
             // Try resolving as a package-qualified function call (e.g.
             // `Module::func` used as a term without parens).
             } else if self.has_function(
