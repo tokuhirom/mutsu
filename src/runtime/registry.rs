@@ -940,6 +940,26 @@ impl Registry {
         !self.method_wrap_chains.is_empty()
     }
 
+    /// The wrap chain of `method` on the built-in class `class_name` or, when it
+    /// has none, on the first class of the catalog MRO that does (`NFD.list` is
+    /// wrapped by a `.wrap` of `Uni.list`).
+    // Cost: O(1) while nothing is wrapped; otherwise O(c + d), c = catalog rows
+    // (the MRO scan), d = MRO depth.
+    pub(crate) fn builtin_method_wrap_chain_along_mro(
+        &self,
+        class_name: &str,
+        method: &str,
+    ) -> Option<&Vec<(u64, Value)>> {
+        if self.method_wrap_chains.is_empty() {
+            return None;
+        }
+        self.method_wrap_chain(class_name, method, 0).or_else(|| {
+            crate::builtin_types::catalog::builtin_type_mro_strs(class_name)?
+                .iter()
+                .find_map(|class| self.method_wrap_chain(class, method, 0))
+        })
+    }
+
     /// The wrap chain for one method candidate, if non-empty.
     pub(crate) fn method_wrap_chain(
         &self,
