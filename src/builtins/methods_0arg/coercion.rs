@@ -60,14 +60,42 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             | ValueView::Bool(_) => {
                 crate::builtins::method_table::numeric_coerce::complex_of(target).map(Ok)
             }
-            // A type object is `0+0i`; anything else is `Cool.Complex`'s
-            // (`method_table::str_numeric`): a string parses, an aggregate is
-            // its element count.
-            ValueView::Package(_) => Some(Ok(Value::complex(0.0, 0.0))),
-            _ => Some(Ok(
-                crate::builtins::method_table::str_numeric::complex_of_cool(target)
-                    .unwrap_or_else(|| Value::complex(0.0, 0.0)),
+            // A numeric type object has no number to coerce: `Complex` is
+            // `self.Num.Complex`, and `Num` of a type object is refused
+            // (`Int.Complex` is `X::Parameter::InvalidConcreteness`,
+            // `Num.Complex` cannot unbox it). Any other `Cool` type object
+            // (`Str`, `List`) is `0+0i`.
+            ValueView::Package(name) => {
+                let name = name.resolve();
+                let owner = match name.as_str() {
+                    "Int" | "Bool" => "Int",
+                    "Rat" | "FatRat" => "Rational",
+                    "Real" => "Real",
+                    "IntStr" | "RatStr" | "NumStr" | "ComplexStr" => "Str",
+                    "Num" => {
+                        return Some(Err(RuntimeError::new(
+                            "Cannot unbox a type object (Num) to a num.".to_string(),
+                        )));
+                    }
+                    "Complex" | "Numeric" => return None,
+                    // A `Cool` type object (`Str`, `List`) is `0+0i`; anything
+                    // else (`Blob`, `Promise`) has no `.Complex`.
+                    _ if crate::runtime::Interpreter::type_matches("Cool", &name) => {
+                        return Some(Ok(Value::complex(0.0, 0.0)));
+                    }
+                    _ => return None,
+                };
+                Some(Err(RuntimeError::parameter_invalid_concreteness(
+                    owner, &name, "Num", "self", true, true,
+                )))
+            }
+            // A lazy list cannot count itself.
+            _ if crate::builtins::methods_0arg::is_lazy_count_source(target) => Some(Ok(
+                crate::runtime::utils::cannot_lazy_failure("Complex"),
             )),
+            // Anything else is `Cool.Complex`'s (`method_table::str_numeric`): a
+            // string parses, an aggregate is its element count.
+            _ => crate::builtins::method_table::str_numeric::complex_of_cool(target).map(Ok),
         },
         "Pair" => match target.view() {
             ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => Some(Ok(target.clone())),
