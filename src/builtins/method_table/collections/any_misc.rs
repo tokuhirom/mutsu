@@ -70,6 +70,32 @@ pub(crate) fn chrs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
             _ => v.to_string_value().parse::<i64>().unwrap_or(0),
         }
     };
+    // An element that is neither an `Int` nor a `Str` (a `Match`, a `Rat`,
+    // ...) cannot be converted: `chrs` answers a `Failure` (#13195).
+    let refused = |elems: &[Value]| -> Option<Value> {
+        elems.iter().enumerate().find_map(|(index, elem)| {
+            (!matches!(elem.view(), ValueView::Int(_) | ValueView::Str(_))).then(|| {
+                RuntimeError::type_check_operation_failure(
+                    &format!("converting element #{index} to .chr"),
+                    elem.clone(),
+                    "Int",
+                )
+            })
+        })
+    };
+    match target.view() {
+        ValueView::Array(items, ..) => {
+            if let Some(failure) = refused(&items) {
+                return Ok(failure);
+            }
+        }
+        ValueView::Seq(items) => {
+            if let Some(failure) = refused(&items) {
+                return Ok(failure);
+            }
+        }
+        _ => {}
+    }
     let items: Vec<i64> = match target.view() {
         ValueView::Array(items, ..) => items.iter().map(&val_to_i64).collect(),
         ValueView::Seq(items) => items.iter().map(&val_to_i64).collect(),

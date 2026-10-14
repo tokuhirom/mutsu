@@ -197,11 +197,11 @@ fn extrema_pairs(
                 result.push(pair);
             }
         }
-        return Some(Ok(Value::seq(result)));
+        return Some(Ok(Value::array(result)));
     }
     let items = plain_extrema_items(target)?;
     if items.is_empty() {
-        return Some(Ok(Value::seq(Vec::new())));
+        return Some(Ok(Value::array(Vec::new())));
     }
     let mut best = items[0].clone();
     let mut result = vec![Value::value_pair(Value::int(0), best.clone())];
@@ -216,7 +216,7 @@ fn extrema_pairs(
             result.push(Value::value_pair(Value::int(index as i64), item.clone()));
         }
     }
-    Some(Ok(Value::seq(result)))
+    Some(Ok(Value::array(result)))
 }
 
 // Cost: O(e), e = plain positional elements compared with the running extremum.
@@ -266,9 +266,22 @@ pub(crate) fn minmax(target: &Value, args: &[Value]) -> Option<Result<Value, Run
                 max = item;
             }
         }
-        Some(Ok(
-            crate::runtime::builtins_collection::make_inclusive_range_pub(min.clone(), max.clone()),
-        ))
+        // The endpoints are `Real`s: a `Match` is compared as the `Cool` it is,
+        // then numifies through its text (a non-numeric one is a `Failure`).
+        let endpoint = |item: &Value| -> Result<Value, RuntimeError> {
+            if item.match_str_value().is_none() {
+                return Ok(item.clone());
+            }
+            match crate::runtime::utils::str_numeric_operand_failure(item) {
+                Some(failure) => Ok(failure),
+                None => crate::builtins::arith_add(Value::int(0), item.clone()),
+            }
+        };
+        Some(endpoint(min).and_then(|lo| {
+            endpoint(max).map(|hi| {
+                crate::runtime::builtins_collection::make_inclusive_range_pub(lo, hi)
+            })
+        }))
     }
 }
 

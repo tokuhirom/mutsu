@@ -122,6 +122,13 @@ impl Interpreter {
             }
         }
 
+        // `rotor` has no candidate without a cycle spec.
+        if positional_args.is_empty() {
+            return Err(crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                "rotor",
+            ));
+        }
+
         // Build spec list from positional args
         // If single arg is a list/array, use its elements as specs
         let specs = if positional_args.len() == 1 {
