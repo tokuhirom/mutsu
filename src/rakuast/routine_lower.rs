@@ -8,7 +8,7 @@ use crate::value::RuntimeError;
 /// parameters are handled; typed/named/slurpy/defaulted parameters and anonymous
 /// subs in expression position are the current coverage boundary.
 pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = call_name_str(node)?;
+    let (name, name_expr) = declarator_name(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = super::routine_traits::IsTraits::default();
     let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
@@ -42,7 +42,7 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     ));
     Ok(Stmt::SubDecl {
         name: crate::symbol::Symbol::intern(&name),
-        name_expr: None,
+        name_expr,
         params,
         param_defs,
         return_type,
@@ -61,4 +61,15 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         supersede: false,
         custom_traits,
     })
+}
+
+/// A declarator's name and, for `::(EXPR)`, its name expression.
+// Cost: O(n), n = nodes of the name expression.
+pub(super) fn declarator_name(
+    node: &RakuAstNode,
+) -> Result<(String, Option<crate::ast::Expr>), RuntimeError> {
+    match super::symbolic_deref::lower_declarator_name(named_child(node, "name")?)? {
+        Some((name, expr)) => Ok((name, Some(expr))),
+        None => Ok((call_name_str(node)?, None)),
+    }
 }
