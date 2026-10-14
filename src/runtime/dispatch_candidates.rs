@@ -115,6 +115,7 @@ impl Interpreter {
             optional: multi_rank::has_optional_positional(&params),
             decl_order: def.decl_order,
             profile,
+            invocant: None,
             tier: 0,
             tiered: false,
         }
