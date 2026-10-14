@@ -566,6 +566,7 @@ impl Compiler {
                     && self.for_param_names[..for_param_mark].contains(p)
             })
             .collect();
+        let declared_before = self.sigilless_declared.clone();
         self.push_local_scope();
         for s in &bind_prefix {
             // Parameter bindings, not a user's `my $x` (see `decl_is_sigilless`).
@@ -573,6 +574,10 @@ impl Compiler {
             self.compile_stmt(s);
             self.decl_is_sigilless = false;
         }
+        // The sigilless parameters are now declared bindings of the body: a
+        // later `my $name` in it shadows them like any `my \name` (#13474).
+        self.sigilless_declared
+            .extend(sigilless_param_names.iter().cloned());
         // The parameters the declarations above gave no slot stay by-name env
         // bindings for the whole body. A by-name read of the name after the
         // loop is the enclosing lexical again (`note_shadowed_outer_capture`,
@@ -660,6 +665,7 @@ impl Compiler {
         for n in &newly_registered {
             self.sigilless_locals.remove(n);
         }
+        self.sigilless_declared = declared_before;
         self.code.patch_loop_end(loop_idx);
         // A body that pushed no frame of its own leaves the declarations
         // parked; close them here so they neither leak into the next scope
