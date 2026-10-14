@@ -2552,11 +2552,16 @@ impl Interpreter {
                 // that legitimately returns `Nil` (a missing key on a plain
                 // Mixin with no restriction) is unaffected: `?` only
                 // short-circuits on `Err`, not on an `Ok(Value::NIL)`.
-                let result = self.try_compiled_method_or_interpret(
-                    target.clone(),
-                    "AT-KEY",
-                    vec![Value::str_arc(key.clone())],
-                )?;
+                // An rvalue subscript reads the element: `AT-KEY` may answer
+                // the element's container (a native Hash inside the mixin
+                // does), and the value is what the read produces.
+                let result = self
+                    .try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-KEY",
+                        vec![Value::str_arc(key.clone())],
+                    )?
+                    .deref_container();
                 if result.is_nil() { default } else { result }
             }
             // A role-punned Positional value is represented as a Mixin rather

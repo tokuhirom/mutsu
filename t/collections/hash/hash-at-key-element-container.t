@@ -4,7 +4,7 @@ use Test;
 # own container, so a binding to it, an `is rw` parameter and a `callsame`
 # from a user `AT-KEY` all write back into the hash (#13207).
 
-plan 16;
+plan 17;
 
 {
     my %h = a => 1;
@@ -82,4 +82,14 @@ plan 16;
     my $a = A.new;
     $a[0] = 1;
     is @seen.elems, 0, 'assigning to an `is Array` subclass does not call its AT-POS';
+}
+
+{
+    # A mixed-in Hash's rvalue subscript reads the element's value, even
+    # though its AT-KEY answers the container (roast S11-repository/
+    # cur-candidates.t passes `%_<name>` to a native constructor).
+    my %m = name => 'X';
+    %m does role :: { has $.j = 1 };
+    my sub spec(%_) { CompUnit::DependencySpecification.new(short-name => %_<name>) }
+    is spec(%m).short-name, 'X', 'a mixin hash subscript passes the value on';
 }
