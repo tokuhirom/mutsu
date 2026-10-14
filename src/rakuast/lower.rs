@@ -4362,7 +4362,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         | RakuAstClass::VarDeclarationSignature
                 )
             {
-                return Ok(Expr::DoStmt(Box::new(lower_stmt_inner(declaration)?)));
+                return Ok(Expr::Grouped(Box::new(Expr::DoStmt(Box::new(
+                    lower_stmt_inner(declaration)?,
+                )))));
             }
             let lowered = lower_expr(inner)?;
             // A parenthesized bareword fat-arrow is a positional Pair at the
@@ -4750,7 +4752,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // the parser's `Nil` literal instead (`term_literals`), which is what
         // `is default` restores on assignment.
         RakuAstClass::TypeSimple => match simple_type_name(node, node)?.as_str() {
-            "Nil" => Ok(Expr::Literal(Value::NIL)),
+            "Nil" if !super::shadowed_terms::declares_package("Nil") => {
+                Ok(Expr::Literal(Value::NIL))
+            }
             name => Ok(Expr::BareWord(name.to_string())),
         },
         // `Map:D` (a `Type::Definedness`) in expression position, such as a
