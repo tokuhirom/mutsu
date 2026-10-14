@@ -138,6 +138,13 @@ pub(crate) fn encode(target: &Value, args: &[Value]) -> Result<Value, RuntimeErr
     if let ValueView::Uni(_) = target.view() {
         return uni_encode(target, args);
     }
+    // `Str.encode` unboxes the invocant, which a type object cannot be.
+    if let ValueView::Package(name) = target.view() {
+        return Err(RuntimeError::new(format!(
+            "Cannot unbox a type object ({}) to a str.",
+            crate::value::user_facing_type_name(name.as_str())
+        )));
+    }
     Ok(with_str(target, |s| {
         crate::value::value_buf::make_buf_from_bytes(Symbol::intern("utf8"), s.as_bytes())
     }))

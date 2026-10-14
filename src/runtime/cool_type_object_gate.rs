@@ -43,6 +43,8 @@ const DEFINITE_ONLY: &[&str] = &[
     "lines",
     "NFC",
     "NFD",
+    "NFKC",
+    "NFKD",
     "ord",
     "ords",
     "rindex",
@@ -59,6 +61,7 @@ const DEFINITE_ONLY: &[&str] = &[
     "uc",
     "uniname",
     "uninames",
+    "uniprops",
     "wordcase",
     "words",
 ];
@@ -83,6 +86,29 @@ fn cool_type_object(target: &Value) -> Option<String> {
         ) && Interpreter::is_builtin_type(&name)
             && Interpreter::type_matches("Cool", &name));
     is_cool.then(|| name.to_string())
+}
+
+/// The `DEFINITE_ONLY` methods whose only `Str` candidate is `Str:D`: an
+/// allomorph type object fails binding the invocant
+/// (`X::Parameter::InvalidConcreteness`); the other names are `multi`s that
+/// find no candidate (`X::Multi::NoMatch`). Verified against rakudo
+/// v2026.07 on `IntStr` (2026-10-14).
+const STR_D_SINGLE_CANDIDATE: &[&str] = &[
+    "chars", "chomp", "chop", "codes", "comb", "fc", "flip", "lc", "subst", "substr", "tc",
+    "tclc", "trim", "trim-leading", "trim-trailing", "uc", "words",
+];
+
+/// What an allomorph type object (`IntStr`, ...) answers a [`DEFINITE_ONLY`]
+/// method with.
+// Cost: O(k), k = the names of `STR_D_SINGLE_CANDIDATE`.
+fn allomorph_refusal(type_name: &str, method: &str) -> RuntimeError {
+    if STR_D_SINGLE_CANDIDATE.contains(&method) {
+        RuntimeError::parameter_invalid_concreteness("Str", type_name, method, "self", true, true)
+    } else {
+        super::methods_signature_errors::make_multi_no_match_error_detailed(
+            method, type_name, false, "", &[],
+        )
+    }
 }
 
 /// The subject argument of a `Cool` string routine whose sub form is the
@@ -173,6 +199,14 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if !DEFINITE_ONLY.contains(&method) {
             return None;
+        }
+        if let ValueView::Package(name) = target.view()
+            && matches!(
+                name.resolve().as_str(),
+                "IntStr" | "NumStr" | "RatStr" | "ComplexStr"
+            )
+        {
+            return Some(Err(allomorph_refusal(&name.resolve(), method)));
         }
         let type_name = cool_type_object(target)?;
         if type_name == "Str" && STR_UNDEFINED_STRINGIFIES.contains(&method) {

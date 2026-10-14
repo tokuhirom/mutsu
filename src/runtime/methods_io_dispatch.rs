@@ -182,6 +182,17 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // A `Cool` type object boxes no string to encode: Rakudo's `encode`
+        // unboxes the invocant (`Str.encode`, `IntStr.encode`).
+        if let ValueView::Package(name) = target.view()
+            && Self::is_builtin_type(&name.resolve())
+            && Self::type_matches("Cool", &name.resolve())
+        {
+            return Err(RuntimeError::new(format!(
+                "Cannot unbox a type object ({}) to a str.",
+                crate::value::user_facing_type_name(name.resolve().as_str())
+            )));
+        }
         // Positional args: [0] = encoding name, [1] = Unicode normalization form
         // (`C`/`D`/`KC`/`KD` i.e. NFC/NFD/NFKC/NFKD). Rakudo `#?rakudo skip`s the
         // normalization-form parameter ("We do not handle NDF yet"); mutsu
