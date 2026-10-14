@@ -86,6 +86,15 @@ fn cool_only_names() -> &'static FxHashSet<&'static str> {
 /// The builtin method names `Any` declares and `Mu` does not: the `Mu` type
 /// object is no `Any`, so it does not resolve them (`Mu.elems`, `Mu.List`,
 /// `Mu.first` are `X::Method::NotFound` in Rakudo, #12976).
+///
+/// The coercions `Any` declares for the container types (`Any.List`, `Any.Hash`)
+/// are not in the catalog `.^can` reads (`Any.^can('List')` is empty), so they
+/// are listed here.
+const ANY_COERCIONS: &[&str] = &[
+    "Array", "Bag", "BagHash", "Hash", "List", "Map", "Mix", "MixHash", "Seq", "Set", "SetHash",
+    "Slip", "Supply",
+];
+
 fn any_only_names() -> &'static FxHashSet<&'static str> {
     static NAMES: OnceLock<FxHashSet<&'static str>> = OnceLock::new();
     NAMES.get_or_init(|| {
@@ -93,6 +102,7 @@ fn any_only_names() -> &'static FxHashSet<&'static str> {
         let mu: FxHashSet<&'static str> = builtin_type_method_names("Mu").into_iter().collect();
         builtin_type_method_names("Any")
             .into_iter()
+            .chain(ANY_COERCIONS.iter().copied())
             .filter(|name| !mu.contains(name))
             .collect()
     })
