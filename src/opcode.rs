@@ -9735,7 +9735,16 @@ impl CompiledCode {
             | OpCode::IndexAssignExprNested { name_idx: idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
             | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
-            | OpCode::IndexElemAutoviv { name_idx: idx, .. } => Some(*idx),
+            | OpCode::IndexElemAutoviv { name_idx: idx, .. }
+            // Element delete / increment mutate the named container in place
+            // like an element assign: a scalar `$x` holding the container must
+            // be captured too, or a closure run after its frame is gone (a
+            // deferred `.map` the caller sinks) mutates a stale copy.
+            | OpCode::DeleteIndexNamed(idx, _)
+            | OpCode::PostIncrementIndex(idx, ..)
+            | OpCode::PostDecrementIndex(idx, ..)
+            | OpCode::PreIncrementIndex(idx, ..)
+            | OpCode::PreDecrementIndex(idx, ..) => Some(*idx),
             _ => None,
         }
     }
