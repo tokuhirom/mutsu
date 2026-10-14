@@ -93,9 +93,7 @@ pub(super) fn convert_use(
     let from_spelling = match (arg.map(Expr::peel_parens), tags) {
         (Some(Expr::Literal(v)), [tag]) if tag == "from" && !is_pragma_name(module) => v
             .as_str()
-            .filter(|text| {
-                !text.is_empty() && !text.contains(['<', '>', ' ', '\'', '"', '\\'])
-            })
+            .filter(|text| !text.is_empty() && !text.contains(['<', '>', ' ', '\'', '"', '\\']))
             .map(str::to_string),
         _ => None,
     };
