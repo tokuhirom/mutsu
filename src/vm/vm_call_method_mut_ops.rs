@@ -1225,7 +1225,11 @@ impl Interpreter {
         {
             let mut place =
                 crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code)
-                    .with_arg_sources(arg_sources.as_ref().map_or(&[], |sources| sources.as_slice()));
+                    .with_arg_sources(
+                        arg_sources
+                            .as_ref()
+                            .map_or(&[], |sources| sources.as_slice()),
+                    );
             if let Some(result) =
                 crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
             {
@@ -2259,7 +2263,11 @@ impl Interpreter {
                         &target,
                         code,
                     )
-                    .with_arg_sources(arg_sources.as_ref().map_or(&[], |sources| sources.as_slice()));
+                    .with_arg_sources(
+                        arg_sources
+                            .as_ref()
+                            .map_or(&[], |sources| sources.as_slice()),
+                    );
                     if let Some(result) = crate::builtins::method_table::invoke_mut(
                         self, &mut place, method_sym, &args,
                     ) {

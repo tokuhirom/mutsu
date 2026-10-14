@@ -120,7 +120,8 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Vec<crate::symbol::Symbol>> {
         let mut keys = Vec::with_capacity(args.len());
-        self.multi_arg_type_keys_into(args, &mut keys).then_some(keys)
+        self.multi_arg_type_keys_into(args, &mut keys)
+            .then_some(keys)
     }
 
     /// [`Self::multi_arg_type_keys`] into a caller-owned (reusable) buffer;
