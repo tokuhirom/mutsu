@@ -4679,6 +4679,7 @@ t/rakuast/rakuast-module-names.t
 t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-name-part-empty.t
 t/rakuast/rakuast-named-anon-declarations.t
+t/rakuast/rakuast-named-param-outer-signature.t
 t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-named-subscript-adverbs.t
 t/rakuast/rakuast-named-type-arguments.t
@@ -6020,9 +6021,11 @@ t/routines/signature/named-dynamic-param.t
 t/routines/signature/named-dynamic-parameter.t
 t/routines/signature/named-hash-param.t
 t/routines/signature/named-param-alias-type-check.t
+t/routines/signature/named-param-anon-scalar-subsig.t
 t/routines/signature/named-param-container-share.t
 t/routines/signature/named-param-default-reads-earlier-named.t
 t/routines/signature/named-param-no-leak-from-caller.t
+t/routines/signature/named-param-outer-sub-signature-binds.t
 t/routines/signature/named-param-rename-is-copy-readonly-leak.t
 t/routines/signature/named-param-rename-redeclaration.t
 t/routines/signature/named-param-subsignature-dispatch.t
