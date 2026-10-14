@@ -403,6 +403,12 @@ impl Interpreter {
         let cn = class_name.resolve();
         if cn == "Instant" && method.replace('-', "_") == "from_posix" {
             let posix = args.first().cloned().unwrap_or_else(|| Value::int(0));
+            // `Instant.from-posix("abc")` numifies its argument, so a string
+            // that is no number dies with X::Str::Numeric (App::RaCoCo's
+            // index reader relies on that to skip a bad timestamp).
+            if let Err(err) = crate::runtime::utils::check_str_numeric(&posix) {
+                return Some(Err(err));
+            }
             let mut attrs = HashMap::new();
             attrs.insert(
                 "value".to_string(),
