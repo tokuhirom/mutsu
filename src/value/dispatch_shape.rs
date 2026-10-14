@@ -322,7 +322,7 @@ impl DispatchShape {
 
     /// Whether `Any`'s list row `method` reaches this closed shape. None
     /// reaches `sort`, whose handler reads only a list (a closed shape sorts
-    /// through the interpreter), and only a `Pair` reaches `reverse`, `min`
+    /// through the interpreter), and only a `Pair`, `Capture` or `Version` reaches `reverse`, a `Pair` `min`
     /// and `max`, whose handlers read a scalar, a hash, a list and a pair. A `Capture` flattens to itself
     /// (`methods_0arg`'s `Capture` block), and the
     /// quant hashes read as their list of pairs for `unique` first
@@ -350,7 +350,11 @@ impl DispatchShape {
                 matches!(self, DispatchShape::Pair)
             }
             DispatchShape::Pair => true,
-            _ if const_str_eq(method, "reverse") => false,
+            // `Any.reverse` is `self.list.reverse`: a `Capture` reads its
+            // positionals, a `Version` is the one-element list holding itself.
+            _ if const_str_eq(method, "reverse") => {
+                matches!(self, DispatchShape::Capture | DispatchShape::Version)
+            }
             DispatchShape::Capture => !const_str_eq(method, "flat"),
             DispatchShape::Set
             | DispatchShape::SetHash

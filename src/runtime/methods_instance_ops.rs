@@ -3836,6 +3836,21 @@ impl Interpreter {
                         got + 1
                     )));
                 }
+                // `Any`'s `invert` (`self.list.invert`) reaches a `Capture` and a
+                // `Version`, which have no row of their own for it.
+                // TODO: compile to bytecode -- give `Any` a real `invert` row
+                // and let `DispatchShape::reaches` open it.
+                match (method, target.view()) {
+                    ("invert", ValueView::Capture { positional, .. }) if args.is_empty() => {
+                        let items = Value::real_array(positional.to_vec());
+                        return self.call_method_with_values(items, method, args);
+                    }
+                    ("invert", ValueView::Version { .. }) if args.is_empty() => {
+                        let items = Value::real_array(vec![target.clone()]);
+                        return self.call_method_with_values(items, method, args);
+                    }
+                    _ => {}
+                }
                 Err(make_method_not_found_error(method, &type_name, false))
             }
         }

@@ -182,6 +182,9 @@ impl Interpreter {
         if let Some(err) = super::any_cool_method_gate::cool_method_not_found(&target, method) {
             return Err(err);
         }
+        if super::any_cool_method_gate::fmt_has_no_candidate(&target, method) {
+            return Err(make_multi_no_match_error(method));
+        }
         // A buffer is not a `Cool` either (#13313): the by-name text
         // dispatchers would stringify it (`Buf.new(1).contains(1)`).
         if let Some(type_name) =
