@@ -950,6 +950,10 @@ impl Interpreter {
         match self.plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
             Some(lane_key) if self.plain_method_lane_hit(&lane_key) => {
                 self.caches.plain_method_lane_candidate = None;
+                // Hand the key's buffer back: the next call's key reuses it.
+                let mut arg_keys = lane_key.2;
+                arg_keys.clear();
+                self.caches.plain_method_lane_scratch = arg_keys;
                 return self.run_plain_method_lane(
                     code,
                     target_name,

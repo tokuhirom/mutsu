@@ -120,6 +120,17 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Vec<crate::symbol::Symbol>> {
         let mut keys = Vec::with_capacity(args.len());
+        self.multi_arg_type_keys_into(args, &mut keys).then_some(keys)
+    }
+
+    /// [`Self::multi_arg_type_keys`] into a caller-owned (reusable) buffer;
+    /// `false` when some argument has no type key.
+    // Cost: O(a), a = arguments (one type-key intern each).
+    pub(crate) fn multi_arg_type_keys_into(
+        &mut self,
+        args: &[Value],
+        keys: &mut Vec<crate::symbol::Symbol>,
+    ) -> bool {
         for (pos_idx, raw) in args.iter().enumerate() {
             // A `VarRef` (a variable passed as an argument) dispatches on the
             // *source variable's declared type* as well as on the value's own
@@ -250,7 +261,7 @@ impl Interpreter {
                 | ValueView::Capture { .. }
                 // A `VarRef` nested inside a `VarRef` is not a shape the
                 // unwrap above produces; refuse it rather than guess.
-                | ValueView::VarRef { .. } => return None,
+                | ValueView::VarRef { .. } => return false,
                 _ => {
                     let name = crate::runtime::utils::value_type_name(a);
                     // ADR-0019 E1a shadow probe (zero behavior change): see
@@ -281,7 +292,7 @@ impl Interpreter {
                 keys.push(key_syms::undefined_arg());
             }
         }
-        Some(keys)
+        true
     }
 
     /// Whether one candidate parameter's type constraint makes the enclosing
