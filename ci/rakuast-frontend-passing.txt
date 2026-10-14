@@ -5412,6 +5412,7 @@ t/routines/call/return-trailing-comma.t
 t/routines/call/return-type-code-object-call.t
 t/routines/call/return-type-hyphenated-qualified.t
 t/routines/call/return-type-undeclared-invalidtype.t
+t/routines/call/return-value-spec-comp.t
 t/routines/call/return-value-spec-nested-block.t
 t/routines/call/returns-coercion-type.t
 t/routines/call/returns-declaring-scope-type.t
@@ -6040,6 +6041,7 @@ t/routines/signature/nonconst-param-default-full-arity-light.t
 t/routines/signature/not-parametric.t
 t/routines/signature/object-hash-param-binding.t
 t/routines/signature/omitted-named-unpack-param-inner-defaults.t
+t/routines/signature/optional-callable-param-multi-narrowness.t
 t/routines/signature/optional-named-empty-list-comparison.t
 t/routines/signature/optional-param-seed.t
 t/routines/signature/optional-param-where-runs-when-omitted.t
@@ -6453,6 +6455,7 @@ t/types/ecosystem-rational-complex-numeric.t
 t/types/enum-subset/bool-enumeration-collection-methods.t
 t/types/enum-subset/builtin-enum-base-tier.t
 t/types/enum-subset/definite-return-core-term-not-imported-type.t
+t/types/enum-subset/definite-return.t
 t/types/enum-subset/definite-scalar-nil-reassignment.t
 t/types/enum-subset/definite-type-object.t
 t/types/enum-subset/enum-bare-key-sub-scope.t
