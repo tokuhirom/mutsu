@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.43,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -37,11 +37,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
+        "first_failure": "Unknown function: get-attr-obj",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.31,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 13.22,
+        "secs": 12.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,11 +60,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
+        "first_failure": "Unknown function: get-attr-obj",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.34,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,30 +74,99 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.8,
+        "secs": 2.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "correct number of elements",
+        "nok": 2,
+        "ok": 2,
         "plan": 7,
-        "secs": 0.34,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/011-arrays.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.06,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "correct number of elements",
+        "nok": 2,
+        "ok": 2,
+        "plan": 7,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/011-arrays.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Simple",
+        "nok": 2,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/012-hashes.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Simple",
+        "nok": 2,
+        "ok": 0,
+        "plan": 2,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/012-hashes.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,20 +175,342 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
+        "first_failure": "Variable '$.good' of type 'Str:D' must be initialized [at AttrX-Mooish-v1.0.10/t/013-validations.custom.rakutest:87]",
         "nok": 0,
         "ok": 0,
-        "plan": 7,
-        "secs": 0.26,
+        "plan": null,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/011-arrays.rakutest",
+      "path": "t/013-validations.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Variable '$.good' of type 'Str:D' must be initialized [at AttrX-Mooish-v1.0.10/t/013-validations.rakutest:87]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/013-validations.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'add_private_method' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/014-private.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'add_private_method' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/014-private.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Triggers",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/015-triggers.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Triggers",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/015-triggers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "filtered value",
+        "nok": 3,
+        "ok": 0,
+        "plan": 15,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/016-filtering.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "filtered value",
+        "nok": 3,
+        "ok": 0,
+        "plan": 15,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/016-filtering.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. Two terms in a row [at AttrX-Mooish-v1.0.10/t/020-role.custom.rakutest:185]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/020-role.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'setup-attr-helpers' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/020-role.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: get-attr-obj",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/030-inheritance.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: get-attr-obj",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/030-inheritance.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "missing filter method",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/040-errors.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "missing filter method",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/040-errors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "built as expected",
+        "nok": 1,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/050-multi-filter.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
         "secs": 1.17,
         "skip": 0,
         "todo": 0,
@@ -127,9 +518,124 @@
       }
     },
     {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "built as expected",
+        "nok": 1,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/050-multi-filter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
+        "first_failure": "add_method target must be a type object",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/060-composer.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "add_method target must be a type object",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/060-composer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Basics",
+        "nok": 2,
+        "ok": 1,
+        "plan": 3,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/070-typecheck-coerce.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Basics",
+        "nok": 2,
+        "ok": 1,
+        "plan": 3,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/070-typecheck-coerce.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'declares_method' for invocant of type 'Mu'",
         "nok": 0,
         "ok": 0,
         "plan": 2,
@@ -138,30 +644,7 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/012-hashes.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 2,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/012-hashes.rakutest",
+      "path": "t/080-aliasing.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
@@ -175,494 +658,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Variable '$.good' of type 'Str:D' must be initialized [at AttrX-Mooish-v1.0.10/t/013-validations.custom.rakutest:87]",
+        "first_failure": "No such method 'declares_method' for invocant of type 'Mu'",
         "nok": 0,
         "ok": 0,
-        "plan": null,
-        "secs": 0.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/013-validations.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Variable '$.good' of type 'Str:D' must be initialized [at AttrX-Mooish-v1.0.10/t/013-validations.rakutest:87]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/013-validations.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 11,
-        "secs": 0.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/014-private.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 1.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 11,
-        "secs": 0.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/014-private.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 1.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/015-triggers.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/015-triggers.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.14,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 15,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/016-filtering.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 1.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 15,
-        "secs": 0.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/016-filtering.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 1.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at AttrX-Mooish-v1.0.10/t/020-role.custom.rakutest:185]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/020-role.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 5,
-        "secs": 0.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/020-role.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 7,
-        "secs": 0.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/030-inheritance.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 2.71,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 7,
+        "plan": 2,
         "secs": 0.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/030-inheritance.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 2.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "missing filter method",
-        "nok": 2,
-        "ok": 0,
-        "plan": 4,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/040-errors.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "missing filter method",
-        "nok": 2,
-        "ok": 0,
-        "plan": 4,
-        "secs": 0.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/040-errors.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.14,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 0.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/050-multi-filter.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 0.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/050-multi-filter.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 0.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/060-composer.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 0.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/060-composer.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/070-typecheck-coerce.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/070-typecheck-coerce.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 2,
-        "secs": 0.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/080-aliasing.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
-        "nok": 0,
-        "ok": 0,
-        "plan": 2,
-        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -672,7 +672,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.82,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -681,11 +681,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
+        "first_failure": "Unknown function: get-attr-obj",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.3,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -695,7 +695,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 25.19,
+        "secs": 20.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -704,11 +704,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
+        "first_failure": "Unknown function: get-attr-obj",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.29,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -718,7 +718,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 26.23,
+        "secs": 21.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -731,7 +731,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.13,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -741,7 +741,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.34,
+        "secs": 1.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -754,7 +754,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.08,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -764,7 +764,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.35,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -777,7 +777,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.3,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -787,7 +787,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.13,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -796,11 +796,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Dynamic variable $*PACKAGE not found",
+        "first_failure": "No such method 'base-name' for invocant of type 'Attribute'",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.41,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -810,7 +810,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.23,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -831,7 +831,7 @@
     "date": "2026-10-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8e9f3690",
+    "mutsu_commit": "560520c4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -846,7 +846,7 @@
   "totals": {
     "baseline_assertions": 214,
     "baseline_files": 34,
-    "mutsu_assertions": 0,
+    "mutsu_assertions": 6,
     "parity_files": 0,
     "regressed_files": 34
   },

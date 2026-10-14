@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.22,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.87,
+        "secs": 5.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 55,
         "plan": 55,
-        "secs": 0.14,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,53 +48,51 @@
         "nok": 0,
         "ok": 55,
         "plan": 55,
-        "secs": 0.9,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "An exception occurred while evaluating a CHECK",
         "nok": 0,
-        "ok": 11,
+        "ok": 80,
         "plan": 80,
-        "secs": 0.22,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-layout.rakutest",
       "raku": {
         "nok": 0,
         "ok": 80,
         "plan": 80,
-        "secs": 1.23,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "An exception occurred while evaluating a CHECK",
         "nok": 0,
-        "ok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 0.21,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-emojify.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.7,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +110,7 @@
     "date": "2026-10-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8e9f3690",
+    "mutsu_commit": "560520c4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,13 +121,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/EX/TEXT_MISCUTILS/746e88a35bf0cf644f94d1dd5f93f4d107fe0b0b.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 139,
     "baseline_files": 4,
-    "mutsu_assertions": 67,
-    "parity_files": 2,
-    "regressed_files": 2
+    "mutsu_assertions": 139,
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "0.0.13"
 }

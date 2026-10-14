@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.31,
+        "secs": 5.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.32,
+        "secs": 5.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -47,11 +47,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "ignoring entry trait attribute: Bool::True",
+        "first_failure": "Cannot assign to an immutable value",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.59,
+        "ok": 8,
+        "plan": 11,
+        "secs": 1.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -61,7 +61,29 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 17.65,
+        "secs": 19.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/cos-date-string.t",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,67 +92,43 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Date year",
+        "first_failure": "incremented",
         "nok": 7,
-        "ok": 6,
-        "plan": 21,
-        "secs": 0.5,
+        "ok": 28,
+        "plan": 35,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
-      },
-      "path": "t/cos-date-string.t",
-      "raku": {
-        "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 1.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed for an element of %seen; expected List but got Hash ({:A(10), :B(:ind-ref...)",
-        "nok": 0,
-        "ok": 0,
-        "plan": 35,
-        "secs": 0.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
       },
       "path": "t/cos-deref.t",
       "raku": {
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 2.93,
+        "secs": 3.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Impossible coercion from 'Str' into 'PDF::COS::ByteString': no acceptable coercion method found",
         "nok": 0,
-        "ok": 3,
+        "ok": 9,
         "plan": 9,
-        "secs": 0.2,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/cos-text-string.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.11,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -139,11 +137,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$att'; expected Attribute but got TestDict (TestDict)",
+        "first_failure": "Unknown function: enum",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.41,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -153,7 +151,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.6,
+        "secs": 3.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -162,11 +160,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$att'; expected Attribute but got TestArray ([])",
+        "first_failure": "No such method 'tie' for invocant of type 'Int'",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.36,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -176,7 +174,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.7,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -190,7 +188,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.81,
+        "secs": 5.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -199,9 +197,9 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$att'; expected Attribute but got DummyCatalog ({:dict(${:Info(:dict...)",
+        "first_failure": "Cannot modify an immutable Str (D:19970915110347-08'00')",
         "nok": 0,
-        "ok": 1,
+        "ok": 3,
         "plan": 10,
         "secs": 0.6,
         "skip": 0,
@@ -213,7 +211,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.9,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -226,7 +224,7 @@
         "nok": 5,
         "ok": 0,
         "plan": 14,
-        "secs": 1.61,
+        "secs": 2.81,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -236,7 +234,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 3.38,
+        "secs": 3.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -245,11 +243,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such symbol 'PDF::COS::Type'",
+        "first_failure": "X::Undeclared::Symbols: Undeclared name:",
         "nok": 0,
         "ok": 0,
         "plan": 24,
-        "secs": 1.78,
+        "secs": 1.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -259,7 +257,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 5.13,
+        "secs": 5.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -271,7 +269,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.24,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -281,7 +279,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.07,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -295,7 +293,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.55,
+        "secs": 6.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -308,7 +306,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 5,
-        "secs": 1.34,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -318,7 +316,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.25,
+        "secs": 1.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -331,7 +329,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 10,
-        "secs": 1.35,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -341,7 +339,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.81,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -354,7 +352,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 5,
-        "secs": 1.87,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -364,7 +362,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.75,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -377,7 +375,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 1.5,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -387,7 +385,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.34,
+        "secs": 2.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -400,7 +398,7 @@
         "nok": 3,
         "ok": 46,
         "plan": 49,
-        "secs": 2.2,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -410,7 +408,7 @@
         "nok": 0,
         "ok": 49,
         "plan": 49,
-        "secs": 2.07,
+        "secs": 2.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -422,7 +420,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.41,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -432,7 +430,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.47,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -445,7 +443,7 @@
         "nok": 45,
         "ok": 47,
         "plan": 92,
-        "secs": 2.48,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -455,30 +453,30 @@
         "nok": 0,
         "ok": 92,
         "plan": 92,
-        "secs": 2.17,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "$.content",
-        "nok": 1,
-        "ok": 6,
+        "first_failure": "Type check failed in assignment to $cs; expected ColorSpaceArray but got List (())",
+        "nok": 0,
+        "ok": 7,
         "plan": 13,
-        "secs": 0.56,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/indobj-array.t",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.24,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -491,7 +489,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.29,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -501,7 +499,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.01,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -515,7 +513,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.39,
+        "secs": 6.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -528,7 +526,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 13,
-        "secs": 0.24,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -538,7 +536,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.33,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -550,7 +548,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.32,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -560,7 +558,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.33,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -573,7 +571,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 23,
-        "secs": 0.32,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -583,7 +581,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 1.32,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -596,7 +594,7 @@
         "nok": 2,
         "ok": 1,
         "plan": 27,
-        "secs": 1.29,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -606,7 +604,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 1.61,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -619,7 +617,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 13,
-        "secs": 0.23,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -629,7 +627,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.22,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -642,7 +640,7 @@
         "nok": 1,
         "ok": 3,
         "plan": 23,
-        "secs": 2.05,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -652,7 +650,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 1.66,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -666,30 +664,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.11,
+        "secs": 5.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed for an element of %seen; expected List but got PDF::COS::Dict (((my %Hash_139763742...)",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "ast dereference",
+        "nok": 2,
+        "ok": 4,
         "plan": 17,
-        "secs": 1.86,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/io-serialize.t",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 7.18,
+        "secs": 8.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -702,7 +700,7 @@
         "nok": 2,
         "ok": 13,
         "plan": 19,
-        "secs": 0.51,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -712,30 +710,29 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 1.47,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Impossible coercion from 'IO::Path' into 'PDF::IO': no acceptable coercion method found",
         "nok": 0,
-        "ok": 0,
+        "ok": 37,
         "plan": 37,
-        "secs": 0.4,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/io.t",
       "raku": {
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 2.72,
+        "secs": 2.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -749,7 +746,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.29,
+        "secs": 5.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -763,7 +760,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.53,
+        "secs": 6.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -777,7 +774,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.97,
+        "secs": 6.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -791,7 +788,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.07,
+        "secs": 5.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -805,7 +802,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.95,
+        "secs": 6.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -819,7 +816,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.39,
+        "secs": 5.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -833,7 +830,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.91,
+        "secs": 5.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -847,7 +844,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.35,
+        "secs": 5.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -861,7 +858,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.97,
+        "secs": 5.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -875,7 +872,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.04,
+        "secs": 5.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -889,7 +886,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.14,
+        "secs": 6.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -903,7 +900,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.24,
+        "secs": 5.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -915,7 +912,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 2.03,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -925,7 +922,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 4.19,
+        "secs": 5.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -934,11 +931,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "don't know how to ast-coerce: Lock.new",
+        "first_failure": "Type check failed in binding to parameter '$dict'; expected Hash but got Int",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.85,
+        "secs": 1.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -948,30 +945,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.53,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Impossible coercion from 'IO::Path' into 'PDF::IO': no acceptable coercion method found",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.92,
+        "ok": 16,
+        "plan": 16,
+        "secs": 2.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/write-pdf.t",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.64,
+        "secs": 2.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1030,7 +1026,7 @@
     "date": "2026-10-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8e9f3690",
+    "mutsu_commit": "560520c4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -1045,9 +1041,9 @@
   "totals": {
     "baseline_assertions": 561,
     "baseline_files": 31,
-    "mutsu_assertions": 190,
-    "parity_files": 4,
-    "regressed_files": 27
+    "mutsu_assertions": 307,
+    "parity_files": 8,
+    "regressed_files": 23
   },
   "version": "0.6.17"
 }
