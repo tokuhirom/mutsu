@@ -90,9 +90,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 )))
             }
             // A lazy list cannot count itself.
-            _ if crate::builtins::methods_0arg::is_lazy_count_source(target) => Some(Ok(
-                crate::runtime::utils::cannot_lazy_failure("Complex"),
-            )),
+            _ if crate::builtins::methods_0arg::is_lazy_count_source(target) => {
+                Some(Ok(crate::runtime::utils::cannot_lazy_failure("Complex")))
+            }
             // Anything else is `Cool.Complex`'s (`method_table::str_numeric`): a
             // string parses, an aggregate is its element count.
             _ => crate::builtins::method_table::str_numeric::complex_of_cool(target).map(Ok),
