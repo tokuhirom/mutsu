@@ -1762,7 +1762,9 @@ fn closure_body_source(body: &[crate::ast::Stmt]) -> Option<String> {
                 op: crate::ast::AssignOp::Assign,
                 target_is_sigilless: false,
             } if !name.is_empty()
-                && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')) =>
+                && name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')) =>
             {
                 expressions.push(format!("${name} = {}", expression_source(expr)?))
             }
