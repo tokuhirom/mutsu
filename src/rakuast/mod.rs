@@ -434,6 +434,7 @@ pub enum RakuAstClass {
     TraitHandles,
     /// `will PHASE { ... }` on a variable declaration.
     TraitWill,
+    TraitTrusts,
     TraitDoes,
     /// `class A hides B`.
     TraitHides,
@@ -744,6 +745,7 @@ impl RakuAstClass {
             TraitIs => "RakuAST::Trait::Is",
             TraitHandles => "RakuAST::Trait::Handles",
             TraitWill => "RakuAST::Trait::Will",
+            TraitTrusts => "RakuAST::Trait::Trusts",
             TraitDoes => "RakuAST::Trait::Does",
             TraitHides => "RakuAST::Trait::Hides",
             StatementTrusts => "RakuAST::Statement::Trusts",
@@ -1620,6 +1622,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TraitIs,
     RakuAstClass::TraitHandles,
     RakuAstClass::TraitWill,
+    RakuAstClass::TraitTrusts,
     RakuAstClass::TraitDoes,
     RakuAstClass::TraitHides,
     RakuAstClass::StatementTrusts,
@@ -3346,6 +3349,11 @@ fn multi_field_schema(
         ("RakuAST::Var::Package", "new") => (RakuAstClass::VarPackage, &["name", "sigil"][..]),
         ("RakuAST::ParameterTarget::Var", "new") => {
             (RakuAstClass::ParameterTargetVar, &["name"][..])
+        }
+        ("RakuAST::Trait::Will", "new") => (RakuAstClass::TraitWill, &["phase", "block"][..]),
+        ("RakuAST::Trait::Trusts", "new") => (RakuAstClass::TraitTrusts, &["type"][..]),
+        ("RakuAST::Statement::Trusts", "new") => {
+            (RakuAstClass::StatementTrusts, &["type"][..])
         }
         _ => return None,
     })
