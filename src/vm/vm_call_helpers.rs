@@ -11,6 +11,9 @@ pub(super) struct CallArgKinds {
 }
 use crate::symbol::Symbol;
 
+/// A call site's argument-source names, shared between the call op and the callee.
+pub(super) type SharedArgNames = std::sync::Arc<Vec<Option<String>>>;
+
 impl Interpreter {
     /// Convert a named-flavour Pair into the positional flavour; a no-op for
     /// everything else (ADR-0021 I1/I4). The same normalization
@@ -166,8 +169,8 @@ impl Interpreter {
         code: &CompiledCode,
         raw_args: Vec<Value>,
         arg_sources_idx: Option<u32>,
-        decoded_sources: Option<(std::sync::Arc<Vec<Option<String>>>, bool)>,
-    ) -> (Vec<Value>, Option<std::sync::Arc<Vec<Option<String>>>>) {
+        decoded_sources: Option<(SharedArgNames, bool)>,
+    ) -> (Vec<Value>, Option<SharedArgNames>) {
         let Some((names, true)) = decoded_sources else {
             return (raw_args, decoded_sources.map(|(names, _)| names));
         };
@@ -335,7 +338,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         arg_sources_idx: Option<u32>,
-    ) -> Option<(std::sync::Arc<Vec<Option<String>>>, bool)> {
+    ) -> Option<(SharedArgNames, bool)> {
         // §1.4/§1.5: repopulate the companion `name -> slot` map for this call from
         // the `Pair(name, Int(slot))` arg-source entries. Cleared first so a call
         // with no slotted sources leaves it empty (no stale slot from a prior call).
