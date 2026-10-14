@@ -38,6 +38,14 @@ pub(super) fn dispatch(
                     target, "chars",
                 ))));
             }
+            // `Cool.chars` is `self.Str.chars`: an instance may define its own
+            // `Str`, which `method_table::answer_shapeless` reads.
+            if let ValueView::Instance { class_name, .. } = target.view()
+                && crate::builtin_types::catalog::builtin_type_mro_strs(class_name.as_str())
+                    .is_none()
+            {
+                return None;
+            }
             Some(Some(Ok(Value::int(
                 crate::builtins::str_prim::chars(target) as i64,
             ))))
