@@ -320,6 +320,7 @@ pub(crate) mod vm_poll;
 mod vm_positional_index_key;
 mod vm_pseudo_stash_ops;
 mod vm_quanthash_autoviv;
+mod vm_role_capture_propagate;
 pub(crate) mod vm_unit_lexical_meta_lanes;
 pub(crate) use vm_core_type_object_methods::SCHEDULER_USAGE_COLUMNS;
 mod vm_rakudo_internals;
