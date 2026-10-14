@@ -44,7 +44,11 @@ impl Interpreter {
         if name.contains('=') {
             return None;
         }
-        name.as_bytes()
+        // A dynamic scalar (`*V`) is a plain scalar of the frame that declared
+        // it, so a block called with `$*V` binds its topic to that container.
+        let plain = name.strip_prefix('*').unwrap_or(name);
+        plain
+            .as_bytes()
             .first()
             .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
             .then(|| name.clone())

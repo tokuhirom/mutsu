@@ -1000,6 +1000,40 @@ impl Interpreter {
                     rw_bindings.push(("_".to_string(), source.clone()));
                     cell
                 }
+                // A block that only reads `$_` still binds it raw (#11298):
+                // a write made to the caller's variable while the block runs
+                // must be visible through `$_`. When the variable already
+                // lives in a shared cell the topic IS that cell. When it does
+                // not, the only writer that can reach it during the call is
+                // the block itself, by name through its capture; then the
+                // variable is boxed under the source name here, which the
+                // block's by-name write stores through. The write then left
+                // the binding unchanged, so the free-variable writeback skips
+                // it and the topic writeback hands the caller its new value.
+                // A block that touches neither `$_` nor the variable gets
+                // neither, so it publishes nothing back.
+                Some(ref source)
+                    if !first.is_container_ref()
+                        && !topic_arg_is_bare
+                        && !cc.immutable_topic
+                        && (topic_alias_cell.is_some()
+                            || (source.starts_with('*') && cc.has_calls)
+                            || cc
+                                .free_var_writes
+                                .contains(&crate::symbol::Symbol::intern(source))) =>
+                {
+                    match topic_alias_cell.as_ref() {
+                        Some(existing) => existing.clone(),
+                        None => {
+                            let cell = Value::container_ref(crate::gc::Gc::new(
+                                crate::value::ContainerCell::new(first.clone()),
+                            ));
+                            self.env_mut().insert(source.clone(), cell.clone());
+                            rw_bindings.push(("_".to_string(), source.clone()));
+                            cell
+                        }
+                    }
+                }
                 _ => first.clone(),
             };
             self.env_mut().insert_sym(crate::symbol::wk::topic(), topic);
