@@ -1229,8 +1229,10 @@ impl Interpreter {
                 self.stack.push(value);
                 *ip += 1;
             }
-            // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL): every
-            // whole-stash `Pkg::`/`OUTER::`/`MY::`/`DYNAMIC::` term builds a fresh stash map (see
+            // Cost: a named package's `Pkg::` is O(k + t), k = interned names under the
+            // package (the package index), t = registered types, plus each routine member's code
+            // value; `GLOBAL::`/`OUTER::`/`MY::`/`DYNAMIC::` are O(v), v = entries of the whole
+            // env (plus `our_vars` for GLOBAL). Every read builds a fresh stash map (see
             // exec_get_pseudo_stash_op); a one-key read compiles to GetPseudoStashKeyed instead.
             // Rakudo: O(1) -- see #9171.
             OpCode::GetPseudoStash(name_idx) => {

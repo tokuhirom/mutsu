@@ -2933,6 +2933,15 @@ impl Env {
         self.iter_tier().keys()
     }
 
+    /// The value [`Self::iter`] yields for `key`, if it yields one: a probe of
+    /// the same tier, for a caller that visits a few known keys instead of
+    /// iterating all of them.
+    // Cost: O(1) expected (the folded capture view is built once, as `iter`
+    // builds it).
+    pub(crate) fn iter_get_sym(&self, key: Symbol) -> Option<&Value> {
+        self.iter_tier().get(&key)
+    }
+
     pub fn values(&self) -> std::collections::hash_map::Values<'_, Symbol, Value> {
         self.iter_tier().values()
     }
