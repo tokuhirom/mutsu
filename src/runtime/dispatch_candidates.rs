@@ -880,6 +880,15 @@ impl Interpreter {
             if base == cn.as_str() {
                 return 0;
             }
+            // The type object of an `Int`-based enum is one step below `Int`
+            // (`enum E <a b>`: `E.^mro` is `(E) (Int) (Cool) (Any) (Mu)`), so
+            // it out-ranks `Int:U` and the ancestors follow at +1 (#13243).
+            if self.is_int_enum_type_name(cn.as_str()) {
+                let enum_mro = builtin_type_mro("Int");
+                if let Some(i) = enum_mro.iter().position(|&a| a == base) {
+                    return i + 1;
+                }
+            }
             // A parametric type object (`Positional[Dog]`) ranks by its base
             // name: distance 0 to a `Positional` constraint (JSON::Unmarshal's
             // `_unmarshal($json, @x)` receiving an attribute type).

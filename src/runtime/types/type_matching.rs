@@ -961,6 +961,15 @@ impl Interpreter {
                 || matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.as_str() == "Failure")
                 || matches!(value.view(), ValueView::Package(name) if name == "Nil");
         }
+        // The type object of an `Int`-based enum is an `Int` type
+        // (`E ~~ Int`); the candidate ranking puts it one step below `Int`
+        // (#13243).
+        if constraint == "Int"
+            && let ValueView::Package(name) = value.view()
+            && self.is_int_enum_type_name(name.as_str())
+        {
+            return true;
+        }
         if constraint == "UInt" {
             return match value.view() {
                 ValueView::Int(i) => i >= 0,
@@ -978,18 +987,7 @@ impl Interpreter {
                         // `Int` subclass) is not `.DEFINITE`, so it passes.
                         || self.type_matches_value_resolved("Int", value)
                         // The type object of an `Int`-based enum (`enum E <a b>`).
-                        // TODO: make it an `Int` type everywhere (`E ~~ Int`); that
-                        // needs multi ranking to prefer the enum over `Int:U`.
-                        || self
-                            .registry()
-                            .enum_types
-                            .get(name.as_str())
-                            .is_some_and(|variants| {
-                                !variants.is_empty()
-                                    && variants.iter().all(|(_, v)| {
-                                        matches!(v, crate::value::EnumValue::Int(_))
-                                    })
-                            })
+                        || self.is_int_enum_type_name(name.as_str())
                 }
                 ValueView::Enum {
                     value: crate::value::EnumValue::Int(i),
@@ -2233,5 +2231,22 @@ impl Interpreter {
 pub(super) fn record_subset_where_fail(why: &mut Option<Box<RuntimeError>>, e: RuntimeError) {
     if e.is_fail() || e.exception.is_some() {
         *why = Some(Box::new(e));
+    }
+}
+
+impl Interpreter {
+    /// Whether `name` is the type object of an enum whose values are all
+    /// `Int`s (`enum E <a b>`), an `Int` subtype.
+    // Cost: O(v), v = the enum's variants.
+    pub(crate) fn is_int_enum_type_name(&self, name: &str) -> bool {
+        self.registry()
+            .enum_types
+            .get(name)
+            .is_some_and(|variants| {
+                !variants.is_empty()
+                    && variants
+                        .iter()
+                        .all(|(_, v)| matches!(v, crate::value::EnumValue::Int(_)))
+            })
     }
 }
