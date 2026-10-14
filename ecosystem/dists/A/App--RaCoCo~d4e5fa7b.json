@@ -23,7 +23,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.12,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.39,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.51,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,30 +55,30 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 24.52,
+        "secs": 16.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "01-run-proc-with-vars-and-out",
-        "nok": 1,
-        "ok": 1,
+        "first_failure": "The spawned command 'not-exists' exited unsuccessfully (exit code: 127, signal: 0)",
+        "nok": 0,
+        "ok": 2,
         "plan": 6,
-        "secs": 1.34,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/02-ext-proc.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.91,
+        "secs": 2.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.46,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -100,7 +100,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.71,
+        "secs": 1.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.0,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -122,7 +122,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.73,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.37,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -144,7 +144,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.3,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,14 +154,146 @@
       "cmp": "no_baseline",
       "path": "t/06-precompiler.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-khpc4i4r/dist/.racoco' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-mbs6u61b/dist/.racoco' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.9,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-coverable-outliner.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/08-coverable-index.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/09-coverable-supplier.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-coverable-collector.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/11-report-data-part.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 3.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-report-data.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 3.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       }
     },
     {
@@ -175,149 +307,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/07-coverable-outliner.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "01-retrieve-from-index",
-        "nok": 2,
-        "ok": 1,
-        "plan": 3,
-        "secs": 0.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/08-coverable-index.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed for return value; expected Str but got Any (Any)",
-        "nok": 0,
-        "ok": 0,
-        "plan": 7,
-        "secs": 0.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/09-coverable-supplier.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 1.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/10-coverable-collector.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 2.73,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "08-plus-construct",
-        "nok": 1,
-        "ok": 10,
-        "plan": 11,
-        "secs": 0.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/11-report-data-part.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 6.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "06-write-to-file",
-        "nok": 3,
-        "ok": 6,
-        "plan": 9,
-        "secs": 0.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/12-report-data.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 5.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-khpc4i4r/dist/dist/t-resources/exam/resources/report-file.html: No such file or directory",
-        "nok": 0,
-        "ok": 0,
-        "plan": 2,
-        "secs": 0.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
       "path": "t/13-reporter-html.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 6.95,
+        "secs": 4.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -329,7 +324,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.39,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -339,7 +334,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 5.07,
+        "secs": 3.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -352,7 +347,7 @@
         "nok": 1,
         "ok": 2,
         "plan": 3,
-        "secs": 0.66,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -362,7 +357,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.75,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -374,7 +369,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.17,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -384,7 +379,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.16,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -396,7 +391,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.54,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -406,30 +401,29 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 6.41,
+        "secs": 4.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'TOP' for invocant of type 'INI'",
         "nok": 0,
-        "ok": 0,
+        "ok": 44,
         "plan": 44,
-        "secs": 0.2,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/18-config-file.rakutest",
       "raku": {
         "nok": 0,
         "ok": 44,
         "plan": 44,
-        "secs": 2.54,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -438,11 +432,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'TOP' for invocant of type 'INI'",
+        "first_failure": "Raku bin dir path ｢/home/runner/work/mutsu/mutsu/target/release｣ does not exists.",
         "nok": 0,
-        "ok": 6,
+        "ok": 19,
         "plan": 21,
-        "secs": 0.52,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -452,30 +446,29 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 6.5,
+        "secs": 5.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'TOP' for invocant of type 'INI'",
         "nok": 0,
-        "ok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.53,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/20-cli-main.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.44,
+        "secs": 1.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -513,10 +506,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-13",
+    "date": "2026-10-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "560520c4",
+    "mutsu_commit": "8bf3a7cf",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -531,9 +524,9 @@
   "totals": {
     "baseline_assertions": 163,
     "baseline_files": 20,
-    "mutsu_assertions": 79,
-    "parity_files": 10,
-    "regressed_files": 10
+    "mutsu_assertions": 156,
+    "parity_files": 17,
+    "regressed_files": 3
   },
   "version": "2.0.1"
 }
