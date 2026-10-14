@@ -1213,7 +1213,8 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         None => None,
     };
     let name_expr = match node.fields.iter().any(|f| f.name == Some("name")) {
-        true => super::routine_lower::declarator_name(node)?.1,
+        true => super::symbolic_deref::lower_declarator_name(named_child(node, "name")?)?
+            .map(|(_, expr)| expr),
         false => None,
     };
     Ok(head.finish(Stmt::ClassDecl {
