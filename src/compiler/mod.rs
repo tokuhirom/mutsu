@@ -1787,6 +1787,10 @@ pub(crate) struct Compiler {
     /// by name (a single-parameter loop has no slot); a nested `my` of the same
     /// name shadows them, see [`Self::declare_local`].
     by_name_for_params: Vec<String>,
+    /// Every name this chunk has bound as a by-name `for` parameter. Such a
+    /// binding writes through a captured cell of the same name, so an
+    /// enclosing lexical it shadows is not force-captured (#13377).
+    by_name_param_names: std::collections::HashSet<String>,
     /// Free variables (reads and writes) of each named sub declared inside a
     /// ROUTINE body that is lexically visible here, keyed by the sub's name.
     /// Such a sub resolves its free variables against the env live at call
@@ -2087,6 +2091,7 @@ impl Compiler {
             enclosing_local_names: std::collections::HashSet::new(),
             for_param_names: Vec::new(),
             by_name_for_params: Vec::new(),
+            by_name_param_names: std::collections::HashSet::new(),
             lexical_sub_free_vars: Default::default(),
             lexical_sub_written_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
@@ -3116,6 +3121,7 @@ impl Compiler {
             let slot = self.alloc_local(name);
             self.code.emit(OpCode::SetLocal(slot));
         } else {
+            self.note_shadowed_outer_capture(name, true);
             let idx = self
                 .code
                 .add_constant(Value::str(self.qualify_variable_name(name)));
@@ -3138,6 +3144,19 @@ impl Compiler {
     /// Retain the enclosing scalar binding when a sigilless parameter reuses
     /// its canonical name. The two source namespaces are distinct even though
     /// both runtime env entries use the bare scalar key.
+    /// An enclosing frame's lexical reached by name where this chunk has a
+    /// same-named local only in a nested block (`my $b = 99; sub f { say $b;
+    /// { my $b = 3 }; $b = 1 }`): the local hides the name from
+    /// `compute_free_vars`, so the capture is forced (#13377). A by-name
+    /// `for` parameter of the name would write through the captured cell, so
+    /// it is left alone.
+    // Cost: O(|name|).
+    pub(super) fn note_shadowed_outer_capture(&mut self, name: &str, writes: bool) {
+        if self.enclosing_local_names.contains(name) && !self.by_name_param_names.contains(name) {
+            self.note_forced_outer_scalar_capture(name, writes);
+        }
+    }
+
     pub(super) fn note_forced_outer_scalar_capture(&mut self, name: &str, writes: bool) {
         let sym = crate::symbol::Symbol::intern(name);
         if !self.code.forced_free_var_syms.contains(&sym) {
@@ -3177,6 +3196,7 @@ impl Compiler {
             let slot = self.alloc_local(name);
             self.code.emit(OpCode::SetLocal(slot));
         } else {
+            self.note_shadowed_outer_capture(name, true);
             let idx = self
                 .code
                 .add_constant(Value::str(self.qualify_variable_name(name)));
