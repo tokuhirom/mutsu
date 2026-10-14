@@ -5033,15 +5033,19 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             return Err(unsupported(postfix));
                         }
                         if list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty()) {
-                            return super::subscript_adverb::lower(
+                            // The parser keeps the zen slice itself when
+                            // `:exists` directly follows the empty subscript.
+                            let subscript = if super::subscript_adverb::leads_with_exists(postfix) {
+                                Expr::ZenSlice(Box::new(operand))
+                            } else {
                                 Expr::Index {
                                     target: Box::new(operand),
                                     index: Box::new(Expr::Literal(Value::WHATEVER)),
                                     is_positional,
                                     spelling: Default::default(),
-                                },
-                                postfix,
-                            );
+                                }
+                            };
+                            return super::subscript_adverb::lower(subscript, postfix);
                         }
                         return Ok(Expr::ZenSlice(Box::new(operand)));
                     }
