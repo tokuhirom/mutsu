@@ -3192,6 +3192,18 @@ impl Interpreter {
                 // or the core's own `int*`/`num*`/`str` (`P6int`/`P6num`/`P6str`).
                 if let ValueView::Package(name) = target.view() {
                     let name = name.resolve();
+                    // A definite (`Foo:D`, `Foo:U`) or coercion (`Int(Str)`)
+                    // type object is made by `DefiniteHOW`/`CoercionHOW`, which
+                    // cannot be instantiated: `Uninstantiable`, whatever the base
+                    // type's REPR. NativeCall's `validnctype` accepts a
+                    // `--> ::?CLASS:D` return by it. (`Foo:_` is `Foo` itself.)
+                    if matches!(
+                        crate::runtime::types::strip_type_smiley(&name).1,
+                        Some(":D" | ":U")
+                    ) || crate::runtime::types::is_coercion_constraint(&name)
+                    {
+                        return Ok(Value::str_from("Uninstantiable"));
+                    }
                     if let Some(repr) = self.native_decl(&name).and_then(|d| d.repr) {
                         return Ok(Value::str(repr));
                     }

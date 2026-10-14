@@ -310,7 +310,15 @@ impl Interpreter {
         let ValueView::Sub(data) = code.view() else {
             return None;
         };
-        (crate::qualified::qualified(data.package, bare) == name).then(|| sub.clone())
+        let declared = crate::qualified::qualified(data.package, bare);
+        // A call through a package's exported short name (`Inner::f()` for
+        // `module Inner is export` inside `unit module Outer`) reaches the same
+        // routine as its full spelling.
+        (declared == name
+            || self
+                .resolve_package_alias_prefix(name.as_str())
+                .is_some_and(|full| full == declared.as_str()))
+        .then(|| sub.clone())
     }
 
     /// Whether the routine wrapped under the bare name `name` is the one a
