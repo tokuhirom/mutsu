@@ -124,6 +124,9 @@ impl Interpreter {
         }
         // The `Cool`-subtype sibling (#9772): `Str.comb` / `Int.uc` on the type
         // object refuse it instead of answering out of its gist.
+        if let Some(result) = self.cool_type_object_default_fmt(target, method_sym.as_str(), args) {
+            return Some(result);
+        }
         if let Some(result) = self.cool_type_object_string_method(target, method_sym.as_str()) {
             return Some(result);
         }

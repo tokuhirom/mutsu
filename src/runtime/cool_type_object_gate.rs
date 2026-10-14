@@ -142,6 +142,27 @@ impl Interpreter {
         self.cool_type_object_string_method(&subject, name)
     }
 
+    /// `Cool.fmt` with the default format: `sprintf('%s', self)` of a `Cool` type
+    /// object, which stringifies to `""` with the uninitialized-value warning
+    /// (`Str.fmt` and `Int.fmt` are `""`). A call with a format already
+    /// reaches the method table, which formats the type object the same way.
+    // Cost: O(1), a name test and the type-object probe.
+    pub(crate) fn cool_type_object_default_fmt(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "fmt" || !args.is_empty() {
+            return None;
+        }
+        let type_name = cool_type_object(target)?;
+        Some(
+            self.warn_type_object_string_context(&type_name, false)
+                .map(|_| Value::str(String::new())),
+        )
+    }
+
     /// Answer a `Cool` string method called on a builtin `Cool` type object,
     /// or `None` when the call is not gated (see the module docs).
     // Cost: O(|method|), a scan of two short constant tables.
