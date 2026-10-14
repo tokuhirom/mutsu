@@ -2055,6 +2055,16 @@ impl Interpreter {
                     ValueView::Scalar(inner) => inner,
                     _ => &target,
                 };
+                // The element's own container, as the `Hash.AT-KEY` row
+                // answers (rakudo's `Hash.AT-KEY` is `is raw`).
+                if let Some(slot) = crate::builtins::method_table::subscript::hash_element_container(
+                    inner_target,
+                    &args[0],
+                ) {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "at-key");
+                    self.stack.push(slot);
+                    return Ok(());
+                }
                 if let ValueView::Hash(map) = inner_target.view() {
                     // An object hash stores `.WHICH` keys.
                     let key = if map.key_type.is_some() {
