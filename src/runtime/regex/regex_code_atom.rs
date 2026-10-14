@@ -236,12 +236,25 @@ impl Interpreter {
             let mut scratch_stmts: Vec<Stmt> = Vec::new();
             for stmt in stmts.iter() {
                 let Stmt::VarDecl {
-                    name, expr, is_our, ..
+                    name,
+                    expr,
+                    is_our,
+                    custom_traits,
+                    ..
                 } = stmt
                 else {
                     scratch_stmts.push(stmt.clone());
                     continue;
                 };
+                // A bare `:my $x;` re-run by a later iteration of a quantified
+                // group is declared once per rule invocation: it keeps the
+                // value it already holds (#13255). An initializer re-runs.
+                if !*is_our
+                    && current_caps.regex_vars().contains_key(name)
+                    && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                {
+                    continue;
+                }
                 if name.trim_start_matches(['@', '%']).starts_with('*') || name == "_" {
                     scratch_stmts.push(stmt.clone());
                     continue;
