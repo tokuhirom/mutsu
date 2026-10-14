@@ -3,16 +3,14 @@ use Test;
 
 # Two independent defects in how multi dispatch ranks a NATIVE candidate.
 #
-# 1. A literal had no source variable, so `unwrap_varref_for_dispatch` found no
-#    `var_type` and the boxed candidate ranked at distance 0:
+# 1. A literal is a boxed value (rakudo 2026.09; 2026.07 treated it as native,
+#    which #7778 mirrored and #13065 reverted):
 #
 #        multi sub d(int $x) { "native" }
 #        multi sub d(Int $x) { "boxed" }
-#        d(5);     # raku: native   mutsu: boxed
+#        d(5);     # raku: boxed
 #
-#    The discriminator is PROVENANCE, not the value: raku answers `boxed` for
-#    `d("7".Int)`, an in-range boxed Int produced at runtime, and for
-#    `d(2**70)`, which does not fit the native width.
+#    The discriminator is PROVENANCE: a variable declared `int` is native.
 #
 # 2. Even WITH a source variable the comparison was on the spelling, so only an
 #    identically-named native constraint beat `Int`. raku ranks every native
@@ -20,16 +18,17 @@ use Test;
 #    `int64` over `Int` alike. Signedness is a family boundary (a `my int $n`
 #    against `uint`/`Int` answers `Int`), and so is int-vs-num.
 #
-# Every expectation below was measured against rakudo 2026.07.
+# Every expectation below was measured against rakudo 2026.09, where a LITERAL
+# argument is a boxed value (#13065): it ranks the boxed candidate first.
 
-plan 23;
+plan 21;
 
 # --- 1. literal provenance ---------------------------------------------
 {
     multi sub d(int $x) { "native" }
     multi sub d(Int $x) { "boxed" }
-    is d(5), 'native', 'an Int literal picks the native candidate';
-    is d(-3), 'native', 'a negated Int literal too (it parses as Unary/Literal)';
+    is d(5), 'boxed', 'an Int literal is a boxed Int: it picks the Int candidate';
+    is d(-3), 'boxed', 'a negated Int literal too (it parses as Unary/Literal)';
     is d("7".Int), 'boxed', 'a runtime-produced in-range Int still picks the boxed one';
     is d(2**70), 'boxed', 'and so does one too wide for the native type';
     my int $n = 5;
@@ -42,26 +41,26 @@ plan 23;
 {
     multi sub e(Int $x) { "boxed" }
     multi sub e(int $x) { "native" }
-    is e(5), 'native', 'the same holds with the candidates declared in the other order';
+    is e(5), 'boxed', 'the same holds with the candidates declared in the other order';
 }
 
 # The other two native families.
 {
     multi sub h(num $x) { "nativenum" }
     multi sub h(Num $x) { "boxednum" }
-    is h(1e0), 'nativenum', 'a Num literal picks the native num candidate';
+    is h(1e0), 'boxednum', 'a Num literal picks the boxed Num candidate';
 }
 {
     multi sub i(str $x) { "nativestr" }
     multi sub i(Str $x) { "boxedstr" }
-    is i("a"), 'nativestr', 'a Str literal picks the native str candidate';
+    is i("a"), 'boxedstr', 'a Str literal picks the boxed Str candidate';
 }
 
 # --- 2. the native FAMILY rule -----------------------------------------
 {
     multi sub j(int64 $x) { "i64" }
     multi sub j(Int $x)   { "boxed" }
-    is j(5), 'i64', 'an Int literal reaches a differently-spelled signed candidate';
+    is j(5), 'boxed', 'an Int literal prefers Int over a differently-spelled signed candidate';
     my int $n = 5;
     is j($n), 'i64', 'and so does a `my int` variable';
 }
@@ -70,7 +69,6 @@ plan 23;
     multi sub a1(Int $x)  { "boxed" }
     my int $v = 5;
     is a1($v), 'i8', 'a `my int` variable reaches a NARROWER signed candidate';
-    is a1(5), 'i8', 'and so does a literal';
 }
 {
     multi sub a2(int32 $x) { "i32" }
@@ -83,7 +81,6 @@ plan 23;
     multi sub b1(Num $x)   { "boxed" }
     my num $v = 1e0;
     is b1($v), 'n32', 'the num family behaves the same way';
-    is b1(1e0), 'n32', 'for a literal too';
 }
 {
     multi sub c1(uint8 $x) { "u8" }
@@ -121,9 +118,10 @@ plan 23;
     is m4($v), 'boxed', 'a `my int` variable does not reach a num candidate';
 }
 
-# A native candidate still beats a plain `Any`, as it always did.
+# A native candidate still beats a plain `Any` for a native variable.
 {
     multi sub k1(int $x) { "native" }
     multi sub k1(Any $x) { "any" }
-    is k1(5), 'native', 'a native candidate still beats Any for a literal';
+    my int $n = 5;
+    is k1($n), 'native', 'a native candidate still beats Any for a native variable';
 }

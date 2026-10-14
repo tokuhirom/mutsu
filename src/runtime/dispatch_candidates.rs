@@ -656,7 +656,6 @@ impl Interpreter {
     ) -> (usize, RankProfile) {
         let owner = WalkOwner {
             package: def.package,
-            literal_mask: self.literal_native_args,
         };
         self.params_type_distance_profile(args, &Self::dispatch_visible_params(def), owner)
     }

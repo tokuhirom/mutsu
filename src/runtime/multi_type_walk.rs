@@ -20,11 +20,6 @@ pub(crate) struct WalkOwner {
     /// The package a bare user type name in the signature is resolved from:
     /// the package that declared the candidate.
     pub(crate) package: Symbol,
-    /// The call site's literal-argument bitmask (see
-    /// `Interpreter::literal_native_args`). Only a sub call publishes one; a
-    /// method call passes 0, since the field then belongs to an enclosing
-    /// sub call.
-    pub(crate) literal_mask: u32,
 }
 
 impl Interpreter {
@@ -182,7 +177,7 @@ impl Interpreter {
             let idx = *pos_idx;
             let value = args.get(idx)?;
             *pos_idx += 1;
-            Some(self.unwrap_arg_for_dispatch(value, idx, owner.literal_mask))
+            Some(self.unwrap_arg_for_dispatch(value))
         };
         for pd in params.iter() {
             // A named parameter does not contribute to narrowness (see
@@ -443,34 +438,16 @@ impl Interpreter {
     /// container argument (a hash element, a Pair's value) ranks by its
     /// contents, as it type-checks.
     ///
-    /// An argument at a position `literal_mask` marks as WRITTEN as a literal
-    /// is given the native type a same-shaped variable would have carried, so
-    /// `multi d(int)` / `multi d(Int)` called as `d(5)` picks `int` as rakudo
-    /// does. Provenance, not the value, is the discriminator, and rakudo
-    /// agrees: `d("7".Int)` produces an in-range boxed `Int` at runtime and
-    /// correctly picks `Int`. A bigint literal yields no native type for the
-    /// same reason rakudo answers `Int` for `d(2**70)`: it does not fit the
-    /// native width.
+    /// A literal argument carries no native type: it is a boxed `Int` / `Num`
+    /// / `Str`, so `multi d(int)` / `multi d(Int)` called as `d(5)` ranks the
+    /// boxed candidate first, as rakudo 2026.09 does (#13065). Only a source
+    /// variable declared `int` / `num` / `str` ranks as native.
     // Cost: O(1) plus one variable-type lookup for a varref.
-    fn unwrap_arg_for_dispatch(
-        &self,
-        value: &Value,
-        pos_idx: usize,
-        literal_mask: u32,
-    ) -> (Value, Option<String>) {
+    fn unwrap_arg_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
         let (mut arg, var_type) = self.unwrap_varref_for_dispatch(value);
         if arg.is_container_ref() {
             arg = arg.deref_container();
         }
-        if var_type.is_some() || pos_idx >= 32 || literal_mask & (1 << pos_idx) == 0 {
-            return (arg, var_type);
-        }
-        let synthetic = match arg.view() {
-            ValueView::Int(_) => Some("int"),
-            ValueView::Num(_) => Some("num"),
-            ValueView::Str(_) => Some("str"),
-            _ => None,
-        };
-        (arg, synthetic.map(str::to_string))
+        (arg, var_type)
     }
 }
