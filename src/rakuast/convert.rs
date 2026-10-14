@@ -670,6 +670,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     return Err(unsupported("multi-statement if/unless modifier body"));
                 };
                 if !else_branch.is_empty() {
+                    // `proceed |c` / `succeed |c` is parsed into a guarded
+                    // control transfer (`slipped_control_stmt`); rakudo has the
+                    // plain call over the slipped argument.
+                    if let Some(call) = slipped_control_call(cond, then_branch, else_branch)? {
+                        return Ok(Some(statement_expression(call)));
+                    }
                     return Err(unsupported("if/unless modifier with an else branch"));
                 }
                 let mut statement = convert_stmt(modified)?
@@ -6648,6 +6654,37 @@ fn call_name(
 /// WithoutParentheses form. Unlike [`listop_call`], the `args` field is omitted
 /// entirely when there are no arguments (matching raku's gist for a bare
 /// `return`/`last`/`next`).
+/// The call a `proceed |c` / `succeed |c` guard stands for, or `None` when the
+/// `if` is not that parser expansion.
+// Cost: O(|slip|).
+fn slipped_control_call(
+    cond: &Expr,
+    then_branch: &[Stmt],
+    else_branch: &[Stmt],
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let name = match else_branch {
+        [Stmt::Proceed] => "proceed",
+        [Stmt::Succeed] => "succeed",
+        _ => return Ok(None),
+    };
+    let Expr::MethodCall {
+        target, name: m, ..
+    } = cond
+    else {
+        return Ok(None);
+    };
+    let (Expr::ArrayLiteral(items), "elems") = (&**target, m.as_str()) else {
+        return Ok(None);
+    };
+    let [slip @ Expr::Unary { .. }] = items.as_slice() else {
+        return Ok(None);
+    };
+    if !matches!(then_branch, [Stmt::Die(_)]) {
+        return Ok(None);
+    }
+    control_call(name, std::slice::from_ref(slip)).map(Some)
+}
+
 fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let name_node = RakuAstNode {
         class: RakuAstClass::Name,

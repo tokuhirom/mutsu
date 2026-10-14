@@ -1442,6 +1442,7 @@ t/control/label-first-class.t
 t/control/labeled-c-style-loop.t
 t/control/labeled-loop.t
 t/control/labeled-repeat-loop-control.t
+t/control/last-next-slipped-args.t
 t/control/leave-in-if-branch.t
 t/control/leave-keep-undo-in-map-block.t
 t/control/leave-phaser-if-given-fires.t
