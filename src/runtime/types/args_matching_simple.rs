@@ -30,15 +30,42 @@ impl Interpreter {
     /// earlier parameters bound. A call qualifies when every argument is
     /// positional and there is one per parameter.
     // Cost: O(p) type checks plus the predicates, p = parameters.
-    pub(crate) fn args_match_simple_positional(
+    pub(super) fn args_match_simple_positional(
         &mut self,
         args: &[Value],
         param_defs: &[ParamDef],
         multi_dispatch: bool,
         candidate_package: Option<Symbol>,
     ) -> Option<bool> {
+        self.args_match_simple_positional_with(
+            args,
+            param_defs,
+            multi_dispatch,
+            candidate_package,
+            false,
+        )
+    }
+
+    /// [`Self::args_match_simple_positional`], optionally also taking the
+    /// `__type_only__` placeholder a nameless typed parameter (`multi m(Int)`)
+    /// carries. Only a caller that has checked the placeholder's constraint is
+    /// a core class may allow it: `multi f(LOG;; $x)` / `multi f(G)` put an
+    /// enum value or a constant there, which is a value constraint the plain
+    /// type check would get wrong.
+    // Cost: O(p) type checks plus the predicates, p = parameters.
+    pub(crate) fn args_match_simple_positional_with(
+        &mut self,
+        args: &[Value],
+        param_defs: &[ParamDef],
+        multi_dispatch: bool,
+        candidate_package: Option<Symbol>,
+        allow_type_only: bool,
+    ) -> Option<bool> {
         if args.len() != param_defs.len()
-            || !param_defs.iter().all(Self::is_simple_positional_param)
+            || !param_defs.iter().all(|pd| {
+                Self::is_simple_positional_param(pd)
+                    || (allow_type_only && pd.name == "__type_only__" && Self::is_simple_positional_param_named(pd))
+            })
             || args
                 .iter()
                 .any(|arg| arg.unwrap_varref().is_string_pair_value())
@@ -165,15 +192,20 @@ impl Interpreter {
         if !plain {
             return None;
         }
-        self.args_match_simple_positional(args, params, false, None)
+        self.args_match_simple_positional_with(args, params, false, None, true)
     }
 
     pub(crate) fn is_simple_positional_param(pd: &ParamDef) -> bool {
+        !pd.name.starts_with("__") && Self::is_simple_positional_param_named(pd)
+    }
+
+    /// [`Self::is_simple_positional_param`] without the check on the name's
+    /// `__` prefix.
+    fn is_simple_positional_param_named(pd: &ParamDef) -> bool {
         // A scalar parameter's name carries no sigil (`$x` is `x`); `@`/`%`/`&`
         // parameters and the synthetic `_capture` / `__type_only__` names do.
         !pd.name.is_empty()
             && !pd.name.starts_with(['@', '%', '&'])
-            && (!pd.name.starts_with("__") || pd.name == "__type_only__")
             && pd.name != "_capture"
             && !pd.named
             && !pd.slurpy
