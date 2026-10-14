@@ -488,6 +488,12 @@ impl Interpreter {
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         'react_loop: loop {
+            // `exit` inside a `whenever` body only latches the halt flag (the
+            // VM unwinds the body); the drive loop has to stop on it too, or
+            // it would park on the waker for events that no longer matter.
+            if self.is_halted() {
+                break 'react_loop;
+            }
             // A `whenever` nested inside another `whenever`'s body only
             // registers when that body runs, which is inside this loop. Adopt
             // whatever the last round registered, so the react keeps running
