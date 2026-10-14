@@ -1772,7 +1772,8 @@ impl Interpreter {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::Str(name) => name.to_string(),
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => isa_arg.to_string_value(),
+                    // `isa(Mu \type)`: any other value stands for its own type.
+                    _ => crate::value::types::what_type_name(&isa_arg),
                 };
                 // isa only matches classes, not roles. If the target is a role
                 // that has NOT been punned to a class, return False (use .does
@@ -3127,7 +3128,8 @@ impl Interpreter {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::Str(name) => name.to_string(),
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => isa_arg.to_string_value(),
+                    // `isa(Mu \type)`: any other value stands for its own type.
+                    _ => crate::value::types::what_type_name(&isa_arg),
                 };
                 if pkg_name == target_name {
                     return Ok(Value::TRUE);
