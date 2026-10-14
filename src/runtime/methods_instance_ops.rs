@@ -3818,6 +3818,22 @@ impl Interpreter {
                         name.resolve()
                     )));
                 }
+                // A built-in method the receiver has, called with more
+                // positionals than any candidate takes, fails to bind.
+                if let Some(receiver) = crate::builtins::method_table::Receiver::of(&target)
+                    && let Some(max) = crate::builtins::method_table::max_row_arity(
+                        receiver,
+                        Symbol::intern(method),
+                    )
+                    && args.len() > max
+                {
+                    let expected = max + 1;
+                    return Err(RuntimeError::new(format!(
+                        "Too many positionals passed; expected {expected} argument{} but got {}",
+                        if expected == 1 { "" } else { "s" },
+                        args.len() + 1
+                    )));
+                }
                 Err(make_method_not_found_error(method, &type_name, false))
             }
         }
