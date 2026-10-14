@@ -55,6 +55,12 @@ environment, `AGENTS.md` and the skills, so the prompt only needs the lane-speci
    starting another, post a short status note on the issue and stop; the child never starts its own
    successor (`mutsu-ticket-flow`, "Stopping mid-campaign").
 5. Replies to the user in Japanese; repository artifacts in English.
+6. **Builds are slow here and that is normal; never give up on one.** A remote container has ~4
+   cores and an empty `target/`: the cold debug build takes 5-10 minutes and `scripts/dev gate`
+   far longer (`docs/agent-environments.md`). The session-start hook already started a warm build
+   (`scripts/dev status`), so start with `scripts/dev wait <id>` (`run_in_background: true`) and
+   end the turn until it finishes. Do not abandon the ticket, skip the gate, kill the build or
+   conclude the environment is broken because five minutes have passed.
 
 Why several tickets per session and not one: a fresh container has an empty `target/`, so every
 new session pays a full build plus the `AGENTS.md`/skill read-in, and a lane's tickets touch
