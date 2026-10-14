@@ -3501,6 +3501,30 @@ impl Interpreter {
             }
         }
 
+        // `Iterable`'s `hyper`/`race`/`lazy` read a user `Iterable` through its
+        // own `iterator` method (#12929).
+        if matches!(method, "hyper" | "race" | "lazy")
+            && args.is_empty()
+            && let ValueView::Instance { class_name, .. } = target.view()
+            && self.class_does_role(&class_name.resolve(), "Iterable")
+            && self.has_user_method(&class_name.resolve(), "iterator")
+        {
+            let iterator = self.call_method_with_values(target.clone(), "iterator", Vec::new())?;
+            let mut items = Vec::new();
+            loop {
+                let item = self.call_method_with_values(iterator.clone(), "pull-one", Vec::new())?;
+                if item.is_iteration_end() {
+                    break;
+                }
+                items.push(item);
+            }
+            let list = Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            );
+            return self.call_method_with_values(list, method, Vec::new());
+        }
+
         // Complex -> Real type conversion (`$*TOLERANCE` decides whether the
         // imaginary part is negligible)
         if matches!(method, "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Real")
