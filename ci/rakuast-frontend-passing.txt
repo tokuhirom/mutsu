@@ -4570,6 +4570,7 @@ t/rakuast/rakuast-eval-andthen.t
 t/rakuast/rakuast-eval-anonsub.t
 t/rakuast/rakuast-eval-array-lit.t
 t/rakuast/rakuast-eval-assign-expr.t
+t/rakuast/rakuast-eval-bare-done.t
 t/rakuast/rakuast-eval-bare-for.t
 t/rakuast/rakuast-eval-block-arg.t
 t/rakuast/rakuast-eval-bool.t
@@ -6724,6 +6725,7 @@ t/types/string/unicode-operators.t
 t/types/string/unicode-ops-hyper.t
 t/types/string/unicode-quote-listop-and-wordlist.t
 t/types/string/unicode-type-object.t
+t/types/string/unicode-yada-ellipsis.t
 t/types/string/uniname-derived-ranges.t
 t/types/string/uniname-out-of-range.t
 t/types/string/uniname-uniparse-name-table.t
