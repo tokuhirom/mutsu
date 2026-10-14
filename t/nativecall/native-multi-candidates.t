@@ -29,8 +29,8 @@ is native-or-boxed($boxed), 'boxed',
     'a boxed lexical selects the boxed candidate';
 is native-or-boxed($native), 'native',
     'a native lexical selects the native candidate';
-is native-or-boxed(42), 'native',
-    'a native-shaped literal selects the native candidate';
+is native-or-boxed(42), 'boxed',
+    'a literal is boxed and selects the boxed candidate';
 
 my Int $boxed-again = 3;
 throws-like { native-only-int($boxed-again) }, X::Multi::NoMatch,
