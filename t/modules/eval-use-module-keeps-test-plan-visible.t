@@ -6,8 +6,9 @@ use lib $*PROGRAM.parent(2).add('fixtures/eval-use-module/lib');
 # alone, so the script that had imported it died with `Unknown function: plan`.
 eval-lives-ok 'use EvalUsedModule', 'EVAL of a use inside Test code';
 
-plan 2;
 subtest 'plan is still callable from a subtest' => {
     plan 1;
     ok True, 'inside';
 }
+
+done-testing;
