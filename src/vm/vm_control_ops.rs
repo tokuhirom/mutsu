@@ -136,7 +136,7 @@ impl Interpreter {
         }?;
 
         let mut attrs = std::collections::HashMap::new();
-        // `warn` appends a "\n  in block ..." location annotation to its
+        // `warn` appends a "\n  in ..." (sub, method or block) location annotation to its
         // message for the default uncaught-warn printer. When a CONTROL
         // block observes the CX::Warn, `.message` should be just the user
         // text without the location, so strip the appended suffix.
@@ -145,7 +145,7 @@ impl Interpreter {
         } else if signal.is_warn() {
             signal
                 .message
-                .split_once("\n  in block ")
+                .split_once("\n  in ")
                 .map(|(user, _)| user.to_string())
                 .unwrap_or_else(|| signal.message.to_string())
         } else {
