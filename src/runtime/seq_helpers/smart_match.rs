@@ -1347,6 +1347,11 @@ impl Interpreter {
             }
             // Hash ~~ Hash: structural equality (eqv)
             (ValueView::Hash(lmap), ValueView::Hash(rmap)) => {
+                // `Map.ACCEPTS(Map:D \m)` is `self eqv m`: a `Hash` and a
+                // `Map` are different types, so they never match.
+                if left.is_immutable_map() != right.is_immutable_map() {
+                    return false;
+                }
                 if lmap.len() != rmap.len() {
                     return false;
                 }
