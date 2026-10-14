@@ -531,7 +531,17 @@ fn lower_argument(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), Run
             return Ok((None, tags));
         }
     }
-    Ok((Some(lower_expr(argument)?), Vec::new()))
+    let lowered = lower_expr(argument)?;
+    // The parser keeps the parentheses of an import list (`use Foo ()`, `use Foo
+    // (1, 2)`); an empty one is what suppresses the module's default exports.
+    let lowered = if argument.class == RakuAstClass::CircumfixParentheses
+        && !matches!(lowered, Expr::Grouped(_))
+    {
+        Expr::Grouped(Box::new(lowered))
+    } else {
+        lowered
+    };
+    Ok((Some(lowered), Vec::new()))
 }
 
 fn colonpair_true_key(node: &RakuAstNode) -> Option<String> {

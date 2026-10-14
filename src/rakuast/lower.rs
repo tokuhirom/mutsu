@@ -3137,6 +3137,19 @@ fn term_identifier_expr(name: &str) -> Expr {
                 Expr::Literal(value)
             }
         }
+        // `Empty` is the empty Slip literal the parser folds it to (a
+        // `BareWord("Empty")` as a `use` argument would be read as a tag).
+        "Empty" if !super::shadowed_terms::is_shadowed(name) => {
+            let value = Value::slip_arc(std::sync::Arc::new(Vec::new()));
+            if crate::parser::term_keywords_shadowable() {
+                Expr::ShadowableTermKeyword {
+                    name: crate::symbol::Symbol::intern(name),
+                    value,
+                }
+            } else {
+                Expr::Literal(value)
+            }
+        }
         // The math constants are the numeric literals the parser folds them to,
         // unless the unit declares a term of that name.
         "pi" | "\u{3c0}" if !super::shadowed_terms::is_shadowed(name) => {

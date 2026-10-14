@@ -2809,6 +2809,7 @@ t/modules/import-export/use-colon-ver-selector.t
 t/modules/import-export/use-constant-begin-time.t
 t/modules/import-export/use-dist-selector-param-type.t
 t/modules/import-export/use-dist-selectors.t
+t/modules/import-export/use-empty-imports.t
 t/modules/import-export/use-fatal-pragma-scope.t
 t/modules/import-export/use-from-nqp-is-a-noop.t
 t/modules/import-export/use-if-begin-time.t
@@ -4821,6 +4822,7 @@ t/rakuast/rakuast-uninitialized-decl-default.t
 t/rakuast/rakuast-unless.t
 t/rakuast/rakuast-unresolved-qualified-name.t
 t/rakuast/rakuast-until-loop.t
+t/rakuast/rakuast-use-empty-import.t
 t/rakuast/rakuast-use-from-adverb.t
 t/rakuast/rakuast-use-pragma.t
 t/rakuast/rakuast-use-require-ctor.t
