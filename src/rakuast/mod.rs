@@ -3376,9 +3376,7 @@ fn multi_field_schema(
         }
         ("RakuAST::Trait::Will", "new") => (RakuAstClass::TraitWill, &["phase", "block"][..]),
         ("RakuAST::Trait::Trusts", "new") => (RakuAstClass::TraitTrusts, &["type"][..]),
-        ("RakuAST::Statement::Trusts", "new") => {
-            (RakuAstClass::StatementTrusts, &["type"][..])
-        }
+        ("RakuAST::Statement::Trusts", "new") => (RakuAstClass::StatementTrusts, &["type"][..]),
         _ => return None,
     })
 }
