@@ -139,7 +139,7 @@ impl Interpreter {
             name: attr_name_str.clone(),
             is_public: decl.is_public,
             default: decl.default.clone(),
-            captured_env: None,
+            captured_env: self.capture_attr_decl_lexicals(decl.default.as_ref()),
             captured_unit: None,
             declaring_package: Some(crate::symbol::Symbol::intern(cx.name)),
             is_rw: effective_is_rw,
