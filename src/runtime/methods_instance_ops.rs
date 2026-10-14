@@ -636,7 +636,25 @@ impl Interpreter {
                 && let Some(callable) = attributes.as_map().get("__mutsu_method_callable")
                 && let Some(result) = self.dispatch_callable_method(callable, method, &args)
             {
-                return result;
+                // The primed callable keeps the method's signature (minus what
+                // was assumed) for introspection, but runs through this Method
+                // object: its `CALL-ME` binds the invocant to the owner's
+                // candidate, while binding the callable's anonymous invocant
+                // parameter would leave `self` unset.
+                return result.map(|primed| match primed.view() {
+                    ValueView::Sub(data) if !matches!(class_name.as_str(), "Regex") => {
+                        let mut carrier = (**data).clone();
+                        carrier.body = std::sync::Arc::new(Vec::new());
+                        carrier.compiled_code = None;
+                        carrier.compiled_routine = None;
+                        carrier.env.insert_sym(
+                            crate::symbol::wk::assuming_callee_marker(),
+                            target.clone(),
+                        );
+                        Value::sub_value(crate::gc::Gc::new(carrier))
+                    }
+                    _ => primed,
+                });
             }
             if method == "cando"
                 && args.len() == 1
@@ -696,6 +714,10 @@ impl Interpreter {
                     unreachable!("method assuming carrier must be a Sub");
                 };
                 let mut data = (**data).clone();
+                // Called through the dispatcher object's own `CALL-ME`, which
+                // re-dispatches on the (assumed) invocant.
+                data.env
+                    .insert_sym(crate::symbol::wk::assuming_callee_marker(), target.clone());
                 for arg in args {
                     if let ValueView::Pair(key, value) = arg.view() {
                         data.assumed_named.insert(key.clone(), value.clone());
@@ -3447,7 +3469,7 @@ impl Interpreter {
                             && matches!(
                                 am.get("__mutsu_lookup_class").map(Value::view),
                                 Some(ValueView::Str(owner))
-                                    if args.first().is_some_and(|inv| matches!(inv.view(), ValueView::Instance { .. })
+                                    if args.first().is_some_and(|inv| matches!(inv.view(), ValueView::Instance { .. } | ValueView::Package(_))
                                         && self.type_matches_value(owner.as_str(), inv))
                             )))
                         && !is_multi_candidate

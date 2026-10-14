@@ -614,6 +614,15 @@ impl Interpreter {
                     call_args.push(Value::pair(key, value));
                 }
             }
+            // A `.assuming`-primed `Method` object: the merged arguments
+            // (invocant first) go to the object's own `CALL-ME`.
+            if let Some(callee) = data
+                .env
+                .get_sym(crate::symbol::wk::assuming_callee_marker())
+                .cloned()
+            {
+                return self.try_compiled_method_or_interpret(callee, "CALL-ME", call_args);
+            }
             // Routine wrapper from .assuming() on a multi-dispatch sub
             if let Some(ValueView::Str(routine_name)) =
                 data.env.get("__mutsu_routine_name").map(Value::view)
