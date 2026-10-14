@@ -236,7 +236,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("dwim-right", Absent::False),
         ],
         TraitReturns | TraitOf | TraitDoes | TraitHides => &[("type", Absent::Required)],
-        StatementTrusts => &[("type", Absent::Required)],
+        StatementTrusts | TraitTrusts => &[("type", Absent::Required)],
         TraitHandles => &[("term", Absent::Required)],
         TraitWill => &[("phase", Absent::Required), ("block", Absent::Required)],
         TraitIs => &[

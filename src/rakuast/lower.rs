@@ -921,6 +921,8 @@ struct ClassTraits {
     hidden_parents: Vec<String>,
     /// `is NAME` / `is NAME(ARGS)`: a trait of the program's own.
     custom_traits: Vec<(String, Option<Expr>)>,
+    /// `Trait::Trusts(type => B)`: what a `trusts B;` in the body declares.
+    trusts: Vec<String>,
 }
 
 fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
@@ -933,6 +935,7 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
             is_hidden: false,
             hidden_parents: Vec::new(),
             custom_traits: Vec::new(),
+            trusts: Vec::new(),
         });
     };
     let RakuAstFieldValue::List(items) = &f.value else {
@@ -945,6 +948,7 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
     let mut is_hidden = false;
     let mut hidden_parents = Vec::new();
     let mut custom_traits = Vec::new();
+    let mut trusts = Vec::new();
     for item in items {
         let ValueView::RakuAst(t) = item.view() else {
             return Err(unsupported(node));
@@ -1007,6 +1011,11 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
                 parents.push(role.clone());
                 does_parents.push(role);
             }
+            // A hand-built `Trait::Trusts` is the trait form of a `trusts B;`
+            // statement (rakudo deparses it as one in the body).
+            RakuAstClass::TraitTrusts => {
+                trusts.push(simple_type_name(node, named_child(t, "type")?)?);
+            }
             _ => return Err(unsupported(node)),
         }
     }
@@ -1018,6 +1027,7 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
         is_hidden,
         hidden_parents,
         custom_traits,
+        trusts,
     })
 }
 
@@ -1210,6 +1220,23 @@ pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
     body
 }
 
+/// The `trusts B;` statements a package's `Trait::Trusts` traits stand for,
+/// placed ahead of the body's own statements.
+// Cost: O(b + t), b = body statements, t = trusted types.
+fn prepend_trusts(body: &mut Vec<Stmt>, trusts: Vec<String>) {
+    if trusts.is_empty() {
+        return;
+    }
+    let mut stmts: Vec<Stmt> = trusts
+        .into_iter()
+        .map(|name| Stmt::TrustsDecl {
+            name: crate::symbol::Symbol::intern(&name),
+        })
+        .collect();
+    stmts.append(body);
+    *body = stmts;
+}
+
 /// `class NAME { … }` -> `Stmt::ClassDecl`. The body is a `Block` whose
 /// statements are the class body (methods, attributes, …), lowered by the same
 /// statement dispatch. Only the plain form round-trips: the converter refuses
@@ -1226,7 +1253,9 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_hidden,
         hidden_parents,
         custom_traits: written_traits,
+        trusts,
     } = class_traits(node)?;
+    prepend_trusts(&mut body, trusts);
     let mut body_parents = Vec::new();
     for parent in super::role::take_also_is_parents(&mut body) {
         crate::parser::push_also_is_parent(&mut parents, &mut body_parents, &mut false, parent);
@@ -1389,7 +1418,7 @@ pub(super) fn package_head(
 
 fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let head = package_head(node, crate::parser::next_anon_grammar_name)?;
-    let body = lower_package_body(lower_block(named_child(node, "body")?)?);
+    let mut body = lower_package_body(lower_block(named_child(node, "body")?)?);
     let ClassTraits {
         mut parents,
         does_parents,
@@ -1398,7 +1427,9 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_hidden,
         hidden_parents,
         custom_traits: written_traits,
+        trusts,
     } = class_traits(node)?;
+    prepend_trusts(&mut body, trusts);
     if is_rw || is_hidden || !hidden_parents.is_empty() || !written_traits.is_empty() {
         return Err(unsupported(node));
     }
