@@ -112,6 +112,18 @@ impl UndeclaredVars<'_> {
         self.scopes.iter().any(|s| s.contains(name))
     }
 
+    /// Whether `name` is a file-scope lexical of the running routine's own
+    /// compunit, which is not in `env` (an imported `our $x is export` among
+    /// them): the two unit-lexical redirects of the by-name read chokepoint
+    /// (`get_env_with_main_alias`), without its package-variable fallbacks,
+    /// which would make an `our` of an unrelated block look declared.
+    // Cost: O(1) hash probes.
+    fn unit_lexical_declares(&self, name: &str) -> bool {
+        self.interp.unit_scope_lexical(name, None).is_some()
+            || (self.interp.any_lexical_package_frame()
+                && self.interp.module_imported_lexical(name).is_some())
+    }
+
     /// Whether a static scope around the `EVAL` call declares `name`, here or
     /// later in its source (`CompiledCode::eval_scope_names`): the run-time
     /// env does not hold a lexical declared after the call yet (#10511).
@@ -177,7 +189,7 @@ impl UndeclaredVars<'_> {
         // A file-scope lexical of the running routine's own compunit (an
         // imported `our $x is export` among them) is not in `env`: the by-name
         // read chokepoint redirects to the unit's store, and so does this.
-        if (env.contains_key(name) || self.interp.get_env_with_main_alias(name).is_some())
+        if (env.contains_key(name) || self.unit_lexical_declares(name))
             && !self.interp.registry().classes.contains_key(name)
             && !self.interp.has_function(name)
         {
@@ -217,7 +229,7 @@ impl UndeclaredVars<'_> {
         let env = self.interp.env();
         if env.contains_key(&sigiled)
             || env.contains_key(name)
-            || self.interp.get_env_with_main_alias(&sigiled).is_some()
+            || self.unit_lexical_declares(&sigiled)
         {
             return None;
         }

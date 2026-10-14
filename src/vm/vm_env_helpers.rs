@@ -594,7 +594,7 @@ impl Interpreter {
     ///
     /// Gated on the table being non-empty, so a program that loads no such module
     /// pays one `is_empty` test per variable access.
-    pub(super) fn unit_scope_lexical(&self, name: &str, name_sym: Option<Symbol>) -> Option<Value> {
+    pub(crate) fn unit_scope_lexical(&self, name: &str, name_sym: Option<Symbol>) -> Option<Value> {
         self.unit_lexical_slot(name, name_sym).cloned()
     }
 
