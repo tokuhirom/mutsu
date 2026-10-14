@@ -432,7 +432,7 @@ impl Interpreter {
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
         crate::alloc_scope_named!(_sc_cmm_dec, "cmm:decode-sources");
-        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let decoded_sources = self.decode_arg_sources_shared(code, arg_sources_idx);
         crate::alloc_scope_end!(_sc_cmm_dec);
         crate::alloc_scope_named!(_sc_cmm_names, "cmm:names");
         let method_raw = name.raw;
@@ -469,10 +469,16 @@ impl Interpreter {
         // ADR-0054 S3: spread only the positions the caller wrote as `|EXPR`
         // -- decided by call-site syntax, not by a value merely evaluating to
         // a Slip (`.method(@a.Slip)` stays one argument).
-        let (args, arg_sources) =
-            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
+        let (args, arg_sources) = Self::spread_call_args_by_syntax_shared(
+            code,
+            raw_args,
+            arg_sources_idx,
+            decoded_sources,
+        );
         let args = Self::hllize_call_args(args);
-        self.set_pending_call_arg_sources(arg_sources.clone());
+        // The callee reads the same names this op keeps using below: share
+        // one allocation rather than cloning the vector and every name in it.
+        self.set_pending_call_arg_sources_shared(arg_sources.clone());
         // Elements appended to a NATIVE integer array store through the native
         // slot, so each one wraps to the element width exactly as an assignment
         // does (`my uint8 @e; @e.push(1, 300, 2)` stores 1, 44, 2). Done here,
@@ -944,6 +950,10 @@ impl Interpreter {
         match self.plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
             Some(lane_key) if self.plain_method_lane_hit(&lane_key) => {
                 self.caches.plain_method_lane_candidate = None;
+                // Hand the key's buffer back: the next call's key reuses it.
+                let mut arg_keys = lane_key.2;
+                arg_keys.clear();
+                self.caches.plain_method_lane_scratch = arg_keys;
                 return self.run_plain_method_lane(
                     code,
                     target_name,
@@ -1215,7 +1225,11 @@ impl Interpreter {
         {
             let mut place =
                 crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code)
-                    .with_arg_sources(arg_sources.as_deref().unwrap_or(&[]));
+                    .with_arg_sources(
+                        arg_sources
+                            .as_ref()
+                            .map_or(&[], |sources| sources.as_slice()),
+                    );
             if let Some(result) =
                 crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
             {
@@ -2249,7 +2263,11 @@ impl Interpreter {
                         &target,
                         code,
                     )
-                    .with_arg_sources(arg_sources.as_deref().unwrap_or(&[]));
+                    .with_arg_sources(
+                        arg_sources
+                            .as_ref()
+                            .map_or(&[], |sources| sources.as_slice()),
+                    );
                     if let Some(result) = crate::builtins::method_table::invoke_mut(
                         self, &mut place, method_sym, &args,
                     ) {

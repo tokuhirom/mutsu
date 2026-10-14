@@ -267,6 +267,10 @@ pub(crate) struct ResolutionCaches {
     /// [`Self::plain_method_lane`]. Set (or cleared) by that opcode's
     /// gate on every dispatch, so it always describes the innermost one.
     pub(crate) plain_method_lane_candidate: Option<PlainMethodLaneKey>,
+    /// The argument-type buffer of the last lane gate that hit, handed back so
+    /// the next call builds its key without allocating (see
+    /// `vm_call_method_plain_lane`).
+    pub(crate) plain_method_lane_scratch: Vec<crate::symbol::Symbol>,
     /// One-shot flag handing a proven-inert dispatch straight to the
     /// user-method tail; consumed by
     /// `try_compiled_method_mut_or_interpret_sym`.

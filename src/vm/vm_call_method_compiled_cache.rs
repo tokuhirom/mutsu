@@ -120,6 +120,18 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Vec<crate::symbol::Symbol>> {
         let mut keys = Vec::with_capacity(args.len());
+        self.multi_arg_type_keys_into(args, &mut keys)
+            .then_some(keys)
+    }
+
+    /// [`Self::multi_arg_type_keys`] into a caller-owned (reusable) buffer;
+    /// `false` when some argument has no type key.
+    // Cost: O(a), a = arguments (one type-key intern each).
+    pub(crate) fn multi_arg_type_keys_into(
+        &mut self,
+        args: &[Value],
+        keys: &mut Vec<crate::symbol::Symbol>,
+    ) -> bool {
         for (pos_idx, raw) in args.iter().enumerate() {
             // A `VarRef` (a variable passed as an argument) dispatches on the
             // *source variable's declared type* as well as on the value's own
@@ -139,9 +151,14 @@ impl Interpreter {
             // of roast) re-ran the whole candidate walk on every call.
             let a = match raw.view() {
                 ValueView::VarRef { name, value, .. } => {
-                    if let Some(tc) = name.with_str(|n| self.var_type_constraint(n)) {
+                    // The symbol is at hand and the env's own `Str` is borrowed,
+                    // so a typed variable argument costs no re-intern of its
+                    // name and no copy of its constraint per call.
+                    if let Some(tc) = self.var_type_constraint_value_sym(name)
+                        && let ValueView::Str(tc) = tc.view()
+                    {
                         keys.push(key_syms::declared_type());
-                        keys.push(crate::symbol::Symbol::intern(&tc));
+                        keys.push(crate::symbol::Symbol::intern(tc.as_str()));
                     }
                     value.clone()
                 }
@@ -250,7 +267,7 @@ impl Interpreter {
                 | ValueView::Capture { .. }
                 // A `VarRef` nested inside a `VarRef` is not a shape the
                 // unwrap above produces; refuse it rather than guess.
-                | ValueView::VarRef { .. } => return None,
+                | ValueView::VarRef { .. } => return false,
                 _ => {
                     let name = crate::runtime::utils::value_type_name(a);
                     // ADR-0019 E1a shadow probe (zero behavior change): see
@@ -281,7 +298,7 @@ impl Interpreter {
                 keys.push(key_syms::undefined_arg());
             }
         }
-        Some(keys)
+        true
     }
 
     /// Whether one candidate parameter's type constraint makes the enclosing

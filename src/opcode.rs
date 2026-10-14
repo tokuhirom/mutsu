@@ -7672,6 +7672,11 @@ pub(crate) struct CompiledCode {
     /// `params`/`param_defs` used to be cloned out of the pool on every
     /// creation, which is O(signature) with a fat `ParamDef` element.
     pub(crate) stmt_pool_signatures: std::sync::OnceLock<StmtPoolSignatures>,
+    /// Lazily-decoded argument-source descriptor per constant-pool slot (see
+    /// `Interpreter::decode_arg_sources_shared`): a call site's names are the
+    /// same on every execution, so they are decoded once rather than
+    /// re-allocated (a vector and a `String` per named argument) per call.
+    pub(crate) arg_source_decodes: std::sync::OnceLock<ArgSourceDecodes>,
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
     #[cfg(feature = "jit")]
     pub(crate) jit: JitCodeState,
@@ -7782,6 +7787,20 @@ pub(crate) struct ClosureSignature {
 
 /// The per-`stmt_pool`-slot shared signature table of a chunk; see
 /// [`CompiledCode::closure_signature`].
+/// One call site's decoded argument-source descriptor: the caller-visible
+/// source variable name of each argument position, and the compiler-baked
+/// local slots of the sources that have one.
+#[derive(Debug, Clone)]
+pub(crate) struct ArgSourceDecode {
+    pub(crate) names: std::sync::Arc<Vec<Option<String>>>,
+    pub(crate) slots: Vec<(Symbol, u32)>,
+    /// Whether any argument is written `|EXPR` (then the arguments spread).
+    pub(crate) has_slip: bool,
+}
+
+/// [`CompiledCode::arg_source_decodes`]: one lazily-filled slot per constant.
+pub(crate) type ArgSourceDecodes = Box<[std::sync::OnceLock<Option<ArgSourceDecode>>]>;
+
 pub(crate) type StmtPoolSignatures = Box<[std::sync::OnceLock<ClosureSignature>]>;
 
 /// JIT hotness/entry state carried on each `CompiledCode` (ADR-0004 layer 4).
@@ -8236,6 +8255,7 @@ impl CompiledCode {
             op_scan_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
             stmt_pool_signatures: std::sync::OnceLock::new(),
+            arg_source_decodes: std::sync::OnceLock::new(),
             #[cfg(feature = "jit")]
             jit: JitCodeState::default(),
         }
@@ -8372,6 +8392,29 @@ impl CompiledCode {
                 .iter()
                 .any(|slot| slot.get().is_some_and(|b| std::sync::Arc::ptr_eq(b, body)))
         })
+    }
+
+    /// The decoded argument-source descriptor at `constants[idx]`, built once
+    /// per slot by `decode` (`None` when the constant is no descriptor).
+    // Cost: O(1) after the first call for a slot; O(a) for it, a = arguments.
+    pub(crate) fn arg_source_decode(
+        &self,
+        idx: usize,
+        decode: impl FnOnce() -> Option<ArgSourceDecode>,
+    ) -> Option<std::borrow::Cow<'_, ArgSourceDecode>> {
+        let slots = self.arg_source_decodes.get_or_init(|| {
+            (0..self.constants.len())
+                .map(|_| std::sync::OnceLock::new())
+                .collect()
+        });
+        match slots.get(idx) {
+            Some(slot) => slot
+                .get_or_init(decode)
+                .as_ref()
+                .map(std::borrow::Cow::Borrowed),
+            // The pool grew after the side table was sized: decode uncached.
+            None => decode().map(std::borrow::Cow::Owned),
+        }
     }
 
     pub(crate) fn closure_body_arc(&self, idx: usize) -> std::sync::Arc<Vec<Stmt>> {
