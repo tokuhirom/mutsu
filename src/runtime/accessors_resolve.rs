@@ -254,7 +254,7 @@ impl Interpreter {
         // (ADR-0019 C6c).
         let compiled_routine = compiled_body.as_ref().map(|body| body.get()).cloned();
         let declared_readonly = def.captured_readonly.clone();
-        let mut sub_val = Value::make_sub_for_routine(
+        let mut data = Value::sub_data_for_routine(
             def.package,
             def.name,
             def.params,
@@ -263,6 +263,7 @@ impl Interpreter {
             def.is_rw,
             captured_env,
             compiled_routine,
+            Vec::new(),
         );
         // A routine nested in another one (`my sub` inside `sub mk`) writes the
         // enclosing routine's own variables, whose readonly state is decided
@@ -283,18 +284,14 @@ impl Interpreter {
         // Preserve empty_sig from the FunctionDef (arity checks, e.g. sort
         // rejecting 0-arity callables), stabilize the id, and share the def's
         // composition cell (ADR-11827: this rebuild IS the routine, so a
-        // `does` on it is seen by every other value of it), in one rewrap.
-        if let ValueView::Sub(data) = sub_val.view() {
-            let mut new_data = (**data).clone();
-            new_data.routine_cell = def.routine_cell.clone();
-            new_data.empty_sig = empty_sig;
-            if let Some(id) = stable_id {
-                new_data.id = id;
-            }
-            new_data.captured_readonly = captured_readonly;
-            sub_val = Value::sub_value(crate::gc::Gc::new(new_data));
+        // `does` on it is seen by every other value of it).
+        data.routine_cell = def.routine_cell.clone();
+        data.empty_sig = empty_sig;
+        if let Some(id) = stable_id {
+            data.id = id;
         }
-        sub_val
+        data.captured_readonly = captured_readonly;
+        Value::sub_value(crate::gc::Gc::new(data))
     }
 
     /// Build a first-class dispatcher that captures every visible candidate of

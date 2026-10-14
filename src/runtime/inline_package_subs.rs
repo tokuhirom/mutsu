@@ -11,6 +11,15 @@ use super::*;
 use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
 use crate::meta_ns::MetaNs;
 
+/// Whether any `InlinePackageSub` pre-registration marker was ever written in
+/// this process. The marker lookup of every `RegisterDecl` builds its key from
+/// the package, name and site fingerprint; while no marker exists anywhere
+/// (the usual script) that lookup can only miss, so it is skipped. Set before
+/// the first marker is inserted and never cleared; a thread's reads need no
+/// ordering beyond the env it reads the marker from.
+pub(crate) static INLINE_PACKAGE_SUB_MARKERS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 impl Interpreter {
     /// Register the routines declared by an inline package before CHECK
     /// phasers run.  Raku makes an inline package's interface available during
@@ -276,6 +285,7 @@ impl Interpreter {
             // in-sequence `RegisterDecl` must still install it, with the
             // declaring activation's bindings: no "already installed" marker.
             if installed && !nested {
+                INLINE_PACKAGE_SUB_MARKERS.store(true, std::sync::atomic::Ordering::Relaxed);
                 self.env_mut().insert(
                     MetaNs::InlinePackageSub.owned_key_from_parts(&[
                         &package,
