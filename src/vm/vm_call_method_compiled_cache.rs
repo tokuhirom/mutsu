@@ -535,18 +535,10 @@ impl Interpreter {
             && let ValueView::Instance { class_name, .. } = target.view()
             // A built-in instance whose class inherits the method (`NFD.list`
             // is `Uni.list`) is wrapped through the class the wrap landed on.
-            && std::iter::once(class_name.as_str())
-                .chain(
-                    crate::builtin_types::catalog::builtin_type_mro_strs(class_name.as_str())
-                        .unwrap_or(&[])
-                        .iter()
-                        .copied(),
-                )
-                .any(|class| {
-                    self.registry()
-                        .method_wrap_chain(class, method_sym.as_str(), 0)
-                        .is_some()
-                })
+            && self
+                .registry()
+                .builtin_method_wrap_chain_along_mro(class_name.as_str(), method_sym.as_str())
+                .is_some()
         {
             return true;
         }
