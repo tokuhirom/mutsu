@@ -3884,6 +3884,7 @@ impl Compiler {
                         name_idx,
                         body_end: 0,
                         lexicals_idx: crate::opcode::NO_PACKAGE_LEXICALS,
+                        decls_idx: u32::MAX,
                     });
                     let saved_package = self.current_package.clone();
                     let saved_in_unit = self.in_unit_package;
@@ -3913,6 +3914,11 @@ impl Compiler {
                     // slot once the body exits (`PackageScope` restores the
                     // frame's locals then). Outside the package it is reachable
                     // only by its package name or through an import (#10558).
+                    // The names the body's own scope declares: the exit must
+                    // not mistake them for writes to an enclosing lexical
+                    // (#13428).
+                    self.block_decl_tracker
+                        .push((self.decl_scope_depth + 1, Vec::new()));
                     let lexical_scope = self.push_dynamic_scope_lexical();
                     self.hoist_sub_decls(body, true);
                     self.hoist_type_decl_shells(body);
@@ -3920,6 +3926,16 @@ impl Compiler {
                         self.compile_stmt_discarding_value(s);
                     }
                     self.pop_dynamic_scope_lexical(lexical_scope);
+                    let (_, decls) = self.block_decl_tracker.pop().unwrap_or_default();
+                    if !decls.is_empty() {
+                        let decls = self.code.add_constant(Value::array(
+                            decls.into_iter().map(Value::str).collect::<Vec<_>>(),
+                        ));
+                        if let OpCode::PackageScope { decls_idx, .. } = &mut self.code.ops[pkg_idx]
+                        {
+                            *decls_idx = decls;
+                        }
+                    }
                     self.current_package = saved_package;
                     self.in_unit_package = saved_in_unit;
                     self.current_package_kind = saved_package_kind;

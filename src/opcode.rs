@@ -3889,10 +3889,16 @@ pub(crate) enum OpCode {
     /// body's `my` lexicals, newline-joined: they are bound from the
     /// package's static store for the body, written back to it on exit, and
     /// a same-named outer binding is restored.
+    ///
+    /// `decls_idx` is the constant-pool index of the names the body's own
+    /// scope declares (an Array of Str), or `u32::MAX` when it declares none.
+    /// Those are bindings of the body, never writes to a same-named enclosing
+    /// lexical, so the exit does not carry them out (#13428).
     PackageScope {
         name_idx: u32,
         body_end: u32,
         lexicals_idx: u32,
+        decls_idx: u32,
     },
     /// Register a package name so it's accessible as a Package value.
     RegisterPackage { name_idx: u32 },

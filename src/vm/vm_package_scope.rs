@@ -10,13 +10,13 @@ use super::*;
 use crate::vm::vm_block_env::{BlockEnvSave, BlockWrites, ClosedBlockEnv};
 
 impl Interpreter {
-    // Cost: O(L + w + k) plus the body -- see the `OpCode::PackageScope` arm.
+    // Cost: O(L + w * m + k) plus the body -- see the `OpCode::PackageScope` arm.
     pub(super) fn exec_package_scope_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
         body_end: u32,
-        lexicals_idx: u32,
+        (lexicals_idx, decls_idx): (u32, u32),
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -76,9 +76,23 @@ impl Interpreter {
         // `package Zef::CLI { my $CONFIG = preprocess-args-config-mutate(...); ... }`).
         let mut package_lexicals: Vec<(String, Value)> = Vec::new();
         let mut write_back: Vec<(Symbol, Value)> = Vec::new();
+        // The names the body's own scope declares are its bindings, never a
+        // write to a same-named enclosing lexical (#13428).
+        let declared: Vec<Symbol> = (decls_idx != u32::MAX)
+            .then(|| code.constants.get(decls_idx as usize))
+            .flatten()
+            .and_then(Value::as_list_items)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(Symbol::intern)
+                    .collect()
+            })
+            .unwrap_or_default();
         for (k, v) in writes.iter() {
             let k = *k;
-            let in_outer = env.contains_key_sym(k);
+            let in_outer = env.contains_key_sym(k) && !declared.contains(&k);
             if k.contains_str("::") {
                 if in_outer || !Self::is_block_binding_shape_marker(k) {
                     write_back.push((k, v.clone()));
