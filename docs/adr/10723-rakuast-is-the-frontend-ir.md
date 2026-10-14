@@ -1134,6 +1134,19 @@ call's second operand. The caller names of an `EVAL` string include the loaded
 modules' packages, since a package is global rather than lexical to the frame
 that runs the `EVAL`.
 
+### 6.53 S10: `::(EXPR)` declarator names (2026-10-14)
+
+The parser keeps a computed declarator name as the declaration's `name_expr`
+(plus a placeholder name unless the expression is a literal or bare word).
+Rakudo 2026.09 renders it for `Sub`, `Method` and `Class` alike as
+`name => Name(Part::Empty, Part::Expression(EXPR))`. The converter swaps the
+`name` field for that form (`symbolic_deref::replace_declarator_name`) and
+lowering reads it back (`routine_lower::declarator_name`); the package head
+no longer mistakes the leading empty edge of such a name for a `class ::Foo`
+stash. A grammar with a computed name stays the boundary. A name that only a
+constant fold resolves (`my constant cname = 'X'; class ::(cname) { }; X.m`)
+is still an unknown bareword to the converter.
+
 ### 6.54 S10: zen slices with `:exists` (2026-10-14)
 
 The parser models `@a[]:adverb` as an `Index` with a Whatever index, except

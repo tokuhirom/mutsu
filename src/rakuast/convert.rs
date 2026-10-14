@@ -1040,7 +1040,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // RakuAST shape, deferred.
             let spelling = return_type_spelling(custom_traits)?;
             let deferred = [
-                (name_expr.is_some(), "sub with a computed name"),
                 (
                     !signature_alternates.is_empty(),
                     "sub with alternate signatures",
@@ -1083,6 +1082,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
             if super::routine_source::apply(&mut node, body)? {
                 routine_traits::add_flags(&mut node, *multi, false, &Default::default())?;
                 if let Some(scope) = sub_scope(custom_traits) {
@@ -1146,7 +1146,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // submethod that flag carries no RakuAST shape of its own.
             let declared_my = *is_my && !*is_submethod;
             let deferred = [
-                (name_expr.is_some(), "method with a computed name"),
                 (
                     *is_export != !export_tags.is_empty(),
                     "method with a bare `is export`",
@@ -1184,6 +1183,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
             let source_traits = super::routine_source::apply(&mut node, body)?;
             let flags = routine_traits::IsTraits {
                 is_rw: *is_rw,
@@ -1299,14 +1299,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // A `my` class leads with `scope => "my"` (`our` is the default
             // and renders none). Unit scope, `hides`, computed names and user
             // traits carry extra RakuAST shape, deferred.
-            if name_expr.is_some() || has_package_traits(custom_traits) {
+            if has_package_traits(custom_traits) {
                 return Err(unsupported(&format!(
-                    "class with inheritance / scope / repr / traits ({}{})",
-                    if name_expr.is_some() {
-                        "computed name "
-                    } else {
-                        ""
-                    },
+                    "class with inheritance / scope / repr / traits ({})",
                     custom_traits
                         .iter()
                         .map(|(t, _)| t.as_str())
@@ -1323,7 +1318,13 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 },
                 is_colons_package(custom_traits),
             );
-            if has_leading_colons(custom_traits) {
+            if let Some(expr) = name_expr {
+                let name = node_field(Some("name"), super::symbolic_deref::indirect_name(expr)?);
+                match fields.iter_mut().find(|f| f.name == Some("name")) {
+                    Some(slot) => *slot = name,
+                    None => fields.push(name),
+                }
+            } else if has_leading_colons(custom_traits) {
                 name_parts::with_leading_empty(&mut fields);
             }
             super::declare_how::add_field(&mut fields, custom_traits);

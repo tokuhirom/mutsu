@@ -1315,6 +1315,7 @@ t/control/begin-lift-names-inner-type-with-body.t
 t/control/begin-nested-block.t
 t/control/begin-phaser-begintime.t
 t/control/begin-prologue-binding-declaration.t
+t/control/begin-prologue-computed-sub-name.t
 t/control/begin-prologue-eval-type.t
 t/control/begin-prologue-inner-calls.t
 t/control/begin-prologue-inner-decls.t
@@ -3486,6 +3487,7 @@ t/oo/class/class-body-type-scope.t
 t/oo/class/class-body-typed-static-per-class.t
 t/oo/class/class-body-write-reaches-celled-outer-lexical.t
 t/oo/class/class-body-write-through-captured-outer-cell.t
+t/oo/class/class-bounded-env-sync-more.t
 t/oo/class/class-bounded-env-sync.t
 t/oo/class/class-build-invocant-required.t
 t/oo/class/class-compound-name-scope.t
@@ -4638,6 +4640,7 @@ t/rakuast/rakuast-immediate-sub-call.t
 t/rakuast/rakuast-imported-bareword-call.t
 t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
+t/rakuast/rakuast-indirect-declarator-name.t
 t/rakuast/rakuast-indirect-name.t
 t/rakuast/rakuast-infix-adverbs.t
 t/rakuast/rakuast-internal-arg-and-range-ops.t
@@ -6862,6 +6865,7 @@ t/vm/binding/constant.t
 t/vm/binding/decl-as-expression.t
 t/vm/binding/decl-block-init-not-stmt-modifier.t
 t/vm/binding/decl-marker-fusion.t
+t/vm/binding/declarator-null-name.t
 t/vm/binding/declarator-trailing-after-earlier-sub.t
 t/vm/binding/declarator-trailing-wherefore.t
 t/vm/binding/declared-constraint-incdec-bake.t
