@@ -129,6 +129,9 @@ impl Interpreter {
         // role/augment deferred-body execution in
         // `registration_class_compose_body.rs`/`registration_class_augment.rs`.
         let saved_topic = self.env.get("_").cloned();
+        // `$?CLASS` names this class only inside its body (ADR-12529): the
+        // binding below is undone when the body finishes, as the topic is.
+        let saved_class_var = self.env.get("?CLASS").cloned();
         self.set_current_package(name.to_string());
         // An enum key declared in a class body is lexical to that class.  In
         // particular, two classes may each declare an `Error` member without
@@ -414,6 +417,10 @@ impl Interpreter {
         match saved_topic {
             Some(topic) => self.env.insert("_".to_string(), topic),
             None => self.env.remove("_"),
+        };
+        match saved_class_var {
+            Some(class) => self.env.insert("?CLASS".to_string(), class),
+            None => self.env.remove("?CLASS"),
         };
         Ok(cx.class_def)
     }
