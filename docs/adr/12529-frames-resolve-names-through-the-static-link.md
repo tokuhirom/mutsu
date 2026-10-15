@@ -987,6 +987,37 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      a write the block makes after creating the closure is seen. A
      program-scope lexical is still read live: `$x = 2` after the closure
      was created is what the closure sees.
+
+   **Slice 16 done** (`fix/12529-class-body-scoped-class-var`): the first
+   step toward deleting the return merge, and a census of what it still
+   carries. The census instrumented the named path's merge loop and the
+   light paths' `finish_positional_light_env`, and logged every key either
+   wrote back with a binding that differed from the caller's. It ran over
+   every `t/` file and every whitelisted roast file, 730 files in all.
+   - `?CLASS` dominated: 599 files, all on the named path. A class body
+     bound `?CLASS` in the enclosing env and never unbound it. So the
+     mainline read the last declared class (`::('$?CLASS')` answered `B`
+     where rakudo fails). Every call into a frame that saw a different
+     leaked value also wrote it back to its caller.
+
+     The class body now restores `?CLASS` as it restores the topic. The
+     named merge now skips every `?` contextual, as the light paths
+     already did.
+   - What is left, by file count:
+     - frame metadata `__mutsu_*` in 246 files: callable ids, state keys,
+       sigilless alias and readonly markers, `__mutsu_type::`, var-source
+       names, block-lexical-sub and module-merge markers. These are
+       phase 1's per-frame metadata.
+     - type and package names in 142 files (`NativeCall::T`, a nested
+       `Test::A`, `=pod`). These are phase 1's symbol-table names.
+     - plain user lexicals in 130 files. These are writes that reach a
+       caller's lexical by name instead of through a cell. Examples are a
+       `does` mixin or a by-name store in a closure the callee runs
+       (`lives-ok { $a does R }`), a `CONTROL`/`CATCH` handler's writes,
+       and module-scope aggregates a routine mutates.
+
+     Each category has to reach zero, through a cell or a frame field,
+     before the merge loops can go.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
