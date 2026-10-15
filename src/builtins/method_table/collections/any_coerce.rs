@@ -1,5 +1,7 @@
-//! `Any`'s list coercions: `List`, `list`, `Array`, `Slip`, `Supply` and
-//! `Seq` (ADR-11276 §9.110).
+//! `Any`'s list coercions: `List`, `list`, `Array`, `Slip` and `Supply`
+//! (ADR-11276 §9.110). `Seq` stays the interpreter's and the VM's shared
+//! `seq_coerce::to_seq_structural`, which hands out an array's own element
+//! containers.
 //!
 //! Each handler carries the body of the cascade arm it replaced
 //! (`methods_0arg/coercion.rs`): the owners that declare their own row
@@ -35,7 +37,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     any_row("Slip", slip, RowFlags::NONE),
     // A new `Supply` has an identity of its own each time (`RANDOM`).
     any_row("Supply", supply, RowFlags::RANDOM),
-    any_row("Seq", seq, RowFlags::NONE),
 ];
 
 /// `Mu.Capture`: an object's public attributes as named arguments, a list's
@@ -89,31 +90,6 @@ fn array(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
         return listify(&list, true);
     }
     listify(target, true)
-}
-
-/// `Any.Seq`: `Seq.new(self.iterator)`, the receiver's elements as a `Seq`. A
-/// list explicitly marked `.lazy` stays lazy (`(1,2,3).lazy.Seq.is-lazy` is
-/// `True`); any other lazy or infinite receiver, and one `.list` does not
-/// answer, is the interpreter's.
-// Cost: O(e), e = elements of the receiver; O(1) for a lazy list.
-fn seq(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if let ValueView::LazyList(ll) = target.view() {
-        return ll
-            .env
-            .get("__mutsu_preserve_lazy_on_array_assign")
-            .is_some()
-            .then(|| Ok(target.clone()));
-    }
-    let list = capture_positionals(target).unwrap_or_else(|| target.clone());
-    match listify(&list, false)? {
-        Ok(list) => match list.view() {
-            ValueView::Array(items, kind) if !kind.is_lazy() => {
-                Some(Ok(Value::seq(items.to_vec())))
-            }
-            _ => None,
-        },
-        Err(err) => Some(Err(err)),
-    }
 }
 
 /// `Any.Slip`: `self.list.Slip`.

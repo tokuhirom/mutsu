@@ -587,14 +587,13 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 39] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 38] = [
     // `Any`'s list coercions (`method_table::any_coerce`, §9.110).
     "List",
     "list",
     "Array",
     "Slip",
     "Supply",
-    "Seq",
     // `Any`'s views and the other `self.list.METHOD` methods whose handlers
     // carry the deleted cascade arms' bodies (`method_table::any_views`,
     // §9.109): a closed shape that declares its own (`Pair.keys`,

@@ -2650,15 +2650,18 @@ Behaviour changes toward Rakudo, pinned in `t/oo/method/any-view-method-rows.t`:
 ### 9.110 Slice 5: `Any`'s list coercions, `Mu.Capture` and the type objects' coercions; `methods_0arg/coercion.rs` keeps only the zen slice (2026-10-15)
 
 `refactor/11276-coercion-arms`. The arms of `methods_0arg/coercion.rs` for `List`, `list`, `Array`, `Slip`, `Supply`, `Seq`,
-`Capture`, `Pair`, `Complex`, `isNaN` and `Range` are deleted, and the `List`/`Seq` arms of `dispatch_capture`. A census build (as
+`Capture`, `Pair`, `Complex`, `isNaN` and `Range` are deleted, and the `List` arm of `dispatch_capture`. A census build (as
 in §9.109) found the receivers they answered: a `Range` (`List`, `Array`, `Slip`, `Supply`), an unsettled `Seq` (`List`, `list`), a
 `Supply` instance (`list`), `Int`/`Str` and the buffers, a lazy list, the quant hashes, a `Pair`, a stash, and type objects
 (`Int.List`, `Pair.Pair`, `Int.Complex`, `Int.isNaN`, `Any.Capture`). Each now reaches a row:
 
-1. **`Any`'s `List`, `list`, `Array`, `Slip`, `Supply` and `Seq`** (`method_table::collections::any_coerce`) carry the arms'
+1. **`Any`'s `List`, `list`, `Array`, `Slip` and `Supply`** (`method_table::collections::any_coerce`) carry the arms'
    bodies and take a type object (`Int.List` is `((Int))`). A `Capture` is `self.list`, its positionals, which moves
    `\(1, 2, :a(3)).Array`/`.Slip`/`.Supply` to Rakudo's answers. `Any.Supply` is `RANDOM` (a new `Supply` has an identity of its
-   own). `Any.Seq` is the receiver's elements, the interpreter keeping what is lazy.
+   own) and reads a hash as its pairs. `Seq` is **not** a row: a row answered `@a.Seq` at the call-site lane and lost the
+   array's element containers (`@a.Seq.map({ $_ = 5 })` must write through, `t/control/immutable-topic-receiver-oracle.t`,
+   red in CI's release run only), so the arm's one case (a `.lazy` list stays lazy) moved into the shared
+   `seq_coerce::to_seq_structural` that the interpreter and the VM already call.
 2. **`Mu.Capture`** is a row (`value_to_capture`), reaching the closed shapes through `MU_FOR_CLOSED_SHAPES`; `Any.Capture` is
    `\()`. The capture-less scalars' `Capture` (`Int`, `Num`, `Str`, `Version`) take their type objects (`X::Cannot::Capture`).
 3. **Type objects**: `Pair.Pair`, `Int.isNaN` (so `Bool.isNaN`), the numbers' `Complex` and `Cool.Complex` take them

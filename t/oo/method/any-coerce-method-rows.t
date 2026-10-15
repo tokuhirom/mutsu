@@ -1,11 +1,11 @@
 use Test;
 
-# ADR-11276 §9.110: `Any`'s `List`, `list`, `Array`, `Slip`, `Supply` and
-# `Seq`, `Mu.Capture`, `Pair.Pair`, the numbers' `Complex` and `Int.isNaN` are
+# ADR-11276 §9.110: `Any`'s `List`, `list`, `Array`, `Slip` and `Supply`,
+# `Mu.Capture`, `Pair.Pair`, the numbers' `Complex` and `Int.isNaN` are
 # rows, and the receivers the deleted `methods_0arg/coercion.rs` arms
 # answered reach them.
 
-plan 31;
+plan 33;
 
 # A type object lists as itself.
 is Int.List.raku, (Int,).raku, 'Int.List';
@@ -33,6 +33,11 @@ is \(1, 2, :a(3)).Supply.list, (1, 2), 'Capture.Supply';
 # A `Supply` lists its values; a lazy list stays lazy.
 is Supply.from-list(1, 2).list, (1, 2), 'Supply.list';
 ok (1, 2, 3).lazy.Seq.is-lazy, 'a .lazy list stays lazy through .Seq';
+# `.Seq` of an array hands out the elements' own containers.
+my @w = 1, 2;
+@w.Seq.map({ $_ = 5 }).eager;
+is @w, [5, 5], '@a.Seq writes through';
+is \(1, 2, :a(3)).Seq.raku, (1, 2).Seq.raku, 'Capture.Seq';
 is (gather { take 1 }).List, (1,), 'a gather lists its values';
 
 # `Capture`.
