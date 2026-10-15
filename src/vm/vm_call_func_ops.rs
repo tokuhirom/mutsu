@@ -1863,7 +1863,7 @@ impl Interpreter {
         // method is up the call chain), so ask `self` first.
         if let CodeVarBinding::Routine(def) = &binding {
             self.set_pending_call_arg_sources(arg_sources);
-            let result = self.compile_and_call_qualified_def(def, args, compiled_fns);
+            let result = self.call_lexical_import_routine(def, args, compiled_fns);
             self.set_pending_call_arg_sources(None);
             let result = loan_env!(self, maybe_fetch_rw_proxy(result?, true))?;
             self.apply_pending_rw_writeback(code);

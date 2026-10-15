@@ -4453,6 +4453,13 @@ pub(crate) enum OpCode {
     /// On a hit the bound routine gets both operands and the `InfixFunc` is
     /// skipped. Stack: as the `InfixFunc`.
     LexImportInfix { chain_idx: u32, name_idx: u32 },
+    /// Prefix of a [`Self::Reduction`] or [`Self::HyperOp`] at `ip + 1` over a
+    /// user operator, inside a block that `use`s a module (ADR-8751 stage 2):
+    /// as [`Self::LexImportInfix`]. When one of the chain's import sets binds
+    /// `name_idx` (the constant `infix:<op>`), the reduction folds with, or
+    /// the hyper applies, the bound routine instead of resolving the
+    /// operator by name, and the op at `ip + 1` is skipped. Stack: as that op.
+    LexImportMeta { chain_idx: u32, name_idx: u32 },
     /// `import Module :TAGS`: import the exports of an already-loaded module.
     /// Stack: `[] → []`. Operands as [`Self::UseModule`]; runs the runtime
     /// `import_module`.

@@ -278,6 +278,7 @@ impl Compiler {
         if is_assign_op {
             self.compile_expr(left);
             self.compile_expr(right);
+            self.emit_lex_import_meta(Symbol::intern(base_op));
             self.code.emit(OpCode::HyperOp {
                 op: Symbol::intern(base_op),
                 dwim_left,
@@ -329,6 +330,7 @@ impl Compiler {
         } else {
             self.compile_expr(left);
             self.compile_expr(right);
+            self.emit_lex_import_meta(Symbol::intern(op));
             self.code.emit(OpCode::HyperOp {
                 op: Symbol::intern(op),
                 dwim_left,
