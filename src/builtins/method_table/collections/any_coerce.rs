@@ -117,9 +117,9 @@ fn seq(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
 }
 
 /// `Any.Slip`: `self.list.Slip`.
-pub(crate) fn slip(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn slip(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if let Some(list) = capture_positionals(target) {
-        return slip(&list, args);
+        return slip(&list, &[]);
     }
     // Cost: O(e), e = elements (O(1) for a Slip, which is returned as is).
     // A genuinely lazy list (or an unbounded Range) slips as a lazy tail:
@@ -465,13 +465,13 @@ fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeErro
 }
 
 /// `Any.Supply`: a `Supply` of the receiver's elements.
-pub(crate) fn supply(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn supply(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if let Some(list) = capture_positionals(target) {
-        return supply(&list, args);
+        return supply(&list, &[]);
     }
     // A hash or a quant hash supplies its pairs (`self.list.Supply`).
     if let Some(pairs) = crate::runtime::utils::hashlike_receiver_as_pairs_list(target, "Supply") {
-        return supply(&pairs, args);
+        return supply(&pairs, &[]);
     }
     if let ValueView::Instance { class_name, .. } = target.view()
         && (class_name == "Supplier" || class_name == "Supplier::Preserving")

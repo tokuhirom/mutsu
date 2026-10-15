@@ -492,6 +492,10 @@ const fn register() -> Registered {
     out
 }
 
+// A compile-time intermediate, never read at run time: `M` (a const) sizes the
+// statics below from it, which a `static` could not do. Its arrays grow with
+// the row count, past clippy's size threshold.
+#[allow(clippy::large_const_arrays)]
 const REGISTERED: Registered = register();
 
 /// Per name, one bit per arity some `Mut` row takes. Those rows are registered
