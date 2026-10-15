@@ -115,14 +115,73 @@ impl Compiler {
     // Cost: O(s), s = statements of the block.
     pub(super) fn enter_lexical_use_block(&mut self, stmts: &[Stmt]) -> usize {
         let mark = self.lexical_import_chain.len();
+        let mut local_multis: Option<Vec<String>> = None;
         for stmt in stmts {
-            if let Some(id) = Self::lexical_use_set_id(stmt)
-                && !self.lexical_import_chain.contains(&id)
-            {
-                self.lexical_import_chain.push(id);
+            if let Some(id) = Self::lexical_use_set_id(stmt) {
+                let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
+                let id = Self::with_block_multis(id, local);
+                if !self.lexical_import_chain.contains(&id) {
+                    self.lexical_import_chain.push(id);
+                }
             }
         }
         mark
+    }
+
+    /// The `multi`/`proto` routine names `stmts` (a block body) declares
+    /// directly, sorted. Operators are left out: an operator family keeps
+    /// its registry alias anyway.
+    // Cost: O(s log s), s = statements of the block.
+    fn block_multi_names(stmts: &[Stmt]) -> Vec<String> {
+        let mut names: Vec<String> = stmts
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::SubDecl {
+                    name, multi: true, ..
+                }
+                | Stmt::ProtoDecl { name, .. } => Some(name.resolve()),
+                _ => None,
+            })
+            .filter(|name| !name.contains(":<"))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// The lexical import set id of a `use` in a block that declares the
+    /// multi families `local` of its own: the base id plus those names, which
+    /// the import must merge with rather than hide (`{ use M; multi f($x)
+    /// {...} }` dispatches over M's and the block's candidates of `f`), so
+    /// such a family keeps the registry path (ADR-8751 stage 2).
+    // Cost: O(n), n = length of the names.
+    fn with_block_multis(id: Symbol, local: &[String]) -> Symbol {
+        if local.is_empty() {
+            return id;
+        }
+        Symbol::intern(&format!(
+            "{}{}{}",
+            id.resolve(),
+            crate::runtime::lexical_imports::BLOCK_MULTIS_MARK,
+            local.join(",")
+        ))
+    }
+
+    /// The lexical import set the `use` statement `stmt` fills: its id as
+    /// [`Self::enter_lexical_use_block`] opened it for the innermost block.
+    // Cost: O(c + n), c = open import sets, n = length of an id.
+    pub(super) fn open_lexical_use_set(&self, stmt: &Stmt) -> Option<Symbol> {
+        let base = Self::lexical_use_set_id(stmt)?;
+        let base_text = base.resolve();
+        self.lexical_import_chain.iter().rev().copied().find(|id| {
+            *id == base
+                || id
+                    .resolve()
+                    .strip_prefix(base_text.as_str())
+                    .is_some_and(|rest| {
+                        rest.starts_with(crate::runtime::lexical_imports::BLOCK_MULTIS_MARK)
+                    })
+        })
     }
 
     /// The lexical import set id of `stmt` when it is a `use` that binds

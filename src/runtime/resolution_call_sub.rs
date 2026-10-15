@@ -665,7 +665,16 @@ impl Interpreter {
                                 matches!(
                                     captured.view(),
                                     ValueView::Sub(data)
-                                        if data.package == live.package && data.name == live.name
+                                        if data.package == live.package
+                                            && data.name == live.name
+                                            // The same routine, not another
+                                            // family's candidate spelled the
+                                            // same (`multi f` of the importing
+                                            // unit vs. an imported `multi f`).
+                                            && match (&data.compiled_routine, live.compiled_fn()) {
+                                                (Some(c), Some(l)) => c.fingerprint == l.fingerprint,
+                                                _ => true,
+                                            }
                                 )
                             })
                         });
@@ -706,8 +715,11 @@ impl Interpreter {
                         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
                         // Only when the name really is that family there; a
                         // dispatcher whose candidates no name reaches keeps
-                        // the captured-candidate walk below.
-                        if !self.resolve_all_multi_candidates(&name).is_empty() {
+                        // the captured-candidate walk below. Another family
+                        // of the same name does not count: an imported
+                        // family's dispatcher called after its block exited
+                        // must not reach the importing unit's own `multi`.
+                        if self.captured_candidates_are_live(&name, &candidates) {
                             let result = self.call_function(&name, call_args);
                             self.current_unit = saved_unit;
                             return result;

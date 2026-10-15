@@ -163,6 +163,43 @@ Consequences that pin the design:
 - **Stage 2 (phase 2, dispatcher values).** Imported multis, protos and
   operators.
 
+  **Slice 1 done** (`fix/8751-import-multis-operators`, 2026-10-15):
+  - **Multis bind as dispatcher values.** A multi family a block-scoped
+    `use` imports binds in the set as its dispatcher value
+    (`sub_value_from_multi_candidates`), built from the candidates the
+    import installed. The importer's same-named family stays out of it:
+    rakudo's import binds the module's dispatcher in the block, hiding the
+    outer family. When the family's proto only dispatches (body `{*}`,
+    signature a bare capture), the import also stops aliasing it into the
+    registry (`bind_family_lexically`), so a callee written outside the
+    block no longer sees it.
+  - **A block's own multi merges.** A block that declares a `multi` or
+    `proto` of the imported name merges its candidates with the import
+    (`{ use M; multi f(Num) {...} }`, roast `S11-modules/importing.t`
+    test 11). The compiler appends those names to the set id
+    (`with_block_multis`), and such a family keeps the registry path.
+  - **Captured candidates are always in scope.** A dispatcher value's
+    captured candidates are ranked without the compunit visibility filter
+    (#9944/#11004). They are the value's own, wherever it is called from
+    (`choose_best_in_scope_candidate`). The #11004 by-name branch of
+    `call_sub_value` takes the declaring unit's family only when it *is* the
+    captured set: before, any same-named family there won, so `my &d = do {
+    use M; &f }; d('s')` reached the importing unit's own `multi f`.
+  - **Binary operators get a prefix.** A binary user operator (`InfixFunc`
+    with one right operand and no meta-operator) gets an
+    `OpCode::LexImportInfix` prefix, keyed by `infix:<op>`. A closure keeps
+    an imported operator after the block exited.
+  - **Methods already open sets.** A `use` in a method body opens a set,
+    since method bodies compile through the routine body compiler. Slice 1's
+    "a `use` in a method body opens no set yet" no longer holds.
+
+  Left for stage 2:
+  - An operator family keeps its registry alias: a built-in operator's
+    opcode finds its user candidates there. A callee outside the block still
+    sees an imported operator.
+  - A non-trivial proto keeps its registry alias.
+  - Classes and variables keep the `ImportScope` rollback.
+
 ## 5. Acceptance
 
 Checked against `raku` and mutsu, under `t/modules/`:

@@ -81,4 +81,36 @@ impl Interpreter {
         .inspect_err(|e| self.record_call_resume_point(code, call_ip, e))?;
         Ok(true)
     }
+
+    /// Run the binary `InfixFunc` at `ip + 1` through the routine one of the
+    /// import sets of chain `chain_idx` binds `infix:<op>` (`name_idx`) to.
+    /// Returns `false`, having done nothing, when no set binds it.
+    pub(super) fn exec_lex_import_infix_site(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+        chain_idx: u32,
+        name_idx: u32,
+        compiled_fns: &CompiledFns,
+    ) -> Result<bool, RuntimeError> {
+        let Some(chain) = code.lexical_import_chains.get(chain_idx as usize) else {
+            return Ok(false);
+        };
+        let Some(target) = self.lexical_import_binding(chain, code.const_sym(name_idx)) else {
+            return Ok(false);
+        };
+        let call_ip = ip + 1;
+        self.sync_source_line(code, call_ip);
+        let binding = match target {
+            crate::runtime::lexical_imports::LexicalImport::Code(value) => {
+                CodeVarBinding::Bound(value)
+            }
+            crate::runtime::lexical_imports::LexicalImport::Routine(def) => {
+                CodeVarBinding::Routine(def)
+            }
+        };
+        self.exec_call_on_code_var_op(code, name_idx, 2, None, false, binding, compiled_fns)
+            .inspect_err(|e| self.record_call_resume_point(code, call_ip, e))?;
+        Ok(true)
+    }
 }
