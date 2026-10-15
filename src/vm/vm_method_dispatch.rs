@@ -2227,6 +2227,18 @@ impl Interpreter {
                     // `int8` param wraps `200` to `-56`, and an Int-valued
                     // enum or a Bool binds its integer.
                     let mut native_err = None;
+                    // A `Positional`-typed parameter binds a Seq through
+                    // `PositionalBindFailover` (rakudo#4864), as the sub
+                    // binder does: `method m(Positional $p)` given `.map(..)`.
+                    if resolved_constraint == "Positional"
+                        && !self.type_matches_value("Positional", &val)
+                        && self.type_matches_value("PositionalBindFailover", &val)
+                    {
+                        match self.coerce_positional_bind_failover(val.clone()) {
+                            Ok(coerced) => val = coerced,
+                            Err(e) => native_err = Some(e),
+                        }
+                    }
                     if self.native_int_binding_type(&resolved_constraint).is_some() {
                         match crate::runtime::types::wrap_native_int_for_binding(
                             self,

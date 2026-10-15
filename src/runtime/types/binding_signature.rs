@@ -430,7 +430,7 @@ impl Interpreter {
     /// one (own or inherited) and fall back to `.cache` otherwise. The real
     /// `Seq`/`HyperSeq`/`RaceSeq` builtins always have a genuine native
     /// `.iterator` and keep using it.
-    fn coerce_positional_bind_failover(&mut self, value: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn coerce_positional_bind_failover(&mut self, value: Value) -> Result<Value, RuntimeError> {
         let has_own_iterator = match value.view() {
             ValueView::Seq(..) | ValueView::HyperSeq(..) | ValueView::RaceSeq(..) => true,
             ValueView::Instance { class_name, .. } => {
