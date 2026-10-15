@@ -28,6 +28,9 @@ macro_rules! any_rows {
     };
 }
 
+/// A `Handler::Narrow` function.
+type NarrowFn = fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>;
+
 pub(super) static ROWS: &[MethodRow] = any_rows![
     "keys" => keys,
     "values" => values,
@@ -48,7 +51,7 @@ pub(super) static TYPE_OBJECT_ROWS: &[MethodRow] = &[
 
 const fn type_object_row(
     name: &'static str,
-    handler: fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>,
+    handler: NarrowFn,
 ) -> MethodRow {
     MethodRow {
         owner: "Any",
@@ -93,7 +96,7 @@ fn shared_prefix(
     target: &Value,
     scalar: fn(&Value, &[Value]) -> Result<Value, RuntimeError>,
     shaped: fn(Vec<(Value, Value)>) -> Vec<Value>,
-    owner: [fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>; 4],
+    owner: [NarrowFn; 4],
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     if super::any_collection::scalar_like(target) {
         return Some(Some(scalar(target, &[])));
