@@ -1388,8 +1388,6 @@ mod tests {
                 "message",
                 "gist",
                 "Str",
-                "line",
-                "file",
                 "backtrace",
                 "throw",
                 "resume",

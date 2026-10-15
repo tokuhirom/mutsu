@@ -1227,8 +1227,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // those already have their own rows), so one `Exception`-owner row each
     // covers every `X::*`/`CX::*` subtype the chain walk now reaches (see the
     // `register_x` additions in `runtime_init.rs` this same slice).
-    ("Exception", "line", 1, 0),
-    ("Exception", "file", 1, 0),
     ("Exception", "backtrace", 1, 48),
     ("Exception", "throw", 1, 48),
     ("Exception", "resume", 1, 48),
