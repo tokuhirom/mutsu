@@ -1154,9 +1154,9 @@ impl Interpreter {
             // A block-scoped `use` binds a plain routine in the block's lexical
             // import set instead of aliasing it into the registry (ADR-8751
             // stage 1): code written outside the block, called from inside it,
-            // must not see it. A user `infix:<op>` that is no built-in
-            // operator binds the same way (stage 2, `lexically_bindable_operator`);
-            // a proto and the other operators keep the alias.
+            // must not see it. A user operator that is no built-in one binds
+            // the same way (stage 2, `lexically_bindable_operator`); a proto, a
+            // candidate of a built-in operator and `postcircumfix` keep the alias.
             if (!name.contains(":<") || Self::lexically_bindable_operator(&name))
                 && !imported_proto
                 && !exported_method_candidates

@@ -216,9 +216,19 @@ Consequences that pin the design:
     the chain their original compile shared
     (`seed_lexical_import_chain_from`).
 
+  **Slice 3 done** (`fix/8751-import-prefix-postfix-operators`, 2026-10-16):
+  a user `prefix`, `postfix` or `circumfix` operator that is not a built-in
+  one (`compiled_operator::is_builtin_prefix` / `_postfix` / `_circumfix`)
+  binds in the set too. The parser already turns every use of such an
+  operator into a bareword call of its full name (`prefix:<¢>(...)`), so
+  the existing `LexImportCall` prefix reads the set; only the binding
+  decision (`lexically_bindable_operator`) changed. A callee outside the
+  block no longer sees the operator. Pinned by
+  `t/modules/import-export/use-in-block-binds-affix-operators-lexically.t`.
+
   Left for stage 2:
-  - The prefix, postfix and circumfix categories, and a user candidate of a
-    built-in operator (`multi infix:<+>`), keep the registry alias: their
+  - A user candidate of a built-in operator (`multi infix:<+>`,
+    `multi prefix:<->`) and `postcircumfix` keep the registry alias: their
     opcodes find user candidates there. So a callee outside the block still
     sees them.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
