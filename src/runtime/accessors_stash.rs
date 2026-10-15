@@ -635,11 +635,14 @@ impl Interpreter {
             return val;
         }
         // Scalars are stored without the `$` sigil in the env; strip it for lookup.
+        // Read through the same chokepoint a `$x` read uses, so a routine's
+        // captured mainline lexical (ADR-0024's unit bucket) answers ahead of a
+        // same-named binding of whatever block called it (#13604).
         if let Some(bare) = name.strip_prefix('$')
-            && let Some(value) = self.env.get(bare)
+            && let Some(value) = self.get_env_with_main_alias(bare)
             && !value.is_nil()
         {
-            return value.clone();
+            return value;
         }
         // `::('s')` names the TERM `s`, not the scalar `$s`. An enum key is stored
         // in its own key namespace (#7914), so probe it before the plain `env` key

@@ -2510,6 +2510,53 @@ impl Compiler {
                 }
             }
         }
+        // A body that names lexicals by string (`EVAL`, `::('$x')`) may read any
+        // lexical visible here, not only its free variables: bake them all, so
+        // the registration captures each one's declaration cell and the lookup
+        // answers it rather than a caller's same-named binding (#13604).
+        //
+        // Only for a sub declared at the unit's top level: there `local_map`
+        // already answers what each name means for the whole scope. In a
+        // nested block it answers what the name means *so far* -- an outer
+        // `$x` the block redeclares further down, which the string lookup
+        // must not reach (roast `S04-declarations/my-6e.t`).
+        let at_unit_top = !self.in_lexical_scope
+            && self.local_scopes.len().checked_sub(1) == Some(self.unit_root_scope);
+        let names_lexicals = at_unit_top
+            && keys.iter().any(|key| {
+                self.compiled_functions
+                    .get(key)
+                    .is_some_and(|cf| cf.code.static_name_lookup)
+            });
+        if names_lexicals {
+            // A name the body declares itself (a `my`, a parameter) is its own
+            // binding, which the lookup must reach first: the capture is
+            // consulted ahead of the frame (`unit_lexical_slot`).
+            let declared_in_body = |name: &str| {
+                keys.iter().any(|key| {
+                    self.compiled_functions
+                        .get(key)
+                        .is_some_and(|cf| cf.code.locals.iter().any(|l| l == name))
+                })
+            };
+            let mut visible: Vec<(&String, &u32)> = self
+                .local_map
+                .iter()
+                .filter(|(name, _)| {
+                    crate::env::is_user_variable_key(name)
+                        && !name.starts_with("__")
+                        && !declared_in_body(name)
+                })
+                .collect();
+            // `local_map` is a hash map; keep the bake deterministic.
+            visible.sort();
+            for (name, slot) in visible {
+                let sym = crate::symbol::Symbol::intern(name);
+                if !out.iter().any(|(s, _)| *s == sym) {
+                    out.push((sym, *slot));
+                }
+            }
+        }
         out
     }
 

@@ -9634,6 +9634,8 @@ impl CompiledCode {
                 | OpCode::GetLexicalStash { .. }
                 | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
+                // `::('$x') = v` names its target by string as the read does.
+                | OpCode::IndirectTypeLookupStore
                 | OpCode::IndirectCodeLookup(_) => true,
                 // `nqp::getlex`/`bindlex` (and their native forms) name a
                 // lexical of the running frame by a runtime string, so the

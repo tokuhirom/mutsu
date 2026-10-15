@@ -611,8 +611,15 @@ impl Interpreter {
         };
         // Write THROUGH an existing `ContainerRef` cell — see the matching
         // comment in `exec_symbolic_deref_store_op`, which this mirrors for
-        // the `::('$x') = v` spelling.
-        if let Some(existing) = self.env().get(&store_name).cloned()
+        // the `::('$x') = v` spelling. The running routine's captured cell
+        // for the name (ADR-0024) comes first, as it does for a `$x` read
+        // (#13604): the env may hold a same-named binding of the caller.
+        let existing = self
+            .unit_lexical_slot(&store_name, None)
+            .filter(|v| v.is_container_ref())
+            .or_else(|| self.env().get(&store_name))
+            .cloned();
+        if let Some(existing) = existing
             && let ValueView::ContainerRef(arc) = existing.view()
         {
             let value = self.coerce_container_cell_store(&arc, value)?;
