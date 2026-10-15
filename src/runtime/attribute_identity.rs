@@ -19,6 +19,13 @@
 use super::*;
 use crate::symbol::Symbol;
 
+pub(crate) const BOOTSTRAPATTR_MARKER: &str = "__mutsu_is_bootstrapattr";
+
+pub(crate) fn is_bootstrapattr(value: &Value) -> bool {
+    matches!(value.view(), ValueView::Instance { attributes, .. }
+        if attributes.as_map().get(BOOTSTRAPATTR_MARKER).is_some_and(Value::truthy))
+}
+
 /// What one `Attribute` meta-object stands for: the attribute `sigil!name`
 /// of the package `owner`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -98,7 +105,7 @@ impl Interpreter {
                     "__mutsu_attr_name".to_string(),
                     Value::str(attr_name.to_string()),
                 );
-                meta.insert("__mutsu_is_bootstrapattr".to_string(), Value::TRUE);
+                meta.insert(BOOTSTRAPATTR_MARKER.to_string(), Value::TRUE);
                 attribute_meta_object(
                     AttributeIdentity {
                         owner: Symbol::intern("Attribute"),
@@ -132,6 +139,9 @@ impl Interpreter {
         );
         meta.insert("is_public".to_string(), Value::truth(has_accessor));
         meta.insert("is_rw".to_string(), Value::FALSE);
+        if matches!(owner, "Int" | "Num" | "Str") {
+            meta.insert(BOOTSTRAPATTR_MARKER.to_string(), Value::TRUE);
+        }
         meta.insert("sigil".to_string(), Value::str("$".to_string()));
         meta.insert(
             "type".to_string(),

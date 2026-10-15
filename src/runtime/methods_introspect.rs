@@ -143,6 +143,9 @@ impl Interpreter {
             ValueView::WeakSub(_) => "Sub",
             ValueView::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             ValueView::Instance { class_name, .. } => {
+                if crate::runtime::attribute_identity::is_bootstrapattr(target) {
+                    return Ok(Value::package(Symbol::intern("BOOTSTRAPATTR")));
+                }
                 let resolved = class_name.resolve();
                 let visible = if crate::value::is_nameless_anon_type_name(&resolved) {
                     ""
@@ -1073,6 +1076,9 @@ impl Interpreter {
                     .unwrap_or_else(|| crate::value::user_facing_type_name(&resolved).to_string())
             }
             ValueView::Instance { class_name, .. } => {
+                if crate::runtime::attribute_identity::is_bootstrapattr(target) {
+                    return Ok(Value::str("BOOTSTRAPATTR".to_string()));
+                }
                 let resolved = class_name.resolve();
                 let base = self
                     .types

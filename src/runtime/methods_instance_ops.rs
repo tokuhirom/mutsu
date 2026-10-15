@@ -1252,7 +1252,7 @@ impl Interpreter {
                     "raku" => {
                         let is_bootstrap = attributes
                             .as_map()
-                            .get("__mutsu_is_bootstrapattr")
+                            .get(crate::runtime::attribute_identity::BOOTSTRAPATTR_MARKER)
                             .is_some_and(|v| v.truthy());
                         if is_bootstrap {
                             return Ok(Value::str("BOOTSTRAPATTR.new".to_string()));

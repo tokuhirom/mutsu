@@ -459,6 +459,11 @@ impl Interpreter {
     pub(crate) fn mop_receiver_owner(&mut self, value: &Value) -> String {
         match value.view() {
             ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { .. }
+                if crate::runtime::attribute_identity::is_bootstrapattr(value) =>
+            {
+                "BOOTSTRAPATTR".to_string()
+            }
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => self.dispatch_owner_name(value).to_string(),
         }
