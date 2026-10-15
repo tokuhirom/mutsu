@@ -1847,7 +1847,10 @@ impl SubData {
             .param_defs
             .iter()
             .any(|pd| pd.sigilless && pd.name == p)
-            && !self.param_defs.iter().any(|pd| !pd.sigilless && pd.name == p)
+            && !self
+                .param_defs
+                .iter()
+                .any(|pd| !pd.sigilless && pd.name == p)
         {
             Symbol::intern(&crate::term_names::term_key(p))
         } else {
@@ -1859,7 +1862,11 @@ impl SubData {
     /// thereafter.
     pub(crate) fn param_name_syms(&self) -> &Arc<ParamNameSyms> {
         self.param_name_syms_cache.get_or_init(|| {
-            let params: Vec<Symbol> = self.params.iter().map(|p| self.param_storage_sym(p)).collect();
+            let params: Vec<Symbol> = self
+                .params
+                .iter()
+                .map(|p| self.param_storage_sym(p))
+                .collect();
             let mut call_local: rustc_hash::FxHashSet<Symbol> = params.iter().copied().collect();
             for param in self.params.iter() {
                 if let Some(bare) = param.strip_prefix('^') {

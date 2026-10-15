@@ -13754,8 +13754,14 @@ impl CompiledFunction {
         for p in &self.params {
             // A sigilless parameter is spelled bare here but declares its term
             // key (ADR-12441), which `collect_param_names` already added.
-            let sigilless_only = self.param_defs.iter().any(|pd| pd.sigilless && pd.name == *p)
-                && !self.param_defs.iter().any(|pd| !pd.sigilless && pd.name == *p);
+            let sigilless_only = self
+                .param_defs
+                .iter()
+                .any(|pd| pd.sigilless && pd.name == *p)
+                && !self
+                    .param_defs
+                    .iter()
+                    .any(|pd| !pd.sigilless && pd.name == *p);
             if !sigilless_only {
                 declared.insert(p.clone());
             }

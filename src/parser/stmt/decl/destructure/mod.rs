@@ -286,9 +286,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     // sigilless `_` term the same private storage as a standalone declaration.
     // Otherwise a grouped `my (\_)` would reintroduce the topic collision.
     for dvar in &mut vars {
-        if dvar.sigilless {
-
-        }
+        if dvar.sigilless {}
     }
 
     // Parse optional `is default(expr)` trait on grouped declaration

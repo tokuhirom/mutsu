@@ -324,10 +324,9 @@ pub(crate) fn register_user_term_symbol(name: &str) {
         let current = scopes
             .last_mut()
             .expect("scope stack should never be empty");
-        current.term_symbols.insert(
-            symbol,
-            TermBinding::Value(name.to_string()),
-        );
+        current
+            .term_symbols
+            .insert(symbol, TermBinding::Value(name.to_string()));
     });
 }
 
