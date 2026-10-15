@@ -1199,6 +1199,9 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
+            is_hidden_from_backtrace: custom_traits
+                .iter()
+                .any(|(t, _)| t == "__hidden_from_backtrace"),
             is_implementation_detail: custom_traits
                 .iter()
                 .any(|(t, _)| t == "implementation-detail"),
@@ -2095,6 +2098,7 @@ impl Interpreter {
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
             is_test_assertion: false,
+            is_hidden_from_backtrace: false,
             is_implementation_detail: false,
             is_rw: false,
             is_raw: false,
@@ -2302,6 +2306,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                is_hidden_from_backtrace: false,
                 is_implementation_detail: false,
                 is_rw: false,
                 is_raw: false,
@@ -2385,6 +2390,7 @@ impl Interpreter {
                 param_defs: param_defs.to_vec(),
                 body: body.to_vec(),
                 is_test_assertion: false,
+                is_hidden_from_backtrace: false,
                 is_implementation_detail: false,
                 is_rw: false,
                 is_raw: false,

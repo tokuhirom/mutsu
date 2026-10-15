@@ -918,12 +918,13 @@ impl Interpreter {
         // cached on the `CompiledFunction`. Interning them per call cost
         // ~26% on `benchmarks/bench-fib.raku`, since this is the hottest
         // dispatch path and `Symbol::intern` hashes the whole string.
-        self.push_routine_with_location(
+        self.push_routine_with_visibility(
             cf.package_sym(),
             func_name_sym,
             self.current_source_line(),
             self.executing_source_file_sym(),
             cf.source_file_sym(),
+            cf.is_hidden_from_backtrace,
         );
 
         // A routine (sub/method) body is its own topicalizer for a bare

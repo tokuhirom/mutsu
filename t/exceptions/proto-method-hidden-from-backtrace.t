@@ -1,6 +1,6 @@
 use Test;
 
-plan 4;
+plan 5;
 
 # `is hidden-from-backtrace` on a `proto method` hides the proto's own
 # dispatch frame, as it does for a multi candidate (Lumberjack's Logger role).
@@ -31,3 +31,10 @@ role R {
 }
 class Composed does R { }
 is Composed.new.t, "visible,t,<unit>", 'a role proto composed into a class stays hidden';
+
+class ImplicitProto {
+    proto method log(|c) { * };
+    multi method log(Int $l) { visible() };
+    method t { self.log(1) }
+}
+is ImplicitProto.new.t, 'visible,log,t,<unit>', 'a {*} only proto method adds no extra backtrace frame';

@@ -19,6 +19,7 @@ impl Encode for CompiledFunction {
             param_defs,
             return_type,
             fingerprint,
+            is_hidden_from_backtrace,
             empty_sig,
             is_rw,
             is_cached,
@@ -56,6 +57,7 @@ impl Encode for CompiledFunction {
         Compat(param_defs).encode(encoder)?;
         return_type.encode(encoder)?;
         fingerprint.encode(encoder)?;
+        is_hidden_from_backtrace.encode(encoder)?;
         empty_sig.encode(encoder)?;
         is_rw.encode(encoder)?;
         is_cached.encode(encoder)?;
@@ -102,6 +104,7 @@ impl Decode<DecodeCtx> for CompiledFunction {
             param_defs: decode_serde(decoder)?,
             return_type: Decode::decode(decoder)?,
             fingerprint: Decode::decode(decoder)?,
+            is_hidden_from_backtrace: Decode::decode(decoder)?,
             empty_sig: Decode::decode(decoder)?,
             is_rw: Decode::decode(decoder)?,
             is_cached: Decode::decode(decoder)?,

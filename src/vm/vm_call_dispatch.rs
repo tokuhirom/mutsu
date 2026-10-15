@@ -318,7 +318,13 @@ impl Interpreter {
         // bytecode — a user `infix:` operator in a reduce recompiled nothing but
         // still paid the hash on every step, which profiled as 2.6% of a
         // `[mm] 1 .. 200` run (ADR-0019 C6d-1).
-        let cache_key = fingerprint ^ (def.package.id() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let cache_key = fingerprint
+            ^ (def.package.id() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ if def.is_hidden_from_backtrace {
+                0xD6E8_FEB8_6659_FD93
+            } else {
+                0
+            };
         if let Some(cached) = self.caches.otf_compile_cache.get(&cache_key) {
             return cached.clone();
         }
@@ -395,6 +401,7 @@ impl Interpreter {
             empty_sig: def.empty_sig,
             is_rw: def.is_rw,
             is_raw: def.is_raw,
+            is_hidden_from_backtrace: def.is_hidden_from_backtrace,
             uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
             has_rw_positional_param: false,
             aggregate_positional_params: 0,

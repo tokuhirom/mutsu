@@ -293,6 +293,19 @@ impl Interpreter {
         file: Option<Symbol>,
         def_file: Option<Symbol>,
     ) {
+        self.push_routine_with_visibility(package, name, line, file, def_file, false);
+    }
+
+    /// Push a routine frame with its declaration's backtrace visibility.
+    pub(crate) fn push_routine_with_visibility(
+        &mut self,
+        package: Symbol,
+        name: Symbol,
+        line: Option<u32>,
+        file: Option<Symbol>,
+        def_file: Option<Symbol>,
+        is_hidden_from_backtrace: bool,
+    ) {
         let invocation_id = self.take_invocation_id();
         let lexical_package = self.lexical_package_for_frame(def_file);
         // Decided once per symbol (`src/qualified.rs`): this runs on every
@@ -313,7 +326,7 @@ impl Interpreter {
             is_submethod: false,
             is_block: false,
             is_inlined_block: false,
-            is_hidden_from_backtrace: false,
+            is_hidden_from_backtrace,
             def_file,
             invocation_id,
             callable_id: 0,

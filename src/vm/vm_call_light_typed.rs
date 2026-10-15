@@ -639,12 +639,13 @@ impl Interpreter {
         // Slice 1). All three `Symbol`s are pre-resolved rather than interned
         // here -- see the matching push in `vm_call_light.rs` for the cost
         // that made this worth threading.
-        self.push_routine_with_location(
+        self.push_routine_with_visibility(
             cf.package_sym(),
             func_name_sym,
             self.current_source_line(),
             self.executing_source_file_sym(),
             cf.source_file_sym(),
+            cf.is_hidden_from_backtrace,
         );
 
         // A routine body is its own topicalizer for a bare `when`/`default`: a

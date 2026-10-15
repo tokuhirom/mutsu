@@ -225,12 +225,13 @@ impl Interpreter {
         // dynamically-scoped `?FILE` (#8743) — the call site is in the
         // CALLER's own lexical file, which once a module has finished
         // loading `?FILE` no longer names.
-        self.push_routine_with_location(
+        self.push_routine_with_visibility(
             cf.package_sym(),
             fn_name_sym,
             self.current_source_line(),
             self.executing_source_file_sym(),
             cf.source_file_sym(),
+            cf.is_hidden_from_backtrace,
         );
         let let_mark = self.let_saves_len();
         // Frame-less path: roll back the line the body's ops advanced to manually.

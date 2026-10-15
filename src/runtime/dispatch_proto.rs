@@ -235,7 +235,7 @@ impl Interpreter {
             is_submethod: false,
             is_block: false,
             is_inlined_block: false,
-            is_hidden_from_backtrace: false,
+            is_hidden_from_backtrace: only_star,
             def_file: None,
             invocation_id,
             callable_id: 0,
@@ -330,9 +330,10 @@ impl Interpreter {
             is_default: false,
             deprecated_message: None,
             is_submethod: false,
-            is_hidden_from_backtrace: self
-                .registry()
-                .method_entry_proto_hidden(owner_class, method_name),
+            is_hidden_from_backtrace: only_star
+                || self
+                    .registry()
+                    .method_entry_proto_hidden(owner_class, method_name),
             captured_env: None,
             source_file: proto.source_file,
             role_param_bindings: None,

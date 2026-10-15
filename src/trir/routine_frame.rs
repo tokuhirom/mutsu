@@ -46,12 +46,13 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
         let def_file = chunk.def_file.get().copied();
-        self.push_routine_with_location(
+        self.push_routine_with_visibility(
             self.current_package_sym(),
             chunk.name,
             self.current_source_line(),
             self.executing_source_file_sym(),
             def_file,
+            chunk.is_hidden_from_backtrace,
         );
         let saved_unit = def_file.map(|file| {
             let unit = self.unit_of_source_sym(Some(file));

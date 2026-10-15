@@ -13266,6 +13266,8 @@ pub(crate) struct CompiledFunction {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) return_type: Option<String>,
     pub(crate) fingerprint: u64,
+    /// Whether this routine's frame is omitted from backtraces.
+    pub(crate) is_hidden_from_backtrace: bool,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
     /// When true, this sub is declared `is rw`.
@@ -14047,6 +14049,7 @@ mod compiled_fns_identity {
             param_defs: Vec::new(),
             return_type: None,
             fingerprint: 1,
+            is_hidden_from_backtrace: false,
             empty_sig: false,
             is_rw: false,
             is_cached: false,

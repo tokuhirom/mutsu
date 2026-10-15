@@ -156,6 +156,7 @@ impl Interpreter {
             param_defs: sub_param_defs.clone(),
             body,
             is_test_assertion: false,
+            is_hidden_from_backtrace: false,
             is_implementation_detail: false,
             is_rw: false,
             is_raw: false,

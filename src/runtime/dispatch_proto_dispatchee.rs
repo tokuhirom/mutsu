@@ -160,6 +160,7 @@ impl Interpreter {
             // signature, and the fingerprint is seeded above.
             body: Vec::new(),
             is_test_assertion: false,
+            is_hidden_from_backtrace: false,
             is_implementation_detail: false,
             is_cached: false,
             is_rw: data.is_rw,

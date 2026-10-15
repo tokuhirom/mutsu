@@ -4227,6 +4227,9 @@ impl Compiler {
                     *is_rw,
                     *is_raw,
                     is_cached,
+                    custom_traits
+                        .iter()
+                        .any(|(t, _)| t == "__hidden_from_backtrace"),
                     deprecated_info.clone(),
                 ) {
                     compiled_routine_keys.push(key);
@@ -4244,6 +4247,9 @@ impl Compiler {
                         *is_rw,
                         *is_raw,
                         is_cached,
+                        custom_traits
+                            .iter()
+                            .any(|(t, _)| t == "__hidden_from_backtrace"),
                         deprecated_info.clone(),
                     ) {
                         compiled_routine_keys.push(key);
@@ -4420,6 +4426,7 @@ impl Compiler {
                             *is_rw,
                             false,
                             false,
+                            false,
                         )
                         .into_iter()
                         .collect();
@@ -4493,6 +4500,7 @@ impl Compiler {
                         body,
                         false,
                         None,
+                        false,
                         false,
                         false,
                         false,
