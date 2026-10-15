@@ -90,7 +90,7 @@ mod stmt;
 pub(crate) fn is_raku_identifier(input: &str) -> bool {
     stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
 }
-pub(crate) use expr::{atomic_elem_update, wrap_dot_assign};
+pub(crate) use expr::{atomic_elem_update, wrap_dot_assign, wrap_dot_assign_with_terms};
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use stmt::assign::{
     DOTTY_ASSIGN_OP, compound_assign_op_from_name, compound_assigned_value_expr,

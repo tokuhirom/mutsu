@@ -1126,7 +1126,11 @@ pub(super) fn lower_dotty_assign(
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
         return Ok(crate::parser::topic_dot_assign(method_call(target)));
     }
-    Ok(crate::parser::wrap_dot_assign(target, method_call))
+    Ok(crate::parser::wrap_dot_assign_with_terms(
+        target,
+        method_call,
+        super::shadowed_terms::is_declared_term,
+    ))
 }
 
 fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {

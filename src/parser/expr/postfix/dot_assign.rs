@@ -122,9 +122,24 @@ pub(crate) fn dot_assign_to_name(name: String, method_call: Expr) -> Expr {
 /// `ApplyDottyInfix` and the lowering can rebuild the same expansion.
 // Cost: O(n), n = size of the target and the method call (both are cloned).
 pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl Fn(Expr) -> Expr) -> Expr {
+    wrap_dot_assign_with_terms(
+        target,
+        method_call_fn,
+        crate::parser::stmt::simple::is_user_declared_value_term,
+    )
+}
+
+/// [`wrap_dot_assign`] with the caller's notion of which barewords name a
+/// sigilless term: the parser asks its scopes, the RakuAST lowering asks the
+/// declarations its unit carries.
+pub(crate) fn wrap_dot_assign_with_terms(
+    target: Expr,
+    method_call_fn: impl Fn(Expr) -> Expr,
+    is_term: fn(&str) -> bool,
+) -> Expr {
     let source = target.clone();
     let method_call = method_call_fn(source.clone());
-    let expanded = expand_dot_assign(target, &method_call_fn);
+    let expanded = expand_dot_assign(target, &method_call_fn, is_term);
     // The simple-variable expansion already carries the marker.
     if crate::parser::stmt::assign::is_dotty_assign(&expanded) {
         return expanded;
@@ -132,7 +147,11 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl Fn(Expr) -> Exp
     crate::parser::stmt::assign::dotty_assign_marker(source, method_call, expanded)
 }
 
-fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Expr {
+fn expand_dot_assign(
+    target: Expr,
+    method_call_fn: &impl Fn(Expr) -> Expr,
+    is_term: fn(&str) -> bool,
+) -> Expr {
     // Unwrap Grouped and identity `.self` calls to get at the lvalue. `.self`
     // returns its invocant unchanged, so `(X.self).=meth` is exactly `X.=meth`
     // (the assignment writes back through `X`).
@@ -179,7 +198,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
         // A sigilless term (`my \foo`): its assignments are named by its
         // term key, the same one `foo += 1` writes back to (#9551,
         // ADR-12441).
-        Expr::BareWord(name) if crate::parser::stmt::simple::is_user_declared_value_term(name) => {
+        Expr::BareWord(name) if is_term(name) => {
             let name = crate::term_names::bareword_target_key(name);
             dot_assign_to_name(name, method_call_fn(target))
         }
