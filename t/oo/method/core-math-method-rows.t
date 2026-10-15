@@ -4,7 +4,7 @@ use Test;
 # receivers the deleted `methods_0arg/dispatch_core_math.rs` arms answered
 # reach them.
 
-plan 15;
+plan 19;
 
 # `Range`, `Seq` and `Match` are `Cool`: their `Rat` is their number.
 is (1..3).Rat, 3, 'Range.Rat is its element count';
@@ -31,3 +31,11 @@ is (1..3).tree, (1, 2, 3), 'Range.tree';
 is "x".tree, 'x', 'Str.tree is itself';
 is Int.tree, Int, 'a type object is itself';
 is ("x" ~~ /x/).tree.WHAT, Match, 'Match.tree is itself';
+
+# A `Seq` or `Slip` with no settled shape is `Cool` too: its numeric methods
+# read its element count.
+is (1, 2, 3, 4).map(* + 0).sqrt, 2, 'Seq.sqrt';
+is (1, 2, 3, 4).Slip.sqrt, 2, 'Slip.sqrt';
+my $r = (1, 2, 3).map(* + 0).rand;
+ok 0 <= $r < 3, 'Seq.rand is below its element count';
+is (1, 2).map(* + 0).Rat, 2, 'Seq.Rat';

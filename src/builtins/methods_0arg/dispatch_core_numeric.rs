@@ -178,17 +178,6 @@ pub(super) fn dispatch(
             ValueView::Hash(_) => crate::builtins::method_table::map::default(target, &[]),
             _ => None,
         }),
-        // `rand` of a numeric receiver is a row (`method_table::real_misc`), and
-        // `Range.rand` is the `Range` row's (`method_table::range`). A `Seq` has no
-        // table shape, and is `Cool`: it numifies to its element count.
-        // Cost: O(1).
-        "rand" => match target.view() {
-            ValueView::Seq(_) => Some(Some(crate::builtins::method_table::real_misc::rand(
-                target,
-                &[],
-            ))),
-            _ => Some(None),
-        },
         // `sign` of a number is a row; an enum value (no table shape) is the sign
         // of its integer value.
         // Cost: O(1).

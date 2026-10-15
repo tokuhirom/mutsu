@@ -622,7 +622,16 @@ pub(crate) fn shapeless_row(
                 | ValueView::RaceSeq(_)
                 | ValueView::Slip(_)
         );
-    let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()) || lazy_complex;
+    // `Cool`'s numeric methods (`self.Numeric.METHOD`) answer a `Seq` or `Slip`
+    // with no settled shape on its element count, as they do a settled one
+    // (§9.112).
+    let list_numeric = crate::value::cool_numeric_method(method.as_str())
+        && matches!(
+            target.view(),
+            ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) | ValueView::Slip(_)
+        );
+    let coerce =
+        COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()) || lazy_complex || list_numeric;
     let text = text || coerce;
     if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
         return None;
