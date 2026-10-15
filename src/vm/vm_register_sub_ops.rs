@@ -881,7 +881,7 @@ impl Interpreter {
                 .env()
                 .get("__mutsu_in_eval")
                 .is_some_and(|v| v.truthy());
-            if self.block_scope_depth() > 0
+            if (self.block_scope_depth() > 0 || self.inside_routine())
                 && !in_eval
                 // An exported sub is part of its module's interface, installed
                 // by the export machinery; the escape hatch is only for a
