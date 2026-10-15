@@ -1450,6 +1450,9 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.note_unscoped_amp_read(name);
             self.note_lexsub_code_var(name);
+            if let Some(chain_idx) = self.lexical_import_chain_idx(Symbol::intern(name)) {
+                self.code.emit(OpCode::LexImportCall { chain_idx });
+            }
             self.code.emit(OpCode::CallOnCodeVar {
                 name_idx,
                 arity: args.len() as u32,

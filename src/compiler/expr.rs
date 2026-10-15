@@ -1063,6 +1063,12 @@ impl Compiler {
                     None => {
                         self.note_unscoped_amp_read(name);
                         self.note_lexsub_code_var(name);
+                        // `&g` of a routine a block-scoped `use` bound
+                        // (ADR-8751): the prefix reads its binding.
+                        if let Some(chain_idx) = self.lexical_import_chain_idx(Symbol::intern(name))
+                        {
+                            self.code.emit(OpCode::LexImportCall { chain_idx });
+                        }
                         self.code.emit(OpCode::GetCodeVar(name_idx))
                     }
                 };

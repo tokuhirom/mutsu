@@ -250,6 +250,10 @@ impl Interpreter {
         let mut compiler = crate::compiler::Compiler::new();
         if is_eval_unit {
             compiler.mark_as_eval_unit();
+            // An `EVAL` inside a block that `use`s a module sees what the
+            // block imported (ADR-8751): its bareword calls read the sets of
+            // the blocks running around it.
+            compiler.seed_lexical_import_chain(self.active_lexical_import_chain());
         }
         // For an EVAL'd compilation unit's mainline the question is whether a
         // *routine* lexically encloses the `EVAL` call — and a mainline

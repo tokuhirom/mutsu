@@ -35,6 +35,5 @@ is uib-g(), 'main g', 'after the block the unit\'s own routine answers again';
 sub uib-other { uib-g() }
 {
     use UseInBlockM;
-    todo 'a callee written outside the block still sees the registry alias (ADR-8751 stage 1)';
     is uib-other(), 'main g', 'a callee written outside the block does not see the import';
 }

@@ -705,6 +705,13 @@ impl Interpreter {
                 false,
             );
         }
+        // A routine a block-scoped `use` bound lexically has no registry
+        // alias: a by-name lookup in that block reads its binding (ADR-8751).
+        if !has_packages
+            && let Some(value) = self.active_lexical_import_value(lookup_name)
+        {
+            return value;
+        }
         // Look up as a function reference (including multi subs).
         // When pseudo-packages are present (e.g. OUR::, GLOBAL::), also check
         // our_scoped_functions for subs defined in EVAL that don't leak into
