@@ -1211,3 +1211,22 @@ two Cro files that load roles); with them `t/` is green. The third bullet
 (the unconditional env mirror on a container `SetLocal`) and deleting the
 container special cases are still open on #9895.
 
+## 16. §4.2's third bullet: a plain container `SetLocal` skips the env mirror (2026-10-15)
+
+A store to a plain user `@`/`%` lexical (`CompiledCode::is_plain_container_local`:
+no twigil, no qualifier) now takes the same slot-authoritative skip a plain
+scalar store already took (`skip_env_write` in `exec_set_local_op`): no bind,
+no constant, no `needs_env_sync` consumer of the slot, no reflective name
+access in the program. Every other container store keeps the unconditional
+`set_env_with_main_alias` mirror. With §15 the container's readers reach it by
+slot or upvalue, so the mirror only served readers the skip's conditions
+already keep it for.
+
+Measured on the debug build in a 4-core container: all 7734 `t/` files pass;
+the whitelisted roast (1426 files) has no `not ok` beyond the two
+root-permission file tests `ci/known-env-failures.toml` lists, the rest of its
+list being debug-build timeouts of files the change does not touch
+(`S32-str/sprintf-*.t`, `val.t`, ...). The bundled-library battery gate runs in
+CI. Deleting the container special cases §4.2 predicted (`container_name_is_redeclared`,
+the `module_scope_lexicals` snapshot) is the remaining work on #9895.
+
