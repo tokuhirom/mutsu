@@ -416,6 +416,7 @@ impl Interpreter {
             param_defs: param_defs.to_vec(),
             body: body.to_vec(),
             is_test_assertion: false,
+            is_hidden_from_backtrace: false,
             is_implementation_detail: false,
             is_rw,
             is_raw,

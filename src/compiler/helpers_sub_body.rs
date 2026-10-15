@@ -222,6 +222,7 @@ impl Compiler {
         is_rw: bool,
         is_raw: bool,
         is_cached: bool,
+        is_hidden_from_backtrace: bool,
     ) -> Option<crate::symbol::Symbol> {
         self.compile_sub_body_with_deprecation(
             name,
@@ -234,6 +235,7 @@ impl Compiler {
             is_rw,
             is_raw,
             is_cached,
+            is_hidden_from_backtrace,
             None,
         )
     }
@@ -251,6 +253,7 @@ impl Compiler {
         is_rw: bool,
         is_raw: bool,
         is_cached: bool,
+        is_hidden_from_backtrace: bool,
         deprecated_info: Option<(String, String, String, String)>,
     ) -> Option<crate::symbol::Symbol> {
         self.attach_param_chunks(param_defs, name);
@@ -653,6 +656,7 @@ impl Compiler {
                 && !Self::body_writes_legacy_args(body),
             is_rw,
             is_raw,
+            is_hidden_from_backtrace,
             // ADR-0067's third rw-capability fact, computed here because a
             // compiled routine keeps no body AST to re-derive it from.
             uses_return_rw: crate::opcode::body_uses_return_rw(body),

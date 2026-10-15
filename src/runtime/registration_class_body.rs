@@ -597,6 +597,7 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: proto_body.clone(),
             is_test_assertion: false,
+            is_hidden_from_backtrace: false,
             is_implementation_detail: false,
             is_rw: false,
             is_raw: false,

@@ -266,6 +266,8 @@ pub(crate) struct TrChunk {
     /// body -- a TRIR chunk's execution does not maintain
     /// `Interpreter::lexical_fatal_mode` (see that field's doc comment).
     pub(crate) captured_fatal_mode: bool,
+    /// Whether calls to this routine omit its frame from backtraces.
+    pub(crate) is_hidden_from_backtrace: bool,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program

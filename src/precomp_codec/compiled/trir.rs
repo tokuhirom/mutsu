@@ -25,6 +25,7 @@ impl Encode for TrChunk {
             methods,
             def_file: _,
             captured_fatal_mode,
+            is_hidden_from_backtrace,
         } = self;
         ops.encode(encoder)?;
         constants.encode(encoder)?;
@@ -36,6 +37,7 @@ impl Encode for TrChunk {
         calls.encode(encoder)?;
         methods.encode(encoder)?;
         captured_fatal_mode.encode(encoder)?;
+        is_hidden_from_backtrace.encode(encoder)?;
         Ok(())
     }
 }
@@ -57,6 +59,7 @@ impl Decode<DecodeCtx> for TrChunk {
             methods: Decode::decode(decoder)?,
             def_file: Default::default(),
             captured_fatal_mode: Decode::decode(decoder)?,
+            is_hidden_from_backtrace: Decode::decode(decoder)?,
         })
     }
 }

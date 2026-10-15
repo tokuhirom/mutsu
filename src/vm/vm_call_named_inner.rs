@@ -122,12 +122,13 @@ impl Interpreter {
         } else {
             fn_name_sym
         };
-        self.push_routine_with_location(
+        self.push_routine_with_visibility(
             fn_package_sym,
             routine_push_name,
             self.current_source_line(),
             self.executing_source_file_sym(),
             cf.source_file_sym(),
+            cf.is_hidden_from_backtrace,
         );
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {

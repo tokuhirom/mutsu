@@ -295,6 +295,7 @@ impl Compiler {
             empty_sig: false,
             is_rw,
             is_raw: false,
+            is_hidden_from_backtrace: false,
             uses_return_rw: crate::opcode::body_uses_return_rw(body),
             has_rw_positional_param: false,
             aggregate_positional_params: 0,

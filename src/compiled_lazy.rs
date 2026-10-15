@@ -141,6 +141,7 @@ pub(crate) struct AdaptInputs {
     pub(crate) empty_sig: bool,
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
+    pub(crate) is_hidden_from_backtrace: bool,
     pub(crate) source_file: Option<String>,
 }
 
@@ -154,6 +155,7 @@ impl AdaptInputs {
             empty_sig: def.empty_sig,
             is_rw: def.is_rw,
             is_raw: def.is_raw,
+            is_hidden_from_backtrace: def.is_hidden_from_backtrace,
             source_file: def.source_file.clone(),
         }
     }
@@ -167,6 +169,10 @@ impl AdaptInputs {
         adapted.empty_sig = self.empty_sig;
         adapted.is_rw = self.is_rw;
         adapted.is_raw = self.is_raw;
+        adapted.is_hidden_from_backtrace = self.is_hidden_from_backtrace;
+        if let Some(trir) = &mut adapted.trir {
+            std::sync::Arc::make_mut(trir).is_hidden_from_backtrace = self.is_hidden_from_backtrace;
+        }
         adapted.source_file.clone_from(&self.source_file);
         adapted.stamp_source_file(self.source_file.clone());
         // `captured_fatal_mode` (#9521) is already correct on `compiled` -- baked in

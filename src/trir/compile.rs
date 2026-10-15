@@ -206,6 +206,7 @@ impl<'a> TrirCompiler<'a> {
             methods: c.methods,
             def_file: std::sync::OnceLock::new(),
             captured_fatal_mode,
+            is_hidden_from_backtrace: false,
         })
     }
 
