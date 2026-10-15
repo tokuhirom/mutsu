@@ -561,11 +561,11 @@ impl Compiler {
         // cross-frame sentinel.)
         let fresh_param_names: Vec<String> = params
             .iter()
-            .cloned()
             .filter(|p| {
-                !self.local_map.contains_key(p)
-                    && self.for_param_names[..for_param_mark].contains(p)
+                !self.local_map.contains_key(*p)
+                    && self.for_param_names[..for_param_mark].contains(*p)
             })
+            .cloned()
             .collect();
         self.push_local_scope();
         for s in &bind_prefix {
