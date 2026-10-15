@@ -123,7 +123,10 @@ impl Compiler {
         // user class `Red::AST::Empty` registers the short name `Empty` too,
         // but `--> Empty` still means the Empty value (#9530). Same order as
         // the runtime twin `Interpreter::is_definite_return_spec`.
-        if matches!(s, "Nil" | "True" | "False" | "Empty" | "pi" | "IterationEnd") {
+        if matches!(
+            s,
+            "Nil" | "True" | "False" | "Empty" | "pi" | "IterationEnd"
+        ) {
             return Some(true);
         }
         if super::compile_inputs::is_user_declared_type(s) {
