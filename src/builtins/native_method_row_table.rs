@@ -2177,6 +2177,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Any", "sort", 8, 28),
     ("Any", "reverse", 8, 60),
     ("Any", "unique", 1, 24),
+    ("Any", "invert", 1, 24),
     ("Any", "repeated", 1, 24),
     ("Any", "squish", 8, 28),
     ("Any", "collate", 8, 28),

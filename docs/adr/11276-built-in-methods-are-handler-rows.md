@@ -2621,6 +2621,32 @@ the catalog chain of that class (the MRO spells out `Exception` but not `Any`), 
 own `ACCEPTS` row (`class DD is Date`) answers from that row, with the interpreter (`shapeless_row`). Pinned in
 `t/oo/method/accepts-method-builtin-instances.t`.
 
+### 9.109 Slice 5: `Any`'s views and list methods answer the collection arms' receivers; `methods_0arg/collection.rs` has no arm left (2026-10-15)
+
+`refactor/11276-any-kv-view-arms`. The arms of `methods_0arg/collection.rs` (`hash`, `keys`, `values`, `kv`, `pairs`, `pairup`,
+`antipairs`, `kxxv`, `invert`, `sum`, `permutations`, `combinations`, `cache`) are deleted; the file keeps only the helpers rows call
+(`invert_value`, `combinations_seq`, `permutations_seq`). Before deleting them, a census build logged every call an arm answered over
+the whole `t/` suite and the whitelisted roast: `Range` (all five views, `permutations`, `combinations`, `hash`), a `Seq` with no
+settled shape (`cache`, `sum`, `permutations`, the views, `invert`), `Pair.hash`, shaped arrays, `Nil`, a stash's `kv`/`pairs`/`hash`,
+an enum value's `kv`, `IO::Path`/`Blob`/a user instance's `pairs`, `List`/`Array`/`Hash` `cache`/`pairup`/`permutations`, a non-`Pair`
+`List.invert`, and type objects (`hash`, `pairup`). Each now reaches a row:
+
+1. **The rows carry the arms' bodies** (`method_table::collections::any_views`): `Any`'s `keys`, `values`, `kv`, `pairs`,
+   `antipairs` and `invert` (formerly `Pure` handlers asserting a scalar receiver) answer every receiver the arm did, delegating to
+   the `Map`/`Pair`/`List`/quant-hash handlers for those kinds; `Any.pairup`, `Any.cache`, `Any.permutations` and
+   `Any.combinations` are new rows and take a type object, which lists as itself (`Array.cache` is `((Array))`). `Any.hash` takes
+   the arm's type-object, `Nil`, `Hash`, quant-hash and stash cases. `List.invert` uses `Any.invert`'s handler, so a non-`Pair`
+   element is the `X::TypeCheck` the arm raised.
+2. **Closed shapes** reach them through `ANY_LIST_FOR_CLOSED_SHAPES` (eleven names added); a shape with its own row (`Pair.keys`,
+   `Capture.hash`, `Bag.invert`, `Range.sum`, `Seq.cache`) answers it first, and a `Match` still reaches `Capture`'s.
+3. **Shapeless receivers** reach them through `answer_shapeless`, as in §9.80; a stash reaches `Any`'s `kv`, `pairs` and `hash`
+   whatever its MRO says.
+
+Behaviour changes toward Rakudo, pinned in `t/oo/method/any-view-method-rows.t`: `Set.kxxv` and `Hash.kxxv` are
+`X::Method::NotFound` (Rakudo declares `kxxv` on `Baggy` alone); `"a".invert` and `(1..2).invert` are `X::TypeCheck` (were
+`X::Method::NotFound`; the recognition table gains `Any.invert`); `"x".IO.hash` is `X::Hash::Store::OddNumber` (was
+`X::Method::NotFound`). `method-rows-report.py --arms`: the pure arity cascades go from 108 arms to 92.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

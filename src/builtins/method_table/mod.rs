@@ -65,8 +65,8 @@ mod unadmitted;
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::{
     any_collection, any_list_hash as collection_any_list_hash, any_misc as collection_any_misc,
-    capture, clone as collection_clone, lazy, list, list_aggregate, map, pair, positional,
-    quanthash, range, render as collection_render, render_names as collection_render_names,
+    capture, clone as collection_clone, lazy, list, list_aggregate, map, positional, quanthash,
+    range, render as collection_render, render_names as collection_render_names,
     rotate as collection_rotate, seq, subscript, terminals,
 };
 pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_of;

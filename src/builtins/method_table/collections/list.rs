@@ -52,7 +52,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         owner: "List",
         name: "invert",
         arity: 0,
-        handler: Handler::Narrow(invert),
+        handler: Handler::Narrow(super::any_views::invert),
         flags: RowFlags::NONE,
         named: &[],
     },
