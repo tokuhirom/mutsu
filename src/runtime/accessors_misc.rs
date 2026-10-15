@@ -357,6 +357,11 @@ impl Interpreter {
         self.block_scope_depth
     }
 
+    // Cost: O(1).
+    pub(crate) fn inside_routine(&self) -> bool {
+        !self.routine_stack.is_empty()
+    }
+
     pub(crate) fn push_block_scope_depth(&mut self) {
         self.block_scope_depth += 1;
     }
