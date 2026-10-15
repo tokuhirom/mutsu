@@ -6,8 +6,8 @@ Found running ValueMap (all 23 assertions of its suite now match rakudo):
   user `is Map` class can delegate to it (`STORE self, @values, :INITIALIZE,
   :DECONT`, as ValueMap does). Called on an `is Map`/`is Hash` instance it
   stores into the instance's backing hash and answers the instance.
-- `Hash.push`/`append` rows no longer apply to a `Map` (nor an `is Map`
-  subclass), whose Rakudo type has neither method.
+- `Hash.push`/`append` on a `Map` (or an `is Map`
+  subclass) raise X::Method::NotFound: Rakudo's Map has neither method.
 - `%vm[0] = 42` on an `is Map` instance raised no error and replaced the
   instance with a Hash holding its internals; it is now refused as an immutable
   write, as for a plain `Map`.
