@@ -48,7 +48,9 @@ impl Interpreter {
                     "c".to_string()
                 }
             });
-        let class_is_6e = class_lang_rev != "c";
+        // 6.c and 6.d share the pre-6.e rule (a class's own BUILD/TWEAK
+        // replaces a role's); only 6.e and later run both.
+        let class_is_6e = revision_is_6e(&class_lang_rev);
         let mut steps = Vec::new();
         for mro_class in mro.iter().rev().map(|s| s.as_str()) {
             if mro_class == "Any" || mro_class == "Mu" {
@@ -84,7 +86,7 @@ impl Interpreter {
                     .and_then(|m| m.get("language-revision"))
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "c".to_string());
-                if !class_is_6e && class_has_own && role_lang_rev == "c" {
+                if !class_is_6e && class_has_own && !revision_is_6e(&role_lang_rev) {
                     continue;
                 }
                 steps.push(ConstructionPhaseStep::Role {
@@ -296,4 +298,10 @@ impl Interpreter {
         }
         Ok(Ok(()))
     }
+}
+
+/// Whether a language revision letter (`c`, `d`, `e`, ...) is 6.e or later.
+// Cost: O(1).
+fn revision_is_6e(rev: &str) -> bool {
+    rev >= "e"
 }
