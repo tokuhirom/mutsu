@@ -2758,7 +2758,10 @@ gains the class (MRO `IO::Path::Parts, Any, Mu`; the method table resolves rows 
 reach the shape and read it as one item, which is Rakudo's answer (`$parts.elems` is `1`, `.List` is `(parts,)`), and
 `.hash`/`.Hash`/`.Map` read the parts by name through `map_hash_coerce::hash_contents`, the hook a package stash already
 used. Behaviour changes toward Rakudo, pinned in `t/io/io-path-parts-method-rows.t`: `.Slip`, `.cache` and `.eager` are
-one item (were the three pairs). Left: `.^roles` lists nothing (the class's bootstrap `ClassDef` declares no roles).
+one item (were the three pairs). `Mu.Str`/`Stringy` do not reach the shape: the object renders through the
+interpreter's default representation. Left: `.^roles` lists nothing (the class's bootstrap `ClassDef` declares no roles),
+and `.Str` is `IO::Path::Parts()` where Rakudo writes `IO::Path::Parts<id>`. `method-rows-report.py --arms`: the pure
+arity cascades go to 31 arms.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
