@@ -3666,6 +3666,10 @@ impl Interpreter {
                 let sym = code.locals_sym.get(idx).copied();
                 self.set_env_plain_lexical(name, sym, val.clone());
             }
+        } else if skip_env_write && code.is_plain_container_local(idx) {
+            // A plain `@`/`%` lexical is slot-authoritative on the same terms
+            // as a plain scalar (ADR-0039 §4.2's third bullet): its readers
+            // reach it by slot or upvalue, so the env mirror is skipped.
         } else {
             self.set_env_with_main_alias(name, val.clone());
         }
