@@ -1037,7 +1037,7 @@ impl Compiler {
                         // A sigil-less target is spelled by its term key
                         // (ADR-12441).
                         name: if *target_is_sigilless {
-                            crate::runtime::term_names::term_key(name)
+                            crate::runtime::term_names::bareword_target_key(name)
                         } else {
                             name.clone()
                         },

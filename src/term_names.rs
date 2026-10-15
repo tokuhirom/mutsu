@@ -52,6 +52,20 @@ pub(crate) fn term_key(name: &str) -> String {
     key
 }
 
+/// The storage key of a bareword assignment target spelled `name`: the term
+/// key of an unqualified sigil-less term (a sigilless binding or a constant,
+/// ADR-12441), `name` itself for a sigiled term (`term:<$x>`, stored as
+/// `$x`) or a qualified symbol (`A::Z`).
+// Cost: O(|name|).
+pub(crate) fn bareword_target_key(name: &str) -> String {
+    if name.is_empty() || name.starts_with(['$', '@', '%', '&', TERM_PREFIX]) || name.contains("::")
+    {
+        name.to_string()
+    } else {
+        term_key(name)
+    }
+}
+
 /// [`term_key`] as a pre-interned [`Symbol`], memoized per name so a hot
 /// bareword read pays no `format!` or string hash.
 // Cost: O(1) expected.

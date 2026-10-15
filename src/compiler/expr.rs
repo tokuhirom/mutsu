@@ -1025,8 +1025,11 @@ impl Compiler {
                 // A sigil-less bareword target arrives as a term key, which
                 // is where an in-scope constant (#9962) and a sigilless
                 // binding (ADR-12441) both live; a name this unit cannot see
-                // is resolved by the VM.
-                self.compile_expr_assign(name, expr, *is_bind);
+                // is resolved by the VM. A qualified symbol (`Pkg::<x> := v`)
+                // is a package store, not a term.
+                let package_store = crate::runtime::term_names::term_spelling(name)
+                    .filter(|spelled| crate::runtime::utils::has_double_colon(spelled));
+                self.compile_expr_assign(package_store.unwrap_or(name), expr, *is_bind);
             }
             // Source-preserving annotation for `x += y` and friends. The
             // parser has already built the ordinary assignment expansion;

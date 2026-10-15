@@ -180,7 +180,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
         // term key, the same one `foo += 1` writes back to (#9551,
         // ADR-12441).
         Expr::BareWord(name) if crate::parser::stmt::simple::is_user_declared_value_term(name) => {
-            let name = crate::term_names::term_key(name);
+            let name = crate::term_names::bareword_target_key(name);
             dot_assign_to_name(name, method_call_fn(target))
         }
         Expr::Index {

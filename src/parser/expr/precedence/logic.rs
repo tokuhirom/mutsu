@@ -583,7 +583,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         Expr::BareWord(name) => Ok((
             r,
             Expr::AssignExpr {
-                name: crate::term_names::term_key(&name),
+                name: crate::term_names::bareword_target_key(&name),
                 expr: Box::new(rhs),
                 is_bind: false,
             },

@@ -374,7 +374,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         Expr::ArrayLiteral(items) => paren_list_assign_expr(items, rhs),
         // A bareword target is a term, spelled by its term key (ADR-12441).
         Expr::BareWord(name) => Expr::AssignExpr {
-            name: crate::term_names::term_key(&name),
+            name: crate::term_names::bareword_target_key(&name),
             expr: Box::new(rhs),
             is_bind: false,
         },

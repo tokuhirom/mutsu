@@ -189,7 +189,7 @@ impl LvalueRoot<'_> {
     pub fn into_spelled_key(self) -> String {
         match self {
             LvalueRoot::Key(key) => key,
-            LvalueRoot::Sigilless(name) => crate::term_names::term_key(name),
+            LvalueRoot::Sigilless(name) => crate::term_names::bareword_target_key(name),
         }
     }
 }
