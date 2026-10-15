@@ -693,6 +693,14 @@ impl Interpreter {
                 // A statement-level `$F := 5` neither reads nor writes `$F`, so
                 // a rebind-only free variable is in neither set above.
                 add_syms(&mut free_syms, &rebound_syms);
+                // A sub that names lexicals by string had every lexical visible
+                // at its declaration baked (`bake_sub_decl_free_var_slots`,
+                // #13604); capture those too.
+                if primary_compiled.is_some_and(|c| c.get().code.static_name_lookup) {
+                    let baked: Vec<Symbol> =
+                        free_var_decl_slots.iter().map(|(sym, _)| *sym).collect();
+                    add_syms(&mut free_syms, &baked);
+                }
                 let mut captured_any = false;
                 for sym in free_syms {
                     let name = sym.resolve();
