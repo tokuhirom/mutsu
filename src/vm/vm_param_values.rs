@@ -54,7 +54,11 @@ impl<'a> std::ops::Index<usize> for ParamValues<'a> {
     type Output = ParamValue<'a>;
 
     fn index(&self, i: usize) -> &ParamValue<'a> {
-        assert!(i < self.len, "ParamValues index {i} out of range {}", self.len);
+        assert!(
+            i < self.len,
+            "ParamValues index {i} out of range {}",
+            self.len
+        );
         match i.checked_sub(INLINE) {
             None => self.inline[i]
                 .as_ref()
