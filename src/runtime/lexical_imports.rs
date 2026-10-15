@@ -144,14 +144,30 @@ impl Interpreter {
     /// Whether the operator routine `name` binds in a lexical import set
     /// instead of the registry: an `infix:<op>` that is not a built-in
     /// operator, whose every use site reads the set (`LexImportInfix`,
-    /// `LexImportMeta`, `LexImportCall` for `&infix:<op>`). A built-in
-    /// operator's opcode, and the prefix, postfix and circumfix categories,
-    /// find user candidates in the registry, so they keep the alias.
+    /// `LexImportMeta`, `LexImportCall` for `&infix:<op>`), or a `prefix`,
+    /// `postfix` or `circumfix` operator that is not a built-in one: the
+    /// parser turns each use of one into a bareword call of its full name,
+    /// which reads the set through `LexImportCall`. A built-in operator's
+    /// opcode finds user candidates in the registry, so it keeps the alias,
+    /// as does `postcircumfix` (its uses compile to subscript ops).
     // Cost: O(m), m = bytes of `name`.
     pub(crate) fn lexically_bindable_operator(name: &str) -> bool {
-        name.strip_prefix("infix:<")
-            .and_then(|rest| rest.strip_suffix('>'))
-            .is_some_and(|op| !op.is_empty() && !crate::compiled_operator::is_builtin_infix(op))
+        use crate::compiled_operator::{
+            is_builtin_circumfix, is_builtin_infix, is_builtin_postfix, is_builtin_prefix,
+        };
+        let Some((category, rest)) = name.split_once(":<") else {
+            return false;
+        };
+        let Some(op) = rest.strip_suffix('>').filter(|op| !op.is_empty()) else {
+            return false;
+        };
+        match category {
+            "infix" => !is_builtin_infix(op),
+            "prefix" => !is_builtin_prefix(op),
+            "postfix" => !is_builtin_postfix(op),
+            "circumfix" => !is_builtin_circumfix(op),
+            _ => false,
+        }
     }
 
     /// Finish the capture [`Self::begin_lexical_import_capture`] started and

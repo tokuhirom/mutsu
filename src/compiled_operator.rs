@@ -323,6 +323,49 @@ pub(crate) fn is_builtin_infix(op: &str) -> bool {
     )
 }
 
+/// Whether `op` names a built-in prefix operator, whose own opcode (or the
+/// unary compile path) finds a user candidate of the same name in the
+/// registry, rather than one only a user routine implements.
+// Cost: O(1).
+pub(crate) fn is_builtin_prefix(op: &str) -> bool {
+    matches!(
+        op,
+        "+" | "-"
+            | "\u{2212}"
+            | "~"
+            | "?"
+            | "!"
+            | "|"
+            | "^"
+            | "++"
+            | "--"
+            | "+^"
+            | "~^"
+            | "?^"
+            | "so"
+            | "not"
+            | "++⚛"
+            | "--⚛"
+            | "⚛"
+    )
+}
+
+/// Whether `op` names a built-in postfix operator (see [`is_builtin_prefix`]).
+// Cost: O(1).
+pub(crate) fn is_builtin_postfix(op: &str) -> bool {
+    matches!(op, "++" | "--" | "i" | "⚛++" | "⚛--")
+}
+
+/// Whether `delims` (the space-separated delimiter pair of a
+/// `circumfix:<...>` name) names a built-in circumfix.
+// Cost: O(1).
+pub(crate) fn is_builtin_circumfix(delims: &str) -> bool {
+    matches!(
+        delims,
+        "( )" | "[ ]" | "{ }" | "< >" | "<< >>" | "« »" | "<<< >>>"
+    )
+}
+
 impl ReductionSpec {
     /// Decode the reduction operator spelling the parser (or
     /// `compile_thunk_reduction`) produced.
