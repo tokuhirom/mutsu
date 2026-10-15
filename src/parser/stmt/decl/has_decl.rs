@@ -1219,6 +1219,10 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         && sigil != b'%'
         && !has_explicit_default
         && is_required.is_none()
+        // A custom trait runs before Rakudo checks (it may mark the attribute
+        // required, as AttrX::Mooish does for `:lazy`); class registration
+        // repeats this check once the traits have been applied.
+        && unknown_traits.is_empty()
     {
         // :D attribute without a default or `is required` → X::Syntax::Variable::MissingInitializer
         let twigil = if is_public { "." } else { "!" };
