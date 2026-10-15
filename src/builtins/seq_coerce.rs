@@ -37,6 +37,8 @@ pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
         ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(
             Value::seq(crate::runtime::utils::value_to_list_for_receiver(target)),
         ),
+        // A `Capture`'s list is its positional part.
+        ValueView::Capture { positional, .. } => Some(Value::seq(positional.to_vec())),
         // Supply (carrier), LazyList (lazy bridge), a Channel (its on-demand
         // receive Seq, #12727), and any Instance (Buf/Blob byte read, or the
         // generic 1-element wrap) are left to the interpreter.
