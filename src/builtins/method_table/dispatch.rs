@@ -677,7 +677,7 @@ pub(crate) fn shapeless_row(
         // `pairs` and `hash` read as such (`any_views`, §9.109); its MRO has
         // no row that does.
         ValueView::Instance { class_name, .. }
-            if matches!(method.as_str(), "kv" | "pairs" | "hash")
+            if matches!(method.as_str(), "kv" | "pairs" | "hash" | "list")
                 && crate::value::types::is_stash_class_name(&class_name.resolve()) =>
         {
             any
@@ -709,8 +709,10 @@ pub(crate) fn shapeless_row(
                 if super::owner_row(class, method, arity).is_some() {
                     exhausted = false;
                     // A subclass of a built-in class that declares its own
-                    // `ACCEPTS` (`class DD is Date`) answers from that row.
-                    if method == "ACCEPTS" {
+                    // `ACCEPTS` (`class DD is Date`) answers from that row,
+                    // and so does an instance of the built-in class itself
+                    // that has no shape (`Supply.list`, §9.110).
+                    if method == "ACCEPTS" || class == class_name {
                         owner = Some(class);
                     }
                     break;

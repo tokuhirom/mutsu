@@ -7,17 +7,9 @@
 //! same [`list_of`] and [`hash_of`].
 
 use super::{Handler, MethodRow, RowFlags};
-use crate::value::{DispatchShape, RuntimeError, Value, ValueMap, ValueView};
+use crate::value::{RuntimeError, Value, ValueMap, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
-    MethodRow {
-        owner: "Any",
-        name: "list",
-        arity: 0,
-        handler: Handler::Narrow(list),
-        flags: RowFlags::NONE,
-        named: &[],
-    },
     MethodRow {
         owner: "Any",
         name: "hash",
@@ -27,33 +19,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
 ];
-
-/// Whether `target` is a value `.list`/`.hash` read as one element: a scalar,
-/// or one of the built-in temporal classes (never a subclass, whose
-/// attributes may be named `list`).
-// Cost: O(1).
-fn is_plain_scalar(target: &Value) -> bool {
-    matches!(
-        target.view(),
-        ValueView::Str(_)
-            | ValueView::Int(_)
-            | ValueView::BigInt(_)
-            | ValueView::Num(_)
-            | ValueView::Rat(..)
-            | ValueView::FatRat(..)
-            | ValueView::BigRat(..)
-            | ValueView::Complex(..)
-            | ValueView::Bool(_)
-    ) || matches!(
-        target.dispatch_shape(),
-        Some(
-            DispatchShape::Date
-                | DispatchShape::DateTime
-                | DispatchShape::Instant
-                | DispatchShape::Duration
-        )
-    )
-}
 
 /// The elements `.list` / `.Array` of a value with no list shape reads: a hash
 /// is its pairs, a set/bag/mix its pairs, anything else the one element.
@@ -66,12 +31,6 @@ pub(crate) fn list_of(target: &Value) -> Vec<Value> {
         }
         _ => vec![target.clone()],
     }
-}
-
-/// The `Any.list` row.
-// Cost: O(1).
-fn list(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    is_plain_scalar(target).then(|| Ok(Value::array(list_of(target))))
 }
 
 /// `Any.hash`: the receiver's elements as a hash initializer. An `Array`,

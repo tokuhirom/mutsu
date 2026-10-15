@@ -31,8 +31,17 @@ pub(super) static ROWS: &[MethodRow] = rows![
     "pairs" => pairs,
     "antipairs" => antipairs,
     "invert" => invert,
-    "Pair" => pair,
 ];
+
+/// `Pair.Pair` is the receiver, the type object included.
+pub(super) static PAIR_ROWS: &[MethodRow] = &[MethodRow {
+    owner: "Pair",
+    name: "Pair",
+    arity: 0,
+    handler: Handler::Narrow(pair),
+    flags: RowFlags::TYPE_OBJECT_OK,
+    named: &[],
+}];
 
 /// `Pair.key`.
 // Cost: O(1) for a data pair; O(k) for a string-keyed one, k = key length.
@@ -128,7 +137,9 @@ pub(crate) fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, Run
 // Cost: O(1).
 pub(crate) fn pair(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
-        ValueView::Pair(..) | ValueView::ValuePair(..) => Some(Ok(target.clone())),
+        ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Package(_) => {
+            Some(Ok(target.clone()))
+        }
         _ => None,
     }
 }

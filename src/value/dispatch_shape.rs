@@ -587,7 +587,14 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 33] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 39] = [
+    // `Any`'s list coercions (`method_table::any_coerce`, §9.110).
+    "List",
+    "list",
+    "Array",
+    "Slip",
+    "Supply",
+    "Seq",
     // `Any`'s views and the other `self.list.METHOD` methods whose handlers
     // carry the deleted cascade arms' bodies (`method_table::any_views`,
     // §9.109): a closed shape that declares its own (`Pair.keys`,
@@ -656,9 +663,9 @@ pub(crate) const CAPTURE_FOR_MATCH: [&str; 11] = [
 /// container, sink it, or render it (`Str`, `Stringy`, which a shape with its own
 /// `Str` row answers first) or ask its type (`isa`), which every value supports. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
 /// answers its own row first.
-pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 15] = [
+pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 16] = [
     "so", "not", "is-lazy", "item", "sink", "self", "defined", "DEFINITE", "Bool", "WHICH",
-    "WHERE", "clone", "Str", "Stringy", "isa",
+    "WHERE", "clone", "Str", "Stringy", "isa", "Capture",
 ];
 
 /// Whether `list` contains `name`, for a `const fn`.

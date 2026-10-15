@@ -8,7 +8,8 @@ pub(super) static ROWS: &[MethodRow] = &[MethodRow {
     name: "isNaN",
     arity: 0,
     handler: Handler::Pure(is_nan),
-    flags: RowFlags::NONE,
+    // `Int.isNaN` (and `Bool.isNaN`) is `False` on the type object too.
+    flags: RowFlags::TYPE_OBJECT_OK,
     named: &[],
 }];
 

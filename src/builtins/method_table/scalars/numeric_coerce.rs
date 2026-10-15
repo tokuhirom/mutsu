@@ -33,6 +33,21 @@ macro_rules! pure {
     };
 }
 
+/// A number's `Complex`, which a type object reaches too: it is
+/// `self.Num.Complex`, and `Num` of a type object is refused.
+macro_rules! complex_row {
+    ($owner:literal) => {
+        MethodRow {
+            owner: $owner,
+            name: "Complex",
+            arity: 0,
+            handler: Handler::Pure(complex_or_type_object),
+            flags: RowFlags::TYPE_OBJECT_OK,
+            named: &[],
+        }
+    };
+}
+
 /// A one-argument (`epsilon`) row; the handler declines an argument that is
 /// not a `Real` by raising the bind failure itself.
 macro_rules! with_epsilon {
@@ -53,7 +68,7 @@ pub(super) static INT_ROWS: &[MethodRow] = &[
     pure!("Int", "Real", real),
     pure!("Int", "Rat", rat),
     pure!("Int", "FatRat", fat_rat),
-    pure!("Int", "Complex", complex),
+    complex_row!("Int"),
     with_epsilon!("Int", "Rat", rat_with),
     with_epsilon!("Int", "FatRat", fat_rat_with),
 ];
@@ -62,7 +77,7 @@ pub(super) static NUM_ROWS: &[MethodRow] = &[
     pure!("Num", "Real", real),
     pure!("Num", "Rat", rat),
     pure!("Num", "FatRat", fat_rat),
-    pure!("Num", "Complex", complex),
+    complex_row!("Num"),
     with_epsilon!("Num", "Rat", rat_with),
     with_epsilon!("Num", "FatRat", fat_rat_with),
 ];
@@ -71,7 +86,7 @@ pub(super) static RAT_ROWS: &[MethodRow] = &[
     pure!("Rat", "Real", real),
     pure!("Rat", "Rat", rat),
     pure!("Rat", "FatRat", fat_rat),
-    pure!("Rat", "Complex", complex),
+    complex_row!("Rat"),
     with_epsilon!("Rat", "Rat", rat_with),
     with_epsilon!("Rat", "FatRat", fat_rat_with),
 ];
@@ -111,6 +126,45 @@ fn complex_self(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
         return Ok(target.clone());
     }
     complex(target, args)
+}
+
+/// `.Complex` of a number, or the error of a numeric type object.
+// Cost: O(1).
+fn complex_or_type_object(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    if let ValueView::Package(name) = target.view()
+        && let Some(result) = complex_of_type_object(&name.resolve())
+    {
+        return result;
+    }
+    complex(target, args)
+}
+
+/// `.Complex` of the type object `name`: `self.Num.Complex`, so a numeric type
+/// object is refused (`Int.Complex` is `X::Parameter::InvalidConcreteness`,
+/// `Num.Complex` cannot unbox it) and any other `Cool` type object (`Str`,
+/// `List`) is `0+0i`. `None` for `Complex`/`Numeric` (their own rows) and a
+/// type that is no `Cool` (`Blob`, `Promise`).
+// Cost: O(1).
+pub(crate) fn complex_of_type_object(name: &str) -> Option<Result<Value, RuntimeError>> {
+    let owner = match name {
+        "Int" | "Bool" => "Int",
+        "Rat" | "FatRat" => "Rational",
+        "Real" => "Real",
+        "IntStr" | "RatStr" | "NumStr" | "ComplexStr" => "Str",
+        "Num" => {
+            return Some(Err(RuntimeError::new(
+                "Cannot unbox a type object (Num) to a num.".to_string(),
+            )));
+        }
+        "Complex" | "Numeric" => return None,
+        _ if crate::runtime::Interpreter::type_matches("Cool", name) => {
+            return Some(Ok(Value::complex(0.0, 0.0)));
+        }
+        _ => return None,
+    };
+    Some(Err(RuntimeError::parameter_invalid_concreteness(
+        owner, name, "Num", "self", true, true,
+    )))
 }
 
 fn complex(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {

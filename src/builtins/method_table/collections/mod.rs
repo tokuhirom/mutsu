@@ -9,6 +9,7 @@ use super::{Handler, MethodRow, RowFlags};
 
 mod accepts;
 pub(crate) mod accepts_open;
+pub(crate) mod any_coerce;
 pub(crate) mod any_collection;
 mod any_interp;
 pub(crate) mod any_list_hash;
@@ -43,6 +44,8 @@ pub(crate) mod type_params;
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any_collection::ROWS,
     any_views::ROWS,
+    any_coerce::ROWS,
+    any_coerce::MU_CAPTURE_ROWS,
     any_views::TYPE_OBJECT_ROWS,
     render::WHICH_ROWS,
     render::PAIR_WHICH_ROWS,
@@ -76,6 +79,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     positional::ROWS,
     rotate::ROWS,
     pair::ROWS,
+    pair::PAIR_ROWS,
     quanthash::ROWS,
     subscript::ROWS,
     accepts::ROWS,
