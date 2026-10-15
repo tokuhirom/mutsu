@@ -2748,6 +2748,18 @@ test-only arity probe asks the owner chain of a value with no shape (an immutabl
 in `t/oo/method/two-arg-method-rows.t`.
 `method-rows-report.py --arms`: the pure arity cascades lose four arms.
 
+### 9.114 Slice 5: `IO::Path::Parts` has a shape; its parts are rows (2026-10-16)
+
+`refactor/11276-io-path-parts`. An `IO::Path::Parts` (`IO::Spec.split`, `IO::Path.parts`) was answered by a block of
+eight arms in `methods_0arg/mod.rs` and two subscript arms in `dispatch_1arg`. It is now a closed instance shape,
+`DispatchShape::IoPathParts`, with the three rows Rakudo declares on the class: `AT-POS` (the `volume`, `dirname` and
+`basename` pairs by position, `Nil` past them), `AT-KEY` (a part by name) and `flat` (the three pairs). The type catalog
+gains the class (MRO `IO::Path::Parts, Any, Mu`; the method table resolves rows along it). `Any`'s audited list rows
+reach the shape and read it as one item, which is Rakudo's answer (`$parts.elems` is `1`, `.List` is `(parts,)`), and
+`.hash`/`.Hash`/`.Map` read the parts by name through `map_hash_coerce::hash_contents`, the hook a package stash already
+used. Behaviour changes toward Rakudo, pinned in `t/io/io-path-parts-method-rows.t`: `.Slip`, `.cache` and `.eager` are
+one item (were the three pairs). Left: `.^roles` lists nothing (the class's bootstrap `ClassDef` declares no roles).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
