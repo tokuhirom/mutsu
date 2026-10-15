@@ -963,6 +963,30 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      scope.
    - A sub declared in a closure body that creates the closure: that sub's
      frame is not linked to the closure it was declared in.
+
+   **Slice 15 done** (`fix/13595-closure-declared-sub-link`, #13595): both
+   shapes.
+
+   - **A sub declared in a closure body.** When such a sub names lexicals by
+     string, its declaring code now counts as doing so too
+     (`Compiler::note_routines_naming_lexicals`, which checks the routines
+     compiled in the body). The closure then gets a reflective capture of its
+     creation site. The sub has no static link of its own and resolves
+     through the closure's frame, so the capture is where it finds the
+     closure's outer lexicals. Before, the closure took only its free
+     variables, and the lookup died with "No such symbol".
+   - **A nested block's lexicals at program scope.** A program-scope capture
+     still links the closure's frame to the live program scope. The nested
+     blocks it was created in are not part of that scope, though. Their plain
+     lexicals (`Env::block_lexicals_above_program_scope`) are now boxed into
+     cells and recorded on the capture (`program_scope_block_names`). The
+     link answers them from the capture ahead of the program scope
+     (`StaticLink::UnitOuter::capture_names`).
+
+     So `my $s = 1; my $k = do { my $s = 5; -> { ::('$s') } }` reads 5, and
+     a write the block makes after creating the closure is seen. A
+     program-scope lexical is still read live: `$x = 2` after the closure
+     was created is what the closure sees.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
