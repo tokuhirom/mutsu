@@ -1198,3 +1198,12 @@ sigilless declaration expansion (`VarDecl(Mu.Numeric)` followed by
 `Initializer::CallAssign`. The converter recognizes this exact untyped
 readonly expansion, and lowering restores its parser shape. Other sigilless
 call-assignment expansions remain outside this boundary.
+
+### 6.59 S10: `done VALUE` in a supply block (2026-10-15)
+
+The parser desugars `done VALUE` to a `SyntheticBlock` containing `emit VALUE`
+and `ReactDone`; the `supply` source record keeps that block in its written
+body. Rakudo renders those as separate statements in the supply's block. The
+statement-list converter now recognizes this exact two-statement expansion
+and renders both nodes; lowering then rebuilds the supply body and its emitter
+rewrite. Other synthetic blocks remain unchanged.
