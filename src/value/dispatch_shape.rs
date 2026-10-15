@@ -408,6 +408,13 @@ impl DispatchShape {
             return self.reaches_audited_any_method(method);
         }
         if const_str_eq(owner, "Mu") {
+            // An `IO::Path::Parts` renders as an object (`IO::Path::Parts<id>`),
+            // which only the interpreter's default representation answers.
+            if matches!(self, DispatchShape::IoPathParts)
+                && (const_str_eq(method, "Str") || const_str_eq(method, "Stringy"))
+            {
+                return false;
+            }
             return const_list_contains(&MU_FOR_CLOSED_SHAPES, method)
                 || self.reaches_mu_numeric(method);
         }
