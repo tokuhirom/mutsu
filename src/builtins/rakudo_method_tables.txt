@@ -179,6 +179,9 @@ only	Thread	app_lifetime	finish	id	is-initial-thread	join	name	run	start	usage	y
 declared	Uni	ACCEPTS	AT-POS	Bool	EXISTS-POS	Int	NFC	NFD	NFKC	NFKD	Numeric	Str	Uni	codes	elems	encode	gist	list	new	of	raku
 methods	Uni	ACCEPTS	AT-POS	Bool	EXISTS-POS	Int	NFC	NFD	NFKC	NFKD	Numeric	POPULATE	Str	Uni	codes	elems	encode	gist	list	new	of	raku
 only	Uni	Int	NFC	NFD	NFKC	NFKD	Numeric	Uni	codes	encode	list	of
+declared	Unicode	NFG	version
+methods	Unicode	NFG	POPULATE	version
+only	Unicode
 declared	Version	ACCEPTS	Capture	Str	Version	WHICH	gist	minus	new	parts	plus	raku	whatever
 methods	Version	ACCEPTS	Capture	POPULATE	Str	Version	WHICH	gist	minus	new	parts	plus	raku	whatever
 only	Version	Capture	Version	minus	parts	plus	whatever

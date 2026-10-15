@@ -2433,6 +2433,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("IO::Handle", "Str", 1, 25),
     ("IO::Handle", "gist", 8, 29),
     ("IO::Handle", "raku", 8, 5),
+    ("Unicode", "NFG", 1, 25),
+    ("Unicode", "version", 1, 25),
     ("IO::Special", "IO", 8, 57),
     ("IO::Special", "accessed", 8, 57),
     ("IO::Special", "changed", 8, 57),
