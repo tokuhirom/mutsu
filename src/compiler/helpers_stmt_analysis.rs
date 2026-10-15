@@ -98,10 +98,75 @@ impl Compiler {
     ) {
         let idx =
             Self::has_use_stmt(stmts).then(|| self.code.emit(OpCode::ImportScope { body_end: 0 }));
+        // The block's `use`s bind lexically in it (ADR-8751): every call site
+        // it encloses sees their import sets, a site before the `use` included.
+        let chain_mark = self.lexical_import_chain.len();
+        if idx.is_some() {
+            for stmt in stmts {
+                if let Some(id) = self.lexical_use_set_id(stmt)
+                    && !self.lexical_import_chain.contains(&id)
+                {
+                    self.lexical_import_chain.push(id);
+                }
+            }
+        }
         body(self);
+        self.lexical_import_chain.truncate(chain_mark);
         if let Some(idx) = idx {
             self.code.patch_import_scope_end(idx);
         }
+    }
+
+    /// The lexical import set id of `stmt` when it is a `use` that binds
+    /// routines lexically in its block (ADR-8751 stage 1): a module `use`
+    /// below the unit's top level (a top-level import is the whole unit's and
+    /// stays on the registry). The id names the import list, not the
+    /// statement, so a recompile of the block finds the same set and every
+    /// `use` importing the same list shares it.
+    // Cost: O(n), n = size of the `use`'s argument expression.
+    pub(super) fn lexical_use_set_id(&self, stmt: &Stmt) -> Option<Symbol> {
+        let Stmt::Use {
+            module,
+            tags,
+            arg,
+            condition: None,
+            ..
+        } = stmt
+        else {
+            return None;
+        };
+        if self.fold_root && self.decl_scope_depth == 0 {
+            return None;
+        }
+        super::begin_use::preloadable_module_name(module, tags, None, None)?;
+        if tags.iter().any(|t| t == "from") {
+            return None;
+        }
+        let arg = arg.as_ref().map(|a| format!("{a:?}")).unwrap_or_default();
+        Some(Symbol::intern(&format!(
+            "{module}\u{1}{}\u{1}{arg}",
+            tags.join(",")
+        )))
+    }
+
+    /// The `LexImportCall` chain index for a bareword call of `name` compiled
+    /// here, or `None` when no enclosing block `use`s a module or the name
+    /// cannot be an imported routine's.
+    // Cost: O(c), c = enclosing `use`-blocks.
+    pub(super) fn lexical_import_chain_idx(&mut self, name: Symbol) -> Option<u32> {
+        if self.lexical_import_chain.is_empty()
+            || crate::qualified::is_qualified(name)
+            || name.resolve().starts_with("__mutsu")
+        {
+            return None;
+        }
+        let chain: Vec<Symbol> = self.lexical_import_chain.iter().rev().copied().collect();
+        let chains = &mut self.code.lexical_import_chains;
+        if let Some(i) = chains.iter().position(|c| *c == chain) {
+            return Some(i as u32);
+        }
+        chains.push(chain);
+        Some((chains.len() - 1) as u32)
     }
 
     /// Check if a block directly contains a `use`/`need`/`require`/`import`/`no`

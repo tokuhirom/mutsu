@@ -17,7 +17,6 @@ pub(crate) enum OuterStash {
 /// entry and restored on block exit.
 pub(super) struct LexicalScopeSnapshot {
     dynamic_scope_all: bool,
-    lexical_use_modules_len: usize,
     /// Whether this push raised `Compiler::decl_scope_depth`.
     owns_decls: bool,
     /// `use variables :D/:U` is lexical: one inside the entered block stops
@@ -83,7 +82,6 @@ impl Compiler {
         // may legitimately shadow an outer one without being a redeclaration.
         LexicalScopeSnapshot {
             dynamic_scope_all: self.dynamic_scope_all,
-            lexical_use_modules_len: self.code.lexical_use_modules.len(),
             variables_pragma: self.variables_pragma,
             dynamic_scope_names: self.dynamic_scope_names.clone(),
             user_listop_shadows: self.user_listop_shadows.clone(),
@@ -140,9 +138,6 @@ impl Compiler {
             self.decl_scope_depth -= 1;
         }
         self.dynamic_scope_all = saved.dynamic_scope_all;
-        self.code
-            .lexical_use_modules
-            .truncate(saved.lexical_use_modules_len);
         self.variables_pragma = saved.variables_pragma;
         self.dynamic_scope_names = saved.dynamic_scope_names;
         self.user_listop_shadows = saved.user_listop_shadows;

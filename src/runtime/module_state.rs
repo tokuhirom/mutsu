@@ -401,6 +401,13 @@ pub(crate) struct ModuleState {
     /// `env` without their `$` sigil, so the display spelling cannot be
     /// reconstructed from the environment key alone.
     pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
+    /// ADR-8751 stage 1: the routines each block-scoped `use` binds, keyed by
+    /// the use's lexical import set id (`OpCode::UseModule::lexical_set_idx`)
+    /// and then by routine name. Filled the first time such a `use` runs; the
+    /// `OpCode::LexImportCall` sites lexically inside the block read it.
+    pub(crate) lexical_import_sets: HashMap<Symbol, std::sync::Arc<HashMap<Symbol, Value>>>,
+    /// What the `use` filling a lexical import set is importing, while it runs.
+    pub(crate) lexical_import_capture: Option<super::lexical_imports::LexicalImportCapture>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
     /// Whether `use fatal` — explicit, or implied by an enclosing `try` body —
@@ -587,6 +594,8 @@ impl ModuleState {
             module_body_import_aliases: Default::default(),
             imported_exported_proto_tags: Default::default(),
             imported_env_aliases: HashMap::new(),
+            lexical_import_sets: HashMap::new(),
+            lexical_import_capture: None,
             strict_mode: false,
             fatal_mode: false,
             lexical_fatal_mode: false,
@@ -667,6 +676,8 @@ impl ModuleState {
             module_body_import_aliases: self.module_body_import_aliases.clone(),
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             imported_env_aliases: self.imported_env_aliases.clone(),
+            lexical_import_sets: self.lexical_import_sets.clone(),
+            lexical_import_capture: None,
             strict_mode: self.strict_mode,
             fatal_mode: self.fatal_mode,
             lexical_fatal_mode: self.lexical_fatal_mode,

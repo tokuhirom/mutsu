@@ -4,6 +4,19 @@ use crate::runtime::dispatch_key;
 use crate::runtime::native_increment_dispatch::IncrementOp;
 use crate::symbol::Symbol;
 
+/// Where [`Interpreter::exec_call_on_code_var_op`] finds the code object a
+/// `&name(...)` call invokes.
+pub(super) enum CodeVarBinding {
+    /// Resolve `&name` by name from the running frame.
+    ByName,
+    /// A closure's captured binding, by upvalue index
+    /// (`OpCode::CallOnCodeVar::upvalue`).
+    Upvalue(u32),
+    /// Already resolved by the caller: a lexical import's routine
+    /// (`OpCode::LexImportCall`, ADR-8751 stage 1).
+    Bound(Value),
+}
+
 impl Interpreter {
     /// Record a name-keyed positional-light target, retiring every filled
     /// dispatch-cache entry that memoised the old table (ADR-0066).
@@ -583,7 +596,7 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
                 false,
-                None,
+                CodeVarBinding::ByName,
                 compiled_fns,
             );
         }
@@ -1787,13 +1800,13 @@ impl Interpreter {
         arity: u32,
         arg_sources_idx: Option<u32>,
         bare_args: bool,
-        upvalue: Option<u32>,
+        binding: CodeVarBinding,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // A block's `multi` called through the closure's binding while its
         // family is the live by-name one: the `CallFunc` path, with its
         // call-site caches, dispatches exactly that candidate set.
-        if let Some(index) = upvalue
+        if let CodeVarBinding::Upvalue(index) = binding
             && self.family_dispatcher_is_current(code, name_idx, index)
         {
             return self.exec_call_func_op(
@@ -1856,7 +1869,11 @@ impl Interpreter {
         // A closure's read-only free `&name` is its captured binding: read it
         // by upvalue index rather than resolving the name through the running
         // frame's env chain (see `OpCode::CallOnCodeVar::upvalue`).
-        let captured = upvalue.and_then(|index| self.code_var_upvalue(code, index, name_idx));
+        let captured = match binding {
+            CodeVarBinding::ByName => None,
+            CodeVarBinding::Upvalue(index) => self.code_var_upvalue(code, index, name_idx),
+            CodeVarBinding::Bound(value) => Some(value),
+        };
         let mut target = match captured.or(own_private_attr) {
             Some(v) => v,
             None => match self.declared_scope_amp_var_for(code, &name) {
@@ -2557,15 +2574,6 @@ impl Interpreter {
                     crate::vm::vm_stats::record_function_fallback(name);
                     self.set_pending_call_arg_sources(arg_sources);
                     let result = self.vm_call_function_fallback(name, &args);
-                    self.set_pending_call_arg_sources(None);
-                    let result = result?;
-                    loan_env!(self, maybe_fetch_rw_proxy(result, true))
-                } else if !code.lexical_use_modules.is_empty()
-                    && let Some(key) = self.lexical_use_export_key(code, name)
-                {
-                    // TODO: compile to bytecode (bind the import lexically, ADR-12529 phase 2)
-                    self.set_pending_call_arg_sources(arg_sources.clone());
-                    let result = self.vm_call_function_fallback(&key, &args);
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))

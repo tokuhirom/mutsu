@@ -385,6 +385,7 @@ impl Compiler {
             name_idx: test_name_idx,
             tags_idx: None,
             arg_count: 0,
+            lexical_set_idx: None,
         });
         if let Some(plan_arg) = Self::extract_test_more_plan_arg(arg) {
             self.compile_expr(plan_arg);
@@ -4589,6 +4590,7 @@ impl Compiler {
                     name_idx,
                     tags_idx: None,
                     arg_count: 0,
+                    lexical_set_idx: None,
                 });
             }
             Stmt::Use {
@@ -4625,6 +4627,7 @@ impl Compiler {
                         name_idx,
                         tags_idx,
                         arg_count,
+                        lexical_set_idx: None,
                     });
                 }
             }
@@ -4671,18 +4674,13 @@ impl Compiler {
                     arg.as_ref(),
                 ) {
                     self.unit_use_ctx.note_use(name);
-                    // A `use` below the unit's top level scopes its routines to
-                    // the enclosing block; code nested in it (a closure built in
-                    // `sub EXPORT`) must keep resolving them after the block's
-                    // dynamic import scope pops (#8751).
-                    // TODO: resolve at compile time once imports bind lexically (ADR-12529 phase 2).
-                    if !(self.fold_root && self.decl_scope_depth == 0) {
-                        let sym = Symbol::intern(name);
-                        if !self.code.lexical_use_modules.contains(&sym) {
-                            self.code.lexical_use_modules.push(sym);
-                        }
-                    }
                 }
+                // A `use` below the unit's top level binds its routines in the
+                // enclosing block (ADR-8751): the call sites the block encloses
+                // read them from its lexical import set.
+                let lexical_set_idx = self
+                    .lexical_use_set_id(stmt)
+                    .map(|id| self.code.add_constant(Value::str(id.resolve())));
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
                 let tags_idx = if entries.is_empty() {
@@ -4706,6 +4704,7 @@ impl Compiler {
                             name_idx,
                             tags_idx,
                             arg_count,
+                            lexical_set_idx,
                         });
                     }
                     self.code.patch_jump(skip);
@@ -4720,6 +4719,7 @@ impl Compiler {
                         name_idx,
                         tags_idx,
                         arg_count,
+                        lexical_set_idx,
                     });
                 }
             }

@@ -2149,6 +2149,10 @@ impl Compiler {
                 // and the synthetic callsite-line marker must remain an
                 // in-band pair for `peek_callsite_line`.
                 let mut named_entries: Vec<crate::opcode::NamedArgEntry> = Vec::new();
+                // A call a lexical import may answer (ADR-8751) keeps its named
+                // arguments in-band: `LexImportCall` hands the stack to a code
+                // object, which takes the pairs as they are.
+                let lex_import_chain = self.lexical_import_chain_idx(*name);
                 // The listop form of the same rule the method form gets in
                 // `expr_method.rs`: `map { $_ = 5 }, 1, 2` binds the callback's
                 // implicit topic to a bare item, which raku refuses to assign
@@ -2174,6 +2178,7 @@ impl Compiler {
                         right,
                         ..
                     } = arg
+                        && lex_import_chain.is_none()
                         && let Expr::Literal(lit) = left.as_ref()
                         && let crate::value::ValueView::Str(key) = lit.view()
                     {
@@ -2234,6 +2239,9 @@ impl Compiler {
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                if let Some(chain_idx) = lex_import_chain {
+                    self.code.emit(OpCode::LexImportCall { chain_idx });
+                }
                 if named_entries.is_empty() {
                     self.code.emit(OpCode::CallFunc {
                         name_idx,

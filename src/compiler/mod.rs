@@ -1176,6 +1176,11 @@ pub(crate) struct Compiler {
     /// `CompiledFunction::captured_fatal_mode` at each sub/method body's own
     /// compile site.
     fatal_pragma_active: bool,
+    /// ADR-8751 stage 1: the lexical import set ids of the `use`-blocks
+    /// enclosing the code being compiled, outermost first. A bareword call
+    /// compiled while it is non-empty gets an `OpCode::LexImportCall`
+    /// prefix. Nested routines and closures inherit it.
+    lexical_import_chain: Vec<Symbol>,
     /// The implicit definedness smiley (`":D"` / `":U"`) a textually active
     /// `use variables :D/:U` adds to every typed variable declared from this
     /// point on in the same lexical scope (#9990). `None` for no pragma or
@@ -1988,6 +1993,7 @@ impl Compiler {
             local_map: HashMap::new(),
             loop_exit_guards: Vec::new(),
             fatal_pragma_active: false,
+            lexical_import_chain: Vec::new(),
             variables_pragma: None,
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
@@ -2673,7 +2679,7 @@ impl Compiler {
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
         sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
-        sub.code.lexical_use_modules = self.code.lexical_use_modules.clone();
+        sub.lexical_import_chain = self.lexical_import_chain.clone();
         sub.lexical_type_shadows
             .extend(self.lexical_type_shadows.iter().cloned());
         sub.lexical_types_in_scope
