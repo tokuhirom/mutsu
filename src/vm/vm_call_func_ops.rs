@@ -1796,7 +1796,6 @@ impl Interpreter {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// The captured copy of a block-lexical sub whose name several sites
     /// declare (`block_lexical_sub_sites`), when the running env holds one.
     // Cost: O(1) when no name conflicts; else one env lookup and a key format.
@@ -1810,6 +1809,7 @@ impl Interpreter {
             .cloned()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_on_code_var_op(
         &mut self,
         code: &CompiledCode,
