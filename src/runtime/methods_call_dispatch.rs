@@ -110,6 +110,8 @@ impl Interpreter {
         // A routine receiver answers with the roles composed into the routine
         // so far, whichever alias of it this is (ADR-11827).
         let target = Self::routine_current_view(&target).unwrap_or(target);
+        // A lazy-tail Slip answers as the lazy list it reifies from (#13117).
+        let target = Self::lazy_slip_receiver(target, method);
         self.call_method_with_values_unviewed(target, method, args)
     }
 

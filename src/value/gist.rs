@@ -614,6 +614,10 @@ pub(crate) fn gist_value(value: &Value) -> String {
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             format!("({})", gist_elements(items.iter(), " "))
         }
+        // A lazy-tail Slip (`(1..*).Slip`, #13117) is a lazy list.
+        ValueView::Slip(_) if value.is_lazy_tail_slip() => {
+            crate::value::lazy_list_placeholder("gist", false)
+        }
         ValueView::Slip(items) => format!("({})", gist_elements(items.iter(), " ")),
         ValueView::Version { .. } => format!("v{}", value.to_string_value()),
         ValueView::Nil => "Nil".to_string(),
