@@ -536,7 +536,8 @@ impl Compiler {
         // and must stop naming a term key after the loop: `sub f(::T) { for
         // @types -> ::T { }; T }` reads the routine's `T` again (ADR-12441).
         let sigilless_before_loop = self.sigilless_locals.clone();
-        self.sigilless_locals.extend(sigilless_param_names.iter().cloned());
+        self.sigilless_locals
+            .extend(sigilless_param_names.iter().cloned());
         // Bind the loop parameters first, then hoist the body's routine
         // declarations so they capture the freshly-bound params. Hoisting makes
         // a `sub` declared later in the body visible from its beginning (Raku
