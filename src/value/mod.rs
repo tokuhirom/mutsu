@@ -1807,11 +1807,6 @@ pub(crate) enum LightCallLegacy {
 /// bind may serve. See [`ParamNameSyms::light_bindable`] for what each rejected
 /// shape would have needed instead.
 fn is_light_bindable_param_name(name: &str) -> bool {
-    // A sigilless pointy parameter (`-> \x`) is named by its term key
-    // (ADR-12441) and binds like any other plain name.
-    let name = name
-        .strip_prefix(crate::term_names::TERM_PREFIX)
-        .unwrap_or(name);
     let mut chars = name.chars();
     // Requiring an alphabetic first character covers the topic `_` and every
     // `__mutsu` synthetic name in one test, along with every sigil and twigil.
