@@ -4,7 +4,7 @@ use Test;
 # upvalue, ADR-0039 §4.2, #9895), so it sees the container of the scope it was
 # written in, including changes made to it after the closure was created, and
 # never a same-named container of the frame that calls it.
-plan 8;
+plan 9;
 
 {
     my @a = 1, 2;
@@ -52,3 +52,21 @@ plan 8;
     my &g = -> { @a.push: 9; @a.elems };
     is g(), 3, 'a closure that mutates the container still writes it';
 }
+
+{
+    # `cas` on an element addresses the array by name; the closure's reads
+    # must see what it wrote.
+    my @head[1];
+    @head[0] = 0;
+    my &bump = -> {
+        for ^5 {
+            loop {
+                my $old = @head[0];
+                last if cas(@head[0], $old, $old + 1) === $old;
+            }
+        }
+    };
+    bump();
+    is @head[0], 5, 'a closure sees its own cas writes to a captured element';
+}
+

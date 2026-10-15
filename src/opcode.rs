@@ -11398,6 +11398,22 @@ impl CompiledCode {
                 })
             })
             .collect();
+        // A container whose own name this code loads as a string constant is
+        // addressed by name at run time: an atomic helper (`cas(@a[0], ...)`
+        // compiles to `__mutsu_cas_array_elem("@a", @a, ...)`) writes the env
+        // binding, which an upvalue snapshot would not see.
+        let mut eligible = eligible;
+        if !eligible.is_empty() {
+            for op in &self.ops {
+                if let OpCode::LoadConst(idx) = op
+                    && let Some(ValueView::Str(name)) =
+                        self.constants.get(*idx as usize).map(Value::view)
+                    && name.starts_with(['@', '%'])
+                {
+                    eligible.remove(&Symbol::intern(&name));
+                }
+            }
+        }
         if eligible.is_empty() && eligible_code.is_empty() {
             return;
         }
