@@ -90,4 +90,11 @@ Sigilless and constant terms share one namespace on purpose: in Raku both are te
   container that changes after a `my $t` all behave as in Rakudo.
 - A sigilless parameter's slot is named `\t` in `CompiledCode::locals`; tooling that prints
   locals shows the key.
-- Type captures (`::T`) are not sigilless bindings and keep their plain key.
+- A routine's type capture (`::T`) is not a sigilless binding and keeps its plain key; a `for`
+  loop's (`-> ::T $x`) is bound like a `my \T` and so moves with it.
+- A parametric role's sigilless type parameter (`role R[\u]`) is bound under its term key by the
+  binder and handed to the role body under its spelling, as before; telling `\u` from a `$u`
+  parameter of the same role is left for a follow-up.
+- Everything that rewrote a `Stmt::Assign` into an `Expr::AssignExpr` (the tail-value paths, the
+  map/grep recompile, statement-level feeds) carries the term key for a sigil-less target: an
+  `AssignExpr` named by a plain spelling is a `$` scalar.
