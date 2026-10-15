@@ -467,6 +467,10 @@ pub(crate) fn supply(target: &Value, args: &[Value]) -> Option<Result<Value, Run
     if let Some(list) = capture_positionals(target) {
         return supply(&list, args);
     }
+    // A hash or a quant hash supplies its pairs (`self.list.Supply`).
+    if let Some(pairs) = crate::runtime::utils::hashlike_receiver_as_pairs_list(target, "Supply") {
+        return supply(&pairs, args);
+    }
     if let ValueView::Instance { class_name, .. } = target.view()
         && (class_name == "Supplier" || class_name == "Supplier::Preserving")
     {

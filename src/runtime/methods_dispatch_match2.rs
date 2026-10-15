@@ -61,6 +61,14 @@ impl Interpreter {
                 } = target.view()
                     && class_name == "Supply"
                 {
+                    // A materialized supply is `Supply.list`'s row (§9.55), which
+                    // builds the real `Array` `.Array` asks for.
+                    if let Some(result) = crate::builtins::method_table::supply::listify(
+                        &target,
+                        method == "Array",
+                    ) {
+                        return Some(result);
+                    }
                     // A live, channel-backed supply (an `IO::Socket::Async`
                     // read stream) materializes by draining its channel until
                     // the producer signals done: its values never land in the

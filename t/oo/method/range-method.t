@@ -1,9 +1,12 @@
 use Test;
 plan 3;
 
+# Rakudo declares `.Range` only on the numbers (`Int.Range` is the type's
+# bounds); a `List`, a `Str` and a `Range` have none (ADR-11276 §9.110).
+
 my @a = 1, 2, 3;
-is @a.Range, 0..^3, '.Range on array returns index range';
+throws-like { @a.Range }, X::Method::NotFound, '.Range on an array';
 
-is "abcd".Range, 0..^4, '.Range on string returns char index range';
+throws-like { "abcd".Range }, X::Method::NotFound, '.Range on a string';
 
-is (2..5).Range, 2..5, '.Range on Range returns itself';
+throws-like { (2..5).Range }, X::Method::NotFound, '.Range on a Range';

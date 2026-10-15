@@ -610,7 +610,19 @@ pub(crate) fn shapeless_row(
     // `flat($levels)` is `Iterable`'s alone: `Any` declares only `flat()`.
     let iterable =
         ITERABLE_FOR_SHAPELESS.contains(&method.as_str()) || (arity == 1 && method == "flat");
-    let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str());
+    // `Cool.Complex` answers a lazy list's `X::Cannot::Lazy` and an unsettled
+    // `Seq`'s element count (§9.110); an instance or a type object with no
+    // shape is the interpreter's.
+    let lazy_complex = method == "Complex"
+        && matches!(
+            target.view(),
+            ValueView::LazyList(_)
+                | ValueView::Seq(_)
+                | ValueView::HyperSeq(_)
+                | ValueView::RaceSeq(_)
+                | ValueView::Slip(_)
+        );
+    let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()) || lazy_complex;
     let text = text || coerce;
     if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
         return None;
