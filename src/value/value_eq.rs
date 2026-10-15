@@ -120,10 +120,6 @@ impl PartialEq for Value {
             (ValueView::Set(a, _), ValueView::Set(b, _)) => *a == *b,
             (ValueView::Bag(a, _), ValueView::Bag(b, _)) => *a == *b,
             (ValueView::Mix(a, _), ValueView::Mix(b, _)) => *a == *b,
-            (
-                ValueView::CompUnitDepSpec { short_name: a },
-                ValueView::CompUnitDepSpec { short_name: b },
-            ) => a == b,
             (ValueView::Package(a), ValueView::Package(b)) => a == b,
             (ValueView::Pair(ak, av), ValueView::Pair(bk, bv)) => ak == bk && av == bv,
             (ValueView::ValuePair(ak, av), ValueView::ValuePair(bk, bv)) => ak == bk && av == bv,

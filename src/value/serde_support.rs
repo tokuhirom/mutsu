@@ -48,9 +48,6 @@ enum SerValue {
         HashMap<String, crate::value::MixWeight>,
         HashMap<String, Box<SerValue>>,
     ),
-    CompUnitDepSpec {
-        short_name: Symbol,
-    },
     Package(Symbol),
     Routine {
         package: Symbol,
@@ -234,7 +231,6 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             m.weights.clone(),
             ser_original_keys(&m.original_keys)?,
         )),
-        ValueView::CompUnitDepSpec { short_name } => Ok(SerValue::CompUnitDepSpec { short_name }),
         ValueView::Package(s) => Ok(SerValue::Package(s)),
         ValueView::Routine {
             package,
@@ -471,9 +467,6 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Set(s, orig) => Value::set_typed(s, de_original_keys(orig)),
         SerValue::Bag(b, orig) => Value::bag_typed_big(b, de_original_keys(orig)),
         SerValue::Mix(m, orig) => Value::mix_with_original_keys(m, de_original_keys(orig)),
-        SerValue::CompUnitDepSpec { short_name } => {
-            Value::from_repr(ValueRepr::CompUnitDepSpec { short_name })
-        }
         SerValue::Package(s) => Value::Package(s),
         SerValue::Routine {
             package,
@@ -744,7 +737,6 @@ impl SerValue {
             | SerValue::FatRat(..)
             | SerValue::BigRat(..)
             | SerValue::Complex(..)
-            | SerValue::CompUnitDepSpec { .. }
             | SerValue::Package(_)
             | SerValue::Routine { .. }
             | SerValue::Enum { .. }

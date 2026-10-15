@@ -202,10 +202,9 @@ pub(in crate::value) enum Kind {
     HyperWhatever,
     Bool,
     Package,
-    CompUnitDepSpec,
 }
 
-pub(in crate::value) const KIND_COUNT: u8 = Kind::CompUnitDepSpec as u8 + 1;
+pub(in crate::value) const KIND_COUNT: u8 = Kind::Package as u8 + 1;
 
 // 13 kind pages x 8 subkinds.
 const _: () = assert!(KIND_COUNT as u64 <= (0xFFFF - KIND_PAGE_BASE + 1) * 8);
@@ -517,7 +516,6 @@ macro_rules! payload_free_kinds {
             | Kind::HyperWhatever
             | Kind::Bool
             | Kind::Package
-            | Kind::CompUnitDepSpec
     };
 }
 use payload_free_kinds;
@@ -613,7 +611,6 @@ pub(crate) mod jit_words {
                     | Kind::HyperWhatever
                     | Kind::Bool
                     | Kind::Package
-                    | Kind::CompUnitDepSpec
             ),
         }
     }

@@ -70,7 +70,6 @@ impl Interpreter {
         depspec: &Value,
     ) -> (String, Option<String>, Option<String>, Option<String>) {
         match depspec.view() {
-            ValueView::CompUnitDepSpec { short_name } => (short_name.resolve(), None, None, None),
             ValueView::Instance {
                 class_name,
                 attributes,

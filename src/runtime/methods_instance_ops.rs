@@ -1587,12 +1587,9 @@ impl Interpreter {
                         return Ok(compunit);
                     }
                     "need" => {
-                        // A depspec may arrive either as the native `CompUnitDepSpec`
-                        // value (short-name only) or as a full
-                        // `CompUnit::DependencySpecification` instance carrying
-                        // auth/api/version matchers (zef's plugin loader builds the
-                        // latter). Extract the short-name from either form; the
-                        // FileSystem repo resolves purely by name.
+                        // A depspec is a `CompUnit::DependencySpecification`
+                        // instance, or a bare short-name string. Extract the
+                        // short-name; the FileSystem repo resolves purely by name.
                         let depspec = args.first().cloned().unwrap_or(Value::NIL);
                         let (short_name_str, ..) = self.extract_depspec_fields(&depspec);
                         if short_name_str.is_empty() {

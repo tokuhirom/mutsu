@@ -106,7 +106,6 @@ impl Hash for Value {
                 re.to_bits().hash(state);
                 im.to_bits().hash(state);
             }
-            ValueView::CompUnitDepSpec { short_name } => short_name.hash(state),
             ValueView::Package(name) => name.hash(state),
             ValueView::Routine {
                 package,
