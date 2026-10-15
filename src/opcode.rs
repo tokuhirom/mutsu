@@ -9691,7 +9691,10 @@ impl CompiledCode {
         // a stashed body against the live env (see `static_name_lookup`).
         const NAME_LOOKUP_CONSTANTS: [&str; 6] =
             ["EVAL", "EVALFILE", "MY", "OUTER", "LEXICAL", "UNIT"];
-        self.static_name_lookup = own_reflective
+        // Or'd into a preset value: the compiler presets it for a code that
+        // declares a routine naming lexicals by string
+        // (`Compiler::note_routines_naming_lexicals`).
+        self.static_name_lookup |= own_reflective
             || self
                 .ops
                 .iter()
@@ -9703,7 +9706,8 @@ impl CompiledCode {
                 .closure_compiled_codes
                 .iter()
                 .any(|c| c.static_name_lookup);
-        self.needs_reflective_capture |= own_reflective || self.chunk_reflective_capture_traits();
+        self.needs_reflective_capture |=
+            own_reflective || self.static_name_lookup || self.chunk_reflective_capture_traits();
     }
 
     /// A frame that constructs a regex value which interpolates a lexical

@@ -628,6 +628,7 @@ impl Compiler {
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
         sub_compiler.resolve_frame_lexical_routines(body);
+        sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
         // See the twin call in `compile_closure_body_with_routine_flag`: a
         // parameter default / `where` constraint reads its outer lexicals from
@@ -1876,6 +1877,7 @@ impl Compiler {
         // within the body, otherwise fall back to the parent compiler's
         // last_source_line.
         sub_compiler.code.source_line = sub_compiler.last_source_line.or(self.last_source_line);
+        sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
         // A parameter DEFAULT or `where` constraint is evaluated from the
         // `ParamDef` AST at call time and never compiles into these ops, so

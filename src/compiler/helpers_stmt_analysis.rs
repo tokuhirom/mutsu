@@ -247,6 +247,28 @@ impl Compiler {
     /// here, or `None` when no enclosing block `use`s a module or the name
     /// cannot be an imported routine's.
     // Cost: O(c), c = enclosing `use`-blocks.
+    /// Mark this code as naming lexicals by string when a routine it declares
+    /// does (`sub inner { ::('$x') }` in a closure body): the routine is not
+    /// linked to the code it is declared in, so it resolves such a name
+    /// through this code's frame, and that frame's capture must hold every
+    /// lexical its creation site sees, as cells (#13595). Run before
+    /// `compute_needs_env_sync`, which reads the flag.
+    // Cost: O(r), r = routines compiled in this body (its own compiler's
+    // `compiled_functions` or its code's `compiled_fns`, which hold nothing
+    // from outside it).
+    pub(super) fn note_routines_naming_lexicals(&mut self) {
+        // A closure body hands its routines to its code (`compiled_fns`)
+        // before this runs; a sub body still holds them.
+        let names_lexicals = self
+            .compiled_functions
+            .values()
+            .chain(self.code.compiled_fns.iter().flat_map(|fns| fns.values()))
+            .any(|cf| cf.code.static_name_lookup);
+        if names_lexicals {
+            self.code.static_name_lookup = true;
+        }
+    }
+
     /// Emit an `OpCode::LexImportInfix` prefix for the binary `InfixFunc` over
     /// operator `op` the caller emits next, when an enclosing block's `use`
     /// may have imported `infix:<op>` (ADR-8751 stage 2). Every path that
