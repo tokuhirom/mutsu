@@ -254,6 +254,23 @@ impl Interpreter {
         // An operator candidate only another compunit imported is not in
         // scope here (#9944, `runtime/operator_scope.rs`).
         self.retain_visible_operator_candidates(name, &mut candidates);
+        self.choose_best_in_scope_candidate(name, args, candidates, rejected)
+    }
+
+    /// [`Self::choose_best_matching_candidate_excluding`] over candidates the
+    /// caller already holds in scope, so no visibility filter applies: the
+    /// candidates a multi dispatcher value captured are that value's,
+    /// wherever it is called from (an imported family's dispatcher called
+    /// after its importing block exited, ADR-8751).
+    // Cost: O(c log c) ranking plus the bind attempts, c = candidates.
+    pub(super) fn choose_best_in_scope_candidate(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        candidates: Vec<(String, Arc<FunctionDef>)>,
+        rejected: Option<&mut std::collections::HashSet<u64>>,
+    ) -> Resolved {
+        let mut candidates = candidates;
         self.retain_candidates_not_outranked_by_core(name, args, &mut candidates);
         {
             let mut seen_keys = std::collections::HashSet::new();

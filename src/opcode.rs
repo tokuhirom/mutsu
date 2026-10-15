@@ -4446,6 +4446,13 @@ pub(crate) enum OpCode {
     /// and skips the `CallFunc`; otherwise it falls through to it. Stack: as
     /// the `CallFunc`.
     LexImportCall { chain_idx: u32 },
+    /// Prefix of the binary [`Self::InfixFunc`] at `ip + 1` (one right
+    /// operand, no meta-operator) inside a block that `use`s a module
+    /// (ADR-8751 stage 2): as [`Self::LexImportCall`], for an operator.
+    /// `name_idx` is the constant `infix:<op>`, the name the import binds.
+    /// On a hit the bound routine gets both operands and the `InfixFunc` is
+    /// skipped. Stack: as the `InfixFunc`.
+    LexImportInfix { chain_idx: u32, name_idx: u32 },
     /// `import Module :TAGS`: import the exports of an already-loaded module.
     /// Stack: `[] → []`. Operands as [`Self::UseModule`]; runs the runtime
     /// `import_module`.
