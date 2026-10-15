@@ -19,10 +19,11 @@ use super::*;
 pub(crate) enum LexicalImport {
     /// A code object a `sub EXPORT` hook bound (`'&name' => -> |c { ... }`).
     Code(Value),
-    /// A routine the import aliased from its module: its definition's own
-    /// registry key (`Module::name`), which outlives the block's aliases.
-    /// It is called through the named-call path, as the alias was.
-    Routine(Symbol),
+    /// A routine the import aliased from its module: its definition, which
+    /// outlives the block's registry alias. It is called as the alias was,
+    /// by definition (`compile_and_call_qualified_def`), so it runs in the
+    /// module's own scope.
+    Routine(std::sync::Arc<crate::runtime::FunctionDef>),
 }
 
 /// What a `use` that fills a lexical import set imported, collected while
@@ -87,9 +88,7 @@ impl Interpreter {
                 // dispatcher values (ADR-8751 stage 2).
                 self.registry()
                     .function_def(crate::qualified::qualified(package, name))
-                    .map(|def| {
-                        LexicalImport::Routine(crate::qualified::qualified(def.package, def.name))
-                    })
+                    .map(LexicalImport::Routine)
             };
             if let Some(binding) = binding {
                 set.insert(name, binding);

@@ -15,9 +15,9 @@ pub(super) enum CodeVarBinding {
     /// Already resolved by the caller: a lexical import's code object
     /// (`OpCode::LexImportCall`, ADR-8751 stage 1).
     Bound(Value),
-    /// A lexical import's routine, called by its definition's registry key
-    /// through the named-call path (`OpCode::LexImportCall`).
-    Routine(Symbol),
+    /// A lexical import's routine definition, called as the registry alias
+    /// it was found through would be (`OpCode::LexImportCall`).
+    Routine(std::sync::Arc<crate::runtime::FunctionDef>),
 }
 
 impl Interpreter {
@@ -1827,13 +1827,8 @@ impl Interpreter {
         // `const_syms` entry: the dispatch below wants the symbol, and
         // re-interning the same constant per call is exactly what #7766 is
         // about.
-        let (name_sym, name) = match binding {
-            CodeVarBinding::Routine(key) => (key, key.resolve().to_string()),
-            _ => (
-                code.const_sym(name_idx),
-                Self::const_str(code, name_idx).to_string(),
-            ),
-        };
+        let name_sym = code.const_sym(name_idx);
+        let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
             return Err(RuntimeError::new(
@@ -1866,7 +1861,15 @@ impl Interpreter {
         // slot for it, the by-name env lookup below would find the CALLER's
         // same-named private attribute (`$!index` of an unrelated class whose
         // method is up the call chain), so ask `self` first.
-        let by_routine_key = matches!(binding, CodeVarBinding::Routine(_));
+        if let CodeVarBinding::Routine(def) = &binding {
+            self.set_pending_call_arg_sources(arg_sources);
+            let result = self.compile_and_call_qualified_def(def, args, compiled_fns);
+            self.set_pending_call_arg_sources(None);
+            let result = loan_env!(self, maybe_fetch_rw_proxy(result?, true))?;
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(result);
+            return Ok(());
+        }
         let own_private_attr = if name.starts_with('!')
             && self.find_local_slot(code, &name).is_none()
             && self.find_local_slot(code, &format!("&{name}")).is_none()
@@ -1883,11 +1886,8 @@ impl Interpreter {
             CodeVarBinding::Upvalue(index) => self.code_var_upvalue(code, index, name_idx),
             CodeVarBinding::Bound(value) => Some(value),
         };
-        // A routine named by its registry key goes straight to the named-call
-        // arms below: resolving it as `&name` would build a code object.
         let mut target = match captured.or(own_private_attr) {
             Some(v) => v,
-            None if by_routine_key => Value::NIL,
             None => match self.declared_scope_amp_var_for(code, &name) {
                 Some(v) => v,
                 None => self.resolve_amp_var_for(code, &name),
