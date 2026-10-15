@@ -705,45 +705,9 @@ impl Compiler {
                 value_on_stack: true,
             })
         });
-        let scope = self.branch_sigilless_scope(is_statement_modifier);
         body(self);
-        self.restore_branch_sigilless_scope(scope);
         if let Some(idx) = let_frame {
             self.code.patch_let_block_end(idx);
-        }
-    }
-
-    /// The sigilless-name bookkeeping to restore when an `if` branch block
-    /// ends: a `my $x` declared inside the branch shadows a sigilless `\x`
-    /// only until the block closes, so the other branch and the code after the
-    /// `if` still read the parameter (as `compile_block` does). A statement
-    /// modifier opens no block, so its declaration stays visible.
-    // Cost: O(s), s = sigilless names in scope.
-    pub(super) fn branch_sigilless_scope(
-        &self,
-        is_statement_modifier: bool,
-    ) -> Option<(
-        std::collections::HashSet<String>,
-        std::collections::HashSet<String>,
-    )> {
-        (!is_statement_modifier).then(|| {
-            (
-                self.sigilless_locals.clone(),
-                self.shadowed_sigilless_terms.clone(),
-            )
-        })
-    }
-
-    pub(super) fn restore_branch_sigilless_scope(
-        &mut self,
-        scope: Option<(
-            std::collections::HashSet<String>,
-            std::collections::HashSet<String>,
-        )>,
-    ) {
-        if let Some((locals, shadowed)) = scope {
-            self.sigilless_locals = locals;
-            self.shadowed_sigilless_terms = shadowed;
         }
     }
 
