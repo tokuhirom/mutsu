@@ -1211,3 +1211,52 @@ two Cro files that load roles); with them `t/` is green. The third bullet
 (the unconditional env mirror on a container `SetLocal`) and deleting the
 container special cases are still open on #9895.
 
+## 16. §4.2's third bullet: a plain container `SetLocal` skips the env mirror (2026-10-15)
+
+A store to a plain user `@`/`%` lexical (`CompiledCode::is_plain_container_local`:
+no twigil, no qualifier) now takes the same slot-authoritative skip a plain
+scalar store already took (`skip_env_write` in `exec_set_local_op`): no bind,
+no constant, no `needs_env_sync` consumer of the slot, no reflective name
+access in the program. Every other container store keeps the unconditional
+`set_env_with_main_alias` mirror. With §15 the container's readers reach it by
+slot or upvalue, so the mirror only served readers the skip's conditions
+already keep it for.
+
+Measured on the debug build in a 4-core container: all 7734 `t/` files pass;
+the whitelisted roast (1426 files) has no `not ok` beyond the two
+root-permission file tests `ci/known-env-failures.toml` lists, the rest of its
+list being debug-build timeouts of files the change does not touch
+(`S32-str/sprintf-*.t`, `val.t`, ...). The bundled-library battery gate runs in
+CI. Deleting the container special cases §4.2 predicted (`container_name_is_redeclared`,
+the `module_scope_lexicals` snapshot) is the remaining work on #9895.
+
+## 17. §4.2's predicted deletions are not dead: they belong to other decisions (2026-10-15)
+
+§4.2 said the container special cases "exist only because" containers resolved
+by name, so they could be deleted once §15 and §16 landed. That was measured,
+and the claim does not hold.
+
+- **`container_name_is_redeclared` and the atomic-lane masking** guard the
+  cross-thread store (`threads.shared_vars`, ADR-0010/ADR-0068), which is keyed
+  by bare name process-wide. They do not guard the frame env. A prototype with
+  the predicate hard-wired to `false`, on top of §16, fails three
+  `t/concurrency/thread-lock/` files with concrete `not ok`s:
+  `atomic-elem-redeclared-after-start.t`,
+  `thread-callee-array-does-not-clobber-caller.t` and
+  `thread-uncaptured-container-lane.t`. In each, a callee's or a re-declared
+  `my @x` reaches an unrelated binding's lane entry of the same name. The
+  slot/upvalue resolution of §15/§16 does not touch that store. The masks go
+  when the store is keyed by binding identity rather than by name, which is
+  #12204's fix direction and close condition.
+- **The `module_scope_lexicals` snapshot** holds a module's immutable
+  file-scope terms (`constant`s, enum values, imported names) for its own
+  routines once the loading frame is gone. It holds no container, so §15/§16
+  cannot retire it. It is one of the package-owned scope tables of
+  [ADR-0084](0084-the-frame-env-is-not-the-programs-symbol-table.md) (#7817),
+  and it retires with that decision or with a module routine reaching its
+  file scope through the static link
+  ([ADR-12529](12529-frames-resolve-names-through-the-static-link.md) phase 3).
+
+§4.2 is therefore complete with §16, and #9895 closes with it. The two
+deletions are tracked on #12204 and #7817.
+

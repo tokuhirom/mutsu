@@ -8904,6 +8904,15 @@ impl CompiledCode {
     /// True if `local[idx]` is a *plain lexical* name. Was
     /// `plain_locals[idx]`; see [`crate::binding_desc::BindingFlags::plain_local`].
     #[inline]
+    /// Whether slot `idx` holds a plain user `@`/`%` lexical (no twigil, no
+    /// qualifier): the container counterpart of [`Self::is_plain_local`].
+    // Cost: O(|name|).
+    pub(crate) fn is_plain_container_local(&self, idx: usize) -> bool {
+        self.locals.get(idx).is_some_and(|name| {
+            name.starts_with(['@', '%']) && crate::env::is_plain_user_lexical(name)
+        })
+    }
+
     pub(crate) fn is_plain_local(&self, idx: usize) -> bool {
         self.binding_descs
             .get(idx)
