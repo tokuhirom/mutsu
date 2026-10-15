@@ -9603,10 +9603,28 @@ impl CompiledCode {
     /// closure in the process capture the whole visible env by name, so both
     /// the creation-time flatten and the per-call capture merge became linear
     /// in the importing scope's size (#7565).
+    /// Whether the `IndirectTypeLookup` at `ip` looks up a constant name
+    /// that cannot be a variable: no sigil, pushed by the op right before it.
+    // Cost: O(m), m = bytes of the constant name.
+    fn indirect_lookup_names_type(&self, ip: usize) -> bool {
+        let Some(OpCode::LoadConst(idx)) = ip.checked_sub(1).and_then(|p| self.ops.get(p)) else {
+            return false;
+        };
+        matches!(
+            self.constants.get(*idx as usize).map(Value::view),
+            Some(ValueView::Str(name)) if !name.is_empty() && !name.starts_with(['$', '@', '%', '&'])
+        )
+    }
+
     pub(crate) fn scan_reflective_name_access(&mut self) {
         let mut own_reflective = false;
-        for op in &self.ops {
+        for (i, op) in self.ops.iter().enumerate() {
             let reflective = match op {
+                // `::($name)` / `::('$x')` names a lexical by string unless
+                // its operand is a constant type name (`::('Int')`,
+                // `::('Foo::Bar')`): a sigiled constant or a name computed at
+                // run time may be a variable of the running frame (#13595).
+                OpCode::IndirectTypeLookup => !self.indirect_lookup_names_type(i),
                 OpCode::GetCallerVar { .. }
                 | OpCode::GetCallersVar { .. }
                 | OpCode::GetOuterVar { .. }

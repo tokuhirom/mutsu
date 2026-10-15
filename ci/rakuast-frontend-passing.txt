@@ -7519,6 +7519,7 @@ t/vm/scope/strict-no-strict-autodecl-outlives-block.t
 t/vm/scope/strict-undeclared-scalar-any-not-nil.t
 t/vm/scope/strict-undeclared-variable-read.t
 t/vm/scope/strict-use-and-eval.t
+t/vm/scope/symbolic-scalar-lookup-sees-lexicals.t
 t/vm/scope/syntax-missing-and-unitscope-carry-what.t
 t/vm/scope/temp-postfix-incdec.t
 t/vm/scope/temp-scope-restore.t
