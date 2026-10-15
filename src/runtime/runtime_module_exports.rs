@@ -1166,6 +1166,36 @@ impl Interpreter {
             {
                 function_entries.clear();
             }
+            // A multi family likewise binds as its dispatcher value (stage 2),
+            // when its proto only dispatches. An operator family keeps the
+            // alias: a built-in operator's opcode finds its user candidates
+            // in the registry.
+            let family_bound_lexically = !is_operator
+                && !name.contains(":<")
+                && !exported_method_candidates
+                && !bare_file_module
+                && {
+                    let proto_def = self
+                        .registry()
+                        .proto_functions
+                        .get(&source_single_sym)
+                        .cloned()
+                        .or_else(|| {
+                            unit_global_subs
+                                .contains_key(&name)
+                                .then(|| {
+                                    self.registry()
+                                        .proto_functions
+                                        .get(&Symbol::intern(&global_single))
+                                        .cloned()
+                                })
+                                .flatten()
+                        });
+                    self.bind_family_lexically(&name, &function_entries, proto_def.as_deref())
+                };
+            if family_bound_lexically {
+                function_entries.clear();
+            }
             // An imported `only` sub (no multi candidates) is a single lexical
             // symbol: inside a nested scope it hides every outer candidate of
             // the name, exactly as a locally declared `sub` would. Without
@@ -1175,8 +1205,10 @@ impl Interpreter {
                 && function_entries
                     .iter()
                     .all(|(key, _)| !key.as_str().contains('/'));
-            if ((imported_proto || imports_only_sub) && !self.module.import_scope_stack.is_empty())
-                || global_family_present
+            if !family_bound_lexically
+                && (((imported_proto || imports_only_sub)
+                    && !self.module.import_scope_stack.is_empty())
+                    || global_family_present)
             {
                 self.shadow_imported_proto_family(&target_single);
             }
@@ -1200,6 +1232,7 @@ impl Interpreter {
                     // candidates. Chain into the first free `__mN` slot
                     // instead, and skip candidates already installed (a
                     // re-import of the same module must stay idempotent).
+                    self.note_lexical_import_candidate(&name, &v);
                     self.import_multi_candidate_merged(&ks, v);
                 } else {
                     self.registry_mut().functions_mut().insert(k, v);
@@ -1217,6 +1250,7 @@ impl Interpreter {
             let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = [Some(source_single_sym), global_proto_key]
                 .into_iter()
                 .flatten()
+                .filter(|_| !family_bound_lexically)
                 .filter_map(|k| self.registry().proto_functions.get(&k).cloned())
                 .map(|v| (Symbol::intern(&target_single), v))
                 .collect();
@@ -1228,7 +1262,7 @@ impl Interpreter {
             // under the importing package too. (Before unit-module routines
             // registered under their own package, a module's proto was already
             // in `proto_subs` as `GLOBAL::name` and this was invisible.)
-            if imported_proto {
+            if imported_proto && !family_bound_lexically {
                 self.registry_mut().proto_subs_insert(target_single.clone());
                 self.record_imported_exported_proto(target_pkg, &name, symbol_tags.iter().cloned());
             }

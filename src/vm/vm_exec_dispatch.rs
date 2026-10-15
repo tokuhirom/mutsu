@@ -5418,6 +5418,24 @@ impl Interpreter {
                     *ip += 1;
                 }
             }
+            // Cost: O(c) probe, c = enclosing `use`-blocks; on a hit the callee's
+            // body; on a miss nothing (the `InfixFunc` at ip + 1 runs).
+            OpCode::LexImportInfix {
+                chain_idx,
+                name_idx,
+            } => {
+                if self.exec_lex_import_infix_site(
+                    code,
+                    *ip,
+                    *chain_idx,
+                    *name_idx,
+                    compiled_fns,
+                )? {
+                    *ip += 2;
+                } else {
+                    *ip += 1;
+                }
+            }
 
             _ => unreachable!("opcode routed to the wrong exec_ops group"),
         }

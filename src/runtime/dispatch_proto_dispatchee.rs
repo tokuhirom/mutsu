@@ -229,7 +229,7 @@ impl Interpreter {
             })
             .collect();
         let mut ordered = rows.clone();
-        let Some(winner) = self.choose_best_matching_candidate(family, args, rows)? else {
+        let Some(winner) = self.choose_best_in_scope_candidate(family, args, rows, None)? else {
             return Ok(None);
         };
         let Some(code) = winner.dispatchee.clone() else {

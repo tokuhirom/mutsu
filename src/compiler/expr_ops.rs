@@ -911,6 +911,18 @@ impl Compiler {
             }
             self.compile_named_callee_arg(infix_callee.as_deref(), Some(i as u32 + 1), r, false);
         }
+        // A binary operator an enclosing block's `use` may have imported
+        // (ADR-8751 stage 2).
+        if modifier.is_none() && right.len() == 1 {
+            let op_name = Symbol::intern(&format!("infix:<{name}>"));
+            if let Some(chain_idx) = self.lexical_import_chain_idx(op_name) {
+                let name_idx = self.code.add_constant(Value::str(op_name.resolve()));
+                self.code.emit(OpCode::LexImportInfix {
+                    chain_idx,
+                    name_idx,
+                });
+            }
+        }
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let modifier_idx = modifier
             .as_ref()
