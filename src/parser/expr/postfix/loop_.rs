@@ -1662,6 +1662,25 @@ fn postfix_expr_loop_from(
         // Private method call: target!Type::method(args) / target!method(args)
         // Also supports quoted names: target!"method"() / target!'method'()
         if rest.starts_with('!') && !rest.starts_with("!=") {
+            if let Some((postfix_name, postfix_len)) =
+                crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
+            {
+                let private_name_len = parse_private_method_name(&rest[1..])
+                    .map(|(remaining, _)| rest.len() - 1 - remaining.len())
+                    .unwrap_or(0);
+                // A declared postfix whose token consumes the whole private
+                // method spelling wins the tie, as in Rakudo's longest-token
+                // parse: `4!zz` is postfix:<!zz> when that operator exists.
+                if postfix_len > private_name_len {
+                    expr = Expr::Call {
+                        name: Symbol::intern(&postfix_name),
+                        args: vec![expr],
+                        listop: false,
+                    };
+                    rest = &rest[postfix_len..];
+                    continue;
+                }
+            }
             let after_bang = &rest[1..];
             if let Some((r, name)) = parse_private_method_name(after_bang) {
                 let name = Symbol::intern(&name);
