@@ -53,6 +53,11 @@ impl Interpreter {
             .collect();
 
         // Protos first: a candidate's `our`-scope check reads `proto_subs`.
+        // A second proto for the same package/name is a compile-time
+        // redeclaration, even when it occurs in a later package body. Detect it
+        // here before the shared marker can make both source declarations look
+        // like the same pre-registration.
+        let mut preregistered_protos = std::collections::HashSet::new();
         for (package, InlinePackageDecl { stmt, .. }) in &declarations {
             let Stmt::ProtoDecl {
                 name,
@@ -74,6 +79,9 @@ impl Interpreter {
                 continue;
             }
             let name_str = name.resolve();
+            if !preregistered_protos.insert((package.clone(), name_str.clone())) {
+                return Err(RuntimeError::redeclaration_routine(&name_str));
+            }
             let saved_package = self.current_package();
             self.set_current_package(package.clone());
             let result = self.register_proto_decl(

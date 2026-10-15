@@ -13,7 +13,7 @@ use Test;
 # `__mutsu_inline_package_sub_preregistered` protocol) rather than a
 # redeclaration.
 
-plan 10;
+plan 11;
 
 module M2 { our proto sub f4($) {*}; our multi sub f4(Int $x) { "int" } }
 is M2::f4(1), 'int', 'a module body`s `our proto` + `our multi` resolves';
@@ -61,4 +61,10 @@ is M1::f3(1), 'int', 'control: a module body with `my`-scoped candidates';
             module ME3 { our proto sub g3($) {*} }';
       CATCH { default { $err = .message } } }
     like $err, /'Redeclaration'/, 'and so does a re-opened package body';
+}
+{
+    my $err;
+    { EVAL 'if True { module ME4 { our proto sub g4($) {*}; our multi sub g4(Int $x) { "x" } }; module ME4 { our proto sub g4($) {*} } }';
+      CATCH { default { $err = .message } } }
+    like $err, /'Redeclaration'/, 'a duplicate proto across mainline package bodies is refused';
 }
