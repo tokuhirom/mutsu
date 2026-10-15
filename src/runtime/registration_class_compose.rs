@@ -273,7 +273,10 @@ impl Interpreter {
         let type_subs: Vec<(String, String)> = role_param_names
             .iter()
             .zip(role_arg_values.iter())
-            .map(|(p, v)| (p.clone(), type_value_name(v)))
+            .map(|(p, v)| {
+                let spelling = crate::runtime::term_names::term_spelling(p).unwrap_or(p);
+                (spelling.to_string(), type_value_name(v))
+            })
             .collect();
         // Inherit any bindings the composed role itself picked up from a
         // role IT composed (`role Kg does U["g"] {}` records "unit" -> "g"

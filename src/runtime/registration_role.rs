@@ -380,11 +380,19 @@ impl Interpreter {
         } else {
             arg_values
         };
-        Ok(Some((
-            selected.role_def,
-            selected.type_params,
-            resolved_values,
-        )))
+        // A sigilless type parameter (`role R[\u]`) is a term: its binding is
+        // keyed by its term key, so a same-named `$u` parameter keeps its own
+        // (ADR-12441, #13551).
+        let param_keys = selected
+            .type_params
+            .iter()
+            .enumerate()
+            .map(|(i, name)| match selected.type_param_defs.get(i) {
+                Some(pd) if pd.sigilless && pd.name == *name => pd.storage_name().into_owned(),
+                _ => name.clone(),
+            })
+            .collect();
+        Ok(Some((selected.role_def, param_keys, resolved_values)))
     }
 
     #[allow(clippy::too_many_arguments)]
