@@ -442,6 +442,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
                 | crate::ast::SourceForm::HyperAssign { .. }
+                | crate::ast::SourceForm::InlineSubsetTerm(_)
                 | crate::ast::SourceForm::RoutineTraits(_),
             )
             | None => Err(unsupported("source form")),
@@ -3431,6 +3432,22 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
+                if let Some(declaration) = crate::ast::inline_subset_term::declaration(body) {
+                    let statement = convert_stmt(declaration)?
+                        .ok_or_else(|| unsupported("inline subset declaration"))?;
+                    return statement
+                        .fields
+                        .iter()
+                        .find(|field| field.name == Some("expression"))
+                        .and_then(|field| match &field.value {
+                            RakuAstFieldValue::Node(value) => match value.view() {
+                                ValueView::RakuAst(node) => Some(node.clone()),
+                                _ => None,
+                            },
+                            _ => None,
+                        })
+                        .ok_or_else(|| unsupported("inline subset declaration"));
+                }
                 // `(LVALUES) »=» VALUE`: the record that opens the expansion.
                 if let Some(Stmt::SourceForm(form)) = body.first()
                     && let crate::ast::SourceForm::HyperAssign {
@@ -3694,6 +3711,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
                 | crate::ast::SourceForm::HyperAssign { .. }
+                | crate::ast::SourceForm::InlineSubsetTerm(_)
                 | crate::ast::SourceForm::RoutineTraits(_),
             )
             | None => Err(unsupported("source form")),

@@ -39,6 +39,9 @@ pub(crate) enum SourceForm {
         signature: Expr,
         rhs: Expr,
     },
+    /// An inline `subset` term expands to a declaration followed by a read of
+    /// its generated name. Keep the declaration as written for RakuAST.
+    InlineSubsetTerm(Box<Stmt>),
     /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration,
     /// whose parser expansion installs each listed attribute separately.
     AttributeGroup(Vec<Stmt>),

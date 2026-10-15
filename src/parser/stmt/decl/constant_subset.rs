@@ -442,8 +442,5 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         is_my: false,
         decl_id: crate::ast::next_class_decl_id(),
     };
-    Ok((
-        rest,
-        Expr::desugar_block(vec![decl, Stmt::Expr(Expr::BareWord(name))]),
-    ))
+    Ok((rest, crate::ast::inline_subset_term::expand(decl)))
 }
