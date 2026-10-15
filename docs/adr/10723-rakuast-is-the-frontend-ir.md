@@ -1188,3 +1188,13 @@ that comma-list seed with `VarDeclaration::Signature`, and lowering restores
 the same declaration expansion and array seed. This record covers bare groups
 of plain variables; initialized, nested, named and typed groups remain on their
 existing paths or boundaries.
+
+### 6.58 S10: sigilless call-assignment initializer under `quietly` (2026-10-15)
+
+For `quietly my \z .= Numeric`, the parser stores a `DoStmt` around the
+sigilless declaration expansion (`VarDecl(Mu.Numeric)` followed by
+`MarkSigillessReadonly`). Rakudo renders `StatementPrefix::Quietly` around a
+`Statement::Expression` containing `VarDeclaration::Term` with
+`Initializer::CallAssign`. The converter recognizes this exact untyped
+readonly expansion, and lowering restores its parser shape. Other sigilless
+call-assignment expansions remain outside this boundary.
