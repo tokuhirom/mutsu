@@ -160,6 +160,11 @@ impl Interpreter {
             self.registry().classes.contains_key(package)
                 || self.registry().roles.contains_key(package)
         };
+        if let Some(frame) = self.types.method_class_stack.last()
+            && frame.authorizes_private
+        {
+            return Some(frame.name.resolve());
+        }
         if let Some(frame) = self.routine_stack.last() {
             if let Some(package) = frame.lexical_package.filter(is_type) {
                 return Some(package.resolve());

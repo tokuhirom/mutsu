@@ -907,6 +907,16 @@ impl Interpreter {
             .push(super::MethodClassFrame::new(class_name, is_role));
     }
 
+    /// [`Self::push_method_class`] for a call a reflection handle authorizes:
+    /// the private-method trust check sees `class_name` as the caller.
+    pub(crate) fn push_method_class_authorizing_private(&mut self, class_name: &str) {
+        self.types
+            .method_class_stack
+            .push(super::MethodClassFrame::new_authorizing_private(
+                crate::symbol::Symbol::intern(class_name),
+            ));
+    }
+
     pub(crate) fn pop_method_class(&mut self) {
         self.types.method_class_stack.pop();
     }
