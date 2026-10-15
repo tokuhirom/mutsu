@@ -1022,19 +1022,10 @@ impl Compiler {
                 // (#10676, #10827; see `Stmt::Assign`).
                 let outer_target = self.outer_write_target(name, *is_bind);
                 let name = outer_target.as_deref().unwrap_or(name);
-                // A sigil-less bareword bind target arrives as a term key:
-                // it stays one for an in-scope constant (or a name this unit
-                // cannot see, for the VM to resolve), and is the plain
-                // sigil-less binding otherwise (#9962).
-                let name = match crate::runtime::term_names::term_spelling(name) {
-                    Some(spelled)
-                        if !self.names_term_constant(spelled)
-                            && !self.sigilless_target_is_unknown(spelled) =>
-                    {
-                        spelled
-                    }
-                    _ => name,
-                };
+                // A sigil-less bareword target arrives as a term key, which
+                // is where an in-scope constant (#9962) and a sigilless
+                // binding (ADR-12441) both live; a name this unit cannot see
+                // is resolved by the VM.
                 self.compile_expr_assign(name, expr, *is_bind);
             }
             // Source-preserving annotation for `x += y` and friends. The

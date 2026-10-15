@@ -136,7 +136,7 @@ impl Compiler {
         // A sigilless alias is not a container: its store suppresses
         // itemization through `MarkParamRawBindContext`, which this op does
         // not emit.
-        if self.sigilless_locals.contains(name)
+        if name.starts_with(crate::runtime::term_names::TERM_PREFIX)
             || !(Self::is_plain_compound_target(name) || private_attr)
             || !(self.local_map.contains_key(name) || private_attr)
         {

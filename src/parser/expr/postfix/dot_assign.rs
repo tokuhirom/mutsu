@@ -97,6 +97,8 @@ pub(crate) fn dot_assign_to_name(name: String, method_call: Expr) -> Expr {
         Expr::ArrayVar(rest.to_string())
     } else if let Some(rest) = name.strip_prefix('%') {
         Expr::HashVar(rest.to_string())
+    } else if let Some(term) = crate::term_names::term_spelling(&name) {
+        Expr::BareWord(term.to_string())
     } else {
         Expr::Var(name.clone())
     };
@@ -174,10 +176,11 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
             let name = format!("%{}", name);
             dot_assign_to_name(name, method_call_fn(target))
         }
-        // A sigilless term (`my \foo`): its assignments are named by the bare
-        // storage name, the same one `foo += 1` writes back to (#9551).
+        // A sigilless term (`my \foo`): its assignments are named by its
+        // term key, the same one `foo += 1` writes back to (#9551,
+        // ADR-12441).
         Expr::BareWord(name) if crate::parser::stmt::simple::is_user_declared_value_term(name) => {
-            let name = crate::symbol::sigilless_storage_name(name).to_string();
+            let name = crate::term_names::term_key(name);
             dot_assign_to_name(name, method_call_fn(target))
         }
         Expr::Index {

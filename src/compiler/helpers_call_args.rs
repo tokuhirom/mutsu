@@ -158,9 +158,9 @@ impl Compiler {
         let Expr::BareWord(name) = arg else {
             return None;
         };
-        (Self::is_plain_lexical_name(name)
-            && (self.sigilless_locals.contains(name) || self.enclosing_sigilless.contains(name)))
-        .then(|| name.clone())
+        // The binding's storage key is its term key (ADR-12441).
+        (Self::is_plain_lexical_name(name) && self.names_sigilless_binding(name))
+            .then(|| crate::runtime::term_names::term_key(name))
     }
 
     /// Whether a bareword names an in-scope lexical term -- a sigilless

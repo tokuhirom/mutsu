@@ -214,10 +214,14 @@ impl Interpreter {
             self.stack.push(v);
             return Ok(());
         }
-        // An in-scope sigilless `_` is canonicalized by the parser to its
-        // private storage name. Keep the topic spelling out of bareword
-        // lookup, since `_` without that declaration is still undeclared.
+        // A sigilless `_` lives under its term key `\_` (ADR-12441); the env
+        // entry `_` is the topic `$_`, so `_` without that declaration is
+        // still undeclared.
         if name == "_" {
+            if let Some(v) = self.term_binding(name) {
+                self.stack.push(v);
+                return Ok(());
+            }
             return Err(RuntimeError::undeclared_symbols(
                 "Undeclared name:\n    _ used at line 1",
             ));

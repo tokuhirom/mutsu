@@ -189,15 +189,6 @@ struct UndeclaredName<'a> {
 impl UndeclaredName<'_> {
     fn is_known(&self, name: &str) -> bool {
         let interp = self.interp;
-        // A bare `_` is only declared when the caller has a sigilless `_`
-        // term. Its value lives under a private key; the ordinary topic entry
-        // must not make an undeclared `_` look valid.
-        if name == "_" {
-            return self.declared.contains(name)
-                || interp
-                    .env()
-                    .contains_key(crate::symbol::SIGILLESS_UNDERSCORE_STORAGE);
-        }
         // A definite/undefined type object (`Str:D`, `K:U`, `Int:_`) is known
         // exactly when its base type is (#10814).
         if let (base, Some(_)) = crate::runtime::types::strip_type_smiley(name)
@@ -225,7 +216,9 @@ impl UndeclaredName<'_> {
             || interp.has_class(name)
             || interp.has_function(name)
             || interp.has_multi_function_unindexed(name)
-            || interp.env().contains_key(name)
+            // The env entry `_` is the topic `$_`, never a term: a sigilless
+            // `_` lives under its term key `\_` (ADR-12441).
+            || (name != "_" && interp.env().contains_key(name))
             || interp.env().contains_key(&format!("&{name}"))
             // An enum key in the bare-name namespace: one the caller's scope
             // declared (env), or a loaded module's top-level key visible from

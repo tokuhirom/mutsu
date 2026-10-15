@@ -3328,8 +3328,12 @@ impl Compiler {
         )
     }
 
-    fn positional_arg_source_name(expr: &Expr) -> Option<String> {
+    fn positional_arg_source_name(&self, expr: &Expr) -> Option<String> {
         match expr {
+            // A sigilless binding is stored under its term key (ADR-12441).
+            Expr::BareWord(name) if self.names_sigilless_binding(name) => {
+                Some(crate::runtime::term_names::term_key(name))
+            }
             Expr::BareWord(name) => Some(name.to_string()),
             // DoStmt wrapping a VarDecl: `my $c = 42` passed as argument
             Expr::DoStmt(stmt) => stmt.declared_var_key(),
@@ -3537,7 +3541,7 @@ impl Compiler {
                     self.declare_local(name);
                 }
             }
-            let source = if let Some(name) = Self::positional_arg_source_name(arg) {
+            let source = if let Some(name) = self.positional_arg_source_name(arg) {
                 // §1.4/§1.5: bake the caller's local slot for a plain source var
                 // as `Pair(name, Int(slot))`, so the rw-arg writeback can target
                 // the LIVE (inner shadow) slot instead of the by-name `position`

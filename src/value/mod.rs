@@ -1807,6 +1807,11 @@ pub(crate) enum LightCallLegacy {
 /// bind may serve. See [`ParamNameSyms::light_bindable`] for what each rejected
 /// shape would have needed instead.
 fn is_light_bindable_param_name(name: &str) -> bool {
+    // A sigilless pointy parameter (`-> \x`) is named by its term key
+    // (ADR-12441) and binds like any other plain name.
+    let name = name
+        .strip_prefix(crate::term_names::TERM_PREFIX)
+        .unwrap_or(name);
     let mut chars = name.chars();
     // Requiring an alphabetic first character covers the topic `_` and every
     // `__mutsu` synthetic name in one test, along with every sigil and twigil.
@@ -1834,25 +1839,28 @@ fn collect_sub_signature_syms(
 }
 
 impl SubData {
+    /// The storage key of the entry `p` of [`Self::params`]: a sigilless
+    /// parameter is spelled bare there but binds its term key (ADR-12441).
+    // Cost: O(d), d = param_defs.
+    pub(crate) fn param_storage_sym(&self, p: &str) -> Symbol {
+        if self
+            .param_defs
+            .iter()
+            .any(|pd| pd.sigilless && pd.name == p)
+            && !self.param_defs.iter().any(|pd| !pd.sigilless && pd.name == p)
+        {
+            Symbol::intern(&crate::term_names::term_key(p))
+        } else {
+            Symbol::intern(p)
+        }
+    }
+
     /// This code object's [`ParamNameSyms`], built on first use and shared
     /// thereafter.
     pub(crate) fn param_name_syms(&self) -> &Arc<ParamNameSyms> {
         self.param_name_syms_cache.get_or_init(|| {
-            let params: Vec<Symbol> = self.params.iter().map(|p| Symbol::intern(p)).collect();
-            // A sigilless parameter is spelled bare in `params` but binds its
-            // term key (ADR-12441), which the `param_defs` loop below adds.
-            let mut call_local: rustc_hash::FxHashSet<Symbol> = self
-                .params
-                .iter()
-                .zip(params.iter())
-                .filter(|(p, _)| {
-                    !self
-                        .param_defs
-                        .iter()
-                        .any(|pd| pd.sigilless && pd.name == **p)
-                })
-                .map(|(_, sym)| *sym)
-                .collect();
+            let params: Vec<Symbol> = self.params.iter().map(|p| self.param_storage_sym(p)).collect();
+            let mut call_local: rustc_hash::FxHashSet<Symbol> = params.iter().copied().collect();
             for param in self.params.iter() {
                 if let Some(bare) = param.strip_prefix('^') {
                     // Placeholder parameters publish a twigil-less alias in

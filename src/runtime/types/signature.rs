@@ -1103,7 +1103,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 let mut named = named_values_from_unpack_target(value);
                 named.retain(|k, _| !consumed_named_keys.contains(k));
                 if !sub_pd.name.is_empty() {
-                    bind_sub_param_name(interpreter, &sub_pd.name, Value::hash(named));
+                    bind_sub_param_name(interpreter, &sub_pd.storage_name(), Value::hash(named));
                 }
             } else if sub_pd.name.starts_with('@')
                 || sub_pd.name.starts_with('$')
@@ -1122,7 +1122,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                     if !sub_pd.name.is_empty() {
                         bind_sub_param_name(
                             interpreter,
-                            &sub_pd.name,
+                            &sub_pd.storage_name(),
                             Value::capture(remaining, named),
                         );
                     }
@@ -1132,7 +1132,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 // representation used for ordinary listified values.
                 let remaining_value = Value::real_array(remaining);
                 if !sub_pd.name.is_empty() {
-                    bind_sub_param_name(interpreter, &sub_pd.name, remaining_value.clone());
+                    bind_sub_param_name(interpreter, &sub_pd.storage_name(), remaining_value.clone());
                 }
                 // A slurpy param may itself destructure the list it collects,
                 // e.g. `*@ ($a, $b, $y, *@)`. Bind those inner params against the
@@ -1186,7 +1186,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             // don't leak into recursive calls.
             if !sub_pd.name.is_empty() {
                 let default_val = Interpreter::missing_optional_param_value(sub_pd);
-                bind_sub_param_name(interpreter, &sub_pd.name, default_val.clone());
+                bind_sub_param_name(interpreter, &sub_pd.storage_name(), default_val.clone());
                 // An unsupplied `:outer(:$inner)` alias must still declare the
                 // inner names the body actually reads.
                 if sub_pd.named
@@ -1320,7 +1320,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         }
         let bind_alias_name = !is_named_rename_sub_signature(sub_pd);
         if !sub_pd.name.is_empty() && bind_alias_name {
-            bind_sub_param_name(interpreter, &sub_pd.name, candidate.clone());
+            bind_sub_param_name(interpreter, &sub_pd.storage_name(), candidate.clone());
             // Neither shape of a destructured leaf ever got marked readonly:
             // a sigilless leaf (`sub f($ (\a, \b)) { a = 1 }`) is a TERM
             // binding like a top-level `sub f(\a) { a = 1 }` param, and a
@@ -1339,7 +1339,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 // "Cannot modify an immutable TYPE (VALUE)").
                 interpreter
                     .env
-                    .insert_sym_noting(sigilless_readonly_key(&sub_pd.name), Value::TRUE);
+                    .insert_sym_noting(sigilless_readonly_key(&sub_pd.storage_name()), Value::TRUE);
             } else if !sub_pd.name.starts_with('@')
                 && !sub_pd.name.starts_with('%')
                 && !sub_pd.name.starts_with('!')
