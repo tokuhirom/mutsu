@@ -127,7 +127,16 @@ impl Interpreter {
         let invocant_name = sub_param_defs[0].name.clone();
         for p in rest {
             sub_param_defs.push(p.clone());
-            if !p.named && !p.slurpy && !p.is_capture_subsignature() {
+            if p.is_plain_capture() || p.is_capture_subsignature() {
+                // A method exported as a sub must pass a captured argument
+                // list through to the method proto. Expanding the capture at
+                // this call preserves both positional and named arguments.
+                forward_args.push(crate::ast::Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr: Box::new(crate::ast::Expr::BareWord(p.name.clone())),
+                    word: false,
+                });
+            } else if !p.named && !p.slurpy {
                 forward_args.push(crate::ast::Expr::Var(p.name.clone()));
             }
         }
