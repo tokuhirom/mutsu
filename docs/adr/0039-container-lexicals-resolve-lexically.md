@@ -1191,14 +1191,19 @@ read-only free container is captured by upvalue index, and its
 scalar's `GetGlobal` is. A mutated container is still excluded on the same
 terms as a scalar (`free_var_writes`, `free_var_container_writes`, a
 `WrapVarRef` capture), so a closure that pushes into `@a` keeps its by-name
-path. Two shapes had looked free and are not, and stay by-name:
+path. Three shapes had looked free and are not, and stay by-name:
 
 - a role's type parameters (`role R[@l, %d]`), which the composed class binds
   when a role method runs: `Compiler::role_type_param_names` puts them in the
   role method compile's `runtime_bound` set;
 - `%$h` / `@$a`, which compile to `GetHashVar("%h")` and resolve through the
   op's bare-name fallback to the code's own `$h`: a container name whose bare
-  form is one of the code's own locals is not a free variable.
+  form is one of the code's own locals is not a free variable;
+- a container the code addresses by name at run time: `cas(@a[0], ...)`
+  compiles to `__mutsu_cas_array_elem("@a", @a, ...)`, which writes the env
+  binding, so a closure whose own constants hold the container's name keeps
+  the by-name read (roast `S17-lowlevel/cas.t` spun forever without this, a
+  thread re-reading a stale snapshot of `@node-heads`).
 
 The measurement: a prototype without the two exclusions failed four `t/`
 files (`role-pun-build-tweak.t`, `scalar-param-container-share-method.t` and
