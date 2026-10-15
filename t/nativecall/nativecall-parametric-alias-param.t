@@ -7,7 +7,7 @@ use Test;
 #
 # Every expectation was verified against Rakudo.
 
-plan 9;
+plan 12;
 
 use NativeCall;
 
@@ -36,3 +36,14 @@ lives-ok { NativeCall::check_routine_sanity(&c-qsort) }, 'a native routine accep
 
 my I32Arr $typed = CArray[int32].new(1, 2);
 is $typed.elems, 2, 'a variable typed with the alias holds the array';
+
+my Parameter $runtime-parameter .= new(:type(CArray[Pointer]));
+is $runtime-parameter.type.^name,
+    'NativeCall::Types::CArray[NativeCall::Types::Pointer]',
+    'a runtime Parameter keeps a parameterized NativeCall type';
+my Signature $runtime-signature .= new(:params([$runtime-parameter]));
+is $runtime-signature.params[0].type.^name,
+    'NativeCall::Types::CArray[NativeCall::Types::Pointer]',
+    'a Signature built from a runtime Parameter keeps its type';
+is $runtime-signature.params[0].type.REPR, 'CArray',
+    'the runtime Signature exposes the parameterized REPR';

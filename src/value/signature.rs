@@ -29,6 +29,12 @@ pub(crate) trait SubsetBases {
     /// The type object an imported term binds the short spelling `name` to
     /// (`size_t` under `use NativeCall` is NativeCall's own type), or `None`.
     fn type_term(&self, name: &str) -> Option<Value>;
+
+    /// The user-facing name of a runtime type object that is not a Package.
+    fn type_object_name(&mut self, value: &Value) -> Option<String>;
+
+    /// Resolve and cache a runtime-constructed parameterized type object.
+    fn resolve_parameterized_type(&mut self, constraint: &str) -> Option<Value>;
 }
 
 /// The type object a type spelling in a signature denotes: an evaluated
@@ -220,7 +226,10 @@ fn split_sigiled_name(raw: &str) -> (char, String, bool) {
 /// been observed to pass are recognized here; an unrecognized one is ignored
 /// rather than rejected, the same tolerance a native constructor would have
 /// for a caller that only uses a subset of its full parameter surface.
-pub(crate) fn sig_param_from_named_args(args: &[Value]) -> SigParam {
+pub(crate) fn sig_param_from_named_args(
+    args: &[Value],
+    mut interp: Option<&mut dyn SubsetBases>,
+) -> SigParam {
     let mut p = SigParam {
         required: true,
         sigil: '$',
@@ -253,8 +262,27 @@ pub(crate) fn sig_param_from_named_args(args: &[Value]) -> SigParam {
                 p.sigilless = sigilless;
             }
             "type" => {
-                if let ValueView::Package(name) = value.view() {
-                    p.type_constraint = Some(name.resolve());
+                let spelling = match value.view() {
+                    ValueView::Package(name) => Some(name.resolve()),
+                    ValueView::CustomType(custom) => Some(custom.name.resolve()),
+                    ValueView::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => Some(crate::value::parametric_role_name(
+                        &base_name.resolve(),
+                        type_args,
+                    )),
+                    ValueView::Mixin(..) => interp.as_deref_mut().and_then(|i| {
+                        let name = i.type_object_name(value)?;
+                        if name.contains('[') {
+                            i.resolve_parameterized_type(&name)?;
+                        }
+                        Some(name)
+                    }),
+                    _ => None,
+                };
+                if let Some(spelling) = spelling {
+                    p.type_constraint = Some(spelling);
                 }
             }
             "optional" => {

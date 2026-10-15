@@ -617,4 +617,16 @@ impl crate::value::signature::SubsetBases for crate::runtime::Interpreter {
     fn type_term(&self, name: &str) -> Option<Value> {
         self.scoped_type_object(name)
     }
+
+    // Cost: O(r), r = roles in a mixin type; dispatches the existing `.^name`.
+    fn type_object_name(&mut self, value: &Value) -> Option<String> {
+        self.call_method_with_values(value.clone(), "^name", Vec::new())
+            .ok()
+            .map(|name| name.to_string_value())
+    }
+
+    // Cost: O(a) plus the parameterization method, a = type arguments.
+    fn resolve_parameterized_type(&mut self, constraint: &str) -> Option<Value> {
+        self.meta_parameterized_type(constraint)
+    }
 }

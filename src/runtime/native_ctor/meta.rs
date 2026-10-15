@@ -44,7 +44,8 @@ impl Interpreter {
             // declaration path once that syntax is `EVAL`ed — this
             // constructed value is never itself bound against, see
             // `Template::Classic`'s `template(Signature $sig, ...)`).
-            let sig_param = crate::value::signature::sig_param_from_named_args(&args);
+            let sig_param =
+                crate::value::signature::sig_param_from_named_args(&args, Some(self));
             Ok(crate::value::signature::make_parameter_value(
                 sig_param,
                 Some(self),
