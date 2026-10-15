@@ -4,7 +4,7 @@ use Test;
 # binding visible where the sub is declared, not a same-named `my` of the block
 # that calls it (#13604, ADR-12529 phase 3). Its own `my` and parameters still
 # come first. Writes through `::('$x') = v` and `EVAL` reach the same binding.
-plan 13;
+plan 14;
 
 my $q = 'top';
 sub via-eval { EVAL '$q' }
@@ -46,3 +46,11 @@ is $q, 'eval-write', '...and writes the mainline $q';
 $q = 'live';
 is via-eval(), 'live', 'a later mainline write is seen';
 is own-my(), 'own', 'own my after the writes';
+
+# A sub declared in a block sees the block's own `$q`, declared after the sub,
+# not the mainline one visible where the sub is written (roast my-6e.t).
+{
+    sub in-block($str) { EVAL $str }
+    my $q = 'block-later';
+    is in-block('$q'), 'block-later', 'a block sub\'s EVAL sees a later my of its block';
+}
