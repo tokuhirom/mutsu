@@ -262,6 +262,17 @@ impl Compiler {
         position: IfPosition,
         is_statement_modifier: bool,
     ) {
+        let scope = self.branch_sigilless_scope(is_statement_modifier);
+        self.compile_if_branch_body(branch, position, is_statement_modifier);
+        self.restore_branch_sigilless_scope(scope);
+    }
+
+    fn compile_if_branch_body(
+        &mut self,
+        branch: &[Stmt],
+        position: IfPosition,
+        is_statement_modifier: bool,
+    ) {
         match position {
             // The branch must leave exactly one value. `do_if_branch_supported`
             // (checked by every value-position caller) has already rejected the
