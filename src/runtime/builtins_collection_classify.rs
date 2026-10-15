@@ -241,6 +241,13 @@ impl Interpreter {
         // junction autothreading) and `.keys` yields the real key objects.
         // Records each first-level non-Str key object under its encoded string.
         let mut object_keys: ValueMap = ValueMap::default();
+        // Only a standalone classification or an object-hash `:into` target
+        // keeps key objects; a plain `Hash` target stringifies its keys, as
+        // `my %h; %h.classify-list({ $_ % 2 }, 1..6)` does in Rakudo.
+        let keep_object_keys = !matches!(
+            into_target.as_ref().map(Value::view),
+            Some(ValueView::Hash(map)) if map.key_type.is_none()
+        );
         // An `:into` object hash stores `.WHICH` keys: seed the (raw-string-
         // keyed) working buckets from its original key objects, and remember
         // its key type so the result keeps the object-hash identity.
@@ -430,6 +437,7 @@ impl Interpreter {
                     expected_level = Some(path.len());
                 }
                 if let Some(first) = path.first()
+                    && keep_object_keys
                     && !matches!(first.view(), ValueView::Str(_))
                 {
                     object_keys
