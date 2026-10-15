@@ -757,7 +757,7 @@ pub(crate) fn native_method_0arg_cascade(
     }
     // Capture methods
     if let ValueView::Capture { positional, named } = target.view()
-        && let result @ Some(_) = dispatch_capture(target, positional, named, method)
+        && let result @ Some(_) = dispatch_capture(target, positional, method)
     {
         return result;
     }
@@ -776,7 +776,6 @@ pub(crate) fn native_method_0arg_cascade(
 fn dispatch_capture(
     target: &Value,
     positional: &[Value],
-    named: &ValueMap,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
     // The rest of `Capture`'s methods are rows (`method_table::capture`).
