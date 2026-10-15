@@ -528,7 +528,16 @@ impl Interpreter {
         .partition(|(class, _, _)| class == class_name);
         self.registry_mut().pending_role_specialize = rest;
         for (_, key, role_name) in mine {
-            let how = self.registry().class_how_values.get(&key).cloned();
+            // The individual role's HOW, or the group's, whichever carries a
+            // user `specialize` (see `queue_role_how_specialize`).
+            // A lexical role (`my role R`) is stored under a mangled name
+            // (`R\0N`); a trait's `$*PACKAGE.HOW does ...` is keyed by the
+            // name the program sees.
+            let visible = role_name.split('\u{0}').next().unwrap_or(&role_name);
+            let how = [key.as_str(), role_name.as_str(), visible]
+                .into_iter()
+                .filter_map(|k| self.registry().class_how_values.get(k).cloned())
+                .find(|how| self.mixin_has_hook(how, "specialize"));
             if let Some(how) = how {
                 let role_obj = Value::package(Symbol::intern(&role_name));
                 let class_obj = Value::package(Symbol::intern(class_name));

@@ -384,6 +384,11 @@ impl Interpreter {
                 self.registry_mut()
                     .sync_accessor_entries(Symbol::intern(cx.name));
             }
+            // Rakudo specializes a role (running a user `specialize` mixed into
+            // its HOW) before the role's attributes compose into the class, so
+            // the hook can prepare the class HOW the attributes' `compose`
+            // relies on (AttrX::Mooish mixes its ClassHOW role in there).
+            self.drive_role_how_specialize(cx.name)?;
             self.queue_role_attribute_composes(&mut cx, own_attribute_names);
             self.run_pending_attr_composes(&mut cx)?;
             self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
