@@ -14003,6 +14003,13 @@ impl CompiledFunction {
     ) {
         for pd in param_defs {
             declared.insert(pd.storage_name().into_owned());
+            // A type capture (`::T`, `::T $x`) binds `T` (and its bound
+            // marker) in the routine's own scope: a caller's same-named
+            // capture must not see the callee's binding (#13568).
+            if let Some(cap) = &pd.type_capture {
+                declared.insert(cap.clone());
+                declared.insert(crate::meta_ns::MetaNs::TypeCaptureBound.owned_key_for_str(cap));
+            }
             if let Some(ref sub_sig) = pd.sub_signature {
                 Self::collect_param_names(sub_sig, declared);
             }
