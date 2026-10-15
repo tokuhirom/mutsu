@@ -4,7 +4,7 @@ use Test;
 # receivers the deleted `methods_0arg/dispatch_core_math.rs` arms answered
 # reach them.
 
-plan 29;
+plan 31;
 
 # `Range`, `Seq` and `Match` are `Cool`: their `Rat` is their number.
 is (1..3).Rat, 3, 'Range.Rat is its element count';
@@ -57,3 +57,5 @@ throws-like { Buf.new(1).chars }, X::Buf::AsStr, 'Buf.chars';
 # A numeric type object's `Rat` is `Int:D:` (Rakudo).
 throws-like { Int.Rat }, X::Parameter::InvalidConcreteness, 'Int.Rat';
 throws-like { Num.FatRat }, X::Parameter::InvalidConcreteness, 'Num.FatRat';
+throws-like { Bool.Rat }, X::Parameter::InvalidConcreteness, 'Bool.Rat';
+throws-like { Bool.abs }, X::Parameter::InvalidConcreteness, 'Bool.abs';

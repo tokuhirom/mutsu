@@ -16,7 +16,7 @@ fn check_numeric_type_object_method(
         // Numeric types whose instances have these methods
         let is_numeric_type = matches!(
             name.as_ref(),
-            "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Complex" | "Cool" | "Numeric"
+            "Int" | "UInt" | "Bool" | "Num" | "Rat" | "FatRat" | "Complex" | "Cool" | "Numeric"
         );
         if !is_numeric_type {
             return None;
