@@ -244,11 +244,17 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
             name,
             expr,
             op: AssignOp::Assign,
-            ..
+            target_is_sigilless,
         } if !matches!(expr, Expr::Feed { .. }) => {
             let mut out = body.to_vec();
             out[last_idx] = Stmt::Expr(Expr::AssignExpr {
-                name: name.clone(),
+                // `AssignExpr` spells a sigil-less target by its term key
+                // (ADR-12441); a plain name there is a `$` scalar.
+                name: if *target_is_sigilless {
+                    crate::runtime::term_names::term_key(name)
+                } else {
+                    name.clone()
+                },
                 expr: Box::new(expr.clone()),
                 is_bind: false,
             });

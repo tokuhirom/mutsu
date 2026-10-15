@@ -3477,7 +3477,7 @@ impl Interpreter {
                             // S03-operators/assign.t `$x = $x.grep(...)`).
                             if is_multidim_slice_cells(&value) {
                                 self.env.insert(
-                                    Self::bound_array_slice_marker_key(&pd.name),
+                                    Self::bound_array_slice_marker_key(&storage_name),
                                     Value::TRUE,
                                 );
                             }

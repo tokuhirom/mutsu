@@ -253,10 +253,16 @@ impl Compiler {
                         name,
                         expr,
                         op: op @ (crate::ast::AssignOp::Assign | crate::ast::AssignOp::Bind),
-                        ..
+                        target_is_sigilless,
                     } => {
                         self.compile_expr(&Expr::AssignExpr {
-                            name: name.clone(),
+                            // A sigil-less target is spelled by its term key
+                            // (ADR-12441).
+                            name: if *target_is_sigilless {
+                                crate::runtime::term_names::term_key(name)
+                            } else {
+                                name.clone()
+                            },
                             expr: Box::new(expr.clone()),
                             is_bind: matches!(op, crate::ast::AssignOp::Bind),
                         });

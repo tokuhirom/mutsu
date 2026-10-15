@@ -1027,14 +1027,20 @@ impl Compiler {
                 name,
                 expr: feed @ Expr::Feed { .. },
                 op: AssignOp::Assign,
-                ..
+                target_is_sigilless,
             } if name != "*PID" => {
                 let mut feed = feed.clone();
                 {
                     let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
                     let source = std::mem::replace(slot, Expr::Literal(Value::NIL));
                     *slot = Expr::AssignExpr {
-                        name: name.clone(),
+                        // A sigil-less target is spelled by its term key
+                        // (ADR-12441).
+                        name: if *target_is_sigilless {
+                            crate::runtime::term_names::term_key(name)
+                        } else {
+                            name.clone()
+                        },
                         expr: Box::new(source),
                         is_bind: false,
                     };
