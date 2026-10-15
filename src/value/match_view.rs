@@ -275,7 +275,8 @@ impl Value {
         }
     }
 
-    /// The value a `Match` answers `method` on in place of itself, when
+    /// The value a `Match` (or a `Capture`, or a `Backtrace`) answers `method`
+    /// on in place of itself, when
     /// Rakudo's candidate for it is `self.list.METHOD` or `self.hash.METHOD`:
     /// its positional captures for [`is_capture_list_method`], its named
     /// captures for `Hash` (`Any.Hash` reads `Capture.hash`). `None` for any
@@ -287,6 +288,20 @@ impl Value {
     pub(crate) fn match_list_receiver(&self, method: &str) -> Option<Value> {
         if let Some(frames) = self.backtrace_list_receiver(method) {
             return Some(frames);
+        }
+        // A `Capture` is the same `self.list.METHOD` / `self.hash` receiver:
+        // its positional and named parts (§9.111).
+        if let ValueView::Capture { positional, named } = self.view() {
+            if method == "Hash" {
+                return Some(Value::hash(named.clone()));
+            }
+            if !is_capture_list_method(method) {
+                return None;
+            }
+            return Some(Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(positional.to_vec())),
+                crate::value::ArrayKind::List,
+            ));
         }
         if method == "Hash" {
             if !self.is_match_instance() {

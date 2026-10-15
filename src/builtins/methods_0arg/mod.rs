@@ -720,36 +720,12 @@ pub(crate) fn native_method_0arg_cascade(
             _ => None,
         };
     }
-    // Capture methods
-    if let ValueView::Capture { positional, .. } = target.view()
-        && let result @ Some(_) = dispatch_capture(target, positional, method)
-    {
-        return result;
-    }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {
         return result;
     }
     // Then type coercion and specialized methods
     coercion::dispatch(target, method)
-}
-
-fn dispatch_capture(
-    target: &Value,
-    positional: &[Value],
-    method: &str,
-) -> Option<Result<Value, RuntimeError>> {
-    // The rest of `Capture`'s methods are rows (`method_table::capture`).
-    match method {
-        "Hash" => crate::builtins::method_table::capture::hash_coerce(target, &[]),
-        "is-lazy" => Some(Ok(Value::FALSE)),
-        "perl" => crate::builtins::method_table::collection_render_names::raku(target, &[]),
-        "WHAT" => Some(Ok(Value::package(Symbol::intern("Capture")))),
-        // `Any.flat`/`Any.Seq` read `self.list`: the positional part. (`List`
-        // is `Any`'s row, which reads it the same way.)
-        "flat" | "Seq" => Some(Ok(Value::seq(positional.to_vec()))),
-        _ => None,
-    }
 }
 
 /// Create a X::Cannot::Lazy Failure for .elems on an infinite range.

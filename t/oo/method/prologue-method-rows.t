@@ -3,7 +3,7 @@ use Test;
 # ADR-11276 §9.111: the receiver-specific arms of `methods_0arg`'s prologue
 # are rows, and the receivers they answered reach them.
 
-plan 20;
+plan 27;
 
 # `Unicode` is a type object only (`DispatchShape::Unicode`).
 isa-ok Unicode.version, Version, 'Unicode.version';
@@ -37,3 +37,14 @@ try EVAL "1 +* * 2 }";
 is $!.^name, 'X::Syntax::Confused', 'a typed parse error';
 is $!.line, 1, 'X::Syntax::Confused.line';
 ok $!.filename.contains('EVAL'), 'X::Syntax::Confused.filename names the EVAL unit';
+
+# A `Capture` answers `Any`'s `self.list.METHOD` methods on its positionals
+# and `Hash` on its named part.
+my $c = \(1, 2, :a(3));
+is-deeply $c.Hash, {a => 3}, 'Capture.Hash';
+isa-ok $c.Seq, Seq, 'Capture.Seq';
+is $c.Seq, (1, 2), 'Capture.Seq is the positionals';
+is $c.flat, (1, 2), 'Capture.flat';
+is $c.WHAT, Capture, 'Capture.WHAT';
+nok $c.is-lazy, 'Capture.is-lazy';
+is $c.raku, '\(1, 2, :a(3))', 'Capture.raku';

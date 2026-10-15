@@ -329,8 +329,8 @@ impl DispatchShape {
     /// Whether `Any`'s list row `method` reaches this closed shape. None
     /// reaches `sort`, whose handler reads only a list (a closed shape sorts
     /// through the interpreter), and only a `Pair`, `Capture` or `Version` reaches `reverse`, a `Pair` `min`
-    /// and `max`, whose handlers read a scalar, a hash, a list and a pair. A `Capture` flattens to itself
-    /// (`methods_0arg`'s `Capture` block), and the
+    /// and `max`, whose handlers read a scalar, a hash, a list and a pair. A `Capture` flattens its
+    /// positionals (`Value::match_list_receiver`), and the
     /// quant hashes read as their list of pairs for `unique` first
     /// (`hashlike_receiver_as_pairs_list`), then reach the row as a `List`;
     /// the rest reach the row with themselves as invocant.
