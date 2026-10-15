@@ -227,7 +227,7 @@ fn base_with_digits(target: &Value, args: &[Value]) -> Option<Result<Value, Runt
     let [radix, digits] = args else {
         return None;
     };
-    crate::builtins::native_method_2arg(&seconds(target), Symbol::intern("base"), radix, digits)
+    crate::builtins::method_table::numeric_base::base_of(&seconds(target), radix, Some(digits))
 }
 
 /// `Real.Rat($epsilon)`.

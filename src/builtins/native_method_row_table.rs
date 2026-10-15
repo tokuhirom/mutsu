@@ -91,7 +91,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "gist", 1, 25),
     ("Str", "raku", 1, 25),
     ("Str", "elems", 1, 1),
-    ("Str", "fmt", 7, 1),
+    ("Str", "fmt", 3, 1),
     ("Int", "abs", 1, 57),
     ("Int", "ceiling", 1, 57),
     ("Int", "floor", 1, 57),
@@ -693,7 +693,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Match", "Str", 1, 48),
     ("Match", "gist", 1, 16),
     ("Match", "raku", 1, 16),
-    ("Match", "fmt", 7, 0),
+    ("Match", "fmt", 3, 0),
     // ADR-0019 E2b (fifth slice, 2026-08-10): seven more `Any` universal
     // pseudo-methods, alongside the existing `so`/`not`/`defined`/`DEFINITE`
     // rows above -- `self`/`clone`/`WHERE`/`WHICH`/`sink`/`item`/`serial`
@@ -814,7 +814,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Int", "elems", 1, 0),
     ("Int", "flip", 1, 0),
     ("Int", "uniprop", 3, 24),
-    ("Int", "fmt", 7, 0),
+    ("Int", "fmt", 3, 0),
     ("Int", "EXISTS-POS", 2, 0),
     ("Int", "Array", 1, 0),
     ("Int", "lsb", 1, 56),
@@ -1979,7 +1979,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Cool", "lc", 1, 25),
     ("Cool", "lines", 3, 25),
     ("Cool", "match", 8, 4),
-    ("Cool", "fmt", 7, 24),
+    ("Cool", "fmt", 3, 24),
     ("Cool", "ords", 1, 25),
     ("Cool", "rindex", 2, 25),
     ("Cool", "samecase", 2, 24),

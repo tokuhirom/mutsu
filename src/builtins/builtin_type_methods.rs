@@ -105,6 +105,28 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
             arities |= 1 << arity;
         }
     }
+    // A value with no shape of its own (an immutable `Map`) reaches the rows
+    // of its type's MRO through the owner chain (`method_table::invoke_owner`,
+    // ADR-11276 §9.113).
+    if crate::builtins::method_table::Receiver::of(value).is_none()
+        && let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_strs(
+            &crate::value::what_type_name(value),
+        )
+    {
+        for owner in mro {
+            for arity in 0..=2u8 {
+                if crate::builtins::method_table::owner_row(
+                    Symbol::intern(owner),
+                    sym,
+                    usize::from(arity),
+                )
+                .is_some()
+                {
+                    arities |= 1 << arity;
+                }
+            }
+        }
+    }
     // Every receiver reaches `Mu`'s audited rows (ADR-11276 §9.81, §9.91); an
     // instance through its MRO, which `shapeless_row` reads only from the
     // interpreter it is not given here.

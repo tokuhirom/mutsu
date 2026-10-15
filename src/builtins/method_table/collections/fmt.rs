@@ -19,7 +19,7 @@ macro_rules! rows {
                 name: "fmt",
                 arity: 0,
                 handler: Handler::Narrow(fmt),
-                flags: RowFlags::NONE,
+                flags: RowFlags::ANY_ARGS,
                 named: &[],
             },
             MethodRow {
@@ -27,7 +27,7 @@ macro_rules! rows {
                 name: "fmt",
                 arity: 1,
                 handler: Handler::Narrow(fmt),
-                flags: RowFlags::NONE,
+                flags: RowFlags::ANY_ARGS,
                 named: &[],
             },
             MethodRow {
@@ -35,7 +35,7 @@ macro_rules! rows {
                 name: "fmt",
                 arity: 2,
                 handler: Handler::Narrow(fmt),
-                flags: RowFlags::NONE,
+                flags: RowFlags::ANY_ARGS,
                 named: &[],
             },
         )*]

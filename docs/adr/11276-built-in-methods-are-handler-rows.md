@@ -2734,6 +2734,19 @@ Pinned in `t/oo/method/core-math-method-rows.t`. Behaviour changes toward Rakudo
 distance; a numeric type object's `Rat`/`FatRat` (`Int.Rat`, answered `0` by the deleted arm) and every `:D`-only numeric
 method of `Bool` (`Bool.abs`) throw `X::Parameter::InvalidConcreteness` (the numeric type-object check of
 `dispatch_core_numeric` gains the two names and `Bool`). `method-rows-report.py --arms`: the pure arity cascades go from 56 arms to 43.
+### 9.113 Slice 5: the two-argument cascade's `substr`, `fmt`, `base` and `unimatch` arms are gone (2026-10-16)
+
+`refactor/11276-narg-arms`. The census of §9.111 found `dispatch_2arg`'s four arms answering calls their rows existed
+for but did not admit: `"abcdef".substr(1, *)` (24,000 calls in one test), `.substr` of a `Match` or an `Int`, a
+collection's `.fmt($format, $separator)` with a `Format` object, `Rat.base($radix, *)`. Each arm called the same function
+as its row's handler, so the rows now take any plain argument (`RowFlags::ANY_ARGS` on every `substr` and collection `fmt`
+row; the `base` rows had it) and the handler declines what only the interpreter can run. `unimatch` answered no receiver
+the `Cool` row did not. `Duration`/`Instant` `.base($radix, $digits)` called the cascade on its seconds
+(`native_method_2arg`); it calls `numeric_base::base_of` now. The recognition table no longer claims a separator for
+`Str`/`Cool`/`Match`/`Int` `.fmt` (Rakudo's `Cool.fmt` has one parameter; the arity-2 bit was the arm's), and the
+test-only arity probe asks the owner chain of a value with no shape (an immutable `Map`), as `invoke_owner` does. Pinned
+in `t/oo/method/two-arg-method-rows.t`.
+`method-rows-report.py --arms`: the pure arity cascades lose four arms.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
