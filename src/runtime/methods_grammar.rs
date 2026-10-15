@@ -567,6 +567,23 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        let parsed = self.dispatch_package_parse_impl(package_name, method, args);
+        // A parse that answered (a Match, or a failed Match) is over: a subrule
+        // argument-binding error it recorded without raising belongs to that
+        // parse alone and must not surface from the next unrelated `~~` or
+        // `.parse` (YAMLish's failed `load-yaml`).
+        if parsed.is_ok() {
+            let _ = Self::take_pending_regex_error();
+        }
+        parsed
+    }
+
+    fn dispatch_package_parse_impl(
+        &mut self,
+        package_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
         // A previous parse may have returned a failed Match before consuming a
         // subrule binding error from the thread-local slot. Each parse starts
         // with its own error state, so that failure cannot poison the next one.
