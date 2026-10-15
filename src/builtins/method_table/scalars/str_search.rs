@@ -69,7 +69,7 @@ macro_rules! search_rows {
                 name: "substr",
                 arity: 1,
                 handler: Handler::Narrow(substr),
-                flags: RowFlags::NONE,
+                flags: RowFlags::ANY_ARGS,
                 named: &[],
             },
         ]
@@ -80,13 +80,16 @@ pub(super) static STR_ROWS: &[MethodRow] = search_rows!("Str");
 pub(super) static COOL_ROWS: &[MethodRow] = search_rows!("Cool");
 
 /// `substr` with a start and a length. Its own table: a row is one arity, and
-/// the one-argument form above has the method's first row.
+/// the one-argument form above has the method's first row. Every `substr` row
+/// takes any plain argument (a `Whatever`, a `Range`, a closure): the handler
+/// is the one implementation, and declines what only the interpreter can
+/// call (ADR-11276 §9.113).
 pub(super) static STR_SUBSTR_2: &[MethodRow] = &[MethodRow {
     owner: "Str",
     name: "substr",
     arity: 2,
     handler: Handler::Narrow(substr),
-    flags: RowFlags::NONE,
+    flags: RowFlags::ANY_ARGS,
     named: &[],
 }];
 pub(super) static COOL_SUBSTR_2: &[MethodRow] = &[MethodRow {
@@ -94,7 +97,7 @@ pub(super) static COOL_SUBSTR_2: &[MethodRow] = &[MethodRow {
     name: "substr",
     arity: 2,
     handler: Handler::Narrow(substr),
-    flags: RowFlags::NONE,
+    flags: RowFlags::ANY_ARGS,
     named: &[],
 }];
 

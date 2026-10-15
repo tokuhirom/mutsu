@@ -97,29 +97,7 @@ pub(crate) fn native_method_2arg(
         return crate::builtins::comb::native_comb_method(target, &[arg1.clone(), arg2.clone()]);
     }
 
-    match method {
-        // The `unimatch($value, $property)` row's handler
-        // (`method_table::unicode`), for the receivers with no table shape.
-        // Cost: O(1), a table lookup.
-        "unimatch" => crate::builtins::method_table::unicode::unimatch_in(
-            target,
-            &[arg1.clone(), arg2.clone()],
-        ),
-        // The `fmt` rows' implementation (`method_table::collections::fmt`).
-        "fmt" => super::fmt_contains::fmt_native(target, &[arg1.clone(), arg2.clone()]),
-        // Cost: O(k), k = chars returned, once the invocant's grapheme index is
-        // cached (see `native_substr_slice`).
-        "substr" => crate::builtins::substr::native_substr_slice(target, arg1, Some(arg2)),
-        // The numeric types' `base` rows' implementation
-        // (`method_table::numeric_base`); an `Instance` carrying a `value` (a
-        // user subclass) is read through that attribute.
-        "base" => match target.view() {
-            ValueView::Instance { attributes, .. } => {
-                let value = attributes.as_map().get("value").cloned()?;
-                crate::builtins::method_table::numeric_base::base_of(&value, arg1, Some(arg2))
-            }
-            _ => crate::builtins::method_table::numeric_base::base_of(target, arg1, Some(arg2)),
-        },
-        _ => None,
-    }
+    // `fmt`, `substr` and `base` are rows that take any plain argument, and
+    // `unimatch` the `Cool` row (ADR-11276 §9.113).
+    None
 }
