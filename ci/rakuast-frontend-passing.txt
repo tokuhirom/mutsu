@@ -3050,6 +3050,7 @@ t/modules/proto-cross-module-invocant.t
 t/modules/proto-package-qualified-visibility.t
 t/modules/pseudo-our-package-scope.t
 t/modules/pseudo-package-bare-symbol-exists.t
+t/modules/pseudo-package-call-through-stash.t
 t/modules/qualified-call-from-method-in-module.t
 t/modules/qualified-class-in-package-relative.t
 t/modules/qualified-package-visible-after-use-ok-first-load.t
@@ -4476,6 +4477,7 @@ t/oo/role/role-required-method-name-based.t
 t/oo/role/role-required-universal-method.t
 t/oo/role/role-samename-composition-and-nested-class.t
 t/oo/role/role-shadowed-method-in-defer-chain.t
+t/oo/role/role-sigilless-type-param-term.t
 t/oo/role/role-stub-invocant-satisfied-by-accessor.t
 t/oo/role/role-stub-literal-candidate.t
 t/oo/role/role-stub-positional-satisfied-by-accessor.t
@@ -4898,6 +4900,7 @@ t/rakuast/rakuast-sequential-interpolation.t
 t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-sigilless-declarator-init.t
 t/rakuast/rakuast-signature-decl.t
+t/rakuast/rakuast-signature-literal-bind.t
 t/rakuast/rakuast-signature-literal.t
 t/rakuast/rakuast-signature-members.t
 t/rakuast/rakuast-signature-type-cohort.t
@@ -6369,6 +6372,8 @@ t/routines/signature/signature-declaration-initializer-self-scope.t
 t/routines/signature/signature-gist-invocant-format.t
 t/routines/signature/signature-hash-empty-unpack.t
 t/routines/signature/signature-hash-unpack-capture.t
+t/routines/signature/signature-literal-bind-binder-checks.t
+t/routines/signature/signature-literal-bind-type-check.t
 t/routines/signature/signature-multi-invocant.t
 t/routines/signature/signature-nameclash.t
 t/routines/signature/signature-named-alias-default.t

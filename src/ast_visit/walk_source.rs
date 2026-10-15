@@ -61,6 +61,10 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             v.visit_expr(value);
         }
         SourceForm::SignatureDecl(declaration) => v.visit_signature_decl(declaration),
+        SourceForm::SignatureBind { signature, rhs } => {
+            v.visit_expr(signature);
+            v.visit_expr(rhs);
+        }
         SourceForm::AttributeGroup(attributes) => walk_stmts(v, attributes),
         SourceForm::AttributeColonArglist(attributes) => walk_stmts(v, attributes),
         SourceForm::MethodAssignDecl(declaration) => {

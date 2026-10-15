@@ -129,6 +129,7 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         "^.." => TokenKind::CaretDotDot,
         "^..^" => TokenKind::CaretDotDotCaret,
         "...^" => TokenKind::DotDotDotCaret,
+        ":=" => TokenKind::Bind,
         "!%%" => TokenKind::BangPercentPercent,
         "!===" => TokenKind::BangEqEqEq,
         // The low-precedence logicals short-circuit; as an `Ident` they would

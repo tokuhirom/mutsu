@@ -28,17 +28,6 @@ use super::lvalue::{
 use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
-use super::sig_info::{SigParamInfo, extract_signature_param_infos, extract_static_named_map};
-
-/// The binder's (and the env's) name for a signature-literal variable: a
-/// scalar is stored without its `$`, the other sigils keep theirs.
-fn sig_bind_var_name(info: &SigParamInfo) -> String {
-    match info.sigiled_name.strip_prefix('$') {
-        Some(stripped) => stripped.to_string(),
-        None => info.sigiled_name.clone(),
-    }
-}
-
 /// Desugar `LVALUE = RHS` for a method-call / sub-call / callable lvalue into the
 /// corresponding `__mutsu_assign_*` call expression. Mirrors the inline handling
 /// of the main `=` assignment path; factored out so a statement-prefix-wrapped
@@ -975,7 +964,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         // Signature binding: `:($f, $o, $) := @a` or `:(:type($t)) := (...)`
         // Extract variable info from the Signature literal and generate assignments.
-        if let Some(param_infos) = extract_signature_param_infos(&expr) {
+        if crate::ast::signature_bind::supports(&expr) {
             let r = if let Some(stripped) = rest.strip_prefix("::=") {
                 stripped
             } else {
@@ -990,85 +979,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 remaining_len: err.remaining_len.or(Some(r.len())),
                 exception: None,
             })?;
-            // Try static lookup for named params: if rhs is a CaptureLiteral
-            // or comma-list of FatArrow pairs, we can bind each named param
-            // directly to its source expression (preserving identity).
-            let static_named = extract_static_named_map(&rhs);
-            let mut stmts = Vec::new();
-            let tmp_name = format!(
-                "__sig_bind_tmp_{}",
-                TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
-            );
-            // The right-hand side is evaluated once into a temp, bound to the
-            // signature by the signature binder (`__mutsu_sig_bind`), which
-            // raises a type, `where`, definiteness or arity failure as a call
-            // would, and answers what each parameter bound to.
-            let bound_name = format!("{tmp_name}_bound");
-            let decl = |name: String, expr: Expr| Stmt::VarDecl {
-                name,
-                expr,
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            };
-            stmts.push(decl(tmp_name.clone(), rhs));
-            stmts.push(decl(
-                bound_name.clone(),
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_sig_bind"),
-                    args: vec![
-                        expr.clone(),
-                        Expr::Var(tmp_name.clone()),
-                        Expr::Literal(Value::array(
-                            param_infos
-                                .iter()
-                                .filter(|info| !info.sigiled_name.is_empty())
-                                .map(|info| Value::str(sig_bind_var_name(info)))
-                                .collect(),
-                        )),
-                    ],
-                    listop: false,
-                },
-            ));
-            for info in param_infos.iter() {
-                if info.sigiled_name.is_empty() {
-                    continue;
-                }
-                let assign_name = sig_bind_var_name(info);
-                // What the binder bound the parameter to. A named parameter
-                // whose source the right-hand side spells out statically
-                // (`\(:a($b))`) binds that source itself, keeping its
-                // container (`:(:$a is raw) := \(:a($b))` aliases `$b`).
-                let static_source = if info.is_named {
-                    let key = info
-                        .named_keys
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| assign_name.clone());
-                    static_named.as_ref().and_then(|map| map.get(&key).cloned())
-                } else {
-                    None
-                };
-                let value_expr = static_source.unwrap_or_else(|| Expr::Index {
-                    target: Box::new(Expr::Var(bound_name.clone())),
-                    index: Box::new(Expr::Literal(Value::str(assign_name.clone()))),
-                    is_positional: false,
-                    spelling: Default::default(),
-                });
-                stmts.push(Stmt::Assign {
-                    name: assign_name,
-                    expr: value_expr,
-                    op: crate::ast::AssignOp::Bind,
-                    target_is_sigilless: false,
-                });
+            if let Some(stmt) = crate::ast::signature_bind::expand(expr.clone(), rhs) {
+                return parse_statement_modifier(r, stmt);
             }
-            let stmt = Stmt::SyntheticBlock(stmts);
-            return parse_statement_modifier(r, stmt);
         }
         // Reject binding to a zen slice: `@a[] := ...` / `%a{} := ...` → X::Bind::ZenSlice
         if let Expr::ZenSlice(inner) = &expr {

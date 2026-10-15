@@ -420,6 +420,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 take_logical_tail_node(value, op, right)
                     .map(|node| Some(statement_expression(node)))
             }
+            Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
+                signature_bind_node(signature, rhs).map(|node| Some(statement_expression(node)))
+            }
             // `sub f { … }(ARGS)`: the routine as the operand of its call.
             Some(crate::ast::SourceForm::ImmediateCall) => super::immediate_call::convert(stmt)
                 .ok_or_else(|| unsupported("source form"))?
@@ -3031,6 +3034,17 @@ fn take_logical_tail_node(
     })
 }
 
+fn signature_bind_node(signature: &Expr, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), convert_expr(signature)?),
+            node_field(Some("infix"), plain_infix(":=")),
+            node_field(Some("right"), convert_expr(rhs)?),
+        ],
+    })
+}
+
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
@@ -3658,6 +3672,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Some(crate::ast::SourceForm::TakeLogicalTail { value, op, right }) => {
                 take_logical_tail_node(value, op, right)
+            }
+            Some(crate::ast::SourceForm::SignatureBind { signature, rhs }) => {
+                signature_bind_node(signature, rhs)
             }
             // `do sub f { … }(ARGS)`: the call statement under the prefix.
             Some(crate::ast::SourceForm::ImmediateCall) => {

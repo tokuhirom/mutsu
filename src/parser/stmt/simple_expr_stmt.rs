@@ -4,7 +4,6 @@ mod core;
 mod let_temp;
 pub(crate) mod lvalue;
 pub(crate) mod predicates;
-mod sig_info;
 
 pub(in crate::parser) use block_arg_call::bareword_block_call_expr;
 pub(super) use core::expr_stmt;
