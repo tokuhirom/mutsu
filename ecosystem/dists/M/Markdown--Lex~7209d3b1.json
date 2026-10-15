@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 0.89,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 8.77,
+        "secs": 6.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.93,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 3.01,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.04,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.17,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 102.48,
+        "secs": 57.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,30 +90,29 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 25.68,
+        "secs": 14.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "very long lines",
-        "nok": 1,
-        "ok": 19,
+        "nok": 0,
+        "ok": 20,
         "plan": 20,
-        "secs": 76.09,
+        "secs": 39.81,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/05-pathological.rakutest",
       "raku": {
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 15.16,
+        "secs": 7.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,10 +124,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-14",
+    "date": "2026-10-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8bf3a7cf",
+    "mutsu_commit": "97286619",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -139,13 +138,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AR/MARKDOWN_LEX/0f9b4f01538afb2c07476ae0c3624a2ebc139566.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 105,
     "baseline_files": 5,
-    "mutsu_assertions": 104,
-    "parity_files": 4,
-    "regressed_files": 1
+    "mutsu_assertions": 105,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.2.0"
 }

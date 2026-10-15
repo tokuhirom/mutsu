@@ -12,22 +12,23 @@
   "dist": "ake",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Cannot resolve caller task(Str:D, Block:D); none of these signatures matches:",
         "nok": 0,
-        "ok": 5,
+        "ok": 0,
         "plan": 5,
-        "secs": 0.07,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/00-original-task.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.67,
+        "secs": 4.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,33 +38,34 @@
       "cmp": "no_baseline",
       "path": "t/01-original-file.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ake-675259' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ake-54997' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 0.67,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method 'deps' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 18,
+        "ok": 0,
         "plan": 18,
-        "secs": 0.21,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/10-dispatch.t",
       "raku": {
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 3.84,
+        "secs": 5.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -77,7 +79,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.66,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -91,7 +93,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.58,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -105,7 +107,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.37,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,7 +121,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.37,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -133,7 +135,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.31,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -147,7 +149,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.25,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -161,7 +163,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.32,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -175,7 +177,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.29,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -189,7 +191,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.31,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -203,7 +205,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.31,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -217,7 +219,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.32,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -231,7 +233,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.23,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -247,10 +249,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-14",
+    "date": "2026-10-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8bf3a7cf",
+    "mutsu_commit": "97286619",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -261,13 +263,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/KE/AKE/de380cb52a4d60dcb7ec7b9369308ff153d04626.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 23,
     "baseline_files": 2,
-    "mutsu_assertions": 23,
-    "parity_files": 2,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 2
   },
   "version": "0.1.3"
 }

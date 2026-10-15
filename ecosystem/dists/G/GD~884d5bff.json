@@ -19,7 +19,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 9,
-        "secs": 0.89,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 9.9,
+        "secs": 12.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 2,
-        "secs": 0.75,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.85,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.67,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.93,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,11 +84,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$array'; expected NativeCall::Types::CArray but got Int (139954757617530)",
+        "first_failure": "Type check failed in binding to parameter '$array'; expected NativeCall::Types::CArray but got Int (140173868058490)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.7,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -98,7 +98,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 0.88,
+        "secs": 1.66,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -110,10 +110,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-14",
+    "date": "2026-10-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8bf3a7cf",
+    "mutsu_commit": "97286619",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
