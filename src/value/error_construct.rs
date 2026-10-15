@@ -371,6 +371,14 @@ impl RuntimeError {
         if let Some(line) = self.line() {
             attrs.insert("line".to_string(), Value::int(line as i64));
         }
+        if let Some(file) = self.source_file() {
+            attrs
+                .entry("filename".to_string())
+                .or_insert_with(|| Value::str_from(file));
+            attrs
+                .entry("file".to_string())
+                .or_insert_with(|| Value::str_from(file));
+        }
         if let Some(bt) = backtrace() {
             attrs.insert("backtrace".to_string(), bt);
         }

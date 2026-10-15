@@ -157,6 +157,10 @@ pub struct RuntimeErrorCold {
     pub line: Option<usize>,
     /// 1-based source column of a parse failure.
     pub column: Option<usize>,
+    /// The compilation unit a parse failure is in, when it is not the
+    /// mainline (an `EVAL`'s synthesized `EVAL_<N>`): the exception built from
+    /// the error reports it as its `filename` (`X::Comp`) and `file`.
+    pub source_file: Option<String>,
     /// A human-readable hint appended to the rendered error.
     pub hint: Option<String>,
     /// A `LEAVE`/routine unwind targets a routine frame via this callable ID.
@@ -390,6 +394,12 @@ impl RuntimeError {
     }
     pub(crate) fn set_column(&mut self, v: Option<usize>) {
         self.cold_mut().column = v;
+    }
+    pub(crate) fn source_file(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.source_file.as_deref())
+    }
+    pub(crate) fn set_source_file(&mut self, v: String) {
+        self.cold_mut().source_file = Some(v);
     }
     /// Set the `------>` snippet's own line/column, distinct from `line`/
     /// `column` (see [`Self::echo_line`]).

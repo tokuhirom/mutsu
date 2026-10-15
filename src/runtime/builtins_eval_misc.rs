@@ -489,17 +489,22 @@ impl Interpreter {
         // branch), but none of those sites know the EVAL unit's synthesized
         // name -- only this call site does. Backfill it here, once, for the
         // whole `X::Comp` family rather than at each individual raise site.
-        // A diagnosis raised with a typed exception (`X::Syntax::Confused`) has
-        // no parse code; it is the one with a `line` and no `file`, which a
-        // run-time exception always carries.
+        // A diagnosis whose exception is not built yet (a typed
+        // `X::Syntax::Confused: ...` message) carries the name on the error,
+        // and the exception built from it later reports it.
         if let Err(ref mut e) = result
-            && let Some(exc_box) = e.exception.as_ref()
-            && let ValueView::Instance { attributes, .. } = exc_box.view()
-            && (e.code().is_some_and(|c| c.is_parse())
-                || (attributes.contains_key("line") && !attributes.contains_key("file")))
+            && e.code().is_some_and(|c| c.is_parse())
         {
-            attributes.insert_if_absent("filename".to_string(), Value::str(unit_name.clone()));
-            attributes.insert_if_absent("file".to_string(), Value::str(unit_name));
+            match e.exception.as_ref().map(|exc| exc.view()) {
+                Some(ValueView::Instance { attributes, .. }) => {
+                    attributes
+                        .insert_if_absent("filename".to_string(), Value::str(unit_name.clone()));
+                    attributes.insert_if_absent("file".to_string(), Value::str(unit_name));
+                }
+                Some(_) => {}
+                None if e.source_file().is_none() => e.set_source_file(unit_name),
+                None => {}
+            }
         }
         crate::parser::set_parser_source_file(saved_source_file);
         self.current_unit = saved_unit;
