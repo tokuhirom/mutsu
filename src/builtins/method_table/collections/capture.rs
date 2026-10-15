@@ -50,6 +50,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Capture", "list", list),
     row!("Capture", "elems", elems),
     row!("Capture", "Numeric", elems),
+    row!("Capture", "Bool", truth),
     MethodRow {
         owner: "Capture",
         name: "AT-POS",
@@ -282,6 +283,15 @@ pub(crate) fn elems(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
         return None;
     };
     Some(Ok(Value::int(positional.len() as i64)))
+}
+
+/// `Capture.Bool`: true when the capture holds any positional or named part.
+// Cost: O(1).
+fn truth(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Capture { positional, named } = target.view() else {
+        return None;
+    };
+    Some(Ok(Value::truth(!positional.is_empty() || !named.is_empty())))
 }
 
 /// `.AT-POS($pos)`: the positional argument at `pos` (`Nil` past the end), a
