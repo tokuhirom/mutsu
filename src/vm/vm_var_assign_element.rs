@@ -621,6 +621,22 @@ impl Interpreter {
         })
     }
 
+    /// Whether `value` is an instance of a user class inheriting `Map` (its
+    /// entries live in a Map-tagged backing hash), as opposed to a `Hash`
+    /// subclass, whose entries are writable.
+    // Cost: O(1).
+    fn is_map_subclass_instance(value: &Value) -> bool {
+        let ValueView::Instance { attributes, .. } = value.view() else {
+            return false;
+        };
+        attributes
+            .as_map()
+            .get("__mutsu_hash_storage")
+            .is_some_and(|storage| {
+                matches!(storage.view(), ValueView::Hash(h) if h.declared_type.as_deref() == Some("Map"))
+            })
+    }
+
     fn exec_index_assign_expr_named_op_unseeded(
         &mut self,
         code: &CompiledCode,
@@ -741,6 +757,18 @@ impl Interpreter {
                 .and_then(|slot| self.locals.get(slot as usize))
                 .map(|value| value.deref_container().descalarize().clone())
                 .filter(|value| value.is_range())
+        {
+            return Err(RuntimeError::assignment_ro_value(value));
+        }
+        // A positional subscript write on an `is Map` instance (`%vm[0] = 42`,
+        // a ValueMap) reaches `Any.ASSIGN-POS`, which stores through the Map and
+        // is refused as immutable; it must not turn the instance into a Hash.
+        if is_positional
+            && let Some(value) = target_slot
+                .and_then(|slot| self.locals.get(slot as usize).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
+                .map(|value| value.deref_container().descalarize().clone())
+            && Self::is_map_subclass_instance(&value)
         {
             return Err(RuntimeError::assignment_ro_value(value));
         }

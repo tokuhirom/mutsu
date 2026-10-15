@@ -220,7 +220,9 @@ impl Interpreter {
                 && let ValueView::Hash(old_gc) = old_storage.view()
                 && let ValueView::Hash(new_gc) = new_storage.view()
             {
-                Self::hash_inplace_reassign(&old_gc, &new_gc);
+                // Keep the node's declared type: a `Map` subclass's storage is
+                // tagged `Map`, which is what makes it immutable.
+                Self::hash_inplace_reassign_inheriting_meta(&old_gc, &new_gc);
                 return Some(Ok(outer_target.clone()));
             }
             let updated_instance = self.write_back_hash_storage_instance(
