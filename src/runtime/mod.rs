@@ -1069,6 +1069,12 @@ pub(crate) struct MethodClassFrame {
     /// role-ness cannot change while a method it owns is running, so the first
     /// attribute access of the frame answers it for the rest of the frame.
     is_role: std::cell::Cell<u8>,
+    /// The frame was pushed to authorize a private call made through a
+    /// reflection handle (`type.&(Foo.^find_private_method('m'))()`): Rakudo
+    /// checks trust at the `!` call site only, so `private_calling_package`
+    /// answers this frame's class even when a routine frame of the real
+    /// caller sits above it.
+    pub(crate) authorizes_private: bool,
 }
 
 impl MethodClassFrame {
@@ -1081,6 +1087,16 @@ impl MethodClassFrame {
         Self {
             name,
             is_role: std::cell::Cell::new(memo),
+            authorizes_private: false,
+        }
+    }
+
+    /// A frame that authorizes private calls as `name` (see
+    /// [`Self::authorizes_private`]).
+    pub(crate) fn new_authorizing_private(name: Symbol) -> Self {
+        Self {
+            authorizes_private: true,
+            ..Self::new(name, None)
         }
     }
 }
