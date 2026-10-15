@@ -2730,8 +2730,10 @@ deleted; the census of §9.111 named the receivers they still answered, and each
    (a parameterized one, `Buf[uint8]`, through `type_params::type_object_row`). **`IO::Path.chars`** reaches
    `Cool.chars` (an audited name of the `IoPath` shape). The `uniparse` arm was dead.
 
-Pinned in `t/oo/method/core-math-method-rows.t`. Behaviour change toward Rakudo: `StrDistance.Numeric` is its edit
-distance. `method-rows-report.py --arms`: the pure arity cascades go from 56 arms to 43.
+Pinned in `t/oo/method/core-math-method-rows.t`. Behaviour changes toward Rakudo: `StrDistance.Numeric` is its edit
+distance; a numeric type object's `Rat`/`FatRat` (`Int.Rat`, answered `0` by the deleted arm) and every `:D`-only numeric
+method of `Bool` (`Bool.abs`) throw `X::Parameter::InvalidConcreteness` (the numeric type-object check of
+`dispatch_core_numeric` gains the two names and `Bool`). `method-rows-report.py --arms`: the pure arity cascades go from 56 arms to 43.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
