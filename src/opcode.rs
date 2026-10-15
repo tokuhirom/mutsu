@@ -9898,7 +9898,8 @@ impl CompiledCode {
             | OpCode::PostIncrementIndex(idx, ..)
             | OpCode::PostDecrementIndex(idx, ..)
             | OpCode::PreIncrementIndex(idx, ..)
-            | OpCode::PreDecrementIndex(idx, ..) => Some(*idx),
+            | OpCode::PreDecrementIndex(idx, ..)
+            | OpCode::DoesVar(idx, _, false) => Some(*idx),
             _ => None,
         }
     }
@@ -9966,6 +9967,11 @@ impl CompiledCode {
             | OpCode::AssignExpr(idx, _)
             | OpCode::TopicDotAssign(idx)
             | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
+            // `$x does R` rebinds `$x` to the mixed-in value, as `=` does: a
+            // closure that does it to a captured variable writes that
+            // variable, which must therefore be a shared cell (ADR-0018). A
+            // bareword target (`Apple does R`) names an enum key or a type.
+            OpCode::DoesVar(idx, _, false) => Some(*idx),
             // `$obj<key> = value` may copy-on-write a user-class instance,
             // so its scalar container is a real write target for closure
             // capture analysis. `@`/`%` element stores remain in the separate

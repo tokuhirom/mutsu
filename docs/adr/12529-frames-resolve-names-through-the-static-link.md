@@ -1018,6 +1018,37 @@ regresses one of those rows is fixed on its branch, not landed with a note.
 
      Each category has to reach zero, through a cell or a frame field,
      before the merge loops can go.
+
+   **Slice 17 done** (`fix/12529-mainline-capture-sibling-shadow`): a
+   mainline sub's free variable stays bound to the declaration it captured
+   (ADR-0024) when more than one block shadows the name.
+
+   The first shadowing `if` branch or loop body restored the outer value on
+   exit (`pop_loop_local_scope`) into *every* slot of that name. That
+   included a later sibling block's slot, which then held the captured cell.
+   When that sibling's `my $q` ran, `mainline_capture_at` saw a slot holding
+   the cell and took the declaration for a same-scope re-declaration of the
+   captured variable (#11263). So it dropped the capture, and from then on the
+   sub read its caller's `$q`.
+
+   The check now also requires the slot to be one a sub of the code captured
+   (`CompiledSubDeclPlan::free_var_decl_slots`). The by-name restore into
+   sibling slots is left as is: the sibling's declaration overwrites the slot.
+
+   **Slice 18 done** (`fix/12529-does-var-is-a-write`): the first entry of
+   slice 16's lexical category. `$x does R` (`OpCode::DoesVar` on a
+   variable) rebinds `$x` as `=` does, but the free-variable analysis did
+   not count it as a write. So a closure that mixed into a captured `$x`
+   left `$x` a plain value, and the closure changed only its own copy.
+
+   Only the return merge carried the mixin back, and only when the closure
+   ran inside a callee called from the declaring frame
+   (`lives-ok { $a does R }`). A sibling closure, a `start` block's caller
+   and a routine that outlived the frame kept the unmixed value.
+   `op_name_write_const_idx` and `op_name_const_idx` now list a non-bareword
+   `DoesVar`, so the variable is boxed into a shared cell and the store goes
+   through it.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
