@@ -11305,7 +11305,9 @@ impl CompiledCode {
     /// closure never mutates is ever a candidate.
     fn op_upvalue_read_const_idx(op: &OpCode) -> Option<u32> {
         match op {
-            OpCode::GetGlobal(idx) => Some(*idx),
+            OpCode::GetGlobal(idx) | OpCode::GetArrayVar(idx) | OpCode::GetHashVar(idx) => {
+                Some(*idx)
+            }
             _ => None,
         }
     }
@@ -11386,7 +11388,7 @@ impl CompiledCode {
             .filter(|sym| {
                 sym.with_str(|s| {
                     crate::env::is_plain_user_lexical(s)
-                        && !s.starts_with(['@', '%', '&'])
+                        && !s.starts_with('&')
                         && !own.contains(s)
                 })
             })
