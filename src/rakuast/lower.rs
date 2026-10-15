@@ -313,7 +313,13 @@ fn lower_take_logical_tail(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeEr
     if node.class != RakuAstClass::ApplyInfix {
         return Ok(None);
     }
-    let left = lower_expr(named_child(node, "left")?)?;
+    let left_node = named_child(node, "left")?;
+    if left_node.class != RakuAstClass::CallNameWithoutParentheses
+        || !call_name_str(left_node).is_ok_and(|name| name == "take")
+    {
+        return Ok(None);
+    }
+    let left = lower_expr(left_node)?;
     let Expr::Call { name, args, .. } = left else {
         return Ok(None);
     };
