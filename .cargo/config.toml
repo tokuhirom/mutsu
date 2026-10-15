@@ -1,0 +1,9 @@
+# wasm32-unknown-unknown: wasm-ld gives the linear-memory shadow stack 1 MiB,
+# and the browser build has no native stack guard (`native_stack` is unarmed
+# there), so a deep parser/VM recursion that does not fit just traps with
+# "memory access out of bounds". The expression-precedence ladder alone is
+# ~30 Rust frames per nesting level; with an unoptimized (`wasm-pack --dev`)
+# build those frames are large enough that `await (^2).map({ start { 1 } })`
+# overflowed 1 MiB. 8 MiB is initial linear memory, not a limit on the heap.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-zstack-size=8388608"]
