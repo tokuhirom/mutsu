@@ -568,6 +568,8 @@ impl Interpreter {
             param_defs,
             return_type,
             body: proto_body,
+            is_export,
+            export_tags,
             trait_args,
             is_method: true,
             ..
@@ -621,6 +623,19 @@ impl Interpreter {
         {
             self.registry_mut()
                 .mark_proto_method_hidden(owner, &method_name);
+        }
+        if *is_export && !self.module.suppress_exports {
+            let tags = if export_tags.is_empty() {
+                vec!["DEFAULT".to_string()]
+            } else {
+                export_tags.clone()
+            };
+            self.register_exported_operator_method_sub(
+                owner,
+                &method_name,
+                &proto_param_defs,
+                tags,
+            );
         }
         self.apply_method_is_traits(
             owner,
