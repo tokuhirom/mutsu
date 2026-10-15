@@ -151,6 +151,9 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             if let Some(take_tail) = lower_take_logical_tail(expression)? {
                 return Ok(take_tail);
             }
+            if let Some(signature_bind) = lower_signature_bind(expression)? {
+                return Ok(signature_bind);
+            }
             if expression.class == RakuAstClass::Block
                 && !node
                     .fields
@@ -331,6 +334,25 @@ fn lower_take_logical_tail(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeEr
         infix_token(named_child(node, "infix")?)?,
         lower_expr(named_child(node, "right")?)?,
     )))
+}
+
+/// Lower a signature-literal `:=` through the parser's shared expansion.
+// Cost: O(n), n = signature parameters and RHS expression size.
+fn lower_signature_bind(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+    if node.class != RakuAstClass::ApplyInfix {
+        return Ok(None);
+    }
+    let left = named_child(node, "left")?;
+    if left.class != RakuAstClass::FakeSignature
+        || infix_token(named_child(node, "infix")?)? != crate::token_kind::TokenKind::Bind
+    {
+        return Ok(None);
+    }
+    let signature = lower_expr(left)?;
+    let rhs = lower_expr(named_child(node, "right")?)?;
+    crate::ast::signature_bind::expand(signature, rhs)
+        .map(Some)
+        .ok_or_else(|| unsupported(node))
 }
 
 /// A postfix `if`/`unless`/`with`/`without` over the lowered statement: raku

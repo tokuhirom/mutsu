@@ -1226,3 +1226,14 @@ written form as `ApplyInfix(Call::Name("take"), TAIL)`. The parser expansion
 now records the value, operator, and right operand in a `SourceForm`; conversion
 renders the measured infix shape, and lowering calls the same expansion builder
 as parsing. The regression pins single evaluation and short-circuit behavior.
+
+### 6.62 S10: signature-literal binding (2026-10-15)
+
+For `:(...) := RHS`, the parser evaluates the RHS once, binds it through the
+signature binder, then binds each named variable to its corresponding value.
+Rakudo renders the source as `ApplyInfix(FakeSignature, Infix(":="), RHS)`.
+The parser expansion now records the signature and RHS in a `SourceForm`; the
+converter renders that infix shape and lowering calls the same expansion
+builder. The reverse operator map recognizes `:=` as `TokenKind::Bind`, and the
+regressions cover type errors, multi-parameter binding, and one-time RHS
+evaluation.

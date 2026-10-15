@@ -2906,6 +2906,7 @@ pub(crate) mod placeholders;
 pub(crate) mod routine_trait;
 pub(crate) mod shaped_decl;
 pub(crate) mod sigilless_decl;
+pub(crate) mod signature_bind;
 pub(crate) mod signature_decl;
 pub(crate) mod spelled;
 pub(crate) mod stable_hash;

@@ -33,6 +33,12 @@ pub(crate) enum SourceForm {
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
+    /// `:(...) := RHS`: the parser expands the signature bind into temporary
+    /// declarations and assignments; the model layer keeps the written bind.
+    SignatureBind {
+        signature: Expr,
+        rhs: Expr,
+    },
     /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration,
     /// whose parser expansion installs each listed attribute separately.
     AttributeGroup(Vec<Stmt>),
