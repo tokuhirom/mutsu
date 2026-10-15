@@ -52,6 +52,9 @@ pub(crate) fn owners_of(value: &Value, has_name: bool) -> Option<&'static [&'sta
         ValueView::Str(_) if has_name => Some(&["Str"]),
         // An immutable `List` is the same shape: its rows refuse the mutators.
         ValueView::Array(..) => Some(&["Array", "List"]),
+        // A `Map` is immutable: Rakudo declares `push`/`append` (and the keyed
+        // mutators) on `Hash` only, so a Map value reaches the `Map` rows alone.
+        ValueView::Hash(h) if h.declared_type.as_deref() == Some("Map") => Some(&["Map"]),
         ValueView::Hash(_) => Some(&["Hash", "Map"]),
         ValueView::Set(_, true) => Some(&["SetHash"]),
         ValueView::Set(_, false) => Some(&["Set"]),
