@@ -104,7 +104,7 @@ impl Interpreter {
                 // the frame's lexical outer, answering ahead of the per-routine
                 // stores (`Env::frame_capture_holds`).
                 self.env_mut().set_capture_fallback(capture.capture_view());
-                self.env_mut().link_static_outer_to_unit(true, true);
+                self.env_mut().link_static_outer_to_unit(true, true, None);
             } else if cf.code.links_frame_to_unit() {
                 self.env_mut().mark_outer_is_unit();
             }
