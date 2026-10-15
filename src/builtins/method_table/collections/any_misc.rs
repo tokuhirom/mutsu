@@ -7,6 +7,16 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
+    // `Any.tree`: an `Iterable`'s elements treed level by level, any other
+    // value itself (ADR-11276 §9.112).
+    MethodRow {
+        owner: "Any",
+        name: "tree",
+        arity: 0,
+        handler: Handler::Pure(tree),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
     MethodRow {
         owner: "Any",
         name: "serial",
@@ -38,6 +48,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         arity: 0,
         handler: Handler::Narrow(supply),
         flags: RowFlags::RANDOM,
+        named: &[],
+    },
+    // `Any.chrs` is `self.list.chrs`: a number, a numeric string, a `Range`
+    // or a `Seq` reaches it (ADR-11276 §9.112).
+    MethodRow {
+        owner: "Any",
+        name: "chrs",
+        arity: 0,
+        handler: Handler::Pure(chrs),
+        flags: RowFlags::NONE,
         named: &[],
     },
     MethodRow {
@@ -215,4 +235,12 @@ pub(crate) fn supply_of(target: &Value) -> Option<Value> {
     attrs.insert("taps".to_string(), Value::array(Vec::new()));
     attrs.insert("live".to_string(), Value::FALSE);
     Some(Value::make_instance(Symbol::intern("Supply"), attrs))
+}
+
+/// `Any.tree`: every level of the receiver's elements as a `Seq`, a
+/// non-`Iterable` receiver itself.
+// Cost: O(1) on an Array (a lazy `ListGen::Tree`); O(e) on a Seq, Slip, Hash
+// or Range, e = elements of the first level.
+fn tree(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(crate::value::flat::tree_to_depth(target, usize::MAX))
 }

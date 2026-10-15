@@ -65,7 +65,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// type-object branch of `answer_shapeless`: this module's, and the numeric
 /// types' `Range` (`scalars::numeric_range`, ADR-11276 §9.97), which a native
 /// integer type object (`int8`) and the `Rational` role reach.
-const NAMES: [&str; 3] = ["of", "keyof", "Range"];
+const NAMES: [&str; 4] = ["of", "keyof", "Range", "bytes"];
 
 /// The roles a role with rows does itself, for a role type object (`Baggy.keyof`
 /// is `QuantHash`'s). The catalog lists classes only.

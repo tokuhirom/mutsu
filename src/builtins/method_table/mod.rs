@@ -64,9 +64,9 @@ mod unadmitted;
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::{
-    any_collection, any_misc as collection_any_misc, clone as collection_clone, lazy, list,
-    list_aggregate, map, positional, quanthash, range, render as collection_render,
-    render_names as collection_render_names, rotate as collection_rotate, subscript, terminals,
+    any_collection, clone as collection_clone, lazy, list, list_aggregate, map, positional,
+    quanthash, range, render as collection_render, render_names as collection_render_names,
+    rotate as collection_rotate, subscript, terminals,
 };
 pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_of;
 #[cfg(test)]
@@ -77,7 +77,7 @@ pub(crate) use instances::{
     temporal_shift,
 };
 pub(crate) use scalars::{
-    blob, coerce, complex_math, math, numeric_base, numeric_coerce, numify, real, real_misc, str,
+    blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
     str_args, str_numeric, str_search, truth, uni, unicode,
 };
 

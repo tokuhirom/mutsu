@@ -43,9 +43,29 @@ macro_rules! rows {
     };
 }
 
+/// `bytes` is `Blob:D:`: a type object (`Buf[uint8].bytes`) is the row's too,
+/// so it throws instead of counting the bytes of its name.
+pub(super) static BYTES_ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "Blob",
+        name: "bytes",
+        arity: 0,
+        handler: Handler::Narrow(bytes),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Buf",
+        name: "bytes",
+        arity: 0,
+        handler: Handler::Narrow(bytes),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+];
+
 pub(super) static ROWS: &[MethodRow] = rows! {
     "elems" => elems,
-    "bytes" => bytes,
     "list" => list,
     "contents" => list,
     "reverse" => reverse,
@@ -155,6 +175,14 @@ pub(crate) fn bytes(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
             let width = buf_elem_width(&class_name.resolve()) as i64;
             Some(Ok(Value::int(buf_len_or_zero(&attributes) as i64 * width)))
         }
+        ValueView::Package(name) => Some(Err(RuntimeError::parameter_invalid_concreteness(
+            "Blob",
+            &name.resolve(),
+            "bytes",
+            "self",
+            true,
+            true,
+        ))),
         _ => None,
     }
 }

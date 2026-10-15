@@ -16,7 +16,7 @@ fn check_numeric_type_object_method(
         // Numeric types whose instances have these methods
         let is_numeric_type = matches!(
             name.as_ref(),
-            "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Complex" | "Cool" | "Numeric"
+            "Int" | "UInt" | "Bool" | "Num" | "Rat" | "FatRat" | "Complex" | "Cool" | "Numeric"
         );
         if !is_numeric_type {
             return None;
@@ -44,6 +44,8 @@ fn check_numeric_type_object_method(
                 | "expmod"
                 | "is-prime"
                 | "chr"
+                | "Rat"
+                | "FatRat"
         );
         if !is_d_method {
             return None;
@@ -178,17 +180,6 @@ pub(super) fn dispatch(
             ValueView::Hash(_) => crate::builtins::method_table::map::default(target, &[]),
             _ => None,
         }),
-        // `rand` of a numeric receiver is a row (`method_table::real_misc`), and
-        // `Range.rand` is the `Range` row's (`method_table::range`). A `Seq` has no
-        // table shape, and is `Cool`: it numifies to its element count.
-        // Cost: O(1).
-        "rand" => match target.view() {
-            ValueView::Seq(_) => Some(Some(crate::builtins::method_table::real_misc::rand(
-                target,
-                &[],
-            ))),
-            _ => Some(None),
-        },
         // `sign` of a number is a row; an enum value (no table shape) is the sign
         // of its integer value.
         // Cost: O(1).
