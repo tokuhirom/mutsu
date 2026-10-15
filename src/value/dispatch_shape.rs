@@ -711,7 +711,10 @@ fn instance_shapes() -> &'static [(Symbol, DispatchShape); 35] {
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
-            (Symbol::intern("IO::Path::Parts"), DispatchShape::IoPathParts),
+            (
+                Symbol::intern("IO::Path::Parts"),
+                DispatchShape::IoPathParts,
+            ),
             (Symbol::intern("Backtrace"), DispatchShape::Backtrace),
             (
                 Symbol::intern("Backtrace::Frame"),

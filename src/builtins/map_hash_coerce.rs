@@ -186,7 +186,12 @@ pub(crate) fn hash_contents(v: &Value) -> Option<Value> {
     let attrs = attributes.as_map();
     let parts: ValueMap = crate::runtime::utils::io_path_parts_keys()
         .iter()
-        .map(|key| (key.to_string(), attrs.get(*key).cloned().unwrap_or(Value::NIL)))
+        .map(|key| {
+            (
+                key.to_string(),
+                attrs.get(*key).cloned().unwrap_or(Value::NIL),
+            )
+        })
         .collect();
     Some(Value::hash(parts))
 }
