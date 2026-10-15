@@ -202,7 +202,9 @@ impl Interpreter {
     /// a same-scope re-declaration of a captured name -- the run-time half of
     /// a binding declaration the BEGIN prologue split (#11263): its static
     /// half ran first and the prologue's subs captured that.
-    // Cost: O(1), one hash probe of the mainline capture bucket.
+    // Cost: O(1), one hash probe of the mainline capture bucket; O(p + v)
+    // when the slot holds the captured cell, p = sub plans of `code`, v =
+    // their free variables.
     pub(super) fn mainline_capture_at(&self, code: &CompiledCode, slot: usize) -> Option<Value> {
         if self.lexicals.unit_lexicals.is_empty()
             || !self.vardecl_context().get()
@@ -224,7 +226,21 @@ impl Interpreter {
         let ValueView::ContainerRef(captured_cell) = captured.view() else {
             return None;
         };
-        Gc::ptr_eq(&cell, &captured_cell).then(|| cur.clone())
+        if !Gc::ptr_eq(&cell, &captured_cell) {
+            return None;
+        }
+        // The slot must be the declaration a sub captured, not another scope's
+        // same-named slot that a block exit's by-name restore
+        // (`pop_loop_local_scope`) filled with the captured cell: a later
+        // sibling block's `my $q` is a fresh binding, and taking it for a
+        // re-declaration dropped the capture, so the sub read the block's
+        // `$q` from then on (ADR-12529 phase 3).
+        let captured_here = code.sub_decl_plans.iter().any(|plan| {
+            plan.free_var_decl_slots
+                .iter()
+                .any(|&(_, decl)| decl as usize == slot)
+        });
+        captured_here.then(|| cur.clone())
     }
 
     /// After the store [`Self::mainline_capture_at`] saw coming: when it
