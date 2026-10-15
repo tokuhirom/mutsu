@@ -1974,6 +1974,24 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, args) = crate::parser::primary::parse_call_arg_list(rest)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
+        if let Some((package, member)) = name.rsplit_once("::")
+            && matches!(package, "MY" | "OUTER")
+            && !member.is_empty()
+            && !member.contains("::")
+        {
+            return Ok((
+                rest,
+                Expr::CallOn {
+                    target: Box::new(Expr::Index {
+                        target: Box::new(Expr::PseudoStash(format!("{package}::"))),
+                        index: Box::new(Expr::Literal(Value::str(member.to_string()))),
+                        is_positional: false,
+                        spelling: Default::default(),
+                    }),
+                    args,
+                },
+            ));
+        }
         let mut args = args;
         if args.is_empty() {
             args.push(callsite_line_arg(current_line_number(input)));
