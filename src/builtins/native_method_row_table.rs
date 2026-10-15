@@ -228,6 +228,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Complex", "gist", 1, 25),
     ("Complex", "raku", 1, 25),
     ("List", "elems", 1, 25),
+    ("List", "from", 1, 56),
+    ("List", "to", 1, 56),
     ("List", "end", 1, 25),
     ("List", "keys", 1, 24),
     ("List", "values", 1, 24),

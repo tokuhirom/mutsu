@@ -1104,31 +1104,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // Array of Match objects: .to/.from/.ast
-    if let ValueView::Array(arr, _) = target.view() {
-        match method {
-            "to" | "pos" => {
-                if let Some(last) = arr.last() {
-                    return native_method_0arg(last, Symbol::intern(method));
-                }
-                return Some(Ok(Value::int(0)));
-            }
-            "from" => {
-                if let Some(first) = arr.first() {
-                    return native_method_0arg(first, Symbol::intern(method));
-                }
-                return Some(Ok(Value::int(0)));
-            }
-            "ast" => {
-                if let Some(last) = arr.last() {
-                    return native_method_0arg(last, Symbol::intern("ast"));
-                }
-                return Some(Ok(Value::NIL));
-            }
-            _ => {}
-        }
-    }
-
     // IO::Path::Parts does Associative, Positional, and Iterable, but Rakudo's
     // inherited fallback methods itemize the object: `.list`/`.List`/`.values`
     // contain self, `.keys` contains 0, `.pairs`/`.kv` use 0 => self, and
