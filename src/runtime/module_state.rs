@@ -405,7 +405,8 @@ pub(crate) struct ModuleState {
     /// the use's lexical import set id (`OpCode::UseModule::lexical_set_idx`)
     /// and then by routine name. Filled the first time such a `use` runs; the
     /// `OpCode::LexImportCall` sites lexically inside the block read it.
-    pub(crate) lexical_import_sets: HashMap<Symbol, std::sync::Arc<HashMap<Symbol, Value>>>,
+    pub(crate) lexical_import_sets:
+        HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
     /// What the `use` filling a lexical import set is importing, while it runs.
     pub(crate) lexical_import_capture: Option<super::lexical_imports::LexicalImportCapture>,
     pub(crate) strict_mode: bool,

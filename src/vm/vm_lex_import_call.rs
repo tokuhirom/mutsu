@@ -38,13 +38,21 @@ impl Interpreter {
             Self::const_str(code, *name_idx),
             *arity as usize,
         )?;
+        let binding = match target {
+            crate::runtime::lexical_imports::LexicalImport::Code(value) => {
+                CodeVarBinding::Bound(value)
+            }
+            crate::runtime::lexical_imports::LexicalImport::Routine(key) => {
+                CodeVarBinding::Routine(key)
+            }
+        };
         self.exec_call_on_code_var_op(
             code,
             *name_idx,
             *arity,
             *arg_sources_idx,
             false,
-            CodeVarBinding::Bound(target),
+            binding,
             compiled_fns,
         )
         .inspect_err(|e| self.record_call_resume_point(code, call_ip, e))?;

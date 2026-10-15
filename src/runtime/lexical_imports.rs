@@ -14,6 +14,17 @@
 
 use super::*;
 
+/// What a lexical import set binds a routine name to.
+#[derive(Clone)]
+pub(crate) enum LexicalImport {
+    /// A code object a `sub EXPORT` hook bound (`'&name' => -> |c { ... }`).
+    Code(Value),
+    /// A routine the import aliased from its module: its definition's own
+    /// registry key (`Module::name`), which outlives the block's aliases.
+    /// It is called through the named-call path, as the alias was.
+    Routine(Symbol),
+}
+
 /// What a `use` that fills a lexical import set imported, collected while
 /// it runs.
 pub(crate) struct LexicalImportCapture {
@@ -64,20 +75,24 @@ impl Interpreter {
         let mut set = HashMap::new();
         for (package, name) in capture.routines {
             let amp = Symbol::intern(&format!("&{}", name.resolve()));
-            let value = if capture.amp_env_keys.contains(&amp) {
-                self.env.get_sym(amp).cloned()
+            let binding = if capture.amp_env_keys.contains(&amp) {
+                self.env
+                    .get_sym(amp)
+                    .filter(|value| matches!(value.view(), ValueView::Sub(_)))
+                    .cloned()
+                    .map(LexicalImport::Code)
             } else {
+                // A multi family has no single definition under its plain
+                // key; it keeps the registry path until imports bind
+                // dispatcher values (ADR-8751 stage 2).
                 self.registry()
                     .function_def(crate::qualified::qualified(package, name))
-                    .map(|def| self.sub_value_from_function_def((*def).clone()))
+                    .map(|def| {
+                        LexicalImport::Routine(crate::qualified::qualified(def.package, def.name))
+                    })
             };
-            // A multi family has no single definition under its plain key;
-            // it keeps the registry path until imports bind dispatcher values
-            // (ADR-8751 stage 2).
-            if let Some(value) = value
-                && matches!(value.view(), ValueView::Sub(_))
-            {
-                set.insert(name, value);
+            if let Some(binding) = binding {
+                set.insert(name, binding);
             }
         }
         self.module
@@ -117,7 +132,11 @@ impl Interpreter {
     /// The routine `name` is bound to in the first of the import sets
     /// `chain` (innermost first) that binds it.
     // Cost: O(c), c = enclosing `use`-blocks (usually 1).
-    pub(crate) fn lexical_import_binding(&self, chain: &[Symbol], name: Symbol) -> Option<Value> {
+    pub(crate) fn lexical_import_binding(
+        &self,
+        chain: &[Symbol],
+        name: Symbol,
+    ) -> Option<LexicalImport> {
         chain
             .iter()
             .find_map(|id| self.module.lexical_import_sets.get(id)?.get(&name).cloned())
