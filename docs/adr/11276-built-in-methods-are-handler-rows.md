@@ -2676,6 +2676,39 @@ Rakudo reads `self.list` (the codepoints); a class type object's `Capture` answe
 attributes. `__mutsu_zen_angle` (the `<>` zen slice) stays: it is an internal name, not a method, and belongs to the compiler.
 `method-rows-report.py --arms`: the pure arity cascades go from 92 arms to 76.
 
+### 9.111 Slice 5: the prologue of `methods_0arg/mod.rs` answers through rows and receiver adapters (2026-10-16)
+
+`refactor/11276-0arg-prologue-arms`. Eighteen quoted-name arms of `methods_0arg/mod.rs`'s receiver-specific prologue are
+deleted. The census build of §9.109 (every arm logging the receiver it answered, over all of `t/` and the whitelisted roast)
+found which receivers still reached each; each now answers through a row or through a receiver adapter that existed for
+another kind:
+
+1. **`Unicode.version` and `Unicode.NFG`** are rows of a new type-object-only shape, `DispatchShape::Unicode` (as the
+   `IO::Spec` shapes are); the recognition table and the Rakudo snapshot gain the owner.
+2. **`List.from` and `List.to`** are rows (Rakudo declares both on `List`); they ask the first or last element through
+   ordinary dispatch, so an empty list answers `Nil` (was `0`) and `.pos`/`.ast` on a list are `X::Method::NotFound`.
+3. **A `Backtrace` and a `Capture` answer `Any`'s `self.list.METHOD` methods on their own list**, through the adapter that
+   hands a `Match`'s positional captures to them (`Value::match_list_receiver`, §9.98): a backtrace's frames, a capture's
+   positionals (and `Hash` its named part). Any's audited list rows no longer reach the `Backtrace` shape: they read it as a
+   one-element list, so `$bt.List.elems` was `1` and `$bt.Seq` a `List`. `seq_coerce::to_seq_structural` gains the
+   `Capture` case it lacked, so `\(1, 2, :a(3)).Seq` is `(1, 2).Seq` on every path.
+4. **An exception's `line`, `file` and `filename`** are its attributes, which the generic accessor answers; the arm hid
+   that a typed parse error raised inside an `EVAL` (`X::Syntax::Confused`, whose exception is built lazily from its
+   message) never got the `EVAL` unit's name. The `EVAL` backfill now records it on the error
+   (`RuntimeErrorCold::source_file`), and the exception built from it reports `filename` and `file`.
+5. **A user subclass of `Pair` or of a quant hash** answers the built-in methods on its payload through
+   `builtins::native_base` (§9.79), whose payload now covers `__mutsu_pair_value` and `__baggy_data__`; the two delegation
+   blocks with their name lists are gone, and `.Pair` of a `Pair` subclass is the instance.
+6. **`True but False`** (a `Bool` whose only mixin is a `Bool`) is that `Bool` for every method: the four rendering arms
+   become one receiver substitution, and `.Int`, `.Numeric` and `.not` follow the effective truth too, as in Rakudo.
+
+Pinned in `t/oo/method/prologue-method-rows.t`. Left in the prologue, each for its own PR: `Uni`'s `chars`/`comb`
+(roast pins them on `NFC`/`NFD`, Rakudo declares neither, so no row can carry them) and `perl` (the rendering cascade has
+no `Uni` case); `CompUnit::DependencySpecification`, which has two representations (a native value whose `.^name` is
+`Any`, and an instance); `Distribution`, with the slow path's `methods_distribution.rs`; `IO::Path::Parts`; the lazy
+`Match`'s `Capture` (no receiver reached it in the census); `__mutsu_zen_angle` (the compiler's). `method-rows-report.py
+--arms`: the pure arity cascades go from 76 arms to 58.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
