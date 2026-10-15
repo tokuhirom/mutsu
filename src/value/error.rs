@@ -391,6 +391,11 @@ impl RuntimeError {
     pub(crate) fn set_column(&mut self, v: Option<usize>) {
         self.cold_mut().column = v;
     }
+    /// Name the file a parse failure is in without its text (an `EVAL`
+    /// unit): the exception built from the error reports it as `filename`.
+    pub(crate) fn set_source_file(&mut self, v: String) {
+        self.cold_mut().source_file = Some(v);
+    }
     /// Set the `------>` snippet's own line/column, distinct from `line`/
     /// `column` (see [`Self::echo_line`]).
     pub(crate) fn set_echo_position(&mut self, line: usize, column: usize) {

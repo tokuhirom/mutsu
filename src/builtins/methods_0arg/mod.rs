@@ -266,12 +266,10 @@ pub(crate) fn native_method_0arg_cascade(
         if let Some(result) = match_owner_row(target, method_sym, &[]) {
             return Some(result);
         }
-        match method {
-            "Capture" => return Some(Ok(target.clone())),
-            // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
-            // Cost: O(1).
-            "__mutsu_zen_angle" => return Some(Ok(target.clone())),
-            _ => {}
+        // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
+        // Cost: O(1).
+        if method == "__mutsu_zen_angle" {
+            return Some(Ok(target.clone()));
         }
     }
 
@@ -289,41 +287,6 @@ pub(crate) fn native_method_0arg_cascade(
         crate::runtime::thread_usage::note_thread_yield();
         std::thread::yield_now();
         return Some(Ok(Value::NIL));
-    }
-
-    // Unicode's query methods are class methods over the Unicode data shipped
-    // with this runtime. `unicode-normalization` exports the authoritative
-    // version tuple for the tables mutsu actually uses.
-    //
-    // This check must come AFTER the lazy-Match fast path above: `target.view()`
-    // forces full materialization of a lazy Match, which is exactly what that
-    // fast path exists to avoid. By this point `target.is_lazy_match_value()`
-    // has already been ruled out (the fast path returned early for a lazy
-    // Match reaching one of its handled methods; for an unhandled method it
-    // falls through, but a lazy Match is never `ValueView::Package`, so calling
-    // `.view()` here is safe/cheap either way -- see the `Scalar` check right
-    // below, which relies on the same "lazy-Match case already handled above"
-    // invariant to call `target.view()` unconditionally too).
-    if matches!(target.view(), ValueView::Package(name) if name == "Unicode") {
-        match method {
-            "version" => {
-                let (major, minor, patch) = unicode_normalization::UNICODE_VERSION;
-                let mut parts = vec![
-                    crate::value::VersionPart::Num(i64::from(major)),
-                    crate::value::VersionPart::Num(i64::from(minor)),
-                ];
-                // Rakudo renders Unicode 17.0.0 as `v17.0`: retain a patch
-                // component only when the Unicode data has a nonzero patch.
-                if patch != 0 {
-                    parts.push(crate::value::VersionPart::Num(i64::from(patch)));
-                }
-                return Some(Ok(Value::version(parts, false, false)));
-            }
-            // mutsu's strings use grapheme-aware Unicode handling throughout,
-            // so it provides the same NFG availability answer as MoarVM.
-            "NFG" => return Some(Ok(Value::TRUE)),
-            _ => {}
-        }
     }
 
     // Scalar containers are transparent for method dispatch (except .VAR and
@@ -378,45 +341,6 @@ pub(crate) fn native_method_0arg_cascade(
         }
     }
 
-    // Instance with __baggy_data__: delegate Bag-like methods to the inner Bag/Set
-    // so that subclasses of Bag/Set (e.g. `my class MyBag is Bag {}`) work correctly.
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && let Some(inner) = attributes.as_map().get("__baggy_data__")
-        && !matches!(
-            method,
-            "WHAT" | "WHICH" | "raku" | "gist" | "Str" | "perl" | "isa" | "^name"
-        )
-    {
-        return native_method_0arg(inner, method_sym);
-    }
-
-    // An `is Pair` subclass instance answers the Pair accessors on its payload
-    // (`__mutsu_pair_value`, see `dispatch_new_unallocated`).
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && let Some(inner) = attributes.as_map().get("__mutsu_pair_value")
-        && matches!(
-            method,
-            "key"
-                | "value"
-                | "kv"
-                | "keys"
-                | "values"
-                | "antipair"
-                | "invert"
-                | "pairs"
-                | "elems"
-                | "List"
-                | "Slip"
-                | "Hash"
-                | "Map"
-                | "Bool"
-                | "Numeric"
-                | "Int"
-        )
-    {
-        return native_method_0arg(inner, method_sym);
-    }
-
     // $!.pending returns a list of all tracked Failure values (S04 spec).
     if method == "pending" {
         let failures = crate::value::get_pending_failures();
@@ -424,17 +348,6 @@ pub(crate) fn native_method_0arg_cascade(
             crate::gc::Gc::new(crate::value::ArrayData::new(failures)),
             crate::value::ArrayKind::List,
         )));
-    }
-
-    // Nil absorber for common methods: Nil.message, Nil.payload, etc.
-    // In Raku, calling most methods on Nil returns Nil.
-    if target.is_nil()
-        && matches!(
-            method,
-            "message" | "payload" | "backtrace" | "exception" | "handled" | "line" | "file"
-        )
-    {
-        return Some(Ok(Value::NIL));
     }
 
     // `Failure`'s `exception`, `handled`, `gist`, `raku`, `Str` and `Bool` are rows of
@@ -468,24 +381,16 @@ pub(crate) fn native_method_0arg_cascade(
         {
             return Some(Ok(str_val.clone()));
         }
-        // A Bool with a mixed-in Bool override (`True but False`) renders its
-        // Str/gist/raku from the *effective* boolean — `Bool.Str` is
-        // `self ?? 'True' !! 'False'`, so it follows `.Bool`, not the base bool.
+        // A Bool with a mixed-in Bool override and no `Str` or role mixin
+        // (`True but False`) is that Bool for every method, as in Rakudo
+        // (`.Str`, `.Int`, `.not` and `.raku` all follow the effective truth,
+        // ADR-11276 §9.111).
         if matches!(inner.as_ref().view(), ValueView::Bool(_))
             && mixins.get("Str").is_none()
+            && !mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
             && let Some(ValueView::Bool(b)) = mixins.get("Bool").map(Value::view)
         {
-            match method {
-                "Str" | "~" | "gist" => {
-                    return Some(Ok(Value::str(if b { "True" } else { "False" }.to_string())));
-                }
-                "raku" | "perl" => {
-                    return Some(Ok(Value::str(
-                        if b { "Bool::True" } else { "Bool::False" }.to_string(),
-                    )));
-                }
-                _ => {}
-            }
+            return native_method_0arg(&Value::truth(b), method_sym);
         }
         // An allomorph (IntStr/NumStr/…) gists as its preserved source string,
         // not the inner numeric's gist: `<1e3>.gist` → `1e3` (not `1000`). Only
@@ -755,36 +660,12 @@ pub(crate) fn native_method_0arg_cascade(
             _ => None,
         };
     }
-    // Capture methods
-    if let ValueView::Capture { positional, .. } = target.view()
-        && let result @ Some(_) = dispatch_capture(target, positional, method)
-    {
-        return result;
-    }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {
         return result;
     }
     // Then type coercion and specialized methods
     coercion::dispatch(target, method)
-}
-
-fn dispatch_capture(
-    target: &Value,
-    positional: &[Value],
-    method: &str,
-) -> Option<Result<Value, RuntimeError>> {
-    // The rest of `Capture`'s methods are rows (`method_table::capture`).
-    match method {
-        "Hash" => crate::builtins::method_table::capture::hash_coerce(target, &[]),
-        "is-lazy" => Some(Ok(Value::FALSE)),
-        "perl" => crate::builtins::method_table::collection_render_names::raku(target, &[]),
-        "WHAT" => Some(Ok(Value::package(Symbol::intern("Capture")))),
-        // `Any.flat`/`Any.Seq` read `self.list`: the positional part. (`List`
-        // is `Any`'s row, which reads it the same way.)
-        "flat" | "Seq" => Some(Ok(Value::seq(positional.to_vec()))),
-        _ => None,
-    }
 }
 
 /// Create a X::Cannot::Lazy Failure for .elems on an infinite range.
@@ -1053,67 +934,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     if let Some(answer) = crate::builtins::method_table::exception::answer(target, method) {
         return Some(answer);
     }
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && target.instance_is_exception_by_name()
-    {
-        let map = attributes.as_map();
-        match method {
-            "line" => return Some(Ok(map.get("line").cloned().unwrap_or(Value::NIL))),
-            "file" => return Some(Ok(map.get("file").cloned().unwrap_or(Value::NIL))),
-            // `X::Comp` (compile-time diagnoses like `X::Syntax::*`) exposes
-            // `.filename`, not `.file` -- rakudo's actual attribute is
-            // `$!filename`. Fall back to `file` for exceptions that only got the
-            // older generic attribute populated.
-            "filename" => {
-                return Some(Ok(map
-                    .get("filename")
-                    .or_else(|| map.get("file"))
-                    .cloned()
-                    .unwrap_or(Value::NIL)));
-            }
-            _ => {}
-        }
-    }
-
     // Backtrace and Backtrace::Frame: their own methods are rows of the method
     // table (`method_table::backtrace`, ADR-11276 §9.35); a call the table's
-    // entry did not take reaches the same handlers here. The rest are the
-    // ancestors' (`Any`, `Mu`) answers, read from the `frames` list.
+    // entry did not take reaches the same handlers here. `Any`'s
+    // `self.list.METHOD` methods were answered on the frames before the call
+    // reached here (`Value::match_list_receiver`, §9.111).
     if let Some(answer) = crate::builtins::method_table::backtrace::answer(target, method, &[]) {
         return Some(answer);
     }
     if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Backtrace"
-    {
-        match method {
-            "Stringy" => {
-                let text = attributes
-                    .as_map()
-                    .get("text")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                return Some(Ok(Value::str(text)));
-            }
-            "List" | "Seq" => {
-                if let Some(frames) = attributes.as_map().get("frames") {
-                    return Some(Ok(frames.clone()));
-                }
-                return Some(Ok(Value::array(vec![])));
-            }
-            "elems" => {
-                if let Some(frames) = attributes.as_map().get("frames") {
-                    let count = crate::runtime::utils::value_to_list(frames).len();
-                    return Some(Ok(Value::int(count as i64)));
-                }
-                return Some(Ok(Value::int(0)));
-            }
-            _ => {}
-        }
-    } else if let ValueView::Instance {
         class_name,
         attributes,
         ..
@@ -1136,31 +965,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         let cn = class_name.resolve();
         if cn == "Exception" || cn.starts_with("X::") || cn == "Failure" || cn == "CX::Warn" {
             return Some(Err(RuntimeError::resume_signal()));
-        }
-    }
-
-    // Array of Match objects: .to/.from/.ast
-    if let ValueView::Array(arr, _) = target.view() {
-        match method {
-            "to" | "pos" => {
-                if let Some(last) = arr.last() {
-                    return native_method_0arg(last, Symbol::intern(method));
-                }
-                return Some(Ok(Value::int(0)));
-            }
-            "from" => {
-                if let Some(first) = arr.first() {
-                    return native_method_0arg(first, Symbol::intern(method));
-                }
-                return Some(Ok(Value::int(0)));
-            }
-            "ast" => {
-                if let Some(last) = arr.last() {
-                    return native_method_0arg(last, Symbol::intern("ast"));
-                }
-                return Some(Ok(Value::NIL));
-            }
-            _ => {}
         }
     }
 

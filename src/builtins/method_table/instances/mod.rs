@@ -1,7 +1,7 @@
 //! The built-in instance classes' rows (ADR-11276 §10, slice 3D).
 //!
 //! Owners: `Date`, `DateTime`, `Instant`, `Duration`, `Match`, `Mu`, `Code`,
-//! `Backtrace`, `Exception`, `Failure`, `Signature`, `RakuAST::*`. A slice adds
+//! `Backtrace`, `Exception`, `Failure`, `Signature`, `RakuAST::*`, `Unicode`. A slice adds
 //! a family module here and lists it in [`FAMILIES`]; no other file names it.
 
 use super::{Handler, MethodRow, RowFlags};
@@ -39,6 +39,7 @@ pub(crate) mod supply;
 pub(crate) mod temporal;
 pub(crate) mod temporal_edit;
 pub(crate) mod temporal_shift;
+pub(crate) mod unicode_data;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -64,4 +65,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     compunit_handle::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,
+    unicode_data::ROWS,
 ];

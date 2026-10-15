@@ -240,19 +240,6 @@ pub(crate) fn hash(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     Some(Ok(Value::hash_with_data(crate::gc::Gc::new(data))))
 }
 
-/// `.Hash`: the named part, as a mutable `Hash` (unlike `.hash`, which is a `Map`).
-// Cost: O(n), n = named arguments.
-pub(crate) fn hash_coerce(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::Capture { named, .. } = target.view() else {
-        return None;
-    };
-    let mut map = ValueMap::default();
-    for (k, v) in named {
-        map.insert(k.clone(), v.clone());
-    }
-    Some(Ok(Value::hash(map)))
-}
-
 /// `.list`: the positional part. A `Match`'s is a live view of its positional
 /// captures, an unbound one a hole (`Value::match_list_view`).
 // Cost: O(p), p = positional arguments; O(1) for a Match with no unbound

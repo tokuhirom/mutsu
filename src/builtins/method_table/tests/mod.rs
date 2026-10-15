@@ -81,6 +81,7 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::IoSpecWin32 => type_sample("IO::Spec::Win32"),
         DispatchShape::IoSpecCygwin => type_sample("IO::Spec::Cygwin"),
         DispatchShape::IoSpecQnx => type_sample("IO::Spec::QNX"),
+        DispatchShape::Unicode => type_sample("Unicode"),
         DispatchShape::IoHandle => {
             let mut attributes = crate::value::AttrMap::new();
             attributes.insert("handle".to_string(), Value::int(-1));

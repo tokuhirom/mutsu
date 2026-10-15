@@ -157,13 +157,16 @@ pub(crate) enum DispatchShape {
     /// A `Backtrace::Frame` (closed): a handler reads its `subname`, `file`,
     /// `line` and marker attributes.
     BacktraceFrame,
+    /// The `Unicode` class (closed), a type object only: its `version` and
+    /// `NFG` describe the Unicode data this runtime ships.
+    Unicode,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 37] = [
+    pub(crate) const ALL: [DispatchShape; 38] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -201,6 +204,7 @@ impl DispatchShape {
         DispatchShape::Buf,
         DispatchShape::Backtrace,
         DispatchShape::BacktraceFrame,
+        DispatchShape::Unicode,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -245,11 +249,12 @@ impl DispatchShape {
             DispatchShape::Buf => "Buf",
             DispatchShape::Backtrace => "Backtrace",
             DispatchShape::BacktraceFrame => "Backtrace::Frame",
+            DispatchShape::Unicode => "Unicode",
         }
     }
 
     /// Whether a value can be an instance of this shape. The `IO::Spec` shapes
-    /// are type objects only.
+    /// and `Unicode` are type objects only.
     // Cost: O(1).
     pub(crate) const fn has_instances(self) -> bool {
         !matches!(
@@ -258,6 +263,7 @@ impl DispatchShape {
                 | DispatchShape::IoSpecWin32
                 | DispatchShape::IoSpecCygwin
                 | DispatchShape::IoSpecQnx
+                | DispatchShape::Unicode
         )
     }
 
@@ -323,8 +329,8 @@ impl DispatchShape {
     /// Whether `Any`'s list row `method` reaches this closed shape. None
     /// reaches `sort`, whose handler reads only a list (a closed shape sorts
     /// through the interpreter), and only a `Pair`, `Capture` or `Version` reaches `reverse`, a `Pair` `min`
-    /// and `max`, whose handlers read a scalar, a hash, a list and a pair. A `Capture` flattens to itself
-    /// (`methods_0arg`'s `Capture` block), and the
+    /// and `max`, whose handlers read a scalar, a hash, a list and a pair. A `Capture` flattens its
+    /// positionals (`Value::match_list_receiver`), and the
     /// quant hashes read as their list of pairs for `unique` first
     /// (`hashlike_receiver_as_pairs_list`), then reach the row as a `List`;
     /// the rest reach the row with themselves as invocant.
@@ -350,6 +356,9 @@ impl DispatchShape {
                 matches!(self, DispatchShape::Pair)
             }
             DispatchShape::Pair => true,
+            // A `Backtrace` answers them on its frames
+            // (`Value::match_list_receiver`, ADR-11276 §9.111).
+            DispatchShape::Backtrace => false,
             // `Any.reverse` is `self.list.reverse`: a `Capture` reads its
             // positionals, a `Version` is the one-element list holding itself.
             _ if const_str_eq(method, "reverse") => {

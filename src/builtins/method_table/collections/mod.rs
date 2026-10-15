@@ -24,6 +24,7 @@ pub(crate) mod join;
 pub(crate) mod lazy;
 pub(crate) mod list;
 pub(crate) mod list_aggregate;
+mod list_bounds;
 pub(crate) mod list_transform;
 pub(crate) mod map;
 pub(crate) mod pair;
@@ -60,6 +61,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     render_names::STRINGY_ROWS,
     fmt::ROWS,
     capture::ROWS,
+    list_bounds::ROWS,
     join::ROWS,
     clone::ROWS,
     descriptor::ROWS,

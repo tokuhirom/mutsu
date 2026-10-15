@@ -228,6 +228,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Complex", "gist", 1, 25),
     ("Complex", "raku", 1, 25),
     ("List", "elems", 1, 25),
+    ("List", "from", 1, 56),
+    ("List", "to", 1, 56),
     ("List", "end", 1, 25),
     ("List", "keys", 1, 24),
     ("List", "values", 1, 24),
@@ -1225,8 +1227,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // those already have their own rows), so one `Exception`-owner row each
     // covers every `X::*`/`CX::*` subtype the chain walk now reaches (see the
     // `register_x` additions in `runtime_init.rs` this same slice).
-    ("Exception", "line", 1, 0),
-    ("Exception", "file", 1, 0),
     ("Exception", "backtrace", 1, 48),
     ("Exception", "throw", 1, 48),
     ("Exception", "resume", 1, 48),
@@ -2433,6 +2433,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("IO::Handle", "Str", 1, 25),
     ("IO::Handle", "gist", 8, 29),
     ("IO::Handle", "raku", 8, 5),
+    ("Unicode", "NFG", 1, 25),
+    ("Unicode", "version", 1, 25),
     ("IO::Special", "IO", 8, 57),
     ("IO::Special", "accessed", 8, 57),
     ("IO::Special", "changed", 8, 57),
