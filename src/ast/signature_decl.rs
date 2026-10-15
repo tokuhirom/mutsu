@@ -45,6 +45,14 @@ pub(crate) enum SourceForm {
     /// its `emit` / `done` onto the on-demand emitter. It opens the emitter
     /// lambda's body.
     SupplyBlock(Vec<Stmt>),
+    /// `take VALUE and|or|xor|andthen|orelse|notandthen TAIL`: the parser
+    /// expands the value-producing control call into a temporary and a
+    /// `Stmt::Take`, while the model layer keeps the written infix form.
+    TakeLogicalTail {
+        value: Expr,
+        op: crate::token_kind::TokenKind,
+        right: Expr,
+    },
     /// `with COND -> PARAM { BODY }`: the written parameter and body, which
     /// open the then-branch of the expansion `with_then_branch` builds.
     WithPointy {

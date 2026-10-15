@@ -148,6 +148,9 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             // now, even when it reads placeholders or `@_` / `%_` (`{ say $^a }`
             // is then called with no arguments and dies "Too few positionals").
             let expression = named_child(node, "expression")?;
+            if let Some(take_tail) = lower_take_logical_tail(expression)? {
+                return Ok(take_tail);
+            }
             if expression.class == RakuAstClass::Block
                 && !node
                     .fields
@@ -304,6 +307,24 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         _ => lower_stmt_inner(node),
     }
+}
+
+fn lower_take_logical_tail(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+    if node.class != RakuAstClass::ApplyInfix {
+        return Ok(None);
+    }
+    let left = lower_expr(named_child(node, "left")?)?;
+    let Expr::Call { name, args, .. } = left else {
+        return Ok(None);
+    };
+    if name.resolve() != "take" || args.len() != 1 {
+        return Ok(None);
+    }
+    Ok(Some(crate::ast::expand_take_logical_tail(
+        args.into_iter().next().expect("one argument"),
+        infix_token(named_child(node, "infix")?)?,
+        lower_expr(named_child(node, "right")?)?,
+    )))
 }
 
 /// A postfix `if`/`unless`/`with`/`without` over the lowered statement: raku

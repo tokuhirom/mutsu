@@ -1217,3 +1217,12 @@ bindings as statements are read. The supply expansion is rebuilt while its
 body's scope is active, so a lexical `&emit` keeps shadowing the supply
 rewrite. The same mechanism covers enclosing block declarations and lexical
 sub declarations without changing how ordinary parsing builds a supply.
+
+### 6.61 S10: `take` with a loose word-logical tail (2026-10-15)
+
+For `take VALUE and TAIL`, the parser captures `VALUE` once, emits `take`, and
+evaluates the logical tail against the captured value. Rakudo's tree keeps the
+written form as `ApplyInfix(Call::Name("take"), TAIL)`. The parser expansion
+now records the value, operator, and right operand in a `SourceForm`; conversion
+renders the measured infix shape, and lowering calls the same expansion builder
+as parsing. The regression pins single evaluation and short-circuit behavior.

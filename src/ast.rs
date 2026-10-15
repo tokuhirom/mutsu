@@ -2841,6 +2841,43 @@ impl Stmt {
     }
 }
 
+/// Expand a value-producing `take` followed by a loose word-logical tail.
+/// Both the parser and RakuAST lowering use this builder so the compiler sees
+/// one temporary evaluation, one take, and the short-circuit tail.
+// Cost: O(n), n = the total nodes in the value and tail expressions.
+pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) -> Stmt {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = format!("__mutsu_take_value_{id}");
+    let variable = Expr::Var(name.clone());
+    Stmt::SyntheticBlock(vec![
+        Stmt::SourceForm(Box::new(SourceForm::TakeLogicalTail {
+            value: value.clone(),
+            op: op.clone(),
+            right: right.clone(),
+        })),
+        Stmt::VarDecl {
+            name,
+            expr: value,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        },
+        Stmt::Take(variable.clone(), false),
+        Stmt::Expr(Expr::Binary {
+            left: Box::new(variable),
+            op,
+            right: Box::new(right),
+            form: BinaryForm::Infix,
+        }),
+    ])
+}
+
 #[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum AssignOp {
     Assign,
