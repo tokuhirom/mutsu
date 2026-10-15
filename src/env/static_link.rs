@@ -54,6 +54,10 @@ pub(crate) enum StaticLink {
         /// only as the root's fallback, so a flattening of the frame's chain
         /// records it too ([`Env::flattened_recording_program_scope`]).
         activation: Option<Arc<crate::env_capture_view::CaptureView>>,
+        /// Without `capture_first`: the names the frame's capture still
+        /// answers first -- a program-scope capture's nested-block lexicals
+        /// ([`Env::program_scope_block_names`], #13595).
+        capture_names: Option<Arc<rustc_hash::FxHashSet<Symbol>>>,
     },
 }
 
@@ -111,7 +115,12 @@ impl Env {
     // Cost: O(d), d = tiers of the caller chain walked to its deepest frame
     // root (bounded by MAX_OVERLAY_DEPTH); O(1) when the nearest caller frame
     // is linked already.
-    pub(crate) fn link_static_outer_to_unit(&mut self, capture_first: bool, activation: bool) {
+    pub(crate) fn link_static_outer_to_unit(
+        &mut self,
+        capture_first: bool,
+        activation: bool,
+        capture_names: Option<Arc<rustc_hash::FxHashSet<Symbol>>>,
+    ) {
         let activation = if activation {
             self.fallback.clone()
         } else {
@@ -152,6 +161,7 @@ impl Env {
                 target: seg,
                 capture_first,
                 activation,
+                capture_names,
             }));
         self.chain_has_static_link = true;
     }
@@ -231,6 +241,7 @@ impl Env {
                 target: Arc::clone(target),
                 capture_first: false,
                 activation: activation.clone(),
+                capture_names: None,
             })
         };
         let mut seg: Option<&Arc<Env>> = None;
@@ -355,6 +366,42 @@ impl Env {
     // Cost: O(1), plus the overlay's copy-on-write when it is shared.
     pub(crate) fn mark_program_scope_capture(&mut self) {
         self.cow_mut().mark_program_scope_capture();
+    }
+
+    /// Record on this program-scope capture the nested-block lexicals its
+    /// closure's frame answers from the capture first (#13595).
+    // Cost: O(1), plus the overlay's copy-on-write when it is shared.
+    pub(crate) fn set_program_scope_block_names(&mut self, names: rustc_hash::FxHashSet<Symbol>) {
+        if !names.is_empty() {
+            self.cow_mut()
+                .set_program_scope_block_names(Arc::new(names));
+        }
+    }
+
+    /// See [`Self::set_program_scope_block_names`].
+    // Cost: O(1).
+    pub(crate) fn program_scope_block_names(&self) -> Option<Arc<rustc_hash::FxHashSet<Symbol>>> {
+        self.inner.program_scope_block_names().cloned()
+    }
+
+    /// The plain user lexicals this env binds above the program scope's own
+    /// tier: those of the nested blocks running at program scope, which a
+    /// closure created here closes over (#13595). Empty in a call frame's
+    /// chain, which [`Self::chain_has_frame_root`] answers instead.
+    // Cost: O(n), n = entries of the tiers above the chain's tail.
+    pub(crate) fn block_lexicals_above_program_scope(&self) -> rustc_hash::FxHashSet<Symbol> {
+        let mut names = rustc_hash::FxHashSet::default();
+        let mut cur = self;
+        while let Some(parent) = cur.parent.as_deref() {
+            names.extend(
+                cur.inner
+                    .keys()
+                    .filter(|k| k.is_plain_user_lexical())
+                    .copied(),
+            );
+            cur = parent;
+        }
+        names
     }
 
     /// Whether this env is a capture marked by
@@ -483,12 +530,17 @@ impl Env {
     #[inline]
     pub(super) fn static_capture_hit(&self, key: Symbol) -> Option<&Value> {
         let StaticLink::UnitOuter {
-            capture_first: true,
+            capture_first,
+            capture_names,
             ..
-        } = self.inner.static_link()?
-        else {
+        } = self.inner.static_link()?;
+        if !*capture_first
+            && !capture_names
+                .as_ref()
+                .is_some_and(|names| names.contains(&key))
+        {
             return None;
-        };
+        }
         if !lexically_scoped(key) || suppressed() {
             return None;
         }

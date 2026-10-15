@@ -102,6 +102,11 @@ pub(crate) struct Tier {
     /// closure's lexical outer is the program scope, which the closure's frame
     /// then links to (ADR-12529 phase 3).
     program_scope_capture: bool,
+    /// On a [`Self::program_scope_capture`]: the lexicals of the nested
+    /// blocks the closure was created in (as cells), which the capture
+    /// answers ahead of the live program scope -- they shadow or outlive the
+    /// program scope's own bindings (#13595).
+    program_scope_block_names: Option<Arc<rustc_hash::FxHashSet<Symbol>>>,
     /// On a named sub's code object: the capture holds the cells of the
     /// activation that declared the sub (rakudo's `capturelex`), so the sub's
     /// frame resolves those names there first, past its callers and the
@@ -138,6 +143,7 @@ impl Clone for Tier {
             capture_sys: self.capture_sys.clone(),
             static_link: self.static_link.clone(),
             program_scope_capture: self.program_scope_capture,
+            program_scope_block_names: self.program_scope_block_names.clone(),
             activation_capture: self.activation_capture,
         }
     }
@@ -252,6 +258,7 @@ impl Tier {
             capture_sys: OnceLock::new(),
             static_link: None,
             program_scope_capture: false,
+            program_scope_block_names: None,
             activation_capture: false,
         }
     }
@@ -267,6 +274,21 @@ impl Tier {
     // Cost: O(1).
     pub(crate) fn mark_program_scope_capture(&mut self) {
         self.program_scope_capture = true;
+    }
+
+    /// See the `program_scope_block_names` field.
+    // Cost: O(1).
+    pub(crate) fn set_program_scope_block_names(
+        &mut self,
+        names: Arc<rustc_hash::FxHashSet<Symbol>>,
+    ) {
+        self.program_scope_block_names = Some(names);
+    }
+
+    /// See the `program_scope_block_names` field.
+    // Cost: O(1).
+    pub(crate) fn program_scope_block_names(&self) -> Option<&Arc<rustc_hash::FxHashSet<Symbol>>> {
+        self.program_scope_block_names.as_ref()
     }
 
     /// See the `activation_capture` field.

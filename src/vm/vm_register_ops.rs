@@ -1205,7 +1205,23 @@ impl Interpreter {
             // runs against the live env and keeps the plain copy.
             let at_program_scope = cc.static_name_lookup && !self.env().chain_has_frame_root();
             if cc.static_name_lookup && !at_program_scope {
-                self.box_locals_for_reflective_capture(code);
+                self.box_locals_for_reflective_capture(code, None);
+            }
+            // At program scope the closure's frame links to the live program
+            // scope, but the nested blocks it was created in are not part of
+            // it: their lexicals are shared as cells and answered from the
+            // capture first (#13595).
+            // An `is dynamic` lexical stays the dynamic scope's: `$CALLER::a`
+            // in the closure must reach its caller's `$a`.
+            let block_names = at_program_scope
+                .then(|| {
+                    let mut names = self.env().block_lexicals_above_program_scope();
+                    names.retain(|sym| !self.is_var_dynamic(sym.as_str()));
+                    names
+                })
+                .filter(|names| !names.is_empty());
+            if let Some(names) = &block_names {
+                self.box_locals_for_reflective_capture(code, Some(names));
             }
             // The creating frame's lexical scope, not its callers': a static
             // link in the chain hides what it skips (ADR-12529 phase 3).
@@ -1272,6 +1288,9 @@ impl Interpreter {
             // so its scalars need no cells.
             if at_program_scope {
                 flat.mark_program_scope_capture();
+                if let Some(names) = block_names {
+                    flat.set_program_scope_block_names(names);
+                }
             } else if self.env().runs_in_activation_frame() {
                 flat.mark_activation_capture();
             }
@@ -1374,13 +1393,21 @@ impl Interpreter {
     /// name through its capture, ahead of its callers, so a snapshot would miss
     /// the frame's later writes (ADR-12529 phase 3). Only a slot whose value is
     /// the name's visible env binding is boxed, since boxing rebinds the name.
+    /// `only`, when given, limits the boxing to those names.
     // Cost: O(l), l = the creating frame's locals.
-    fn box_locals_for_reflective_capture(&mut self, code: &CompiledCode) {
+    fn box_locals_for_reflective_capture(
+        &mut self,
+        code: &CompiledCode,
+        only: Option<&rustc_hash::FxHashSet<Symbol>>,
+    ) {
         if code.needs_cell_locals.is_empty() || code.locals_sym.len() != code.locals.len() {
             return;
         }
         for idx in 0..code.locals.len() {
             let sym = code.locals_sym[idx];
+            if only.is_some_and(|names| !names.contains(&sym)) {
+                continue;
+            }
             // Only the slot that is this name's visible binding: a name can
             // own several slots (one per shadowing block), and boxing puts the
             // cell under the name in the env as well.
