@@ -742,7 +742,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "univals", 1, 24),
     ("Str", "chrs", 1, 0),
     ("Str", "tclc", 1, 24),
-    ("Str", "Range", 1, 0),
     ("Str", "Complex", 1, 0),
     ("Str", "Version", 1, 56),
     ("Str", "Real", 1, 0),
@@ -1207,6 +1206,11 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // #10132: raku's `Any.^lookup("list")` is defined (`Any.list` wraps the
     // invocant in a one-element List).
     ("Any", "list", 1, 25),
+    ("Any", "List", 1, 25),
+    ("Any", "Array", 1, 25),
+    ("Any", "Slip", 1, 25),
+    ("Any", "Supply", 1, 25),
+    ("Mu", "Capture", 1, 24),
     ("Mu", "defined", 1, 24),
     ("Nil", "gist", 1, 0),
     ("Nil", "raku", 1, 0),

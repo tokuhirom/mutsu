@@ -610,7 +610,19 @@ pub(crate) fn shapeless_row(
     // `flat($levels)` is `Iterable`'s alone: `Any` declares only `flat()`.
     let iterable =
         ITERABLE_FOR_SHAPELESS.contains(&method.as_str()) || (arity == 1 && method == "flat");
-    let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str());
+    // `Cool.Complex` answers a lazy list's `X::Cannot::Lazy` and an unsettled
+    // `Seq`'s element count (§9.110); an instance or a type object with no
+    // shape is the interpreter's.
+    let lazy_complex = method == "Complex"
+        && matches!(
+            target.view(),
+            ValueView::LazyList(_)
+                | ValueView::Seq(_)
+                | ValueView::HyperSeq(_)
+                | ValueView::RaceSeq(_)
+                | ValueView::Slip(_)
+        );
+    let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()) || lazy_complex;
     let text = text || coerce;
     if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
         return None;
@@ -677,10 +689,19 @@ pub(crate) fn shapeless_row(
         // `pairs` and `hash` read as such (`any_views`, §9.109); its MRO has
         // no row that does.
         ValueView::Instance { class_name, .. }
-            if matches!(method.as_str(), "kv" | "pairs" | "hash")
+            if matches!(method.as_str(), "kv" | "pairs" | "hash" | "list")
                 && crate::value::types::is_stash_class_name(&class_name.resolve()) =>
         {
             any
+        }
+        // An instance of a built-in class with no shape (`Supply`) answers from
+        // its own class's row, which was written for it (§9.110); no MRO is
+        // needed to find it. Only a built-in class owns rows, so a user class
+        // never matches here.
+        ValueView::Instance { class_name, .. }
+            if class_name != "Failure" && super::owner_row(class_name, method, arity).is_some() =>
+        {
+            class_name
         }
         ValueView::Instance { class_name, .. } if class_name != "Failure" => {
             let mut owner = None;
@@ -709,8 +730,10 @@ pub(crate) fn shapeless_row(
                 if super::owner_row(class, method, arity).is_some() {
                     exhausted = false;
                     // A subclass of a built-in class that declares its own
-                    // `ACCEPTS` (`class DD is Date`) answers from that row.
-                    if method == "ACCEPTS" {
+                    // `ACCEPTS` (`class DD is Date`) answers from that row,
+                    // and so does an instance of the built-in class itself
+                    // that has no shape (`Supply.list`, §9.110).
+                    if method == "ACCEPTS" || class == class_name {
                         owner = Some(class);
                     }
                     break;

@@ -19,7 +19,8 @@ macro_rules! row {
             name: "Capture",
             arity: 0,
             handler: Handler::Pure(capture),
-            flags: RowFlags::NONE,
+            // `Int.Capture` cannot capture the type object either.
+            flags: RowFlags::TYPE_OBJECT_OK,
             named: &[],
         }
     };

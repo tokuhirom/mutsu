@@ -780,11 +780,9 @@ fn dispatch_capture(
         "is-lazy" => Some(Ok(Value::FALSE)),
         "perl" => crate::builtins::method_table::collection_render_names::raku(target, &[]),
         "WHAT" => Some(Ok(Value::package(Symbol::intern("Capture")))),
-        // `Any.List`/`Any.Seq`/`Any.flat` read `self.list`: the positional part.
-        "flat" | "Seq" | "List" => Some(Ok(match method {
-            "List" => Value::array(positional.to_vec()),
-            _ => Value::seq(positional.to_vec()),
-        })),
+        // `Any.flat`/`Any.Seq` read `self.list`: the positional part. (`List`
+        // is `Any`'s row, which reads it the same way.)
+        "flat" | "Seq" => Some(Ok(Value::seq(positional.to_vec()))),
         _ => None,
     }
 }

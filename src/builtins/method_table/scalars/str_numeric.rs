@@ -57,7 +57,15 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
 ];
 
 pub(super) static COOL_ROWS: &[MethodRow] = &[
-    narrow!("Cool", "Complex", cool_complex),
+    MethodRow {
+        owner: "Cool",
+        name: "Complex",
+        arity: 0,
+        handler: Handler::Narrow(cool_complex),
+        // A `Cool` type object is `0+0i` (`Str.Complex`).
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
     narrow!("Cool", "Failure", cool_failure),
     MethodRow {
         owner: "Cool",
@@ -200,6 +208,13 @@ fn cool_failure(target: &Value, _args: &[Value]) -> Option<Result<Value, Runtime
 /// `Cool.Complex`.
 // Cost: as `complex_of_cool`.
 fn cool_complex(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let ValueView::Package(name) = target.view() {
+        return super::numeric_coerce::complex_of_type_object(&name.resolve());
+    }
+    // A lazy list cannot count itself.
+    if crate::builtins::methods_0arg::is_lazy_count_source(target) {
+        return Some(Ok(crate::runtime::utils::cannot_lazy_failure("Complex")));
+    }
     complex_of_cool(target).map(Ok)
 }
 

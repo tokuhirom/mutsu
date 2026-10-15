@@ -40,6 +40,16 @@ pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
         // Supply (carrier), LazyList (lazy bridge), a Channel (its on-demand
         // receive Seq, #12727), and any Instance (Buf/Blob byte read, or the
         // generic 1-element wrap) are left to the interpreter.
+        // A list explicitly marked `.lazy` stays lazy (`(1,2,3).lazy.Seq.is-lazy`
+        // is `True`).
+        ValueView::LazyList(ll)
+            if ll
+                .env
+                .get("__mutsu_preserve_lazy_on_array_assign")
+                .is_some() =>
+        {
+            Some(target.clone())
+        }
         ValueView::LazyList(_) | ValueView::Channel(_) | ValueView::Instance { .. } => None,
         // A bare scalar becomes a one-element Seq (matches the interpreter's
         // `other => Seq([other])` tail).

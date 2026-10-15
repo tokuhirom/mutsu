@@ -2647,6 +2647,35 @@ Behaviour changes toward Rakudo, pinned in `t/oo/method/any-view-method-rows.t`:
 `X::Method::NotFound`; the recognition table gains `Any.invert`); `"x".IO.hash` is `X::Hash::Store::OddNumber` (was
 `X::Method::NotFound`). `method-rows-report.py --arms`: the pure arity cascades go from 108 arms to 92.
 
+### 9.110 Slice 5: `Any`'s list coercions, `Mu.Capture` and the type objects' coercions; `methods_0arg/coercion.rs` keeps only the zen slice (2026-10-15)
+
+`refactor/11276-coercion-arms`. The arms of `methods_0arg/coercion.rs` for `List`, `list`, `Array`, `Slip`, `Supply`, `Seq`,
+`Capture`, `Pair`, `Complex`, `isNaN` and `Range` are deleted, and the `List` arm of `dispatch_capture`. A census build (as
+in §9.109) found the receivers they answered: a `Range` (`List`, `Array`, `Slip`, `Supply`), an unsettled `Seq` (`List`, `list`), a
+`Supply` instance (`list`), `Int`/`Str` and the buffers, a lazy list, the quant hashes, a `Pair`, a stash, and type objects
+(`Int.List`, `Pair.Pair`, `Int.Complex`, `Int.isNaN`, `Any.Capture`). Each now reaches a row:
+
+1. **`Any`'s `List`, `list`, `Array`, `Slip` and `Supply`** (`method_table::collections::any_coerce`) carry the arms'
+   bodies and take a type object (`Int.List` is `((Int))`). A `Capture` is `self.list`, its positionals, which moves
+   `\(1, 2, :a(3)).Array`/`.Slip`/`.Supply` to Rakudo's answers. `Any.Supply` is `RANDOM` (a new `Supply` has an identity of its
+   own) and reads a hash as its pairs. `Seq` is **not** a row: a row answered `@a.Seq` at the call-site lane and lost the
+   array's element containers (`@a.Seq.map({ $_ = 5 })` must write through, `t/control/immutable-topic-receiver-oracle.t`,
+   red in CI's release run only), so the arm's one case (a `.lazy` list stays lazy) moved into the shared
+   `seq_coerce::to_seq_structural` that the interpreter and the VM already call.
+2. **`Mu.Capture`** is a row (`value_to_capture`), reaching the closed shapes through `MU_FOR_CLOSED_SHAPES`; `Any.Capture` is
+   `\()`. The capture-less scalars' `Capture` (`Int`, `Num`, `Str`, `Version`) take their type objects (`X::Cannot::Capture`).
+3. **Type objects**: `Pair.Pair`, `Int.isNaN` (so `Bool.isNaN`), the numbers' `Complex` and `Cool.Complex` take them
+   (`numeric_coerce::complex_of_type_object`, the arm's body); `Cool.Complex` also answers a lazy list's `X::Cannot::Lazy`.
+4. **An instance of a built-in class with no shape** (`Supply`) answers from its own class's row in `answer_shapeless`
+   (`Supply.list`); a stash reaches `Any.list`.
+
+Behaviour changes toward Rakudo, pinned in `t/oo/method/any-coerce-method-rows.t`: `"a".isNaN` is `X::Method::NotFound` (was
+`False`); `"abc".Range`, `[1, 2].Range` and `(1..3).Range` are `X::Method::NotFound` (Rakudo declares `Range` only on the
+numbers); `Any.Capture` is `\()` (was `\(Any)`); `Int.Capture` is `X::Cannot::Capture`. Left: `Uni.List` answers `(Uni)` where
+Rakudo reads `self.list` (the codepoints); a class type object's `Capture` answers `\(Foo)` where Rakudo cannot look up its
+attributes. `__mutsu_zen_angle` (the `<>` zen slice) stays: it is an internal name, not a method, and belongs to the compiler.
+`method-rows-report.py --arms`: the pure arity cascades go from 92 arms to 76.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
