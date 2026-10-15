@@ -949,14 +949,15 @@ impl Interpreter {
                 // that escaped the first must keep calling its own copy
                 // (#13550), so the call path prefers the captured Sub.
                 {
-                    let site = reg_fp.unwrap_or(idx as u64 ^ ((code as *const _ as usize) as u64));
+                    let code_addr = code as *const CompiledCode as usize;
+                    let site = reg_fp.unwrap_or(idx as u64 ^ code_addr as u64);
                     let key = Symbol::intern(&resolved_name);
                     let sites = &mut self.lexicals.block_lexical_sub_sites;
                     match sites.get_mut(&key) {
-                        Some(entry) if entry.0 != site => *entry = (site, true),
+                        Some(entry) if entry.0 != site => *entry = (site, true, code_addr),
                         Some(_) => {}
                         None => {
-                            sites.insert(key, (site, false));
+                            sites.insert(key, (site, false, code_addr));
                         }
                     }
                 }

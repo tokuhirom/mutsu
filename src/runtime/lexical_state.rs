@@ -352,9 +352,11 @@ pub(crate) struct LexicalState {
     /// second, different site has declared the same name since (#13550). A
     /// closure escaping the first site's routine must call its own captured
     /// Sub, not the registry's latest one, so a call by a `conflict` name
-    /// prefers the captured copy. Populated at registration; checked cheaply
+    /// prefers the captured copy, but only from a chunk other than the
+    /// declaring one (the third field): the env key outlives its block, so
+    /// the declaring chunk's own calls must keep using the registry. Populated at registration; checked cheaply
     /// (guarded by `is_empty()`) on each call.
-    pub(crate) block_lexical_sub_sites: std::collections::HashMap<Symbol, (u64, bool)>,
+    pub(crate) block_lexical_sub_sites: std::collections::HashMap<Symbol, (u64, bool, usize)>,
     /// Frame-lexical routines (ADR-0113) whose definition this interpreter
     /// has derived, keyed by the compile-time identity both their
     /// declaration and their call sites carry. A declaration derives its

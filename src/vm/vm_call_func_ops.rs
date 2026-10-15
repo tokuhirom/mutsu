@@ -591,7 +591,7 @@ impl Interpreter {
         // closure's captured copy is the lexical target, not the registry's
         // latest (#13550).
         if self
-            .block_lexical_sub_conflict(code.const_sym(name_idx))
+            .block_lexical_sub_conflict(code, code.const_sym(name_idx))
             .is_some()
         {
             return self.exec_call_on_code_var_op(
@@ -1799,9 +1799,19 @@ impl Interpreter {
     /// The captured copy of a block-lexical sub whose name several sites
     /// declare (`block_lexical_sub_sites`), when the running env holds one.
     // Cost: O(1) when no name conflicts; else one env lookup and a key format.
-    fn block_lexical_sub_conflict(&self, name: Symbol) -> Option<Value> {
+    fn block_lexical_sub_conflict(&self, code: &CompiledCode, name: Symbol) -> Option<Value> {
         let sites = &self.lexicals.block_lexical_sub_sites;
-        if sites.is_empty() || !sites.get(&name).is_some_and(|s| s.1) {
+        if sites.is_empty()
+            || !sites
+                .get(&name)
+                .is_some_and(|s| s.1 && s.2 != code as *const CompiledCode as usize)
+        {
+            return None;
+        }
+        // A `&name` parameter or `my &name` of the calling frame shadows it.
+        if self.find_local_slot(code, &format!("&{name}")).is_some()
+            || self.env().get(&format!("&{name}")).is_some()
+        {
             return None;
         }
         self.env()
@@ -1888,7 +1898,7 @@ impl Interpreter {
         // frame's env chain (see `OpCode::CallOnCodeVar::upvalue`).
         let captured = upvalue.and_then(|index| self.code_var_upvalue(code, index, name_idx));
         let conflict = if captured.is_none() && own_private_attr.is_none() {
-            self.block_lexical_sub_conflict(name_sym)
+            self.block_lexical_sub_conflict(code, name_sym)
         } else {
             None
         };
