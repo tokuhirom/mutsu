@@ -2678,7 +2678,7 @@ attributes. `__mutsu_zen_angle` (the `<>` zen slice) stays: it is an internal na
 
 ### 9.111 Slice 5: the prologue of `methods_0arg/mod.rs` answers through rows and receiver adapters (2026-10-16)
 
-`refactor/11276-0arg-prologue-arms`. Eighteen quoted-name arms of `methods_0arg/mod.rs`'s receiver-specific prologue are
+`refactor/11276-0arg-prologue-arms`. Twenty quoted-name arms of `methods_0arg/mod.rs`'s receiver-specific prologue are
 deleted. The census build of §9.109 (every arm logging the receiver it answered, over all of `t/` and the whitelisted roast)
 found which receivers still reached each; each now answers through a row or through a receiver adapter that existed for
 another kind:
@@ -2701,13 +2701,16 @@ another kind:
    blocks with their name lists are gone, and `.Pair` of a `Pair` subclass is the instance.
 6. **`True but False`** (a `Bool` whose only mixin is a `Bool`) is that `Bool` for every method: the four rendering arms
    become one receiver substitution, and `.Int`, `.Numeric` and `.not` follow the effective truth too, as in Rakudo.
+7. **Dead arms**: the `Nil` absorber (`Nil.message`, `.payload`, ...) and the lazy `Match`'s `Capture` were reached by no
+   receiver in the census: `Nil` absorbs the methods it does not define before native dispatch (`nil_absorbs_method`),
+   and a match's `Capture` is `Capture`'s row. The recognition rows `Exception.line`/`Exception.file` (mutsu's own,
+   Rakudo declares neither) go with the arm.
 
 Pinned in `t/oo/method/prologue-method-rows.t`. Left in the prologue, each for its own PR: `Uni`'s `chars`/`comb`
 (roast pins them on `NFC`/`NFD`, Rakudo declares neither, so no row can carry them) and `perl` (the rendering cascade has
 no `Uni` case); `CompUnit::DependencySpecification`, which has two representations (a native value whose `.^name` is
-`Any`, and an instance); `Distribution`, with the slow path's `methods_distribution.rs`; `IO::Path::Parts`; the lazy
-`Match`'s `Capture` (no receiver reached it in the census); `__mutsu_zen_angle` (the compiler's). `method-rows-report.py
---arms`: the pure arity cascades go from 76 arms to 58.
+`Any`, and an instance); `Distribution`, with the slow path's `methods_distribution.rs`; `IO::Path::Parts`; `__mutsu_zen_angle` (the
+compiler's). `method-rows-report.py --arms`: the pure arity cascades go from 76 arms to 56.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 

@@ -1,6 +1,6 @@
 # The zero-argument cascade's receiver prologue answers through rows
 
-Eighteen name-matching arms in front of the zero-argument method cascade are
+Twenty name-matching arms in front of the zero-argument method cascade are
 gone (ADR-11276 §9.111). `Unicode.version`/`Unicode.NFG` and `List.from`/`List.to`
 are method-table rows; a `Backtrace` and a `Capture` answer `Any`'s list methods
 on their frames and positionals, the way a `Match` already did; a user subclass
