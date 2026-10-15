@@ -2341,7 +2341,8 @@ impl Interpreter {
         rhs_elem: &Value,
         err: &mut Option<RuntimeError>,
     ) -> bool {
-        self.smart_match_into(lhs_elem, rhs_elem, err)
+        crate::vm::vm_smart_match::pure_smart_match(lhs_elem, rhs_elem)
+            .unwrap_or_else(|| self.smart_match_into(lhs_elem, rhs_elem, err))
     }
 
     /// Parse junction operators in :nth argument strings.
