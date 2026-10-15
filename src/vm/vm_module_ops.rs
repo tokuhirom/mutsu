@@ -9,6 +9,7 @@ impl Interpreter {
         name_idx: u32,
         tags_idx: Option<u32>,
         arg_count: u16,
+        lexical_set_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         // Pop the `use`-argument values pushed by the compiler (in source
@@ -51,8 +52,19 @@ impl Interpreter {
         // module with nothing to install. See the box's progress notes in
         // `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`.
         let f5_gen_before = self.registry().method_generation;
-        if let Err(err) = self.with_use_attach_depth(|vm| vm.vm_use_module_with_tags(module, &tags))
-        {
+        // ADR-8751 stage 1: a block-scoped `use` also binds what it imports
+        // into its lexical import set, for the call sites the block encloses.
+        let lexical_set = lexical_set_idx.map(|idx| code.const_sym(idx));
+        let capture = lexical_set.and_then(|id| self.begin_lexical_import_capture(id));
+        let loaded = self.with_use_attach_depth(|vm| vm.vm_use_module_with_tags(module, &tags));
+        if let (Some(id), Some(outer)) = (lexical_set, capture) {
+            if loaded.is_ok() {
+                self.finish_lexical_import_capture(id, outer);
+            } else {
+                self.module.lexical_import_capture = outer;
+            }
+        }
+        if let Err(err) = loaded {
             return Err(self.in_place_use_error(module, err));
         }
         // Shadow-only: confirms the claim above holds; does not affect

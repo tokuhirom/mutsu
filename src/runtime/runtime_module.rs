@@ -123,6 +123,7 @@ impl Interpreter {
     /// imports are meant to persist anyway.
     pub(crate) fn record_import_env_key(&mut self, key: &str) {
         let key_sym = Symbol::intern(key);
+        self.note_lexical_import_env_key(key_sym);
         let display = if let Some(term) = key.strip_prefix(crate::runtime::term_names::TERM_PREFIX)
         {
             // A sigilless term's env key (`\Y`); its pad name is bare.
@@ -154,6 +155,7 @@ impl Interpreter {
     /// declaration may replace this alias, while another declaration after
     /// that replacement remains a genuine redeclaration.
     pub(crate) fn record_imported_routine_alias(&mut self, package: &str, name: &str) {
+        self.note_lexical_import_routine(package, name);
         let alias = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
         // Only the importing compunit's own scope owns the import: a module
         // loaded while the importer's block is open records its own `use`s on

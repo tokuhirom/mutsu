@@ -5393,7 +5393,10 @@ impl Interpreter {
                     *arity,
                     *arg_sources_idx,
                     *bare_args,
-                    *upvalue,
+                    upvalue.map_or(
+                        super::vm_call_func_ops::CodeVarBinding::ByName,
+                        super::vm_call_func_ops::CodeVarBinding::Upvalue,
+                    ),
                     compiled_fns,
                 ) {
                     Ok(()) => {}
@@ -5405,6 +5408,15 @@ impl Interpreter {
                     }
                 }
                 *ip += 1;
+            }
+            // Cost: O(c) probe, c = enclosing `use`-blocks; on a hit O(a) plus the callee's
+            // body, a = arguments; on a miss nothing (the `CallFunc` at ip + 1 runs).
+            OpCode::LexImportCall { chain_idx } => {
+                if self.exec_lex_import_call_site(code, *ip, *chain_idx, compiled_fns)? {
+                    *ip += 2;
+                } else {
+                    *ip += 1;
+                }
             }
 
             _ => unreachable!("opcode routed to the wrong exec_ops group"),
@@ -7323,9 +7335,10 @@ impl Interpreter {
                 name_idx,
                 tags_idx,
                 arg_count,
+                lexical_set_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_use_module_op(code, *name_idx, *tags_idx, *arg_count)?;
+                self.exec_use_module_op(code, *name_idx, *tags_idx, *arg_count, *lexical_set_idx)?;
                 *ip += 1;
             }
             // Cost: O(x), x = exported symbols re-aliased per execution. Rakudo: O(1) at run time -- see #9170.

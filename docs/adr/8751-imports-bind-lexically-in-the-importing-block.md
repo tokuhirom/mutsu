@@ -2,8 +2,8 @@
 
 - **Status**: Accepted (2026-10-11, by tokuhirom). Supersedes
   [ADR-0108](0108-closure-must-pin-its-defining-blocks-routine-imports.md).
-  Stage 0 (the stopgap below) shipped in PR #12838; the lexical binding is
-  ADR-12529 phase 2 and is not implemented.
+  Stage 0 (the stopgap below) shipped in PR #12838 and is retired by stage 1,
+  whose slice 1 (the binding, for plain routines) is done; see §4.
 - **Date**: 2026-10-11
 - **Addresses**: [GitHub issue #8751](https://github.com/tokuhirom/mutsu/issues/8751)
 - **Related**: [ADR-12529](12529-frames-resolve-names-through-the-static-link.md)
@@ -105,6 +105,44 @@ Consequences that pin the design:
   `lexical_use_modules`, `imported_env_aliases` and the `ImportScope`
   registry snapshot are absent, #10419 and #9170's import remainder close, and
   a `use` inside a routine body no longer bumps `fn_resolve_gen` on every call.
+
+  **Slice 1 done** (`fix/8751-lexical-imports`): the binding half, for
+  plain routines. A module `use` in a block (an inline block, a loop body, a
+  routine or closure body) names a *lexical import set*, whose id is its
+  import list (module, tags, arguments), so a recompile of the block finds
+  the same set and every `use` of the same list shares it.
+  - The compiler opens the sets of a block's `use`s for the whole block
+    (`enter_lexical_use_block`, from `with_import_scope_region` and the
+    routine/closure body compilers), so a call site written *before* the
+    `use` sees them too; nested routines and closures inherit the chain
+    (`Compiler::lexical_import_chain`). The unit's own top level is no block
+    region: a top-level import stays the whole unit's, on the registry.
+  - The `UseModule` of such a `use` carries the set id
+    (`lexical_set_idx`). Its first run collects what the import installed
+    (`record_imported_routine_alias`, and the `&name` env keys a `sub EXPORT`
+    writes) and binds each plain routine into `ModuleState::lexical_import_sets`:
+    a hook's code object as it is, an `is export` routine as its
+    `FunctionDef`, which is then called as the registry alias was
+    (`compile_and_call_qualified_def`). A code object built at import time
+    instead captured the importing frame's view of the module's file-scope
+    lexicals per routine, so one routine's rebind of such a lexical
+    (`$snaps := ...`) was lost to its siblings.
+  - A bareword call under a non-empty chain gets an `OpCode::LexImportCall`
+    prefix ahead of its `CallFunc` (named arguments stay in-band). On a hit
+    it calls the bound routine through the code-variable call path
+    (`CodeVarBinding::Bound` / `Routine`) and skips the `CallFunc`, ahead of every cache
+    and of the importing unit's own `&name`; on a miss it falls through.
+  - Stage 0's `lexical_use_modules` registry probe is deleted.
+
+  Fixed: a closure, a named sub or a nested closure made in the block keeps
+  the import after it exited and when the importing unit has a routine of
+  the same name; one made before the `use` sees it; the Deps same-name
+  wrapper. Pinned by `t/modules/import-export/use-in-block-binds-lexically.t`.
+  Left for stage 1: the import still installs registry aliases for the
+  block's dynamic extent, so a callee written outside the block sees it
+  (acceptance 4, `todo` in that test), and `ImportScope`/
+  `imported_env_aliases` stay until those aliases go; a `use` in a method
+  body opens no set yet; a multi family keeps the registry path (stage 2).
 - **Stage 2 (phase 2, dispatcher values).** Imported multis, protos and
   operators.
 
