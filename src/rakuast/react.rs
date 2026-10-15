@@ -136,7 +136,7 @@ pub(super) fn lower_supply(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if block.class != RakuAstClass::Block {
         return Err(super::lower::unsupported(node));
     }
-    Ok(crate::parser::supply_block(lower_block(block)?))
+    super::lower::with_block_scope(block, |body| Ok(crate::parser::supply_block(body)))
 }
 
 /// `done`, as the bare call rakudo parses it to.

@@ -32,7 +32,7 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     super::shadowed_terms::scan(node);
     super::declared_routines::scan(node);
     super::infix_func::reset();
-    let mut stmts = lower_stmts(node)?;
+    let mut stmts = crate::parser::with_rakuast_lexical_scope(|| lower_stmts(node))?;
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
     // positions, and there is no parser here. Run the same scope authority the
@@ -98,6 +98,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                 // The body of a `unit module` is the rest of the unit, which
                 // the parser leaves beside the declaration.
                 let rest = take_unit_package_body(&mut stmt);
+                crate::parser::register_rakuast_user_sub_binding(&stmt);
                 stmts.push(stmt);
                 stmts.extend(rest);
             }
@@ -2412,8 +2413,20 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// Lower a `Block` (`body => Blockoid` wrapping a positional `StatementList`) to a
 /// statement list.
 pub(super) fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
-    let blockoid = named_child(block, "body")?;
-    lower_stmts(named_child_or_positional(blockoid)?)
+    with_block_scope(block, Ok)
+}
+
+/// Lower a block while its lexical declarations remain visible to its caller.
+// Cost: O(n), n = size of the block.
+pub(super) fn with_block_scope<T>(
+    block: &RakuAstNode,
+    f: impl FnOnce(Vec<Stmt>) -> Result<T, RuntimeError>,
+) -> Result<T, RuntimeError> {
+    crate::parser::with_rakuast_lexical_scope(|| {
+        let blockoid = named_child(block, "body")?;
+        let body = lower_stmts(named_child_or_positional(blockoid)?)?;
+        f(body)
+    })
 }
 
 /// A nameless `Method` / `Submethod` -> `parser::anon_method_expr` over its

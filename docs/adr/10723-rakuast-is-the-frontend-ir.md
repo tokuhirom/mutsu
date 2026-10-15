@@ -1207,3 +1207,13 @@ body. Rakudo renders those as separate statements in the supply's block. The
 statement-list converter now recognizes this exact two-statement expansion
 and renders both nodes; lowering then rebuilds the supply body and its emitter
 rewrite. Other synthetic blocks remain unchanged.
+
+### 6.60 S10: lexical `&emit` in supply blocks (2026-10-15)
+
+RakuAST lowering reconstructs a supply expansion after the parser has left the
+lexical scopes that classified `emit` and `done`. Lowering now maintains a
+temporary parser lexical scope for each block and registers its lowered code
+bindings as statements are read. The supply expansion is rebuilt while its
+body's scope is active, so a lexical `&emit` keeps shadowing the supply
+rewrite. The same mechanism covers enclosing block declarations and lexical
+sub declarations without changing how ordinary parsing builds a supply.

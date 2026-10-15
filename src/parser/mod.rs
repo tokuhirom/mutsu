@@ -39,6 +39,40 @@ pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::modifier::for_modifier_loop_params;
 pub(crate) use stmt::modifier::rewrite_placeholder_block_modifier_stmt;
 pub(crate) use stmt::sub::{INDIRECT_DECL_NAME, op_prec_trait};
+
+/// Lowered RakuAST blocks need the same lexical user-sub view the parser had
+/// while it rewrote syntax such as `emit` inside a `supply` body.
+// Cost: O(1), excluding the closure.
+pub(crate) fn with_rakuast_lexical_scope<T>(f: impl FnOnce() -> T) -> T {
+    stmt::simple::push_scope();
+    struct ScopeGuard;
+    impl Drop for ScopeGuard {
+        fn drop(&mut self) {
+            stmt::simple::pop_scope();
+        }
+    }
+    let guard = ScopeGuard;
+    let result = f();
+    drop(guard);
+    result
+}
+
+/// Register a lexical code variable as the parser does before lowering the
+/// following statements in the same RakuAST block.
+// Cost: O(1).
+pub(crate) fn register_rakuast_user_sub_binding(stmt: &crate::ast::Stmt) {
+    match stmt {
+        crate::ast::Stmt::VarDecl { name, .. } => {
+            if let Some(name) = name.strip_prefix('&') {
+                stmt::simple::register_user_sub(name);
+            }
+        }
+        crate::ast::Stmt::SubDecl { name, .. } => {
+            stmt::simple::register_user_sub(name.resolve().as_str());
+        }
+        _ => {}
+    }
+}
 pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;
