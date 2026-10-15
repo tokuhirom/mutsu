@@ -299,7 +299,9 @@ fn truth(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
     let ValueView::Capture { positional, named } = target.view() else {
         return None;
     };
-    Some(Ok(Value::truth(!positional.is_empty() || !named.is_empty())))
+    Some(Ok(Value::truth(
+        !positional.is_empty() || !named.is_empty(),
+    )))
 }
 
 /// `.Seq` and `.flat`: the positional part as a `Seq` (`self.list.Seq`).
