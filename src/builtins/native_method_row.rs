@@ -1384,14 +1384,7 @@ mod tests {
                 chain.iter().any(|t| t.as_str() == "Exception"),
                 "{owner}'s dispatch_owner_chain should reach Exception now it is register_x'd: {chain:?}"
             );
-            for name in [
-                "message",
-                "gist",
-                "Str",
-                "backtrace",
-                "throw",
-                "resume",
-            ] {
+            for name in ["message", "gist", "Str", "backtrace", "throw", "resume"] {
                 assert_ne!(
                     native_method_arities(sample, name) & 1,
                     0,
