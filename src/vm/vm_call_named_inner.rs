@@ -758,6 +758,12 @@ impl Interpreter {
                 if unchanged {
                     continue;
                 }
+                // A compile-time contextual (`$?CLASS`, `$?LINE`, ...) names
+                // the code it is written in; the callee's value is never the
+                // caller's, as on the light paths (`finish_positional_light_env`).
+                if k.with_str(|s| s.starts_with('?')) {
+                    continue;
+                }
                 // A callee sigilless parameter's alias entry describes the
                 // callee's own binding: when the caller has a same-named
                 // sigilless parameter, merging it back would retarget the
