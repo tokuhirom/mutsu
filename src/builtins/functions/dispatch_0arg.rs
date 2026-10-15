@@ -6,10 +6,22 @@ use crate::value::{RuntimeError, Value};
 /// `nano` term and `nqp::time`.
 // Cost: O(1).
 pub(crate) fn epoch_nanos() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX))
-        .unwrap_or(0)
+    // `SystemTime::now()` panics on wasm32-unknown-unknown, and
+    // `Interpreter::new` reads this for the local UTC offset, so every wasm
+    // program died before running. The host clock (plus the cooperative
+    // scheduler's virtual offset) is what `time` and `now` already answer.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| i64::try_from(d.as_nanos()).unwrap_or(i64::MAX))
+            .unwrap_or(0)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // `as` saturates for out-of-range floats.
+        (crate::value::current_time_secs_f64() * 1e9) as i64
+    }
 }
 
 pub(crate) fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeError>> {
