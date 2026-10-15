@@ -394,12 +394,13 @@ pub(crate) fn native_method_0arg_cascade(
         {
             return Some(Ok(str_val.clone()));
         }
-        // A Bool with a mixed-in Bool override and nothing else (`True but
-        // False`) is that Bool for every method, as in Rakudo (`.Str`, `.Int`,
-        // `.not` and `.raku` all follow the effective truth, ADR-11276
-        // §9.111).
+        // A Bool with a mixed-in Bool override and no `Str` or role mixin
+        // (`True but False`) is that Bool for every method, as in Rakudo
+        // (`.Str`, `.Int`, `.not` and `.raku` all follow the effective truth,
+        // ADR-11276 §9.111).
         if matches!(inner.as_ref().view(), ValueView::Bool(_))
-            && mixins.keys().count() == 1
+            && mixins.get("Str").is_none()
+            && !mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
             && let Some(ValueView::Bool(b)) = mixins.get("Bool").map(Value::view)
         {
             return native_method_0arg(&Value::truth(b), method_sym);
