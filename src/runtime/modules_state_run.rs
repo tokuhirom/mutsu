@@ -4,6 +4,7 @@ pub(crate) mod declarator_docs;
 pub(crate) mod dispatch_state;
 pub(crate) mod io_state;
 pub(crate) mod lexical_state;
+pub(crate) mod lexical_imports;
 pub(crate) mod module_state;
 mod prelude_source;
 pub(crate) mod published_mixins;

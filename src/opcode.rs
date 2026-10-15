@@ -4431,7 +4431,21 @@ pub(crate) enum OpCode {
         /// before this op (`use Foo "a", "b"` / `use Foo <a b c>`). Popped by
         /// the VM and handed to the module's `sub EXPORT`, if any.
         arg_count: u16,
+        /// For a `use` below the unit's top level, the constant-pool index of
+        /// its lexical import set's id (ADR-8751 stage 1): the routines this
+        /// import binds are recorded there, for the call sites the block
+        /// lexically encloses ([`Self::LexImportCall`]).
+        lexical_set_idx: Option<u32>,
     },
+    /// Prefix of the [`Self::CallFunc`] at `ip + 1`, emitted for a bareword
+    /// call lexically inside a block that `use`s a module (ADR-8751 stage 1).
+    /// `chain_idx` indexes `CompiledCode::lexical_import_chains`: the import
+    /// sets of the enclosing `use`-blocks, innermost first. When one of them
+    /// binds the callee's name, this op makes the call through that binding
+    /// (the import wins over the importing unit's own routine of the name)
+    /// and skips the `CallFunc`; otherwise it falls through to it. Stack: as
+    /// the `CallFunc`.
+    LexImportCall { chain_idx: u32 },
     /// `import Module :TAGS`: import the exports of an already-loaded module.
     /// Stack: `[] → []`. Operands as [`Self::UseModule`]; runs the runtime
     /// `import_module`.
@@ -6979,11 +6993,10 @@ pub(crate) struct CompiledCode {
     /// the entire (~100-entry) captured env. Empty until `compute_free_vars`
     /// runs (during `compute_needs_env_sync`).
     pub(crate) free_var_syms: Vec<Symbol>,
-    /// Modules `use`d by a block lexically enclosing this code (or by its own
-    /// body), outside the unit's top level. A bareword call here resolves their
-    /// exported routines first, so a closure keeps the import after the block's
-    /// dynamic import scope has popped (#8751).
-    pub(crate) lexical_use_modules: Vec<Symbol>,
+    /// The lexical import chains of this code's [`OpCode::LexImportCall`]
+    /// sites: per site, the ids of the import sets of the `use`-blocks
+    /// lexically enclosing it, innermost first (ADR-8751 stage 1).
+    pub(crate) lexical_import_chains: Vec<Vec<Symbol>>,
     /// §1.3 closure-capture slot bake: parallel to `free_var_syms`, the CREATING
     /// frame's compile-time local slot for each free variable (`local_map` at the
     /// closure's emit point, baked by `Compiler::add_closure_code_baked`), or
@@ -8181,7 +8194,7 @@ impl CompiledCode {
             for_loop_param_syms: rustc_hash::FxHashSet::default(),
             expr_declared_syms: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
-            lexical_use_modules: Vec::new(),
+            lexical_import_chains: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),
             outer_ref_names: Vec::new(),

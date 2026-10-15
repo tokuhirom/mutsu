@@ -372,6 +372,8 @@ impl Compiler {
         sub_compiler.record_param_local_slots(params, param_defs);
         let import_scope_idx = Self::has_use_stmt(body)
             .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
+        // The body's own `use`s bind lexically in it (ADR-8751).
+        sub_compiler.enter_lexical_use_block(body);
         // Hoist sub declarations within the sub body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
@@ -1323,11 +1325,7 @@ impl Compiler {
         self.inherit_fold_ctx(&mut sub_compiler);
         self.inherit_outer_code_var_names(&mut sub_compiler);
         self.inherit_enclosing_scopes(&mut sub_compiler);
-        // A method or anonymous `sub` body keeps calling a block's routine by
-        // name; only a block-like closure reads it as a binding.
-        if !is_routine {
-            self.inherit_block_lexsubs(&mut sub_compiler);
-        }
+        self.inherit_block_lexsubs(&mut sub_compiler);
         sub_compiler.user_listop_shadows = self.user_listop_shadows.clone();
         sub_compiler.is_routine = is_routine;
         // Make the names of all constants visible at this closure's definition
@@ -1465,6 +1463,8 @@ impl Compiler {
         // return or exception.
         let import_scope_idx = Self::has_use_stmt(body)
             .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
+        // The body's own `use`s bind lexically in it (ADR-8751).
+        sub_compiler.enter_lexical_use_block(body);
         // Hoist sub declarations within the closure body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);

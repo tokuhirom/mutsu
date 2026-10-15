@@ -1597,10 +1597,32 @@ impl Interpreter {
                     continue;
                 }
                 let bare = ks.rsplit('\0').next().unwrap_or(ks);
+                // A sigil-qualified key (`%items`, stored for a private
+                // declaration that collides with a public `@.items`) belongs
+                // to that sigil alone; the bare key then belongs to the other
+                // declaration, so a `%!items` binding must not replace it.
+                let (bare, key_sigil) = match bare.as_bytes() {
+                    [c @ (b'@' | b'%'), ..] if bare.len() > 1 => (&bare[1..], Some(*c)),
+                    _ => (bare, None),
+                };
                 let mut best: Option<(usize, &Value)> = None;
                 for &(rbare, rank, v) in &readings {
                     if rbare != bare || best.is_some_and(|(b, _)| b <= rank) {
                         continue;
+                    }
+                    let reading_sigil = match rank {
+                        3 | 4 => Some(b'@'),
+                        5 | 6 => Some(b'%'),
+                        _ => None,
+                    };
+                    match (key_sigil, reading_sigil) {
+                        (Some(k), r) if r != Some(k) => continue,
+                        (None, Some(r))
+                            if cell_map.contains_key(format!("{}{bare}", r as char).as_str()) =>
+                        {
+                            continue;
+                        }
+                        _ => {}
                     }
                     // The BARE candidate is the dangerous one: unlike `!x`/`@.x`,
                     // it is a name an ordinary lexical or parameter can also
@@ -2568,7 +2590,12 @@ impl Interpreter {
                             || (name.starts_with("%!") || name.starts_with("%.")))
                             && name.len() > 2
                         {
-                            attr_get(&name[2..]).unwrap_or(Value::NIL)
+                            // A private declaration colliding with a public one
+                            // of another sigil lives under `<sigil>bare`.
+                            let sigil_key = format!("{}{}", &name[..1], &name[2..]);
+                            attr_get(&sigil_key)
+                                .or_else(|| attr_get(&name[2..]))
+                                .unwrap_or(Value::NIL)
                         }
                         // Outer env (read-only, no deep clone)
                         else if let Some(val) =
