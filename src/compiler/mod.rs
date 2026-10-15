@@ -1361,6 +1361,13 @@ pub(crate) struct Compiler {
     /// `native_rw_params` and inherited the same way.
     native_ro_params: HashSet<String>,
     compiled_functions: CompiledFns,
+    /// The lexicals this unit's nested blocks declare (`pop_local_scope`),
+    /// and the routines declared at the unit's top level whose bodies name
+    /// lexicals by string. When the unit's compile finishes, each such
+    /// routine records the block-only names as hidden from its view of the
+    /// program scope (`CompiledCode::unit_hidden_lexicals`, #13604).
+    unit_block_lexicals: HashSet<String>,
+    unit_reflective_sub_keys: Vec<crate::symbol::Symbol>,
     current_package: String,
     /// True when compiling inside a `unit module`/`unit class`/`unit role`
     /// body. Used to pre-qualify class/role declarations with the package
@@ -2026,6 +2033,8 @@ impl Compiler {
             native_rw_params: HashSet::new(),
             native_ro_params: HashSet::new(),
             compiled_functions: CompiledFns::default(),
+            unit_block_lexicals: HashSet::new(),
+            unit_reflective_sub_keys: Vec::new(),
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
@@ -2487,7 +2496,7 @@ impl Compiler {
     }
 
     pub(super) fn bake_sub_decl_free_var_slots(
-        &self,
+        &mut self,
         keys: &[crate::symbol::Symbol],
     ) -> Vec<(crate::symbol::Symbol, u32)> {
         let mut out: Vec<(crate::symbol::Symbol, u32)> = Vec::new();
@@ -2556,8 +2565,52 @@ impl Compiler {
                     out.push((sym, *slot));
                 }
             }
+            self.unit_reflective_sub_keys.extend_from_slice(keys);
         }
         out
+    }
+
+    /// Record on each routine [`Self::unit_reflective_sub_keys`] names the
+    /// lexicals declared only in this unit's nested blocks: the program scope
+    /// binds them while such a block runs, and a routine declared at the top
+    /// level must not see them by string (#13604). A name the top level also
+    /// declares is the routine's own outer lexical and stays visible. The set
+    /// is recorded even when empty: it also marks the routine as one whose
+    /// lexical outer is the unit's top level, which hides a block-scoped
+    /// `use`'s imports at call time.
+    // Cost: O(b + r * c), b = block-declared names, r = such routines, c = the
+    // cost of copying one routine's compiled function.
+    fn record_unit_hidden_lexicals(&mut self) {
+        if self.unit_reflective_sub_keys.is_empty() {
+            return;
+        }
+        let top = self.local_scopes.get(self.unit_root_scope);
+        let mut names: Vec<&String> = self
+            .unit_block_lexicals
+            .iter()
+            .filter(|name| {
+                crate::env::is_user_variable_key(name)
+                    && !name.starts_with("__")
+                    && !top.is_some_and(|frame| frame.contains_key(*name))
+            })
+            .collect();
+        names.sort();
+        let hidden: std::sync::Arc<rustc_hash::FxHashSet<crate::symbol::Symbol>> =
+            std::sync::Arc::new(
+                names
+                    .into_iter()
+                    .map(|name| crate::symbol::Symbol::intern(name))
+                    .collect(),
+            );
+        for key in std::mem::take(&mut self.unit_reflective_sub_keys) {
+            let Some(cf) = self.compiled_functions.get(&key) else {
+                continue;
+            };
+            let mut cf = CompiledFunction::clone(cf);
+            std::sync::Arc::make_mut(&mut cf.code).unit_hidden_lexicals =
+                Some(std::sync::Arc::clone(&hidden));
+            self.compiled_functions.insert(key, cf);
+        }
     }
 
     /// The slots of `baked` (a [`Self::bake_sub_decl_free_var_slots`] result)
@@ -3147,6 +3200,10 @@ impl Compiler {
             return;
         };
         let depth = self.local_scopes.len();
+        // A nested block of the unit (the popped frame sat above its root).
+        if !self.in_lexical_scope && depth > self.unit_root_scope {
+            self.unit_block_lexicals.extend(frame.keys().cloned());
+        }
         self.import_scope_levels.retain(|&level| level <= depth);
         self.scope_routine_decls
             .retain(|&(level, _)| level <= depth);
@@ -4879,6 +4936,7 @@ impl Compiler {
                 }
             }
         }
+        self.record_unit_hidden_lexicals();
         self.code.compute_needs_env_sync();
         (self.code, self.compiled_functions)
     }

@@ -299,6 +299,9 @@ impl Env {
                 && let Some(parent) = cur.parent.as_deref()
             {
                 target = Some(std::ptr::from_ref(parent.program_scope_from()));
+                if let Some(names) = cur.inner.unit_hidden() {
+                    hidden.extend(names.iter().copied());
+                }
             } else if let Some(link) = cur.inner.static_link() {
                 let StaticLink::UnitOuter { target: seg, .. } = link;
                 target = Some(Arc::as_ptr(seg));
@@ -467,6 +470,34 @@ impl Env {
         debug_assert!(self.frame_root, "only a frame root has a static link");
         self.outer_is_unit = true;
         self.chain_has_static_link = true;
+    }
+
+    /// Hide `hidden` from this marked frame root's view of the program scope
+    /// ([`Self::mark_outer_is_unit`]): the plain user lexicals the program
+    /// scope binds that the running code's lexical outer does not declare --
+    /// a mainline block's `my` that does not enclose the routine, or a
+    /// variable a block-scoped `use` imported (#13604). `None` clears it.
+    // Cost: O(1), plus the overlay's copy-on-write when it is shared.
+    pub(crate) fn set_unit_hidden(&mut self, hidden: Option<Arc<rustc_hash::FxHashSet<Symbol>>>) {
+        debug_assert!(self.frame_root, "only a frame root has a static link");
+        if hidden.is_none() && self.inner.unit_hidden().is_none() {
+            return;
+        }
+        self.cow_mut().set_unit_hidden(hidden);
+    }
+
+    /// Whether a lookup of `key` that missed this frame root stops here
+    /// instead of continuing at the program scope: the root is marked
+    /// [`Self::mark_outer_is_unit`] and hides `key` ([`Self::set_unit_hidden`]).
+    // Cost: O(1).
+    #[inline]
+    pub(super) fn static_hides(&self, key: Symbol) -> bool {
+        self.outer_is_unit
+            && !suppressed()
+            && self
+                .inner
+                .unit_hidden()
+                .is_some_and(|hidden| hidden.contains(&key))
     }
 
     /// Whether this env is a call frame's root (`Env::scoped_child`), which

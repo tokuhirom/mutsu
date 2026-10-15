@@ -2538,6 +2538,11 @@ impl Env {
                 if let Some(v) = cur.static_capture_hit(key) {
                     return Some(v);
                 }
+                if cur.static_hides(key) {
+                    // A program-scope binding the running code cannot see:
+                    // the lookup ends with what a capture gave (#13604).
+                    return found;
+                }
                 if let Some(outer) = cur.static_skip(key) {
                     cur = outer;
                     continue;

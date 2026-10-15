@@ -6862,6 +6862,14 @@ pub(crate) struct CompiledCode {
     /// of lexicals skip the caller frames (ADR-12529 phase 3,
     /// `env::static_link`). Set by the sub-body compile.
     pub(crate) outer_is_unit: bool,
+    /// On a routine declared at a compunit's top level whose body names
+    /// lexicals by string (`static_name_lookup`): the plain user lexicals
+    /// (env keys) declared only in the unit's nested blocks. The program scope
+    /// may bind them while a block calls the routine, but they are not in its
+    /// lexical outer, so its frame hides them (`Env::set_unit_hidden`,
+    /// #13604). `None` for any other code. Set when the unit's compile
+    /// finishes.
+    pub(crate) unit_hidden_lexicals: Option<Arc<rustc_hash::FxHashSet<Symbol>>>,
     /// Whether this code READS the legacy argument array `@_`.
     ///
     /// This is the one thing that lets a routine accept more positional
@@ -8189,6 +8197,7 @@ impl CompiledCode {
             writes_topic: false,
             declared_in_routine: false,
             outer_is_unit: false,
+            unit_hidden_lexicals: None,
             reads_args_array: false,
             reads_args_hash: false,
             has_env_writes: false,

@@ -173,6 +173,7 @@ impl Interpreter {
         // path binds no parameters, so nothing after it reads the caller.
         if outer_is_unit && caller_env.is_some() {
             self.env_mut().mark_outer_is_unit();
+            self.hide_unit_names_from_frame(&cf.code);
         }
         if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
