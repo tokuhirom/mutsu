@@ -82,6 +82,13 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::IoSpecCygwin => type_sample("IO::Spec::Cygwin"),
         DispatchShape::IoSpecQnx => type_sample("IO::Spec::QNX"),
         DispatchShape::Unicode => type_sample("Unicode"),
+        DispatchShape::IoPathParts => {
+            let mut attributes = crate::value::AttrMap::new();
+            attributes.insert("volume".to_string(), Value::str_from(""));
+            attributes.insert("dirname".to_string(), Value::str_from("/a"));
+            attributes.insert("basename".to_string(), Value::str_from("b.txt"));
+            Value::make_instance(Symbol::intern("IO::Path::Parts"), attributes)
+        }
         DispatchShape::IoHandle => {
             let mut attributes = crate::value::AttrMap::new();
             attributes.insert("handle".to_string(), Value::int(-1));

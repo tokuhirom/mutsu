@@ -1589,6 +1589,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Attribute", "defined", 1, 0),
     ("IO::Path::Parts", "AT-KEY", 2, 48),
     ("IO::Path::Parts", "AT-POS", 2, 48),
+    ("IO::Path::Parts", "flat", 1, 56),
     ("Capture", "list", 1, 48),
     ("Capture", "hash", 1, 48),
     ("Capture", "AT-KEY", 2, 16),

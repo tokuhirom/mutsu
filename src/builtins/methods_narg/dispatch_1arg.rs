@@ -312,26 +312,6 @@ fn native_method_1arg_cascade(
                         }
                         Some(Ok(Value::int(0)))
                     }
-                    // IO::Path::Parts does Positional: `$parts[0]` is `volume => C:`,
-                    // `[1]` the dirname pair, `[2]` the basename pair (fixed order).
-                    // ADR-0021 I2: a data-minted pair defaults positional, not the
-                    // named-argument marker flavour `Value::pair` mints — else `say
-                    // $parts[0]` (no call-site fat-arrow) silently filters it out as
-                    // an in-band named marker (#9820).
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if class_name == "IO::Path::Parts" => {
-                        Some(Ok(crate::runtime::io_path_parts_keys()
-                            .get(idx)
-                            .map(|key| {
-                                let v =
-                                    attributes.as_map().get(*key).cloned().unwrap_or(Value::NIL);
-                                Value::value_pair(Value::str((*key).to_string()), v)
-                            })
-                            .unwrap_or(Value::NIL)))
-                    }
                     // `Any.AT-POS` for an instance read by the subscript
                     // opcode, which has no interpreter for `Any`'s row: an
                     // instance without a positional protocol is the
@@ -377,19 +357,6 @@ fn native_method_1arg_cascade(
             // subclass's raw storage): the associative rows' implementation.
             ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
                 crate::builtins::method_table::subscript::at_key(target, std::slice::from_ref(arg))
-            }
-            // IO::Path::Parts does Associative: `$parts<volume>` returns the part.
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "IO::Path::Parts" => {
-                let key = arg.to_string_value();
-                Some(Ok(attributes
-                    .as_map()
-                    .get(&key)
-                    .cloned()
-                    .unwrap_or(Value::NIL)))
             }
             // `Nil` answers every method with itself.
             ValueView::Nil => Some(Ok(Value::NIL)),
