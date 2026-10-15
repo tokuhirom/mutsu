@@ -32,6 +32,8 @@ pub(crate) struct SigillessDecl<'a> {
     /// parser declares it first and binds `x` to its variable, which `expr`
     /// then names.
     pub declarator: Option<&'a Stmt>,
+    /// `my \name .= method` uses an `Initializer::CallAssign` in RakuAST.
+    pub call_assign: Option<(&'a crate::symbol::Symbol, &'a [Expr])>,
 }
 
 /// The sigilless declaration `stmt` is the parser's expansion of, if it is one.
@@ -54,10 +56,58 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
         let decl = expansion(bind)?;
         return (matches!(decl.expr, Expr::Var(v) if v == inner)).then_some(SigillessDecl {
             declarator: Some(declarator),
+            call_assign: None,
             ..decl
         });
     }
-    expansion(stmts)
+    if let Some(decl) = expansion(stmts) {
+        return Some(decl);
+    }
+    // `my \name .= method` is stored as the initialized variable plus its
+    // readonly marker. The parser's call-assignment expansion has no traits.
+    let [
+        Stmt::VarDecl {
+            name,
+            expr:
+                expr @ Expr::MethodCall {
+                    target,
+                    name: method,
+                    args,
+                    modifier: None,
+                    quoted: false,
+                    sugar: false,
+                },
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags,
+            custom_traits,
+            where_constraint: None,
+        },
+        Stmt::MarkSigillessReadonly(marked),
+    ] = stmts.as_slice()
+    else {
+        return None;
+    };
+    if name != marked
+        || !matches!(&**target, Expr::BareWord(value) if value == "Mu")
+        || !export_tags.is_empty()
+        || !custom_traits.is_empty()
+    {
+        return None;
+    }
+    Some(SigillessDecl {
+        name,
+        expr,
+        type_constraint: None,
+        is_state: false,
+        is_our: false,
+        assigned: true,
+        declarator: None,
+        call_assign: Some((method, args)),
+    })
 }
 
 /// The statements of the parser's sigilless expansion, read back.
@@ -109,5 +159,6 @@ fn expansion(stmts: &[Stmt]) -> Option<SigillessDecl<'_>> {
         is_our: *is_our,
         assigned: assigned?,
         declarator: None,
+        call_assign: None,
     })
 }

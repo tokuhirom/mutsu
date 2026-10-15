@@ -2625,13 +2625,22 @@ fn term_declaration(
     fields.push(node_field(Some("name"), name_from_identifier(decl.name)));
     fields.push(node_field(
         Some("initializer"),
-        RakuAstNode {
-            class: if decl.assigned {
-                RakuAstClass::InitializerAssign
-            } else {
-                RakuAstClass::InitializerBind
+        match decl.call_assign {
+            Some((method, args)) => RakuAstNode {
+                class: RakuAstClass::InitializerCallAssign,
+                fields: vec![node_field(
+                    None,
+                    method_call_postfix(&method.resolve(), args, None, false)?,
+                )],
             },
-            fields: vec![node_field(None, term_initializer(decl)?)],
+            None => RakuAstNode {
+                class: if decl.assigned {
+                    RakuAstClass::InitializerAssign
+                } else {
+                    RakuAstClass::InitializerBind
+                },
+                fields: vec![node_field(None, term_initializer(decl)?)],
+            },
         },
     ));
     Ok(RakuAstNode {
