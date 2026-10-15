@@ -756,8 +756,8 @@ pub(crate) fn native_method_0arg_cascade(
         };
     }
     // Capture methods
-    if let ValueView::Capture { positional, named } = target.view()
-        && let result @ Some(_) = dispatch_capture(target, positional, named, method)
+    if let ValueView::Capture { positional, .. } = target.view()
+        && let result @ Some(_) = dispatch_capture(target, positional, method)
     {
         return result;
     }
@@ -776,23 +776,19 @@ pub(crate) fn native_method_0arg_cascade(
 fn dispatch_capture(
     target: &Value,
     positional: &[Value],
-    named: &ValueMap,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
     // The rest of `Capture`'s methods are rows (`method_table::capture`).
     match method {
         "Hash" => crate::builtins::method_table::capture::hash_coerce(target, &[]),
-        "Int" => crate::builtins::method_table::capture::elems(target, &[]),
         "is-lazy" => Some(Ok(Value::FALSE)),
         "perl" => crate::builtins::method_table::collection_render_names::raku(target, &[]),
-        "Bool" => Some(Ok(Value::truth(
-            !positional.is_empty() || !named.is_empty(),
-        ))),
         "WHAT" => Some(Ok(Value::package(Symbol::intern("Capture")))),
-        "flat" | "Seq" | "List" => {
-            let cap = Value::capture(positional.to_vec(), named.clone());
-            Some(Ok(Value::seq(vec![cap])))
-        }
+        // `Any.List`/`Any.Seq`/`Any.flat` read `self.list`: the positional part.
+        "flat" | "Seq" | "List" => Some(Ok(match method {
+            "List" => Value::array(positional.to_vec()),
+            _ => Value::seq(positional.to_vec()),
+        })),
         _ => None,
     }
 }
