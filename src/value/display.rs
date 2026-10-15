@@ -759,9 +759,6 @@ impl Value {
                 crate::value::EnumValue::Str(s) => s.to_string(),
                 _ => key.resolve(),
             },
-            ValueView::CompUnitDepSpec { short_name } => {
-                format!("CompUnit::DependencySpecification({})", short_name)
-            }
             ValueView::Package(s) => {
                 let resolved = s.resolve();
                 if is_nameless_anon_type_name(&resolved) {

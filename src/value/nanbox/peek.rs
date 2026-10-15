@@ -1268,9 +1268,6 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             Kind::HyperWhatever => ValueView::HyperWhatever,
             Kind::Bool => ValueView::Bool(inline_payload(bits) != 0),
             Kind::Package => ValueView::Package(Symbol::from_id(inline_payload(bits))),
-            Kind::CompUnitDepSpec => ValueView::CompUnitDepSpec {
-                short_name: Symbol::from_id(inline_payload(bits)),
-            },
         }
     }
 }

@@ -649,7 +649,6 @@ impl Value {
             | (ValueView::Version { .. }, ValueView::Version { .. })
             | (ValueView::Nil, ValueView::Nil)
             | (ValueView::Package(_), ValueView::Package(_))
-            | (ValueView::CompUnitDepSpec { .. }, ValueView::CompUnitDepSpec { .. })
             | (ValueView::Junction { .. }, ValueView::Junction { .. })
             | (ValueView::Promise(_), ValueView::Promise(_))
             | (ValueView::Channel(_), ValueView::Channel(_))

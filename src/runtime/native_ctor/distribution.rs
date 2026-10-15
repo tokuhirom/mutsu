@@ -115,25 +115,21 @@ impl Interpreter {
                     "CompUnit::DependencySpecification.new: :short-name is required",
                 )
             })?;
-            if auth_matcher.is_some() || version_matcher.is_some() || api_matcher.is_some()
-            {
-                let mut attrs = HashMap::new();
-                attrs.insert("short-name".to_string(), Value::str(short_name));
-                if let Some(a) = auth_matcher {
-                    attrs.insert("auth-matcher".to_string(), Value::str(a));
-                }
-                if let Some(v) = version_matcher {
-                    attrs.insert("version-matcher".to_string(), Value::str(v));
-                }
-                if let Some(a) = api_matcher {
-                    attrs.insert("api-matcher".to_string(), Value::str(a));
-                }
-                return Ok(Value::make_instance(
-                    Symbol::intern("CompUnit::DependencySpecification"),
-                    attrs,
-                ));
+            let mut attrs = HashMap::new();
+            attrs.insert("short-name".to_string(), Value::str(short_name));
+            if let Some(a) = auth_matcher {
+                attrs.insert("auth-matcher".to_string(), Value::str(a));
             }
-            Ok(Value::comp_unit_dep_spec(Symbol::intern(&short_name)))
+            if let Some(v) = version_matcher {
+                attrs.insert("version-matcher".to_string(), Value::str(v));
+            }
+            if let Some(a) = api_matcher {
+                attrs.insert("api-matcher".to_string(), Value::str(a));
+            }
+            Ok(Value::make_instance(
+                Symbol::intern("CompUnit::DependencySpecification"),
+                attrs,
+            ))
     }
 
     /// `Distribution::Path`.

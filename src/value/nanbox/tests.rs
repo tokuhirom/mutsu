@@ -445,9 +445,6 @@ fn every_variant_roundtrips_losslessly() {
             }),
             true,
         ),
-        ValueRepr::CompUnitDepSpec {
-            short_name: Symbol::intern("Test::Module"),
-        },
         ValueRepr::Package(Symbol::intern("Foo::Bar")),
         ValueRepr::Routine {
             package: Symbol::intern("Main"),
@@ -697,9 +694,6 @@ fn payload_free_kinds_survive_clone_and_drop_without_payload_op() {
         ValueRepr::Bool(true),
         ValueRepr::Bool(false),
         ValueRepr::Package(crate::symbol::Symbol::intern("Int")),
-        ValueRepr::CompUnitDepSpec {
-            short_name: crate::symbol::Symbol::intern("Test"),
-        },
     ];
     for repr in payload_free {
         let expect = format!("{repr:?}");
