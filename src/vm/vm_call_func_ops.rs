@@ -587,23 +587,6 @@ impl Interpreter {
                 compiled_fns,
             );
         }
-        // A block-lexical sub declared at several sites under one name: the
-        // closure's captured copy is the lexical target, not the registry's
-        // latest (#13550).
-        if self
-            .block_lexical_sub_conflict(code, code.const_sym(name_idx))
-            .is_some()
-        {
-            return self.exec_call_on_code_var_op(
-                code,
-                name_idx,
-                arity,
-                arg_sources_idx,
-                false,
-                None,
-                compiled_fns,
-            );
-        }
         // An argument-less `callsame` / `nextsame` that nothing shadows goes
         // straight to the builtin (see `vm_call_dispatcher_builtin`). With no
         // real arguments there are no argument sources to honour.
@@ -1796,29 +1779,6 @@ impl Interpreter {
         Ok(())
     }
 
-    /// The captured copy of a block-lexical sub whose name several sites
-    /// declare (`block_lexical_sub_sites`), when the running env holds one.
-    // Cost: O(1) when no name conflicts; else one env lookup and a key format.
-    fn block_lexical_sub_conflict(&self, code: &CompiledCode, name: Symbol) -> Option<Value> {
-        let sites = &self.lexicals.block_lexical_sub_sites;
-        if sites.is_empty()
-            || !sites
-                .get(&name)
-                .is_some_and(|s| s.1 && s.2 != code as *const CompiledCode as usize)
-        {
-            return None;
-        }
-        // A `&name` parameter or `my &name` of the calling frame shadows it.
-        if self.find_local_slot(code, &format!("&{name}")).is_some()
-            || self.env().get(&format!("&{name}")).is_some()
-        {
-            return None;
-        }
-        self.env()
-            .get(&format!("{}{name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX))
-            .cloned()
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_on_code_var_op(
         &mut self,
@@ -1897,12 +1857,7 @@ impl Interpreter {
         // by upvalue index rather than resolving the name through the running
         // frame's env chain (see `OpCode::CallOnCodeVar::upvalue`).
         let captured = upvalue.and_then(|index| self.code_var_upvalue(code, index, name_idx));
-        let conflict = if captured.is_none() && own_private_attr.is_none() {
-            self.block_lexical_sub_conflict(code, name_sym)
-        } else {
-            None
-        };
-        let mut target = match captured.or(own_private_attr).or(conflict) {
+        let mut target = match captured.or(own_private_attr) {
             Some(v) => v,
             None => match self.declared_scope_amp_var_for(code, &name) {
                 Some(v) => v,
