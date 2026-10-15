@@ -11305,7 +11305,9 @@ impl CompiledCode {
     /// closure never mutates is ever a candidate.
     fn op_upvalue_read_const_idx(op: &OpCode) -> Option<u32> {
         match op {
-            OpCode::GetGlobal(idx) => Some(*idx),
+            OpCode::GetGlobal(idx) | OpCode::GetArrayVar(idx) | OpCode::GetHashVar(idx) => {
+                Some(*idx)
+            }
             _ => None,
         }
     }
@@ -11386,11 +11388,32 @@ impl CompiledCode {
             .filter(|sym| {
                 sym.with_str(|s| {
                     crate::env::is_plain_user_lexical(s)
-                        && !s.starts_with(['@', '%', '&'])
+                        && !s.starts_with('&')
                         && !own.contains(s)
+                        // `%$h` / `@$a` read through `GetHashVar("%h")`, which
+                        // falls back to this code's own bare `h`: not free.
+                        && !s
+                            .strip_prefix(['@', '%'])
+                            .is_some_and(|bare| own.contains(bare))
                 })
             })
             .collect();
+        // A container whose own name this code loads as a string constant is
+        // addressed by name at run time: an atomic helper (`cas(@a[0], ...)`
+        // compiles to `__mutsu_cas_array_elem("@a", @a, ...)`) writes the env
+        // binding, which an upvalue snapshot would not see.
+        let mut eligible = eligible;
+        if !eligible.is_empty() {
+            for op in &self.ops {
+                if let OpCode::LoadConst(idx) = op
+                    && let Some(ValueView::Str(name)) =
+                        self.constants.get(*idx as usize).map(Value::view)
+                    && name.starts_with(['@', '%'])
+                {
+                    eligible.remove(&Symbol::intern(&name));
+                }
+            }
+        }
         if eligible.is_empty() && eligible_code.is_empty() {
             return;
         }
