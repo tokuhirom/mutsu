@@ -590,7 +590,10 @@ impl Interpreter {
         // A block-lexical sub declared at several sites under one name: the
         // closure's captured copy is the lexical target, not the registry's
         // latest (#13550).
-        if self.block_lexical_sub_conflict(code.const_sym(name_idx)).is_some() {
+        if self
+            .block_lexical_sub_conflict(code.const_sym(name_idx))
+            .is_some()
+        {
             return self.exec_call_on_code_var_op(
                 code,
                 name_idx,
