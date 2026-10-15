@@ -78,7 +78,7 @@ pub(crate) use instances::{
 };
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
-    str_args, str_numeric, str_search, truth, uni, unicode,
+    str_args, str_numeric, str_search, truth, uni,
 };
 
 pub(crate) use collections::accepts_open::accepts_by_smartmatch;
