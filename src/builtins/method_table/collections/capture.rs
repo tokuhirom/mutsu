@@ -51,6 +51,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Capture", "elems", elems),
     row!("Capture", "Numeric", elems),
     row!("Capture", "Bool", truth),
+    // Rakudo reaches these through `Any`/`Mu` (`Any.List` is `self.list`, `Any.Seq`
+    // and `Any.flat` read it, `Mu.perl` is the deprecated `raku`); a closed
+    // shape does not reach them, so the Capture answers them itself.
+    row!("Capture", "Hash", hash_coerce),
+    row!("Capture", "List", list),
+    row!("Capture", "Seq", seq),
+    row!("Capture", "flat", seq),
+    row!("Capture", "perl", perl),
     MethodRow {
         owner: "Capture",
         name: "AT-POS",
@@ -292,6 +300,21 @@ fn truth(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
         return None;
     };
     Some(Ok(Value::truth(!positional.is_empty() || !named.is_empty())))
+}
+
+/// `.Seq` and `.flat`: the positional part as a `Seq` (`self.list.Seq`).
+// Cost: O(p), p = positional arguments.
+fn seq(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Capture { positional, .. } = target.view() else {
+        return None;
+    };
+    Some(Ok(Value::seq(positional.to_vec())))
+}
+
+/// `.perl`: the deprecated spelling of `.raku`.
+// Cost: O(n), n = parts of the capture.
+fn perl(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    crate::builtins::method_table::collection_render_names::raku(target, args)
 }
 
 /// `.AT-POS($pos)`: the positional argument at `pos` (`Nil` past the end), a
