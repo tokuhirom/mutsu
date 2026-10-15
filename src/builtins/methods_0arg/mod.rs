@@ -625,28 +625,6 @@ pub(crate) fn native_method_0arg_cascade(
             method,
         ));
     }
-    // Uni types: the rows of `builtins::method_table::uni` answer the rest.
-    // `.chars`, `.comb` and `.perl` (the deprecated alias of `.raku`) have no
-    // row.
-    if let ValueView::Uni(u) = target.view() {
-        match method {
-            // `chars` is no `Uni` method in current Rakudo, but roast pins it as the
-            // codepoint count (`S15-string-types/NF-types.t`: `NFC.chars`).
-            "chars" => return Some(crate::builtins::method_table::uni::elems(target, &[])),
-            "perl" => {
-                return Some(Ok(Value::str(raku_repr::uni_raku_repr(&u.text(), &u.form))));
-            }
-            "comb" => {
-                let parts: Vec<Value> = u
-                    .text()
-                    .chars()
-                    .map(|c| Value::str(c.to_string()))
-                    .collect();
-                return Some(Ok(Value::seq(parts)));
-            }
-            _ => {}
-        }
-    }
     // CompUnit::DependencySpecification methods
     if let ValueView::CompUnitDepSpec { short_name } = target.view() {
         return match method {

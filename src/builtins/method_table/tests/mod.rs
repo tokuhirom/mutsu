@@ -351,6 +351,9 @@ fn rows_are_declared_by_rakudo() {
     let undeclared: Vec<String> = rows()
         // `DESTROY` is a submethod: Rakudo's `.^method_table` does not list it.
         .filter(|row| row.name != "DESTROY")
+        // Roast pins `NFC.chars`/`NFC.comb` (`S15-string-types/NF-types.t`),
+        // which current Rakudo no longer declares (ADR-11276 §9.116).
+        .filter(|row| !(row.owner == "Uni" && matches!(row.name, "chars" | "comb")))
         .filter(|row| {
             let owner =
                 match crate::builtins::builtin_type_methods::canonical_builtin_owner(row.owner) {

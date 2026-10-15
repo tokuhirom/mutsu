@@ -34,6 +34,11 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("list", 0, Handler::Pure(list)),
     row!("gist", 0, Handler::Pure(gist)),
     row!("raku", 0, Handler::Pure(raku)),
+    // `chars` and `comb` are no `Uni` methods in current Rakudo, but roast pins
+    // them (`S15-string-types/NF-types.t`: `NFC.chars` is the codepoint count,
+    // `NFC.comb` the codepoints as strings); ADR-11276 §9.116.
+    row!("chars", 0, Handler::Pure(elems)),
+    row!("comb", 0, Handler::Pure(comb)),
     // `Uni:D: Int:D $pos`; any other index is `Any`'s (`index_arg`).
     row!("AT-POS", 1, Handler::Narrow(at_pos), RowFlags::INDEX_ARG),
     row!(
@@ -136,4 +141,15 @@ pub(crate) fn exists_pos(target: &Value, args: &[Value]) -> Option<Result<Value,
     let uni = uni_of(target).ok()?;
     let index = index_of(&args[0])?;
     Some(Ok(Value::truth((0..uni.len() as i64).contains(&index))))
+}
+
+/// `Uni.comb` (roast's, not Rakudo's): each codepoint as a one-character `Str`.
+// Cost: O(n), n = codepoints.
+fn comb(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let parts = uni_of(target)?
+        .text()
+        .chars()
+        .map(|c| Value::str(c.to_string()))
+        .collect();
+    Ok(Value::seq(parts))
 }
