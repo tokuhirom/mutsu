@@ -163,7 +163,7 @@ Consequences that pin the design:
 - **Stage 2 (phase 2, dispatcher values).** Imported multis, protos and
   operators.
 
-  **Slice 1 done** (`fix/8751-method-body-import-set`, 2026-10-15):
+  **Slice 1 done** (`fix/8751-import-multis-operators`, 2026-10-15):
   - **Multis bind as dispatcher values.** A multi family a block-scoped
     `use` imports binds in the set as its dispatcher value
     (`sub_value_from_multi_candidates`), built from the candidates the
