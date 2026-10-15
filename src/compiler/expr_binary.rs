@@ -991,6 +991,7 @@ impl Compiler {
             self.compile_expr(left);
             self.compile_expr(right);
             let op_name = super::helpers::token_kind_to_op_name(op);
+            self.emit_lex_import_infix(&op_name);
             let name_idx = self.code.add_constant(Value::str(op_name));
             self.code.emit(OpCode::InfixFunc {
                 name_idx,

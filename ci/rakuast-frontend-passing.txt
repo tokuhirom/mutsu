@@ -2875,6 +2875,8 @@ t/modules/import-export/use-if-begin-time.t
 t/modules/import-export/use-if-false-undeclared-routine.t
 t/modules/import-export/use-if-pragma.t
 t/modules/import-export/use-in-block-binds-lexically.t
+t/modules/import-export/use-in-block-binds-multis-lexically.t
+t/modules/import-export/use-in-block-binds-operators-lexically.t
 t/modules/import-export/use-in-block-env-scope.t
 t/modules/import-export/use-in-do-block-is-scoped.t
 t/modules/import-export/use-in-nested-block-is-begin-time.t
