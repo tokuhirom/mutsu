@@ -756,7 +756,7 @@ pub(crate) fn native_method_0arg_cascade(
         };
     }
     // Capture methods
-    if let ValueView::Capture { positional, named } = target.view()
+    if let ValueView::Capture { positional, .. } = target.view()
         && let result @ Some(_) = dispatch_capture(target, positional, method)
     {
         return result;
