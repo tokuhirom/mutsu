@@ -284,7 +284,9 @@ pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
         }
         let (rest, _) = ws1(rest)?;
         let (rest, mut stmt) = class_decl_body(rest, false)?;
-        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
+        if let Some(Stmt::ClassDecl { custom_traits, .. }) =
+            crate::ast::package_header::declaration_mut(&mut stmt)
+        {
             custom_traits.push(declare_how_marker(kw));
         }
         return Ok((rest, stmt));

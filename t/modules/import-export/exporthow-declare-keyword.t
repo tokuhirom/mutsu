@@ -14,7 +14,7 @@ use DeclareShout;
 use DeclareClassHow;
 use DeclareMyClassHow;
 
-plan 11;
+plan 13;
 
 shouter Greeter {
     method greet() { "hello" }
@@ -25,6 +25,15 @@ is Greeter.new.greet, "HELLO",
     'a method of a DECLARE-declared class went through the HOW compose wrap';
 is Greeter.new.part("ann"), "BYE, ANN",
     'the compose wrap applies to every local method (args pass through)';
+
+shouter VersionedGreeter:ver<1.2.3> {
+    method greet() { "hello" }
+}
+is VersionedGreeter.new.greet, "HELLO",
+    'a DECLARE class with :ver keeps its HOW compose hook';
+is VersionedGreeter.^ver, v1.2.3,
+    'a DECLARE class with :ver keeps its version metadata';
+
 ok Greeter.HOW ~~ MetamodelX::ShoutHOW,
     ".HOW of a DECLARE'd class is an instance of the module's HOW type";
 is Greeter.HOW.^name, 'MetamodelX::ShoutHOW',
