@@ -1049,6 +1049,31 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `DoesVar`, so the variable is boxed into a shared cell and the store goes
    through it.
 
+   **Slice 19 done** (`fix/13604-reflective-sub-captures-visible-lexicals`,
+   first half of #13604): §1.3 at program scope. A mainline sub that named a
+   lexical by string (`EVAL '$q'`, `::('$q')`), called from a block with its
+   own `my $q`, read the block's `$q`. Its static link targets the program
+   scope's env, and a block at program scope writes its declarations there.
+
+   Two changes fix it:
+   - **Capture.** Such a sub now captures every lexical visible at its
+     declaration into its ADR-0024 bucket, not only its free variables. The
+     compiler bakes them into `free_var_decl_slots` when a body has
+     `static_name_lookup`, and the registration captures them. Names the
+     body declares itself (its `my`s and parameters) are left out, because
+     the bucket answers ahead of the frame.
+   - **One chokepoint.** `::('$q')` reads and `::('$q') = v` stores now go
+     through the same chokepoint as a `$q` read
+     (`get_env_with_main_alias`, `unit_lexical_slot`), not the raw env.
+     `IndirectTypeLookupStore` now counts as reflective access, as the read
+     already did.
+
+   Still open on #13604:
+   - A name declared only in a block that does not enclose the sub
+     (`if True { my $z }` calling `sub { EVAL '$z' }`) is still visible.
+     That needs a hidden set on the static link.
+   - A block-scoped `use`'s imported variables have the same leak.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
