@@ -825,6 +825,16 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::PointyBlock => {
             let (mut names, mut defs) = signature_positional_params(block)?;
             name_for_unpack_params(&mut names, &mut defs);
+            // The parser spells a sigilless loop parameter of a multi-parameter
+            // loop by its term key (`-> \k, \v` is `params: ["\\k", "\\v"]`,
+            // ADR-12441); the compiler keys the loop variable by that name.
+            if defs.len() > 1 {
+                for (name, def) in names.iter_mut().zip(&defs) {
+                    if def.sigilless && *name == def.name {
+                        *name = def.storage_name().into_owned();
+                    }
+                }
+            }
             match defs.len() {
                 // `for @x -> { … }`: a pointy block with no signature.
                 0 => {
@@ -2500,7 +2510,21 @@ pub(super) fn infix_is_assignment(node: &RakuAstNode) -> bool {
 /// boundary, as the converter never renders one.
 fn infix_is_bind_to_variable(node: &RakuAstNode) -> bool {
     infix_is_bind(node)
-        && named_child(node, "left").is_ok_and(|left| variable_spelling(left).is_ok())
+        && named_child(node, "left")
+            .is_ok_and(|left| variable_spelling(left).is_ok() || term_target_key(left).is_some())
+}
+
+/// The storage key of a bareword assignment target, `t` in `t = 5` /
+/// `t := $x`: the term key `\t` a sigilless binding lives under
+/// (ADR-12441), or `None` when `left` is not a plain `Term::Name`.
+fn term_target_key(left: &RakuAstNode) -> Option<String> {
+    if left.class != RakuAstClass::TermName {
+        return None;
+    }
+    match name_parts::name_shape(named_child_or_positional(left).ok()?) {
+        Some(NameShape::Identifier(name)) => Some(crate::runtime::term_names::term_key(&name)),
+        _ => None,
+    }
 }
 
 /// Whether an `ApplyInfix`'s infix is a plain `:=`.
@@ -2645,6 +2669,9 @@ fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError
     if super::anon_state::is_anonymous(left) {
         let name = super::anon_state::assign_target(left)?;
         return Ok((name, lower_expr(named_child(node, "right")?)?));
+    }
+    if let Some(key) = term_target_key(left) {
+        return Ok((key, lower_expr(named_child(node, "right")?)?));
     }
     let raw = variable_spelling(left).map_err(|_| unsupported(node))?;
     let name = match raw.strip_prefix('$') {
