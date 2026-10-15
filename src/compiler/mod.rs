@@ -1765,7 +1765,7 @@ pub(crate) struct Compiler {
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
     /// Set just before compiling a `VarDecl` that declares a sigilless TERM
-    /// (`my \\x`, a `with`/`if` pointy `-> \\x`): the parser spells it bare,
+    /// (`my \x`, a `with`/`if` pointy `-> \x`): the parser spells it bare,
     /// like a scalar `my $x`, and this is what stores it under the term key
     /// instead (ADR-12441).
     decl_is_term: bool,
@@ -3765,7 +3765,7 @@ impl Compiler {
         // (`*%h`) consumes none, so it must not shift the params after it.
         let mut positional_slot = 0usize;
         for (i, p) in params.iter().enumerate() {
-            // Sigilless params are prefixed with \\ by the parser, which is
+            // Sigilless params are prefixed with \ by the parser, which is
             // their term-key storage name (ADR-12441).
             let actual_name = p.to_string();
             // A slurpy binds a *list*, not one chunk element: `*%h`/`+%h` gets the

@@ -59,15 +59,16 @@ impl Interpreter {
         // an outer symbol of the same name.
         // A named alias (`:d(:$dir)`) names a caller key only, not a body variable,
         // so there is nothing to shadow -- and `d` may be a sibling positional `$d`.
+        let storage = pd.storage_name();
         let saved_self = if !pd.name.is_empty() && !pd.named_alias {
-            let prev = self.env.get(&pd.name).cloned();
+            let prev = self.env.get(&storage).cloned();
             let shadow = pd
                 .type_constraint
                 .as_deref()
                 .filter(|c| !crate::qualified::is_type_capture(c))
                 .and_then(|c| self.resolve_type_object(c))
                 .unwrap_or(Value::NIL);
-            self.env.insert(pd.name.clone(), shadow);
+            self.env.insert(storage.to_string(), shadow);
             Some(prev)
         } else {
             None
@@ -79,10 +80,10 @@ impl Interpreter {
         if let Some(prev) = saved_self {
             match prev {
                 Some(v) => {
-                    self.env.insert(pd.name.clone(), v);
+                    self.env.insert(storage.to_string(), v);
                 }
                 None => {
-                    self.env.remove(&pd.name);
+                    self.env.remove(&storage);
                 }
             }
         }

@@ -2620,7 +2620,11 @@ impl Interpreter {
                                         .or_else(|| varref_from_value(val).map(|(name, _)| name))
                                 })
                                 .filter(|s| {
-                                    s.as_bytes()
+                                    // A sigilless source is named by its term
+                                    // key (`\c`, ADR-12441).
+                                    crate::runtime::term_names::term_spelling(s)
+                                        .unwrap_or(s)
+                                        .as_bytes()
                                         .first()
                                         .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
                                 });
@@ -3111,7 +3115,11 @@ impl Interpreter {
                                     .as_bytes()
                                     .first()
                                     .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
+                            // A sigilless source is named by its term key
+                            // (`\c`, ADR-12441).
                             let source_is_plain_scalar = source_name
+                                .strip_prefix(crate::runtime::term_names::TERM_PREFIX)
+                                .unwrap_or(&source_name)
                                 .as_bytes()
                                 .first()
                                 .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
@@ -3362,7 +3370,7 @@ impl Interpreter {
                     // detach HERE or `@b.push` inside the sub would reach the
                     // caller's `@a`.
                     if is_copy {
-                        // A sigilless parameter (`\\value`) records an env-level
+                        // A sigilless parameter (`\value`) records an env-level
                         // alias to its caller so assignments propagate through the
                         // raw binding. An `is copy` parameter with the same bare
                         // name must start a new, detached binding instead. Leaving

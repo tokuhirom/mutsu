@@ -562,7 +562,7 @@ fn where_constraint_matches(
     let saved = interpreter.env.clone();
     interpreter.env.insert("_".to_string(), candidate.clone());
     if !pd.name.is_empty() {
-        interpreter.env.insert(pd.name.clone(), candidate.clone());
+        interpreter.env.insert(pd.storage_name().into_owned(), candidate.clone());
     }
     let ok = match where_expr {
         Expr::AnonSub { body, .. } => {

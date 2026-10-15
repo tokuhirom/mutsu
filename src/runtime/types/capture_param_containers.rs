@@ -66,8 +66,10 @@ impl Interpreter {
         // sources are reference types whose mutations are already shared, and
         // `self`, twigil and dynamic spellings are not caller lexicals a cell
         // may replace.
+        // A sigilless source is named by its term key (`\c`, ADR-12441).
         let plain_scalar = source != "self"
-            && source
+            && crate::runtime::term_names::term_spelling(&source)
+                .unwrap_or(&source)
                 .as_bytes()
                 .first()
                 .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');

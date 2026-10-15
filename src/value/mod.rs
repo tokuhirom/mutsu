@@ -3205,7 +3205,7 @@ pub struct RegexClosure {
     /// regexes keep `source_tree` as `None` until dynamic tree nodes exist.
     pub source_tree: Option<Arc<crate::regex_tree::RegexTree>>,
     /// The signature an *anonymous* declarator term carried
-    /// (`token ($x) { $x \\d+ }`). A regex is a routine, so its parameters
+    /// (`token ($x) { $x \d+ }`). A regex is a routine, so its parameters
     /// have to ride along with the value: there is no named `token_defs`
     /// entry to look them up on, and a subrule reference (`<&$re('a')>`)
     /// binds them at match time — see

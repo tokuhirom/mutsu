@@ -67,7 +67,7 @@ impl Compiler {
     }
 
     /// Seed a recompile of `origin`'s body with the terms it reads from its
-    /// enclosing scopes: a free variable under a term key (`\\c`, a
+    /// enclosing scopes: a free variable under a term key (`\c`, a
     /// sigilless binding, ADR-12441) makes the recompiled bare `c` that
     /// binding, as it was in `origin`, instead of a bareword lookup.
     // Cost: O(f), f = `origin`'s free variables.

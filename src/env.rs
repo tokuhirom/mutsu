@@ -174,7 +174,7 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
     // and must be droppable when it is not free — kept unconditionally, a stale
     // outer `$self` would shadow the routine-local one a nested closure captures.
     // A dynamic key like `"$*x"` still has decider `*`, so it stays kept.
-    // A term key (`\\x`, a sigilless binding or constant, ADR-12441) is
+    // A term key (`\x`, a sigilless binding or constant, ADR-12441) is
     // decided like a sigiled key, by the character after its prefix.
     let decider = if matches!(first, b'@' | b'%' | b'&' | b'$' | b'\\') {
         b.get(1).copied()
