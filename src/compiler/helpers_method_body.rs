@@ -138,6 +138,7 @@ impl Compiler {
         if let Some(frame) = &self.role_param_scope {
             method_compiler.enclosing_scopes.push(frame.clone());
         }
+        method_compiler.role_type_param_names = self.role_type_param_names.clone();
         // `method m($self: $n)` names its invocant param `self`, so it binds the
         // plain `"self"` key; a `$self` read in the body must resolve to it
         // rather than to the reserved lexical key (ADR-0061). An *anonymous*

@@ -1897,6 +1897,13 @@ impl Compiler {
                 runtime_bound.insert(crate::symbol::Symbol::intern(&n));
             }
         }
+        // A role's type parameters are bound when the role method runs.
+        for name in &sub_compiler.role_type_param_names {
+            runtime_bound.insert(crate::symbol::Symbol::intern(name));
+            runtime_bound.insert(crate::symbol::Symbol::intern(
+                name.trim_start_matches(['$', '@', '%', '&']),
+            ));
+        }
         sub_compiler.code.compute_upvalues(&runtime_bound);
         // See the twin call in `compile_sub_body` (#10827).
         self.absorb_outer_captures(&sub_compiler.code);

@@ -1277,6 +1277,11 @@ pub(crate) struct Compiler {
     /// is composed -- so its methods do not link to the program scope
     /// (`CompiledCode::outer_is_unit`, ADR-12529).
     in_role_body: bool,
+    /// The role type parameters (`role R[@l, %d, $v]`) around the code being
+    /// compiled. The composed class binds them when a role method runs, so a
+    /// role method or a closure in it never captures them as upvalues of the
+    /// frame that created it (ADR-0039 §4.2, #9895).
+    role_type_param_names: Vec<String>,
     /// Index (within `local_scopes`) of this compilation UNIT's outermost scope —
     /// the scope `UNIT::` names. 0 for a file's own compiler; an `EVAL`'d unit
     /// (`mark_as_eval_unit`) pushes an empty wrapper frame first so that
@@ -2009,6 +2014,7 @@ impl Compiler {
             outer_write_names: Default::default(),
             role_param_scope: None,
             in_role_body: false,
+            role_type_param_names: Vec::new(),
             unit_root_scope: 0,
             in_lexical_scope: false,
             lexical_dup_routines: HashSet::new(),
@@ -2679,6 +2685,7 @@ impl Compiler {
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
         sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
+        sub.role_type_param_names = self.role_type_param_names.clone();
         sub.lexical_import_chain = self.lexical_import_chain.clone();
         sub.lexical_type_shadows
             .extend(self.lexical_type_shadows.iter().cloned());

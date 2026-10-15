@@ -841,6 +841,10 @@ impl Compiler {
             (!role_param_scope.is_empty()).then_some(role_param_scope),
         );
         let saved_in_role_body = std::mem::replace(&mut self.in_role_body, true);
+        let saved_role_type_params = std::mem::replace(
+            &mut self.role_type_param_names,
+            type_param_defs.iter().map(|p| p.name.clone()).collect(),
+        );
         let method_compiled_keys = self.compile_method_body_keys(
             body,
             package_name.as_deref(),
@@ -852,6 +856,7 @@ impl Compiler {
         );
         self.in_role_body = saved_in_role_body;
         self.role_param_scope = saved_role_param_scope;
+        self.role_type_param_names = saved_role_type_params;
         // ADR-0019 D8-2: unlike `method_compiled_keys` above (whose
         // `package_name`-gated skip is harmless — the shell registration
         // installs uncompiled `MethodDef`s that the real declaration

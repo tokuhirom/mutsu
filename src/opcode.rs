@@ -11390,6 +11390,11 @@ impl CompiledCode {
                     crate::env::is_plain_user_lexical(s)
                         && !s.starts_with('&')
                         && !own.contains(s)
+                        // `%$h` / `@$a` read through `GetHashVar("%h")`, which
+                        // falls back to this code's own bare `h`: not free.
+                        && !s
+                            .strip_prefix(['@', '%'])
+                            .is_some_and(|bare| own.contains(bare))
                 })
             })
             .collect();
