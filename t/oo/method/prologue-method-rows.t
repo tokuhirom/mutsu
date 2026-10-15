@@ -3,7 +3,7 @@ use Test;
 # ADR-11276 §9.111: the receiver-specific arms of `methods_0arg`'s prologue
 # are rows, and the receivers they answered reach them.
 
-plan 40;
+plan 43;
 
 # `Unicode` is a type object only (`DispatchShape::Unicode`).
 isa-ok Unicode.version, Version, 'Unicode.version';
@@ -71,3 +71,10 @@ is $tf.Int, 0, '(True but False).Int';
 is $tf.not, True, '(True but False).not';
 is $tf.Numeric, 0, '(True but False).Numeric';
 is $tf.Str, 'False', '(True but False).Str';
+
+# `Nil` absorbs the methods it does not define (`Nil.FALLBACK`), and a match's
+# `.Capture` is the match (the deleted arms' answers, now answered upstream).
+is Nil.message, Nil, 'Nil.message';
+is Nil.payload, Nil, 'Nil.payload';
+"ab" ~~ /a/;
+ok $/.Capture === $/, 'Match.Capture is the match';

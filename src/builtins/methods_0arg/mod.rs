@@ -266,12 +266,10 @@ pub(crate) fn native_method_0arg_cascade(
         if let Some(result) = match_owner_row(target, method_sym, &[]) {
             return Some(result);
         }
-        match method {
-            "Capture" => return Some(Ok(target.clone())),
-            // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
-            // Cost: O(1).
-            "__mutsu_zen_angle" => return Some(Ok(target.clone())),
-            _ => {}
+        // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
+        // Cost: O(1).
+        if method == "__mutsu_zen_angle" {
+            return Some(Ok(target.clone()));
         }
     }
 
@@ -350,17 +348,6 @@ pub(crate) fn native_method_0arg_cascade(
             crate::gc::Gc::new(crate::value::ArrayData::new(failures)),
             crate::value::ArrayKind::List,
         )));
-    }
-
-    // Nil absorber for common methods: Nil.message, Nil.payload, etc.
-    // In Raku, calling most methods on Nil returns Nil.
-    if target.is_nil()
-        && matches!(
-            method,
-            "message" | "payload" | "backtrace" | "exception" | "handled" | "line" | "file"
-        )
-    {
-        return Some(Ok(Value::NIL));
     }
 
     // `Failure`'s `exception`, `handled`, `gist`, `raku`, `Str` and `Bool` are rows of
