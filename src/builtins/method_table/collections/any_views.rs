@@ -126,7 +126,12 @@ pub(crate) fn keys(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         target,
         super::any_collection::keys,
         |leaves| leaves.into_iter().map(|(key, _)| key).collect(),
-        [map_keys, super::pair::keys, list_keys, super::quanthash::keys],
+        [
+            map_keys,
+            super::pair::keys,
+            list_keys,
+            super::quanthash::keys,
+        ],
     ) {
         return answer;
     }
@@ -396,7 +401,10 @@ fn cache(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> 
                 crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
             ))
     {
-        return Some(Ok(Value::array_with_kind(items.clone(), kind.decontainerize())));
+        return Some(Ok(Value::array_with_kind(
+            items.clone(),
+            kind.decontainerize(),
+        )));
     }
     // ADR-0034: a `Seq` whose source has not been pulled is not forced; the
     // next touch reifies and keeps (`Seq.cache`'s row).
