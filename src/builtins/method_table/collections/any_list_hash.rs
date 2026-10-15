@@ -110,7 +110,10 @@ fn hash(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> 
                 false,
             ))
         }
-        ValueView::Instance { .. } => is_plain_scalar(target).then(|| hash_of(target)),
+        // A built-in class with a shape (`IO::Path`, a `Date`) is one element,
+        // an odd initializer, as in Rakudo; a user class's instance may have
+        // its own `hash` accessor.
+        ValueView::Instance { .. } => target.dispatch_shape().is_some().then(|| hash_of(target)),
         ValueView::LazyList(_) => None,
         _ => Some(hash_of(target)),
     }

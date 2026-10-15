@@ -7,7 +7,7 @@ use Test;
 # `IO::Path`), a `Seq` with no settled shape, a shaped array, `Nil`, a type
 # object and a stash.
 
-plan 42;
+plan 43;
 
 # A `Range` lists as its elements.
 is (1..3).keys.raku, (0, 1, 2).Seq.raku, 'Range.keys';
@@ -20,6 +20,7 @@ is "ab".NFC.keys.raku, (0, 1).Seq.raku, 'Uni.keys';
 is Blob.new(5, 6).kv.raku, (0, 5, 1, 6).Seq.raku, 'Blob.kv';
 is "x".IO.pairs.elems, 1, 'IO::Path.pairs is one pair';
 is (:a(1)).hash.raku, {a => 1}.raku, 'Pair.hash';
+throws-like { "x".IO.hash }, X::Hash::Store::OddNumber, 'IO::Path.hash is an odd initializer';
 is (1..2).hash.raku, {1 => 2}.raku, 'Range.hash';
 
 # `Nil` has no elements.
