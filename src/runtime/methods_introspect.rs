@@ -257,6 +257,45 @@ impl Interpreter {
         Value::make_instance(Symbol::intern(how_name), attrs)
     }
 
+    /// Whether `cached`, the metaobject cached for an individual role type
+    /// object, misses a mixin applied to the role GROUP's metaobject since it
+    /// was minted. A `$*PACKAGE.HOW does Role` inside a `trait_mod:<is>` mixes
+    /// into the group's entry (`HowTarget` is the bare group name), and the
+    /// next `.HOW` of the same type object must see it, not the stale cache.
+    // Cost: O(1) lookups, plus the individual-role check.
+    fn individual_role_how_lags_group(
+        &self,
+        target: &Value,
+        lookup_name: Option<&str>,
+        cached: &Value,
+    ) -> bool {
+        let Some(name) = lookup_name else {
+            return false;
+        };
+        if !self.is_individual_role_type_object(target) {
+            return false;
+        }
+        let group_key = self.role_group_name(name);
+        let registry = self.registry();
+        // A lexical role (`my role R`, stored as `R\0N`) is mixed into under
+        // the name the program sees.
+        let visible = name.split('\u{0}').next().unwrap_or(name);
+        let Some(group_how) = registry
+            .class_how_values
+            .get(&group_key)
+            .or_else(|| registry.class_how_values.get(visible))
+        else {
+            return false;
+        };
+        let ValueView::Mixin(_, group_mixins) = group_how.view() else {
+            return false;
+        };
+        match cached.view() {
+            ValueView::Mixin(_, mixins) => mixins.overrides().len() < group_mixins.overrides().len(),
+            _ => true,
+        }
+    }
+
     /// Dispatch .HOW method
     ///
     /// A type's `.HOW` must be identity-stable: Rakudo mints one metaclass
@@ -362,6 +401,7 @@ impl Interpreter {
         });
         if let Some(ref key) = how_cache_key
             && let Some(how_val) = self.registry().class_how_values.get(key)
+            && !self.individual_role_how_lags_group(target, how_lookup_name.as_deref(), how_val)
         {
             return Ok(how_val.clone());
         }
@@ -407,12 +447,19 @@ impl Interpreter {
                 .as_ref()
                 .map(|n| self.role_group_name(n))
                 .unwrap_or_else(|| display.clone());
-            if let Some(ValueView::Mixin(_, group_mixins)) = self
-                .registry()
-                .class_how_values
-                .get(&group_key)
-                .map(Value::view)
-            {
+            let visible_key = how_lookup_name
+                .as_deref()
+                .map(|n| n.split('\u{0}').next().unwrap_or(n).to_string())
+                .unwrap_or_else(|| group_key.clone());
+            let group_how = {
+                let registry = self.registry();
+                registry
+                    .class_how_values
+                    .get(&group_key)
+                    .or_else(|| registry.class_how_values.get(&visible_key))
+                    .cloned()
+            };
+            if let Some(ValueView::Mixin(_, group_mixins)) = group_how.as_ref().map(Value::view) {
                 how = Value::mixin(how, group_mixins.overrides().clone());
             }
             // `is_individual_role_type_object` only matches a `Package` or

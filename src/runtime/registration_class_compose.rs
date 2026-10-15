@@ -188,27 +188,21 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Queue a post-registration `specialize` call for `class_name` when the
-    /// role's HOW (the individual role's, or the group's) had a role with a
-    /// user `specialize` method mixed in -- rakudo drives
-    /// `ParametricRoleHOW.specialize` when a class composes the role.
+    /// Queue a post-registration `specialize` call for `class_name`: rakudo
+    /// drives `ParametricRoleHOW.specialize` when a class composes the role,
+    /// so a user `specialize` mixed into the role's HOW (the individual
+    /// role's, or the group's) runs.
     fn queue_role_how_specialize(&mut self, class_name: &str, role_name: &str, role_id: u64) {
+        // Queued unconditionally: a role attribute's trait (`has $.a is mooish`)
+        // mixes the hook into the role's HOW while the class composes the
+        // role's attributes, i.e. after this point. `drive_role_how_specialize`
+        // decides whether a user `specialize` is there.
         let candidate_key = crate::runtime::types::role_candidate_type_name(role_name, role_id);
-        let key = [candidate_key, role_name.to_string()]
-            .into_iter()
-            .find(|k| {
-                self.registry()
-                    .class_how_values
-                    .get(k)
-                    .is_some_and(|how| self.mixin_has_hook(how, "specialize"))
-            });
-        if let Some(key) = key {
-            self.registry_mut().pending_role_specialize.push((
-                class_name.to_string(),
-                key,
-                role_name.to_string(),
-            ));
-        }
+        self.registry_mut().pending_role_specialize.push((
+            class_name.to_string(),
+            candidate_key,
+            role_name.to_string(),
+        ));
     }
 
     /// Compose one resolved role candidate (attributes, methods, deferred
