@@ -13752,7 +13752,13 @@ impl CompiledFunction {
         // Parameters are always function-local (including sub-signature params)
         Self::collect_param_names(&self.param_defs, &mut declared);
         for p in &self.params {
-            declared.insert(p.clone());
+            // A sigilless parameter is spelled bare here but declares its term
+            // key (ADR-12441), which `collect_param_names` already added.
+            let sigilless_only = self.param_defs.iter().any(|pd| pd.sigilless && pd.name == *p)
+                && !self.param_defs.iter().any(|pd| !pd.sigilless && pd.name == *p);
+            if !sigilless_only {
+                declared.insert(p.clone());
+            }
         }
         // Scan opcodes for SetVarDynamic which marks `my` declarations, and
         // ForLoop which binds its loop parameter(s). A `for` param (`-> $idx`) is
@@ -13990,7 +13996,7 @@ impl CompiledFunction {
         declared: &mut std::collections::HashSet<String>,
     ) {
         for pd in param_defs {
-            declared.insert(pd.name.clone());
+            declared.insert(pd.storage_name().into_owned());
             if let Some(ref sub_sig) = pd.sub_signature {
                 Self::collect_param_names(sub_sig, declared);
             }

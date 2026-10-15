@@ -765,7 +765,9 @@ impl Interpreter {
                 if kflags & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0
                     && k.with_str(|s| {
                         s.strip_prefix(crate::symbol::SIGILLESS_ALIAS_KEY_PREFIX)
-                            .is_some_and(|base| cf.param_defs.iter().any(|pd| pd.name == base))
+                            .is_some_and(|base| {
+                                cf.param_defs.iter().any(|pd| pd.storage_name() == base)
+                            })
                     })
                 {
                     continue;
