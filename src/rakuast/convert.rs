@@ -3432,7 +3432,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
-                if let Some(declaration) = crate::ast::inline_subset_term::declaration(body) {
+                if let Some(declaration) =
+                    crate::ast::inline_subset_term::inline_subset_declaration(body)
+                {
                     let statement = convert_stmt(declaration)?
                         .ok_or_else(|| unsupported("inline subset declaration"))?;
                     return statement

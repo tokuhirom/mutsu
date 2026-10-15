@@ -18,7 +18,7 @@ pub(crate) fn expand(declaration: Stmt) -> Expr {
 }
 
 /// Recover the written declaration from an inline subset expansion.
-pub(crate) fn declaration(stmts: &[Stmt]) -> Option<&Stmt> {
+pub(crate) fn inline_subset_declaration(stmts: &[Stmt]) -> Option<&Stmt> {
     let Some(Stmt::SourceForm(form)) = stmts.first() else {
         return None;
     };
