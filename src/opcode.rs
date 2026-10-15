@@ -7395,11 +7395,6 @@ pub(crate) struct CompiledCode {
     /// consults it; the run-time env only knows names already declared.
     /// Empty unless the chunk calls `EVAL`.
     pub(crate) eval_scope_names: std::collections::HashSet<String>,
-    /// Bare words naming an ENCLOSING sigilless binding (`\attr`) that this
-    /// code also declares as a same-keyed `$` local (`my $attr = attr`). The
-    /// shared local key would hide the capture from `compute_free_vars`, so the
-    /// compiler lists them here and they stay free variables.
-    pub(crate) shadowed_sigilless_reads: Vec<String>,
     /// `&name` reads (`GetCodeVar`, `CallOnCodeVar`) whose read site the
     /// compiler proved has NO `&name` lexical binding in scope -- no `my &name`,
     /// `&name` parameter or role `&name` type parameter in any scope it can
@@ -8226,7 +8221,6 @@ impl CompiledCode {
             captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
             eval_scope_names: std::collections::HashSet::new(),
-            shadowed_sigilless_reads: Vec::new(),
             unscoped_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
@@ -10354,9 +10348,6 @@ impl CompiledCode {
         let mut captured_in_decl_closures: Vec<(u32, Symbol)> = Vec::new();
         let mut self_capture_closures: Vec<(u32, Symbol)> = Vec::new();
         let mut pending_decl = false;
-        for name in &self.shadowed_sigilless_reads {
-            free.insert(Symbol::intern(name));
-        }
         for op in &self.ops {
             // `S///` / `s///` / `tr///` work on the implicit topic without
             // naming it, so they reference `$_` exactly as an explicit `$_`
@@ -13350,7 +13341,8 @@ pub(crate) struct CompiledFunction {
     /// keys, which are already `Symbol`s, so the return merge compares `u32`s
     /// instead of rebuilding a `HashSet<&str>` (SipHash) on every call.
     pub(crate) declared_locals: Option<rustc_hash::FxHashSet<Symbol>>,
-    /// Pre-interned `param_defs[i].name`, parallel to `param_defs`. The call
+    /// Pre-interned `param_defs[i].storage_name()` (the name, or a sigilless
+    /// parameter's term key, ADR-12441), parallel to `param_defs`. The call
     /// paths mark every param read-only on entry; without this each mark would
     /// re-hash the parameter name string on every call.
     pub(crate) param_name_syms: Vec<Symbol>,
@@ -13865,7 +13857,7 @@ impl CompiledFunction {
         self.param_name_syms = self
             .param_defs
             .iter()
-            .map(|pd| Symbol::intern(&pd.name))
+            .map(|pd| Symbol::intern(&pd.storage_name()))
             .collect();
         // All-or-nothing: a single unclassifiable constraint leaves the vector
         // empty, and the call paths then use the by-name check for every

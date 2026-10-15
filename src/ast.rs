@@ -420,6 +420,19 @@ impl ParamDef {
         self.name == "self" && !self.is_implicit_invocant()
     }
 
+    /// The storage key of the lexical this parameter binds (ADR-12441): a
+    /// sigilless parameter (`\x`, `+x`, `|x`) declares the TERM `x`, kept
+    /// under its term key `\x` so a same-named `$x` is a different variable;
+    /// every other parameter is stored under its name.
+    // Cost: O(|name|).
+    pub(crate) fn storage_name(&self) -> std::borrow::Cow<'_, str> {
+        if self.sigilless && !self.name.is_empty() {
+            std::borrow::Cow::Owned(crate::term_names::term_key(&self.name))
+        } else {
+            std::borrow::Cow::Borrowed(&self.name)
+        }
+    }
+
     /// True for an invocant the parser *synthesized* (`method (Foo:D:)`,
     /// `method (::?CLASS:)`): the source never named it, so it is anonymous
     /// to introspection (`Parameter.name` is empty, `.raku` renders `$:`)

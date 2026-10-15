@@ -114,6 +114,17 @@ impl Compiler {
             self.compile_stmt(s);
         }
 
+        // A sigilless loop parameter is a term, stored under its term key
+        // (ADR-12441): `-> \t` binds `\t`, never the key a same-named `$t`
+        // uses. The parser already spells a multi-parameter `\k`, which IS
+        // that key; a single parameter is spelled bare and keyed here.
+        let storage_param = param.as_ref().map(|p| match param_def {
+            Some(def) if def.sigilless && !p.starts_with('\\') => {
+                crate::runtime::term_names::term_key(p)
+            }
+            _ => p.clone(),
+        });
+        let param = &storage_param;
         // A single named param (`-> $k`) is bound by the VM directly, by name,
         // without overriding `$_`.
         let param_idx = param
@@ -322,7 +333,7 @@ impl Compiler {
                 .zip(params_def.iter())
                 .filter_map(|(name, def)| {
                     let type_constraint = def.type_constraint.as_ref()?;
-                    let name = name.strip_prefix('\\').unwrap_or(name).to_string();
+                    let name = name.clone();
                     let old = self
                         .local_types
                         .insert(name.clone(), type_constraint.clone());
@@ -372,7 +383,7 @@ impl Compiler {
                 .iter()
                 .enumerate()
                 .map(|(i, p)| {
-                    let stripped = p.strip_prefix('\\').unwrap_or(p).to_string();
+                    let stripped = p.to_string();
                     // A slurpy binds a fresh list of the chunk's leftovers, not
                     // an element of it, so there is nothing to write back
                     // through: `for @a <-> $a, *@r { $a = ... }` must write back
@@ -416,10 +427,7 @@ impl Compiler {
         // by the declaration, and the VM restores it from this snapshot.
         let multi_param_locals: Vec<Option<u32>> = params
             .iter()
-            .map(|p| {
-                let bare = p.strip_prefix('\\').unwrap_or(p);
-                self.local_map.get(bare).copied()
-            })
+            .map(|p| self.local_map.get(p.as_str()).copied())
             .collect();
         // When the block parameter has a type constraint other than Mu or
         // Junction, junction items are autothreaded (expanded into their
@@ -460,10 +468,7 @@ impl Compiler {
                     params,
                     params_def,
                 ),
-                multi_param_names: params
-                    .iter()
-                    .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
-                    .collect(),
+                multi_param_names: params.to_vec(),
                 multi_param_is_copy: (0..params.len())
                     .map(|i| {
                         params_def
@@ -539,12 +544,8 @@ impl Compiler {
         // them from leaking past the loop.
         // The loop parameters are lexicals of the body, never package variables.
         let for_param_mark = self.for_param_names.len();
-        self.for_param_names.extend(
-            param
-                .iter()
-                .chain(params.iter())
-                .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string()),
-        );
+        self.for_param_names
+            .extend(param.iter().chain(params.iter()).cloned());
         // The loop's multi-parameters are declarations of the loop block
         // (`build_for_bind_stmts` emits them as `my`-style decls), so they are
         // declared in a frame that becomes the body's own scope frame (see
@@ -560,33 +561,24 @@ impl Compiler {
         // cross-frame sentinel.)
         let fresh_param_names: Vec<String> = params
             .iter()
-            .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+            .cloned()
             .filter(|p| {
                 !self.local_map.contains_key(p)
                     && self.for_param_names[..for_param_mark].contains(p)
             })
             .collect();
-        let declared_before = self.sigilless_declared.clone();
         self.push_local_scope();
         for s in &bind_prefix {
-            // Parameter bindings, not a user's `my $x` (see `decl_is_sigilless`).
-            self.decl_is_sigilless = matches!(s, Stmt::VarDecl { .. } | Stmt::SyntheticBlock(_));
             self.compile_stmt(s);
-            self.decl_is_sigilless = false;
         }
-        // The sigilless parameters are now declared bindings of the body: a
-        // later `my $name` in it shadows them like any `my \name` (#13474).
-        self.sigilless_declared
-            .extend(sigilless_param_names.iter().cloned());
         // The parameters the declarations above gave no slot stay by-name env
         // bindings for the whole body. A by-name read of the name after the
         // loop is the enclosing lexical again (`note_shadowed_outer_capture`,
         // #13420).
         let by_name_mark = self.by_name_for_params.len();
         for p in param.iter().chain(params.iter()) {
-            let bare = p.strip_prefix('\\').unwrap_or(p);
-            if !self.local_map.contains_key(bare) {
-                self.by_name_for_params.push(bare.to_string());
+            if !self.local_map.contains_key(p.as_str()) {
+                self.by_name_for_params.push(p.clone());
             }
         }
         // Hand the declarations to the body's frame without restoring anything
@@ -665,7 +657,6 @@ impl Compiler {
         for n in &newly_registered {
             self.sigilless_locals.remove(n);
         }
-        self.sigilless_declared = declared_before;
         self.code.patch_loop_end(loop_idx);
         // A body that pushed no frame of its own leaves the declarations
         // parked; close them here so they neither leak into the next scope

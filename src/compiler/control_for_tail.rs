@@ -54,9 +54,7 @@ impl Compiler {
         if name == "_"
             || !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
             || param.as_deref() == Some(name.as_str())
-            || params
-                .iter()
-                .any(|p| p.strip_prefix('\\').unwrap_or(p) == name)
+            || params.iter().any(|p| p == name)
         {
             return None;
         }

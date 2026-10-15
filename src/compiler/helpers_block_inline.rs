@@ -301,10 +301,9 @@ impl Compiler {
         // how `if my \r = @rows { r.Array }` compiles its condition
         // (`DoStmt(SyntheticBlock([VarDecl, MarkSigillessReadonly]))`) —
         // without the pre-pass, `r` became `$[...]` and `r.Array` nested.
-        for s in stmts {
-            if let Stmt::MarkSigillessReadonly(name) | Stmt::MarkSigilless(name) = s {
-                self.sigilless_locals.insert(name.clone());
-            }
+        let term_names = Self::sigilless_mark_names(stmts);
+        for name in &term_names {
+            self.sigilless_locals.insert((*name).to_string());
         }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
@@ -687,7 +686,10 @@ impl Compiler {
                 self.bind_vardecl = true;
                 self.sigilless_bind_vardecl = has_mark_sigilless;
             }
+            self.decl_is_term =
+                matches!(stmt, Stmt::VarDecl { name, .. } if term_names.contains(&name.as_str()));
             self.compile_stmt(stmt);
+            self.decl_is_term = false;
             // ADR-0052: a `given`/`when`/`default` statement nets one stack
             // value. A non-last one must be popped, or it would shadow the
             // block's real tail value (the stack top wins). The last one is

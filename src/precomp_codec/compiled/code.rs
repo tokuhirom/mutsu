@@ -126,7 +126,6 @@ impl Encode for CompiledCode {
             captures_own_declaration,
             outer_code_var_names,
             eval_scope_names,
-            shadowed_sigilless_reads,
             unscoped_amp_reads,
             needs_cell_free_vars,
             has_calls,
@@ -282,7 +281,6 @@ impl Encode for CompiledCode {
         captures_own_declaration.encode(encoder)?;
         encode_string_set(outer_code_var_names, encoder)?;
         encode_string_set(eval_scope_names, encoder)?;
-        shadowed_sigilless_reads.encode(encoder)?;
         unscoped_amp_reads.encode(encoder)?;
         needs_cell_free_vars.encode(encoder)?;
         has_calls.encode(encoder)?;
@@ -425,7 +423,6 @@ impl Decode<DecodeCtx> for CompiledCode {
             captures_own_declaration: Decode::decode(decoder)?,
             outer_code_var_names: decode_set(decoder)?,
             eval_scope_names: decode_set(decoder)?,
-            shadowed_sigilless_reads: Decode::decode(decoder)?,
             unscoped_amp_reads: Decode::decode(decoder)?,
             needs_cell_free_vars: Decode::decode(decoder)?,
             has_calls: Decode::decode(decoder)?,

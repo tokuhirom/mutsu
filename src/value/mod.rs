@@ -1826,7 +1826,7 @@ fn collect_sub_signature_syms(
     if let Some(params) = sub_sig {
         for sp in params {
             if !sp.name.is_empty() {
-                names.insert(Symbol::intern(&sp.name));
+                names.insert(Symbol::intern(&sp.storage_name()));
             }
             collect_sub_signature_syms(&sp.sub_signature, names);
         }
@@ -1839,7 +1839,20 @@ impl SubData {
     pub(crate) fn param_name_syms(&self) -> &Arc<ParamNameSyms> {
         self.param_name_syms_cache.get_or_init(|| {
             let params: Vec<Symbol> = self.params.iter().map(|p| Symbol::intern(p)).collect();
-            let mut call_local: rustc_hash::FxHashSet<Symbol> = params.iter().copied().collect();
+            // A sigilless parameter is spelled bare in `params` but binds its
+            // term key (ADR-12441), which the `param_defs` loop below adds.
+            let mut call_local: rustc_hash::FxHashSet<Symbol> = self
+                .params
+                .iter()
+                .zip(params.iter())
+                .filter(|(p, _)| {
+                    !self
+                        .param_defs
+                        .iter()
+                        .any(|pd| pd.sigilless && pd.name == **p)
+                })
+                .map(|(_, sym)| *sym)
+                .collect();
             for param in self.params.iter() {
                 if let Some(bare) = param.strip_prefix('^') {
                     // Placeholder parameters publish a twigil-less alias in
@@ -1853,7 +1866,7 @@ impl SubData {
             }
             for pd in self.param_defs.iter() {
                 if !pd.name.is_empty() {
-                    let name_sym = Symbol::intern(&pd.name);
+                    let name_sym = Symbol::intern(&pd.storage_name());
                     call_local.insert(name_sym);
                     // The parameter's own type-constraint metadata is
                     // call-local too: it must not be written back over a

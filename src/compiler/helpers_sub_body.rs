@@ -64,14 +64,13 @@ impl Compiler {
     fn alloc_sub_signature_locals(compiler: &mut Compiler, sub_params: &[crate::ast::ParamDef]) {
         for sp in sub_params {
             if !sp.name.is_empty() {
-                compiler.declare_param(&sp.name);
+                compiler.declare_param(&sp.storage_name());
                 // A sigilless destructured sub-param (`-> (\i, \j) { i + j }`) IS the
                 // bare word within the body, so it must shadow a same-named term
                 // constant (e.g. the imaginary unit `i`). Register it like the
                 // single-pointy-param path does, so BareWord resolves to GetLocal.
                 if sp.sigilless {
                     compiler.sigilless_locals.insert(sp.name.clone());
-                    compiler.sigilless_declared.insert(sp.name.clone());
                 }
             }
             if let Some(nested) = &sp.sub_signature {
@@ -336,19 +335,18 @@ impl Compiler {
         sub_compiler.seed_native_int_param_types(param_defs);
         sub_compiler.seed_param_decl_types(param_defs);
         // Pre-allocate locals for parameters
-        for param in params {
+        for param in Self::non_term_param_names(params, param_defs) {
             sub_compiler.declare_param(param);
         }
         // Also allocate from param_defs in case param names differ
         for pd in param_defs {
             if !pd.name.is_empty() {
-                sub_compiler.declare_param(&pd.name);
+                sub_compiler.declare_param(&pd.storage_name());
                 sub_compiler.note_readonly_code_param(pd);
                 // Track sigilless parameters so BareWord resolution uses
                 // GetLocal for them but not for `$`-sigiled params.
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
-                    sub_compiler.sigilless_declared.insert(pd.name.clone());
                 }
             }
             // Also allocate locals for sub_signature parameters (array unpacking)
@@ -1393,7 +1391,7 @@ impl Compiler {
         sub_compiler.seed_native_int_param_types(param_defs);
         sub_compiler.seed_param_decl_types(param_defs);
         // Pre-allocate locals for parameters
-        for param in params {
+        for param in Self::non_term_param_names(params, param_defs) {
             sub_compiler.declare_param(param);
         }
         // A WhateverCode is a compiler-generated callable, not a source lexical
@@ -1401,11 +1399,10 @@ impl Compiler {
         // the surrounding source block.
         for pd in param_defs {
             if !pd.name.is_empty() {
-                sub_compiler.declare_param(&pd.name);
+                sub_compiler.declare_param(&pd.storage_name());
                 sub_compiler.note_readonly_code_param(pd);
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
-                    sub_compiler.sigilless_declared.insert(pd.name.clone());
                 }
             }
             // A destructured sub-signature param (`-> (\i, \j) { i + j }`) carries

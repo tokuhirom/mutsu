@@ -1,4 +1,4 @@
-//! The term namespace for sigil-less `constant`s.
+//! The term namespace for sigil-less `constant`s and sigilless bindings.
 //!
 //! In Raku `constant b = 256` declares a *term* `b`; `my $b` declares a
 //! `$`-sigiled variable. They are different symbols, so a same-named scalar —
@@ -30,8 +30,11 @@
 //! Qualified package stores (`Pkg::b`) are unchanged: a qualified constant and
 //! an `our $b` of the same package still share a key. That collision needs no
 //! lexical scoping to hit and is left for the package-stash work.
-// TODO: sigil-less `my \x` bindings and `\x` parameters still share the scalar
-// key space; moving them here is the other half of #9962's "decide once".
+//!
+//! Sigilless bindings — `my \x`, a `\x` / `+x` / `|x` parameter, a pointy
+//! `-> \x` — are terms too and live under the same key (ADR-12441,
+//! `docs/adr/12441-sigilless-bindings-live-in-the-term-namespace.md`):
+//! `sub f(\t, $t)` binds two variables, `\t` and `t`.
 
 use crate::ast::Expr;
 use crate::symbol::Symbol;

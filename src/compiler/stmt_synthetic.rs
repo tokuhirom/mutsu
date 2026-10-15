@@ -4,8 +4,6 @@ use super::*;
 
 impl Compiler {
     pub(super) fn compile_synthetic_stmt(&mut self, stmts: &[Stmt]) {
-        // Set by a caller that binds parameters (the `for` bind stmts).
-        let params_bind = std::mem::take(&mut self.decl_is_sigilless);
         // Detect `:=` bind context for `@` variables: the parser wraps
         // `my @a := expr` in a SyntheticBlock containing VarDecl followed
         // by `__mutsu_record_bound_array_len`.  Set bind_vardecl so the
@@ -29,6 +27,10 @@ impl Compiler {
         // `OpCode::IndexAutovivifyLazyTerminal`). It compiles AFTER the
         // declaration, so the block has to tell the VarDecl itself.
         let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
+        // The names this expansion declares as sigilless TERMS: a `VarDecl`
+        // its `MarkSigilless`/`MarkSigillessReadonly` names is stored under
+        // the term key (ADR-12441).
+        let term_names = Self::sigilless_mark_names(stmts);
         // Collect sigilless readonly names so we can clear the flag
         // before the VarDecl assignment (allows re-declaration in loops).
         let sigilless_readonly_names: Vec<String> = stmts
@@ -67,8 +69,9 @@ impl Compiler {
                 // `\x = ...` binds the value itself — no Scalar
                 // container, so SetLocal must not itemize it).
                 self.sigilless_locals.insert(name.clone());
-                self.sigilless_declared.insert(name.clone());
-                let key = crate::runtime::sigilless_readonly_key(name);
+                let key = crate::runtime::sigilless_readonly_key(
+                    &crate::runtime::term_names::term_key(name),
+                );
                 let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
                 let false_idx = self.code.add_constant(Value::FALSE);
                 self.code.emit(OpCode::LoadConst(false_idx));
@@ -86,14 +89,26 @@ impl Compiler {
                 self.code.emit(OpCode::SinkPop(false, true));
                 continue;
             }
-            self.decl_is_sigilless = params_bind
-                || matches!(s, Stmt::VarDecl { name, .. }
-                if has_mark_sigilless || sigilless_readonly_names.contains(name));
+            self.decl_is_term =
+                matches!(s, Stmt::VarDecl { name, .. } if term_names.contains(&name.as_str()));
             self.compile_stmt_discarding_value(s);
-            self.decl_is_sigilless = false;
+            self.decl_is_term = false;
         }
         if restore_pointy_given_topic {
             self.code.emit(OpCode::ExitPointyTopic);
         }
+    }
+
+    /// The names a parser expansion's `MarkSigilless` /
+    /// `MarkSigillessReadonly` statements mark as sigilless terms.
+    // Cost: O(n), n = statements.
+    pub(super) fn sigilless_mark_names(stmts: &[Stmt]) -> Vec<&str> {
+        stmts
+            .iter()
+            .filter_map(|s| match s {
+                Stmt::MarkSigilless(n) | Stmt::MarkSigillessReadonly(n) => Some(n.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 }

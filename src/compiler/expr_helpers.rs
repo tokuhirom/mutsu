@@ -879,15 +879,7 @@ impl Compiler {
                 .add_constant(Value::str(self.qualify_variable_name(name)));
             self.code.emit(OpCode::GetGlobal(name_idx));
         } else if let Some(&slot) = self.local_map.get(name) {
-            if self.sigilless_param_shadows_outer_scalar(name) {
-                self.note_forced_outer_scalar_capture(name, false);
-                let name_idx = self
-                    .code
-                    .add_constant(Value::str(self.qualify_variable_name(name)));
-                self.code.emit(OpCode::GetGlobal(name_idx));
-            } else {
-                self.code.emit(OpCode::GetLocal(slot));
-            }
+            self.code.emit(OpCode::GetLocal(slot));
         } else {
             self.note_shadowed_outer_capture(name, false);
             let name_idx = self

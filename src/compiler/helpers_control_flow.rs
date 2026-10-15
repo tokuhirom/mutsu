@@ -333,6 +333,7 @@ impl Compiler {
                 Some((var_name.to_string(), Expr::Var(tmp))),
             );
         }
+        let is_term = var_name.starts_with('\\');
         let (bare_name, read_expr) = if let Some(bare) = var_name.strip_prefix('\\') {
             self.sigilless_locals.insert(bare.to_string());
             (bare.to_string(), Expr::BareWord(bare.to_string()))
@@ -352,10 +353,10 @@ impl Compiler {
             custom_traits: Vec::new(),
             where_constraint: None,
         };
-        // A pointy parameter binding, not a user's `my $x`.
-        self.decl_is_sigilless = true;
+        // A sigilless pointy parameter is a term (ADR-12441).
+        self.decl_is_term = is_term;
         self.compile_stmt(&var_decl);
-        self.decl_is_sigilless = false;
+        self.decl_is_term = false;
         (read_expr, None)
     }
 
