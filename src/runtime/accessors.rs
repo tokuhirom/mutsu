@@ -62,7 +62,7 @@ impl Interpreter {
         if Self::return_spec_scalar_name(s).is_some() {
             return true;
         }
-        if matches!(s, "Nil" | "True" | "False" | "Empty" | "pi") {
+        if matches!(s, "Nil" | "True" | "False" | "Empty" | "pi" | "IterationEnd") {
             return true;
         }
         if s.starts_with('\"')
@@ -90,6 +90,15 @@ impl Interpreter {
         // the parser's enum-value registry instead (no interpreter access
         // there); this checks the actual runtime enum-key namespace.
         if crate::runtime::utils::is_builtin_enum_value(s) || self.enum_bare_value(s).is_some() {
+            return true;
+        }
+        // A declared `constant` named by an uppercase identifier (`constant K
+        // = 42; sub f(--> K) {...}`) is a definite return of its value, as in
+        // rakudo, not a type constraint named `K`.
+        if s.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && (self.constant_marker_visible(s) || self.constant_marker_visible(&format!("\\{s}")))
+        {
             return true;
         }
         if s.chars().next().is_some_and(|c| c.is_ascii_uppercase())
