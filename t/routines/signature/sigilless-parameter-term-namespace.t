@@ -3,7 +3,7 @@ use Test;
 # A sigilless binding (`\t`) and a scalar (`$t`) are different symbols
 # (#12441, ADR-12441): neither hides nor overwrites the other.
 
-plan 12;
+plan 14;
 
 {
     sub f(\t, $t) { "{t}{$t}" }
@@ -61,4 +61,13 @@ plan 12;
     is EVAL('t'), 5, 'EVAL sees a sigilless binding';
     my $t = 6;
     is EVAL('t ~ $t'), '56', 'EVAL tells \t from $t';
+}
+
+{
+    sub t(\target, \value) { try { target = value } }
+    my $x = 1;
+    is t($x, 9), 9, 'a try block ending in a sigilless assignment yields the value';
+    sub u(\s) { s .= uc; s }
+    my $y = 'c';
+    is u($y), 'C', '.= on a sigilless parameter writes through';
 }
