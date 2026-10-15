@@ -1617,7 +1617,11 @@ impl Interpreter {
                     };
                     match (key_sigil, reading_sigil) {
                         (Some(k), r) if r != Some(k) => continue,
-                        (None, Some(r)) if cell_map.contains_key(format!("{}{bare}", r as char).as_str()) => continue,
+                        (None, Some(r))
+                            if cell_map.contains_key(format!("{}{bare}", r as char).as_str()) =>
+                        {
+                            continue;
+                        }
                         _ => {}
                     }
                     // The BARE candidate is the dangerous one: unlike `!x`/`@.x`,
