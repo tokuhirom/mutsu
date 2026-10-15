@@ -3427,6 +3427,11 @@ impl Interpreter {
                 // flatten. Non-slip values pass through untouched.
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let demoted = match val.view() {
+                    // A lazy-tail Slip demotes to the lazy list it reifies
+                    // from (#13117).
+                    ValueView::Slip(_) if val.is_lazy_tail_slip() => {
+                        Self::lazy_slip_receiver(val, "list")
+                    }
                     ValueView::Slip(items) => Value::seq(items.iter().cloned().collect()),
                     _ => val,
                 };

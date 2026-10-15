@@ -1840,8 +1840,11 @@ impl Interpreter {
     /// [`crate::env::note_env_key`] — a placeholder parameter (`$^a`) is stored
     /// under a `^`-prefixed key, and dropping that latch would leave
     /// `placeholder_var_possible()` reading false while such a key is live.
-    fn insert_fast_param_values(env: &mut crate::env::Env, param_values: &[(&str, Symbol, Value)]) {
-        for (param_name, param_sym, param_val) in param_values {
+    fn insert_fast_param_values(
+        env: &mut crate::env::Env,
+        param_values: &super::vm_param_values::ParamValues<'_>,
+    ) {
+        for (param_name, param_sym, param_val) in param_values.iter() {
             crate::env::note_env_key(param_name);
             env.insert_sym(*param_sym, param_val.clone());
         }
@@ -2055,7 +2058,7 @@ impl Interpreter {
         }
         // (name, interned name, value): the name for matching against the
         // body's local names, the symbol for the env insert.
-        let mut param_values: Vec<(&str, Symbol, Value)> = Vec::new();
+        let mut param_values = super::vm_param_values::ParamValues::new();
         // Indices into `param_values` of the plain `@x`/`%x` parameters bound
         // below, whose constraint is registered once the callee's env exists.
         // Each carries the caller's variable name for `.VAR.name`, if any.

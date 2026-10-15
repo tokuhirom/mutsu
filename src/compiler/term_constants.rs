@@ -69,16 +69,37 @@ impl Compiler {
         }
         match slot.filter(|_| own) {
             Some(slot) => {
-                self.code.emit(OpCode::GetLocal(slot));
+                // BIND the term slot to the sigilless binding (the raw read
+                // keeps a `:=` alias's container) instead of copying its value,
+                // so later writes to the bound variable stay visible (#12441).
+                let key = crate::runtime::term_names::term_key(name);
+                let term_slot = self.alloc_local(&key);
+                let key_idx = self.code.add_constant(Value::str(key));
+                self.code.emit(OpCode::SetVarDynamic {
+                    name_idx: key_idx,
+                    dynamic: false,
+                    local_slot: Some(term_slot),
+                    reset: crate::opcode::DeclReset::Fresh,
+                    type_follows: false,
+                    bind_declaration: true,
+                    shadows_by_name: false,
+                });
+                self.code.emit(OpCode::GetLocalRaw(slot));
+                self.code.emit(OpCode::MarkBindContext);
+                self.code.emit(OpCode::SetLocalDecl {
+                    slot: term_slot,
+                    explicit_init: true,
+                    typechecked: false,
+                });
             }
             None => {
                 self.code.shadowed_sigilless_reads.push(name.to_string());
                 let name_idx = self.code.add_constant(Value::str(name.to_string()));
                 self.code.emit(OpCode::GetGlobal(name_idx));
+                let slot = self.alloc_local(&crate::runtime::term_names::term_key(name));
+                self.code.emit(OpCode::SetLocal(slot));
             }
         }
-        let slot = self.alloc_local(&crate::runtime::term_names::term_key(name));
-        self.code.emit(OpCode::SetLocal(slot));
         self.shadowed_sigilless_terms.insert(name.to_string());
         self.sigilless_locals.remove(name);
     }

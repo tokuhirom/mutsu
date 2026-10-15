@@ -837,6 +837,12 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        if let Some(slip) = Self::lazy_slip_coercion(&target, method, args.len()) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-slip");
+            self.stack.push(slip);
+            return Ok(());
+        }
+        let target = Self::lazy_slip_receiver(target, method);
         let target = match self.take_seq_prefix(&target, method, &args)? {
             Some(prefix) => prefix,
             None => target,
@@ -1489,7 +1495,10 @@ impl Interpreter {
                     // A quoted or run-time name reaches a generated accessor
                     // (`$obj."$n"()` with `$n = "hash"` and `has %.hash`).
                     _ => {
-                        self.grammar_has_user_method_memo(cn, method_sym)
+                        // An augmented slurpy-only `multi` on a built-in
+                        // ancestor ranks after the built-in method (#13509).
+                        (self.grammar_has_user_method_memo(cn, method_sym)
+                            && !self.user_candidates_all_outranked_by_builtin(cn.as_str(), method))
                             || (quoted && self.has_public_accessor(&cn.resolve(), method))
                             || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }

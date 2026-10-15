@@ -110,6 +110,8 @@ impl Interpreter {
         // A routine receiver answers with the roles composed into the routine
         // so far, whichever alias of it this is (ADR-11827).
         let target = Self::routine_current_view(&target).unwrap_or(target);
+        // A lazy-tail Slip answers as the lazy list it reifies from (#13117).
+        let target = Self::lazy_slip_receiver(target, method);
         self.call_method_with_values_unviewed(target, method, args)
     }
 
@@ -4002,7 +4004,7 @@ impl Interpreter {
             let type_name = self.dispatch_owner_name(&target);
             if self.has_user_method(type_name, method)
                 && !self.native_base_bypass_hit(&target, Symbol::intern(method))
-                && !self.user_override_outranked_by_builtin(&target, type_name, method)
+                && !self.user_override_outranked_by_builtin(type_name, method)
             {
                 return self.dispatch_instance_and_fallback(target, method, args);
             }
@@ -4047,7 +4049,12 @@ impl Interpreter {
             && match target.view() {
                 ValueView::Instance { class_name, .. } => {
                     let class_name = class_name.resolve();
-                    self.class_has_user_method(&class_name, method)
+                    // An augmented slurpy-only `multi` on a built-in ancestor
+                    // ranks after the built-in method, so it does not shadow it
+                    // (#13509).
+                    (self.class_has_user_method(&class_name, method)
+                        && !self.native_base_bypass_hit(&target, Symbol::intern(method))
+                        && !self.user_candidates_all_outranked_by_builtin(&class_name, method))
                         || self.class_scoped_accessor_shadows(&class_name, method, &args)
                         // A Cool-only builtin (`.subst`, `.trans`, ...) is not
                         // resolvable on a plain Any-derived instance in raku, so

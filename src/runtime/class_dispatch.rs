@@ -271,6 +271,26 @@ impl Interpreter {
                     return res.map(|v| (v, None));
                 }
             }
+            // The user candidates of a `multi method` (or an `augment`ed one) join
+            // the candidates the receiver inherits from a built-in `proto`
+            // (`Any.map`, `Any.elems`, `Mu.say`): a call none of the user's
+            // accepts reaches the built-in one, as in Rakudo
+            // (`class D { multi method elems(Int $x) }; D.new.elems` is 1).
+            // The row table has no signatures, so "the built-in is a multi" is
+            // approximated by "the receiver's MRO has a built-in of that name".
+            // TODO: rank the built-in's candidates with the user's (#12751).
+            if !matches!(inv_value.view(), ValueView::Package(_) | ValueView::Mixin(..))
+                && !self.native_base_bypass_hit(&inv_value, Symbol::intern(method_name))
+                && self
+                    .lookup_proto_method(receiver_class_name, method_name)
+                    .is_none()
+            {
+                let mro = self.class_mro(receiver_class_name);
+                if Self::builtin_method_level(&mro, method_name).is_some() {
+                    let v = self.run_core_type_builtin(inv_value, method_name, args)?;
+                    return Ok((v, None));
+                }
+            }
             let sigs = self.format_method_candidate_signatures(
                 receiver_class_name,
                 method_name,

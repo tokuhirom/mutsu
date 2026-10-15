@@ -377,6 +377,10 @@ pub(crate) fn collection_gist(target: &Value) -> Option<Option<Result<Value, Run
             Value::str(crate::value::lazy_list_placeholder("gist", false))
         }
         ValueView::Seq(items) => Value::str(format!("({})", capped_join(&items, gist_item))),
+        // A lazy-tail Slip (`(1..*).Slip`, #13117) is a lazy list: `(...)`.
+        ValueView::Slip(_) if crate::builtins::lazy_slip::has_lazy_tail(target) => {
+            Value::str(crate::value::lazy_list_placeholder("gist", false))
+        }
         ValueView::Slip(items) => Value::str(format!("({})", capped_join(&items, gist_item))),
         ValueView::Pair(k, v) => Value::str(format!("{} => {}", k, runtime::gist_value(v))),
         // A Pair-valued key is parenthesized so the outer arrow is unambiguous

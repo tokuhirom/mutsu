@@ -1048,6 +1048,36 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Err(_) => None,
     };
     let init = named_child(node, "initializer")?;
+    if init.class == RakuAstClass::InitializerCallAssign {
+        let call = named_child_or_positional(init)?;
+        let (method, callee, args) = super::dynamic_method::call_assign_initializer(call)?;
+        if callee.is_some() {
+            return Err(unsupported(node));
+        }
+        let expr = Expr::MethodCall {
+            target: Box::new(Expr::BareWord("Mu".to_string())),
+            name: crate::symbol::Symbol::intern(&method),
+            args,
+            modifier: None,
+            quoted: false,
+            sugar: false,
+        };
+        return Ok(Stmt::SyntheticBlock(vec![
+            Stmt::VarDecl {
+                name: name.clone(),
+                expr,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            },
+            Stmt::MarkSigillessReadonly(name),
+        ]));
+    }
     let assigned = match init.class {
         RakuAstClass::InitializerAssign => true,
         RakuAstClass::InitializerBind => false,

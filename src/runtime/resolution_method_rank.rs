@@ -117,18 +117,10 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn is_core_type_receiver(invocant: &Value) -> bool {
-        !(invocant.is_lazy_match_value()
-            || matches!(
-                invocant.view(),
-                ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Package(_)
-            ))
-    }
-
     /// The MRO index of the most-derived level with a built-in method
     /// `method_name`, or `None`.
     // Cost: O(m), m = MRO depth.
-    fn builtin_method_level(mro: &[Symbol], method_name: &str) -> Option<usize> {
+    pub(super) fn builtin_method_level(mro: &[Symbol], method_name: &str) -> Option<usize> {
         let name: &'static str = Symbol::intern(method_name).as_str();
         mro.iter().position(|owner| {
             let folded =
