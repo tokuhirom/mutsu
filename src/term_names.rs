@@ -58,7 +58,9 @@ pub(crate) fn term_key(name: &str) -> String {
 /// `$x`) or a qualified symbol (`A::Z`).
 // Cost: O(|name|).
 pub(crate) fn bareword_target_key(name: &str) -> String {
-    if name.is_empty() || name.starts_with(['$', '@', '%', '&', TERM_PREFIX]) || name.contains("::")
+    if name.is_empty()
+        || name.starts_with(['$', '@', '%', '&', TERM_PREFIX])
+        || crate::qualified::is_qualified_str(name)
     {
         name.to_string()
     } else {
