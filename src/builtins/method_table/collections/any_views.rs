@@ -325,8 +325,13 @@ fn pairup(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>
 // Cost: O(e + v), e = pairs of the invocant, v = values produced (a Positional
 // value fans out to one pair per element).
 pub(crate) fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if target.is_nil() {
+    // `Nil` and a type object list as nothing.
+    if target.is_nil() || matches!(target.view(), ValueView::Package(_)) {
         return Some(Ok(Value::array(Vec::new())));
+    }
+    // A `Capture` is `self.list`: its positionals.
+    if let ValueView::Capture { positional, .. } = target.view() {
+        return invert(&Value::array(positional.to_vec()), args);
     }
     if let Some(result) = super::list::invert(target, args) {
         return Some(result);

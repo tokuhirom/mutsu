@@ -507,6 +507,10 @@ pub(crate) fn permutations(target: &Value, args: &[Value]) -> Option<Result<Valu
     if !args.is_empty() {
         return None;
     }
+    // A lazy or infinite receiver has no end to enumerate (`X::Cannot::Lazy`).
+    if let Some(err) = crate::runtime::Interpreter::lazy_guard_error("permutations", target) {
+        return Some(Err(err));
+    }
     let items = if crate::runtime::utils::is_shaped_array(target) {
         crate::runtime::utils::shaped_array_leaves(target)
     } else {
@@ -549,6 +553,10 @@ pub(crate) fn permutations(target: &Value, args: &[Value]) -> Option<Result<Valu
 pub(crate) fn combinations(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if !args.is_empty() {
         return None;
+    }
+    // A lazy or infinite receiver has no end to enumerate (`X::Cannot::Lazy`).
+    if let Some(err) = crate::runtime::Interpreter::lazy_guard_error("combinations", target) {
+        return Some(Err(err));
     }
     let items = if crate::runtime::utils::is_shaped_array(target) {
         crate::runtime::utils::shaped_array_leaves(target)
