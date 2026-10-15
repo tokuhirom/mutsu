@@ -742,7 +742,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "univals", 1, 24),
     ("Str", "chrs", 1, 0),
     ("Str", "tclc", 1, 24),
-    ("Str", "Range", 1, 0),
     ("Str", "Complex", 1, 0),
     ("Str", "Version", 1, 56),
     ("Str", "Real", 1, 0),
