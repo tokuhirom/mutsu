@@ -113,4 +113,98 @@ impl Interpreter {
             .inspect_err(|e| self.record_call_resume_point(code, call_ip, e))?;
         Ok(true)
     }
+
+    /// Run the `Reduction` or `HyperOp` at `ip + 1` with the routine one of
+    /// the import sets of chain `chain_idx` binds `infix:<op>` (`name_idx`)
+    /// to. Returns `false`, having done nothing, when no set binds it.
+    pub(super) fn exec_lex_import_meta_site(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+        chain_idx: u32,
+        name_idx: u32,
+        compiled_fns: &CompiledFns,
+    ) -> Result<bool, RuntimeError> {
+        let Some(chain) = code.lexical_import_chains.get(chain_idx as usize) else {
+            return Ok(false);
+        };
+        let Some(target) = self.lexical_import_binding(chain, code.const_sym(name_idx)) else {
+            return Ok(false);
+        };
+        let callable = match target {
+            crate::runtime::lexical_imports::LexicalImport::Code(value) => value,
+            crate::runtime::lexical_imports::LexicalImport::Routine(def) => {
+                self.sub_value_from_function_def((*def).clone())
+            }
+        };
+        self.sync_source_line(code, ip + 1);
+        match code.ops.get(ip + 1) {
+            Some(OpCode::Reduction(spec_idx)) => {
+                let spec = code.reduction_spec(*spec_idx);
+                self.exec_reduction_op(code, spec, Some(callable))?;
+            }
+            Some(OpCode::HyperOp {
+                dwim_left,
+                dwim_right,
+                ..
+            }) => {
+                self.exec_hyper_func_op(
+                    code,
+                    name_idx,
+                    *dwim_left,
+                    *dwim_right,
+                    false,
+                    Some(callable),
+                    compiled_fns,
+                )?;
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
+    /// Call `def`, the routine a lexical import set binds, as a by-name call
+    /// of it would: a Junction argument whose parameter does not accept one
+    /// is autothreaded (`maybe_autothread_func_call`), one call per
+    /// eigenstate, before the routine runs.
+    // Cost: O(j) calls of `def` (j = eigenstates of the threaded Junctions; 1
+    // without a Junction argument) plus O(a) per call, a = arguments.
+    pub(super) fn call_lexical_import_routine(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        let junction_indices: Vec<usize> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| Self::extract_junction_from_arg(v).is_some())
+            .map(|(i, _)| i)
+            .collect();
+        if !junction_indices.is_empty() {
+            let indices =
+                self.autothread_indices_for_params(&args, &junction_indices, &def.param_defs);
+            if !indices.is_empty() {
+                let idx = self.pick_autothread_junction_index(&args, &indices);
+                if let Some((kind, values, pair_key)) = Self::extract_junction_from_arg(&args[idx])
+                {
+                    let mut results = Vec::with_capacity(values.len());
+                    for eigenstate in values.iter() {
+                        let mut threaded = args.clone();
+                        threaded[idx] = match &pair_key {
+                            Some(key) => Value::pair(key.clone(), eigenstate.clone()),
+                            None => eigenstate.clone(),
+                        };
+                        results.push(self.call_lexical_import_routine(
+                            def,
+                            threaded,
+                            compiled_fns,
+                        )?);
+                    }
+                    return Ok(Value::junction(kind, results));
+                }
+            }
+        }
+        self.compile_and_call_qualified_def(def, args, compiled_fns)
+    }
 }

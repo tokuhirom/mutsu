@@ -193,10 +193,36 @@ Consequences that pin the design:
     since method bodies compile through the routine body compiler. Slice 1's
     "a `use` in a method body opens no set yet" no longer holds.
 
+  **Slice 2 done** (`fix/8751-import-operators`, 2026-10-15): a user
+  `infix:<op>` that is not a built-in operator (`lexically_bindable_operator`)
+  binds in the set instead of the registry, so a callee written outside the
+  block no longer sees it.
+
+  Every form that uses the operator inside the block reads the set:
+  - a binary use and a compound assignment (`LexImportInfix`);
+  - `&infix:<op>` (`LexImportCall`);
+  - a reduction, triangle reduction or hyper. Their new prefix
+    `OpCode::LexImportMeta` runs the `Reduction` with the bound routine as
+    its callable (`exec_reduction_op`'s `op_callable`), and the `HyperOp`
+    through the `>>[&f]<<` machinery (`exec_hyper_func_op`'s
+    `func_override`).
+
+  Two gaps the slice closed, both visible through slice 1's bindings:
+  - **Junctions.** A call through a bound `FunctionDef` did not autothread
+    a Junction argument. `call_lexical_import_routine` now threads it as a
+    by-name call does.
+  - **Recompiled bodies.** A `.map` or `gather` body is compiled again from
+    its AST, and those recompiles lost the chain. They are now seeded with
+    the chain their original compile shared
+    (`seed_lexical_import_chain_from`).
+
   Left for stage 2:
-  - An operator family keeps its registry alias: a built-in operator's
-    opcode finds its user candidates there. A callee outside the block still
-    sees an imported operator.
+  - The prefix, postfix and circumfix categories, and a user candidate of a
+    built-in operator (`multi infix:<+>`), keep the registry alias: their
+    opcodes find user candidates there. So a callee outside the block still
+    sees them.
+  - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
+    do, they need the prefix too.
   - A non-trivial proto keeps its registry alias.
   - Classes and variables keep the `ImportScope` rollback.
 

@@ -212,6 +212,31 @@ impl Compiler {
         )))
     }
 
+    /// Start this recompile of a block's body (a `.map`/`gather` callback
+    /// compiled again from its AST) inside the import sets its original
+    /// compile `origin` was under (ADR-8751): the chain every call site of
+    /// `origin` shares, its outermost sets. A `use` inside the body opens
+    /// its own again as the body compiles.
+    // Cost: O(s * c), s = call-site chains of `origin`, c = sets per chain.
+    pub(crate) fn seed_lexical_import_chain_from(&mut self, origin: &crate::opcode::CompiledCode) {
+        let mut chains = origin.lexical_import_chains.iter();
+        let Some(first) = chains.next() else {
+            return;
+        };
+        // Innermost first, so the shared outer sets are a common suffix.
+        let mut common: &[Symbol] = first;
+        for chain in chains {
+            let shared = common
+                .iter()
+                .rev()
+                .zip(chain.iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count();
+            common = &common[common.len() - shared..];
+        }
+        self.seed_lexical_import_chain(common.to_vec());
+    }
+
     /// Start this (EVAL) unit inside the import sets `innermost_first` of the
     /// blocks running around its `EVAL` call (ADR-8751).
     pub(crate) fn seed_lexical_import_chain(&mut self, innermost_first: Vec<Symbol>) {
@@ -222,6 +247,43 @@ impl Compiler {
     /// here, or `None` when no enclosing block `use`s a module or the name
     /// cannot be an imported routine's.
     // Cost: O(c), c = enclosing `use`-blocks.
+    /// Emit an `OpCode::LexImportInfix` prefix for the binary `InfixFunc` over
+    /// operator `op` the caller emits next, when an enclosing block's `use`
+    /// may have imported `infix:<op>` (ADR-8751 stage 2). Every path that
+    /// emits a binary `InfixFunc` calls this -- the RakuAST frontend lowers a
+    /// user operator to an `Expr::Binary`, not an `Expr::InfixFunc`.
+    // Cost: O(c + m), c = enclosing `use`-blocks, m = bytes of `op`.
+    pub(super) fn emit_lex_import_infix(&mut self, op: &str) {
+        let name = Symbol::intern(&format!("infix:<{op}>"));
+        if let Some(chain_idx) = self.lexical_import_chain_idx(name) {
+            let name_idx = self.code.add_constant(Value::str(name.resolve()));
+            self.code.emit(OpCode::LexImportInfix {
+                chain_idx,
+                name_idx,
+            });
+        }
+    }
+
+    /// Emit an `OpCode::LexImportMeta` prefix for the reduction or hyper over
+    /// user operator `op` the caller emits next, when an enclosing block's
+    /// `use` may have imported it (ADR-8751 stage 2). A built-in operator
+    /// gets none: its opcode finds user candidates in the registry.
+    // Cost: O(c + m), c = enclosing `use`-blocks, m = bytes of `op`.
+    pub(super) fn emit_lex_import_meta(&mut self, op: Symbol) {
+        let op = op.as_str();
+        if op.is_empty() || crate::compiled_operator::is_builtin_infix(op) {
+            return;
+        }
+        let name = Symbol::intern(&format!("infix:<{op}>"));
+        if let Some(chain_idx) = self.lexical_import_chain_idx(name) {
+            let name_idx = self.code.add_constant(Value::str(name.resolve()));
+            self.code.emit(OpCode::LexImportMeta {
+                chain_idx,
+                name_idx,
+            });
+        }
+    }
+
     pub(super) fn lexical_import_chain_idx(&mut self, name: Symbol) -> Option<u32> {
         if self.lexical_import_chain.is_empty()
             || crate::qualified::is_qualified(name)

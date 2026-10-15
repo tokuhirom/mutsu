@@ -2,6 +2,10 @@ use super::*;
 use crate::value::ValueMap;
 
 impl Interpreter {
+    /// `func_override`, when given, is the routine to call (an operator an
+    /// enclosing block's `use` bound, `OpCode::LexImportMeta`) instead of
+    /// resolving `name_idx`'s name.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_hyper_func_op(
         &mut self,
         code: &CompiledCode,
@@ -9,6 +13,7 @@ impl Interpreter {
         dwim_left: bool,
         dwim_right: bool,
         writeback: bool,
+        func_override: Option<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
@@ -36,7 +41,9 @@ impl Interpreter {
         // fallback mishandles both for mutating sigilless subs.
         // A `&op` the frame binds itself (a `&op` parameter) lives only in a
         // local slot, never in the env (#9464).
-        let func_value: Option<Value> = {
+        let func_value: Option<Value> = if func_override.is_some() {
+            func_override
+        } else {
             let bare = name.trim_start_matches('&');
             let mut found = self.frame_amp_callable(code, bare).filter(|v| {
                 matches!(

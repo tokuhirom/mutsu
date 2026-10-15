@@ -141,6 +141,19 @@ impl Interpreter {
         true
     }
 
+    /// Whether the operator routine `name` binds in a lexical import set
+    /// instead of the registry: an `infix:<op>` that is not a built-in
+    /// operator, whose every use site reads the set (`LexImportInfix`,
+    /// `LexImportMeta`, `LexImportCall` for `&infix:<op>`). A built-in
+    /// operator's opcode, and the prefix, postfix and circumfix categories,
+    /// find user candidates in the registry, so they keep the alias.
+    // Cost: O(m), m = bytes of `name`.
+    pub(crate) fn lexically_bindable_operator(name: &str) -> bool {
+        name.strip_prefix("infix:<")
+            .and_then(|rest| rest.strip_suffix('>'))
+            .is_some_and(|op| !op.is_empty() && !crate::compiled_operator::is_builtin_infix(op))
+    }
+
     /// Finish the capture [`Self::begin_lexical_import_capture`] started and
     /// bind the imported routines into the set `id`. `outer` is the capture
     /// that was running when this one began (a nested load's own `use`).

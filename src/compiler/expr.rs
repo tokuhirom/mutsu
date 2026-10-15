@@ -1233,9 +1233,9 @@ impl Compiler {
                         Expr::Var(name.clone())
                     };
                     self.compile_expr(&target);
-                    let op_idx = self
-                        .code
-                        .add_reduction_spec(ReductionSpec::lower(op.as_str()));
+                    let spec = ReductionSpec::lower(op.as_str());
+                    self.emit_lex_import_meta(spec.base);
+                    let op_idx = self.code.add_reduction_spec(spec);
                     self.code.emit(OpCode::Reduction(op_idx));
                     return;
                 }
@@ -1267,9 +1267,9 @@ impl Compiler {
                     }
                 }
                 self.compile_expr(expr);
-                let op_idx = self
-                    .code
-                    .add_reduction_spec(ReductionSpec::lower(op.as_str()));
+                let spec = ReductionSpec::lower(op.as_str());
+                self.emit_lex_import_meta(spec.base);
+                let op_idx = self.code.add_reduction_spec(spec);
                 self.code.emit(OpCode::Reduction(op_idx));
             }
             // ADR-0048 Phase 2: a phaser-as-expression / `once {}` body does
@@ -1749,7 +1749,9 @@ impl Compiler {
                     }
                 }
                 self.code.emit(OpCode::MakeArray(items.len() as u32));
-                let op_idx = self.code.add_reduction_spec(ReductionSpec::lower(op));
+                let spec = ReductionSpec::lower(op);
+                self.emit_lex_import_meta(spec.base);
+                let op_idx = self.code.add_reduction_spec(spec);
                 self.code.emit(OpCode::Reduction(op_idx));
             }
         }

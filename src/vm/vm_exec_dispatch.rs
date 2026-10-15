@@ -5420,6 +5420,18 @@ impl Interpreter {
             }
             // Cost: O(c) probe, c = enclosing `use`-blocks; on a hit the callee's
             // body; on a miss nothing (the `InfixFunc` at ip + 1 runs).
+            // Cost: O(c) probe, c = enclosing `use`-blocks; on a hit the reduction or
+            // hyper at ip + 1 with the bound routine; on a miss nothing (that op runs).
+            OpCode::LexImportMeta {
+                chain_idx,
+                name_idx,
+            } => {
+                if self.exec_lex_import_meta_site(code, *ip, *chain_idx, *name_idx, compiled_fns)? {
+                    *ip += 2;
+                } else {
+                    *ip += 1;
+                }
+            }
             OpCode::LexImportInfix {
                 chain_idx,
                 name_idx,
@@ -6517,7 +6529,7 @@ impl Interpreter {
             OpCode::Reduction(spec_idx) => {
                 self.sync_source_line(code, *ip);
                 let spec = code.reduction_spec(*spec_idx);
-                self.exec_reduction_op(code, spec)?;
+                self.exec_reduction_op(code, spec, None)?;
                 *ip += 1;
             }
 
@@ -6915,6 +6927,7 @@ impl Interpreter {
                         *dwim_left,
                         *dwim_right,
                         *writeback,
+                        None,
                         compiled_fns,
                     )
                 })?;

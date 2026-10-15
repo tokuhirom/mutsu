@@ -19,10 +19,15 @@ impl Interpreter {
     /// each step, so the unshared accumulated `Str` grows in place and `[~] @a` is
     /// O(t) amortized in the result's chars t; `[\~]` keeps every prefix alive,
     /// so its steps join strands instead (ADR-0120), O(1) amortized per step.
+    ///
+    /// `op_callable` is the routine an enclosing block's `use` bound the
+    /// operator to (ADR-8751, `OpCode::LexImportMeta`), used instead of
+    /// resolving the operator by name.
     pub(super) fn exec_reduction_op(
         &mut self,
         code: &CompiledCode,
         spec: crate::compiled_operator::ReductionSpec,
+        op_callable: Option<Value>,
     ) -> Result<(), RuntimeError> {
         // Every marker the operator's spelling carried — the `[\op]` scan
         // form, the `[!op]` negation, the compiler's thunked short-circuit
@@ -183,7 +188,10 @@ impl Interpreter {
             }
             return Ok(());
         }
-        let mut callable = self.reduction_callable_for_op(base_op, Some(code));
+        let mut callable = match op_callable {
+            Some(callable) => Some(callable),
+            None => self.reduction_callable_for_op(base_op, Some(code)),
+        };
         // `my &op = &[+]; [[&op]] 5` is still a reduction with `infix:<+>`'s
         // identity, so unwrap a callable that merely names a builtin operator
         // back into that operator before any of the arity/associativity/
