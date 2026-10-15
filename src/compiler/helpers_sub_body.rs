@@ -372,6 +372,8 @@ impl Compiler {
         sub_compiler.record_param_local_slots(params, param_defs);
         let import_scope_idx = Self::has_use_stmt(body)
             .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
+        // The body's own `use`s bind lexically in it (ADR-8751).
+        sub_compiler.enter_lexical_use_block(body);
         // Hoist sub declarations within the sub body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
@@ -1465,6 +1467,8 @@ impl Compiler {
         // return or exception.
         let import_scope_idx = Self::has_use_stmt(body)
             .then(|| sub_compiler.code.emit(OpCode::ImportScope { body_end: 0 }));
+        // The body's own `use`s bind lexically in it (ADR-8751).
+        sub_compiler.enter_lexical_use_block(body);
         // Hoist sub declarations within the closure body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);

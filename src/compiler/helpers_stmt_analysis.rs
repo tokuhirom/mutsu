@@ -98,18 +98,7 @@ impl Compiler {
     ) {
         let idx =
             Self::has_use_stmt(stmts).then(|| self.code.emit(OpCode::ImportScope { body_end: 0 }));
-        // The block's `use`s bind lexically in it (ADR-8751): every call site
-        // it encloses sees their import sets, a site before the `use` included.
-        let chain_mark = self.lexical_import_chain.len();
-        if idx.is_some() {
-            for stmt in stmts {
-                if let Some(id) = self.lexical_use_set_id(stmt)
-                    && !self.lexical_import_chain.contains(&id)
-                {
-                    self.lexical_import_chain.push(id);
-                }
-            }
-        }
+        let chain_mark = self.enter_lexical_use_block(stmts);
         body(self);
         self.lexical_import_chain.truncate(chain_mark);
         if let Some(idx) = idx {
@@ -117,14 +106,32 @@ impl Compiler {
         }
     }
 
+    /// Open the lexical import sets of the `use`s `stmts` (a block body)
+    /// holds: every call site the block encloses sees them, one before the
+    /// `use` included (ADR-8751). Only a block below the unit's top level
+    /// comes here -- the unit's own statements are not a block region -- so a
+    /// top-level import stays the whole unit's, on the registry. Returns the
+    /// mark to truncate `lexical_import_chain` back to on exit.
+    // Cost: O(s), s = statements of the block.
+    pub(super) fn enter_lexical_use_block(&mut self, stmts: &[Stmt]) -> usize {
+        let mark = self.lexical_import_chain.len();
+        for stmt in stmts {
+            if let Some(id) = Self::lexical_use_set_id(stmt)
+                && !self.lexical_import_chain.contains(&id)
+            {
+                self.lexical_import_chain.push(id);
+            }
+        }
+        mark
+    }
+
     /// The lexical import set id of `stmt` when it is a `use` that binds
     /// routines lexically in its block (ADR-8751 stage 1): a module `use`
-    /// below the unit's top level (a top-level import is the whole unit's and
-    /// stays on the registry). The id names the import list, not the
+    /// with no `:if` condition. The id names the import list, not the
     /// statement, so a recompile of the block finds the same set and every
     /// `use` importing the same list shares it.
     // Cost: O(n), n = size of the `use`'s argument expression.
-    pub(super) fn lexical_use_set_id(&self, stmt: &Stmt) -> Option<Symbol> {
+    pub(super) fn lexical_use_set_id(stmt: &Stmt) -> Option<Symbol> {
         let Stmt::Use {
             module,
             tags,
@@ -135,9 +142,6 @@ impl Compiler {
         else {
             return None;
         };
-        if self.fold_root && self.decl_scope_depth == 0 {
-            return None;
-        }
         super::begin_use::preloadable_module_name(module, tags, None, None)?;
         if tags.iter().any(|t| t == "from") {
             return None;
