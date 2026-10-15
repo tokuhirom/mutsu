@@ -97,6 +97,17 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         if crate::ast::anon_state::is_implicit_decl(stmt) {
             continue;
         }
+        if let Some(expansion) = done_value_expansion(stmt) {
+            for part in expansion {
+                if let Some(mut node) = convert_stmt(part)? {
+                    if let Some(n) = line.take() {
+                        node.fields.push(origin::field(n));
+                    }
+                    fields.push(node_field(None, node));
+                }
+            }
+            continue;
+        }
         if let Some(mut node) = convert_stmt(stmt)? {
             if let Some(n) = line.take() {
                 node.fields.push(origin::field(n));
@@ -108,6 +119,28 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         class: RakuAstClass::StatementList,
         fields,
     })
+}
+
+/// `done VALUE` expands to `emit VALUE; done`, which Rakudo keeps as two
+/// statements in a supply block.
+// Cost: O(1), the expansion has exactly two statements.
+fn done_value_expansion(stmt: &Stmt) -> Option<&[Stmt]> {
+    let Stmt::SyntheticBlock(stmts) = stmt else {
+        return None;
+    };
+    let [
+        Stmt::Call {
+            name,
+            args,
+            listop: false,
+        },
+        Stmt::ReactDone,
+    ] = stmts.as_slice()
+    else {
+        return None;
+    };
+    (name.resolve() == "emit" && matches!(args.as_slice(), [crate::ast::CallArg::Positional(_)]))
+        .then_some(stmts)
 }
 
 /// The `scope` a package declaration is written with: `my` for a lexical one,
