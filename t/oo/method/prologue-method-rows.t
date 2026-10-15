@@ -57,7 +57,7 @@ is $vp.key, 'a', 'Pair subclass: .key';
 is $vp.antipair.raku, (1 => "a").raku, 'Pair subclass: .antipair';
 is $vp.Pair.WHAT, VP, 'Pair subclass: .Pair is the instance';
 is $vp.fmt("%s=%s"), 'a=1', 'Pair subclass: .fmt';
-is $vp.invert.raku, ((1 => "a"),).raku, 'Pair subclass: .invert';
+is $vp.invert.raku, '(1 => "a",).Seq', 'Pair subclass: .invert';
 class MB is Bag {}
 my $mb = MB.new(<a a b>);
 is $mb.total, 3, 'Bag subclass: .total';
