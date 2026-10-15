@@ -47,6 +47,10 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
             walk_stmts(v, body);
         }
         SourceForm::SupplyBlock(body) => walk_stmts(v, body),
+        SourceForm::TakeLogicalTail { value, right, .. } => {
+            v.visit_expr(value);
+            v.visit_expr(right);
+        }
         SourceForm::HyperAssign {
             target,
             value,

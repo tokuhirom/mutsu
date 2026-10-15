@@ -1,7 +1,5 @@
 use super::*;
 
-static TAKE_VALUE_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
 /// The listop invocant colon, for the listops that have a dedicated *statement*
 /// parser (`die`/`fail`/`take`/`take-rw`/`return`) instead of going through the
 /// generic no-paren listop path.
@@ -331,25 +329,14 @@ pub(crate) fn take_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     let (r, _) = ws(rest)?;
     let stmt = if crate::parser::expr::starts_with_loose_word_logical(r) {
-        let id = TAKE_VALUE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let tmp_name = format!("__mutsu_take_value_{id}");
-        let tmp_var = Expr::Var(tmp_name.clone());
+        let tmp_var = Expr::Var("__mutsu_take_value_probe".to_string());
         let (rest, tail) = crate::parser::expr::word_logical_tail_pub(r, tmp_var.clone())?;
-        let capture = Stmt::VarDecl {
-            name: tmp_name,
-            expr,
-            type_constraint: None,
-            is_state: false,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
+        let Expr::Binary { op, right, .. } = &tail else {
+            unreachable!("word-logical tail builder returns a binary expression")
         };
         return parse_statement_modifier(
             rest,
-            Stmt::SyntheticBlock(vec![capture, Stmt::Take(tmp_var, false), Stmt::Expr(tail)]),
+            crate::ast::expand_take_logical_tail(expr, op.clone(), (**right).clone()),
         );
     } else {
         Stmt::Take(expr, false)

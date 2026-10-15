@@ -416,6 +416,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign_statement(stmt).map(Some)
             }
+            Some(crate::ast::SourceForm::TakeLogicalTail { value, op, right }) => {
+                take_logical_tail_node(value, op, right)
+                    .map(|node| Some(statement_expression(node)))
+            }
             // `sub f { … }(ARGS)`: the routine as the operand of its call.
             Some(crate::ast::SourceForm::ImmediateCall) => super::immediate_call::convert(stmt)
                 .ok_or_else(|| unsupported("source form"))?
@@ -3009,6 +3013,24 @@ fn source_form(stmt: &Stmt) -> Option<&crate::ast::SourceForm> {
     }
 }
 
+fn take_logical_tail_node(
+    value: &Expr,
+    op: &crate::token_kind::TokenKind,
+    right: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(
+                Some("left"),
+                control_call("take", std::slice::from_ref(value))?,
+            ),
+            node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
+            node_field(Some("right"), convert_expr(right)?),
+        ],
+    })
+}
+
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
@@ -3633,6 +3655,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
                 declaration_compound_assign(stmt)
+            }
+            Some(crate::ast::SourceForm::TakeLogicalTail { value, op, right }) => {
+                take_logical_tail_node(value, op, right)
             }
             // `do sub f { … }(ARGS)`: the call statement under the prefix.
             Some(crate::ast::SourceForm::ImmediateCall) => {
