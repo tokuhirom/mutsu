@@ -49,10 +49,7 @@ pub(super) static TYPE_OBJECT_ROWS: &[MethodRow] = &[
     type_object_row("pairup", pairup),
 ];
 
-const fn type_object_row(
-    name: &'static str,
-    handler: NarrowFn,
-) -> MethodRow {
+const fn type_object_row(name: &'static str, handler: NarrowFn) -> MethodRow {
     MethodRow {
         owner: "Any",
         name,
