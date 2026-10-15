@@ -27,7 +27,11 @@ fn levenshtein(a: &str, b: &str) -> usize {
 // Cost: O(b * a), b and a = chars of the two strings.
 fn str_distance(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> Option<usize> {
     let map = attributes.as_map();
-    let text = |key: &str| map.get(key).map(|v| v.to_string_value()).unwrap_or_default();
+    let text = |key: &str| {
+        map.get(key)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default()
+    };
     Some(levenshtein(&text("before"), &text("after")))
 }
 
