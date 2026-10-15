@@ -17,7 +17,7 @@ pub(super) enum CodeVarBinding {
     Bound(Value),
     /// A lexical import's routine definition, called as the registry alias
     /// it was found through would be (`OpCode::LexImportCall`).
-    Routine(std::sync::Arc<crate::runtime::FunctionDef>),
+    Routine(std::sync::Arc<crate::ast::FunctionDef>),
 }
 
 impl Interpreter {

@@ -23,7 +23,7 @@ pub(crate) enum LexicalImport {
     /// outlives the block's registry alias. It is called as the alias was,
     /// by definition (`compile_and_call_qualified_def`), so it runs in the
     /// module's own scope.
-    Routine(std::sync::Arc<crate::runtime::FunctionDef>),
+    Routine(std::sync::Arc<crate::ast::FunctionDef>),
 }
 
 /// What a `use` that fills a lexical import set imported, collected while
