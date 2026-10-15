@@ -316,6 +316,10 @@ pub(crate) struct ProtoDispatchFrame {
     pub(crate) dispatch_token: u64,
     /// `Interpreter::method_call_depth` when the proto body was entered.
     pub(crate) method_depth: u32,
+    /// `Some` for a proto run by a captured-candidate dispatcher value
+    /// (`wk::multi_dispatch_proto`): `{*}` redispatches to that value's
+    /// candidates, not to the family its name finds in the registry.
+    pub(crate) dispatcher: Option<Value>,
 }
 
 /// The deferral chain of a `multi_dispatch_stack` frame: the candidates

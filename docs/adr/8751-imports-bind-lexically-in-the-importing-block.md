@@ -226,6 +226,27 @@ Consequences that pin the design:
   block no longer sees the operator. Pinned by
   `t/modules/import-export/use-in-block-binds-affix-operators-lexically.t`.
 
+  **Slice 4 done** (`fix/8751-import-nontrivial-proto`, 2026-10-16): a multi
+  family whose proto does more than dispatch binds in the set too.
+  - **The dispatcher runs the proto.** A captured-candidate dispatcher value
+    (`sub_value_from_multi_candidates`) of a family whose proto body is more
+    than `{*}` carries the proto as a code object
+    (`with_dispatch_proto`, `wk::multi_dispatch_proto`). A call through the
+    value that does not resolve the family by name runs it under a proto
+    dispatch frame that names the value (`push_proto_dispatch_frame_over`),
+    and that frame's `{*}` goes to the value's captured candidates
+    (`call_proto_frame_dispatcher`, factored out of `call_sub_value` as
+    `call_captured_candidates`), not to whatever the name finds in the
+    registry.
+  - **An only-star proto with a real signature** (`proto f(Int $) {*}`)
+    binds as its candidates alone, as before for a bare-capture one. mutsu
+    checks an only-star proto's signature only for literal arguments, so the
+    candidates answer the same.
+  - **Not only imports.** `&f` of a family with such a proto, taken where the
+    family is declared, keeps the proto after the scope is gone (`my &k = do {
+    proto f(|) { 'P:' ~ {*} }; multi f(Int) {...}; &f }` ran the candidate
+    alone before).
+
   Left for stage 2:
   - A user candidate of a built-in operator (`multi infix:<+>`,
     `multi prefix:<->`) and `postcircumfix` keep the registry alias: their
@@ -233,7 +254,6 @@ Consequences that pin the design:
     sees them.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
-  - A non-trivial proto keeps its registry alias.
   - Classes and variables keep the `ImportScope` rollback. A top-level
     routine that names a variable by string (`EVAL '$v'`, `::('$v')`) no
     longer sees a block-scoped import of it when the block calls it

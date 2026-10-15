@@ -777,6 +777,11 @@ pub(crate) mod wk {
         compose_left_marker => "__mutsu_compose_left";
         identity_callable_marker => "__mutsu_identity_callable";
         multi_dispatch_candidates => "__mutsu_multi_dispatch_candidates";
+        /// On a captured-candidate dispatcher (`multi_dispatch_candidates`):
+        /// the family's proto as a code object, when it does more than
+        /// dispatch. A call through the dispatcher runs it, and its `{*}`
+        /// redispatches to the captured candidates (ADR-8751 stage 2).
+        multi_dispatch_proto => "__mutsu_multi_dispatch_proto";
         /// The `Method` object a `.assuming`-primed method callable invokes
         /// (`$type.^lookup('m').assuming($obj)`), so the call binds its
         /// invocant the way the object's own `CALL-ME` does.

@@ -2982,6 +2982,9 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         frame: crate::runtime::ProtoDispatchFrame,
     ) -> Result<Value, RuntimeError> {
+        if let Some(dispatcher) = &frame.dispatcher {
+            return self.call_proto_frame_dispatcher(dispatcher, frame.args.clone());
+        }
         let proto_name = frame.name.clone();
         let args = frame.args.clone();
         // `{*}` rw-redispatch (ledger §D): when the proto declares a scalar

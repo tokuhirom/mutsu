@@ -18,6 +18,9 @@ impl Interpreter {
         &mut self,
         frame: ProtoDispatchFrame,
     ) -> Result<Value, RuntimeError> {
+        if let Some(dispatcher) = &frame.dispatcher {
+            return self.call_proto_frame_dispatcher(dispatcher, frame.args.clone());
+        }
         let ProtoDispatchFrame {
             name: proto_name,
             args,
