@@ -1018,28 +1018,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     if let Some(answer) = crate::builtins::method_table::exception::answer(target, method) {
         return Some(answer);
     }
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && target.instance_is_exception_by_name()
-    {
-        let map = attributes.as_map();
-        match method {
-            "line" => return Some(Ok(map.get("line").cloned().unwrap_or(Value::NIL))),
-            "file" => return Some(Ok(map.get("file").cloned().unwrap_or(Value::NIL))),
-            // `X::Comp` (compile-time diagnoses like `X::Syntax::*`) exposes
-            // `.filename`, not `.file` -- rakudo's actual attribute is
-            // `$!filename`. Fall back to `file` for exceptions that only got the
-            // older generic attribute populated.
-            "filename" => {
-                return Some(Ok(map
-                    .get("filename")
-                    .or_else(|| map.get("file"))
-                    .cloned()
-                    .unwrap_or(Value::NIL)));
-            }
-            _ => {}
-        }
-    }
-
     // Backtrace and Backtrace::Frame: their own methods are rows of the method
     // table (`method_table::backtrace`, ADR-11276 §9.35); a call the table's
     // entry did not take reaches the same handlers here. `Any`'s

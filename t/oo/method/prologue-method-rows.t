@@ -3,7 +3,7 @@ use Test;
 # ADR-11276 §9.111: the receiver-specific arms of `methods_0arg`'s prologue
 # are rows, and the receivers they answered reach them.
 
-plan 17;
+plan 20;
 
 # `Unicode` is a type object only (`DispatchShape::Unicode`).
 isa-ok Unicode.version, Version, 'Unicode.version';
@@ -30,3 +30,10 @@ isa-ok $bt.Seq, Seq, 'Backtrace.Seq';
 is $bt.Seq.elems, $bt.list.elems, 'Backtrace.Seq is the frames';
 isa-ok $bt.Stringy, Str, 'Backtrace.Stringy';
 is $bt.keys.elems, $bt.list.elems, 'Backtrace.keys indexes the frames';
+
+# A compile-time diagnosis answers `line` and `filename` from its attributes;
+# a typed one raised inside an EVAL names the EVAL unit too.
+try EVAL "1 +* * 2 }";
+is $!.^name, 'X::Syntax::Confused', 'a typed parse error';
+is $!.line, 1, 'X::Syntax::Confused.line';
+ok $!.filename.contains('EVAL'), 'X::Syntax::Confused.filename names the EVAL unit';
