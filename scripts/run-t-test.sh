@@ -36,7 +36,8 @@ per_file_timeout_scale() {
       echo 3
       ;;
     t/concurrency/concurrent-attr-hash-writes-do-not-corrupt.t|\
-    t/concurrency/concurrent-param-array-reader-families.t)
+    t/concurrency/concurrent-param-array-reader-families.t|\
+    t/concurrency/concurrent-param-hash-reader-families.t)
       # Deliberate hammer tests: 3-8 threads x 300-6000 iterations over one
       # shared container. Measured on an opt-level-0 debug binary, alone on
       # an idle 4-core box: 49-63s (attr-hash-writes, JIT/GC stress) and
@@ -44,6 +45,9 @@ per_file_timeout_scale() {
       # the nightly stress jobs' `prove -j4` with a 90s base both ran out of
       # budget (exit 124, "planned 8 ran 5" / "planned 48 ran 40") while every
       # reported assertion was ok and no crash report was written (#13344).
+      # The hash twin (param-hash-reader-families) measured 27-29s alone on
+      # a debug binary with the JIT forced hot and hit the same wall in the
+      # nightly (exit 124, "planned 32 ran 29", no crash report; #13515).
       # The work is the point of the test, so the budget scales (x3).
       echo 3
       ;;
