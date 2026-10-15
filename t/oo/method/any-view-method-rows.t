@@ -7,7 +7,7 @@ use Test;
 # `IO::Path`), a `Seq` with no settled shape, a shaped array, `Nil`, a type
 # object and a stash.
 
-plan 40;
+plan 42;
 
 # A `Range` lists as its elements.
 is (1..3).keys.raku, (0, 1, 2).Seq.raku, 'Range.keys';
@@ -48,6 +48,8 @@ throws-like { (1, 2, 3).pairup.eager }, X::Pairup::OddNumber, 'an odd element';
 
 # `invert` checks its elements.
 throws-like { (1, 2).invert.eager }, X::TypeCheck, 'List.invert of a non-Pair';
+throws-like { "a".invert.eager }, X::TypeCheck, 'Str.invert names the Str';
+throws-like { (1..2).invert.eager }, X::TypeCheck, 'Range.invert';
 is (a => 1, b => 2).invert.sort.raku, (1 => "a", 2 => "b").Seq.raku, 'List.invert';
 
 # `cache`.

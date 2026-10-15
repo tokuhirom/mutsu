@@ -63,7 +63,8 @@ fn aggregate_rows_resolve_to_the_rakudo_owners() {
         let sym = Symbol::intern(name);
         assert_eq!(owner_of(DispatchShape::List, sym, 0), "List");
         assert_eq!(owner_of(DispatchShape::Array, sym, 0), "List");
-        assert!(lookup(DispatchShape::Hash, sym, 0).is_none());
+        // A `Hash` is `Any`'s `self.list.METHOD` (ADR-11276 §9.109).
+        assert!(lookup(DispatchShape::Hash, sym, 0).is_some_and(|row| row.owner == "Any"));
     }
 }
 

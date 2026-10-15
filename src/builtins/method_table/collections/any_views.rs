@@ -335,8 +335,11 @@ pub(crate) fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, Run
         // An itemized `$`-held list reports its offending element, not the
         // whole `Array`.
         ValueView::Array(items, _) => items.iter().cloned().collect::<Vec<_>>(),
-        ValueView::Seq(..) | ValueView::Slip(..) => crate::runtime::utils::value_to_list(target),
-        _ => return None,
+        // A lazy list is forced by the interpreter.
+        ValueView::LazyList(_) => return None,
+        // Any other receiver is `self.list`: a scalar is its one element
+        // (`"a".invert` names the `Str`, as in Rakudo).
+        _ => crate::runtime::utils::value_to_list(target),
     };
     let got = elements
         .into_iter()
