@@ -2720,7 +2720,10 @@ collection's `.fmt($format, $separator)` with a `Format` object, `Rat.base($radi
 as its row's handler, so the rows now take any plain argument (`RowFlags::ANY_ARGS` on every `substr` and collection `fmt`
 row; the `base` rows had it) and the handler declines what only the interpreter can run. `unimatch` answered no receiver
 the `Cool` row did not. `Duration`/`Instant` `.base($radix, $digits)` called the cascade on its seconds
-(`native_method_2arg`); it calls `numeric_base::base_of` now. Pinned in `t/oo/method/two-arg-method-rows.t`.
+(`native_method_2arg`); it calls `numeric_base::base_of` now. The recognition table no longer claims a separator for
+`Str`/`Cool`/`Match`/`Int` `.fmt` (Rakudo's `Cool.fmt` has one parameter; the arity-2 bit was the arm's), and the
+test-only arity probe asks the owner chain of a value with no shape (an immutable `Map`), as `invoke_owner` does. Pinned
+in `t/oo/method/two-arg-method-rows.t`.
 `method-rows-report.py --arms`: the pure arity cascades lose four arms.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
