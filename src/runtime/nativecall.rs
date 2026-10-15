@@ -125,12 +125,37 @@ impl ParamSpec {
     }
 }
 
+/// A type object a callback parameter was declared as. Equality and the
+/// `Debug` text (which keys the closure intern table) go by the type itself.
+#[cfg_attr(not(feature = "libffi"), allow(dead_code))]
+#[derive(Clone)]
+pub struct DeclaredType(pub Value);
+
+impl std::fmt::Debug for DeclaredType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DeclaredType({})", self.0.to_string_value())
+    }
+}
+
+impl PartialEq for DeclaredType {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for DeclaredType {}
+
 /// The C signature of a `&callback (Sig)` parameter: what the C side will pass
 /// to, and expect back from, the function pointer mutsu hands it.
 #[cfg_attr(not(feature = "libffi"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallbackSig {
     pub params: Vec<CType>,
+    /// Per parameter, the declared type object when it is a user class
+    /// (`class archive is repr('CPointer')`) or a parameterized `CArray[T]`:
+    /// the callback receives an instance of it, as in rakudo, rather than a
+    /// bare `Pointer`.
+    pub param_types: Vec<Option<DeclaredType>>,
     pub ret: CType,
 }
 
