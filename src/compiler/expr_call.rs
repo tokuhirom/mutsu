@@ -2117,6 +2117,9 @@ impl Compiler {
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                if let Some(chain_idx) = self.lexical_import_chain_idx(*name) {
+                    self.code.emit(OpCode::LexImportCall { chain_idx });
+                }
                 self.code.emit(OpCode::CallFunc {
                     name_idx,
                     arity: args.len() as u32,
