@@ -88,20 +88,28 @@ fn array(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
     listify(target, true)
 }
 
-/// `Any.Seq`: a list explicitly marked `.lazy` stays lazy (`(1,2,3).lazy.Seq.is-lazy`
-/// is `True`); every other receiver is the interpreter's.
-// Cost: O(1).
+/// `Any.Seq`: `Seq.new(self.iterator)`, the receiver's elements as a `Seq`. A
+/// list explicitly marked `.lazy` stays lazy (`(1,2,3).lazy.Seq.is-lazy` is
+/// `True`); any other lazy or infinite receiver, and one `.list` does not
+/// answer, is the interpreter's.
+// Cost: O(e), e = elements of the receiver; O(1) for a lazy list.
 fn seq(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    match target.view() {
-        ValueView::LazyList(ll)
-            if ll
-                .env
-                .get("__mutsu_preserve_lazy_on_array_assign")
-                .is_some() =>
-        {
-            Some(Ok(target.clone()))
-        }
-        _ => None,
+    if let ValueView::LazyList(ll) = target.view() {
+        return ll
+            .env
+            .get("__mutsu_preserve_lazy_on_array_assign")
+            .is_some()
+            .then(|| Ok(target.clone()));
+    }
+    let list = capture_positionals(target).unwrap_or_else(|| target.clone());
+    match listify(&list, false)? {
+        Ok(list) => match list.view() {
+            ValueView::Array(items, kind) if !kind.is_lazy() => {
+                Some(Ok(Value::seq(items.to_vec())))
+            }
+            _ => None,
+        },
+        Err(err) => Some(Err(err)),
     }
 }
 
