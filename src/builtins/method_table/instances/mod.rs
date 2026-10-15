@@ -28,6 +28,7 @@ pub(crate) mod compunit_handle;
 pub(crate) mod date;
 pub(crate) mod dateish;
 pub(crate) mod dateish_io;
+pub(crate) mod depspec;
 pub(crate) mod datetime;
 pub(crate) mod exception;
 pub(crate) mod failure;
@@ -66,4 +67,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     temporal_shift::ROWS,
     temporal_edit::ROWS,
     unicode_data::ROWS,
+    depspec::ROWS,
 ];

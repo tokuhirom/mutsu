@@ -1417,46 +1417,6 @@ impl Interpreter {
             {
                 return result;
             }
-            if class_name == "CompUnit::DependencySpecification" {
-                match method {
-                    "short-name" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("short-name")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
-                    }
-                    "auth-matcher" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("auth-matcher")
-                            .cloned()
-                            .unwrap_or(Value::TRUE));
-                    }
-                    "version-matcher" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("version-matcher")
-                            .cloned()
-                            .unwrap_or(Value::TRUE));
-                    }
-                    "api-matcher" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("api-matcher")
-                            .cloned()
-                            .unwrap_or(Value::TRUE));
-                    }
-                    "Str" | "gist" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("short-name")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
-                    }
-                    _ => {}
-                }
-            }
             if class_name == "CompUnit::Repository::FileSystem" {
                 match method {
                     // mutsu loads modules from source (precompilation is a
