@@ -755,6 +755,12 @@ pub(crate) fn native_method_0arg_cascade(
             _ => None,
         };
     }
+    // Capture methods
+    if let ValueView::Capture { positional, named } = target.view()
+        && let result @ Some(_) = dispatch_capture(target, positional, named, method)
+    {
+        return result;
+    }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {
         return result;
@@ -765,6 +771,27 @@ pub(crate) fn native_method_0arg_cascade(
     }
     // Then type coercion and specialized methods
     coercion::dispatch(target, method)
+}
+
+fn dispatch_capture(
+    target: &Value,
+    positional: &[Value],
+    named: &ValueMap,
+    method: &str,
+) -> Option<Result<Value, RuntimeError>> {
+    // The rest of `Capture`'s methods are rows (`method_table::capture`).
+    match method {
+        "Hash" => crate::builtins::method_table::capture::hash_coerce(target, &[]),
+        "is-lazy" => Some(Ok(Value::FALSE)),
+        "perl" => crate::builtins::method_table::collection_render_names::raku(target, &[]),
+        "WHAT" => Some(Ok(Value::package(Symbol::intern("Capture")))),
+        // `Any.List`/`Any.Seq`/`Any.flat` read `self.list`: the positional part.
+        "flat" | "Seq" | "List" => Some(Ok(match method {
+            "List" => Value::array(positional.to_vec()),
+            _ => Value::seq(positional.to_vec()),
+        })),
+        _ => None,
+    }
 }
 
 /// Create a X::Cannot::Lazy Failure for .elems on an infinite range.

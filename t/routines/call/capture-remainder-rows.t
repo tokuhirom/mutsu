@@ -1,6 +1,6 @@
 use Test;
 
-# ADR-11276 slice 3C remainder: Capture's last cascade arms are rows. Expected
+
 # values are Rakudo's.
 plan 12;
 
