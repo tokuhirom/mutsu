@@ -1,9 +1,8 @@
-/// Miscellaneous methods: Rat, FatRat, tree. (The transcendental math methods
-/// are rows of `builtins::method_table::scalars::math`; succ, pred, sink, item,
-/// race and hyper are rows too, ADR-11276 §9.82.)
-use crate::value::{RuntimeError, Value, ValueView, make_rat};
-
-use crate::builtins::method_table::str_numeric::{fat_rat_of_str, rat_of_str};
+//! The numeric value of the `Cool` instances with no shape of their own. The
+//! methods this file once matched by name are rows: the transcendental math
+//! methods (`method_table::scalars::math`), `succ`/`pred`/`sink`/`item`/`race`/
+//! `hyper` (ADR-11276 §9.82), `Cool.Rat`/`Cool.FatRat` and `Any.tree` (§9.112).
+use crate::value::{Value, ValueView};
 
 /// Levenshtein edit distance between two strings (by Unicode scalar), used for
 /// the numeric value of a `StrDistance`.
@@ -23,215 +22,51 @@ fn levenshtein(a: &str, b: &str) -> usize {
     prev[b.len()]
 }
 
-/// Real (numeric) value of a "Cool" builtin instance, used by the `.Rat`/`.FatRat`
-/// coercers: an `IO::Path` numifies via its path string, a `Match` via its
-/// matched substring, and a `StrDistance` via the edit distance between its
-/// `before`/`after` strings.
-pub(crate) fn cool_instance_numeric(target: &Value) -> Option<f64> {
-    let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-    else {
-        return None;
+/// The edit distance a `StrDistance` (the result of `tr///`) numifies to,
+/// between its `before` and `after` strings.
+// Cost: O(b * a), b and a = chars of the two strings.
+fn str_distance(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> Option<usize> {
+    let map = attributes.as_map();
+    let text = |key: &str| {
+        map.get(key)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default()
     };
-    // A grammar cursor is a Match (raku: `Grammar` IS a `Match` subclass) but
-    // reports the grammar's own class name, so route it by shape, not name.
-    let owner = if target.is_match_instance() {
-        "Match".to_string()
-    } else {
-        class_name.resolve()
-    };
-    match owner.as_str() {
-        "IO::Path" => target.to_string_value().trim().parse::<f64>().ok(),
-        "Match" => target
-            .match_str_value()
-            .and_then(|v| v.to_string_value().trim().parse::<f64>().ok()),
-        "StrDistance" => {
-            let before = attributes
-                .as_map()
-                .get("before")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default();
-            let after = attributes
-                .as_map()
-                .get("after")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default();
-            Some(levenshtein(&before, &after) as f64)
-        }
+    Some(levenshtein(&text("before"), &text("after")))
+}
+
+/// [`str_distance`] of a `StrDistance` instance, `None` for any other value:
+/// what `Cool`'s numeric rows read it as (`numify`).
+// Cost: as [`str_distance`].
+pub(crate) fn str_distance_of(target: &Value) -> Option<usize> {
+    match target.view() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "StrDistance" => str_distance(&attributes),
         _ => None,
     }
 }
 
-pub(super) fn dispatch(
-    target: &Value,
-    method: &str,
-) -> Option<Option<Result<Value, RuntimeError>>> {
-    match method {
-        // A number: the numeric types' `Rat` rows' implementation
-        // (`method_table::numeric_coerce`).
-        "Rat" if let Some(rat) = crate::builtins::method_table::numeric_coerce::rat_of(target) => {
-            Some(Some(Ok(rat)))
-        }
-        "Rat" => Some(match target.view() {
-            // The `Cool.Rat` row's implementation (`method_table::str_numeric`); a
-            // string that numifies to a `Complex` (`"1+2i".Rat` is `Complex.Rat`)
-            // is the interpreter's.
-            ValueView::Str(s) => rat_of_str(&s).map(Ok),
-            // A Complex is Real when its imaginary part is `≅ 0`; the runtime
-            // reads `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`).
-            ValueView::Complex(..) => None,
-            ValueView::Array(items, ..) => Some(Ok(make_rat(items.len() as i64, 1))),
-            ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-                Some(Ok(make_rat(items.len() as i64, 1)))
-            }
-            ValueView::Hash(map) => Some(Ok(make_rat(map.len() as i64, 1))),
-            ValueView::Range(a, b) | ValueView::RangeExclStart(a, b) => {
-                let n = if b >= a { b - a + 1 } else { 0 };
-                Some(Ok(make_rat(n, 1)))
-            }
-            ValueView::RangeExcl(a, b) | ValueView::RangeExclBoth(a, b) => {
-                let n = if b > a { b - a } else { 0 };
-                Some(Ok(make_rat(n, 1)))
-            }
-            ValueView::GenericRange {
-                start,
-                end,
-                excl_end,
-                ..
-            } => {
-                let s = start.to_f64();
-                let e = end.to_f64();
-                if s.is_finite() && e.is_finite() {
-                    let mut count = (e - s).floor() as i64 + 1;
-                    if excl_end {
-                        count -= 1;
-                    }
-                    if count < 0 {
-                        count = 0;
-                    }
-                    Some(Ok(make_rat(count, 1)))
-                } else {
-                    Some(Ok(make_rat(0, 1)))
-                }
-            }
-            // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
-            ValueView::Instance { class_name, .. }
-                if class_name == "Instant" || class_name == "Duration" =>
-            {
-                None
-            }
-            ValueView::Instance { .. } => cool_instance_numeric(target).map(|n| {
-                if n.fract() == 0.0 && n.is_finite() {
-                    Ok(make_rat(n as i64, 1))
-                } else if n.is_finite() {
-                    Ok(crate::builtins::num_to_rat_with_epsilon(n, 1e-6))
-                } else {
-                    Ok(make_rat(0, 1))
-                }
-            }),
-            ValueView::Package(_) => Some(Ok(make_rat(0, 1))),
-            _ => {
-                let n = target.to_f64();
-                if n.fract() == 0.0 && n.is_finite() {
-                    Some(Ok(make_rat(n as i64, 1)))
-                } else if n.is_finite() {
-                    Some(Ok(crate::builtins::num_to_rat_with_epsilon(n, 1e-6)))
-                } else {
-                    Some(Ok(make_rat(0, 1)))
-                }
-            }
-        }),
-        // A number: the numeric types' `FatRat` rows' implementation
-        // (`method_table::numeric_coerce`).
-        "FatRat"
-            if let Some(fat) =
-                crate::builtins::method_table::numeric_coerce::fat_rat_of(target) =>
-        {
-            Some(Some(Ok(fat)))
-        }
-        "FatRat" => Some(match target.view() {
-            // The `Str.FatRat` conversion (`method_table::str_numeric`); a string that
-            // numifies to a `Complex` is the interpreter's, as for `.Rat`.
-            ValueView::Str(s) => fat_rat_of_str(&s).map(Ok),
-            // As `.Rat`: the runtime checks `$*TOLERANCE`.
-            ValueView::Complex(..) => None,
-            ValueView::Array(items, ..) => Some(Ok(Value::fat_rat_raw(items.len() as i64, 1))),
-            ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-                Some(Ok(Value::fat_rat_raw(items.len() as i64, 1)))
-            }
-            ValueView::Hash(map) => Some(Ok(Value::fat_rat_raw(map.len() as i64, 1))),
-            ValueView::Range(a, b) | ValueView::RangeExclStart(a, b) => {
-                let n = if b >= a { b - a + 1 } else { 0 };
-                Some(Ok(Value::fat_rat_raw(n, 1)))
-            }
-            ValueView::RangeExcl(a, b) | ValueView::RangeExclBoth(a, b) => {
-                let n = if b > a { b - a } else { 0 };
-                Some(Ok(Value::fat_rat_raw(n, 1)))
-            }
-            ValueView::GenericRange {
-                start,
-                end,
-                excl_end,
-                ..
-            } => {
-                let s = start.to_f64();
-                let e = end.to_f64();
-                if s.is_finite() && e.is_finite() {
-                    let mut count = (e - s).floor() as i64 + 1;
-                    if excl_end {
-                        count -= 1;
-                    }
-                    if count < 0 {
-                        count = 0;
-                    }
-                    Some(Ok(Value::fat_rat_raw(count, 1)))
-                } else {
-                    Some(Ok(Value::fat_rat_raw(0, 1)))
-                }
-            }
-            ValueView::Package(_) => Some(Ok(Value::fat_rat_raw(0, 1))),
-            // IO::Path/Match/StrDistance numify via their Cool string/distance.
-            // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
-            ValueView::Instance { class_name, .. }
-                if class_name == "Instant" || class_name == "Duration" =>
-            {
-                None
-            }
-            ValueView::Instance { .. } if cool_instance_numeric(target).is_some() => {
-                let n = cool_instance_numeric(target).unwrap_or(0.0);
-                if n.fract() == 0.0 && n.is_finite() {
-                    Some(Ok(Value::fat_rat_raw(n as i64, 1)))
-                } else if n.is_finite() {
-                    match crate::builtins::num_to_rat_with_epsilon(n, 1e-6).view() {
-                        ValueView::Rat(n, d) => Some(Ok(Value::fat_rat_raw(n, d))),
-                        _ => Some(Ok(Value::fat_rat_raw(0, 1))),
-                    }
-                } else {
-                    Some(Ok(Value::fat_rat_raw(0, 1)))
-                }
-            }
-            _ => {
-                let n = target.to_f64();
-                if n.fract() == 0.0 && n.is_finite() {
-                    Some(Ok(Value::fat_rat_raw(n as i64, 1)))
-                } else if n.is_finite() {
-                    let rat = crate::builtins::num_to_rat_with_epsilon(n, 1e-6);
-                    match rat.view() {
-                        ValueView::Rat(n, d) => Some(Ok(Value::fat_rat_raw(n, d))),
-                        _ => Some(Ok(Value::fat_rat_raw(0, 1))),
-                    }
-                } else {
-                    Some(Ok(Value::fat_rat_raw(0, 1)))
-                }
-            }
-        }),
-        "tree" => Some(Some(Ok(crate::value::flat::tree_to_depth(
-            target,
-            usize::MAX,
-        )))),
-        _ => None,
+/// Real (numeric) value of a "Cool" builtin instance, read by `Mu`'s numeric
+/// rows: an `IO::Path` numifies via its path string, a `Match` via its matched
+/// substring, and a `StrDistance` via the edit distance between its
+/// `before`/`after` strings.
+// Cost: O(1) for a path or a match (its text parsed); as `str_distance` otherwise.
+pub(crate) fn cool_instance_numeric(target: &Value) -> Option<f64> {
+    // A grammar cursor is a Match (raku: `Grammar` IS a `Match` subclass) but
+    // reports the grammar's own class name, so it is asked by shape, not name.
+    if target.is_match_instance() {
+        return target
+            .match_str_value()
+            .and_then(|v| v.to_string_value().trim().parse::<f64>().ok());
     }
+    if let Some(distance) = str_distance_of(target) {
+        return Some(distance as f64);
+    }
+    if target.dispatch_shape() == Some(crate::value::DispatchShape::IoPath) {
+        return target.to_string_value().trim().parse::<f64>().ok();
+    }
+    None
 }

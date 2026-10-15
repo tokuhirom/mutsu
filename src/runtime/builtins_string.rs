@@ -7,7 +7,7 @@ impl Interpreter {
     // authoritative (reached via call_function_fallback -> native_function).
     // chrs is routed through native_function_variadic; ords/unival/univals are in
     // native_function_1arg (unival/univals delegate to the .unival/.univals
-    // method, the single source of truth in methods_0arg/dispatch_core_unicode).
+    // method, the single source of truth in the `Cool.unival`/`univals` rows).
     // flip / lc / uc / tc / trim / chars removed (Slice 6.3 dedup) — same.
     pub(super) fn builtin_sprintf(
         &mut self,

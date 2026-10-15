@@ -39,6 +39,12 @@ pub(crate) fn numify(target: &Value) -> Result<Cow<'_, Value>, Value> {
     if let Some(elems) = numeric_range_elems(target) {
         return Ok(Cow::Owned(elems));
     }
+    // A `StrDistance` numifies to its edit distance.
+    if let Some(distance) =
+        crate::builtins::methods_0arg::dispatch_core_math::str_distance_of(target)
+    {
+        return Ok(Cow::Owned(Value::int(distance as i64)));
+    }
     let count = match target.view() {
         ValueView::Hash(map) => Some(map.len()),
         // A `List`, an `Array` and the list-likes (`Seq`, `Slip`, ...).

@@ -2712,6 +2712,28 @@ no `Uni` case); `CompUnit::DependencySpecification`, which has two representatio
 `Any`, and an instance); `Distribution`, with the slow path's `methods_distribution.rs`; `IO::Path::Parts`; `__mutsu_zen_angle` (the
 compiler's). `method-rows-report.py --arms`: the pure arity cascades go from 76 arms to 56.
 
+### 9.112 Slice 5: `dispatch_core_math`, `dispatch_core_list` and `dispatch_core_unicode` are gone (2026-10-16)
+
+`refactor/11276-core-math-arms`. The three family files of `methods_0arg` and `dispatch_core_numeric`'s `rand` arm are
+deleted; the census of §9.111 named the receivers they still answered, and each reaches a row:
+
+1. **`Cool.Rat` / `Cool.FatRat`** reach a `Range` and a settled `Seq` (both `Cool` in Rakudo: the two names join
+   `COOL_NUMERIC_FOR_COLLECTIONS`) and a shapeless `Cool` (`COOL_COERCE_FOR_SHAPELESS`): an unsettled `Seq`, an enum, a
+   `StrDistance`, which `numify` now reads as its edit distance (`StrDistance.Numeric` too). `cool_instance_numeric`
+   asks shapes (`is_match_instance`, `DispatchShape::IoPath`) instead of matching class names.
+2. **`Any.tree`** is a row (Rakudo declares it on `Any`); the closed shapes reach it through
+   `ANY_LIST_FOR_CLOSED_SHAPES`, a `Match` among them (a non-`Iterable` is itself).
+3. **`Cool`'s numeric methods** (`self.Numeric.METHOD`, [`cool_numeric_method`]) answer a `Seq` or `Slip` with no
+   settled shape through `answer_shapeless`, on its element count: `Seq.sqrt`, `Seq.rand`.
+4. **`Any.chrs`** is a row next to `List.chrs` (Rakudo declares both), so a number, a numeric string, a `Range` and a
+   `Seq` reach it. **`Blob.bytes` / `Buf.bytes`** take a type object and throw `X::Parameter::InvalidConcreteness`
+   (a parameterized one, `Buf[uint8]`, through `type_params::type_object_row`). **`IO::Path.chars`** reaches
+   `Cool.chars` (an audited name of the `IoPath` shape). The `uniparse` arm was dead.
+
+Pinned in `t/oo/method/core-math-method-rows.t`. Behaviour changes toward Rakudo: `StrDistance.Numeric` is its edit
+distance; a numeric type object's `Rat`/`FatRat` (`Int.Rat`, answered `0` by the deleted arm) and every `:D`-only numeric
+method of `Bool` (`Bool.abs`) throw `X::Parameter::InvalidConcreteness` (the numeric type-object check of
+`dispatch_core_numeric` gains the two names and `Bool`). `method-rows-report.py --arms`: the pure arity cascades go from 56 arms to 43.
 ### 9.113 Slice 5: the two-argument cascade's `substr`, `fmt`, `base` and `unimatch` arms are gone (2026-10-16)
 
 `refactor/11276-narg-arms`. The census of §9.111 found `dispatch_2arg`'s four arms answering calls their rows existed
