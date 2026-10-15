@@ -1,9 +1,10 @@
-# An escaped closure calls the `my sub` of its own method
+# An escaped anonymous method calls the `my sub` of its own method
 
-A `my sub` declared in a method body is registered by bare name, so two methods
-declaring `gs` replaced each other and a closure escaping the first called the
-second's `gs` (`b1b1` where Rakudo prints `a1b1`). Registration now remembers the
-declaration site per name; once a second, different site declares the same name,
-calls by that name use the Sub captured in the closure's env instead of the
-registry's latest entry. Names declared at a single site keep the registry path
-(and its `state` variables and wrap chains). Fixes #13550.
+A `my sub` declared in a method body is a lexical of that method, but a call to
+it from an `anon method`/`anon sub` literal inside the method resolved by name
+through the routine registry, which holds only the last-registered same-named
+sub: two methods each declaring `gs`, each returning an `anon method` that calls
+it, both closures called the second method's `gs` (`b1b1` where Rakudo prints
+`a1b1`). The closure-body compiler withheld the enclosing block's routines from
+routine-shaped literals (block-like closures already read them as bindings);
+they now inherit them too. Fixes #13550.
