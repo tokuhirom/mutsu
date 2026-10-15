@@ -7,7 +7,7 @@ use Test;
 # `IO::Path`), a `Seq` with no settled shape, a shaped array, `Nil`, a type
 # object and a stash.
 
-plan 36;
+plan 40;
 
 # A `Range` lists as its elements.
 is (1..3).keys.raku, (0, 1, 2).Seq.raku, 'Range.keys';
@@ -60,6 +60,12 @@ is Any.hash.raku, {}.raku, 'Any.hash';
 is Int.hash.raku, {}.raku, 'Int.hash';
 is Hash.hash.raku, 'Hash', 'Hash.hash is Hash';
 throws-like { Mu.hash }, X::Method::NotFound, 'Mu is no Any';
+
+# A type object lists as itself.
+is Array.cache.raku, (Array,).raku, 'Array.cache';
+is Int.permutations.elems, 1, 'Int.permutations';
+is Int.combinations.elems, 2, 'Int.combinations';
+is Int.keys.elems, 0, 'Int.keys';
 
 # `kxxv` is `Baggy`'s alone.
 throws-like { set(<a>).kxxv }, X::Method::NotFound, 'Set.kxxv';

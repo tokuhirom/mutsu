@@ -43,7 +43,7 @@ pub(crate) mod type_params;
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any_collection::ROWS,
     any_views::ROWS,
-    any_views::PAIRUP_ROWS,
+    any_views::TYPE_OBJECT_ROWS,
     render::WHICH_ROWS,
     render::PAIR_WHICH_ROWS,
     render::LIST_GIST_ROWS,

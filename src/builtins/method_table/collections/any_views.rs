@@ -35,21 +35,30 @@ pub(super) static ROWS: &[MethodRow] = any_rows![
     "pairs" => pairs,
     "antipairs" => antipairs,
     "invert" => invert,
-    "permutations" => super::list_aggregate::permutations,
-    "combinations" => super::list_aggregate::combinations,
-    "cache" => cache,
 ];
 
-/// `Any.pairup` declines nothing: a type object lists as nothing
-/// (`Range.pairup` is `()`).
-pub(super) static PAIRUP_ROWS: &[MethodRow] = &[MethodRow {
-    owner: "Any",
-    name: "pairup",
-    arity: 0,
-    handler: Handler::Narrow(pairup),
-    flags: RowFlags::TYPE_OBJECT_OK,
-    named: &[],
-}];
+/// `self.list.METHOD` of a type object is that of the one-element list
+/// holding it (`Array.cache` is `((Array))`, `Int.permutations` `((Int))`).
+pub(super) static TYPE_OBJECT_ROWS: &[MethodRow] = &[
+    type_object_row("permutations", super::list_aggregate::permutations),
+    type_object_row("combinations", super::list_aggregate::combinations),
+    type_object_row("cache", cache),
+    type_object_row("pairup", pairup),
+];
+
+const fn type_object_row(
+    name: &'static str,
+    handler: fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>,
+) -> MethodRow {
+    MethodRow {
+        owner: "Any",
+        name,
+        arity: 0,
+        handler: Handler::Narrow(handler),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    }
+}
 
 /// The `(index, leaf)` pairs of a shaped array, the index a plain `Int` for a
 /// one-dimensional array and the list of its coordinates otherwise.

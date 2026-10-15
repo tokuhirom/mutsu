@@ -1,6 +1,3 @@
-use crate::runtime;
-use crate::symbol::Symbol;
-use crate::value::ValueMap;
 use crate::value::{ListGen, RuntimeError, Value, ValueView};
 fn make_inverted_pair(key: Value, value: Value) -> Value {
     // Positional flavour regardless of key type — see `quanthash_typed_pair`.
