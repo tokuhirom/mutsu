@@ -587,14 +587,16 @@ impl Interpreter {
                 if !pd.sigilless || pd.slurpy || pd.name.is_empty() {
                     continue;
                 }
-                if let Some(slot) = cf.code.locals.iter().position(|n| n == &pd.name) {
+                // The binding's term key (ADR-12441).
+                let storage = pd.storage_name();
+                if let Some(slot) = cf.code.locals.iter().position(|n| *n == storage) {
                     let final_val = self.locals[slot].clone();
                     // Collect every alias-chain hop before propagating, so the
                     // post-merge re-apply sees the same targets.
                     let mut seen = std::collections::HashSet::new();
                     let mut alias = self
                         .env()
-                        .get_sym(crate::runtime::sigilless_alias_key(&pd.name))
+                        .get_sym(crate::runtime::sigilless_alias_key(&storage))
                         .and_then(|v| match v.view() {
                             ValueView::Str(s) => Some(s.to_string()),
                             _ => None,
@@ -612,7 +614,7 @@ impl Interpreter {
                                 _ => None,
                             });
                     }
-                    self.propagate_sigilless_alias_chain(&cf.code, &pd.name, None, &final_val);
+                    self.propagate_sigilless_alias_chain(&cf.code, &storage, None, &final_val);
                 }
             }
         }
@@ -763,7 +765,9 @@ impl Interpreter {
                 if kflags & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0
                     && k.with_str(|s| {
                         s.strip_prefix(crate::symbol::SIGILLESS_ALIAS_KEY_PREFIX)
-                            .is_some_and(|base| cf.param_defs.iter().any(|pd| pd.name == base))
+                            .is_some_and(|base| {
+                                cf.param_defs.iter().any(|pd| pd.storage_name() == base)
+                            })
                     })
                 {
                     continue;

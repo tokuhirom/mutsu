@@ -182,14 +182,14 @@ pub enum LvalueRoot<'a> {
 }
 
 impl LvalueRoot<'_> {
-    /// The storage key, resolving a sigil-less root by its spelling. Callers
-    /// that can see compiler scope resolve a sigil-less `constant` to its
-    /// term key instead (`Compiler::lvalue_root_key`).
+    /// The storage key. A sigil-less root is a term — a sigilless binding or
+    /// a sigil-less constant — and both live under its term key (#9962,
+    /// ADR-12441).
     // Cost: O(|name|).
     pub fn into_spelled_key(self) -> String {
         match self {
             LvalueRoot::Key(key) => key,
-            LvalueRoot::Sigilless(name) => name.to_string(),
+            LvalueRoot::Sigilless(name) => crate::term_names::bareword_target_key(name),
         }
     }
 }

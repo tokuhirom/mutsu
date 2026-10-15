@@ -53,7 +53,10 @@ fn hash_stored_value(v: Value) -> Value {
 /// metadata and all, and re-coercing that strips it (a `%_` parameter relayed
 /// into `CompUnit::DependencySpecification.new` lost its values that way).
 pub(crate) fn param_is_sigilless(name: &str) -> bool {
-    name.as_bytes()
+    // A sigilless parameter's own key is its term key (`\c`, ADR-12441).
+    crate::runtime::term_names::term_spelling(name)
+        .unwrap_or(name)
+        .as_bytes()
         .first()
         .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
 }

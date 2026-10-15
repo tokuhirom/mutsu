@@ -365,7 +365,8 @@ impl Interpreter {
                         selected
                             .type_param_defs
                             .get(i)
-                            .map(|pd| pd.name.as_str())
+                            .map(|pd| pd.storage_name())
+                            .as_deref()
                             .unwrap_or(param_name),
                     )
                     .or_else(|| self.env.get(param_name))

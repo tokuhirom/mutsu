@@ -297,7 +297,8 @@ impl Interpreter {
                 .is_ok();
             if bound {
                 for (i, name) in names.iter().enumerate() {
-                    let Some(value) = self.env.get(name).cloned() else {
+                    // A sigilless parameter bound its term key (ADR-12441).
+                    let Some(value) = self.env.get(&param_defs[i].storage_name()).cloned() else {
                         continue;
                     };
                     // Key by the role's declared parameter spelling, which is

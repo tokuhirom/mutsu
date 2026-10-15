@@ -1,4 +1,4 @@
-//! The term namespace for sigil-less `constant`s.
+//! The term namespace for sigil-less `constant`s and sigilless bindings.
 //!
 //! In Raku `constant b = 256` declares a *term* `b`; `my $b` declares a
 //! `$`-sigiled variable. They are different symbols, so a same-named scalar —
@@ -30,8 +30,11 @@
 //! Qualified package stores (`Pkg::b`) are unchanged: a qualified constant and
 //! an `our $b` of the same package still share a key. That collision needs no
 //! lexical scoping to hit and is left for the package-stash work.
-// TODO: sigil-less `my \x` bindings and `\x` parameters still share the scalar
-// key space; moving them here is the other half of #9962's "decide once".
+//!
+//! Sigilless bindings — `my \x`, a `\x` / `+x` / `|x` parameter, a pointy
+//! `-> \x` — are terms too and live under the same key (ADR-12441,
+//! `docs/adr/12441-sigilless-bindings-live-in-the-term-namespace.md`):
+//! `sub f(\t, $t)` binds two variables, `\t` and `t`.
 
 use crate::ast::Expr;
 use crate::symbol::Symbol;
@@ -47,6 +50,22 @@ pub(crate) fn term_key(name: &str) -> String {
     key.push(TERM_PREFIX);
     key.push_str(name);
     key
+}
+
+/// The storage key of a bareword assignment target spelled `name`: the term
+/// key of an unqualified sigil-less term (a sigilless binding or a constant,
+/// ADR-12441), `name` itself for a sigiled term (`term:<$x>`, stored as
+/// `$x`) or a qualified symbol (`A::Z`).
+// Cost: O(|name|).
+pub(crate) fn bareword_target_key(name: &str) -> String {
+    if name.is_empty()
+        || name.starts_with(['$', '@', '%', '&', TERM_PREFIX])
+        || crate::qualified::is_qualified_str(name)
+    {
+        name.to_string()
+    } else {
+        term_key(name)
+    }
 }
 
 /// [`term_key`] as a pre-interned [`Symbol`], memoized per name so a hot

@@ -1027,14 +1027,20 @@ impl Compiler {
                 name,
                 expr: feed @ Expr::Feed { .. },
                 op: AssignOp::Assign,
-                ..
+                target_is_sigilless,
             } if name != "*PID" => {
                 let mut feed = feed.clone();
                 {
                     let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
                     let source = std::mem::replace(slot, Expr::Literal(Value::NIL));
                     *slot = Expr::AssignExpr {
-                        name: name.clone(),
+                        // A sigil-less target is spelled by its term key
+                        // (ADR-12441).
+                        name: if *target_is_sigilless {
+                            crate::runtime::term_names::bareword_target_key(name)
+                        } else {
+                            name.clone()
+                        },
                         expr: Box::new(source),
                         is_bind: false,
                     };
@@ -1111,7 +1117,6 @@ impl Compiler {
                 // MarkSigillessReadonly this does NOT set the readonly flag: a typed
                 // sigilless bind (`my Int \d := 7`) keeps container mutability.
                 self.sigilless_locals.insert(name.clone());
-                self.sigilless_declared.insert(name.clone());
                 // Whether this term is writable depends on what the declaration
                 // bound it to, which only the runtime knows. The verdict is
                 // taken with the bind source still on the stack, by the
@@ -1119,16 +1124,19 @@ impl Compiler {
                 // `sigilless_bind_vardecl` in the `Stmt::VarDecl` arm); this op
                 // writes the readonly marker, and has to run AFTER the store
                 // because a declaration clears that marker.
-                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str(crate::runtime::term_names::term_key(name)));
                 self.code.emit(OpCode::MarkSigillessBind(name_idx));
             }
             Stmt::MarkSigillessReadonly(name) => {
                 // Track sigilless locals so BareWord compilation can
                 // distinguish them from `$`-sigiled variables.
                 self.sigilless_locals.insert(name.clone());
-                self.sigilless_declared.insert(name.clone());
-                // Set __mutsu_sigilless_readonly::NAME = true in env
-                let key = crate::runtime::sigilless_readonly_key(name);
+                // Set __mutsu_sigilless_readonly::\NAME = true in env
+                let key = crate::runtime::sigilless_readonly_key(
+                    &crate::runtime::term_names::term_key(name),
+                );
                 let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
                 let true_idx = self.code.add_constant(Value::TRUE);
                 self.code.emit(OpCode::LoadConst(true_idx));
@@ -1216,15 +1224,28 @@ impl Compiler {
                 // writes, for everything that tracks the constant BY that name
                 // (bareword resolution, redeclaration, exports, the package
                 // store); `name` is the storage key from here on.
+                // A sigilless declaration (`my \x`, a `with`/`if` pointy `-> \x`)
+                // is a term too, and lives under the same key (ADR-12441).
                 let spelled = name;
                 let term_storage;
-                let name = if crate::runtime::term_names::is_term_constant_decl(name, custom_traits)
+                let declares_term = std::mem::take(&mut self.decl_is_term)
+                    && !name.starts_with(['$', '@', '%', '&', '\\']);
+                let name = if declares_term
+                    || crate::runtime::term_names::is_term_constant_decl(name, custom_traits)
                 {
                     term_storage = crate::runtime::term_names::term_key(name);
                     &term_storage
                 } else {
                     name
                 };
+                // Whether the declared name is a sigilless binding in scope (a
+                // readonly `my \x`, registered before its declaration, or a
+                // multi-parameter `for` loop's `-> \k`, which the parser already
+                // spells by its term key): it binds the value itself, with no
+                // Scalar container.
+                let binds_term = self
+                    .sigilless_locals
+                    .contains(spelled.strip_prefix('\\').unwrap_or(spelled));
                 // Snapshot-and-clear `bind_vardecl` immediately: it is a
                 // one-shot signal meant for THIS declaration's own store
                 // (set by an enclosing `SyntheticBlock`/inline-block for a
@@ -1235,15 +1256,6 @@ impl Compiler {
                 // that unrelated declaration bind-context treatment and
                 // skipping the array-from-Range materialization it needs
                 // ("Cannot modify an immutable Range").
-                let declares_sigilless = std::mem::take(&mut self.decl_is_sigilless);
-                if !declares_sigilless
-                    && !*is_our
-                    && !*is_state
-                    && !*is_dynamic
-                    && std::ptr::eq(name, spelled)
-                {
-                    self.shadow_sigilless_term(name);
-                }
                 let bind_vardecl = self.bind_vardecl;
                 self.bind_vardecl = false;
                 let sigilless_bind_vardecl = self.sigilless_bind_vardecl;
@@ -1996,7 +2008,7 @@ impl Compiler {
                         // or bodiless declaration keeps the two-store sequence.
                         && (!name.starts_with('&')
                             || (has_explicit_initializer && !name.contains(':')))
-                        && !self.sigilless_locals.contains(name.as_str())
+                        && !binds_term
                         && !has_default_trait
                         && !scalar_bind_decont
                         && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
@@ -2056,7 +2068,7 @@ impl Compiler {
                         // Scalar constants and sigilless declarations (`my \x = ...`)
                         // also carry the mark: both bind the value itself (no Scalar
                         // container), so SetLocal must not itemize it.
-                        if is_constant || self.sigilless_locals.contains(name.as_str()) {
+                        if is_constant || binds_term {
                             self.code.emit(OpCode::MarkConstantContext);
                         }
                         // A default-trait decl suppresses the explicit-initializer
@@ -2359,15 +2371,10 @@ impl Compiler {
                 // does one whose target this unit cannot see at all (`EVAL
                 // 'b = 5'`); the VM falls back to the plain name when no term
                 // of that spelling is in scope.
-                let term_target;
-                let name = if *target_is_sigilless
-                    && (self.names_term_constant(name) || self.sigilless_target_is_unknown(name))
-                {
-                    term_target = crate::runtime::term_names::term_key(name);
-                    &term_target
-                } else {
-                    name
-                };
+                let term_target = target_is_sigilless
+                    .then(|| self.sigilless_assign_target_key(name))
+                    .flatten();
+                let name = term_target.as_ref().unwrap_or(name);
                 // Keep `provably_bare_receiver_vars` (see its doc, and the
                 // matching `Stmt::VarDecl` arm) live across a REASSIGNMENT
                 // too, not just the declaration: a plain scalar `=`/`:=` and a
@@ -2620,14 +2627,16 @@ impl Compiler {
                 // holder of it sees the new contents.
                 if matches!(op, AssignOp::Assign) && *target_is_sigilless {
                     let name = self.resolve_self_lexical(effective_name);
-                    let slot = self.assignment_target_slot(name, true).unwrap_or(u32::MAX);
+                    let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
                     let name_idx = self
                         .code
                         .add_constant(Value::str(self.qualify_variable_name(name)));
                     self.code
                         .emit(OpCode::SigillessAggregateStore { name_idx, slot });
                 }
-                if matches!(op, AssignOp::Assign) && self.sigilless_locals.contains(effective_name)
+                if matches!(op, AssignOp::Assign)
+                    && crate::runtime::term_names::term_spelling(effective_name)
+                        .is_some_and(|n| self.sigilless_locals.contains(n))
                 {
                     self.code.emit(OpCode::MarkParamRawBindContext);
                 }
@@ -2636,14 +2645,13 @@ impl Compiler {
                 // goes straight to `SetLocal`/`SetGlobal` below — so record
                 // its target slot here for `rebound_slots` (#9237).
                 if matches!(op, AssignOp::Bind) {
-                    let source_slot =
-                        self.assignment_target_slot(effective_name, *target_is_sigilless);
+                    let source_slot = self.local_map.get(effective_name).copied();
                     self.code.note_rebound_slot(source_slot);
                     if source_slot.is_none() {
                         self.code.note_rebound_name(effective_name);
                     }
                 }
-                self.emit_set_named_var_with_kind(effective_name, *target_is_sigilless);
+                self.emit_set_named_var(effective_name);
             }
             Stmt::If {
                 cond,
@@ -5167,6 +5175,16 @@ impl Compiler {
             Stmt::Let { name, .. } => {
                 let name = name.clone();
                 self.compile_let_stmt_as_value(stmt, &name);
+            }
+            // A sigil-less target is a term (ADR-12441): its value is read
+            // back from the term key, not the scalar spelled `name`.
+            Stmt::Assign {
+                name,
+                target_is_sigilless: true,
+                ..
+            } => {
+                self.compile_stmt(stmt);
+                self.emit_tail_var_stmt_value(stmt, name, true);
             }
             Stmt::Assign { name, .. } => {
                 self.compile_stmt(stmt);

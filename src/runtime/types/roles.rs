@@ -648,9 +648,11 @@ impl Interpreter {
                 let capture = candidate.type_param_defs[i].captured_type_name();
                 let declared = candidate.type_params.get(i).unwrap_or(sig_name);
                 let bare_sig_name = sig_name.trim_start_matches(['$', '@', '%', '&']);
+                // A sigilless parameter bound its term key (ADR-12441).
+                let storage = candidate.type_param_defs[i].storage_name();
                 let Some(value) = self
                     .env
-                    .get(capture.unwrap_or(sig_name.as_str()))
+                    .get(capture.unwrap_or(&storage))
                     .or_else(|| self.env.get(declared))
                     .or_else(|| self.env.get(sig_name))
                     .or_else(|| self.env.get(bare_sig_name))

@@ -65,4 +65,19 @@ impl Compiler {
     pub(crate) fn seed_outer_code_var_names(&mut self, names: impl IntoIterator<Item = String>) {
         self.code.outer_code_var_names.extend(names);
     }
+
+    /// Seed a recompile of `origin`'s body with the terms it reads from its
+    /// enclosing scopes: a free variable under a term key (`\c`, a
+    /// sigilless binding, ADR-12441) makes the recompiled bare `c` that
+    /// binding, as it was in `origin`, instead of a bareword lookup.
+    // Cost: O(f), f = `origin`'s free variables.
+    pub(crate) fn seed_enclosing_terms_from(&mut self, origin: &crate::opcode::CompiledCode) {
+        for sym in &origin.free_var_syms {
+            sym.with_str(|key| {
+                if let Some(term) = crate::runtime::term_names::term_spelling(key) {
+                    self.enclosing_sigilless.insert(term.to_string());
+                }
+            });
+        }
+    }
 }

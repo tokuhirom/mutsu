@@ -160,8 +160,11 @@ impl Compiler {
             // Object::Trampoline replaces itself with the real object.
             // Cost: O(1) (compiles to the assignment).
             "nqp::assign" if args.len() == 2 => {
+                // A bareword operand is a term, spelled by its term key
+                // (ADR-12441).
                 let name = match &args[0] {
-                    Expr::Var(name) | Expr::BareWord(name) => name.clone(),
+                    Expr::Var(name) => name.clone(),
+                    Expr::BareWord(name) => crate::runtime::term_names::bareword_target_key(name),
                     _ => return false,
                 };
                 self.compile_expr(&Expr::AssignExpr {
@@ -177,7 +180,8 @@ impl Compiler {
             // Cost: O(1) (compiles to the binding).
             "nqp::bind" if args.len() == 2 => {
                 let name = match &args[0] {
-                    Expr::Var(name) | Expr::BareWord(name) => name.clone(),
+                    Expr::Var(name) => name.clone(),
+                    Expr::BareWord(name) => crate::runtime::term_names::bareword_target_key(name),
                     _ => {
                         self.compile_expr(&Expr::Call {
                             name: crate::symbol::Symbol::intern("die"),

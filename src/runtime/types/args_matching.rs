@@ -782,7 +782,7 @@ impl Interpreter {
                     self.env.insert_sym(crate::symbol::wk::topic(), arg.clone());
                     // Bind the parameter name so that `where {$param ...}` can
                     // reference it during dispatch matching.
-                    self.env.insert(pd.name.clone(), arg.clone());
+                    self.env.insert(pd.storage_name().into_owned(), arg.clone());
                     let ok = match where_expr.as_ref() {
                         Expr::AnonSub { body, .. } => {
                             // Bind placeholder params (e.g. `$^n`) to the single
@@ -1062,7 +1062,7 @@ impl Interpreter {
                     // Bind the parameter name so `where {$param ...}` can reference
                     // it during dispatch matching (mirrors the positional path).
                     if !pd.name.is_empty() {
-                        self.env.insert(pd.name.clone(), val.clone());
+                        self.env.insert(pd.storage_name().into_owned(), val.clone());
                     }
                     let ok = match where_expr.as_ref() {
                         Expr::AnonSub { .. } => {
@@ -1125,7 +1125,7 @@ impl Interpreter {
                 self.env
                     .insert_sym(crate::symbol::wk::topic(), slurpy_value.clone());
                 if !pd.name.is_empty() {
-                    self.env.insert(pd.name.clone(), slurpy_value.clone());
+                    self.env.insert(pd.storage_name().into_owned(), slurpy_value.clone());
                 }
                 let ok = match where_expr.as_ref() {
                     Expr::AnonSub { .. } => {

@@ -70,7 +70,7 @@ fn baked_param_name_sym(baked: &[Symbol], idx: usize, pd: &ParamDef) -> Option<S
     // `symbol::intern_calls()` budget tests take their debug calibration
     // (#7766).
     debug_assert_eq!(
-        Symbol::lookup(&pd.name),
+        Symbol::lookup(&pd.storage_name()),
         Some(sym),
         "param_name_syms[{idx}] is not the symbol of param_defs[{idx}] ({:?})",
         pd.name,
@@ -1589,10 +1589,11 @@ impl Interpreter {
             .collect();
         let mut positional_idx = 0usize;
         for (param_idx, pd) in param_defs.iter().enumerate() {
+            let storage_name = pd.storage_name();
             let binding_name = if bind_self_lexical && pd.declares_self_lexical() {
                 crate::env::LEX_SELF
             } else {
-                pd.name.as_str()
+                storage_name.as_ref()
             };
             // One Symbol per parameter for the whole per-parameter path below
             // (value bind, type constraint, readonly mark), instead of one per
@@ -1602,7 +1603,7 @@ impl Interpreter {
             // an arm that never names the parameter still interns nothing.
             let pd_name_cell = std::cell::OnceCell::new();
             let pd_name_sym = || {
-                if binding_name == pd.name {
+                if binding_name == storage_name {
                     baked_param_name_sym(baked_name_syms, param_idx, pd).unwrap_or_else(|| {
                         *pd_name_cell.get_or_init(|| Symbol::intern(binding_name))
                     })
@@ -1664,8 +1665,8 @@ impl Interpreter {
                         if pd.sigilless {
                             self.lexicals.sigilless_alias_seen = true;
                             self.env
-                                .insert_sym_noting(sigilless_readonly_key(&pd.name), Value::TRUE);
-                            self.env.remove_sym(sigilless_alias_key(&pd.name));
+                                .insert_sym_noting(sigilless_readonly_key(&storage_name), Value::TRUE);
+                            self.env.remove_sym(sigilless_alias_key(&storage_name));
                             self.bind_param_value_sym(
                                 binding_name,
                                 pd_name_sym(),
@@ -1786,8 +1787,8 @@ impl Interpreter {
                     if !pd.name.is_empty() {
                         self.lexicals.sigilless_alias_seen = true;
                         self.env
-                            .insert_sym_noting(sigilless_readonly_key(&pd.name), Value::TRUE);
-                        self.env.remove_sym(sigilless_alias_key(&pd.name));
+                            .insert_sym_noting(sigilless_readonly_key(&storage_name), Value::TRUE);
+                        self.env.remove_sym(sigilless_alias_key(&storage_name));
                         self.bind_param_value_sym(
                             binding_name,
                             pd_name_sym(),
@@ -2586,7 +2587,7 @@ impl Interpreter {
                             bound_value = Value::container_ref_itemized(crate::gc::Gc::new(
                                 crate::value::ContainerCell::new(bound_value),
                             ));
-                            rw_bindings.push((pd.name.clone(), source_name));
+                            rw_bindings.push((storage_name.to_string(), source_name));
                         }
                         // A named `is rw`/`is raw` scalar param aliases the
                         // caller's variable through a shared `ContainerRef`
@@ -2619,12 +2620,16 @@ impl Interpreter {
                                         .or_else(|| varref_from_value(val).map(|(name, _)| name))
                                 })
                                 .filter(|s| {
-                                    s.as_bytes()
+                                    // A sigilless source is named by its term
+                                    // key (`\c`, ADR-12441).
+                                    crate::runtime::term_names::term_spelling(s)
+                                        .unwrap_or(s)
+                                        .as_bytes()
                                         .first()
                                         .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
                                 });
                             if let Some(src) = source_name {
-                                rw_bindings.push((pd.name.clone(), src.clone()));
+                                rw_bindings.push((storage_name.to_string(), src.clone()));
                                 let descriptor = src.clone();
                                 let existing = self
                                     .env
@@ -2670,7 +2675,7 @@ impl Interpreter {
                                 // bound directly to that value, not to a fresh
                                 // Scalar container. Keep the binding kind so
                                 // `.VAR` reports the value's type.
-                                raw_nonlvalue_params.push(pd.name.clone());
+                                raw_nonlvalue_params.push(storage_name.to_string());
                             }
                         }
                         // A named alias param `:min(:$minutes)` names a caller key
@@ -3071,7 +3076,7 @@ impl Interpreter {
                                 }
                             }
                             if !implicit_raw_veto && !raw_readonly_source {
-                                rw_bindings.push((pd.name.clone(), writeback_source.clone()));
+                                rw_bindings.push((storage_name.to_string(), writeback_source.clone()));
                             }
                             // ...and to the IMMEDIATE source as well, when the
                             // two differ. A method call does not chain envs: its
@@ -3093,7 +3098,7 @@ impl Interpreter {
                                 && !raw_readonly_source
                                 && writeback_source != source_name
                             {
-                                rw_bindings.push((pd.name.clone(), source_name.clone()));
+                                rw_bindings.push((storage_name.to_string(), source_name.clone()));
                             }
                             // A plain scalar param aliasing a plain scalar caller
                             // variable binds through a shared `ContainerRef` cell
@@ -3110,7 +3115,11 @@ impl Interpreter {
                                     .as_bytes()
                                     .first()
                                     .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
+                            // A sigilless source is named by its term key
+                            // (`\c`, ADR-12441).
                             let source_is_plain_scalar = source_name
+                                .strip_prefix(crate::runtime::term_names::TERM_PREFIX)
+                                .unwrap_or(&source_name)
                                 .as_bytes()
                                 .first()
                                 .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
@@ -3168,7 +3177,7 @@ impl Interpreter {
                             // `Tee($file, my $*OUT)` keys on it).
                             if param_is_plain_scalar && source_name.starts_with('*') {
                                 self.env.insert(
-                                    MetaNs::VarSourceName.owned_key_for_str(&pd.name),
+                                    MetaNs::VarSourceName.owned_key_for_str(&storage_name),
                                     Value::str(format!("${source_name}")),
                                 );
                             }
@@ -3176,7 +3185,7 @@ impl Interpreter {
                             // bindings (e.g. `$a := $arg`) can transitively
                             // resolve through the `is rw` parameter to the
                             // caller's variable.
-                            let alias_key = sigilless_alias_key(&pd.name);
+                            let alias_key = sigilless_alias_key(&storage_name);
                             self.env
                                 .insert_sym_noting(alias_key, Value::str(source_name));
                             self.lexicals.sigilless_alias_seen = true;
@@ -3206,10 +3215,10 @@ impl Interpreter {
                         } else {
                             // is raw with non-lvalue: param stays readonly
                             // (not added to rw_bindings, will be marked readonly below)
-                            raw_nonlvalue_params.push(pd.name.clone());
+                            raw_nonlvalue_params.push(storage_name.to_string());
                         }
                     } else if implicit_raw_veto || raw_readonly_source {
-                        raw_nonlvalue_params.push(pd.name.clone());
+                        raw_nonlvalue_params.push(storage_name.to_string());
                     }
                     let raw_arg = args[positional_idx].clone();
                     let source_name = arg_source_name;
@@ -3243,7 +3252,7 @@ impl Interpreter {
                         && let Some(source_name) = &source_name
                         && source_name.starts_with(['@', '%'])
                     {
-                        rw_bindings.push((pd.name.clone(), source_name.clone()));
+                        rw_bindings.push((storage_name.to_string(), source_name.clone()));
                     }
                     // Slice 2d: a readonly scalar `$` param receiving an array/hash
                     // *variable* argument binds the same (mutable) container in
@@ -3361,7 +3370,7 @@ impl Interpreter {
                     // detach HERE or `@b.push` inside the sub would reach the
                     // caller's `@a`.
                     if is_copy {
-                        // A sigilless parameter (`\\value`) records an env-level
+                        // A sigilless parameter (`\value`) records an env-level
                         // alias to its caller so assignments propagate through the
                         // raw binding. An `is copy` parameter with the same bare
                         // name must start a new, detached binding instead. Leaving
@@ -3379,9 +3388,9 @@ impl Interpreter {
                         // parameter of every call.
                         if self.lexicals.sigilless_alias_seen {
                             self.env
-                                .remove_sym(crate::runtime::sigilless_alias_key(&pd.name));
+                                .remove_sym(crate::runtime::sigilless_alias_key(&storage_name));
                             self.env
-                                .remove_sym(crate::runtime::sigilless_readonly_key(&pd.name));
+                                .remove_sym(crate::runtime::sigilless_readonly_key(&storage_name));
                         }
                         // An itemized holder (`$(1,2)` read from a `$`-variable
                         // or an Array element) copies its Positional, not the
@@ -3431,7 +3440,7 @@ impl Interpreter {
                     // above already.
                     if !pd.sigilless && self.lexicals.sigilless_alias_seen {
                         self.env
-                            .remove_sym(crate::runtime::sigilless_readonly_key(&pd.name));
+                            .remove_sym(crate::runtime::sigilless_readonly_key(&storage_name));
                     }
                     if pd.sigilless {
                         // Every arm below writes at least one of the two
@@ -3439,8 +3448,8 @@ impl Interpreter {
                         // `is copy` binding skip removing them when none can
                         // exist (see there).
                         self.lexicals.sigilless_alias_seen = true;
-                        let alias_key = sigilless_alias_key(&pd.name);
-                        let readonly_key = sigilless_readonly_key(&pd.name);
+                        let alias_key = sigilless_alias_key(&storage_name);
+                        let readonly_key = sigilless_readonly_key(&storage_name);
                         if implicit_raw_veto || raw_readonly_source {
                             // A type object or sigilless-readonly source is a
                             // value, not a writable source for a raw parameter.
@@ -3476,7 +3485,7 @@ impl Interpreter {
                             // S03-operators/assign.t `$x = $x.grep(...)`).
                             if is_multidim_slice_cells(&value) {
                                 self.env.insert(
-                                    Self::bound_array_slice_marker_key(&pd.name),
+                                    Self::bound_array_slice_marker_key(&storage_name),
                                     Value::TRUE,
                                 );
                             }
@@ -3528,7 +3537,7 @@ impl Interpreter {
                             // cell and copies back to the caller's `$_`, with
                             // no alias (the callee's `_` is its own topic).
                             let topic_writeback = source_name == "_"
-                                && rw_bindings.iter().any(|(param, _)| *param == pd.name);
+                                && rw_bindings.iter().any(|(param, _)| *param == storage_name);
                             if topic_writeback {
                                 self.env.remove_sym(alias_key);
                                 self.env.insert_sym_noting(readonly_key, Value::FALSE);
@@ -3735,7 +3744,7 @@ impl Interpreter {
                             value = Value::container_ref_itemized(crate::gc::Gc::new(
                                 crate::value::ContainerCell::new(value),
                             ));
-                            rw_bindings.push((pd.name.clone(), source_name.clone()));
+                            rw_bindings.push((storage_name.to_string(), source_name.clone()));
                         }
                         // rw shared-cell binding: a scalar `is rw`/`is raw`
                         // parameter aliases the CALLER's container, so bind it to
@@ -3845,7 +3854,7 @@ impl Interpreter {
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self
                             .env
-                            .get(&pd.name)
+                            .get(storage_name.as_ref())
                             .cloned()
                             .unwrap_or_else(|| args[positional_idx].clone());
                         bind_sub_signature_from_value(self, sub_params, &target)?;

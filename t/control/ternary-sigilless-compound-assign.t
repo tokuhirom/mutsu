@@ -21,7 +21,7 @@ class Renderer {
         my \sgr = False ?? 'hot' !! %colors<default> //= 'cold';
         my @seen;
         for @line {
-            @seen.push("$_:$sgr");
+            @seen.push("$_:{sgr}");
         }
         @seen.join(' ')
     }

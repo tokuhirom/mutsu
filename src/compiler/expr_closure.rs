@@ -429,8 +429,12 @@ impl Compiler {
         is_whatever_code: bool,
         param_sigilless: bool,
     ) {
+        // A sigilless pointy parameter (`-> \x { }`) binds its term key
+        // (ADR-12441).
         let params: Vec<String> = if param.is_empty() {
             Vec::new()
+        } else if param_sigilless {
+            vec![crate::runtime::term_names::term_key(param)]
         } else {
             vec![param.to_string()]
         };

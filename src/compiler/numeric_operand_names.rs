@@ -17,7 +17,7 @@ impl Compiler {
         if name.is_empty()
             || name.starts_with('^')
             || name.contains("__")
-            || self.sigilless_locals.contains(name)
+            || name.starts_with(crate::runtime::term_names::TERM_PREFIX)
         {
             return None;
         }

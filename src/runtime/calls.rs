@@ -100,7 +100,7 @@ impl Interpreter {
         if let Some(params) = sub_sig {
             for sp in params {
                 if !sp.name.is_empty() {
-                    names.insert(sp.name.clone());
+                    names.insert(sp.storage_name().into_owned());
                 }
                 Self::collect_sub_signature_names(&sp.sub_signature, names);
             }

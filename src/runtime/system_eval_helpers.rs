@@ -280,15 +280,6 @@ impl Interpreter {
                     .filter_map(term_name),
             );
         }
-        // The sigilless `_` term is stored under a private key because `_` is
-        // also the environment spelling of the topical `$_`. Re-seed its
-        // source spelling so the EVAL parser canonicalizes `_` to that key.
-        if self
-            .env
-            .contains_key(crate::symbol::SIGILLESS_UNDERSCORE_STORAGE)
-        {
-            names.push("_".to_string());
-        }
         names.extend(crate::parser::imported_value_term_names());
         // Runtime import aliases survive nested parses and cold module loads,
         // unlike the parser's current import table. Their display spelling

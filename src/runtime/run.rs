@@ -1048,6 +1048,7 @@ impl Interpreter {
         let (mut compiler, compile_unit) = self.block_compiler();
         if let Some(origin) = origin {
             compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
+            compiler.seed_enclosing_terms_from(origin);
         }
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let (mut code, mut fns) = compiler.compile(stmts);

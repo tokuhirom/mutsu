@@ -122,7 +122,11 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             Expr::Var(name) => Some((name.clone(), Expr::Var(name.clone()))),
             Expr::ArrayVar(name) => Some((format!("@{}", name), Expr::ArrayVar(name.clone()))),
             Expr::HashVar(name) => Some((format!("%{}", name), Expr::HashVar(name.clone()))),
-            Expr::BareWord(name) => Some((name.clone(), Expr::BareWord(name.clone()))),
+            // A bareword target is a term, spelled by its term key (ADR-12441).
+            Expr::BareWord(name) => Some((
+                crate::term_names::bareword_target_key(name),
+                Expr::BareWord(name.clone()),
+            )),
             _ => None,
         };
         if let Some((assign_name, lhs_expr)) = assign_target {

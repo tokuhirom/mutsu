@@ -346,11 +346,6 @@ impl Compiler {
                     self.code.emit(OpCode::NqpOp { id, arity: 0 });
                     return;
                 }
-                // A sigilless binding whose key a same-named `my $name` took
-                // over (#11994): its value was parked under the term key.
-                if self.emit_shadowed_sigilless_read(name) {
-                    return;
-                }
                 // A lexical type shadowing an enclosing constant (#11517): the
                 // type's own `MY::` binding, read by name so a nested closure
                 // captures it. `GetBareWord` would find the constant's term key.
@@ -370,86 +365,63 @@ impl Compiler {
                     self.code.emit(OpCode::LoadConst(idx));
                     return;
                 }
-                // Only resolve to GetLocal for sigilless bindings (e.g. `my \Foo = ...`)
-                // or builtin-type-safe locals.  `$`-sigiled variables whose `$` was
-                // stripped share the same key in local_map but must NOT shadow type
-                // names, so they go through GetBareWord which checks the type registry.
-                if let Some(slot) = self.term_constant_slot(name) {
+                if self.sigilless_locals.contains(name.as_str()) {
+                    // A sigilless binding (`my \x`, a `\x` parameter, a `-> \x`
+                    // pointy parameter) lives under its term key (ADR-12441), so a
+                    // same-named `$x` never hides it. It IS the variable even when
+                    // the name coincides with a native lowercase type (`my \str`,
+                    // an `Int \ch` param). One without a slot of its own (a
+                    // `for` loop's `-> \i`, bound by name) is read by name.
+                    let key = crate::runtime::term_names::term_key(name);
+                    if let Some(&slot) = self.local_map.get(key.as_str()) {
+                        self.code.emit(OpCode::GetLocal(slot));
+                    } else {
+                        let name_idx = self.code.add_constant(Value::str(key));
+                        self.code.emit(OpCode::GetGlobal(name_idx));
+                    }
+                } else if let Some(slot) = self.term_constant_slot(name) {
                     // An in-scope sigil-less constant lives in its own
                     // term-namespace slot (#9962): a same-named `$b` — even one
                     // declared later, or a parameter of this very routine —
                     // cannot shadow it.
                     self.code.emit(OpCode::GetLocal(slot));
+                } else if self.enclosing_sigilless.contains(name.as_str()) {
+                    // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING
+                    // scope, read here from a nested — possibly escaping — closure.
+                    // It IS the variable, so emit a by-name global read of its
+                    // term key: GetGlobal is in `op_name_const_idx`, so
+                    // `compute_free_vars` records it as a free variable and the
+                    // closure captures the enclosing frame's slot value. A plain
+                    // GetBareWord would not be captured and would degrade to the
+                    // literal string once the creating frame returns (escaping
+                    // closure / `.^add_method` method body). This holds even when
+                    // the name coincides with a builtin type (`\str`): a
+                    // module sub's `Str \str` parameter must not read the `str`
+                    // TYPE OBJECT (String::Rotate's `sub rotate`).
+                    let key = crate::runtime::term_names::term_key(name);
+                    let name_idx = self.code.add_constant(Value::str(key));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
-                    if self.sigilless_locals.contains(name.as_str())
-                        || self.constant_vars_in_scope.contains(name.as_str())
+                    if self.constant_vars_in_scope.contains(name.as_str())
                         || name == "self"
                         || name == "__ANON_STATE__"
                     {
-                        // Sigilless bindings and in-scope constants: the bare word
-                        // IS the variable, so read directly from the local slot —
-                        // even when the name coincides with a native lowercase type
-                        // (`my \str`, an `Int \ch` param): in Raku the lexical
-                        // binding shadows the native type within its scope.
-                        // (Out-of-scope constants fall through to GetBareWord, which
-                        // resolves them as `our`-scoped package globals.)
+                        // In-scope constants: the bare word IS the variable, so
+                        // read directly from the local slot. (Out-of-scope
+                        // constants fall through to GetBareWord, which resolves
+                        // them as `our`-scoped package globals.)
                         self.code.emit(OpCode::GetLocal(slot));
                     } else if crate::runtime::Interpreter::is_builtin_type(name) {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
-                    } else if self.enclosing_sigilless.contains(name.as_str()) {
-                        // The local is a `$`-sigiled variable that merely shares its
-                        // key with an ENCLOSING sigilless binding (`\attr` outside,
-                        // `my $attr = attr` inside): the bare word names the outer
-                        // binding, not the `$` variable (`my $attr := attr` in a
-                        // trait_mod's `anon method`, Intl::CLDR).
-                        if !self.code.shadowed_sigilless_reads.contains(name) {
-                            self.code.shadowed_sigilless_reads.push(name.clone());
-                        }
-                        let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::GetGlobal(name_idx));
                     } else {
                         // The local is a `$`-sigiled variable — a bare word with the
                         // same name should resolve as a type/package, not the variable.
                         // The op says so: the runtime cannot tell the scalar's `env`
-                        // entry from a sigilless binding's by the shared key (#11898).
+                        // entry from a term's by the plain key (#11898).
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::GetBareWordOverScalar(name_idx));
                     }
-                } else if self.enclosing_sigilless.contains(name.as_str()) {
-                    // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING
-                    // scope, read here from a nested — possibly escaping — closure.
-                    // It IS the variable, so emit a by-name global read: GetGlobal
-                    // is in `op_name_const_idx`, so `compute_free_vars` records it
-                    // as a free variable and the closure captures the enclosing
-                    // frame's slot value. A plain GetBareWord would not be captured
-                    // and would degrade to the literal string once the creating
-                    // frame returns (escaping closure / `.^add_method` method body).
-                    //
-                    // This holds even when the name coincides with a builtin type
-                    // (`\str`, `\int`) — a lexical sigilless binding shadows the
-                    // type within its scope, exactly as the `sigilless_locals`
-                    // branch above already documents for the same-frame case. The
-                    // old `!is_builtin_type(name)` guard here sent `\str` to
-                    // GetBareWord, which consults the TYPE registry, so a module
-                    // sub's `Str \str` parameter read the `str` TYPE OBJECT
-                    // instead of its argument (String::Rotate's `sub rotate`).
-                    //
-                    // The closure may ALSO declare a same-keyed `$` local
-                    // (`my $attr = attr`); that local would hide the capture from
-                    // `compute_free_vars`, so the name is listed explicitly.
-                    if !self.code.shadowed_sigilless_reads.contains(name) {
-                        self.code.shadowed_sigilless_reads.push(name.clone());
-                    }
-                    let name_idx = self.code.add_constant(Value::str(name.clone()));
-                    self.code.emit(OpCode::GetGlobal(name_idx));
-                } else if self.sigilless_locals.contains(name.as_str()) {
-                    // A sigilless binding with no slot of its own -- a `for`
-                    // loop's `-> \i` parameter, bound by name -- is still the
-                    // variable: read it by name. GetBareWord would resolve the
-                    // term first, so `-> \i` read back the imaginary unit `i`.
-                    let name_idx = self.code.add_constant(Value::str(name.clone()));
-                    self.code.emit(OpCode::GetGlobal(name_idx));
                 } else if self.enclosing_local_names.contains(name.as_str()) {
                     // No sigilless binding of the name is in scope (checked above),
                     // so the same-named local of an ENCLOSING frame is a
@@ -1050,20 +1022,14 @@ impl Compiler {
                 // (#10676, #10827; see `Stmt::Assign`).
                 let outer_target = self.outer_write_target(name, *is_bind);
                 let name = outer_target.as_deref().unwrap_or(name);
-                // A sigil-less bareword bind target arrives as a term key:
-                // it stays one for an in-scope constant (or a name this unit
-                // cannot see, for the VM to resolve), and is the plain
-                // sigil-less binding otherwise (#9962).
-                let name = match crate::runtime::term_names::term_spelling(name) {
-                    Some(spelled)
-                        if !self.names_term_constant(spelled)
-                            && !self.sigilless_target_is_unknown(spelled) =>
-                    {
-                        spelled
-                    }
-                    _ => name,
-                };
-                self.compile_expr_assign(name, expr, *is_bind);
+                // A sigil-less bareword target arrives as a term key, which
+                // is where an in-scope constant (#9962) and a sigilless
+                // binding (ADR-12441) both live; a name this unit cannot see
+                // is resolved by the VM. A qualified symbol (`Pkg::<x> := v`)
+                // is a package store, not a term.
+                let package_store = crate::runtime::term_names::term_spelling(name)
+                    .filter(|spelled| crate::runtime::utils::has_double_colon(spelled));
+                self.compile_expr_assign(package_store.unwrap_or(name), expr, *is_bind);
             }
             // Source-preserving annotation for `x += y` and friends. The
             // parser has already built the ordinary assignment expansion;

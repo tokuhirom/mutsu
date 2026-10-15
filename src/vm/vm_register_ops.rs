@@ -515,7 +515,7 @@ impl Interpreter {
             .filter(|(sym, _)| {
                 !type_param_defs.iter().any(|pd| {
                     let bare = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
-                    sym.with_str(|s| s == bare || s == pd.name.as_str())
+                    sym.with_str(|s| s == bare || s == pd.name.as_str() || s == pd.storage_name())
                 })
             })
             .copied()

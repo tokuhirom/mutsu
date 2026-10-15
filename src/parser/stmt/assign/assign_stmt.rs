@@ -30,13 +30,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 let rest = atomic_rest.unwrap_or_else(|| &after_ws[1..]);
                 let (rest, _) = ws(rest)?;
                 let (rest, expr) = parse_assign_expr_or_comma(rest)?;
-                let storage_name = if bare_name == "_"
-                    && crate::parser::stmt::simple::is_user_declared_value_term("_")
-                {
-                    crate::symbol::SIGILLESS_UNDERSCORE_STORAGE.to_string()
-                } else {
-                    bare_name.clone()
-                };
+                let storage_name = bare_name.clone();
                 if is_atomic {
                     let stmt = Stmt::Expr(crate::ast::atomic_op::store_var(storage_name, expr));
                     return parse_statement_modifier(rest, stmt);

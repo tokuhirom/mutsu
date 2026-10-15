@@ -1826,7 +1826,7 @@ fn collect_sub_signature_syms(
     if let Some(params) = sub_sig {
         for sp in params {
             if !sp.name.is_empty() {
-                names.insert(Symbol::intern(&sp.name));
+                names.insert(Symbol::intern(&sp.storage_name()));
             }
             collect_sub_signature_syms(&sp.sub_signature, names);
         }
@@ -1834,11 +1834,34 @@ fn collect_sub_signature_syms(
 }
 
 impl SubData {
+    /// The storage key of the entry `p` of [`Self::params`]: a sigilless
+    /// parameter is spelled bare there but binds its term key (ADR-12441).
+    // Cost: O(d), d = param_defs.
+    pub(crate) fn param_storage_sym(&self, p: &str) -> Symbol {
+        if self
+            .param_defs
+            .iter()
+            .any(|pd| pd.sigilless && pd.name == p)
+            && !self
+                .param_defs
+                .iter()
+                .any(|pd| !pd.sigilless && pd.name == p)
+        {
+            Symbol::intern(&crate::term_names::term_key(p))
+        } else {
+            Symbol::intern(p)
+        }
+    }
+
     /// This code object's [`ParamNameSyms`], built on first use and shared
     /// thereafter.
     pub(crate) fn param_name_syms(&self) -> &Arc<ParamNameSyms> {
         self.param_name_syms_cache.get_or_init(|| {
-            let params: Vec<Symbol> = self.params.iter().map(|p| Symbol::intern(p)).collect();
+            let params: Vec<Symbol> = self
+                .params
+                .iter()
+                .map(|p| self.param_storage_sym(p))
+                .collect();
             let mut call_local: rustc_hash::FxHashSet<Symbol> = params.iter().copied().collect();
             for param in self.params.iter() {
                 if let Some(bare) = param.strip_prefix('^') {
@@ -1853,7 +1876,7 @@ impl SubData {
             }
             for pd in self.param_defs.iter() {
                 if !pd.name.is_empty() {
-                    let name_sym = Symbol::intern(&pd.name);
+                    let name_sym = Symbol::intern(&pd.storage_name());
                     call_local.insert(name_sym);
                     // The parameter's own type-constraint metadata is
                     // call-local too: it must not be written back over a
@@ -3184,7 +3207,7 @@ pub struct RegexClosure {
     /// regexes keep `source_tree` as `None` until dynamic tree nodes exist.
     pub source_tree: Option<Arc<crate::regex_tree::RegexTree>>,
     /// The signature an *anonymous* declarator term carried
-    /// (`token ($x) { $x \\d+ }`). A regex is a routine, so its parameters
+    /// (`token ($x) { $x \d+ }`). A regex is a routine, so its parameters
     /// have to ride along with the value: there is no named `token_defs`
     /// entry to look them up on, and a subrule reference (`<&$re('a')>`)
     /// binds them at match time — see

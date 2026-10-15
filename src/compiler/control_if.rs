@@ -52,9 +52,6 @@ impl Compiler {
         is_statement_modifier: bool,
         position: IfPosition,
     ) {
-        // A pointy `-> \v` is the branch's own lexical: it is not a sigilless
-        // binding the program declared for the code after the `if` (#11994).
-        let declared_before = self.sigilless_declared.clone();
         self.compile_if_construct_inner(
             cond,
             then_branch,
@@ -63,7 +60,6 @@ impl Compiler {
             is_statement_modifier,
             position,
         );
-        self.sigilless_declared = declared_before;
     }
 
     fn compile_if_construct_inner(
