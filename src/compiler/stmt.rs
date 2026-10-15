@@ -5176,6 +5176,16 @@ impl Compiler {
                 let name = name.clone();
                 self.compile_let_stmt_as_value(stmt, &name);
             }
+            // A sigil-less target is a term (ADR-12441): its value is read
+            // back from the term key, not the scalar spelled `name`.
+            Stmt::Assign {
+                name,
+                target_is_sigilless: true,
+                ..
+            } => {
+                self.compile_stmt(stmt);
+                self.emit_tail_var_stmt_value(stmt, name, true);
+            }
             Stmt::Assign { name, .. } => {
                 self.compile_stmt(stmt);
                 if let Some(&slot) = self.local_map.get(name) {
