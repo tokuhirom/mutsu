@@ -9,7 +9,6 @@ mod dispatch_core_coerce;
 pub(crate) mod dispatch_core_math;
 mod dispatch_core_numeric;
 mod dispatch_core_repr;
-mod dispatch_core_unicode;
 pub(crate) mod which;
 pub(crate) use crate::value::match_helpers;
 pub(crate) use crate::value::raku_repr;
@@ -1099,7 +1098,6 @@ fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, 
         };
     }
 
-    try_dispatch!(dispatch_core_unicode);
     try_dispatch!(dispatch_core_numeric);
     try_dispatch!(dispatch_core_repr);
 

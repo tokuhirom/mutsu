@@ -50,6 +50,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::RANDOM,
         named: &[],
     },
+    // `Any.chrs` is `self.list.chrs`: a number, a numeric string, a `Range`
+    // or a `Seq` reaches it (ADR-11276 §9.112).
+    MethodRow {
+        owner: "Any",
+        name: "chrs",
+        arity: 0,
+        handler: Handler::Pure(chrs),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     MethodRow {
         owner: "List",
         name: "chrs",

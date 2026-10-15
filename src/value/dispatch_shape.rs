@@ -421,6 +421,8 @@ impl DispatchShape {
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
                 && const_list_contains(&COOL_NUMERIC_FOR_COLLECTIONS, method))
+            // `IO::Path.chars` is `Cool.chars` of the path (§9.112).
+            || (matches!(self, DispatchShape::IoPath) && const_str_eq(method, "chars"))
     }
 
     /// Whether `Mu`'s `Int`/`Numeric` row (`method_table::ctors_mop::mu_numeric`)
@@ -598,7 +600,7 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 39] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 40] = [
     // `Any`'s list coercions (`method_table::any_coerce`, §9.110).
     "List",
     "list",
@@ -649,6 +651,8 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 39] = [
     // `Any.tree` (ADR-11276 §9.112): a list-like shape trees its elements, the
     // others answer themselves.
     "tree",
+    // `Any.chrs` (§9.112): `self.list.chrs`.
+    "chrs",
 ];
 
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];
