@@ -1,5 +1,6 @@
 //! A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
-//! captures (ADR-11276 §9.98, #13161).
+//! captures (ADR-11276 §9.98, #13161), and a `Backtrace` on its frames
+//! (§9.111).
 //!
 //! Rakudo's `Match` is a `Capture`, and `Any` declares `min`, `sort`,
 //! `Array`, `grep`, ... as `self.list.METHOD` (and `Hash` as reading
@@ -20,7 +21,9 @@ impl Interpreter {
     // memoized `has_user_method` probe plus O(p) to copy p positional captures.
     pub(crate) fn match_list_receiver(&mut self, target: &Value, method: &str) -> Option<Value> {
         let receiver = target.match_list_receiver(method)?;
-        if self.has_user_method(target.match_dispatch_class(), method) {
+        if target.is_match_instance()
+            && self.has_user_method(target.match_dispatch_class(), method)
+        {
             return None;
         }
         Some(receiver)

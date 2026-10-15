@@ -3,7 +3,7 @@ use Test;
 # ADR-11276 §9.111: the receiver-specific arms of `methods_0arg`'s prologue
 # are rows, and the receivers they answered reach them.
 
-plan 10;
+plan 17;
 
 # `Unicode` is a type object only (`DispatchShape::Unicode`).
 isa-ok Unicode.version, Version, 'Unicode.version';
@@ -19,3 +19,14 @@ is [].to, Nil, 'an empty list: .to is Nil';
 is ().from, Nil, 'an empty list: .from is Nil';
 throws-like { (1, 2).to }, X::Method::NotFound, 'an element with no .to throws';
 throws-like { @m.ast }, X::Method::NotFound, 'List has no .ast';
+
+# A `Backtrace` answers `Any`'s `self.list.METHOD` methods on its frames.
+sub frames { Backtrace.new }
+my $bt = frames();
+is $bt.elems, $bt.list.elems, 'Backtrace.elems counts the frames';
+isa-ok $bt.List, List, 'Backtrace.List';
+is $bt.List.elems, $bt.list.elems, 'Backtrace.List is the frames';
+isa-ok $bt.Seq, Seq, 'Backtrace.Seq';
+is $bt.Seq.elems, $bt.list.elems, 'Backtrace.Seq is the frames';
+isa-ok $bt.Stringy, Str, 'Backtrace.Stringy';
+is $bt.keys.elems, $bt.list.elems, 'Backtrace.keys indexes the frames';

@@ -1042,43 +1042,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // Backtrace and Backtrace::Frame: their own methods are rows of the method
     // table (`method_table::backtrace`, ADR-11276 §9.35); a call the table's
-    // entry did not take reaches the same handlers here. The rest are the
-    // ancestors' (`Any`, `Mu`) answers, read from the `frames` list.
+    // entry did not take reaches the same handlers here. `Any`'s
+    // `self.list.METHOD` methods were answered on the frames before the call
+    // reached here (`Value::match_list_receiver`, §9.111).
     if let Some(answer) = crate::builtins::method_table::backtrace::answer(target, method, &[]) {
         return Some(answer);
     }
     if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Backtrace"
-    {
-        match method {
-            "Stringy" => {
-                let text = attributes
-                    .as_map()
-                    .get("text")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                return Some(Ok(Value::str(text)));
-            }
-            "List" | "Seq" => {
-                if let Some(frames) = attributes.as_map().get("frames") {
-                    return Some(Ok(frames.clone()));
-                }
-                return Some(Ok(Value::array(vec![])));
-            }
-            "elems" => {
-                if let Some(frames) = attributes.as_map().get("frames") {
-                    let count = crate::runtime::utils::value_to_list(frames).len();
-                    return Some(Ok(Value::int(count as i64)));
-                }
-                return Some(Ok(Value::int(0)));
-            }
-            _ => {}
-        }
-    } else if let ValueView::Instance {
         class_name,
         attributes,
         ..

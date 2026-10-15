@@ -356,6 +356,9 @@ impl DispatchShape {
                 matches!(self, DispatchShape::Pair)
             }
             DispatchShape::Pair => true,
+            // A `Backtrace` answers them on its frames
+            // (`Value::match_list_receiver`, ADR-11276 §9.111).
+            DispatchShape::Backtrace => false,
             // `Any.reverse` is `self.list.reverse`: a `Capture` reads its
             // positionals, a `Version` is the one-element list holding itself.
             _ if const_str_eq(method, "reverse") => {

@@ -285,6 +285,9 @@ impl Value {
     // Cost: O(1) for a non-Match or another name; O(p) to copy the p
     // positional captures (or one map clone for `Hash`).
     pub(crate) fn match_list_receiver(&self, method: &str) -> Option<Value> {
+        if let Some(frames) = self.backtrace_list_receiver(method) {
+            return Some(frames);
+        }
         if method == "Hash" {
             if !self.is_match_instance() {
                 return None;
@@ -298,6 +301,52 @@ impl Value {
             return None;
         }
         Some(self.match_positional_list(method == "Array"))
+    }
+
+    /// The frames a `Backtrace` answers `method` on in place of itself, when
+    /// Rakudo's candidate for it is `Any`'s `self.list.METHOD` (`elems`,
+    /// `List`, `Seq`, `sort`, ...): `Backtrace` declares `list` (its frames)
+    /// and inherits the rest from `Any` (ADR-11276 §9.111). `None` for a name
+    /// `Backtrace` declares itself (`first`, `map`, `flat`) or any other
+    /// receiver, including a user subclass.
+    // Cost: O(1) for another receiver or name; O(f) to copy the f frames.
+    fn backtrace_list_receiver(&self, method: &str) -> Option<Value> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = self.view()
+        else {
+            return None;
+        };
+        if class_name != "Backtrace"
+            || matches!(method, "first" | "map" | "flat" | "list" | "Hash")
+            || !(is_capture_list_method(method)
+                || matches!(
+                    method,
+                    "elems"
+                        | "end"
+                        | "keys"
+                        | "values"
+                        | "kv"
+                        | "pairs"
+                        | "antipairs"
+                        | "invert"
+                        | "join"
+                        | "Supply"
+                ))
+        {
+            return None;
+        }
+        let frames = attributes
+            .as_map()
+            .get("frames")
+            .map(crate::value::to_list::value_to_list)
+            .unwrap_or_default();
+        Some(Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(frames)),
+            crate::value::ArrayKind::List,
+        ))
     }
 
     /// The positional captures as the list `Any`'s iteration methods walk:
