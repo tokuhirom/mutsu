@@ -117,6 +117,7 @@ impl Interpreter {
             nominal: (literal, typed),
             distance,
             refinement: [constrained, subsig, writable, 0],
+            constrained_slot: 0,
             non_slurpy: !capture && !multi_rank::has_slurpy_positional(&params),
             arity: if capture {
                 (0, 0)

@@ -254,6 +254,10 @@ pub(crate) struct MultiRank {
     pub(crate) nominal: (usize, usize),
     pub(crate) distance: usize,
     pub(crate) refinement: [usize; 4],
+    /// Which component of [`Self::refinement`] counts the constrained
+    /// parameters (`where`, `subset`): 0 for a sub, 1 for a method (whose
+    /// component 0 counts literals).
+    pub(crate) constrained_slot: usize,
     pub(crate) non_slurpy: bool,
     /// `(positional count, required positional count)`, slurpies excluded:
     /// rakudo's `num_types` and `min_arity`, for the arity-mismatch rule of
@@ -320,7 +324,12 @@ impl MultiRank {
     // Cost: O(1).
     fn refinement_cmp(&self, other: &MultiRank) -> Ordering {
         let ord = other.refinement.cmp(&self.refinement);
-        if ord == Ordering::Equal || self.refinement[1..] != other.refinement[1..] {
+        let rest = |r: &MultiRank| {
+            let mut rest = r.refinement;
+            rest[r.constrained_slot] = 0;
+            rest
+        };
+        if ord == Ordering::Equal || rest(self) != rest(other) {
             return ord;
         }
         let less = if ord == Ordering::Less { other } else { self };
