@@ -80,6 +80,21 @@ fn run(
     if !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
+    // An element that is an object rather than an Int (a `CArray[uint8]` slot
+    // reference, `UIntPosRef`) contributes its integer value, as rakudo's
+    // `append` coerces each element.
+    let coerced;
+    let args = if matches!(method, "push" | "append" | "unshift" | "prepend") {
+        match interp.coerce_buf_element_objects(args) {
+            Ok(items) => {
+                coerced = items;
+                &coerced[..]
+            }
+            Err(e) => return Some(Err(e)),
+        }
+    } else {
+        args
+    };
     let Some(name) = place.name().map(str::to_string) else {
         return by_value(&target, method, args);
     };

@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::runtime::nativecall::{CType, CallbackSig, NativeCallSpec, ParamSpec};
+use crate::runtime::nativecall::{CType, CallbackSig, DeclaredType, NativeCallSpec, ParamSpec};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The C type an NCI type code names, on an LP64 platform (`long` and
@@ -122,6 +122,24 @@ fn param_spec_from_info(info: &Value) -> Result<ParamSpec, RuntimeError> {
     })
 }
 
+/// The type a pointer-shaped callback parameter is declared as (its
+/// `typeobj`), when it is a user class or a parameterized `CArray[T]` rather
+/// than one of NativeCall's own bare pointer types.
+// Cost: O(1).
+fn callback_param_class(info: &Value) -> Option<DeclaredType> {
+    let typeobj = info_get(info, "typeobj")?;
+    let name = match typeobj.view() {
+        ValueView::Package(name) => name.resolve().to_string(),
+        // `CArray[uint8]` is a mixin over the `CArray` package.
+        ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Package(_)) => {
+            return Some(DeclaredType(typeobj));
+        }
+        _ => return None,
+    };
+    let short = crate::runtime::cstruct_layout::short_base_name(&name);
+    (!matches!(short, "Pointer" | "CArray" | "Buf" | "Blob" | "Str")).then(|| DeclaredType(typeobj))
+}
+
 /// A callback parameter's C signature: `callback_args` holds the return hash
 /// first, then one hash per parameter.
 // Cost: O(c), c = parameters of the callback's signature.
@@ -132,12 +150,14 @@ fn callback_sig_from_info(args: Option<&Value>) -> Result<CallbackSig, RuntimeEr
             "NativeCall: a callback parameter has no signature information",
         ));
     };
+    let param_types = params.iter().map(callback_param_class).collect();
     let params = params
         .iter()
         .map(|p| info_type_code(p).and_then(|code| ctype_for_code(&code)))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(CallbackSig {
         params,
+        param_types,
         ret: ctype_for_code(&info_type_code(ret)?)?,
     })
 }

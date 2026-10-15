@@ -250,7 +250,11 @@ fn invoke(data: &CallbackData, args: *const *const std::ffi::c_void) -> Option<V
     // A pointer-shaped parameter arrives as the address; box it as upstream's
     // `Pointer`, which is what rakudo hands the callback. NULL stays the type
     // object, as for a native return.
-    for (arg, ct) in raku_args.iter_mut().zip(&data.sig.params) {
+    for ((arg, ct), class) in raku_args
+        .iter_mut()
+        .zip(&data.sig.params)
+        .zip(&data.sig.param_types)
+    {
         if matches!(
             ct,
             CType::Pointer | CType::CArray | CType::Buf | CType::Callback
@@ -259,7 +263,21 @@ fn invoke(data: &CallbackData, args: *const *const std::ffi::c_void) -> Option<V
             // from the live `&mut Interpreter` making the native call.
             let interp = unsafe { &mut *interp };
             let addr = crate::runtime::nativecall::value_c_address(arg);
-            if let Some(Ok(boxed)) = interp.native_pointer_of_declared("Pointer", addr, true) {
+            // A parameter declared as a user class (`archive`, a CPointer
+            // REPR) or `CArray[T]` arrives as an instance of it; anything the
+            // type cannot box falls back to a bare `Pointer`.
+            let declared = class
+                .as_ref()
+                .and_then(|c| {
+                    let built = interp.native_object_of_type(&c.0, addr).or_else(|| {
+                        let name = crate::runtime::registration_class::type_value_name(&c.0);
+                        interp.native_pointer_of_declared(&name, addr, false)
+                    })?;
+                    // NULL stays the type object, as for a native return.
+                    Some(built.map(|b| if addr == 0 { c.0.clone() } else { b }))
+                })
+                .or_else(|| interp.native_pointer_of_declared("Pointer", addr, true));
+            if let Some(Ok(boxed)) = declared {
                 *arg = boxed;
             }
         }

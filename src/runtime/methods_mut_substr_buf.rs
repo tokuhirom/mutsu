@@ -338,6 +338,27 @@ impl Interpreter {
         result
     }
 
+    /// The arguments of a `Buf` push/append flattened, with every element that
+    /// is a Proxy (a `CArray[uint8]` slot, `UIntPosRef`) fetched, and every
+    /// plain object (not a number, string or buffer) coerced through `.Int`.
+    // Cost: O(k) plus one `.Int` call per object element, k = elements.
+    pub(crate) fn coerce_buf_element_objects(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut items = Self::flatten_buf_args(args.to_vec());
+        for item in items.iter_mut() {
+            if item.is_proxy_value() {
+                *item = self.auto_fetch_proxy(item)?;
+            } else if let ValueView::Instance { class_name, .. } = item.view()
+                && !crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+            {
+                *item = self.call_method_with_values(item.clone(), "Int", vec![])?;
+            }
+        }
+        Ok(items)
+    }
+
     /// The `X::TypeCheck` of a `Str` pushed onto a `Buf`.
     // Cost: O(1).
     pub(crate) fn buf_element_type_error(got: &Value) -> RuntimeError {
