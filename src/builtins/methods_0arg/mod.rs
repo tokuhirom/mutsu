@@ -765,10 +765,6 @@ pub(crate) fn native_method_0arg_cascade(
     if let result @ Some(_) = dispatch_core(target, method) {
         return result;
     }
-    // Then collection methods (keys, values, kv, pairs, etc.)
-    if let result @ Some(_) = collection::dispatch(target, method) {
-        return result;
-    }
     // Then type coercion and specialized methods
     coercion::dispatch(target, method)
 }

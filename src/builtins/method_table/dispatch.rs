@@ -673,6 +673,15 @@ pub(crate) fn shapeless_row(
                 any
             }
         }
+        // A package stash is a `Hash` of its symbols that `Any`'s `kv`,
+        // `pairs` and `hash` read as such (`any_views`, §9.109); its MRO has
+        // no row that does.
+        ValueView::Instance { class_name, .. }
+            if matches!(method.as_str(), "kv" | "pairs" | "hash")
+                && crate::value::types::is_stash_class_name(&class_name.resolve()) =>
+        {
+            any
+        }
         ValueView::Instance { class_name, .. } if class_name != "Failure" => {
             let mut owner = None;
             let subscript = matches!(

@@ -7,7 +7,7 @@
 //! same [`list_of`] and [`hash_of`].
 
 use super::{Handler, MethodRow, RowFlags};
-use crate::value::{DispatchShape, RuntimeError, Value, ValueView};
+use crate::value::{DispatchShape, RuntimeError, Value, ValueMap, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
@@ -23,7 +23,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "hash",
         arity: 0,
         handler: Handler::Narrow(hash),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
 ];
@@ -87,22 +87,31 @@ pub(crate) fn hash_of(target: &Value) -> Result<Value, RuntimeError> {
     crate::runtime::utils::build_hash_from_items(items)
 }
 
-/// The `Any.hash` row. It declines what the cascade routes elsewhere: a type
-/// object, a `Nil`, an instance (a user class may have its own `hash`
-/// accessor, and a stash is a Map of its symbols), a hash, a quant hash (their
-/// own rows) and a lazy list (forced by the interpreter).
+/// The `Any.hash` row. A type object has no contents, so its `.hash` is the
+/// empty hash (`Hash.hash` is `Hash` itself, and `Mu`, which is no `Any`, never
+/// reaches the row); `Nil` is the empty hash too; a hash is itself, de-itemized;
+/// a package stash is the Map of its symbols. It declines an instance of any
+/// other class (a user class may have its own `hash` accessor) and a lazy list
+/// (forced by the interpreter).
 // Cost: O(e), e = elements of the invocant (O(1) for a scalar: an odd-element error).
 fn hash(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let readable = match target.view() {
-        ValueView::Package(_)
-        | ValueView::Nil
-        | ValueView::Hash(_)
-        | ValueView::Set(..)
-        | ValueView::Bag(..)
-        | ValueView::Mix(..)
-        | ValueView::LazyList(_) => false,
-        ValueView::Instance { .. } => is_plain_scalar(target),
-        _ => true,
-    };
-    readable.then(|| hash_of(target))
+    match target.view() {
+        ValueView::Package(name) if name == "Hash" => Some(Ok(target.clone())),
+        ValueView::Package(_) | ValueView::Nil => Some(Ok(Value::hash(ValueMap::default()))),
+        ValueView::Hash(_) => super::map::hash(target, &[]),
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+            super::quanthash::hash(target, &[])
+        }
+        ValueView::Instance { .. }
+            if crate::builtins::map_hash_coerce::stash_symbols(target).is_some() =>
+        {
+            Some(crate::builtins::map_hash_coerce::to_hash(
+                target.clone(),
+                false,
+            ))
+        }
+        ValueView::Instance { .. } => is_plain_scalar(target).then(|| hash_of(target)),
+        ValueView::LazyList(_) => None,
+        _ => Some(hash_of(target)),
+    }
 }

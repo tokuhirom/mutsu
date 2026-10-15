@@ -14,6 +14,7 @@ mod any_interp;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
 pub(crate) mod any_subscript;
+pub(crate) mod any_views;
 pub(crate) mod capture;
 pub(crate) mod clone;
 mod descriptor;
@@ -41,6 +42,8 @@ pub(crate) mod type_params;
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any_collection::ROWS,
+    any_views::ROWS,
+    any_views::PAIRUP_ROWS,
     render::WHICH_ROWS,
     render::PAIR_WHICH_ROWS,
     render::LIST_GIST_ROWS,
