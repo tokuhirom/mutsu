@@ -531,11 +531,12 @@ impl Compiler {
         } else {
             Vec::new()
         };
-        let newly_registered: Vec<String> = sigilless_param_names
-            .iter()
-            .filter(|n| self.sigilless_locals.insert((*n).clone()))
-            .cloned()
-            .collect();
+        // Everything the loop binds as a term -- its sigilless parameters and
+        // the synthesized `my \T` of a type capture (`-> ::T`) -- is the body's
+        // and must stop naming a term key after the loop: `sub f(::T) { for
+        // @types -> ::T { }; T }` reads the routine's `T` again (ADR-12441).
+        let sigilless_before_loop = self.sigilless_locals.clone();
+        self.sigilless_locals.extend(sigilless_param_names.iter().cloned());
         // Bind the loop parameters first, then hoist the body's routine
         // declarations so they capture the freshly-bound params. Hoisting makes
         // a `sub` declared later in the body visible from its beginning (Raku
@@ -654,9 +655,7 @@ impl Compiler {
         self.callframe_block_depth -= 1;
         self.for_param_names.truncate(for_param_mark);
         self.by_name_for_params.truncate(by_name_mark);
-        for n in &newly_registered {
-            self.sigilless_locals.remove(n);
-        }
+        self.sigilless_locals = sigilless_before_loop;
         self.code.patch_loop_end(loop_idx);
         // A body that pushed no frame of its own leaves the declarations
         // parked; close them here so they neither leak into the next scope
