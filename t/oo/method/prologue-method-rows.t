@@ -3,7 +3,7 @@ use Test;
 # ADR-11276 §9.111: the receiver-specific arms of `methods_0arg`'s prologue
 # are rows, and the receivers they answered reach them.
 
-plan 36;
+plan 40;
 
 # `Unicode` is a type object only (`DispatchShape::Unicode`).
 isa-ok Unicode.version, Version, 'Unicode.version';
@@ -64,3 +64,10 @@ is $mb.total, 3, 'Bag subclass: .total';
 is $mb.kxxv.sort, <a a b>, 'Bag subclass: .kxxv';
 is $mb.WHAT, MB, 'Bag subclass: .WHAT';
 is $mb.elems, 2, 'Bag subclass: .elems';
+
+# `True but False` is that Bool for every method (Rakudo).
+my $tf = True but False;
+is $tf.Int, 0, '(True but False).Int';
+is $tf.not, True, '(True but False).not';
+is $tf.Numeric, 0, '(True but False).Numeric';
+is $tf.Str, 'False', '(True but False).Str';

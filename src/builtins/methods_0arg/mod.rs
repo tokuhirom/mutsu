@@ -394,24 +394,15 @@ pub(crate) fn native_method_0arg_cascade(
         {
             return Some(Ok(str_val.clone()));
         }
-        // A Bool with a mixed-in Bool override (`True but False`) renders its
-        // Str/gist/raku from the *effective* boolean — `Bool.Str` is
-        // `self ?? 'True' !! 'False'`, so it follows `.Bool`, not the base bool.
+        // A Bool with a mixed-in Bool override and nothing else (`True but
+        // False`) is that Bool for every method, as in Rakudo (`.Str`, `.Int`,
+        // `.not` and `.raku` all follow the effective truth, ADR-11276
+        // §9.111).
         if matches!(inner.as_ref().view(), ValueView::Bool(_))
-            && mixins.get("Str").is_none()
+            && mixins.keys().count() == 1
             && let Some(ValueView::Bool(b)) = mixins.get("Bool").map(Value::view)
         {
-            match method {
-                "Str" | "~" | "gist" => {
-                    return Some(Ok(Value::str(if b { "True" } else { "False" }.to_string())));
-                }
-                "raku" | "perl" => {
-                    return Some(Ok(Value::str(
-                        if b { "Bool::True" } else { "Bool::False" }.to_string(),
-                    )));
-                }
-                _ => {}
-            }
+            return native_method_0arg(&Value::truth(b), method_sym);
         }
         // An allomorph (IntStr/NumStr/…) gists as its preserved source string,
         // not the inner numeric's gist: `<1e3>.gist` → `1e3` (not `1000`). Only
