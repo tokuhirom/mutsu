@@ -944,6 +944,25 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    -1.05%, `bench-multi-dispatch` -1.14% / -1.16%, `bench-string` -0.05% /
    +0.03%. Allocations: -10,000 on `method-call` and `bench-multi-dispatch`
    (one overlay map per call that no longer receives a `$_`).
+
+   **Slice 14 done** (`fix/13595-reflective-closure-block-lexicals`,
+   #13595): `::('$x')` and `::($name)` count as naming a lexical by string.
+   They compile to `IndirectTypeLookup`, which `scan_reflective_name_access`
+   did not list. A program whose only reflective access was such a lookup
+   therefore never set the reflective-access flag. Its scalar stores then
+   skipped the env mirror (ADR-0039 §16), and no closure got a reflective
+   capture. The result was `my $s = 1; say ::('$s')` dying with "No such
+   symbol". The same held for a closure reading its exited block's lexical
+   this way. Only a constant name without a sigil (`::('Int')`,
+   `::('Foo::Bar')`) stays non-reflective: it names a type, and the symbol
+   table answers it.
+
+   Two shapes of #13595 remain:
+   - A block-local lexical that shadows a program-scope one of the same
+     name: a program-scope capture is consulted after the live program
+     scope.
+   - A sub declared in a closure body that creates the closure: that sub's
+     frame is not linked to the closure it was declared in.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
