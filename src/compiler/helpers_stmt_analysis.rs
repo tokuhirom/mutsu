@@ -153,6 +153,12 @@ impl Compiler {
         )))
     }
 
+    /// Start this (EVAL) unit inside the import sets `innermost_first` of the
+    /// blocks running around its `EVAL` call (ADR-8751).
+    pub(crate) fn seed_lexical_import_chain(&mut self, innermost_first: Vec<Symbol>) {
+        self.lexical_import_chain = innermost_first.into_iter().rev().collect();
+    }
+
     /// The `LexImportCall` chain index for a bareword call of `name` compiled
     /// here, or `None` when no enclosing block `use`s a module or the name
     /// cannot be an imported routine's.

@@ -143,6 +143,23 @@ Consequences that pin the design:
   (acceptance 4, `todo` in that test), and `ImportScope`/
   `imported_env_aliases` stay until those aliases go; a `use` in a method
   body opens no set yet; a multi family keeps the registry path (stage 2).
+
+  **Slice 2 done** (`fix/8751-imports-skip-registry-alias`): a plain routine
+  a block-scoped `use` imports is bound in the lexical import set *instead
+  of* being aliased into the registry (`import_module` hands it to
+  `bind_routine_lexically` when the running `use` fills a set for the
+  importing compunit), so a callee written outside the block no longer sees
+  it (acceptance 4). Every read the compiler can place gets the
+  `LexImportCall` prefix: a bareword call, `&g(...)` (`CallOnCodeVar`) and a
+  `&g` value (`GetCodeVar`). A read by a run-time name falls back to the sets
+  of the blocks whose import scope is open (`ImportScopeSnapshot::lexical_sets`):
+  `::('&g')` / `&::("g")` (`resolve_code_var`) and an `EVAL` in the block,
+  whose compiler is seeded with them. That fallback is dynamic, as the
+  aliases were; it only serves names nothing lexical answers. Left for
+  stage 1: the import scope still rolls back the registry for what slice 2
+  does not bind (multis, protos, operators, classes, variables), so
+  `ImportScope` and `imported_env_aliases` stay; a `use` in a method body
+  opens no set yet.
 - **Stage 2 (phase 2, dispatcher values).** Imported multis, protos and
   operators.
 

@@ -2703,6 +2703,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// `runtime::attach_target`), in attach order. Run LIFO when the scope
     /// closes, on every exit path (`OpCode::ImportScope`).
     pub(crate) leave_phasers: Vec<Value>,
+    /// The lexical import sets a block-scoped `use` in this scope filled
+    /// (ADR-8751): what a by-name lookup the compiler could not resolve
+    /// (`::('&f')`, an `EVAL` in the block) still sees while it runs.
+    pub(crate) lexical_sets: Vec<Symbol>,
     /// The compilation unit whose code opened this scope
     /// (`executing_unit_sym_for_module_load` at the push). An import made here
     /// shadows that unit's own top-level routines, but not another unit's

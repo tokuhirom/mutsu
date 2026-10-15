@@ -109,6 +109,7 @@ impl Interpreter {
                 scope_classes,
                 imported_env_aliases: self.module.imported_env_aliases.clone(),
                 leave_phasers: Vec::new(),
+                lexical_sets: Vec::new(),
                 unit: self.executing_unit_sym_for_module_load(),
             }
         };
@@ -414,6 +415,7 @@ impl Interpreter {
                 monkey_typing,
                 scope_classes,
                 leave_phasers: _,
+                lexical_sets: _,
                 unit: _,
             } = snapshot;
             // Remove functions added since the push, EXCEPT a module's own

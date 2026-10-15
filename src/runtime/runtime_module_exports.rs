@@ -1151,6 +1151,21 @@ impl Interpreter {
                     }
                 }
             }
+            // A block-scoped `use` binds a plain routine in the block's lexical
+            // import set instead of aliasing it into the registry (ADR-8751
+            // stage 1): code written outside the block, called from inside it,
+            // must not see it. A multi family, a proto and an operator keep
+            // the alias until imports bind dispatcher values (stage 2).
+            if !is_operator
+                && !name.contains(":<")
+                && !imported_proto
+                && !exported_method_candidates
+                && let [(key, def)] = function_entries.as_slice()
+                && !key.as_str().contains('/')
+                && self.bind_routine_lexically(&name, &def.clone())
+            {
+                function_entries.clear();
+            }
             // An imported `only` sub (no multi candidates) is a single lexical
             // symbol: inside a nested scope it hides every outer candidate of
             // the name, exactly as a locally declared `sub` would. Without

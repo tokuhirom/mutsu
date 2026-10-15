@@ -38,26 +38,49 @@ pub(crate) struct LexicalImportCapture {
     /// The `&name` env keys the import wrote (a `sub EXPORT` hook binds its
     /// routines there, not in the registry).
     amp_env_keys: HashSet<Symbol>,
+    /// The plain routines the import bound lexically instead of aliasing
+    /// them into the registry ([`Interpreter::bind_routine_lexically`]).
+    lexical_defs: HashMap<Symbol, std::sync::Arc<crate::ast::FunctionDef>>,
 }
 
 impl Interpreter {
-    /// Start collecting the imports of the `use` filling the lexical import
-    /// set `id`; `None` when the set is already filled (every `use` with the
-    /// same id imports the same routines).
+    /// Start collecting the imports of a `use` that fills a lexical import
+    /// set. Every run of the `use` refills it: the import binds its plain
+    /// routines only there, never in the registry. Returns the capture that
+    /// was running (a module loading inside an outer block's `use`).
     // Cost: O(1).
-    pub(crate) fn begin_lexical_import_capture(
-        &mut self,
-        id: Symbol,
-    ) -> Option<Option<LexicalImportCapture>> {
-        if self.module.lexical_import_sets.contains_key(&id) {
-            return None;
-        }
+    pub(crate) fn begin_lexical_import_capture(&mut self) -> Option<LexicalImportCapture> {
         let capture = LexicalImportCapture {
             unit: self.executing_unit_sym_for_module_load(),
             routines: Vec::new(),
             amp_env_keys: HashSet::new(),
+            lexical_defs: HashMap::new(),
         };
-        Some(self.module.lexical_import_capture.replace(capture))
+        self.module.lexical_import_capture.replace(capture)
+    }
+
+    /// Whether the running import binds `name` lexically rather than
+    /// aliasing it into the registry, and if so record `def` as its binding.
+    /// Only a plain routine (no multi candidates, no proto, not an operator)
+    /// imported by the compunit that wrote the block-scoped `use` qualifies;
+    /// everything else keeps the registry alias (ADR-8751 stage 2).
+    // Cost: O(1).
+    pub(crate) fn bind_routine_lexically(
+        &mut self,
+        name: &str,
+        def: &std::sync::Arc<crate::ast::FunctionDef>,
+    ) -> bool {
+        let importer = self.executing_unit_sym_for_module_load();
+        let Some(capture) = self.module.lexical_import_capture.as_mut() else {
+            return false;
+        };
+        if capture.unit != importer {
+            return false;
+        }
+        capture
+            .lexical_defs
+            .insert(Symbol::intern(name), std::sync::Arc::clone(def));
+        true
     }
 
     /// Finish the capture [`Self::begin_lexical_import_capture`] started and
@@ -76,7 +99,9 @@ impl Interpreter {
         let mut set = HashMap::new();
         for (package, name) in capture.routines {
             let amp = Symbol::intern(&format!("&{}", name.resolve()));
-            let binding = if capture.amp_env_keys.contains(&amp) {
+            let binding = if let Some(def) = capture.lexical_defs.get(&name) {
+                Some(LexicalImport::Routine(std::sync::Arc::clone(def)))
+            } else if capture.amp_env_keys.contains(&amp) {
                 self.env
                     .get_sym(amp)
                     .filter(|value| matches!(value.view(), ValueView::Sub(_)))
@@ -126,6 +151,46 @@ impl Interpreter {
         {
             capture.amp_env_keys.insert(key);
         }
+    }
+
+    /// Record that the innermost import scope's block filled set `id`.
+    // Cost: O(s), s = sets the scope already holds (usually 0).
+    pub(crate) fn note_active_lexical_import_set(&mut self, id: Symbol) {
+        if let Some(top) = self.module.import_scope_stack.last_mut()
+            && !top.lexical_sets.contains(&id)
+        {
+            top.lexical_sets.push(id);
+        }
+    }
+
+    /// The lexical import sets of the blocks whose import scope is open,
+    /// innermost first: what a lookup by a run-time name sees.
+    // Cost: O(s), s = open import scopes' sets.
+    pub(crate) fn active_lexical_import_chain(&self) -> Vec<Symbol> {
+        self.module
+            .import_scope_stack
+            .iter()
+            .rev()
+            .flat_map(|scope| scope.lexical_sets.iter().rev())
+            .copied()
+            .collect()
+    }
+
+    /// The code object `&name` is lexically imported as in an open block, for
+    /// a by-name lookup (`::('&name')`, `&::("name")`).
+    // Cost: O(s) plus building the code object.
+    pub(crate) fn active_lexical_import_value(&self, name: &str) -> Option<Value> {
+        if self.module.import_scope_stack.is_empty() {
+            return None;
+        }
+        let chain = self.active_lexical_import_chain();
+        if chain.is_empty() {
+            return None;
+        }
+        Some(match self.lexical_import_binding(&chain, Symbol::intern(name))? {
+            LexicalImport::Code(value) => value,
+            LexicalImport::Routine(def) => self.sub_value_from_function_def((*def).clone()),
+        })
     }
 
     /// The routine `name` is bound to in the first of the import sets
