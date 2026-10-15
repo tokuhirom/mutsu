@@ -306,6 +306,13 @@ impl Interpreter {
                     // into the env for the role body to read. It is not always
                     // the signature parameter's own name, so both are recorded
                     // when they differ.
+                    // A sigilless one (`role R[\u]`) is a term: it is
+                    // recorded under its term key alone, so a same-named `$u`
+                    // parameter of the role keeps its own binding (#13551).
+                    if param_defs[i].sigilless {
+                        bindings.insert(param_defs[i].storage_name().into_owned(), value);
+                        continue;
+                    }
                     bindings.insert(param_names.get(i).unwrap_or(name).clone(), value.clone());
                     bindings.insert(name.clone(), value);
                 }
