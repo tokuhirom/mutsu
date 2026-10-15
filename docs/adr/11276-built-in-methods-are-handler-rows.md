@@ -2712,6 +2712,17 @@ no `Uni` case); `CompUnit::DependencySpecification`, which has two representatio
 `Any`, and an instance); `Distribution`, with the slow path's `methods_distribution.rs`; `IO::Path::Parts`; `__mutsu_zen_angle` (the
 compiler's). `method-rows-report.py --arms`: the pure arity cascades go from 76 arms to 56.
 
+### 9.113 Slice 5: the two-argument cascade's `substr`, `fmt`, `base` and `unimatch` arms are gone (2026-10-16)
+
+`refactor/11276-narg-arms`. The census of §9.111 found `dispatch_2arg`'s four arms answering calls their rows existed
+for but did not admit: `"abcdef".substr(1, *)` (24,000 calls in one test), `.substr` of a `Match` or an `Int`, a
+collection's `.fmt($format, $separator)` with a `Format` object, `Rat.base($radix, *)`. Each arm called the same function
+as its row's handler, so the rows now take any plain argument (`RowFlags::ANY_ARGS` on every `substr` and collection `fmt`
+row; the `base` rows had it) and the handler declines what only the interpreter can run. `unimatch` answered no receiver
+the `Cool` row did not. `Duration`/`Instant` `.base($radix, $digits)` called the cascade on its seconds
+(`native_method_2arg`); it calls `numeric_base::base_of` now. Pinned in `t/oo/method/two-arg-method-rows.t`.
+`method-rows-report.py --arms`: the pure arity cascades lose four arms.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
