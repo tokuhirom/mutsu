@@ -520,7 +520,7 @@ impl Interpreter {
         // Well-known core constant terms are valid as literal return types
         // (`--> Empty`, `--> True`); they are not type names so
         // `is_resolvable_type` does not cover them.
-        if matches!(rt, "Empty" | "True" | "False" | "NaN" | "Inf") {
+        if matches!(rt, "Empty" | "True" | "False" | "NaN" | "Inf" | "IterationEnd") {
             return Ok(());
         }
         if captures.contains(rt)

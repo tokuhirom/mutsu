@@ -19,28 +19,49 @@ use std::sync::OnceLock;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MethodDefSyms {
     params: OnceLock<Box<[Symbol]>>,
+    param_storage: OnceLock<Box<[String]>>,
     param_def_names: OnceLock<Box<[Symbol]>>,
     source_file: OnceLock<Option<Symbol>>,
 }
 
 impl super::MethodDef {
-    /// `params[i]`, interned.
+    /// The storage key of `params[i]`: its name, or the term key of a
+    /// sigilless parameter (ADR-12441), whose `param_defs[i]` says so.
+    // Cost: O(1) after the first call; O(p) once, p = number of parameters.
+    #[inline]
+    pub(crate) fn param_storage_names(&self) -> &[String] {
+        self.syms.param_storage.get_or_init(|| {
+            self.params
+                .iter()
+                .enumerate()
+                .map(|(i, n)| match self.param_defs.get(i) {
+                    Some(pd) if pd.name == *n => pd.storage_name().into_owned(),
+                    _ => n.clone(),
+                })
+                .collect()
+        })
+    }
+
+    /// [`Self::param_storage_names`], interned.
     // Cost: O(1) after the first call; O(p) once, p = number of parameters.
     #[inline]
     pub(crate) fn param_syms(&self) -> &[Symbol] {
-        self.syms
-            .params
-            .get_or_init(|| self.params.iter().map(|n| Symbol::intern(n)).collect())
+        self.syms.params.get_or_init(|| {
+            self.param_storage_names()
+                .iter()
+                .map(|n| Symbol::intern(n))
+                .collect()
+        })
     }
 
-    /// `param_defs[i].name`, interned.
+    /// `param_defs[i].storage_name()`, interned.
     // Cost: O(1) after the first call; O(p) once, p = number of parameters.
     #[inline]
     pub(crate) fn param_def_name_syms(&self) -> &[Symbol] {
         self.syms.param_def_names.get_or_init(|| {
             self.param_defs
                 .iter()
-                .map(|pd| Symbol::intern(&pd.name))
+                .map(|pd| Symbol::intern(&pd.storage_name()))
                 .collect()
         })
     }

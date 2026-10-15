@@ -79,9 +79,12 @@ impl Compiler {
                     let slot = self.local_map.get(name).copied();
                     self.code.emit(OpCode::PreIncrement(name_idx, slot));
                 } else if let Expr::BareWord(name) = expr {
-                    if self.sigilless_locals.contains(name.as_str()) {
-                        let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::PreIncrement(name_idx, None));
+                    if self.names_sigilless_binding(name) {
+                        // The term key of the sigilless binding (ADR-12441).
+                        let key = crate::runtime::term_names::term_key(name);
+                        let slot = self.local_map.get(key.as_str()).copied();
+                        let name_idx = self.code.add_constant(Value::str(key));
+                        self.code.emit(OpCode::PreIncrement(name_idx, slot));
                     } else {
                         self.compile_incdec_nomatch("prefix:<++>", expr);
                     }
@@ -156,9 +159,12 @@ impl Compiler {
                     let slot = self.local_map.get(name).copied();
                     self.code.emit(OpCode::PreDecrement(name_idx, slot));
                 } else if let Expr::BareWord(name) = expr {
-                    if self.sigilless_locals.contains(name.as_str()) {
-                        let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::PreDecrement(name_idx, None));
+                    if self.names_sigilless_binding(name) {
+                        // The term key of the sigilless binding (ADR-12441).
+                        let key = crate::runtime::term_names::term_key(name);
+                        let slot = self.local_map.get(key.as_str()).copied();
+                        let name_idx = self.code.add_constant(Value::str(key));
+                        self.code.emit(OpCode::PreDecrement(name_idx, slot));
                     } else {
                         self.compile_incdec_nomatch("prefix:<-->", expr);
                     }

@@ -783,7 +783,14 @@ impl Interpreter {
                 // hands one straight in).
                 let bound_to_container = arrival.is_some() || base.is_container_ref();
                 let invocant_value = arrival.unwrap_or_else(|| base.clone());
-                self.env_mut().insert(param_name.clone(), invocant_value);
+                // A sigilless invocant (`sub (\obj)` installed by `^add_method`)
+                // binds its term key (ADR-12441).
+                let storage_name = method_def
+                    .param_defs
+                    .get(idx)
+                    .filter(|pd| pd.name == *param_name)
+                    .map_or_else(|| param_name.clone(), |pd| pd.storage_name().into_owned());
+                self.env_mut().insert(storage_name.clone(), invocant_value);
                 if method_def
                     .param_defs
                     .get(idx)
@@ -804,7 +811,7 @@ impl Interpreter {
                     && crate::runtime::raw_invocant::param_is_raw_invocant(pd)
                     && pd.sigilless
                 {
-                    let key = crate::runtime::sigilless_readonly_key(param_name);
+                    let key = crate::runtime::sigilless_readonly_key(&storage_name);
                     if bound_to_container {
                         self.env_mut().remove_sym(key);
                     } else {
@@ -1275,9 +1282,9 @@ impl Interpreter {
                     // back would overwrite the caller's alias chain with the
                     // callee's immediate argument name.
                     || s.strip_prefix("__mutsu_sigilless_alias::")
-                        .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.name == name))
+                        .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
                     || s.strip_prefix("__mutsu_sigilless_readonly::")
-                        .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.name == name))
+                        .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
             };
             let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
                 method_def.captured_env.as_ref().is_some_and(|c| {
@@ -2068,7 +2075,8 @@ impl Interpreter {
         let mut raw_invocant_readonly: Option<(&str, bool)> = None;
         let mut arg_idx = 0;
         let param_syms = method_def.param_syms();
-        for (idx, param_name) in method_def.params.iter().enumerate() {
+        let param_storage = method_def.param_storage_names();
+        for (idx, param_name) in param_storage.iter().enumerate() {
             let pd = method_def.param_defs.get(idx);
             let (binding_name, binding_sym) = if pd.is_some_and(|pd| pd.declares_self_lexical()) {
                 (crate::env::LEX_SELF, crate::symbol::wk::lex_self())
@@ -2294,7 +2302,7 @@ impl Interpreter {
                             base_type,
                             &got_type,
                             method_name,
-                            param_name,
+                            &method_def.params[idx],
                             smiley == Some(":D"),
                             pd.is_some_and(|pd| pd.is_invocant),
                         ));
@@ -2891,9 +2899,9 @@ impl Interpreter {
                             .as_ref()
                             .is_some_and(|c| attr_twigil_local(&c.as_map(), s))
                         || s.strip_prefix("__mutsu_sigilless_alias::")
-                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.name == name))
+                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
                         || s.strip_prefix("__mutsu_sigilless_readonly::")
-                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.name == name))
+                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
                 };
                 let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
                     method_def.captured_env.as_ref().is_some_and(|c| {

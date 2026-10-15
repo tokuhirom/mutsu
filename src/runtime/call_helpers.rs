@@ -58,7 +58,9 @@ impl Interpreter {
         }
         // A dynamic scalar (`*V`) is a plain scalar of the frame that declared
         // it, so a block called with `$*V` binds its topic to that container.
+        // ... and so is a sigilless binding, named by its term key (ADR-12441).
         let plain = name.strip_prefix('*').unwrap_or(name);
+        let plain = crate::runtime::term_names::term_spelling(plain).unwrap_or(plain);
         plain
             .as_bytes()
             .first()

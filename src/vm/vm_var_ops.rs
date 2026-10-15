@@ -588,6 +588,8 @@ impl Interpreter {
     }
 
     pub(crate) fn term_symbol_from_name(name: &str) -> Option<&str> {
+        // A sigilless `my \term:<x>` is stored under its term key (ADR-12441).
+        let name = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
         let bytes = name.as_bytes();
         if bytes.is_empty() {
             return None;

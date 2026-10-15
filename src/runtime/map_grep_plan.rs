@@ -204,7 +204,7 @@ impl Interpreter {
         lexically_in_routine: bool,
     ) -> InlineLoopPlan {
         let (code, fns) = self.compile_loop_block_cached(data);
-        let param_syms: Vec<Symbol> = data.params.iter().map(|p| Symbol::intern(p)).collect();
+        let param_syms: Vec<Symbol> = data.params.iter().map(|p| data.param_storage_sym(p)).collect();
         let mut temporaries: Vec<Symbol> = Vec::with_capacity(param_syms.len() + 3);
         let push = |temporaries: &mut Vec<Symbol>, k: Symbol| {
             if !temporaries.contains(&k) {
@@ -223,7 +223,9 @@ impl Interpreter {
             if let crate::ast::Stmt::MarkSigillessReadonly(name) = stmt {
                 push(
                     &mut temporaries,
-                    crate::runtime::sigilless_readonly_key(name),
+                    crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(
+                        name,
+                    )),
                 );
             }
         }
@@ -235,7 +237,7 @@ impl Interpreter {
             if pd.traits.iter().any(|t| t == "rw" || t == "raw") {
                 push(
                     &mut temporaries,
-                    crate::runtime::sigilless_readonly_key(&pd.name),
+                    crate::runtime::sigilless_readonly_key(&pd.storage_name()),
                 );
             }
         }

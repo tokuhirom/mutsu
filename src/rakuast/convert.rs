@@ -3705,6 +3705,31 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             expr,
             is_bind,
         } => {
+            // A bareword target is a term (spelled by its term key,
+            // ADR-12441): rakudo's left side is the `Term::Name`, and `=` is
+            // a list assignment (no `:item`).
+            if let Some(term) = crate::runtime::term_names::term_spelling(name) {
+                let left = RakuAstNode {
+                    class: RakuAstClass::TermName,
+                    fields: vec![node_field(None, name_from_identifier(term))],
+                };
+                let infix = if *is_bind {
+                    plain_infix(":=")
+                } else {
+                    RakuAstNode {
+                        class: RakuAstClass::Assignment,
+                        fields: Vec::new(),
+                    }
+                };
+                return Ok(RakuAstNode {
+                    class: RakuAstClass::ApplyInfix,
+                    fields: vec![
+                        node_field(Some("left"), left),
+                        node_field(Some("infix"), infix),
+                        node_field(Some("right"), convert_expr(expr)?),
+                    ],
+                });
+            }
             if *is_bind {
                 return bind_infix(name, expr);
             }

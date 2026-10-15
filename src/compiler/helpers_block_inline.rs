@@ -129,6 +129,17 @@ impl Compiler {
             // this the fallback compiles the assignment as a sink and the block
             // yields Nil (surfaced by a two-phase `pull-one { with $!k {...} else
             // { $!k := ... } }` iterator whose `else` value was dropped).
+            // A sigil-less target (`x = 5`) is a term: the full statement
+            // compiler resolves its key and its aggregate-store semantics.
+            Stmt::Assign {
+                name,
+                target_is_sigilless: true,
+                ..
+            } => {
+                self.compile_stmt(stmt);
+                self.emit_tail_var_stmt_value(stmt, name, true);
+                true
+            }
             Stmt::Assign { name, expr, op, .. } => {
                 // Keep the full statement compiler for `:=`.  A binding is not
                 // an assignment with a different spelling: it needs the
@@ -301,10 +312,9 @@ impl Compiler {
         // how `if my \r = @rows { r.Array }` compiles its condition
         // (`DoStmt(SyntheticBlock([VarDecl, MarkSigillessReadonly]))`) —
         // without the pre-pass, `r` became `$[...]` and `r.Array` nested.
-        for s in stmts {
-            if let Stmt::MarkSigillessReadonly(name) | Stmt::MarkSigilless(name) = s {
-                self.sigilless_locals.insert(name.clone());
-            }
+        let term_names = Self::sigilless_mark_names(stmts);
+        for name in &term_names {
+            self.sigilless_locals.insert((*name).to_string());
         }
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
@@ -611,6 +621,17 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    // A sigil-less target: see `compile_when_tail_stmt_inner`.
+                    Stmt::Assign {
+                        name,
+                        target_is_sigilless: true,
+                        ..
+                    } => {
+                        self.compile_stmt(stmt);
+                        self.emit_tail_var_stmt_value(stmt, name, true);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::Assign { name, expr, op, .. } => {
                         // As in `compile_when_tail_stmt_inner`, retain the
                         // complete bind lowering for a tail `:=`.  In
@@ -687,7 +708,10 @@ impl Compiler {
                 self.bind_vardecl = true;
                 self.sigilless_bind_vardecl = has_mark_sigilless;
             }
+            self.decl_is_term =
+                matches!(stmt, Stmt::VarDecl { name, .. } if term_names.contains(&name.as_str()));
             self.compile_stmt(stmt);
+            self.decl_is_term = false;
             // ADR-0052: a `given`/`when`/`default` statement nets one stack
             // value. A non-last one must be popped, or it would shadow the
             // block's real tail value (the stack top wins). The last one is

@@ -169,7 +169,21 @@ impl Interpreter {
                     "Associative".to_string()
                 }
             }
-            _ => raw_type_name.unwrap_or_else(|| "Mu".to_string()),
+            _ => {
+                // `has Int:D $.x`: the attribute's type is the definite type
+                // object (`Int:D`, a `DefiniteHOW`), not `Int`
+                // (AttrX::Mooish asks `.type.HOW.archetypes.definite`).
+                let smiley = self
+                    .registry()
+                    .classes
+                    .get(owner)
+                    .and_then(|cd| cd.attribute_smileys.get(attr_name).cloned());
+                match (raw_type_name, smiley.as_deref()) {
+                    (Some(t), Some(sm @ ("D" | "U"))) => format!("{t}:{sm}"),
+                    (Some(t), _) => t,
+                    (None, _) => "Mu".to_string(),
+                }
+            }
         };
         let mut meta = HashMap::new();
         meta.insert("name".to_string(), Value::str(full_name));
@@ -318,6 +332,7 @@ impl Interpreter {
         is_public: bool,
         owner: &str,
         type_constraint: Option<&str>,
+        smiley: Option<&str>,
     ) -> Value {
         let full_name = format!("{}!{}", sigil, attr_name);
         // Same owner-chain resolution as `make_attribute_object`: a nested
@@ -331,7 +346,12 @@ impl Interpreter {
             '%' => type_constraint
                 .map(|t| format!("Associative[{}]", t))
                 .unwrap_or_else(|| "Associative".to_string()),
-            _ => type_constraint.unwrap_or_else(|| "Mu".to_string()),
+            // `has Int:D $.x`: the type is the definite type object.
+            _ => match (type_constraint, smiley) {
+                (Some(t), Some(sm @ ("D" | "U"))) => format!("{t}:{sm}"),
+                (Some(t), _) => t,
+                (None, _) => "Mu".to_string(),
+            },
         };
         let mut meta = HashMap::new();
         meta.insert("name".to_string(), Value::str(full_name));
@@ -540,6 +560,7 @@ impl Interpreter {
                         is_public,
                         owner,
                         type_constraint,
+                        decl.type_smiley.as_deref(),
                     );
                     self.registry_mut()
                         .class_attribute_trait_objects

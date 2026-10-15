@@ -123,7 +123,10 @@ impl Compiler {
         // user class `Red::AST::Empty` registers the short name `Empty` too,
         // but `--> Empty` still means the Empty value (#9530). Same order as
         // the runtime twin `Interpreter::is_definite_return_spec`.
-        if matches!(s, "Nil" | "True" | "False" | "Empty" | "pi") {
+        if matches!(
+            s,
+            "Nil" | "True" | "False" | "Empty" | "pi" | "IterationEnd"
+        ) {
             return Some(true);
         }
         if super::compile_inputs::is_user_declared_type(s) {
@@ -253,10 +256,16 @@ impl Compiler {
                         name,
                         expr,
                         op: op @ (crate::ast::AssignOp::Assign | crate::ast::AssignOp::Bind),
-                        ..
+                        target_is_sigilless,
                     } => {
                         self.compile_expr(&Expr::AssignExpr {
-                            name: name.clone(),
+                            // A sigil-less target is spelled by its term key
+                            // (ADR-12441).
+                            name: if *target_is_sigilless {
+                                crate::runtime::term_names::bareword_target_key(name)
+                            } else {
+                                name.clone()
+                            },
                             expr: Box::new(expr.clone()),
                             is_bind: matches!(op, crate::ast::AssignOp::Bind),
                         });
@@ -333,6 +342,7 @@ impl Compiler {
                 Some((var_name.to_string(), Expr::Var(tmp))),
             );
         }
+        let is_term = var_name.starts_with('\\');
         let (bare_name, read_expr) = if let Some(bare) = var_name.strip_prefix('\\') {
             self.sigilless_locals.insert(bare.to_string());
             (bare.to_string(), Expr::BareWord(bare.to_string()))
@@ -352,10 +362,10 @@ impl Compiler {
             custom_traits: Vec::new(),
             where_constraint: None,
         };
-        // A pointy parameter binding, not a user's `my $x`.
-        self.decl_is_sigilless = true;
+        // A sigilless pointy parameter is a term (ADR-12441).
+        self.decl_is_term = is_term;
         self.compile_stmt(&var_decl);
-        self.decl_is_sigilless = false;
+        self.decl_is_term = false;
         (read_expr, None)
     }
 

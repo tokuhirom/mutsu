@@ -445,6 +445,60 @@ impl Interpreter {
         Ok(ClassBodyFlow::RunTail)
     }
 
+    /// The deferred half of `X::Syntax::Variable::MissingInitializer`: the
+    /// parser skips the check for an attribute with a custom trait, because
+    /// Rakudo applies the traits first and a trait may mark the attribute
+    /// required (AttrX::Mooish does for `:lazy`, through
+    /// `nqp::bindattr($attr, Attribute, '$!required', 1)`).
+    // Cost: O(1) lookups.
+    fn check_definite_attribute_initialized(
+        &mut self,
+        cx: &ClassBodyCx<'_>,
+        decl: &crate::opcode::CompiledAttrDecl,
+        attr_name: &str,
+    ) -> Result<(), RuntimeError> {
+        let has_written_default = decl.default.is_some() && !decl.default_is_seed;
+        if decl.type_smiley.as_deref() != Some("D")
+            || matches!(decl.sigil, '@' | '%')
+            || has_written_default
+            || decl.is_required.is_some()
+            || decl.unknown_traits.is_empty()
+        {
+            return Ok(());
+        }
+        // Ask the trait-time Attribute object itself (it may carry role mixins
+        // such as AttrX::Mooish::Attribute, and `nqp::bindattr` lands wherever
+        // `.required` reads from).
+        let trait_obj = self
+            .registry()
+            .class_attribute_trait_objects
+            .get(&(cx.name.to_string(), attr_name.to_string()))
+            .cloned();
+        let marked_required = match trait_obj {
+            Some(obj) => self
+                .call_method_with_values(obj, "required", Vec::new())
+                .is_ok_and(|v| !matches!(v.view(), ValueView::Package(_) | ValueView::Nil)),
+            None => false,
+        };
+        if marked_required {
+            return Ok(());
+        }
+        let twigil = if decl.is_public { "." } else { "!" };
+        let type_name = decl.type_constraint.as_deref().unwrap_or("Any");
+        let message = format!(
+            "Variable '{}{}{}' of type '{}:D' must be initialized",
+            decl.sigil, twigil, attr_name, type_name
+        );
+        let mut attrs = crate::value::ValueMap::default();
+        attrs.insert("type".to_string(), Value::str(format!("{type_name}:D")));
+        attrs.insert("name".to_string(), Value::str(format!("$!{attr_name}")));
+        attrs.insert("message".to_string(), Value::str(message));
+        Err(RuntimeError::typed(
+            "X::Syntax::Variable::MissingInitializer",
+            attrs,
+        ))
+    }
+
     /// Publish the in-progress class definition before dispatching an
     /// attribute trait. Rakudo exposes the generated accessor to a trait
     /// handler, and handlers such as Attribute::Lazy use that Method object
@@ -476,6 +530,7 @@ impl Interpreter {
                 return Err(err);
             }
         };
+        self.check_definite_attribute_initialized(cx, decl, attr_name)?;
         // A custom trait that re-dispatched to CORE's `:rw` / `:built`
         // candidates changes the attribute as if the trait were written on the
         // `has` line; republish so the accessor is regenerated.

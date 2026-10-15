@@ -66,6 +66,17 @@ fn push_or_append(
     is_push: bool,
     args: &[Value],
 ) -> Result<Value, RuntimeError> {
+    // `push`/`append` are `Hash` methods; a `Map` (and an `is Map` subclass's
+    // backing store) does not have them in Rakudo.
+    if matches!(
+        place.value().deref_container().descalarize().view(),
+        ValueView::Hash(h) if h.declared_type.as_deref() == Some("Map")
+    ) {
+        return Err(RuntimeError::meta_method_not_found(
+            if is_push { "push" } else { "append" },
+            "Map",
+        ));
+    }
     // What the type error names: the variable, or `%_` for a hash with none.
     let name = place.name().map(str::to_string);
     let shown = name.clone().unwrap_or_else(|| "%_".to_string());

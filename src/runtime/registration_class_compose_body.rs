@@ -72,9 +72,6 @@ impl Interpreter {
                 {
                     return None;
                 }
-                if !declared.contains(bare.as_str()) && matches!(v.view(), ValueView::Package(_)) {
-                    return None;
-                }
                 Some((bare, v.clone()))
             })
             .collect();

@@ -244,11 +244,17 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
             name,
             expr,
             op: AssignOp::Assign,
-            ..
+            target_is_sigilless,
         } if !matches!(expr, Expr::Feed { .. }) => {
             let mut out = body.to_vec();
             out[last_idx] = Stmt::Expr(Expr::AssignExpr {
-                name: name.clone(),
+                // `AssignExpr` spells a sigil-less target by its term key
+                // (ADR-12441); a plain name there is a `$` scalar.
+                name: if *target_is_sigilless {
+                    crate::runtime::term_names::bareword_target_key(name)
+                } else {
+                    name.clone()
+                },
                 expr: Box::new(expr.clone()),
                 is_bind: false,
             });
@@ -360,6 +366,7 @@ impl Interpreter {
             // in the recompiled body must still capture a callee named after
             // one (`-> $n { func $n }` inside `.map({ ... })`, #12384).
             compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
+            compiler.seed_enclosing_terms_from(origin);
         }
         let normalized_body = normalize_tail_stmt_for_value(&data.body);
         // The body is compiled as a top-level chunk, where a bare LEAVE /
@@ -456,6 +463,7 @@ impl Interpreter {
         // visible to closures nested in the gather body (#12384).
         if let Some(origin) = analysis_cc.as_deref() {
             compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
+            compiler.seed_enclosing_terms_from(origin);
             // A `return` in the body targets the routine the gather was
             // written in, so the recompile keeps the definition site's
             // classification (ADR-0050) instead of compiling it as a

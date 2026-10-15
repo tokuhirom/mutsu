@@ -1764,21 +1764,11 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
-    /// The subset of `sigilless_locals` the program declared itself: `\\x`
-    /// parameters of the routine and `my \\x` bindings (not loop/`with`/`if`
-    /// pointy parameters). Scoped like `sigilless_locals`.
-    sigilless_declared: std::collections::HashSet<String>,
-    /// Names whose visible sigilless binding (`\\t` parameter, `my \\t`) was
-    /// shadowed by a same-spelled scalar declaration (`my $t`, #11994). Both
-    /// symbols share the scalar storage key `t`, so the declaration first
-    /// copies the sigilless value into a slot under the term key
-    /// (`runtime::term_names::term_key`), and a bare `t` reads that copy for
-    /// the rest of the scope. Handed down to nested closures.
-    shadowed_sigilless_terms: std::collections::HashSet<String>,
-    /// Set just before compiling a `VarDecl` that is a sigilless declaration
-    /// (`my \\x`) or a synthesized parameter binding (`for`/`with`/`if`
-    /// pointy params), so it is not mistaken for a user's scalar `my $x`.
-    decl_is_sigilless: bool,
+    /// Set just before compiling a `VarDecl` that declares a sigilless TERM
+    /// (`my \x`, a `with`/`if` pointy `-> \x`): the parser spells it bare,
+    /// like a scalar `my $x`, and this is what stores it under the term key
+    /// instead (ADR-12441).
+    decl_is_term: bool,
     /// Local names visible in enclosing compiled frames. A same-named local
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
@@ -2088,9 +2078,7 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
-            sigilless_declared: std::collections::HashSet::new(),
-            shadowed_sigilless_terms: std::collections::HashSet::new(),
-            decl_is_sigilless: false,
+            decl_is_term: false,
             enclosing_local_names: std::collections::HashSet::new(),
             for_param_names: Vec::new(),
             by_name_for_params: Vec::new(),
@@ -2656,8 +2644,6 @@ impl Compiler {
             .extend(self.sigilless_locals.iter().cloned());
         sub.enclosing_sigilless
             .extend(self.enclosing_sigilless.iter().cloned());
-        sub.shadowed_sigilless_terms
-            .extend(self.shadowed_sigilless_terms.iter().cloned());
         sub.enclosing_local_names
             .extend(self.local_map.keys().cloned());
         // A routine hoisted to its scope's entry is compiled before the
@@ -2765,7 +2751,7 @@ impl Compiler {
                 if pd.named {
                     continue;
                 }
-                if let Some(&slot) = self.local_map.get(&pd.name) {
+                if let Some(&slot) = self.local_map.get(pd.storage_name().as_ref()) {
                     slots.push(slot);
                 }
             }
@@ -2899,6 +2885,21 @@ impl Compiler {
                 .readonly_code_params
                 .insert(Symbol::intern(&pd.name));
         }
+    }
+
+    /// The entries of a routine's plain `params` name list that are not
+    /// sigilless parameters. A sigilless `\x` is spelled `x` there too, but
+    /// its slot is declared under its term key from its `ParamDef`
+    /// ([`crate::ast::ParamDef::storage_name`], ADR-12441); declaring the
+    /// spelling as well would hand a same-named `$x` an orphan slot.
+    // Cost: O(p * d), p = params, d = param_defs.
+    fn non_term_param_names<'a>(
+        params: &'a [String],
+        param_defs: &'a [crate::ast::ParamDef],
+    ) -> impl Iterator<Item = &'a String> + 'a {
+        params
+            .iter()
+            .filter(move |p| !param_defs.iter().any(|pd| pd.sigilless && pd.name == **p))
     }
 
     fn declare_param(&mut self, name: &str) -> u32 {
@@ -3132,18 +3133,6 @@ impl Compiler {
         }
     }
 
-    /// Whether a sigilless parameter occupies the canonical name that an
-    /// enclosing scalar lexical uses. Raku keeps `$name` and bare `name` in
-    /// separate namespaces even though both are stored under the same runtime
-    /// key; the compiler's slot map is intentionally name-keyed, so this is
-    /// the point where the source-level target kind must disambiguate them.
-    fn sigilless_param_shadows_outer_scalar(&self, name: &str) -> bool {
-        !name.starts_with(['@', '%', '&', '!'])
-            && self.sigilless_locals.contains(name)
-            && self.enclosing_local_names.contains(name)
-            && !self.enclosing_sigilless.contains(name)
-    }
-
     /// An enclosing frame's lexical reached by name where this chunk has a
     /// same-named local only in a nested block (`my $b = 99; sub f { say $b;
     /// { my $b = 3 }; $b = 1 }`): the local hides the name from
@@ -3170,43 +3159,6 @@ impl Compiler {
         }
         if writes && !self.code.forced_free_var_writes.contains(&sym) {
             self.code.forced_free_var_writes.push(sym);
-        }
-    }
-
-    /// Resolve an assignment target's local slot while preserving the source
-    /// distinction between a sigilless term and a sigiled scalar.
-    pub(super) fn assignment_target_slot(
-        &self,
-        name: &str,
-        target_is_sigilless: bool,
-    ) -> Option<u32> {
-        if !target_is_sigilless && self.sigilless_param_shadows_outer_scalar(name) {
-            None
-        } else {
-            self.local_map.get(name).copied()
-        }
-    }
-
-    /// Assignment twin of [`Self::emit_set_named_var`] for a source target
-    /// whose sigil kind was retained by the parser.
-    pub(super) fn emit_set_named_var_with_kind(&mut self, name: &str, target_is_sigilless: bool) {
-        let name = self.resolve_self_lexical(name);
-        let captures_outer_scalar =
-            !target_is_sigilless && self.sigilless_param_shadows_outer_scalar(name);
-        if captures_outer_scalar {
-            self.note_forced_outer_scalar_capture(name, true);
-        }
-        if let Some(slot) = self.assignment_target_slot(name, target_is_sigilless) {
-            self.code.emit(OpCode::SetLocal(slot));
-        } else if name.starts_with('!') && name.len() > 1 {
-            let slot = self.alloc_local(name);
-            self.code.emit(OpCode::SetLocal(slot));
-        } else {
-            self.note_shadowed_outer_capture(name, true);
-            let idx = self
-                .code
-                .add_constant(Value::str(self.qualify_variable_name(name)));
-            self.code.emit(OpCode::SetGlobal(idx));
         }
     }
 
@@ -3376,8 +3328,12 @@ impl Compiler {
         )
     }
 
-    fn positional_arg_source_name(expr: &Expr) -> Option<String> {
+    fn positional_arg_source_name(&self, expr: &Expr) -> Option<String> {
         match expr {
+            // A sigilless binding is stored under its term key (ADR-12441).
+            Expr::BareWord(name) if self.names_sigilless_binding(name) => {
+                Some(crate::runtime::term_names::term_key(name))
+            }
             Expr::BareWord(name) => Some(name.to_string()),
             // DoStmt wrapping a VarDecl: `my $c = 42` passed as argument
             Expr::DoStmt(stmt) => stmt.declared_var_key(),
@@ -3585,7 +3541,7 @@ impl Compiler {
                     self.declare_local(name);
                 }
             }
-            let source = if let Some(name) = Self::positional_arg_source_name(arg) {
+            let source = if let Some(name) = self.positional_arg_source_name(arg) {
                 // §1.4/§1.5: bake the caller's local slot for a plain source var
                 // as `Pair(name, Int(slot))`, so the rw-arg writeback can target
                 // the LIVE (inner shadow) slot instead of the by-name `position`
@@ -3809,8 +3765,9 @@ impl Compiler {
         // (`*%h`) consumes none, so it must not shift the params after it.
         let mut positional_slot = 0usize;
         for (i, p) in params.iter().enumerate() {
-            // Sigilless params are prefixed with \\ by the parser.
-            let actual_name = p.strip_prefix('\\').unwrap_or(p).to_string();
+            // Sigilless params are prefixed with \ by the parser, which is
+            // their term-key storage name (ADR-12441).
+            let actual_name = p.to_string();
             // A slurpy binds a *list*, not one chunk element: `*%h`/`+%h` gets the
             // named arguments (always none — a `for` loop passes only
             // positionals), and every other variadic (`*@r`, `**@r`, `+@r`, and
@@ -3976,11 +3933,7 @@ impl Compiler {
             if let Some(sub_params) = &def.sub_signature
                 && let Some(name) = params.get(i)
             {
-                destructure_binds(
-                    name.strip_prefix('\\').unwrap_or(name),
-                    sub_params,
-                    &mut bind_stmts,
-                );
+                destructure_binds(name, sub_params, &mut bind_stmts);
             }
         }
         // A type capture (`-> ::T $x`, `-> ::T`, `-> $a, ::T`) binds `T` to the
@@ -4018,7 +3971,7 @@ impl Compiler {
         }
         for (i, def) in params_def.iter().enumerate() {
             if let (Some(cap), Some(name)) = (&def.type_capture, params.get(i)) {
-                bind_stmts.push(capture_bind(name.strip_prefix('\\').unwrap_or(name), cap));
+                bind_stmts.push(capture_bind(name, cap));
             }
         }
         // Sigilless multi-params (`-> \k, \v`) are raw bindings that alias the

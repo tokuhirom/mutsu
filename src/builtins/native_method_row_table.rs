@@ -1411,6 +1411,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Map", "iterator", 1, 28),
     ("Map", "new", 7, 28),
     ("Map", "sort", 7, 28),
+    ("Map", "STORE", 7, 28),
     ("List", "iterator", 1, 28),
     ("List", "new", 7, 60),
     ("Seq", "iterator", 1, 60),

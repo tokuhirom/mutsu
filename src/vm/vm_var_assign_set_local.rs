@@ -3670,7 +3670,14 @@ impl Interpreter {
             self.set_env_with_main_alias(name, val.clone());
         }
         if let Some(symbol) = Self::term_symbol_from_name(name) {
-            self.env_mut().insert(symbol.to_string(), val.clone());
+            // A sigilless `my \term:<x>` (stored `\term:<x>`) makes `x` a term,
+            // so its mirror is the term key `\x` (ADR-12441).
+            let mirror = if crate::runtime::term_names::term_spelling(name).is_some() {
+                crate::runtime::term_names::term_key(symbol)
+            } else {
+                symbol.to_string()
+            };
+            self.env_mut().insert(mirror, val.clone());
             if !self.current_package_is_global() {
                 let pkg = self.current_package_str();
                 self.env_mut()

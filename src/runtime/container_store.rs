@@ -80,10 +80,21 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let values = args
             .iter()
-            .find(|a| !matches!(a.view(), ValueView::Pair(k, _) if k == "INITIALIZE"))
+            .find(|a| {
+                !matches!(a.view(), ValueView::Pair(k, _) if matches!(k.as_str(), "INITIALIZE" | "DECONT"))
+            })
             .cloned()
             .unwrap_or(Value::NIL);
         let target = invocant.deref_container();
+        // A user `is Map`/`is Hash` instance keeps its entries in a backing
+        // hash; its native `STORE` (what a user `STORE` reaches through
+        // `Map.^lookup('STORE')`) stores there and answers the instance.
+        if let ValueView::Instance { attributes, .. } = target.view()
+            && let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned()
+            && let ValueView::Hash(gc) = storage.view()
+        {
+            return Some(self.store_into_hash(&gc, &values).map(|_| target.clone()));
+        }
         let inner = match target.view() {
             ValueView::Mixin(inner, _) => inner.as_ref().clone(),
             _ => target.clone(),

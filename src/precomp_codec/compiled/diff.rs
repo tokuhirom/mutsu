@@ -162,7 +162,6 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         authoritative_free_vars,
         self_capture_decl_locals,
         captures_own_declaration,
-        shadowed_sigilless_reads,
         unscoped_amp_reads,
         needs_cell_free_vars,
         has_calls,

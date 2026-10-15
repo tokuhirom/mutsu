@@ -579,10 +579,11 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 value: Box::new(rhs),
             },
         )),
+        // A bareword target is a term, spelled by its term key (ADR-12441).
         Expr::BareWord(name) => Ok((
             r,
             Expr::AssignExpr {
-                name,
+                name: crate::term_names::bareword_target_key(&name),
                 expr: Box::new(rhs),
                 is_bind: false,
             },

@@ -762,7 +762,7 @@ impl Interpreter {
                 }
             };
             let mut item = if param_is_copy {
-                item.detach_shared_container()
+                item.deref_container().detach_shared_container()
             } else {
                 item
             };
