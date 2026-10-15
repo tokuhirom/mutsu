@@ -686,6 +686,9 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        if crate::runtime::attribute_identity::is_bootstrapattr(value) {
+            return matches!(constraint, "Mu" | "NQPMu" | "BOOTSTRAPATTR");
+        }
         // A nested type declared with a compound name is referenced by its
         // leaf inside the declaring package. Resolve that package-scoped alias
         // before the fast tag checks and subset lookup; assignment/type-check
