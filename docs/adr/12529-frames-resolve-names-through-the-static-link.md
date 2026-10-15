@@ -1035,6 +1035,20 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    (`CompiledSubDeclPlan::free_var_decl_slots`). The by-name restore into
    sibling slots is left as is: the sibling's declaration overwrites the slot.
 
+   **Slice 18 done** (`fix/12529-does-var-is-a-write`): the first entry of
+   slice 16's lexical category. `$x does R` (`OpCode::DoesVar` on a
+   variable) rebinds `$x` as `=` does, but the free-variable analysis did
+   not count it as a write. So a closure that mixed into a captured `$x`
+   left `$x` a plain value, and the closure changed only its own copy.
+
+   Only the return merge carried the mixin back, and only when the closure
+   ran inside a callee called from the declaring frame
+   (`lives-ok { $a does R }`). A sibling closure, a `start` block's caller
+   and a routine that outlived the frame kept the unmixed value.
+   `op_name_write_const_idx` and `op_name_const_idx` now list a non-bareword
+   `DoesVar`, so the variable is boxed into a shared cell and the store goes
+   through it.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
