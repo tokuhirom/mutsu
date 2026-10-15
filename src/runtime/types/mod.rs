@@ -1400,7 +1400,8 @@ impl Interpreter {
                 if let Some(captured) = pd.captured_type_name() {
                     self.env.get(captured).cloned()
                 } else {
-                    self.env.get(&pd.name).cloned()
+                    // A sigilless parameter bound its term key (ADR-12441).
+                    self.env.get(&pd.storage_name()).cloned()
                 }
             })
             .enumerate()

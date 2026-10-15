@@ -2365,17 +2365,10 @@ impl Compiler {
                 // does one whose target this unit cannot see at all (`EVAL
                 // 'b = 5'`); the VM falls back to the plain name when no term
                 // of that spelling is in scope.
-                let term_target;
-                let name = if *target_is_sigilless
-                    && (self.names_sigilless_binding(name)
-                        || self.names_term_constant(name)
-                        || self.sigilless_target_is_unknown(name))
-                {
-                    term_target = crate::runtime::term_names::term_key(name);
-                    &term_target
-                } else {
-                    name
-                };
+                let term_target = target_is_sigilless
+                    .then(|| self.sigilless_assign_target_key(name))
+                    .flatten();
+                let name = term_target.as_ref().unwrap_or(name);
                 // Keep `provably_bare_receiver_vars` (see its doc, and the
                 // matching `Stmt::VarDecl` arm) live across a REASSIGNMENT
                 // too, not just the declaration: a plain scalar `=`/`:=` and a

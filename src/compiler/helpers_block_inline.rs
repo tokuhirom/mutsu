@@ -129,6 +129,17 @@ impl Compiler {
             // this the fallback compiles the assignment as a sink and the block
             // yields Nil (surfaced by a two-phase `pull-one { with $!k {...} else
             // { $!k := ... } }` iterator whose `else` value was dropped).
+            // A sigil-less target (`x = 5`) is a term: the full statement
+            // compiler resolves its key and its aggregate-store semantics.
+            Stmt::Assign {
+                name,
+                target_is_sigilless: true,
+                ..
+            } => {
+                self.compile_stmt(stmt);
+                self.emit_tail_var_stmt_value(stmt, name, true);
+                true
+            }
             Stmt::Assign { name, expr, op, .. } => {
                 // Keep the full statement compiler for `:=`.  A binding is not
                 // an assignment with a different spelling: it needs the
@@ -607,6 +618,17 @@ impl Compiler {
                                 self.emit_set_named_var(name);
                             }
                         }
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
+                    // A sigil-less target: see `compile_when_tail_stmt_inner`.
+                    Stmt::Assign {
+                        name,
+                        target_is_sigilless: true,
+                        ..
+                    } => {
+                        self.compile_stmt(stmt);
+                        self.emit_tail_var_stmt_value(stmt, name, true);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }

@@ -462,7 +462,10 @@ impl Compiler {
     pub(super) fn expr_is_decontainerized_value(&self, expr: &Expr) -> bool {
         match expr.peel_parens() {
             Expr::Literal(_) => true,
-            Expr::BareWord(name) => !self.local_map.contains_key(name.as_str()),
+            // A sigilless binding (ADR-12441) is a variable, not a bare term.
+            Expr::BareWord(name) => {
+                !self.local_map.contains_key(name.as_str()) && !self.names_sigilless_binding(name)
+            }
             // A method call's result is an rvalue (`$tv.Int` is not `$tv`'s
             // Scalar), and `try` hands its body's value through untouched.
             // Only a statically-named call is ruled by the raw-invocant
@@ -483,9 +486,15 @@ impl Compiler {
     /// either owns a Scalar or is the value itself.
     pub(super) fn container_eq_decont_name(&self, expr: &Expr) -> Option<String> {
         match expr.peel_parens() {
-            Expr::BareWord(name) if self.local_map.contains_key(name.as_str()) => {
-                // A leading backslash tells the VM this is a sigilless name.
-                Some(format!("\\{name}"))
+            // A sigilless binding is named by its term key (ADR-12441), which
+            // is also what tells the VM it is one.
+            Expr::BareWord(name)
+                if self.names_sigilless_binding(name)
+                    || self
+                        .local_map
+                        .contains_key(crate::runtime::term_names::term_key(name).as_str()) =>
+            {
+                Some(crate::runtime::term_names::term_key(name))
             }
             e => Self::resolve_container_var_name(e),
         }

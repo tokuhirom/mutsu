@@ -893,7 +893,18 @@ impl Compiler {
     ) {
         // A declaration is read back under its storage key — a sigil-less
         // constant's is its term key (#9962).
-        let storage = crate::runtime::term_names::stmt_decl_storage_name(stmt);
+        let storage = crate::runtime::term_names::stmt_decl_storage_name(stmt).or_else(|| {
+            // A sigil-less assignment target is read back under its term key
+            // when it is a term (ADR-12441).
+            match stmt {
+                Stmt::Assign {
+                    target_is_sigilless: true,
+                    name,
+                    ..
+                } => self.sigilless_assign_target_key(name),
+                _ => None,
+            }
+        });
         let name = storage.as_deref().unwrap_or(name);
         // The declaration was compiled under its BEGIN-time resolved name
         // (`our &infix:["\c[DOUBLE PLUS]"]`), so read it back under that one.

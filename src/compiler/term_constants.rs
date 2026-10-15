@@ -85,6 +85,19 @@ impl Compiler {
         self.sigilless_locals.contains(name) || self.enclosing_sigilless.contains(name)
     }
 
+    /// The storage key of the target of a `name = …` statement whose source
+    /// spelled it without a sigil (`Stmt::Assign { target_is_sigilless }`):
+    /// the term key when `name` is a sigilless binding (ADR-12441), an
+    /// in-scope constant (#9962), or nothing this unit can see (resolved by
+    /// the VM); `None` when the plain key stands.
+    // Cost: O(|name|).
+    pub(super) fn sigilless_assign_target_key(&self, name: &str) -> Option<String> {
+        (self.names_sigilless_binding(name)
+            || self.names_term_constant(name)
+            || self.sigilless_target_is_unknown(name))
+        .then(|| crate::runtime::term_names::term_key(name))
+    }
+
     /// The storage key of the sigil-less term `name` used as an lvalue root
     /// (`x[0] = 1`): its term key when it names a sigilless binding or a
     /// sigil-less constant, its spelling otherwise.

@@ -146,6 +146,16 @@ impl Compiler {
                 self.compile_if_value_branch(body, |c| c.compile_block_inline(body));
                 self.code.patch_body_end(given_idx);
             }
+            // A sigil-less target is a term (ADR-12441): the statement
+            // compiler resolves its key.
+            Stmt::Assign {
+                name,
+                target_is_sigilless: true,
+                ..
+            } => {
+                self.compile_stmt(stmt);
+                self.emit_tail_var_stmt_value(stmt, name, true);
+            }
             Stmt::Assign { name, expr, .. } => {
                 // do $var = expr -> returns the assigned value
                 self.compile_expr(expr);

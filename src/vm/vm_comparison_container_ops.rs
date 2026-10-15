@@ -137,9 +137,10 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let name = Self::const_str(code, name_idx);
-        let denotes_container = match name.strip_prefix('\\') {
-            Some(sigilless) => self.sigilless_denotes_scalar_container(sigilless),
-            None => self.name_denotes_scalar_container(name),
+        let denotes_container = if crate::runtime::term_names::term_spelling(name).is_some() {
+            self.sigilless_denotes_scalar_container(code, name)
+        } else {
+            self.name_denotes_scalar_container(name)
         };
         let result = if denotes_container {
             false
@@ -153,16 +154,25 @@ impl Interpreter {
     /// it was bound to, or the caller's container when a raw parameter
     /// aliased a `$` variable (the binder records that variable's name, and
     /// the name holds the shared cell) -- the same facts `.VAR` reflects.
-    /// The compiler marks such a name with a leading backslash, because a
-    /// `$x` and a `\x` are both spelled `x` once the sigil is dropped.
-    fn sigilless_denotes_scalar_container(&self, name: &str) -> bool {
+    /// `name` is the binding's term key (`\x`, ADR-12441).
+    // Cost: O(l), l = local slots of the chunk (the by-name slot probe).
+    fn sigilless_denotes_scalar_container(&self, code: &CompiledCode, name: &str) -> bool {
+        let is_cell = |v: &Value| matches!(v.view(), ValueView::ContainerRef(_));
         self.env()
             .get(crate::meta_ns::MetaNs::VarSourceName.str_key_for_str(name))
             .is_some()
+            || match self.find_local_slot(code, name) {
+                Some(slot) => self.locals.get(slot).is_some_and(is_cell),
+                None => self.env().get(name).is_some_and(is_cell),
+            }
+            // A raw parameter aliasing a caller's `$` variable: that variable's
+            // cell is the container.
             || self
                 .env()
-                .get(name)
-                .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+                .get_sym(crate::runtime::sigilless_alias_key(name))
+                .and_then(|src| src.as_str().map(str::to_string))
+                .and_then(|src| self.env().get(&src).cloned())
+                .is_some_and(|v| is_cell(&v))
     }
 
     /// Whether the variable `name` denotes a **Scalar container** — the thing
