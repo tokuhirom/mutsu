@@ -391,7 +391,7 @@ const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
 /// ADR-11276 §9.92): an enum, a lazy or shaped array, an unsettled `Seq`, an
 /// instance whose MRO reaches `Cool` with no built-in class declaring the name
 /// first, and a `Cool` type object with no shape.
-const COOL_COERCE_FOR_SHAPELESS: [&str; 5] = ["Real", "Num", "UInt", "Int", "Numeric"];
+const COOL_COERCE_FOR_SHAPELESS: [&str; 7] = ["Real", "Num", "UInt", "Int", "Numeric", "Rat", "FatRat"];
 
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,
 /// `List` or `Seq` declares, for a receiver with no shape (ADR-11276 §9.79,

@@ -348,6 +348,8 @@ impl DispatchShape {
                 const_str_eq(method, "join")
                     || const_str_eq(method, "serial")
                     || const_str_eq(method, "end")
+                    // `Any.tree` of a non-`Iterable` is the value itself.
+                    || const_str_eq(method, "tree")
             }
             _ if const_str_eq(method, "sort") => false,
             // `min`/`max` read a `Pair` as its one element; the other closed
@@ -502,12 +504,12 @@ pub(crate) const ROLES_WITH_ROWS: [&str; 8] = [
 
 /// The `Cool` numeric methods a `Range` or `Seq` reaches
 /// ([`DispatchShape::reaches_audited`]).
-const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 51] = [
+const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 53] = [
     "sin", "cos", "tan", "sec", "cosec", "cotan", "sinh", "cosh", "tanh", "sech", "cosech",
     "cotanh", "asin", "acos", "atan", "asec", "acosec", "acotan", "asinh", "acosh", "atanh",
     "asech", "acosech", "acotanh", "exp", "log", "log2", "log10", "sqrt", "cis", "atan2", "roots",
     "unpolar", "abs", "sign", "floor", "ceiling", "truncate", "round", "is-prime", "conj", "chr",
-    "rand", "int", "uint", "byte", "Complex", "UInt", "Version", "Real", "Num",
+    "rand", "int", "uint", "byte", "Complex", "UInt", "Version", "Real", "Num", "Rat", "FatRat",
 ];
 
 /// Whether `Cool` declares `name` as `self.Numeric.METHOD` (or a numeric
@@ -596,7 +598,7 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 38] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 39] = [
     // `Any`'s list coercions (`method_table::any_coerce`, §9.110).
     "List",
     "list",
@@ -644,6 +646,9 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 38] = [
     // `Any.ACCEPTS` (`self === topic`, §9.108) reaches a `Capture` alone: the
     // other closed shapes declare their own or are not audited for it.
     "ACCEPTS",
+    // `Any.tree` (ADR-11276 §9.112): a list-like shape trees its elements, the
+    // others answer themselves.
+    "tree",
 ];
 
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];

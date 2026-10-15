@@ -1104,7 +1104,6 @@ fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, 
     try_dispatch!(dispatch_core_numeric);
     try_dispatch!(dispatch_core_list);
     try_dispatch!(dispatch_core_repr);
-    try_dispatch!(dispatch_core_math);
 
     None
 }
