@@ -5,7 +5,8 @@ use super::vm_call_func_ops::CodeVarBinding;
 use super::*;
 
 impl Interpreter {
-    /// Run the `CallFunc` / `CallOnCodeVar` at `ip + 1` through the routine
+    /// Run the `CallFunc` / `CallOnCodeVar` / bare `GetBareWord` at `ip + 1`
+    /// through the routine
     /// one of the import sets of chain `chain_idx` binds its callee to, or
     /// push that routine for a `GetCodeVar` there. Returns `false`, having
     /// done nothing, when no set binds the name; the caller then runs the
@@ -33,6 +34,8 @@ impl Interpreter {
             }) => (*name_idx, Some((*arity, *arg_sources_idx, *bare_args))),
             // `&g`: the binding as a value.
             Some(OpCode::GetCodeVar(name_idx)) => (*name_idx, None),
+            // A bare `g`: a call with no arguments.
+            Some(OpCode::GetBareWord(name_idx)) => (*name_idx, Some((0, None, false))),
             _ => return Ok(false),
         };
         let Some(chain) = code.lexical_import_chains.get(chain_idx as usize) else {

@@ -431,6 +431,12 @@ impl Compiler {
                     self.code.emit(OpCode::GetBareWordOverScalar(name_idx));
                 } else {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    // A bare `g` naming a routine a block-scoped `use` bound is
+                    // a call of it (ADR-8751); the RakuAST lowering spells an
+                    // argument-less call this way.
+                    if let Some(chain_idx) = self.lexical_import_chain_idx(Symbol::intern(name)) {
+                        self.code.emit(OpCode::LexImportCall { chain_idx });
+                    }
                     self.code.emit(OpCode::GetBareWord(name_idx));
                 }
             }
