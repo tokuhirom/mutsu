@@ -1,5 +1,6 @@
 # Existing Interpreter fields classified as lexicals by ADR-10779 D2.
 amp_param_shadowed_names
+block_lexical_sub_sites
 atomic_var_seen
 block_declared_vars
 class_body_static_names

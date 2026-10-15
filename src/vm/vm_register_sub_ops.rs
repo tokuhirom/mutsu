@@ -945,6 +945,21 @@ impl Interpreter {
                         self.env().clone(),
                     )
                 };
+                // A second, different declaration site of this name: a closure
+                // that escaped the first must keep calling its own copy
+                // (#13550), so the call path prefers the captured Sub.
+                {
+                    let site = reg_fp.unwrap_or(idx as u64 ^ ((code as *const _ as usize) as u64));
+                    let key = Symbol::intern(&resolved_name);
+                    let sites = &mut self.lexicals.block_lexical_sub_sites;
+                    match sites.get_mut(&key) {
+                        Some(entry) if entry.0 != site => *entry = (site, true),
+                        Some(_) => {}
+                        None => {
+                            sites.insert(key, (site, false));
+                        }
+                    }
+                }
                 // A RESERVED key, not the plain `&name`: while the block is
                 // still live the registry entry is authoritative (it is what
                 // carries `state` variables and wrap chains), and a plain
