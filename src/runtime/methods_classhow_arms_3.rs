@@ -21,7 +21,13 @@ impl Interpreter {
             };
             let method_name = method_arg.to_string_value();
             let how = self.dispatch_how(target, &[])?;
-            let how_name = match how.view() {
+            // A HOW with roles mixed in (`$how does Role`, as AttrX::Mooish does to
+            // the class HOW) is a `Mixin` over the HOW instance.
+            let how_base = match how.view() {
+                ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+                _ => how.clone(),
+            };
+            let how_name = match how_base.view() {
                 ValueView::Instance { class_name, .. } => class_name.resolve(),
                 _ => "Mu".to_string(),
             };
