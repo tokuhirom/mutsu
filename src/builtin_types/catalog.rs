@@ -539,6 +539,15 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     // `runtime_init.rs` is fixed alongside this row.
     row!("IO::Path", mro: ["IO::Path", "Cool", "Any", "Mu"], roles: ["IO"], owner: ""),
     row!("IO::Handle", mro: ["IO::Handle", "Any", "Mu"], roles: [], owner: ""),
+    // `IO::Path::Parts` (ADR-11276 §9.114): a plain `Value::make_instance`
+    // type whose rows (`AT-POS`, `AT-KEY`, `flat`) the method table resolves
+    // along this MRO; Rakudo's `.^roles` is these three.
+    row!(
+        "IO::Path::Parts",
+        mro: ["IO::Path::Parts", "Any", "Mu"],
+        roles: ["Iterable", "Associative", "Positional"],
+        owner: "",
+    ),
     // ---- StrDistance (ADR-0051 P4 CI fallout, 2026-08-21) ----
     // Found via a real CI regression (roast/S32-num/rat.t): `StrDistance` is a
     // plain `Value::make_instance` type (no registered `ClassDef`, like
