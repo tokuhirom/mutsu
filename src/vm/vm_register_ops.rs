@@ -1211,8 +1211,14 @@ impl Interpreter {
             // scope, but the nested blocks it was created in are not part of
             // it: their lexicals are shared as cells and answered from the
             // capture first (#13595).
+            // An `is dynamic` lexical stays the dynamic scope's: `$CALLER::a`
+            // in the closure must reach its caller's `$a`.
             let block_names = at_program_scope
-                .then(|| self.env().block_lexicals_above_program_scope())
+                .then(|| {
+                    let mut names = self.env().block_lexicals_above_program_scope();
+                    names.retain(|sym| !self.is_var_dynamic(sym.as_str()));
+                    names
+                })
                 .filter(|names| !names.is_empty());
             if let Some(names) = &block_names {
                 self.box_locals_for_reflective_capture(code, Some(names));
