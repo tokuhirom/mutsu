@@ -175,6 +175,15 @@ impl Interpreter {
         let Some(record) = record else {
             return;
         };
+        // Nothing written (and, without `include_reads`, nothing to read back): the
+        // loop below would walk an empty list after building it.
+        if !include_reads
+            && code.free_var_writes.is_empty()
+            && code.free_var_container_writes.is_empty()
+            && code.nested_sub_written_free.is_empty()
+        {
+            return;
+        }
         if record.marks.is_empty() && self.no_readonly_vars() {
             return;
         }
