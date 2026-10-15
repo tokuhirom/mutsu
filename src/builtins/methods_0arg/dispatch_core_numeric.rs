@@ -44,6 +44,8 @@ fn check_numeric_type_object_method(
                 | "expmod"
                 | "is-prime"
                 | "chr"
+                | "Rat"
+                | "FatRat"
         );
         if !is_d_method {
             return None;
