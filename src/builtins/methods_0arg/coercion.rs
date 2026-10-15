@@ -4,7 +4,8 @@ use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
-/// Type coercion and specialized 0-arg methods: is-prime, isNaN, re, im, conj, reals, Complex, key, value, Slip, list/Array, Range
+/// The `<>` zen slice (`__mutsu_zen_angle`) and the plain positionals' `list`/`List`/`Array`.
+/// The coercions are rows (`method_table::collections::any_coerce`, ADR-11276 §9.110).
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     if matches!(method, "list" | "List" | "Array")
         && matches!(
