@@ -1061,7 +1061,11 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      compiler bakes them into `free_var_decl_slots` when a body has
      `static_name_lookup`, and the registration captures them. Names the
      body declares itself (its `my`s and parameters) are left out, because
-     the bucket answers ahead of the frame.
+     the bucket answers ahead of the frame. This applies only to a sub
+     declared at the unit's top level. In a nested block, `local_map` at
+     the sub's position still names an outer `$x` that the block redeclares
+     further down, and that later `$x` is what the string lookup must find
+     (roast `S04-declarations/my-6e.t`).
    - **One chokepoint.** `::('$q')` reads and `::('$q') = v` stores now go
      through the same chokepoint as a `$q` read
      (`get_env_with_main_alias`, `unit_lexical_slot`), not the raw env.
