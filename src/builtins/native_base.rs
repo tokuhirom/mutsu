@@ -1,5 +1,6 @@
-//! The native-base resolution (ADR-11276 §9.79): built-in methods on an
-//! instance of a user class deriving from a built-in scalar type.
+//! The native-base resolution (ADR-11276 §9.79, §9.111): built-in methods on an
+//! instance of a user class deriving from a built-in scalar type, `Pair` or
+//! quant hash.
 //!
 //! `class MyInt is Int {}; MyInt.new(5)` is an ordinary instance whose integer
 //! lives in the reserved `__mutsu_int_value` attribute, `class MyNum is Num {}`
@@ -67,8 +68,29 @@ fn returns_the_instance(payload: &Value, method: &str) -> bool {
         ValueView::Rat(..) | ValueView::BigRat(..) => {
             matches!(method, "Rat" | "Numeric" | "Real")
         }
+        ValueView::Pair(..) | ValueView::ValuePair(..) => method == "Pair",
         _ => false,
     }
+}
+
+/// The built-in value an instance of a user class deriving from a built-in
+/// type carries: a scalar payload ([`native_base_payload`]), the `Pair` of an
+/// `is Pair` subclass (`__mutsu_pair_value`, see `dispatch_new_unallocated`)
+/// or the `Bag`/`Set`/`Mix` of a quant-hash subclass (`__baggy_data__`).
+///
+/// [`native_base_payload`]: crate::value::numeric_payload::native_base_payload
+// Cost: O(1) (at most seven attribute-map lookups).
+fn subclass_payload(target: &Value) -> Option<Value> {
+    if let Some(payload) = crate::value::numeric_payload::native_base_payload(target) {
+        return Some(payload);
+    }
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    let map = attributes.as_map();
+    map.get("__mutsu_pair_value")
+        .or_else(|| map.get("__baggy_data__"))
+        .cloned()
 }
 
 /// The value standing in for `target` as the invocant of the built-in
@@ -83,7 +105,7 @@ pub(crate) fn redirect(target: &Value, method: &str) -> Option<Value> {
     if !matches!(target.view(), ValueView::Instance { .. }) || answered_by_the_instance(method) {
         return None;
     }
-    let payload = crate::value::numeric_payload::native_base_payload(target)?;
+    let payload = subclass_payload(target)?;
     (!returns_the_instance(&payload, method)).then_some(payload)
 }
 
@@ -101,7 +123,7 @@ pub(crate) fn dispatch(
     if answered_by_the_instance(method) {
         return None;
     }
-    let payload = crate::value::numeric_payload::native_base_payload(target)?;
+    let payload = subclass_payload(target)?;
     match args {
         [] if returns_the_instance(&payload, method) => Some(Ok(target.clone())),
         [] => super::methods_0arg::native_method_0arg(&payload, method_sym),

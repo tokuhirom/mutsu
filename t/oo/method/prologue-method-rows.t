@@ -3,7 +3,7 @@ use Test;
 # ADR-11276 §9.111: the receiver-specific arms of `methods_0arg`'s prologue
 # are rows, and the receivers they answered reach them.
 
-plan 27;
+plan 36;
 
 # `Unicode` is a type object only (`DispatchShape::Unicode`).
 isa-ok Unicode.version, Version, 'Unicode.version';
@@ -48,3 +48,19 @@ is $c.flat, (1, 2), 'Capture.flat';
 is $c.WHAT, Capture, 'Capture.WHAT';
 nok $c.is-lazy, 'Capture.is-lazy';
 is $c.raku, '\(1, 2, :a(3))', 'Capture.raku';
+
+# A user subclass of `Pair` or of a quant hash answers the built-in methods
+# on its payload, and the coercion to its own base type is the instance.
+class VP is Pair {}
+my $vp = VP.new(key => "a", value => 1);
+is $vp.key, 'a', 'Pair subclass: .key';
+is $vp.antipair.raku, (1 => "a").raku, 'Pair subclass: .antipair';
+is $vp.Pair.WHAT, VP, 'Pair subclass: .Pair is the instance';
+is $vp.fmt("%s=%s"), 'a=1', 'Pair subclass: .fmt';
+is $vp.invert.raku, ((1 => "a"),).raku, 'Pair subclass: .invert';
+class MB is Bag {}
+my $mb = MB.new(<a a b>);
+is $mb.total, 3, 'Bag subclass: .total';
+is $mb.kxxv.sort, <a a b>, 'Bag subclass: .kxxv';
+is $mb.WHAT, MB, 'Bag subclass: .WHAT';
+is $mb.elems, 2, 'Bag subclass: .elems';

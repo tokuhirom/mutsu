@@ -343,45 +343,6 @@ pub(crate) fn native_method_0arg_cascade(
         }
     }
 
-    // Instance with __baggy_data__: delegate Bag-like methods to the inner Bag/Set
-    // so that subclasses of Bag/Set (e.g. `my class MyBag is Bag {}`) work correctly.
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && let Some(inner) = attributes.as_map().get("__baggy_data__")
-        && !matches!(
-            method,
-            "WHAT" | "WHICH" | "raku" | "gist" | "Str" | "perl" | "isa" | "^name"
-        )
-    {
-        return native_method_0arg(inner, method_sym);
-    }
-
-    // An `is Pair` subclass instance answers the Pair accessors on its payload
-    // (`__mutsu_pair_value`, see `dispatch_new_unallocated`).
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && let Some(inner) = attributes.as_map().get("__mutsu_pair_value")
-        && matches!(
-            method,
-            "key"
-                | "value"
-                | "kv"
-                | "keys"
-                | "values"
-                | "antipair"
-                | "invert"
-                | "pairs"
-                | "elems"
-                | "List"
-                | "Slip"
-                | "Hash"
-                | "Map"
-                | "Bool"
-                | "Numeric"
-                | "Int"
-        )
-    {
-        return native_method_0arg(inner, method_sym);
-    }
-
     // $!.pending returns a list of all tracked Failure values (S04 spec).
     if method == "pending" {
         let failures = crate::value::get_pending_failures();
