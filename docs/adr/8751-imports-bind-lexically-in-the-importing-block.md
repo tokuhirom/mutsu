@@ -120,12 +120,17 @@ Consequences that pin the design:
   - The `UseModule` of such a `use` carries the set id
     (`lexical_set_idx`). Its first run collects what the import installed
     (`record_imported_routine_alias`, and the `&name` env keys a `sub EXPORT`
-    writes) and binds each plain routine's code object into
-    `ModuleState::lexical_import_sets`.
+    writes) and binds each plain routine into `ModuleState::lexical_import_sets`:
+    a hook's code object as it is, an `is export` routine as its
+    `FunctionDef`, which is then called as the registry alias was
+    (`compile_and_call_qualified_def`). A code object built at import time
+    instead captured the importing frame's view of the module's file-scope
+    lexicals per routine, so one routine's rebind of such a lexical
+    (`$snaps := ...`) was lost to its siblings.
   - A bareword call under a non-empty chain gets an `OpCode::LexImportCall`
     prefix ahead of its `CallFunc` (named arguments stay in-band). On a hit
     it calls the bound routine through the code-variable call path
-    (`CodeVarBinding::Bound`) and skips the `CallFunc`, ahead of every cache
+    (`CodeVarBinding::Bound` / `Routine`) and skips the `CallFunc`, ahead of every cache
     and of the importing unit's own `&name`; on a miss it falls through.
   - Stage 0's `lexical_use_modules` registry probe is deleted.
 
