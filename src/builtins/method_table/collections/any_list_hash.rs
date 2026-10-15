@@ -9,16 +9,14 @@
 use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueMap, ValueView};
 
-pub(super) static ROWS: &[MethodRow] = &[
-    MethodRow {
-        owner: "Any",
-        name: "hash",
-        arity: 0,
-        handler: Handler::Narrow(hash),
-        flags: RowFlags::TYPE_OBJECT_OK,
-        named: &[],
-    },
-];
+pub(super) static ROWS: &[MethodRow] = &[MethodRow {
+    owner: "Any",
+    name: "hash",
+    arity: 0,
+    handler: Handler::Narrow(hash),
+    flags: RowFlags::TYPE_OBJECT_OK,
+    named: &[],
+}];
 
 /// The elements `.list` / `.Array` of a value with no list shape reads: a hash
 /// is its pairs, a set/bag/mix its pairs, anything else the one element.

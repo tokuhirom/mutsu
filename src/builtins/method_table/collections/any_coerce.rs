@@ -59,7 +59,10 @@ fn mu_capture(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     if let ValueView::Package(name) = target.view()
         && name == "Any"
     {
-        return Ok(Value::capture(Vec::new(), crate::value::ValueMap::default()));
+        return Ok(Value::capture(
+            Vec::new(),
+            crate::value::ValueMap::default(),
+        ));
     }
     crate::builtins::methods_0arg::coercion::value_to_capture(target)
 }
@@ -197,7 +200,9 @@ pub(crate) fn list_type(target: &Value, _args: &[Value]) -> Option<Result<Value,
         // O(e), e = elements, for the finite arm.
         ValueView::Range(a, b) => {
             if b == i64::MAX {
-                Some(Ok(crate::builtins::methods_0arg::coercion::unbounded_range_list(target)?))
+                Some(Ok(
+                    crate::builtins::methods_0arg::coercion::unbounded_range_list(target)?,
+                ))
             } else if a == i64::MIN {
                 Some(Ok(target.clone()))
             } else {
@@ -207,7 +212,9 @@ pub(crate) fn list_type(target: &Value, _args: &[Value]) -> Option<Result<Value,
         // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
         ValueView::RangeExcl(a, b) => {
             if b == i64::MAX {
-                Some(Ok(crate::builtins::methods_0arg::coercion::unbounded_range_list(target)?))
+                Some(Ok(
+                    crate::builtins::methods_0arg::coercion::unbounded_range_list(target)?,
+                ))
             } else if a == i64::MIN {
                 Some(Ok(target.clone()))
             } else {
@@ -275,7 +282,9 @@ pub(crate) fn list_type(target: &Value, _args: &[Value]) -> Option<Result<Value,
             excl_start,
             excl_end,
         } => {
-            if let Some(list) = crate::builtins::methods_0arg::coercion::unbounded_range_list(target) {
+            if let Some(list) =
+                crate::builtins::methods_0arg::coercion::unbounded_range_list(target)
+            {
                 return Some(Ok(list));
             }
             // String range: expand using codepoint succession
@@ -311,7 +320,9 @@ pub(crate) fn list_type(target: &Value, _args: &[Value]) -> Option<Result<Value,
         // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
         ValueView::RangeExclStart(a, b) => {
             if b == i64::MAX {
-                Some(Ok(crate::builtins::methods_0arg::coercion::unbounded_range_list(target)?))
+                Some(Ok(
+                    crate::builtins::methods_0arg::coercion::unbounded_range_list(target)?,
+                ))
             } else {
                 Some(Ok(Value::array((a + 1..=b).map(Value::int).collect())))
             }
@@ -319,7 +330,9 @@ pub(crate) fn list_type(target: &Value, _args: &[Value]) -> Option<Result<Value,
         // Cost: O(1) for the infinite arm, O(e) for the finite arm (as above).
         ValueView::RangeExclBoth(a, b) => {
             if b == i64::MAX {
-                Some(Ok(crate::builtins::methods_0arg::coercion::unbounded_range_list(target)?))
+                Some(Ok(
+                    crate::builtins::methods_0arg::coercion::unbounded_range_list(target)?,
+                ))
             } else {
                 Some(Ok(Value::array((a + 1..b).map(Value::int).collect())))
             }
@@ -372,9 +385,7 @@ fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeErro
     match target.view() {
         // A Range's elements: the `Range.list` row's implementation
         // (`method_table::range`).
-        _ if target.is_range() => {
-            super::range::listify(target, want_array)
-        }
+        _ if target.is_range() => super::range::listify(target, want_array),
         // The `Supply.list` row's implementation (`method_table::supply`).
         ValueView::Instance { class_name, .. } if class_name == "Supply" => {
             super::super::supply::listify(target, want_array)
@@ -383,11 +394,9 @@ fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeErro
             class_name,
             attributes,
             ..
-        } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
-            Some(Ok(wrap(crate::value::value_buf::buf_elems_or_empty(
-                &attributes,
-            ))))
-        }
+        } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => Some(Ok(wrap(
+            crate::value::value_buf::buf_elems_or_empty(&attributes),
+        ))),
         ValueView::Instance { class_name, .. }
             if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
         {
@@ -427,12 +436,8 @@ fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeErro
             }
         }
         // The `Seq.list`/`Seq.Array` rows' implementation (`method_table::seq`).
-        ValueView::Seq(_) => {
-            super::seq::listify(target, want_array)
-        }
-        ValueView::Slip(items) => {
-            Some(Ok(wrap(items.to_vec())))
-        }
+        ValueView::Seq(_) => super::seq::listify(target, want_array),
+        ValueView::Slip(items) => Some(Ok(wrap(items.to_vec()))),
         // A genuinely-lazy list stays lazy through `.Array`/`.list`:
         // tag it with the target context so `.WHAT` reports `Array`/`List`
         // without materializing the (possibly infinite) generator. A
@@ -455,11 +460,8 @@ fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeErro
         }
         ValueView::Channel(_) => None, // fall through to runtime for drain
         // The `Any.list` row's reading of the rest.
-        _ => Some(Ok(wrap(
-            super::any_list_hash::list_of(target),
-        ))),
+        _ => Some(Ok(wrap(super::any_list_hash::list_of(target)))),
     }
-
 }
 
 /// `Any.Supply`: a `Supply` of the receiver's elements.
@@ -486,5 +488,4 @@ pub(crate) fn supply(target: &Value, args: &[Value]) -> Option<Result<Value, Run
     // The `List.Supply` row's implementation
     // (`method_table::collections::any_misc`).
     super::any_misc::supply_of(target).map(Ok)
-
 }
