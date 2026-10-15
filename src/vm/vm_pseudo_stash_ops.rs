@@ -178,8 +178,10 @@ impl Interpreter {
             // must read the bound package's stash, not a package literally
             // called "NCexports". Only a `Package` value redirects — any other
             // binding leaves the literal-name reading intact.
+            // A sigilless binding lives under its term key (ADR-12441).
             let target = self
-                .get_env_with_main_alias(package)
+                .term_binding(package)
+                .or_else(|| self.get_env_with_main_alias(package))
                 .and_then(|v| match v.view() {
                     ValueView::Package(sym) => Some(
                         self.resolve_type_in_current_package(&sym.resolve())
