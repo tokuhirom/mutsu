@@ -696,12 +696,10 @@ pub(crate) fn shapeless_row(
         }
         // An instance of a built-in class with no shape (`Supply`) answers from
         // its own class's row, which was written for it (§9.110); no MRO is
-        // needed to find it.
+        // needed to find it. Only a built-in class owns rows, so a user class
+        // never matches here.
         ValueView::Instance { class_name, .. }
-            if class_name != "Failure"
-                && crate::builtin_types::catalog::builtin_type_mro_strs(class_name.as_str())
-                    .is_some()
-                && super::owner_row(class_name, method, arity).is_some() =>
+            if class_name != "Failure" && super::owner_row(class_name, method, arity).is_some() =>
         {
             class_name
         }
