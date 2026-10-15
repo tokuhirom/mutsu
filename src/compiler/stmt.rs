@@ -4686,8 +4686,8 @@ impl Compiler {
                 // A `use` below the unit's top level binds its routines in the
                 // enclosing block (ADR-8751): the call sites the block encloses
                 // read them from its lexical import set.
-                let lexical_set_idx = Self::lexical_use_set_id(stmt)
-                    .filter(|id| self.lexical_import_chain.contains(id))
+                let lexical_set_idx = self
+                    .open_lexical_use_set(stmt)
                     .map(|id| self.code.add_constant(Value::str(id.resolve())));
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();

@@ -26,6 +26,10 @@ pub(crate) enum LexicalImport {
     Routine(std::sync::Arc<crate::ast::FunctionDef>),
 }
 
+/// Separates a lexical import set id's import list from the multi families
+/// the importing block declares itself (`Compiler::with_block_multis`).
+pub(crate) const BLOCK_MULTIS_MARK: &str = "\u{1}multis:";
+
 /// What a `use` that fills a lexical import set imported, collected while
 /// it runs.
 pub(crate) struct LexicalImportCapture {
@@ -45,6 +49,9 @@ pub(crate) struct LexicalImportCapture {
     /// family's dispatcher value binds. Rakudo's import binds the module's
     /// dispatcher in the block, hiding an outer family of the same name.
     multi_defs: HashMap<Symbol, Vec<std::sync::Arc<crate::ast::FunctionDef>>>,
+    /// The multi families the importing block declares itself: the import
+    /// merges with them, so they keep the registry path.
+    block_multis: HashSet<Symbol>,
 }
 
 impl Interpreter {
@@ -52,9 +59,18 @@ impl Interpreter {
     /// set. Every run of the `use` refills it: the import binds its plain
     /// routines only there, never in the registry. Returns the capture that
     /// was running (a module loading inside an outer block's `use`).
-    // Cost: O(1).
-    pub(crate) fn begin_lexical_import_capture(&mut self) -> Option<LexicalImportCapture> {
+    // Cost: O(n), n = length of the set id `id`.
+    pub(crate) fn begin_lexical_import_capture(
+        &mut self,
+        id: Symbol,
+    ) -> Option<LexicalImportCapture> {
+        let block_multis = id
+            .resolve()
+            .split_once(BLOCK_MULTIS_MARK)
+            .map(|(_, names)| names.split(',').map(Symbol::intern).collect())
+            .unwrap_or_default();
         let capture = LexicalImportCapture {
+            block_multis,
             unit: self.executing_unit_sym_for_module_load(),
             routines: Vec::new(),
             amp_env_keys: HashSet::new(),
@@ -104,6 +120,9 @@ impl Interpreter {
     ) -> bool {
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
+            || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
+                capture.block_multis.contains(&Symbol::intern(name))
+            })
             || proto.is_some_and(|proto| !proto_only_dispatches(proto))
         {
             return false;
@@ -199,6 +218,7 @@ impl Interpreter {
         let importer = self.executing_unit_sym_for_module_load();
         if let Some(capture) = self.module.lexical_import_capture.as_mut()
             && capture.unit == importer
+            && !capture.block_multis.contains(&Symbol::intern(name))
         {
             capture
                 .multi_defs

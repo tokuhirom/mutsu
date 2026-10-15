@@ -55,7 +55,7 @@ impl Interpreter {
         // ADR-8751 stage 1: a block-scoped `use` also binds what it imports
         // into its lexical import set, for the call sites the block encloses.
         let lexical_set = lexical_set_idx.map(|idx| code.const_sym(idx));
-        let outer = lexical_set.map(|_| self.begin_lexical_import_capture());
+        let outer = lexical_set.map(|id| self.begin_lexical_import_capture(id));
         let loaded = self.with_use_attach_depth(|vm| vm.vm_use_module_with_tags(module, &tags));
         if let (Some(id), Some(outer)) = (lexical_set, outer) {
             if loaded.is_ok() {
