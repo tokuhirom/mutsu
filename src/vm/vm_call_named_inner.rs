@@ -750,7 +750,16 @@ impl Interpreter {
                 // `propagate_pending_caller_writes` below). Copying the
                 // callee's binding of the name back is how a callee's write
                 // used to reach a caller's same-named, unrelated lexical.
-                if kflags & crate::symbol::flags::PLAIN_USER_LEXICAL != 0 {
+                // Nor is a type name, a package-qualified variable or an
+                // uppercase-named scalar (slice 38): a type the callee declared
+                // lexically is its own, a package one lives in the symbol
+                // table, a package variable in `our_vars`, and a scalar in its
+                // cell, as for a lowercase one.
+                if kflags
+                    & (crate::symbol::flags::PLAIN_USER_LEXICAL
+                        | crate::symbol::flags::UPPER_IDENT_KEY)
+                    != 0
+                {
                     continue;
                 }
                 // Only a key the caller already has can be merged back, and

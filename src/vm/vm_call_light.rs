@@ -1303,7 +1303,10 @@ impl Interpreter {
             k == "_"
                 || k == "@_"
                 || k == "%_"
-                || k.flags() & crate::symbol::flags::PLAIN_USER_LEXICAL != 0
+                || k.flags()
+                    & (crate::symbol::flags::PLAIN_USER_LEXICAL
+                        | crate::symbol::flags::UPPER_IDENT_KEY)
+                    != 0
                 || k.with_str(|s| s.starts_with('?'))
                 || (bang_is_callee_private
                     && k.with_str(crate::symbol::is_routine_scoped_implicit_var))
