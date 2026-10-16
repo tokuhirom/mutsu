@@ -1264,7 +1264,7 @@ impl Interpreter {
     }
 
     /// Dispatch the "now" method for DateTime subclasses.
-    pub(super) fn dispatch_datetime_now(
+    pub(crate) fn dispatch_datetime_now(
         &mut self,
         target: &Value,
         args: &[Value],

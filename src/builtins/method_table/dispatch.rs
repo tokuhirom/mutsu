@@ -131,6 +131,13 @@ pub(crate) fn invoke_owner(
         .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))?;
     let row = row(id);
     let target = target();
+    // A type object reaches only a row that admits one, as through the guard
+    // step: an instance row's handler never sees one (ADR-11276 §9.123).
+    if !row.flags.contains(RowFlags::TYPE_OBJECT_OK)
+        && matches!(target.view(), crate::value::ValueView::Package(_))
+    {
+        return None;
+    }
     if named_count == 0 {
         return call(row, Some(interp), &target, args, Named::NONE).map(|(result, _)| result);
     }

@@ -10,6 +10,7 @@ mod methods_attribute_meta;
 mod methods_promise_class;
 mod methods_repo_registry;
 mod methods_routine_rows;
+mod methods_temporal_class;
 mod methods_promise_scheduler;
 mod methods_qualified;
 mod methods_quanthash_ctor;

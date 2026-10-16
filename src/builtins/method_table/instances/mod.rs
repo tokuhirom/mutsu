@@ -41,6 +41,7 @@ pub(crate) mod routine;
 pub(crate) mod signature;
 pub(crate) mod supply;
 pub(crate) mod temporal;
+pub(crate) mod temporal_class;
 pub(crate) mod temporal_edit;
 pub(crate) mod temporal_shift;
 pub(crate) mod unicode_data;
@@ -70,6 +71,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     compunit::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,
+    temporal_class::ROWS,
     unicode_data::ROWS,
     depspec::ROWS,
     compunit_repo::ROWS,
