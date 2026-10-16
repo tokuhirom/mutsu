@@ -500,7 +500,34 @@ pub(crate) fn stmt_list_with_mode(
                     super::nested_block_methods::hoist(&mut tail_stmts);
                     *body = tail_stmts;
                 }
-                Stmt::RoleDecl { body, .. } => {
+                Stmt::RoleDecl { body, is_rw, .. } => {
+                    // `also is Parent;` / `also is rw;` in a `unit role` body are
+                    // the header's `is Parent` / `is rw` (Gnome::Gio::EmblemedIcon),
+                    // as for the block form; left in, they run as a runtime
+                    // "two terms in a row".
+                    let mut also_parents: Vec<String> = Vec::new();
+                    tail_stmts.retain(|stmt| {
+                        if class::stmt_is_also_is_rw(stmt) {
+                            *is_rw = true;
+                            false
+                        } else if let Some(parent) = class::stmt_also_is_parent(stmt) {
+                            also_parents.push(parent);
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    for parent in also_parents.into_iter().rev() {
+                        tail_stmts.insert(
+                            0,
+                            Stmt::DoesDecl {
+                                name: crate::symbol::Symbol::intern(&parent),
+                                args: None,
+                                from_is: true,
+                                also: false,
+                            },
+                        );
+                    }
                     // Same as the `unit class` case above: `use` is compile-time
                     // in Raku, so `unit role R; use Base; also does Base;` must
                     // load Base before R's composition resolves. A unit-role body
