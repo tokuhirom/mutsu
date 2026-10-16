@@ -4307,33 +4307,24 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::QuotedRegex => {
             let body = named_child(node, "body")?;
             let match_immediately = bool_field(node, "match-immediately")?;
-            let adverbs = match node
-                .fields
-                .iter()
-                .find(|field| field.name == Some("adverbs"))
-            {
-                Some(field) => match &field.value {
-                    RakuAstFieldValue::List(items) => items
-                        .iter()
-                        .map(|item| {
-                            let ValueView::RakuAst(adverb) = item.view() else {
-                                return Err(unsupported(node));
-                            };
-                            super::substitution::lower_adverb(adverb)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                    _ => return Err(unsupported(node)),
-                },
-                None => Vec::new(),
-            };
+            let lowered_adverbs = super::substitution::lower_match_adverbs(node)?;
             let tree = RegexTree {
                 body: lower_regex_node(body)?,
                 match_immediately,
-                adverbs,
+                adverbs: lowered_adverbs.adverbs,
                 declaration_kind: None,
             };
             let value = regex_execution_value(&tree)?;
-            if tree.match_immediately {
+            if lowered_adverbs.pos_expr.is_some() || lowered_adverbs.continue_expr.is_some() {
+                if !tree.match_immediately {
+                    return Err(unsupported(node));
+                }
+                Ok(Expr::MatchRegexDynamicAdverbs {
+                    value,
+                    pos_expr: lowered_adverbs.pos_expr,
+                    continue_expr: lowered_adverbs.continue_expr,
+                })
+            } else if tree.match_immediately {
                 Ok(Expr::MatchRegexTree { value, tree })
             } else {
                 Ok(Expr::RegexLiteral { value, tree })

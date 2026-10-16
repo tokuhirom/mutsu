@@ -984,10 +984,21 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     {
                         tree.match_immediately = true;
                         tree.adverbs = tree_adverbs;
+                        let regex_val = regex_val.with_regex_source_tree(tree.clone());
+                        if adverbs.pos_expr.is_some() || adverbs.continue_expr.is_some() {
+                            return Ok((
+                                rest,
+                                Expr::MatchRegexDynamicAdverbs {
+                                    value: regex_val,
+                                    pos_expr: adverbs.pos_expr,
+                                    continue_expr: adverbs.continue_expr,
+                                },
+                            ));
+                        }
                         return Ok((
                             rest,
                             Expr::MatchRegexTree {
-                                value: regex_val.with_regex_source_tree(tree.clone()),
+                                value: regex_val,
                                 tree,
                             },
                         ));
