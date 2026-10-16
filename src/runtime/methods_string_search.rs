@@ -5,7 +5,7 @@ impl Interpreter {
     // the needle, once the invocant's grapheme index is cached (`$pos` is
     // resolved through it; the suffix is borrowed). :i/:m fold the suffix,
     // O(d + m) extra.
-    pub(super) fn dispatch_contains(
+    pub(crate) fn dispatch_contains(
         &mut self,
         target: Value,
         args: &[Value],
@@ -91,7 +91,7 @@ impl Interpreter {
         ))
     }
 
-    pub(super) fn dispatch_starts_with(
+    pub(crate) fn dispatch_starts_with(
         &self,
         target: Value,
         args: &[Value],
@@ -99,7 +99,7 @@ impl Interpreter {
         self.dispatch_prefix_suffix_check(target, args, true)
     }
 
-    pub(super) fn dispatch_ends_with(
+    pub(crate) fn dispatch_ends_with(
         &self,
         target: Value,
         args: &[Value],

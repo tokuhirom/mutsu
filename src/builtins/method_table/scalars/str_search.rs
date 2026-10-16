@@ -8,98 +8,15 @@
 //! `grapheme_index::with_str_index` (a `Str` is borrowed, anything else
 //! stringified) and the needle through its string form.
 //!
-//! The table only hands a row plain scalar arguments (`method_table::answer`),
-//! so a `Regex`, `Junction`, `Pair`, list or type-object needle never reaches
-//! these handlers; those calls take the cascades. `substr` is narrower still:
+//! These are the pure candidates: the rows (`str_search_interp.rs`) call them
+//! for a plain needle and the interpreter for every other form. `substr` is narrower still:
 //! its row binds only a non-negative `Int` start and length inside the string
 //! and declines anything else (a negative or `WhateverCode` position, a
 //! `Range`, an out-of-range start that must answer a `Failure`).
 
-use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::grapheme_index::{find_graphemes, with_str_index};
 use crate::builtins::str_prim::{self, Fold};
 use crate::value::{RuntimeError, Value, ValueView};
-
-/// The rows one owner declares.
-macro_rules! search_rows {
-    ($owner:literal) => {
-        &[
-            MethodRow {
-                owner: $owner,
-                name: "contains",
-                arity: 1,
-                handler: Handler::Pure(contains),
-                flags: RowFlags::NONE,
-                named: &[],
-            },
-            MethodRow {
-                owner: $owner,
-                name: "starts-with",
-                arity: 1,
-                handler: Handler::Pure(starts_with),
-                flags: RowFlags::NONE,
-                named: &[],
-            },
-            MethodRow {
-                owner: $owner,
-                name: "ends-with",
-                arity: 1,
-                handler: Handler::Pure(ends_with),
-                flags: RowFlags::NONE,
-                named: &[],
-            },
-            MethodRow {
-                owner: $owner,
-                name: "index",
-                arity: 1,
-                handler: Handler::Pure(index),
-                flags: RowFlags::NONE,
-                named: &[],
-            },
-            MethodRow {
-                owner: $owner,
-                name: "rindex",
-                arity: 1,
-                handler: Handler::Pure(rindex),
-                flags: RowFlags::NONE,
-                named: &[],
-            },
-            MethodRow {
-                owner: $owner,
-                name: "substr",
-                arity: 1,
-                handler: Handler::Narrow(substr),
-                flags: RowFlags::ANY_ARGS,
-                named: &[],
-            },
-        ]
-    };
-}
-
-pub(super) static STR_ROWS: &[MethodRow] = search_rows!("Str");
-pub(super) static COOL_ROWS: &[MethodRow] = search_rows!("Cool");
-
-/// `substr` with a start and a length. Its own table: a row is one arity, and
-/// the one-argument form above has the method's first row. Every `substr` row
-/// takes any plain argument (a `Whatever`, a `Range`, a closure): the handler
-/// is the one implementation, and declines what only the interpreter can
-/// call (ADR-11276 §9.113).
-pub(super) static STR_SUBSTR_2: &[MethodRow] = &[MethodRow {
-    owner: "Str",
-    name: "substr",
-    arity: 2,
-    handler: Handler::Narrow(substr),
-    flags: RowFlags::ANY_ARGS,
-    named: &[],
-}];
-pub(super) static COOL_SUBSTR_2: &[MethodRow] = &[MethodRow {
-    owner: "Cool",
-    name: "substr",
-    arity: 2,
-    handler: Handler::Narrow(substr),
-    flags: RowFlags::ANY_ARGS,
-    named: &[],
-}];
 
 /// The one-needle `contains` candidate shared by Str, Cool and Map.
 // Cost: O(p + m), p = match position, m = chars of the needle (the invocant

@@ -43,7 +43,14 @@ macro_rules! shared_rows {
             row!($owner, "trans", 0, ARGS_NAMED.or(RowFlags::SLURPY), trans),
             row!($owner, "indices", 1, ARGS_NAMED, indices),
             row!($owner, "indices", 2, ARGS_NAMED, indices),
-            row!($owner, "IO", 0, RowFlags::NONE, io, &["CWD", "SPEC"]),
+            row!(
+                $owner,
+                "IO",
+                0,
+                RowFlags::TYPE_OBJECT_OK,
+                io,
+                &["CWD", "SPEC"]
+            ),
             row!($owner, "split", 1, ARGS_NAMED, split),
             row!($owner, "split", 2, ARGS_NAMED, split),
         ]

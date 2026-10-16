@@ -1,5 +1,23 @@
 use super::*;
 
+/// The text methods [`Interpreter::text_method_by_mro`] answers.
+const TEXT_METHODS_BY_MRO: [&str; 14] = [
+    "match",
+    "subst",
+    "wordcase",
+    "comb",
+    "IO",
+    "contains",
+    "starts-with",
+    "ends-with",
+    "index",
+    "indices",
+    "rindex",
+    "substr-eq",
+    "substr",
+    "trans",
+];
+
 impl Interpreter {
     /// Whether `v` is an `IO::CatHandle` instance. Used to keep the generic
     /// 0-arg `.say`/`.print`/`.put`/`.printf` "stringify the invocant" behavior
@@ -216,46 +234,62 @@ impl Interpreter {
                     _ => None,
                 }
             }
-            // A regex argument may be a closure over its defining scope; install
-            // it around the match the same way `~~` does.
-            "match" => Some(self.dispatch_match_row(target, args)),
-            "subst" => Some(self.dispatch_subst_row(target, args)),
-            // Cost: see `dispatch_wordcase` (src/runtime/methods_string_wordcase.rs).
-            "wordcase" if !args.is_empty() => Some(self.dispatch_wordcase(target, &args)),
-            "comb" if !args.is_empty() => {
-                if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
-                {
-                    Some(self.dispatch_supply_transform(target, "comb", &args))
-                } else if matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if matches!(class_name.resolve().as_str(),
-                        "IO::Handle" | "IO::Path" | "IO::Pipe" | "IO::CatHandle"))
-                {
-                    // Defer to native IO dispatch so file content is read first.
-                    None
-                } else {
-                    // The matcher argument may be a stored regex closed over
-                    // its defining scope; install it around the comb the same
-                    // way `~~`/`.match`/`.subst` do.
-                    let matcher = args.first().cloned();
-                    self.with_regex_closure_scope(matcher, |me| {
-                        me.dispatch_comb_with_args(target, &args)
-                    })
-                }
-            }
-            "IO" => self.dispatch_io_coerce(&target, &args),
-            "contains" => Some(self.dispatch_contains(target, &args)),
-            "starts-with" => Some(self.dispatch_starts_with(target, &args)),
-            "ends-with" => Some(self.dispatch_ends_with(target, &args)),
-            "index" => Some(self.dispatch_index(target, &args)),
-            "indices" => Some(self.dispatch_indices(target, &args)),
-            "rindex" => Some(self.dispatch_rindex(target, &args)),
-            "substr-eq" => Some(self.dispatch_substr_eq(target, &args)),
-            "substr" => Some(self.dispatch_substr(target, &args)),
-            "substr-rw" => Some(self.dispatch_substr_rw(target, &args)),
-            // Cost: see `dispatch_trans` (src/runtime/methods_trans.rs).
-            "trans" => Some(self.dispatch_trans(target, &args)),
-            _ => None,
+            _ => self.text_method_by_mro(target, method, &args),
         }
+    }
+
+    /// `Str`'s, `Cool`'s and `Any`'s text methods for a call no
+    /// receiver-specific answer took: the row the receiver's MRO declares
+    /// first, as `.^can` walks it (ADR-11276 §9.129). A `Cool` instance with a
+    /// `Str` of its own is read through it, as Rakudo's `self.Str.METHOD` does.
+    /// A junction autothreads elsewhere; a receiver no owner of which declares
+    /// the name is `X::Method::NotFound`.
+    // Cost: O(m) for the MRO, m = its length, plus `invoke_mro`'s.
+    fn text_method_by_mro(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !TEXT_METHODS_BY_MRO.contains(&method)
+            || matches!(target.view(), ValueView::Junction { .. })
+        {
+            return None;
+        }
+        // An enum member is a value of its base type (§9.125); `.^mro` does
+        // not list the base yet, so the member's roles' base is named here.
+        let mro = match target.view() {
+            ValueView::Enum { value, .. } => match value {
+                crate::value::EnumValue::Str(_) => vec!["Str", "Cool", "Any", "Mu"],
+                _ => vec!["Int", "Cool", "Any", "Mu"],
+            }
+            .into_iter()
+            .map(String::from)
+            .collect(),
+            _ => self.classhow_mro_unhidden_names(&target),
+        };
+        let owners: Vec<&str> = mro.iter().map(String::as_str).collect();
+        let method_sym = Symbol::intern(method);
+        let first = owners
+            .iter()
+            .find(|owner| crate::builtins::method_table::owner_declares(owner, method_sym));
+        if first == Some(&"Cool")
+            && let ValueView::Instance { class_name, .. } = target.view()
+            && self.has_user_method(&class_name.resolve(), "Str")
+        {
+            let text = match self.call_method_with_values(target, "Str", Vec::new()) {
+                Ok(text) => text,
+                Err(err) => return Some(Err(err)),
+            };
+            return crate::builtins::method_table::invoke_mro(
+                self,
+                &["Str", "Cool"],
+                method,
+                args,
+                &text,
+            );
+        }
+        crate::builtins::method_table::invoke_mro(self, &owners, method, args, &target)
     }
 
     /// Dispatch "classify" / "categorize": the `Any` rows' handler and the
@@ -336,7 +370,7 @@ impl Interpreter {
 
     /// Helper for .comb with arguments.
     /// Handles: .comb($matcher), .comb($matcher, $limit), .comb($matcher, :match)
-    pub(super) fn dispatch_comb_with_args(
+    pub(crate) fn dispatch_comb_with_args(
         &mut self,
         target: Value,
         args: &[Value],

@@ -22,16 +22,6 @@ macro_rules! iter_rows {
                 flags: RowFlags::NONE,
                 named: &[],
             },
-            // `comb($matcher)` with an `Int` chunk size or a `Str` needle;
-            // a `Regex`, a code object or a `Pair` takes the interpreter.
-            MethodRow {
-                owner: $owner,
-                name: "comb",
-                arity: 1,
-                handler: Handler::Narrow(crate::builtins::comb::native_comb_method),
-                flags: RowFlags::NONE,
-                named: &[],
-            },
             MethodRow {
                 owner: $owner,
                 name: "words",

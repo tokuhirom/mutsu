@@ -66,7 +66,13 @@ pub(super) static ROWS: &[MethodRow] = &[
         &["partial"]
     ),
     any_row!("Any", "skip", 0, ARGS.or(RowFlags::SLURPY), skip),
-    any_row!("Any", "match", 1, ARGS_NAMED, match_),
+    any_row!(
+        "Any",
+        "match",
+        1,
+        ARGS_NAMED.or(RowFlags::TYPE_OBJECT_OK),
+        match_
+    ),
     any_row!("Any", "classify", 1, ARGS, classify, &["as", "into"]),
     any_row!("Any", "categorize", 1, ARGS, categorize, &["as", "into"]),
     any_row!("Hash", "classify-list", 2, ARGS, classify_list, &["as"]),
