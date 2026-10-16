@@ -86,6 +86,11 @@ fn list(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
     if matches!(t.view(), ValueView::Channel(_)) {
         return None;
     }
+    // A shaped array flattens all its dimensions, an uninitialized slot read
+    // as the container's type default.
+    if let Some(flat) = i.shaped_flatten_with_default(t) {
+        return Some(Ok(Value::array(flat)));
+    }
     Some(i.dispatch_list_coercion(t.clone()))
 }
 

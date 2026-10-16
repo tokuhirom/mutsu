@@ -87,7 +87,7 @@ impl Interpreter {
     /// container's type-default (`Any`, or the native/typed element default):
     /// `my @a[2;2]` → `(Any, Any, Any, Any)`, `my Int @a[3]` → `(Int, Int, Int)`.
     /// Returns `None` when `target` is not a shaped array (normal coercion runs).
-    pub(super) fn shaped_flatten_with_default(&mut self, target: &Value) -> Option<Vec<Value>> {
+    pub(crate) fn shaped_flatten_with_default(&mut self, target: &Value) -> Option<Vec<Value>> {
         let depth = crate::runtime::utils::shaped_array_shape(target)?.len();
         let default = self.typed_container_default(target);
         let mut out = Vec::new();
