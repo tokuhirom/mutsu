@@ -947,7 +947,6 @@ t/concurrency/concurrent-hash-assign.t
 t/concurrency/concurrent-lane-decline-routes.t
 t/concurrency/concurrent-map-grep-rw-writes-reach-live-container.t
 t/concurrency/concurrent-nested-subscript-store.t
-t/concurrency/concurrent-param-array-reader-families.t
 t/concurrency/concurrent-param-container-mutation.t
 t/concurrency/concurrent-param-hash-reader-families.t
 t/concurrency/concurrent-role-mixin-visibility.t
