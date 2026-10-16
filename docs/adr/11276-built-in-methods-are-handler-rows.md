@@ -2929,6 +2929,25 @@ Found on the way: #13651 (`Encoding::Registry.find(...).name` spells `utf-8`, Ra
 of a `file#` path answers a `FileSystem` repository where Rakudo answers `Nil` (kept). `method-rows-report.py --arms`:
 the runtime slow path goes from 428 arms to 416.
 
+### 9.123 `invoke_owner` admits a type object only to a `TYPE_OBJECT_OK` row; `Date`'s and `DateTime`'s class methods are rows (2026-10-16)
+
+`refactor/11276-temporal-class-rows`. The owner entry (`invoke_owner`, §9.19) found a row by owner, name and arity and
+called it whatever the receiver was, so a type object could reach an instance row's handler, which the guard step
+never lets happen; every owner whose class methods became rows so far (§9.120, §9.122) had handlers that happened to
+decline one. The entry now refuses a type object (`ValueView::Package`) for a row without `TYPE_OBJECT_OK`, as the guard
+step does, and the call goes on as if no row matched. No caller relied on the old behaviour (the `IO::Spec` rows, the
+`Promise` and §9.122 class-method rows are `TYPE_OBJECT_OK`; the other owner lookups pass instances).
+
+That makes owners with instance rows safe to look up by owner for a type object: `Date.today`, `Date.new-from-daycount`
+and `DateTime.now`, three arms of `dispatch_method_by_name_3`, are `OWNER_ONLY | TYPE_OBJECT_OK` rows
+(`instances/temporal_class.rs`, implementations in `runtime/methods_temporal_class.rs`), found by owner for the type
+object of the class or of a user subclass (`Interpreter::temporal_class_owners` reads a subclass's cached MRO); a
+subclass's `today`/`new-from-daycount` build through its constructor, as before. Their recognition rows claim arity `N`:
+no pure cascade answers them. Not moved: the type objects' `Date`/`DateTime` coercions, whose Rakudo answers are
+irregular (`Date.Date` is `(Date)`, `D.Date` of a subclass dies reading attributes; mutsu answers the type object for
+both). No behaviour change; pinned in `t/oo/method/date-class-method-rows.t`, which also pins that `Date.year` and a
+subclass's `D.year` die. `method-rows-report.py --arms`: the runtime slow path loses 3 arms.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
