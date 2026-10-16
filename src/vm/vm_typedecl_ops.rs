@@ -458,7 +458,46 @@ impl Interpreter {
             // (`class Foo is repr(...) { ... }; say Foo.REPR;`) is unaffected
             // either way, since its `say` is a separate mainline statement
             // that only runs after this whole op completes.
-            if let Some(repr_name) = repr {
+            // `is repr(Opaque)` with `constant Opaque = 'CPointer'`: the parser keeps the
+            // bare identifier as written, so a name that is not itself a representation
+            // is resolved as a constant holding the representation's name.
+            let resolved_repr: Option<String> = repr.as_ref().map(|r| {
+                const KNOWN: [&str; 14] = [
+                    "P6opaque",
+                    "CUnion",
+                    "CStruct",
+                    "CPPStruct",
+                    "CPointer",
+                    "CArray",
+                    "Uninstantiable",
+                    "NativeCall",
+                    "CStr",
+                    "ConcBlockingQueue",
+                    "AsyncTask",
+                    "VMArray",
+                    "VMHash",
+                    "P6int",
+                ];
+                if KNOWN.contains(&r.as_str())
+                    || !r
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_alphabetic() || c == '_')
+                {
+                    return r.clone();
+                }
+                match self
+                    .term_binding(r)
+                    .or_else(|| self.get_env_with_main_alias(r))
+                {
+                    Some(v) if matches!(v.view(), crate::value::ValueView::Str(_)) => {
+                        v.to_string_value()
+                    }
+                    _ => r.clone(),
+                }
+            });
+            let repr = &resolved_repr;
+            if let Some(repr_name) = repr.as_deref() {
                 if repr_name == "CUnion" {
                     self.register_cunion_class(&storage_name);
                 } else if repr_name == "CStruct" {
