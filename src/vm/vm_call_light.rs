@@ -392,13 +392,15 @@ impl Interpreter {
         // A routine whose frame skips its callers for a lexical (ADR-12529
         // phase 3) marks its own root. It reuses the caller's env only when
         // that is itself such an empty frame, which sees exactly the same
-        // program scope past it.
+        // program scope past it -- unless it hides names of that scope
+        // (`hide_unit_names_from_frame`), which needs a root of its own.
         let outer_is_unit = cf.code.links_frame_to_unit();
         // A body that touches `$/`, `$!` or `$_` reuses only a frame that
         // owns them, so they are never another frame's (`env::routine_owned`).
         let owns_state = cf.code.uses_routine_state || (cf.code.reads_topic && cf.code.is_routine);
         let caller_env = if self.env().overlay_is_shared_empty()
-            && (!outer_is_unit || self.env().is_empty_unit_frame())
+            && (!outer_is_unit
+                || (self.env().is_empty_unit_frame() && cf.code.unit_hidden_lexicals.is_none()))
             && (!owns_state || self.env().owns_routine_state())
         {
             None
@@ -969,6 +971,7 @@ impl Interpreter {
         // argument's source variable, which is the caller's (ADR-12529).
         if outer_is_unit && caller_env.is_some() {
             self.env_mut().mark_outer_is_unit();
+            self.hide_unit_names_from_frame(&cf.code);
         }
         let body_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut ip = 0;

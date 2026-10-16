@@ -1072,11 +1072,29 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      `IndirectTypeLookupStore` now counts as reflective access, as the read
      already did.
 
-   Still open on #13604:
-   - A name declared only in a block that does not enclose the sub
-     (`if True { my $z }` calling `sub { EVAL '$z' }`) is still visible.
-     That needs a hidden set on the static link.
-   - A block-scoped `use`'s imported variables have the same leak.
+   **Slice 20 done** (`fix/13604-unit-outer-hidden-set`, second half of
+   #13604): a top-level sub that names lexicals by string no longer sees a
+   name declared only in the block that calls it (`if True { my $z }` calling
+   `sub { EVAL '$z' }`), nor a variable a block-scoped `use` imported. The
+   program scope binds both while the block runs, and the static link used to
+   answer with them.
+
+   - **Block-only lexicals.** The unit's compiler records the names its nested
+     blocks declare (`pop_local_scope`). When the unit finishes, each
+     top-level routine with `static_name_lookup` gets the ones the top level
+     does not also declare (`CompiledCode::unit_hidden_lexicals`). The set is
+     recorded even when empty, because it also marks the routine as one whose
+     lexical outer is the unit's top level.
+   - **Block imports.** At call time the frame adds the plain lexicals the open
+     block-scoped import scopes bound (`imported_env_keys`). A key that
+     shadows an enclosing import's binding stays visible: the routine does see
+     the outer binding, and the block's value is what the link still finds.
+   - **The hide.** The marked frame root carries the union
+     (`Env::set_unit_hidden`, a field of the root's own overlay). A lookup
+     that would continue at the program scope for one of those names stops
+     there (`Env::static_hides`), and the static view drops them too. A light
+     call does not reuse its caller's empty unit frame for such a routine,
+     since the hide needs a root of its own.
 
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,

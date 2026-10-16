@@ -107,6 +107,7 @@ impl Interpreter {
                 self.env_mut().link_static_outer_to_unit(true, true, None);
             } else if cf.code.links_frame_to_unit() {
                 self.env_mut().mark_outer_is_unit();
+                self.hide_unit_names_from_frame(&cf.code);
             }
             // A routine owns its `$/`: a match-state lookup that misses the
             // frame does not reach the caller's (ADR-12529, `env::routine_owned`).
