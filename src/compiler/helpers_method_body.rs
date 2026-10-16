@@ -372,6 +372,20 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
     ) -> Vec<Symbol> {
         let mut out: Vec<Symbol> = Vec::new();
+        self.collect_decl_time_param_free_var_syms(param_defs, &mut out);
+        out
+    }
+
+    /// [`Self::decl_time_param_free_var_syms`] into `out`, descending into
+    /// sub-signatures (`*@ ($x where { ... })`): the binder evaluates their
+    /// defaults and constraints from the AST too.
+    // Cost: O(p * c), p = parameters at every depth, c = compiling one of
+    // their default or constraint expressions.
+    fn collect_decl_time_param_free_var_syms(
+        &self,
+        param_defs: &[crate::ast::ParamDef],
+        out: &mut Vec<Symbol>,
+    ) {
         for pd in param_defs {
             let exprs = pd.default.iter().chain(pd.where_constraint.as_deref());
             for expr in exprs {
@@ -381,8 +395,27 @@ impl Compiler {
                     }
                 }
             }
+            for nested in [&pd.sub_signature, &pd.outer_sub_signature]
+                .into_iter()
+                .flatten()
+            {
+                self.collect_decl_time_param_free_var_syms(nested, out);
+            }
         }
-        out
+    }
+
+    /// Whether any parameter of `param_defs`, at any sub-signature depth, has a
+    /// default or a `where` constraint.
+    // Cost: O(p), p = parameters at every depth.
+    fn has_decl_time_param_exprs(param_defs: &[crate::ast::ParamDef]) -> bool {
+        param_defs.iter().any(|pd| {
+            pd.default.is_some()
+                || pd.where_constraint.is_some()
+                || [&pd.sub_signature, &pd.outer_sub_signature]
+                    .into_iter()
+                    .flatten()
+                    .any(|nested| Self::has_decl_time_param_exprs(nested))
+        })
     }
 
     /// Fold the outer lexicals a signature's *declaration-time* expressions
@@ -407,10 +440,7 @@ impl Compiler {
         code: &mut crate::opcode::CompiledCode,
         param_defs: &[crate::ast::ParamDef],
     ) {
-        if param_defs
-            .iter()
-            .all(|pd| pd.default.is_none() && pd.where_constraint.is_none())
-        {
+        if !Self::has_decl_time_param_exprs(param_defs) {
             return;
         }
         for sym in self.decl_time_param_free_var_syms(param_defs) {
