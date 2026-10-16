@@ -1,8 +1,8 @@
 use super::*;
 
 impl Interpreter {
-    /// Dispatch Seq.from-loop / Seq.from_loop
-    pub(super) fn dispatch_seq_from_loop(
+    /// `Seq.from-loop`.
+    pub(crate) fn dispatch_seq_from_loop(
         &mut self,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {

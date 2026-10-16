@@ -27,7 +27,16 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Thread", "id", Handler::Narrow(id_row)),
     row!("Thread", "Numeric", Handler::Narrow(id_row)),
     row!("Thread", "name", Handler::Narrow(name_row)),
-    row!("Thread", "is-initial-thread", Handler::Narrow(initial_row)),
+    // `Thread.is-initial-thread` on the type object asks about the calling
+    // thread (ADR-11276 §9.124).
+    MethodRow {
+        owner: "Thread",
+        name: "is-initial-thread",
+        arity: 0,
+        handler: Handler::Narrow(initial_row),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK),
+        named: &[],
+    },
     row!("Thread", "app_lifetime", Handler::Narrow(app_lifetime_row)),
     row!("Thread", "Str", Handler::Narrow(str_row)),
     row!("Thread", "gist", Handler::Narrow(gist_row)),
@@ -112,6 +121,11 @@ fn name_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
 /// `Thread.is-initial-thread`.
 // Cost: O(a), a = attributes.
 fn initial_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if matches!(target.view(), ValueView::Package(name) if name == "Thread") {
+        return Some(Ok(Value::truth(
+            crate::runtime::methods_collection_ops::is_initial_thread(),
+        )));
+    }
     let attrs = attrs_of(target, "Thread")?;
     Some(Ok(Value::truth(
         attrs.get("is_initial").is_some_and(Value::truthy),

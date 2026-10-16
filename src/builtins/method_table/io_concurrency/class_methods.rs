@@ -60,6 +60,18 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("IO::Socket::Async", "listen", 0, async_listen),
     row!("IO::Socket::Async", "bind-udp", 0, async_bind_udp),
     row!("IO::Socket::Async", "udp", 0, async_udp),
+    row!("Seq", "from-loop", 0, seq_from_loop),
+    row!("X::AdHoc", "from-slurpy", 0, adhoc_from_slurpy),
+    row!("Thread", "start", 1, thread_start),
+    // `Supply.start` is an instance method: a supply of the block's results.
+    MethodRow {
+        owner: "Supply",
+        name: "start",
+        arity: 1,
+        handler: Handler::Interp(supply_start),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
 ];
 
 /// The owner whose class methods `target` answers: the type object of one of
@@ -81,6 +93,23 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
         "IO::Socket::INET" => &["IO::Socket::INET"],
         "IO::Socket::Async" => &["IO::Socket::Async"],
         _ => return None,
+    })
+}
+
+/// The owner whose class methods the type object `target` answers early in the
+/// by-name dispatch (`dispatch_method_by_name_1`): `Seq`, `Thread` and
+/// `X::AdHoc` for their own type objects, and `Promise` for any other (its
+/// handlers decline a type object that is no `Promise` class, ADR-11276 §9.120).
+// Cost: O(1).
+pub(crate) fn early_owners_of(target: &Value) -> Option<&'static [&'static str]> {
+    let ValueView::Package(name) = target.view() else {
+        return None;
+    };
+    Some(match name.as_str() {
+        "Seq" => &["Seq"],
+        "Thread" => &["Thread"],
+        "X::AdHoc" => &["X::AdHoc"],
+        _ => &["Promise"],
     })
 }
 
@@ -193,4 +222,29 @@ fn async_bind_udp(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<
 // Cost: one socket.
 fn async_udp(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<'_>) -> Answer {
     Some(i.dispatch_socket_async_udp(&all_args(args, named)))
+}
+
+/// `Seq.from-loop(&body, &cond?, :$repeat, :$label)`.
+// Cost: O(1) to build the lazy sequence.
+fn seq_from_loop(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    Some(i.dispatch_seq_from_loop(all_args(args, named)))
+}
+
+/// `X::AdHoc.from-slurpy(*@parts)`: an `X::AdHoc` whose payload is the parts.
+// Cost: O(n), n = parts.
+fn adhoc_from_slurpy(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    Some(i.dispatch_adhoc_from_slurpy(&all_args(args, named)))
+}
+
+/// `Thread.start(&code, :$name, :$app_lifetime)`: a started thread.
+// Cost: one OS thread spawn.
+fn thread_start(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    Some(i.dispatch_thread_start(&all_args(args, named)))
+}
+
+/// `Supply.start(&code)`: a supply of supplies, each running the block on one
+/// value.
+// Cost: O(1) to build the derived supply.
+fn supply_start(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    Some(i.dispatch_supply_transform(t.clone(), "start", &all_args(args, named)))
 }

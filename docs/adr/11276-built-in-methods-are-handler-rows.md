@@ -2948,6 +2948,20 @@ irregular (`Date.Date` is `(Date)`, `D.Date` of a subclass dies reading attribut
 both). No behaviour change; pinned in `t/oo/method/date-class-method-rows.t`, which also pins that `Date.year` and a
 subclass's `D.year` die. `method-rows-report.py --arms`: the runtime slow path loses 3 arms.
 
+### 9.124 `Seq.from-loop`, `Thread.start`, `Thread.is-initial-thread`, `X::AdHoc.from-slurpy` and `Supply.start` are rows (2026-10-16)
+
+`refactor/11276-thread-seq-class-rows`. Four arms of `dispatch_method_by_name_1` asked which type object the receiver
+was (`from-loop` and its `from_loop` spelling on `Seq`, `start` on `Thread` or a `Supply` instance through
+`dispatch_promise_start`, `is-initial-thread` on `Thread`, `from-slurpy` on `X::AdHoc`). `Seq.from-loop`,
+`Thread.start` and `X::AdHoc.from-slurpy` are `OWNER_ONLY | TYPE_OBJECT_OK | SLURPY` rows next to §9.122's
+(`io_concurrency/class_methods.rs`), found by the early owner lookup at the top of that dispatch, which named only
+`Promise` (§9.120) and now names `Seq`, `Thread` and `X::AdHoc` for their own type objects (`early_owners_of`) and
+`Promise` for any other. `Supply.start` is an instance row of `Supply`, found by the later lookup of
+`dispatch_method_by_name_3` (§9.122's `owners_of` already names a `Supply` instance). `Thread.is-initial-thread` had a
+row for an instance (§9.22); the row admits the type object now and answers for the calling thread there.
+`dispatch_promise_start` is deleted. Behaviour toward Rakudo: `Seq.from_loop` is gone (Rakudo has no such method; no
+caller in the tree). Pinned in `t/concurrency/thread-lock/thread-seq-class-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

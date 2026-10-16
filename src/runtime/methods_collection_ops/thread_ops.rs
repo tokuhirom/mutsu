@@ -9,7 +9,7 @@ use crate::value::ValueView;
 impl Interpreter {
     /// Thread.start({ block }) -- spawn a real OS thread
     /// Supports named params: :name("..."), :app_lifetime
-    pub(in crate::runtime) fn dispatch_thread_start(
+    pub(crate) fn dispatch_thread_start(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
