@@ -176,7 +176,13 @@ impl Interpreter {
     /// one with a plain positional parameter.
     // Cost: O(p), p = parameters of the candidate.
     pub(crate) fn candidate_is_slurpy_only(def: &MethodDef) -> bool {
-        !def.param_defs.is_empty()
+        // The implicit `*%_` every method carries, like an explicit named
+        // slurpy, does not affect the positional ranking: a candidate whose
+        // only parameter is the explicit invocant (`multi method
+        // FatRat(Str:D:)`) ranks like any other candidate.
+        def.param_defs
+            .iter()
+            .any(|pd| pd.is_variadic() && !pd.name.starts_with('%'))
             && def
                 .param_defs
                 .iter()
