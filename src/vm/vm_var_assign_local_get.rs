@@ -827,7 +827,14 @@ impl Interpreter {
         {
             return;
         }
-        let container = cur.into_container_ref();
+        let mut container = cur.into_container_ref();
+        // A container a closure (or this frame) rebinds with `:=` takes a
+        // binding cell from the start, so every closure that captures it,
+        // before or after the rebind, shares the binding the rebind reseats
+        // (ADR-12529 §3, slice 25; scalars: #9307).
+        if code.rebound_slots.contains(&(idx as u32)) {
+            container = Self::wrap_in_binding_cell(container);
+        }
         self.locals[idx] = container.clone();
         self.env_mut().insert(name.clone(), container.clone());
         if self.threads.shared_vars_active {

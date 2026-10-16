@@ -348,7 +348,7 @@ impl Interpreter {
     /// `rposition` search. The baked slot is validated against the slot's name
     /// (stale/hand-built chunks fall back to the search). §1.3 closure-capture
     /// slot bake.
-    fn resolve_capture_slot(
+    pub(super) fn resolve_capture_slot(
         code: &CompiledCode,
         parent_slots: &[Option<u32>],
         i: usize,
@@ -1810,6 +1810,14 @@ impl Interpreter {
         // shadow would update the wrong slot (S06-advanced/wrap.t). With the
         // gate off `alloc_local` get-or-creates by name, so duplicates are
         // structurally impossible and this is byte-identical.
+        // An own `@`/`%` the closure rebinds: its declaration gave it a
+        // container cell (`needs_cell_unvouched_containers`); make that a
+        // binding cell, so the closure's `@y := ...` reseats the binding this
+        // frame's slot shares (ADR-12529 §3, slice 25). Scalars take the same
+        // step in the loop below.
+        if !code.rebound_slots.is_empty() && !cc.free_var_rebinds.is_empty() {
+            self.bind_rebound_captured_containers(code, cc);
+        }
         let dup_shadow_possible =
             crate::compiler::shadow_slots_active() && code.has_dup_named_locals;
         let has_mutated_instance_capture =

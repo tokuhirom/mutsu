@@ -323,6 +323,7 @@ pub(crate) mod vm_poll;
 mod vm_positional_index_key;
 mod vm_pseudo_stash_ops;
 mod vm_quanthash_autoviv;
+mod vm_rebound_container_capture;
 mod vm_role_capture_propagate;
 mod vm_unit_hidden;
 pub(crate) mod vm_unit_lexical_meta_lanes;

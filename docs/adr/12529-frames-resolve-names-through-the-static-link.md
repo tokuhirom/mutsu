@@ -1235,6 +1235,27 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    Remaining in the binding entry: a rebind in a block handed to a routine
    (`closure-rebind-reaches-declaring-frame-through-linked-callee.t`).
 
+   **Slice 25 done** (`fix/12529-closure-rebind-cell`): the last binding
+   file of slice 21's census
+   (`closure-rebind-reaches-declaring-frame-through-linked-callee.t`). A
+   closure that rebinds an `@`/`%` of the frame that created it
+   (`run-it({ @y := [3] })`) rebound only its own env entry: a scalar the
+   closure rebinds gets a binding cell at the capture (#9307), but a
+   container takes its cell at the declaration, and the declaration asked
+   for one only when an escaping closure captured it. So the return merge
+   of `run-it` was what carried `[3]` to the block.
+
+   - The compiler now adds an own `@`/`%` a nested closure rebinds to the
+     declaration-site container lane (`needs_cell_unvouched_containers`),
+     escaping or not.
+   - That declaration's cell is a binding cell when the slot is rebound
+     (`box_decl_local_container_cell`), so a sibling closure made before the
+     rebind shares the binding too, and a name bound to the old container
+     keeps it. The capture wraps a plain cell it still finds
+     (`bind_rebound_captured_containers`).
+
+   Pinned by `t/routines/closure/closure-rebinds-captured-container-through-cell.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
