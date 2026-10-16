@@ -1355,6 +1355,19 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    (`op_name_write_const_idx`), so the capture boxes `$b` into a cell and
    the write-back goes through it. Pinned by
    `t/routines/closure/quanthash-values-loop-in-closure-writes-back.t`.
+   **Slice 31 done** (`fix/12529-cas-code-form-cell`): the
+   `t/types/cas-typed-constraint.t` entry of slice 26's census (11). The
+   first `cas` on an element of an `@`/`%` variable moves the variable
+   onto a celled atomic store, and `init_celled_atomic_store` (and
+   `celled_hash_elem` for a new key) stored that container into the
+   running code's env entry by name. When the first `cas` ran inside a
+   closure (`throws-like { cas(@c[0], ...) }`), only the closure's copy of
+   `@c` moved, so the declaring block kept the uncelled array whose
+   elements later `cas` calls no longer write; the merge of the routine
+   that ran the closure carried the move. A captured `@`/`%` is bound
+   through its shared cell (ADR-0039), so the celled store now goes into
+   that cell. Pinned by
+   `t/routines/closure/cas-in-closure-celled-store-reaches-declarer.t`.
 
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
