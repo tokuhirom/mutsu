@@ -32,6 +32,7 @@ pub(crate) mod dateish_io;
 pub(crate) mod datetime;
 pub(crate) mod depspec;
 pub(crate) mod distribution;
+pub(crate) mod enumeration;
 pub(crate) mod exception;
 pub(crate) mod failure;
 pub(crate) mod instant;
@@ -62,6 +63,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     regex_match::ROWS,
     backtrace::ROWS,
     exception::ROWS,
+    enumeration::ROWS,
     code::ROWS,
     routine::ROWS,
     failure::ROWS,

@@ -28,111 +28,25 @@ impl Interpreter {
             .then(|| inner.as_ref().clone())
     }
 
-    /// Dispatch methods on Enum values.
-    /// Returns Some(result) if handled, None if not an enum method.
+    /// The methods of an enum member: its base type's collection methods for
+    /// an `Array`/`Hash`-valued member ([`Self::enum_aggregate_base`]), then
+    /// the rows of the roles Rakudo composes into every enum type
+    /// (`Enumeration`, `NumericEnumeration`, `StringyEnumeration`; ADR-11276
+    /// §9.125), found by their owner. `None` when neither answers.
+    // Cost: O(o) to find the row, o = the member's roles, plus the row's own.
     pub(super) fn dispatch_enum_method(
         &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let ValueView::Enum {
-            enum_type,
-            key,
-            value,
-            index,
-        } = target.view()
-        else {
-            return None;
-        };
+        let owners = crate::builtins::method_table::enumeration_owners_of(target)?;
         if let Some(base) = Self::enum_aggregate_base(target, method) {
             return Some(self.call_method_with_values(base, method, args.to_vec()));
         }
-
-        match method {
-            "key" => Some(Ok(Value::str(key.resolve()))),
-            "value" => Some(Ok(value.to_value())),
-            // A numeric coercion of an enum member acts on its underlying value:
-            // `cool.Int` for `enum Numbers (cool => '42')` is `'42'.Int` == 42,
-            // and `sqrt-n-one.Real` for a `'i'` value raises the string-numeric
-            // error, exactly as raku does.
-            "Int" | "Numeric" | "Real" | "Num" | "Rat" | "Complex" => {
-                let underlying = value.to_value();
-                Some(self.call_method_with_values(underlying, method, args.to_vec()))
-            }
-            "WHAT" => Some(Ok(Value::package(enum_type))),
-            "raku" | "perl" => Some(Ok(Value::str(
-                crate::builtins::methods_0arg::raku_repr::enum_raku_repr(
-                    &enum_type.resolve(),
-                    &key.resolve(),
-                ),
-            ))),
-            "gist" => Some(Ok(Value::str(key.resolve()))),
-            "Str" => match value {
-                EnumValue::Int(_) => Some(Ok(Value::str(key.resolve()))),
-                EnumValue::Str(s) => Some(Ok(Value::str(s.clone()))),
-                EnumValue::Generic(_) => Some(Ok(Value::str(key.resolve()))),
-            },
-            "kv" => {
-                let val = value.to_value();
-                Some(Ok(Value::array(vec![Value::str(key.resolve()), val])))
-            }
-            "pair" => {
-                let val = value.to_value();
-                // ADR-0021 I2: data-minted pairs default positional.
-                Some(Ok(Value::value_pair(Value::str(key.resolve()), val)))
-            }
-            // An enum member is its base type's value, so it answers that
-            // type's `ACCEPTS` (`Less.ACCEPTS(-1)` is `Int`'s, `True`; a
-            // `Str`-valued member's is `Str`'s): the smartmatch of the topic
-            // against the member, which compares by value (#13333).
-            // Cost: the smartmatch's, O(1) for a numeric member.
-            "ACCEPTS" => {
-                if args.is_empty() {
-                    return Some(Err(RuntimeError::new("ACCEPTS requires an argument")));
-                }
-                Some(Ok(Value::truth(
-                    crate::builtins::method_table::accepts_by_smartmatch(
-                        self, &args[0], target,
-                    ),
-                )))
-            }
-            "pred" => {
-                if index == 0 {
-                    // .pred on first element returns itself
-                    return Some(Ok(target.clone()));
-                }
-                if let Some(variants) = self.registry().enum_types.get(&enum_type.resolve())
-                    && let Some((prev_key, prev_val)) = variants.get(index - 1)
-                {
-                    return Some(Ok(Value::enum_parts(
-                        enum_type,
-                        Symbol::intern(prev_key),
-                        prev_val.clone(),
-                        index - 1,
-                    )));
-                }
-                // Fallback: return self if variants not found
-                Some(Ok(target.clone()))
-            }
-            "succ" => {
-                if let Some(variants) = self.registry().enum_types.get(&enum_type.resolve()) {
-                    if let Some((next_key, next_val)) = variants.get(index + 1) {
-                        return Some(Ok(Value::enum_parts(
-                            enum_type,
-                            Symbol::intern(next_key),
-                            next_val.clone(),
-                            index + 1,
-                        )));
-                    }
-                    // .succ on last element returns itself
-                    return Some(Ok(target.clone()));
-                }
-                // Fallback: return self if variants not found
-                Some(Ok(target.clone()))
-            }
-            _ => None,
-        }
+        crate::builtins::method_table::invoke_owner(self, owners, method, args, || {
+            target.clone()
+        })
     }
 
     /// Dispatch collection methods (.pairs, .keys, .values, .kv, .antipairs, .invert)
