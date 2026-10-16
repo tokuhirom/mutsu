@@ -11,7 +11,7 @@ impl Interpreter {
             return Ok(seq);
         }
         if let ValueView::Channel(ch) = target.view() {
-            return self.dispatch_channel_method(&ch, "Seq", Vec::new());
+            return Self::channel_list_coercion(&ch, "Seq");
         }
         Ok(match target.view() {
             ValueView::Seq(_) => target.clone(),

@@ -92,7 +92,7 @@ impl Interpreter {
     /// `Promise.scheduler`: the bound user scheduler, else the built-in one
     /// (the process `$*SCHEDULER`, which is what an unbound promise was
     /// constructed under).
-    pub(in crate::runtime) fn promise_scheduler_value(&mut self, shared: &SharedPromise) -> Value {
+    pub(crate) fn promise_scheduler_value(&mut self, shared: &SharedPromise) -> Value {
         if let Some(sched) = shared.scheduler() {
             return sched;
         }

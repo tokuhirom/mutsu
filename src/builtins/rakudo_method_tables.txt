@@ -35,6 +35,9 @@ only	CallFrame	SET-SELF	annotations	callframe	code	deprecate-IO-dash	file	langua
 declared	Capture	AT-KEY	AT-POS	Bool	Capture	EXISTS-KEY	EXISTS-POS	FLATTENABLE_HASH	FLATTENABLE_LIST	Numeric	Str	WHICH	antipairs	elems	from-args	gist	hash	keys	kv	list	pairs	raku	values
 methods	Capture	AT-KEY	AT-POS	BUILD	Bool	Capture	EXISTS-KEY	EXISTS-POS	FLATTENABLE_HASH	FLATTENABLE_LIST	Numeric	POPULATE	Str	WHICH	antipairs	elems	from-args	gist	hash	keys	kv	list	pairs	raku	values
 only	Capture	Capture	FLATTENABLE_HASH	FLATTENABLE_LIST	from-args	hash	list
+declared	Channel	Capture	Supply	close	closed	elems	fail	get-await-handle	iterator	list	poll	receive	send
+methods	Channel	BUILD	Capture	POPULATE	Supply	close	closed	elems	fail	get-await-handle	iterator	list	poll	receive	send
+only	Channel	Capture	close	closed	fail	get-await-handle	iterator	list	poll	receive	send
 declared	Code	ACCEPTS	Capture	POSITIONS	Str	arity	associative	assuming	bytecode-size	cando	clone	count	file	id	iffy	is-implementation-detail	line	name	new	of	outer	prec	precedence	reducer	returns	set_name	signature	static_id	thunky
 methods	Code	<anon>	ACCEPTS	Capture	POPULATE	POSITIONS	Str	arity	associative	assuming	bytecode-size	cando	count	file	iffy	is-implementation-detail	line	new	of	outer	prec	precedence	reducer	returns	signature	static_id	thunky
 only	Code	Capture	arity	associative	assuming	bytecode-size	cando	clone	count	file	id	iffy	is-implementation-detail	line	name	of	outer	precedence	reducer	returns	set_name	signature	static_id	thunky
@@ -170,6 +173,9 @@ only	Num	Bridge	Capture	Complex	FatRat	Int	Num	Range	Rat	UPGRADE-RAT	abs	acosec	
 declared	Pair	ACCEPTS	AT-KEY	Capture	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	Pair	Str	WHICH	abs-value	add-value	antipair	antipairs	clone	fmt	freeze	gist	invert	iterator	key	keyof	keys	kv	new	of	pairs	raku	value	values
 methods	Pair	ACCEPTS	AT-KEY	Capture	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	POPULATE	Pair	Str	WHICH	abs-value	add-value	antipair	antipairs	clone	fmt	freeze	gist	invert	iterator	key	keyof	keys	kv	new	of	pairs	raku	value	values
 only	Pair	Capture	FLATTENABLE_HASH	FLATTENABLE_LIST	Pair	abs-value	add-value	antipair	freeze	iterator	key	keyof	of	value
+declared	Promise	Bool	Supply	allof	andthen	anyof	at	break	broken	cause	get-await-handle	in	keep	kept	orelse	result	scheduler	sink	start	status	then	vow
+methods	Promise	BUILD	Bool	POPULATE	Supply	allof	andthen	anyof	at	break	broken	cause	get-await-handle	in	keep	kept	new	orelse	result	scheduler	sink	start	status	then	vow
+only	Promise	allof	andthen	anyof	at	cause	get-await-handle	in	orelse	result	scheduler	sink	start	status	then	vow
 declared	Range	ACCEPTS	ASSIGN-POS	AT-POS	Bag	BagHash	Bool	Capture	EXISTS-POS	Inf-Inf	Mix	MixHash	Numeric	Set	SetHash	Str	WHICH	append	bounds	contains	elems	ended-by	excludes-max	excludes-min	first	flat	fmt	generic-string-sequence	hyper	in-range	index	infinite	int-bounds	is-int	is-lazy	item	iterator	lazy	lazy-if	list	max	min	minmax	new	of	pick	pop	prepend	push	race	raku	rand	reverse	roll	shift	sum	unshift
 methods	Range	ACCEPTS	ASSIGN-POS	AT-POS	Bag	BagHash	Bool	Capture	EXISTS-POS	Inf-Inf	Mix	MixHash	Numeric	POPULATE	Set	SetHash	Str	WHICH	append	bounds	contains	elems	ended-by	excludes-max	excludes-min	first	flat	fmt	generic-string-sequence	hyper	in-range	index	infinite	int-bounds	is-int	is-lazy	item	iterator	lazy	lazy-if	list	max	min	minmax	new	of	pick	pop	prepend	push	race	raku	rand	reverse	roll	shift	sum	unshift
 only	Range	ASSIGN-POS	Capture	Inf-Inf	append	bounds	ended-by	excludes-max	excludes-min	first	flat	fmt	hyper	in-range	infinite	is-int	item	iterator	lazy	lazy-if	of	pop	prepend	push	race	rand	reverse	shift	unshift

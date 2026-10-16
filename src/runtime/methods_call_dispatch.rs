@@ -4154,25 +4154,39 @@ impl Interpreter {
             return result;
         }
 
-        // SharedPromise dispatch
-        if let ValueView::Promise(shared) = target.view() {
-            return self.dispatch_promise_method(&shared, method, args, &target);
+        // `Promise`'s and `Channel`'s methods are rows of the method table,
+        // found by their owner (ADR-11276 §9.118).
+        if let Some(owners) = crate::builtins::method_table::promise_channel_owners_of(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return result;
+        }
+        // `Any`'s list coercions a `Channel` inherits read `self.list`, the
+        // lazy list that receives one value per element (`Channel.list`).
+        if let ValueView::Channel(ch) = target.view()
+            && crate::builtins::method_table::CHANNEL_LIST_COERCIONS.contains(&method)
+        {
+            return Self::channel_list_coercion(&ch, method);
         }
 
-        // SharedChannel dispatch
-        if let ValueView::Channel(ch) = target.view() {
-            return self.dispatch_channel_method(&ch, method, args);
-        }
-
-        // Promise::Vow forwards keep/break
+        // A `Promise::Vow`'s `keep`/`break` and the internal names a user
+        // scheduler's cue calls.
         if let ValueView::Instance {
             class_name,
             attributes,
             ..
         } = target.view()
             && class_name.resolve() == "Promise::Vow"
+            && let Some(result) =
+                self.promise_vow_method(&(attributes).as_map(), method, args.clone())
         {
-            return self.dispatch_promise_vow_method(&(attributes).as_map(), method, args);
+            return result;
         }
 
         // Mixin fallback: check __mutsu_attr__ and delegate to inner
@@ -4320,7 +4334,7 @@ impl Interpreter {
         match target.view() {
             // The eager drain (`.list` pulls on demand, #12727).
             ValueView::Channel(ch) => Some(
-                self.dispatch_channel_method(&ch, "List", vec![])
+                Self::channel_list_coercion(&ch, "List")
                     .and_then(|list| self.list_to_capture(&list)),
             ),
             ValueView::Instance { class_name, .. } if class_name.resolve() == "Supply" => Some(

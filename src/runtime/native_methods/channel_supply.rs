@@ -48,7 +48,7 @@ const CLASS: &str = "__ChannelSupply";
 impl Interpreter {
     /// `$channel.Supply`.
     // Cost: O(1).
-    pub(in crate::runtime) fn make_channel_supply(ch: &SharedChannel) -> Value {
+    pub(crate) fn make_channel_supply(ch: &SharedChannel) -> Value {
         let mut producer_attrs = HashMap::new();
         producer_attrs.insert("channel".to_string(), Value::channel(ch.clone()));
         let producer = native_method_shim(

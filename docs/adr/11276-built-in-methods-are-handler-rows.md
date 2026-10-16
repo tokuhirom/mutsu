@@ -2815,6 +2815,36 @@ instance rendering (were the distribution's name). Left: `.content` answers an `
 implemented (`abspath`, `resource`, `name`, ...) have no row. `method-rows-report.py --arms`: the pure arity cascades go
 from 23 arms to 20, the runtime slow path from 536 to 497.
 
+### 9.118 Slice 3E remainder: `Promise`, `Promise::Vow` and `Channel` are rows, found by their owner (2026-10-16)
+
+`refactor/11276-promise-channel-rows`. A promise and a channel are native value kinds shared between threads
+(`ValueView::Promise`, `ValueView::Channel`), answered near the end of `call_method_with_values` by
+`dispatch_promise_method` and `dispatch_channel_method` (32 quoted-name arms in `methods_promise.rs`); a vow is a
+`Promise::Vow` instance whose `keep`/`break` had two copies, one there and one in the native-methods tier
+(`native_promise_vow`). Every method Rakudo declares on the three classes that mutsu implemented is now an `OWNER_ONLY`
+row (`io_concurrency/promise_channel.rs`): `Promise`'s `get-await-handle`, `result`, `status`, `scheduler`, `then`,
+`andthen`, `orelse`, `keep`, `break`, `cause`, `Bool`, `vow`; the vow's `keep`/`break`; `Channel`'s
+`get-await-handle`, `send`, `receive`, `poll`, `close`, `fail`, `list`, `closed`, `elems`, `Supply`. The rows are found
+by their owner at the place the arms were (`promise_channel::owners_of`), so the order against the rest of
+`call_method_with_values` is unchanged; the vow's two entries (the native-methods tier and `call_method_with_values`)
+reach the same row. The implementations are `Interpreter` methods in `methods_promise.rs`, one per method.
+
+No shape: the calls block, run user callbacks or wake other threads, so none is a candidate for the pure entries, and the
+owner entry takes the callable and object arguments the guard step would refuse. `Channel`'s `Seq`, `List` and `Array`
+are `Any`'s `self.list.METHOD` coercions in Rakudo (no row can be `Channel`'s); the interpreter answers them as
+`channel_list_coercion` (`.Seq` lazy, the other two draining until the close), which `.Seq`'s coercion entry and
+`.Capture` share. The arms for names neither class declares (`WHAT`, `isa`, `Str`, `gist`, `raku`) are gone: the
+general paths answer them. `Channel.elems` keeps a pure-cascade case, which calls the row's handler.
+
+Behaviour changes toward Rakudo, pinned in `t/concurrency/promise/promise-channel-method-rows.t`: `Channel.elems`
+dies with Rakudo's message (`Cannot determine number of elements on a Channel`); `Promise::Vow.Str` is the default
+instance rendering (`Promise::Vow<id>`, was `(Vow)`); `Channel.Str` is `Channel` from the value's own rendering (Rakudo:
+`Channel<id>`). Left: `Promise.Str` is `Promise(Planned)` from `value::display` where Rakudo writes `Promise<id>`; a
+user subclass of `Promise` or `Channel` is an instance answered by the native-methods tier (`native_promise`,
+`native_channel_mut`) on its attributes, a second representation in which `await` fails (#13634); the vow's internal
+`__mutsu_run_start`/`__mutsu_run_dispatch` names stay with the 3G remainder's `__mutsu_*` names.
+`method-rows-report.py --arms`: the runtime slow path loses 32 arms.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
