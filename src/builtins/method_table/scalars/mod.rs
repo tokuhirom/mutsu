@@ -35,6 +35,7 @@ pub(crate) mod str_interp;
 pub(crate) mod str_iter;
 pub(crate) mod str_numeric;
 pub(crate) mod str_search;
+mod str_search_interp;
 mod stringify;
 pub(crate) mod succ_pred;
 pub(crate) mod truth;
@@ -49,10 +50,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     str::COOL_TEXT_ROWS,
     str_iter::STR_ROWS,
     str_iter::COOL_ROWS,
-    str_search::STR_ROWS,
-    str_search::COOL_ROWS,
-    str_search::STR_SUBSTR_2,
-    str_search::COOL_SUBSTR_2,
+    str_search_interp::STR_ROWS,
+    str_search_interp::COOL_ROWS,
     stringify::ROWS,
     stringify::INT_ROWS,
     str_numeric::STR_ROWS,

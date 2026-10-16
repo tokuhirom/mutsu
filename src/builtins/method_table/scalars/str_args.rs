@@ -67,8 +67,6 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
         flags: RowFlags::ANY_ARGS.or(RowFlags::TYPE_OBJECT_OK),
         named: &[],
     },
-    row!("Str", "substr-eq", 1, Handler::Narrow(substr_eq)),
-    row!("Str", "substr-eq", 2, Handler::Narrow(substr_eq)),
     row!("Str", "Date", 0, Handler::Narrow(date)),
     row!("Str", "DateTime", 0, Handler::Narrow(date_time)),
     MethodRow {

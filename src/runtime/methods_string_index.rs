@@ -6,7 +6,7 @@ impl Interpreter {
     // Cost: O(c * (d + m)) amortized, d = chars from `$pos` to the match,
     // m = chars of a needle, c = needles, once the invocant's grapheme index is
     // cached (`$pos` and the hit are converted through it).
-    pub(super) fn dispatch_index(
+    pub(crate) fn dispatch_index(
         &self,
         target: Value,
         args: &[Value],
@@ -174,7 +174,7 @@ impl Interpreter {
     // Cost: O((pos - p) * m) amortized, p = match position, m = chars of the
     // needle: a byte-level reverse search from `$pos`, converted through the
     // cached grapheme index.
-    pub(super) fn dispatch_rindex(
+    pub(crate) fn dispatch_rindex(
         &self,
         target: Value,
         args: &[Value],

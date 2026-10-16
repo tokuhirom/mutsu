@@ -401,6 +401,75 @@ const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
 const COOL_COERCE_FOR_SHAPELESS: [&str; 7] =
     ["Real", "Num", "UInt", "Int", "Numeric", "Rat", "FatRat"];
 
+/// Answer a call by the first row of `owners` that binds it (ADR-11276
+/// §9.129): the receiver's MRO as `.^can` walks it, with the interpreter,
+/// after every receiver-specific answer declined. A row binds when it takes
+/// the call's arity, admits its arguments and named ones as the guard step
+/// would, admits a type object only with `TYPE_OBJECT_OK`, and its handler
+/// does not decline; otherwise the walk goes on to the next owner, as a
+/// multi candidate of a parent class is still a candidate in Rakudo
+/// (`Range.contains(/re/)` is `Cool`'s).
+// Cost: O(o * k) to find the rows, o = owners, k = rows named `method`, plus
+// O(a) per row to admit a arguments, plus the handlers' own cost.
+pub(crate) fn invoke_mro(
+    interp: &mut Interpreter,
+    owners: &[&str],
+    method: &str,
+    args: &[Value],
+    target: &Value,
+) -> Option<Result<Value, RuntimeError>> {
+    let method = Symbol::intern(method);
+    let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
+    let arity = args.len() - named_count;
+    let (named, positional): (Vec<Value>, Vec<Value>) = args
+        .iter()
+        .cloned()
+        .partition(|arg| arg.is_string_pair_value());
+    let type_object = matches!(target.view(), crate::value::ValueView::Package(_));
+    let mut declared = false;
+    let answer = owners.iter().find_map(|owner| {
+        declared |= super::owner_declares(owner, method);
+        let row = row(super::owner_row(Symbol::intern(owner), method, arity)?);
+        // An interpreter row reads any argument the way its routine does (a
+        // `Seq` of pairs for `trans`, a list of needles for `index`); only a
+        // `Junction`, which must autothread, is refused.
+        let admitted = if matches!(row.handler, Handler::Interp(_)) {
+            !positional
+                .iter()
+                .any(|arg| matches!(arg.view(), crate::value::ValueView::Junction { .. }))
+        } else {
+            admits_row(row, &positional)
+        };
+        if (type_object && !row.flags.contains(RowFlags::TYPE_OBJECT_OK))
+            || !named.iter().all(|pair| names_declared(row, pair))
+            || !admitted
+        {
+            return None;
+        }
+        call(
+            row,
+            Some(&mut *interp),
+            target,
+            &positional,
+            Named::new(&named),
+        )
+        .map(|(result, _)| result)
+    });
+    // An owner declares the method, but no candidate of any owner takes this
+    // many arguments: Rakudo's multi dispatch finds none (`"".subst`).
+    if answer.is_none()
+        && declared
+        && !owners
+            .iter()
+            .any(|owner| super::owner_row(Symbol::intern(owner), method, arity).is_some())
+    {
+        return Some(Err(
+            crate::runtime::methods_signature_errors::make_multi_no_match_error(method.as_str()),
+        ));
+    }
+    answer
+}
+
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,
 /// `List` or `Seq` declares, for a receiver with no shape (ADR-11276 §9.79,
 /// §9.80, §9.81).

@@ -41,7 +41,6 @@ macro_rules! text_rows {
             "fc" => fc,
             "tc" => tc,
             "tclc" => tclc,
-            "wordcase" => wordcase,
             "flip" => flip,
             "trim" => trim,
             "trim-leading" => trim_leading,
