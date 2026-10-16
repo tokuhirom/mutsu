@@ -30,6 +30,20 @@ impl Interpreter {
         if quoted_pseudo {
             self.dispatch.skip_pseudo_method_native = None;
         }
+        // `Promise`'s class methods (`start`, `in`, `at`, `kept`, `broken`,
+        // `allof`, `anyof`) are rows of the method table, found by their owner
+        // for a `Promise` type object or a subclass's (ADR-11276 §9.120).
+        if matches!(target.view(), ValueView::Package(_))
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                &["Promise"],
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return Some(result);
+        }
         match method {
             "are" => Some(self.dispatch_are(target, &args)),
             "classify" | "categorize" if matches!(target.view(), ValueView::Package(name) if name == "Supply") =>
@@ -158,7 +172,6 @@ impl Interpreter {
                     None
                 }
             }
-            "in" => self.dispatch_promise_in(&target, &args),
             "THREAD" => {
                 if let ValueView::Junction { values, .. } = target.view() {
                     let code = args.first().cloned().unwrap_or(Value::NIL);
@@ -182,19 +195,12 @@ impl Interpreter {
                 }
                 None
             }
-            "at" => self.dispatch_promise_at(&target, &args),
-            "kept" => self.dispatch_promise_kept(&target, &args),
-            "broken" => self.dispatch_promise_broken(&target, &args),
             // `X::AdHoc.from-slurpy(3, False, "Not here")` — the documented
             // class method that builds an `X::AdHoc` out of a slurpy argument
-            // list. Sits alongside the other native class methods on builtin
-            // type objects (`Promise.allof`, `Promise.in`, ...) rather than in
-            // the arity-keyed native tables, because it is variadic.
+            // list, variadic, so not in the arity-keyed native tables.
             "from-slurpy" if matches!(target.view(), ValueView::Package(n) if n == "X::AdHoc") => {
                 Some(self.dispatch_adhoc_from_slurpy(&args))
             }
-            "allof" => self.dispatch_promise_allof(&target, &args),
-            "anyof" => self.dispatch_promise_anyof(&target, &args),
             "WHAT" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_what(&target, args)),
             "HOW" if !quoted_pseudo => Some(self.dispatch_how(&target, &args)),
             "WHO" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_who(&target)),

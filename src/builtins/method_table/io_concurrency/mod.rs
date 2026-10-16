@@ -20,6 +20,7 @@ mod io_path_stat;
 mod io_spec;
 mod io_special;
 pub(crate) mod promise_channel;
+mod promise_class;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -35,4 +36,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     io_special::ROWS,
     concurrency_state::ROWS,
     promise_channel::ROWS,
+    promise_class::ROWS,
 ];
