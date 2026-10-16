@@ -489,7 +489,8 @@ fn compute_flags(s: &str) -> u16 {
         f |= flags::DYNAMIC_VAR_ENV_KEY;
     }
     if s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
-        && s.chars().all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
     {
         f |= flags::UPPER_IDENT_KEY;
     }
