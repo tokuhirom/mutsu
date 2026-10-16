@@ -778,6 +778,17 @@ impl Interpreter {
             let method = if bind_method_available {
                 Some(bind_method)
             } else if self.has_user_method(&cls, assign_method) {
+                // `$obj<k> := $v` on an object that stores through `ASSIGN-KEY`
+                // but has no `BIND-KEY` cannot bind: rakudo dies `X::Bind`
+                // (LibXML::Dict, `dies-ok { $dict<e> := $e }`).
+                if is_bind {
+                    return Err(RuntimeError::typed(
+                        "X::Bind",
+                        [("target".to_string(), Value::str(cls.clone()))]
+                            .into_iter()
+                            .collect(),
+                    ));
+                }
                 Some(assign_method)
             } else {
                 None
