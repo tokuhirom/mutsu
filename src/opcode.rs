@@ -1,5 +1,6 @@
 mod attribute_decl;
 mod proto_decl;
+mod role_body_outer_refs;
 
 pub(crate) use attribute_decl::{AttrDeclChunks, CompiledAttrDecl};
 
@@ -6281,8 +6282,10 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// execution path every composition entry point runs (ADR-0019 D8-2).
     /// See [`DeferredBodyOp`].
     pub(crate) deferred_body_ops: Vec<DeferredBodyOp>,
-    /// The declaring frame's local slots a role-body `:=` declaration binds
-    /// (`role R { my $w := $z }`, `my \x := $z`), a subset of
+    /// The declaring frame's local slots the role's deferred body names: a
+    /// role-body `:=` declaration's source (`role R { my $w := $z }`, `my \x
+    /// := $z`) and every other outer lexical it reads or writes (`role R {
+    /// $count++ }`, ADR-12529 §3 slice 34), a subset of
     /// `method_outer_lexical_slots`. The deferred body runs only at
     /// composition, as a separate chunk that reaches `$z` by name, so the
     /// role registration boxes each of these into a shared cell (slot and
@@ -12758,13 +12761,22 @@ impl CompiledCode {
         let our_scope_violation =
             role_body_our_scope_violation(body).map(crate::static_str::StaticStr);
         let body_plan = role_body_plan(body);
-        let body_bind_source_slots = body_bind_source_slots(
+        let deferred_raw = || {
             body_plan.iter().filter_map(|op| match op {
                 RoleBodyOp::Deferred { raw, .. } => Some(raw.as_ref()),
                 _ => None,
-            }),
+            })
+        };
+        let mut body_bind_source_slots =
+            body_bind_source_slots(deferred_raw(), &method_outer_lexical_slots);
+        for slot in role_body_outer_refs::role_body_outer_ref_slots(
+            deferred_raw(),
             &method_outer_lexical_slots,
-        );
+        ) {
+            if !body_bind_source_slots.contains(&slot) {
+                body_bind_source_slots.push(slot);
+            }
+        }
         let plan_idx = self.role_decl_plans.len() as u32;
         self.role_decl_plans.push(CompiledRoleDeclPlan {
             name: *name,
