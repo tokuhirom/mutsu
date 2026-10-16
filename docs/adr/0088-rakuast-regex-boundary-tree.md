@@ -1631,3 +1631,14 @@ modifier before the outer atom parser could classify it. The focused
 `t/rakuast/rakuast-regex-block-range-ratchet.t` pins the measured structure and
 EVAL behavior; `t/regex/regex-alias-repeat-code-count.t` exercises the cohort
 through the frontend mode.
+
+## 68. Dynamic match-position adverbs (2026-10-17)
+
+`m:p(EXPR)` / `m:pos(EXPR)` and `m:c(EXPR)` / `m:continue(EXPR)` retain their
+expression as the value of the corresponding `QuotedRegex` colonpair. Lowering
+separates a non-literal argument back into `Expr::MatchRegexDynamicAdverbs` and
+keeps the flag in the runtime value, so the existing VM reevaluates the
+expression for every match. Literal integer offsets continue through the
+ordinary static-adverb path. The focused RakuAST test pins the node fields and
+EVAL lowering; `t/regex/regex-dynamic-pos-adverb.t` exercises dynamic position
+and continue behavior through the frontend mode.

@@ -220,7 +220,8 @@ pub(super) fn adverb_node(adverb: &RegexAdverb) -> Result<RakuAstNode, RuntimeEr
         .ok_or_else(|| unsupported_what("regex adverb argument"))?;
     let value = convert_expr(&expr)?;
     // What cannot be spelled again cannot be lowered: refuse it here.
-    if argument_text(&value).is_none() {
+    let dynamic_position = matches!(adverb.name.as_str(), "p" | "pos" | "c" | "continue");
+    if argument_text(&value).is_none() && !dynamic_position {
         return Err(unsupported_what("regex adverb argument"));
     }
     let semilist = RakuAstNode {
@@ -324,6 +325,62 @@ pub(super) fn lower_adverb(node: &RakuAstNode) -> Result<RegexAdverb, RuntimeErr
         }
         _ => Err(unsupported(node)),
     }
+}
+
+pub(super) struct LoweredMatchAdverbs {
+    pub(super) adverbs: Vec<RegexAdverb>,
+    pub(super) pos_expr: Option<Box<crate::ast::Expr>>,
+    pub(super) continue_expr: Option<Box<crate::ast::Expr>>,
+}
+
+/// Split dynamic `m:p(EXPR)` / `m:c(EXPR)` values from the static adverbs so
+/// lowering can reuse the parser's existing per-match expression path.
+pub(super) fn lower_match_adverbs(node: &RakuAstNode) -> Result<LoweredMatchAdverbs, RuntimeError> {
+    let mut adverbs = Vec::new();
+    let mut pos_expr = None;
+    let mut continue_expr = None;
+    if let Some(field) = node
+        .fields
+        .iter()
+        .find(|field| field.name == Some("adverbs"))
+    {
+        let RakuAstFieldValue::List(items) = &field.value else {
+            return Err(unsupported(node));
+        };
+        for item in items {
+            let adverb = rakuast_node_of(item).ok_or_else(|| unsupported(node))?;
+            if adverb.class == RakuAstClass::ColonPairValue {
+                let key = leaf_str(adverb, "key")?;
+                let dynamic_slot = match key.as_str() {
+                    "p" | "pos" => Some(&mut pos_expr),
+                    "c" | "continue" => Some(&mut continue_expr),
+                    _ => None,
+                };
+                if let Some(slot) = dynamic_slot {
+                    let argument = named_child(adverb, "value")?;
+                    let expression =
+                        parenthesized_expression(argument).ok_or_else(|| unsupported(adverb))?;
+                    if expression.class != RakuAstClass::IntLiteral {
+                        if slot.is_some() {
+                            return Err(unsupported(adverb));
+                        }
+                        *slot = Some(Box::new(lower_expr(expression)?));
+                        adverbs.push(RegexAdverb {
+                            name: key,
+                            argument: None,
+                        });
+                        continue;
+                    }
+                }
+            }
+            adverbs.push(lower_adverb(adverb)?);
+        }
+    }
+    Ok(LoweredMatchAdverbs {
+        adverbs,
+        pos_expr,
+        continue_expr,
+    })
 }
 
 /// The expression of `(EXPR)`: a parenthesis holding one statement.

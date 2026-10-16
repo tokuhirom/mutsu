@@ -8,18 +8,14 @@ use crate::regex_tree::RegexAdverb;
 
 /// The outer adverbs of an `rx//` (or, with `match_time`, an `m//`) as the
 /// `QuotedRegex` adverbs the RakuAST lowering can turn back into the same
-/// execution value, spelled as written (`g`, `2x`, `x(2)`, `nth(1,3)`). `None`
-/// when any adverb is outside that set, or a position argument is an
-/// expression only evaluated at match time; the literal then keeps its
-/// value-only path.
+/// execution value, spelled as written (`g`, `2x`, `x(2)`, `nth(1,3)`). Dynamic
+/// `:pos` and `:continue` expressions remain adverb values here; lowering
+/// separates them into the existing match-time expression path.
 // Cost: O(a), a = number of adverbs.
 pub(super) fn rakuast_regex_adverbs(
     adverbs: &MatchAdverbs,
     match_time: bool,
 ) -> Option<Vec<RegexAdverb>> {
-    if adverbs.pos_expr.is_some() || adverbs.continue_expr.is_some() {
-        return None;
-    }
     adverbs
         .source
         .iter()

@@ -3251,6 +3251,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
             quoted_regex_node(tree)
         }
+        Expr::MatchRegexDynamicAdverbs { value, .. } => value
+            .regex_source_tree()
+            .ok_or_else(|| unsupported("dynamic match regex without a source tree"))
+            .and_then(quoted_regex_node),
         Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args, .. } => {
             if name.as_str() == "__object_hash" {
                 let mut fields = Vec::with_capacity(2);

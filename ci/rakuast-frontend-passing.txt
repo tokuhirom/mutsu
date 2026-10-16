@@ -303,12 +303,14 @@ t/collections/lazy-seq/iteration-buffer.t
 t/collections/lazy-seq/iteration-end-sentinel-object.t
 t/collections/lazy-seq/iterationbuffer-any-list-methods.t
 t/collections/lazy-seq/iterationbuffer-raku-gist.t
+t/collections/lazy-seq/iterationbuffer-rows.t
 t/collections/lazy-seq/iterationbuffer-subclass-new-storage.t
 t/collections/lazy-seq/iterator-held-in-array-advances.t
 t/collections/lazy-seq/iterator-itemized-array.t
 t/collections/lazy-seq/iterator-lazy-source-no-materialize.t
 t/collections/lazy-seq/iterator-map-grep-stream-vm-pull.t
 t/collections/lazy-seq/iterator-map-grep-streams.t
+t/collections/lazy-seq/iterator-protocol-rows.t
 t/collections/lazy-seq/iterator-pull-from-lazy-source.t
 t/collections/lazy-seq/iterator-push-into-iterationbuffer.t
 t/collections/lazy-seq/iterator-push-methods.t
@@ -489,6 +491,7 @@ t/collections/range-pair/pair-subscript-stores-into-a-container-value.t
 t/collections/range-pair/pair-type.t
 t/collections/range-pair/pair-typed-value-container.t
 t/collections/range-pair/pair-unique-seq.t
+t/collections/range-pair/pair-value-anon-scalar-container.t
 t/collections/range-pair/pair-value-assign-binds-container.t
 t/collections/range-pair/pair-value-assign-vivify.t
 t/collections/range-pair/pair-value-consumers-accept-both-flavors.t
@@ -971,6 +974,7 @@ t/concurrency/nqp-async-timer-queue.t
 t/concurrency/nqp-async-watchfile.t
 t/concurrency/nqp-spawnprocasync.t
 t/concurrency/proc-async-divergences.t
+t/concurrency/proc-async-method-rows.t
 t/concurrency/proc-async-slurpy-command.t
 t/concurrency/proc-async.t
 t/concurrency/procasync-final-grapheme-holdback.t
@@ -1139,6 +1143,7 @@ t/concurrency/supply/supply-live-tail.t
 t/concurrency/supply/supply-map.t
 t/concurrency/supply/supply-max.t
 t/concurrency/supply/supply-merge-class-method-array.t
+t/concurrency/supply/supply-method-rows.t
 t/concurrency/supply/supply-min.t
 t/concurrency/supply/supply-multi-whenever-done.t
 t/concurrency/supply/supply-nested-on-demand-quit-propagation.t
@@ -1321,6 +1326,7 @@ t/concurrency/thread-lock/thread-late-declared-array-push.t
 t/concurrency/thread-lock/thread-param-mask-panic-unwind.t
 t/concurrency/thread-lock/thread-pool-stack-budget.t
 t/concurrency/thread-lock/thread-rw-param-captured-scalar.t
+t/concurrency/thread-lock/thread-seq-class-method-rows.t
 t/concurrency/thread-lock/thread-shared-scalar-visibility.t
 t/concurrency/thread-lock/thread-stack-id.t
 t/concurrency/thread-lock/thread-start-join.t
@@ -1986,6 +1992,7 @@ t/grammar/user-infix-longest-token-builtins.t
 t/io/argfiles-eof-stdin.t
 t/io/assuming-capture-slurpy-regression.t
 t/io/builtin-method-wrap-io-handle-print.t
+t/io/cathandle-method-rows.t
 t/io/chdir-adverbs.t
 t/io/chdir-path-check.t
 t/io/chmod-allomorph.t
@@ -2939,6 +2946,7 @@ t/modules/module-local-class-shadows-builtin-ns.t
 t/modules/module-local-type-shadows-builtin.t
 t/modules/module-method-lexical-sub.t
 t/modules/module-method-resolves-in-its-own-unit.t
+t/modules/module-nested-sub-captures-routine-array.t
 t/modules/module-noarg-default-private-sub-comma.t
 t/modules/module-our-globals-outlive-scope.t
 t/modules/module-own-dynamic-does-not-leak.t
@@ -3030,6 +3038,7 @@ t/modules/package-block-my-sub-hoist.t
 t/modules/package-body-routine-family-is-lexical.t
 t/modules/package-constant-alias-qualified-sub.t
 t/modules/package-hash-subscript-vivify.t
+t/modules/package-less-module-file-scope-lexicals.t
 t/modules/package-lexical-rebind-keeps-alias.t
 t/modules/package-lexical-subrule.t
 t/modules/package-lookup.t
@@ -3442,6 +3451,7 @@ t/oo/attribute/attribute-key-and-value-types.t
 t/oo/attribute/attribute-lazy-initialization.t
 t/oo/attribute/attribute-lowercase-subset-checked-at-construction.t
 t/oo/attribute/attribute-meta-object-identity.t
+t/oo/attribute/attribute-method-rows.t
 t/oo/attribute/attribute-nil-argument-default.t
 t/oo/attribute/attribute-of-trait-order.t
 t/oo/attribute/attribute-own-compose-hook.t
@@ -3585,6 +3595,7 @@ t/oo/class/class-attr-mutation.t
 t/oo/class/class-basic.t
 t/oo/class/class-body-bind-aliases-outer-lexical.t
 t/oo/class/class-body-captured-var-writeback-coherence.t
+t/oo/class/class-body-in-routine-writes-outer-lexical.t
 t/oo/class/class-body-lexical-read.t
 t/oo/class/class-body-my-lexical-scope.t
 t/oo/class/class-body-my-shadows-outer-lexical.t
@@ -3798,6 +3809,7 @@ t/oo/method/class-body-lexical-shadowed-by-method-closure.t
 t/oo/method/class-body-use-import-visible-in-method.t
 t/oo/method/class-body-write-to-method-captured-lexical.t
 t/oo/method/class-eval-method.t
+t/oo/method/class-method-rows.t
 t/oo/method/classhow-lookup-method-instance-callable.t
 t/oo/method/classhow-lookup-method-is-dispatcher-multi.t
 t/oo/method/classhow-method-names.t
@@ -3833,10 +3845,12 @@ t/oo/method/control-resume-method-warn.t
 t/oo/method/cool-failure-method-row.t
 t/oo/method/cool-real-method-rows.t
 t/oo/method/cool-str-conversion-method-rows.t
+t/oo/method/cool-text-methods-by-mro.t
 t/oo/method/core-math-method-rows.t
 t/oo/method/core-type-method-object-call-on-instance.t
 t/oo/method/core-type-method-object-call.t
 t/oo/method/counted-head-tail-method-rows.t
+t/oo/method/date-class-method-rows.t
 t/oo/method/date-method-rows.t
 t/oo/method/datetime-method-rows.t
 t/oo/method/declares-method-on-mixed-in-how.t
@@ -3855,6 +3869,7 @@ t/oo/method/empty-body-method-compiled.t
 t/oo/method/end-listop-and-method.t
 t/oo/method/enum-enums-method.t
 t/oo/method/enum-value-type-only-method-param.t
+t/oo/method/enumeration-method-rows.t
 t/oo/method/explicit-at-underscore-param-method-call.t
 t/oo/method/fast-method-cache-attributive-param-writeback.t
 t/oo/method/fast-method-call-param-count.t
@@ -4369,6 +4384,7 @@ t/oo/role/qualified-runtime-role-default.t
 t/oo/role/raku-container-mixin-role-raku.t
 t/oo/role/rational-role.t
 t/oo/role/return-type-imported-parameterized-role.t
+t/oo/role/role-also-is-parent.t
 t/oo/role/role-anonymous-enum.t
 t/oo/role/role-assign-key-hash-subclass.t
 t/oo/role/role-attr-default-captured-scope.t
@@ -4404,6 +4420,7 @@ t/oo/role/role-body-sub-proto.t
 t/oo/role/role-body-use-at-declaration.t
 t/oo/role/role-body-use-flat-role-name.t
 t/oo/role/role-body-use-survives-block-scope-rollback.t
+t/oo/role/role-body-writes-declaration-site-lexicals.t
 t/oo/role/role-bounded-env-sync.t
 t/oo/role/role-builtin-parent.t
 t/oo/role/role-callable-param-and-custom-container.t
@@ -4896,6 +4913,7 @@ t/rakuast/rakuast-regex-arg-expressions.t
 t/rakuast/rakuast-regex-argumented-aliases.t
 t/rakuast/rakuast-regex-argumented-subrules.t
 t/rakuast/rakuast-regex-assertions-and-backrefs.t
+t/rakuast/rakuast-regex-block-range-ratchet.t
 t/rakuast/rakuast-regex-blocks-properties-quotes.t
 t/rakuast/rakuast-regex-boundaries-and-args.t
 t/rakuast/rakuast-regex-char-class-assertions.t
@@ -4906,8 +4924,10 @@ t/rakuast/rakuast-regex-decl-trivia-and-modifiers.t
 t/rakuast/rakuast-regex-declaration-code-blocks.t
 t/rakuast/rakuast-regex-internal-modifier.t
 t/rakuast/rakuast-regex-match-markers.t
+t/rakuast/rakuast-regex-mid-pattern-anchor.t
 t/rakuast/rakuast-regex-modifiers-anchors.t
 t/rakuast/rakuast-regex-named-default-pointy.t
+t/rakuast/rakuast-regex-nul-followed-by-digit.t
 t/rakuast/rakuast-regex-outer-adverbs.t
 t/rakuast/rakuast-regex-placeholders-and-callees.t
 t/rakuast/rakuast-regex-proto-multi.t
@@ -5201,6 +5221,7 @@ t/regex/recursive-frugal-regex-subrule.t
 t/regex/regex-accepts-method.t
 t/regex/regex-adverb-error.t
 t/regex/regex-alias-quantified-positional.t
+t/regex/regex-alias-repeat-code-count.t
 t/regex/regex-alias-subrule-quantified.t
 t/regex/regex-alias-zero-width-assertion.t
 t/regex/regex-aliased-group-subcap.t
@@ -5213,9 +5234,11 @@ t/regex/regex-atom-run-giveback-prune.t
 t/regex/regex-attribute-twigil-rejected.t
 t/regex/regex-backref-in-group.t
 t/regex/regex-backslash-negated-classes.t
+t/regex/regex-backslash-zero-nul.t
 t/regex/regex-basic.t
 t/regex/regex-bool-lexical-topic.t
 t/regex/regex-boundary-assertions-bcg.t
+t/regex/regex-caret-mid-pattern.t
 t/regex/regex-carrier-writeback-coherence.t
 t/regex/regex-cclass-parity.t
 t/regex/regex-code-assertion-quoted-braces.t
@@ -5408,6 +5431,7 @@ t/regex/rx-value-interpolation-not-cached-across-calls.t
 t/regex/self-in-regex-code-block.t
 t/regex/subrule-code-var-holding-named-regex.t
 t/regex/subset-regex-return-check.t
+t/regex/subst/closure-substitution-on-captured-var-writes-through-cell.t
 t/regex/subst/eval-subst-writeback.t
 t/regex/subst/failed-subst-is-nil.t
 t/regex/subst/gate-b-subst-and-phaser-fold.t
@@ -5620,6 +5644,8 @@ t/routines/call/return-coercion-lazy-gather.t
 t/routines/call/return-comma-recursion.t
 t/routines/call/return-constraint-malformed.t
 t/routines/call/return-from-nested-block.t
+t/routines/call/return-merge-skips-plain-lexicals.t
+t/routines/call/return-merge-skips-uppercase-keys.t
 t/routines/call/return-modifier.t
 t/routines/call/return-pipe-scalar-context.t
 t/routines/call/return-rw-container-values.t
@@ -5673,6 +5699,7 @@ t/routines/closure/assuming-type-capture.t
 t/routines/closure/block-sub-closure-binding-activation.t
 t/routines/closure/block-sub-closure-binding-calls.t
 t/routines/closure/block-sub-closure-binding.t
+t/routines/closure/cas-in-closure-celled-store-reaches-declarer.t
 t/routines/closure/closure-arg-shares-its-captured-container.t
 t/routines/closure/closure-attr-element-write.t
 t/routines/closure/closure-body-shared-per-pool-slot.t
@@ -5721,6 +5748,8 @@ t/routines/closure/closure-nested-writeback.t
 t/routines/closure/closure-readonly-freevar-live.t
 t/routines/closure/closure-rebind-reaches-declaring-frame-through-linked-callee.t
 t/routines/closure/closure-rebind-seen-by-siblings.t
+t/routines/closure/closure-rebinds-captured-container-through-cell.t
+t/routines/closure/closure-rebinds-captured-immutable-container.t
 t/routines/closure/closure-sees-by-name-write.t
 t/routines/closure/closure-sees-later-rebind.t
 t/routines/closure/closure-selective-env-sync.t
@@ -5733,6 +5762,7 @@ t/routines/closure/end-phaser-closure-capture-refresh.t
 t/routines/closure/escaped-closure-elem-incdec-delete.t
 t/routines/closure/escaped-my-sub-closure-two-methods.t
 t/routines/closure/eval-closure-imported-sub.t
+t/routines/closure/eval-closure-writes-caller-lexical-cell.t
 t/routines/closure/feed-and-lazy-closure-seq.t
 t/routines/closure/frame-lexical-inner-sub-closures.t
 t/routines/closure/frame-lexical-sub-called-from-closure.t
@@ -5752,6 +5782,7 @@ t/routines/closure/pointy-block-placeholder.t
 t/routines/closure/pointy-block-return-type.t
 t/routines/closure/proxy-fetch-closure-scope.t
 t/routines/closure/qqx-closure-interpolation.t
+t/routines/closure/quanthash-values-loop-in-closure-writes-back.t
 t/routines/closure/reentrant-closure-array-capture.t
 t/routines/closure/sequence-closure-endpoint-over-256.t
 t/routines/closure/sequence-closure-returns-seq.t
@@ -5760,6 +5791,7 @@ t/routines/closure/state-closure-clone-lifetime.t
 t/routines/closure/typed-hash-assign-in-closure-keeps-type.t
 t/routines/closure/user-class-instance-element-write-through-closure.t
 t/routines/closure/user-infix-closure-arg-writeback.t
+t/routines/closure/user-infix-closure-operand-escapes.t
 t/routines/closure/whatever-rw-and-currying.t
 t/routines/closure/whatever-xz-currying.t
 t/routines/closure/whatevercode-call-arg-value.t
@@ -5778,6 +5810,7 @@ t/routines/closure/wrap-original-runs-compiled-body.t
 t/routines/closure/wrap-our-sub-qualified-call.t
 t/routines/closure/wrap-reentrant-my-sub-wrapper.t
 t/routines/closure/wrap.t
+t/routines/code-routine-rows.t
 t/routines/collection-map-named-array-noncallable.t
 t/routines/conversion-functions.t
 t/routines/core-postcircumfix-routine.t
@@ -6809,6 +6842,7 @@ t/types/mu-set-why-on-instance.t
 t/types/mu-str-rows.t
 t/types/mu-type-object-no-any-methods.t
 t/types/my-typed-decl-in-loop.t
+t/types/named-sub-rebinds-typed-outer-container.t
 t/types/nil-any-identity.t
 t/types/nil-exists-pos-key.t
 t/types/nil-key-value-views.t
@@ -7054,6 +7088,7 @@ t/types/temporal/date-datetime-raku.t
 t/types/temporal/date-datetime-subclass-class-name.t
 t/types/temporal/date-format-methods.t
 t/types/temporal/date-subclass-methods.t
+t/types/temporal/date-subclass-narg-rows.t
 t/types/temporal/date-subclass-owner-rows.t
 t/types/temporal/date-subclass-qualified-new-and-arith.t
 t/types/temporal/date-whatever-and-daycount.t
@@ -7289,6 +7324,7 @@ t/vm/frames/deferred-map-grep-plan-reuse.t
 t/vm/frames/deferred-map-read-paths.t
 t/vm/frames/frame-env-our-code-var.t
 t/vm/frames/light-call-bare-type-accepts-type-object.t
+t/vm/frames/light-call-carries-runtime-name-writes.t
 t/vm/frames/light-call-definite-return.t
 t/vm/frames/light-call-frame-writes-dedup.t
 t/vm/frames/light-call-state-leak-on-panic-unwind.t
