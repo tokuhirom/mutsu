@@ -1380,10 +1380,11 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    constraint is its element type, checked by every element store whether
    the container sits in a cell or not (a closure's typed container already
    takes one at its declaration). So `sub f { @declared := @src }` with a
-   `my Cool @declared` rebound only the sub's own entry. An `@`/`%` is now
-   kept out of the cell only for a native element type, as
-   `box_decl_local_container_cell` does. Pinned by
-   `t/types/named-sub-rebinds-typed-outer-container.t`.
+   `my Cool @declared` rebound only the sub's own entry. An `@`/`%` name
+   now always takes the cell (a native element type such as JSON::Fast's
+   `my str @out` already did, as a value type). Pinned by
+   `t/types/named-sub-rebinds-typed-outer-container.t` and
+   `t/modules/module-nested-sub-captures-routine-array.t`.
 
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
