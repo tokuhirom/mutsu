@@ -52,7 +52,6 @@ impl Interpreter {
             )));
         }
         match method {
-            "Seq" if args.is_empty() => Some(self.dispatch_seq_coercion(target)),
             "list" | "Array" if args.is_empty() => {
                 if let ValueView::Instance {
                     class_name,
@@ -97,153 +96,12 @@ impl Interpreter {
                 }
                 None
             }
-            // A Channel drains its items (blocking receives), not one-item-wraps.
-            "List" if args.is_empty() && matches!(target.view(), ValueView::Channel(_)) => None,
-            "List" if args.is_empty() => Some(self.dispatch_list_coercion(target)),
-            "Set" | "SetHash" if args.is_empty() => {
-                let result = match self.dispatch_to_set_with_what(target, method) {
-                    Ok(r) => r,
-                    Err(e) => return Some(Err(e)),
-                };
-                // If SetHash, ensure the mutable flag is set
-                if method == "SetHash" {
-                    return Some(Ok(result.quanthash_with_mutability(true)));
-                }
-                Some(Ok(result))
-            }
-            "Bag" | "BagHash" if args.is_empty() => {
-                let result = match self.dispatch_to_bag_with_what(target, method) {
-                    Ok(r) => r,
-                    Err(e) => return Some(Err(e)),
-                };
-                // If BagHash, ensure the mutable flag is set
-                if method == "BagHash" {
-                    return Some(Ok(result.quanthash_with_mutability(true)));
-                }
-                Some(Ok(result))
-            }
-            "new-from-pairs" => {
-                // Bag.new-from-pairs(...) / BagHash.new-from-pairs(...)
-                // Takes pairs as arguments and uses pair values as counts.
-                if let ValueView::Package(name) = target.view() {
-                    let cn = name.resolve();
-                    if matches!(cn.as_str(), "Bag" | "BagHash") {
-                        // Check for lazy inputs
-                        for a in &args {
-                            if Self::is_lazy_for_coerce(a) {
-                                return Some(Err(RuntimeError::cannot_lazy_what(&cn)));
-                            }
-                        }
-                        // Collect all items, flattening arrays
-                        let mut all_items = Vec::new();
-                        for arg in &args {
-                            match arg.view() {
-                                ValueView::Array(items, ..) => {
-                                    all_items.extend(items.iter().cloned());
-                                }
-                                _ => all_items.push(arg.clone()),
-                            }
-                        }
-                        // Convert items to a temporary array and use dispatch_to_bag
-                        let arr = Value::array(all_items);
-                        let result = match self.dispatch_to_bag_with_what(arr, &cn) {
-                            Ok(r) => r,
-                            Err(e) => return Some(Err(e)),
-                        };
-                        if cn == "BagHash" {
-                            return Some(Ok(result.quanthash_with_mutability(true)));
-                        }
-                        return Some(Ok(result));
-                    }
-                }
-                None
-            }
-            "Mix" if args.is_empty() => Some(self.dispatch_to_mix_with_what(target, method)),
-            "MixHash" if args.is_empty() => {
-                // `.MixHash` is `.Mix` plus the mutable flag and embedded `MixHash`
-                // type metadata; the metadata lives in the `Mix` Arc, so the
-                // whole coercion is a pure value op shared with the VM native path.
-                Some(crate::builtins::quanthash_coerce::to_mixhash(target))
-            }
             "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
                 self.dispatch_setty_baggy_mixy(&target, method)
-            }
-            "Map" | "Hash" if args.is_empty() => {
-                // `.Hash` on the Any type object — notably an uninitialized
-                // `my $d` (PLAN 8.5 step 3 seeds Any) — is the empty hash,
-                // exactly like the Nil arm below.
-                if method == "Hash" && target.is_any_type_object() {
-                    return Some(Ok(Value::hash(ValueMap::default())));
-                }
-                if matches!(target.view(), ValueView::Package(_)) {
-                    return Some(Ok(Value::package(Symbol::intern(method))));
-                }
-                // `.Map` / `.Hash` are pure value coercions (the `Map`
-                // declared-type is embedded in the resulting `Hash` Arc,
-                // not an interpreter-owned side table). Single impl shared with
-                // the VM native path.
-                if method == "Map" {
-                    return Some(crate::builtins::map_hash_coerce::to_map(target));
-                }
-                // `.Hash` on an undefined invocant (`my $d`; a bare `Nil`) is the
-                // empty hash, like the `.hash` method. (`.Map` still throws on
-                // an undefined invocant, matching raku, so this is Hash-only.)
-                if target.is_nil() {
-                    return Some(Ok(Value::hash(ValueMap::default())));
-                }
-                Some(crate::builtins::map_hash_coerce::to_hash(target, true))
-            }
-            "hash" if args.is_empty() && !matches!(target.view(), ValueView::Instance { .. }) => {
-                Some(self.dispatch_to_hash(target))
-            }
-            "slice" => {
-                // Seq.slice(@indices) — return elements at the given indices as a Seq.
-                // Seq.slice() with no args returns an empty Seq.
-                let items = if let ValueView::Seq(arc) = target.view() {
-                    arc.to_vec()
-                } else {
-                    crate::runtime::utils::value_to_list(&target)
-                };
-                if args.is_empty() {
-                    Some(Ok(Value::seq(Vec::new())))
-                } else {
-                    let mut result = Vec::with_capacity(args.len());
-                    for arg in &args {
-                        // Expand each argument to zero or more 0-based indices, in
-                        // order: a plain number is a single index, while a Range
-                        // (`3..6`) contributes every index it spans, so
-                        // `.slice(0, 3..6, 8)` gathers indices 0,3,4,5,6,8.
-                        let indices: Vec<usize> = match arg.view() {
-                            ValueView::Int(i) if i >= 0 => vec![i as usize],
-                            ValueView::Num(n) if n >= 0.0 => vec![n as usize],
-                            _ if arg.is_range() => crate::runtime::utils::value_to_list(arg)
-                                .iter()
-                                .filter_map(|v| match v.view() {
-                                    ValueView::Int(i) if i >= 0 => Some(i as usize),
-                                    _ => None,
-                                })
-                                .collect(),
-                            _ => Vec::new(),
-                        };
-                        for i in indices {
-                            if i < items.len() {
-                                result.push(items[i].clone());
-                            }
-                        }
-                    }
-                    Some(Ok(Value::seq(result)))
-                }
             }
             "elems" => self.dispatch_elems_method(target, args),
             "pop" => Some(self.dispatch_pop_method(target, args)),
             "snip" => self.dispatch_snip_method(target, method, args),
-            "take" if args.is_empty() => {
-                match self.take_value(target.clone()) {
-                    Ok(_) => {}
-                    Err(e) => return Some(Err(e)),
-                }
-                Some(Ok(target))
-            }
             _ => None,
         }
     }

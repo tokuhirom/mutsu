@@ -3,7 +3,7 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Dispatch .Seq coercion method
-    pub(super) fn dispatch_seq_coercion(&mut self, target: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_seq_coercion(&mut self, target: Value) -> Result<Value, RuntimeError> {
         // Structural receivers (Seq/Array/Slip/Range/bare scalar) share the pure
         // impl with the VM native path; Supply/LazyList/Instance need state and
         // are handled below.
@@ -87,7 +87,7 @@ impl Interpreter {
     /// container's type-default (`Any`, or the native/typed element default):
     /// `my @a[2;2]` → `(Any, Any, Any, Any)`, `my Int @a[3]` → `(Int, Int, Int)`.
     /// Returns `None` when `target` is not a shaped array (normal coercion runs).
-    pub(super) fn shaped_flatten_with_default(&mut self, target: &Value) -> Option<Vec<Value>> {
+    pub(crate) fn shaped_flatten_with_default(&mut self, target: &Value) -> Option<Vec<Value>> {
         let depth = crate::runtime::utils::shaped_array_shape(target)?.len();
         let default = self.typed_container_default(target);
         let mut out = Vec::new();
@@ -108,7 +108,7 @@ impl Interpreter {
     }
 
     /// Dispatch .List coercion method
-    pub(super) fn dispatch_list_coercion(&self, target: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_list_coercion(&self, target: Value) -> Result<Value, RuntimeError> {
         if let ValueView::Instance {
             class_name,
             attributes,

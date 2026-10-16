@@ -428,6 +428,10 @@ pub(crate) fn invoke_mro(
         .partition(|arg| arg.is_string_pair_value());
     let type_object = matches!(target.view(), crate::value::ValueView::Package(_));
     let mut declared = false;
+    // Whether a row took the call's arity, and whether every such row turned
+    // the call down only for its type-object receiver (`Int.slice(0, 2)`).
+    let mut arity_rows = false;
+    let mut only_type_refused = true;
     let answer = owners.iter().find_map(|owner| {
         declared |= super::owner_declares(owner, method);
         super::owner_rows_at(Symbol::intern(owner), method, arity).find_map(|id| {
@@ -444,12 +448,14 @@ pub(crate) fn invoke_mro(
             } else {
                 admits_row(row, &positional)
             };
-            if (type_object && !row.flags.contains(RowFlags::TYPE_OBJECT_OK))
-                || !named.iter().all(|pair| names_declared(row, pair))
-                || !admitted
-            {
+            arity_rows = true;
+            let type_refused = type_object && !row.flags.contains(RowFlags::TYPE_OBJECT_OK);
+            if type_refused || !named.iter().all(|pair| names_declared(row, pair)) || !admitted {
+                only_type_refused &=
+                    type_refused && named.iter().all(|pair| names_declared(row, pair)) && admitted;
                 return None;
             }
+            only_type_refused = false;
             call(
                 row,
                 Some(&mut *interp),
@@ -462,11 +468,14 @@ pub(crate) fn invoke_mro(
     });
     // An owner declares the method, but no candidate of any owner takes this
     // many arguments: Rakudo's multi dispatch finds none (`"".subst`).
+    // Or every candidate that takes the arity is for a defined invocant only:
+    // Rakudo's `Any:D` candidates do not bind a type object either.
     if answer.is_none()
         && declared
-        && !owners
+        && (!owners
             .iter()
             .any(|owner| super::owner_row(Symbol::intern(owner), method, arity).is_some())
+            || (arity_rows && only_type_refused))
     {
         return Some(Err(
             crate::runtime::methods_signature_errors::make_multi_no_match_error(method.as_str()),
