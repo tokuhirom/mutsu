@@ -813,7 +813,12 @@ impl Interpreter {
         } else {
             self.locals[idx].clone()
         };
-        if !matches!(cur.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+        // A slot something rebinds (`%qh := Set.new(...)` in a closure) takes
+        // its binding cell whatever it holds now: an immutable Set, Bag or
+        // Map is a binding to replace, not a container to write through
+        // (ADR-12529 §3, slice 29).
+        let rebound = code.rebound_slots.contains(&(idx as u32));
+        if !rebound && !matches!(cur.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return;
         }
         let name = code.locals[idx].clone();
@@ -832,7 +837,7 @@ impl Interpreter {
         // binding cell from the start, so every closure that captures it,
         // before or after the rebind, shares the binding the rebind reseats
         // (ADR-12529 §3, slice 25; scalars: #9307).
-        if code.rebound_slots.contains(&(idx as u32)) {
+        if rebound {
             container = Self::wrap_in_binding_cell(container);
         }
         self.locals[idx] = container.clone();

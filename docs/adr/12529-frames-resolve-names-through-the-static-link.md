@@ -1325,6 +1325,21 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    closure and its siblings share one container. Pinned by
    `t/routines/closure/eval-closure-writes-caller-lexical-cell.t`.
 
+   **Slice 29 done** (`fix/12529-quanthash-rebind-cell`): the QuantHash
+   rebind entry of slice 26's census
+   (`t/routines/signature/quanthash-parameterized.t` 25). Slice 25 gave a
+   rebound `@`/`%` its binding cell at the declaration, but
+   `box_decl_local_container_cell` boxes only an Array or Hash value, so a
+   variable bound to an immutable Set, Bag, Map or List (`my %qh :=
+   Set.new(1, 2)`) and rebound in a closure still rebound only the
+   closure's copy. A rebound slot now takes its binding cell whatever it
+   holds. Pinned by
+   `t/routines/closure/closure-rebinds-captured-immutable-container.t`.
+
+   Correction to slice 26's census: `t/vm/underscore-kebab-var.t` is not a
+   dependent. It compares `$*EXECUTABLE-NAME` with `mutsu`, and the census
+   binary had a different file name.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
