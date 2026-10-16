@@ -402,7 +402,8 @@ const COOL_COERCE_FOR_SHAPELESS: [&str; 7] =
     ["Real", "Num", "UInt", "Int", "Numeric", "Rat", "FatRat"];
 
 /// Answer a call by the first row of `owners` that binds it (ADR-11276
-/// §9.129): the receiver's MRO as `.^can` walks it, with the interpreter,
+/// §9.129; an owner's rows at the call's arity in turn, §9.135): the
+/// receiver's MRO as `.^can` walks it, with the interpreter,
 /// after every receiver-specific answer declined. A row binds when it takes
 /// the call's arity, admits its arguments and named ones as the guard step
 /// would, admits a type object only with `TYPE_OBJECT_OK`, and its handler
@@ -429,33 +430,35 @@ pub(crate) fn invoke_mro(
     let mut declared = false;
     let answer = owners.iter().find_map(|owner| {
         declared |= super::owner_declares(owner, method);
-        let row = row(super::owner_row(Symbol::intern(owner), method, arity)?);
-        // An interpreter row reads any argument the way its routine does (a
-        // `Seq` of pairs for `trans`, a list of needles for `index`); only a
-        // `Junction`, which must autothread, is refused, unless the row's
-        // parameters are `Mu` (`JUNCTION_ARGS`).
-        let admitted = if matches!(row.handler, Handler::Interp(_)) {
-            row.flags.contains(RowFlags::JUNCTION_ARGS)
-                || !positional
-                    .iter()
-                    .any(|arg| matches!(arg.view(), crate::value::ValueView::Junction { .. }))
-        } else {
-            admits_row(row, &positional)
-        };
-        if (type_object && !row.flags.contains(RowFlags::TYPE_OBJECT_OK))
-            || !named.iter().all(|pair| names_declared(row, pair))
-            || !admitted
-        {
-            return None;
-        }
-        call(
-            row,
-            Some(&mut *interp),
-            target,
-            &positional,
-            Named::new(&named),
-        )
-        .map(|(result, _)| result)
+        super::owner_rows_at(Symbol::intern(owner), method, arity).find_map(|id| {
+            let row = row(id);
+            // An interpreter row reads any argument the way its routine does (a
+            // `Seq` of pairs for `trans`, a list of needles for `index`); only a
+            // `Junction`, which must autothread, is refused, unless the row's
+            // parameters are `Mu` (`JUNCTION_ARGS`).
+            let admitted = if matches!(row.handler, Handler::Interp(_)) {
+                row.flags.contains(RowFlags::JUNCTION_ARGS)
+                    || !positional
+                        .iter()
+                        .any(|arg| matches!(arg.view(), crate::value::ValueView::Junction { .. }))
+            } else {
+                admits_row(row, &positional)
+            };
+            if (type_object && !row.flags.contains(RowFlags::TYPE_OBJECT_OK))
+                || !named.iter().all(|pair| names_declared(row, pair))
+                || !admitted
+            {
+                return None;
+            }
+            call(
+                row,
+                Some(&mut *interp),
+                target,
+                &positional,
+                Named::new(&named),
+            )
+            .map(|(result, _)| result)
+        })
     });
     // An owner declares the method, but no candidate of any owner takes this
     // many arguments: Rakudo's multi dispatch finds none (`"".subst`).

@@ -245,28 +245,7 @@ impl Interpreter {
                 }
             }
             "elems" => self.dispatch_elems_method(target, args),
-            "max" | "min" if args.is_empty() => {
-                let result = if method == "max" {
-                    crate::builtins::method_table::list_aggregate::max(&target, &args)
-                } else {
-                    crate::builtins::method_table::list_aggregate::min(&target, &args)
-                };
-                result.or_else(|| Some(self.dispatch_min_max_method(target, method, args)))
-            }
-            "max" | "min" => Some(self.dispatch_min_max_method(target, method, args)),
-            "minpairs" | "maxpairs" if args.is_empty() => {
-                let result = if method == "maxpairs" {
-                    crate::builtins::method_table::list_aggregate::maxpairs(&target, &args)
-                } else {
-                    crate::builtins::method_table::list_aggregate::minpairs(&target, &args)
-                };
-                result.or_else(|| Some(self.dispatch_minmaxpairs(target, method)))
-            }
             "pop" => Some(self.dispatch_pop_method(target, args)),
-            "sort" => Some(self.dispatch_sort_method(target, args)),
-            "unique" => Some(self.dispatch_unique(target, &args)),
-            "repeated" => Some(self.dispatch_repeated(target, &args)),
-            "minmax" => self.dispatch_minmax_method(target, method, args),
             "snip" => self.dispatch_snip_method(target, method, args),
             "take" if args.is_empty() => {
                 match self.take_value(target.clone()) {
@@ -670,7 +649,7 @@ impl Interpreter {
         }))
     }
     /// Dispatch "min" and "max" methods.
-    fn dispatch_min_max_method(
+    pub(crate) fn dispatch_min_max_method(
         &mut self,
         target: Value,
         method: &str,
@@ -765,7 +744,7 @@ impl Interpreter {
     }
 
     /// Dispatch the "sort" method.
-    pub(super) fn dispatch_sort_method(
+    pub(crate) fn dispatch_sort_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
@@ -786,7 +765,7 @@ impl Interpreter {
     }
 
     /// Dispatch the "minmax" method.
-    pub(super) fn dispatch_minmax_method(
+    pub(crate) fn dispatch_minmax_method(
         &mut self,
         target: Value,
         method: &str,

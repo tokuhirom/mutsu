@@ -3241,6 +3241,24 @@ arms. They are now `Any` rows on the same routines (`flatmap`'s inline arm body 
 `Interpreter::dispatch_flatmap_method`), reached through the same MRO walk. `flatmap` takes one mapper, so
 `.flatmap(&a, &b)` is `X::Multi::NoMatch`, as in Rakudo; before, the second mapper was silently dropped.
 
+### 9.135 A pure row's interpreter twin: an owner's rows at one arity are candidates in turn (2026-10-16)
+
+`refactor/11276-any-aggregate-twins`. `Any.min`, `max`, `minmax`, `minpairs`, `maxpairs`, `sort`, `unique` and
+`repeated` have a pure `Handler::Narrow` row that answers a plain list without a callback. The by-name cascade kept an
+arm per name for everything else: a callback or adverb (`.max(&by)`, `.sort(&cmp)`, `.unique(:as(...))`), and a
+receiver the pure row declines (an instance, a user iterator, a type object). The arms called one routine each
+(`dispatch_min_max_method`, `dispatch_sort_method`, `dispatch_unique`, ...). A row could not replace them: one owner,
+name and arity had one row, the pure one, and the guard step must keep finding it.
+
+Decision. An owner may register a second row at the same name and arity, its interpreter twin
+(`collections/any_interp_twins.rs`: `OWNER_ONLY`, `SLURPY`, `ANY_ARGS`, `ANY_NAMED`, `TYPE_OBJECT_OK`), registered
+after the pure row. `owner_row`, the guard step's shape tables and the const index keep finding the first row, the
+pure one, so every pure path is unchanged. The MRO walk (`invoke_mro`) now tries each of an owner's rows at the call's
+arity in turn (`owner_rows_at`), as Rakudo tries a proto's candidates. When the pure row declines or does not bind
+the call's adverbs, the twin takes it through the routine the arm called. The eight names join
+`any_list_method_by_mro`, and their arms are gone. A call no candidate takes is `X::Multi::NoMatch`
+(`.minpairs(1)`), as in Rakudo. Pinned in `t/oo/method/any-list-methods-by-mro.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

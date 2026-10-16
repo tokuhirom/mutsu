@@ -12,6 +12,7 @@ pub(crate) mod accepts_open;
 pub(crate) mod any_coerce;
 pub(crate) mod any_collection;
 mod any_interp;
+mod any_interp_twins;
 pub(crate) use any_interp::early_entry_defers;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
@@ -79,6 +80,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::LIST_ROWS,
     list_transform::FLAT_ROWS,
     list_transform::FLAT_LEVELS_ROWS,
+    // After the pure rows of the same owner, name and arity (§9.135).
+    any_interp_twins::ROWS,
     map::ROWS,
     iteration_buffer::ROWS,
     positional::ROWS,
