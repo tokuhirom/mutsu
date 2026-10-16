@@ -69,6 +69,7 @@ pub(crate) use collections::{
     rotate as collection_rotate, subscript, terminals,
 };
 pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_of;
+pub(crate) use instances::compunit_repo::owners_of as compunit_repo_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};

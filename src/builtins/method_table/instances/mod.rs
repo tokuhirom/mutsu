@@ -25,6 +25,7 @@ use narrow_row;
 pub(crate) mod backtrace;
 pub(crate) mod code;
 pub(crate) mod compunit_handle;
+pub(crate) mod compunit_repo;
 pub(crate) mod date;
 pub(crate) mod dateish;
 pub(crate) mod dateish_io;
@@ -68,4 +69,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     temporal_edit::ROWS,
     unicode_data::ROWS,
     depspec::ROWS,
+    compunit_repo::ROWS,
 ];

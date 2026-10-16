@@ -125,158 +125,155 @@ impl Interpreter {
         }
     }
 
-    /// CUR::Installation method dispatch.
-    pub(crate) fn dispatch_cur_installation_method(
+    /// `CompUnit::Repository::Installation.install` / `.uninstall`: both take
+    /// `Distribution $distribution`; an untyped value must never reach the
+    /// repository (`site` is a real store).
+    pub(crate) fn cur_inst_install_checked(
         &mut self,
-        repo: &Value,
-        attributes: &AttrMap,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Option<Result<Value, RuntimeError>> {
-        let prefix = attributes
-            .get("prefix")
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        match method {
-            "candidates" => {
-                let depspec = args.first().cloned().unwrap_or(Value::NIL);
-                Some(self.cur_inst_candidates(&prefix, &depspec))
-            }
-            "install" | "uninstall" => {
-                let dist = args.first().cloned().unwrap_or(Value::NIL);
-                // Both take `Distribution $distribution`; an untyped value
-                // must never reach the repository (`site` is a real store).
-                if !self.type_matches_value("Distribution", &dist) {
-                    return Some(Err(self.typecheck_binding_parameter_failure(
-                        "$distribution",
-                        "Distribution",
-                        &dist,
-                    )));
-                }
-                Some(if method == "install" {
-                    self.cur_inst_install(&prefix, &dist)
-                } else {
-                    self.cur_inst_uninstall(&prefix, &dist)
-                })
-            }
-            "installed" => {
-                let mut installed = match self.cur_inst_installed(&prefix) {
-                    Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
-                };
-                if self.is_core_repo_prefix(&prefix)
-                    && let Some(core) = self.bundled_core_distribution()
-                    && let Some((items, _)) = installed.clone().into_array()
-                {
-                    let mut items = items.to_vec();
-                    items.push(core);
-                    installed = Value::array(items);
-                }
-                Some(Ok(installed))
-            }
-            "can-install" => {
-                // Mirror rakudo's CompUnit::Repository::Installation.can-install:
-                // writable if the prefix is writable, or it does not yet exist and
-                // it can be *created* — i.e. the nearest already-existing ancestor
-                // directory is writable. Checking only the immediate parent is
-                // wrong when several path components are missing at once (mutsu's
-                // default `home`/`site` repos live under a not-yet-created
-                // `~/.local/share/mutsu/repo/`; `zef install`'s `auto` target
-                // selection then found no installable repo and died with "Need a
-                // valid installation target to continue").
-                use crate::runtime::native_io::path_is_writable;
-                let prefix_path = std::path::Path::new(&prefix);
-                let can = if path_is_writable(prefix_path) {
-                    true
-                } else if prefix_path.exists() {
-                    // Exists but not writable.
-                    false
-                } else {
-                    // Walk up to the nearest existing ancestor and check whether
-                    // the missing prefix could be created under it.
-                    let mut ancestor = prefix_path.parent();
-                    loop {
-                        match ancestor {
-                            Some(dir) if dir.exists() => break path_is_writable(dir),
-                            Some(dir) => ancestor = dir.parent(),
-                            None => break false,
-                        }
-                    }
-                };
-                Some(Ok(Value::truth(can)))
-            }
-            "path-spec" => Some(Ok(Value::str(format!("inst#{prefix}")))),
-            "short-id" => Some(Ok(Value::str_from("inst"))),
-            // A repository stringifies as its bare prefix and gists as
-            // `<short-id>#<prefix>` (`inst#/home/user/.raku`), which is what
-            // `.say for $*REPO.repo-chain` prints. Without these the generic
-            // instance fallback rendered `CompUnit::Repository::Installation.new`.
-            "Str" => Some(Ok(Value::str(prefix))),
-            "gist" => Some(Ok(Value::str(format!("inst#{prefix}")))),
-            "id" => {
-                // A stable, non-empty identifier derived from the repo prefix.
-                Some(Ok(Value::str(format!("{:X}", hash_strings(&[&prefix])))))
-            }
-            "loaded" => {
-                let loaded = self
-                    .module
-                    .cur_repo
-                    .loaded
-                    .get(&prefix)
-                    .cloned()
-                    .unwrap_or_default();
-                Some(Ok(Value::array(loaded)))
-            }
-            "next-repo" => Some(Ok(self.repo_next_link(repo, attributes))),
-            "prefix" => Some(Ok(self.make_io_path_instance(&prefix))),
-            "need" => Some(self.cur_inst_need(&prefix, repo, args.first().cloned())),
-            "files" => {
-                let search_path = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let prefix_path = std::path::Path::new(&prefix);
-                let dist_dir = prefix_path.join("dist");
-                let mut results = Vec::new();
-                if dist_dir.is_dir()
-                    && let Ok(entries) = std::fs::read_dir(&dist_dir)
-                {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                            continue;
-                        }
-                        let Ok(json_str) = std::fs::read_to_string(&path) else {
-                            continue;
-                        };
-                        let Ok(meta) = self.parse_json_to_value(&json_str) else {
-                            continue;
-                        };
-                        if let Some(files) = meta.hash_get_str("files")
-                            && files.hash_get_str(&search_path).is_some()
-                        {
-                            let dist_id = path
-                                .file_stem()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .to_string();
-                            let mut attrs = HashMap::new();
-                            attrs.insert("prefix".to_string(), self.make_io_path_instance(&prefix));
-                            attrs.insert("meta".to_string(), meta);
-                            attrs.insert("dist-id".to_string(), Value::str(dist_id));
-                            results.push(Value::make_instance(
-                                crate::symbol::Symbol::intern("Distribution::Installation"),
-                                attrs,
-                            ));
-                        }
-                    }
-                }
-                Some(Ok(Value::array(results)))
-            }
-            _ => None,
+        prefix: &str,
+        dist: &Value,
+        uninstall: bool,
+    ) -> Result<Value, RuntimeError> {
+        if !self.type_matches_value("Distribution", dist) {
+            return Err(self.typecheck_binding_parameter_failure(
+                "$distribution",
+                "Distribution",
+                dist,
+            ));
+        }
+        if uninstall {
+            self.cur_inst_uninstall(prefix, dist)
+        } else {
+            self.cur_inst_install(prefix, dist)
         }
     }
 
+    /// `CompUnit::Repository::Installation.installed`: the installed
+    /// distributions, and for the `core` repository the bundled core one.
+    pub(crate) fn cur_inst_installed_with_core(
+        &mut self,
+        prefix: &str,
+    ) -> Result<Value, RuntimeError> {
+        let installed = self.cur_inst_installed(prefix)?;
+        if self.is_core_repo_prefix(prefix)
+            && let Some(core) = self.bundled_core_distribution()
+            && let Some((items, _)) = installed.clone().into_array()
+        {
+            let mut items = items.to_vec();
+            items.push(core);
+            return Ok(Value::array(items));
+        }
+        Ok(installed)
+    }
+
+    /// `CompUnit::Repository::Installation.can-install`, as Rakudo's: writable
+    /// if the prefix is writable, or it does not yet exist and it can be
+    /// *created* -- i.e. the nearest already-existing ancestor directory is
+    /// writable. Checking only the immediate parent is wrong when several path
+    /// components are missing at once (mutsu's default `home`/`site` repos live
+    /// under a not-yet-created `~/.local/share/mutsu/repo/`; `zef install`'s
+    /// `auto` target selection then found no installable repo and died with
+    /// "Need a valid installation target to continue").
+    pub(crate) fn cur_inst_can_install(prefix: &str) -> bool {
+        use crate::runtime::native_io::path_is_writable;
+        let prefix_path = std::path::Path::new(prefix);
+        if path_is_writable(prefix_path) {
+            return true;
+        }
+        if prefix_path.exists() {
+            // Exists but not writable.
+            return false;
+        }
+        // Walk up to the nearest existing ancestor and check whether the
+        // missing prefix could be created under it.
+        let mut ancestor = prefix_path.parent();
+        loop {
+            match ancestor {
+                Some(dir) if dir.exists() => return path_is_writable(dir),
+                Some(dir) => ancestor = dir.parent(),
+                None => return false,
+            }
+        }
+    }
+
+    /// `CompUnit::Repository::Installation.id`: a stable, non-empty
+    /// identifier derived from the repository prefix.
+    pub(crate) fn cur_inst_id(prefix: &str) -> String {
+        format!("{:X}", hash_strings(&[prefix]))
+    }
+
+    /// `CompUnit::Repository::Installation.loaded`: the compunits this
+    /// repository loaded.
+    pub(crate) fn cur_inst_loaded(&self, prefix: &str) -> Value {
+        let loaded = self
+            .module
+            .cur_repo
+            .loaded
+            .get(prefix)
+            .cloned()
+            .unwrap_or_default();
+        Value::array(loaded)
+    }
+
+    /// `CompUnit::Repository::Installation.files($file)`: the installed
+    /// distributions whose `files` include `search_path`.
+    pub(crate) fn cur_inst_files(&self, prefix: &str, search_path: &str) -> Value {
+        let prefix_path = std::path::Path::new(prefix);
+        let dist_dir = prefix_path.join("dist");
+        let mut results = Vec::new();
+        if dist_dir.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&dist_dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let Ok(json_str) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let Ok(meta) = self.parse_json_to_value(&json_str) else {
+                    continue;
+                };
+                if let Some(files) = meta.hash_get_str("files")
+                    && files.hash_get_str(search_path).is_some()
+                {
+                    let dist_id = path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    let mut attrs = HashMap::new();
+                    attrs.insert("prefix".to_string(), self.make_io_path_instance(prefix));
+                    attrs.insert("meta".to_string(), meta);
+                    attrs.insert("dist-id".to_string(), Value::str(dist_id));
+                    results.push(Value::make_instance(
+                        crate::symbol::Symbol::intern("Distribution::Installation"),
+                        attrs,
+                    ));
+                }
+            }
+        }
+        Value::array(results)
+    }
+
+    /// `CompUnit::Repository.repo-chain`: `repo` followed by every repository
+    /// its `next-repo` links reach.
+    pub(crate) fn repo_chain(&self, repo: &Value) -> Value {
+        let mut chain = Vec::new();
+        let mut next = repo.clone();
+        while next.truthy() {
+            let following = match next.view() {
+                ValueView::Instance { attributes, .. } => {
+                    self.repo_next_link(&next, &attributes.as_map())
+                }
+                _ => Value::NIL,
+            };
+            chain.push(next);
+            next = following;
+        }
+        Value::array(chain)
+    }
     /// Implement CompUnit::RepositoryRegistry.run-script($name).
     /// Searches lib_paths for an installed script by name (in bin/ or resources/bin/),
     /// then loads and executes it.
