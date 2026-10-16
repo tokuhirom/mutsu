@@ -189,4 +189,45 @@ impl Interpreter {
             _ => self.dispatch_supply_transform(target, op.name(), &args),
         })
     }
+
+    /// `Supply.list` / `.Array`: a materialized supply's values (the pure
+    /// `listify`), else a live, channel-backed supply (an `IO::Socket::Async`
+    /// read stream) drained until the producer signals done, else the values
+    /// the stateful path collects (an on-demand supply runs its body). Only
+    /// this entry point blocks: the combinators stay lazy on a live source,
+    /// or `Supply.interval(.1).map({ … })` would wait out a stream that never
+    /// ends. `None` for anything but a `Supply` instance.
+    // Cost: O(e), e = values the supply emits until done.
+    pub(crate) fn supply_materialize(
+        &mut self,
+        target: &Value,
+        want_array: bool,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        if class_name != "Supply" {
+            return None;
+        }
+        if let Some(result) = crate::builtins::method_table::supply::listify(target, want_array) {
+            return Some(result);
+        }
+        let attrs = attributes.as_map();
+        if !attrs.contains_key("proc_output")
+            && let Some(sid) = attrs.get("supply_id").and_then(Value::as_int)
+            && let Some(rx) = crate::runtime::native_methods::take_supply_channel(sid as u64)
+        {
+            let mut items = Vec::new();
+            while let Ok(crate::runtime::native_methods::SupplyEvent::Emit(value)) = rx.recv() {
+                items.push(value);
+            }
+            return Some(Ok(Value::array(items)));
+        }
+        Some(self.supply_list_values(&attrs, true).map(Value::array))
+    }
 }

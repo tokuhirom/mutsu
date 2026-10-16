@@ -5,7 +5,7 @@ use Test;
 # IterationBuffer-free plain list all reach the same row. Answers checked
 # against Rakudo.
 
-plan 44;
+plan 50;
 
 class Plain {}
 class PI { method iterator { (4, 5).iterator } }
@@ -66,3 +66,12 @@ is-deeply (1, 2, 3, 2, 1).toggle(* < 3).List, (1, 2), 'toggle';
 is-deeply (1, 2).Seq.rotate.List, (2, 1), 'rotate on a Seq';
 throws-like { (1, 2).join('a', 'b') }, Exception, message => /'Too many positionals'/, 'join takes one separator';
 is Supply.from-list(1, 2).tree.^name, 'Supply', 'tree on a Supply is the Supply';
+
+# A Supply's list coercions, `elems` and the quant hashes' family coercions.
+my $sup = Supply.from-list(1, 2);
+is-deeply $sup.list, (1, 2), 'Supply.list';
+is $sup.Array.raku, '[1, 2]', 'Supply.Array';
+is Plain.new.elems, 1, 'elems on an instance';
+is SetHash.Baggy.^name, 'BagHash', 'SetHash.Baggy keeps the hashiness';
+is Set.Mixy.^name, 'Mix', 'Set.Mixy';
+is bag(1).Setty.raku, 'Set.new(1)', 'Bag.Setty';

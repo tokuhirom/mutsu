@@ -52,54 +52,6 @@ impl Interpreter {
             )));
         }
         match method {
-            "list" | "Array" if args.is_empty() => {
-                if let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = target.view()
-                    && class_name == "Supply"
-                {
-                    // A materialized supply is `Supply.list`'s row (§9.55), which
-                    // builds the real `Array` `.Array` asks for.
-                    if let Some(result) = crate::builtins::method_table::supply::listify(
-                        &target,
-                        method == "Array",
-                    ) {
-                        return Some(result);
-                    }
-                    // A live, channel-backed supply (an `IO::Socket::Async`
-                    // read stream) materializes by draining its channel until
-                    // the producer signals done: its values never land in the
-                    // `values` attribute, so `supply_list_values` would report
-                    // an open stream as an empty one (roast
-                    // S32-io/IO-Socket-Async.t collects a whole connection with
-                    // `@got.append: $conn.Supply.list`). Only this `.list`/
-                    // `.Array` entry point blocks -- the combinators must stay
-                    // lazy on a live source, or `Supply.interval(.1).map({ … })`
-                    // would wait out a stream that never ends.
-                    let attrs = attributes.as_map();
-                    if !attrs.contains_key("proc_output")
-                        && let Some(sid) = attrs.get("supply_id").and_then(Value::as_int)
-                        && let Some(rx) =
-                            crate::runtime::native_methods::take_supply_channel(sid as u64)
-                    {
-                        let mut items = Vec::new();
-                        while let Ok(crate::runtime::native_methods::SupplyEvent::Emit(value)) =
-                            rx.recv()
-                        {
-                            items.push(value);
-                        }
-                        return Some(Ok(Value::array(items)));
-                    }
-                    return Some(self.supply_list_values(&attrs, true).map(Value::array));
-                }
-                None
-            }
-            "Setty" | "Baggy" | "Mixy" if args.is_empty() => {
-                self.dispatch_setty_baggy_mixy(&target, method)
-            }
-            "elems" => self.dispatch_elems_method(target, args),
             "pop" => Some(self.dispatch_pop_method(target, args)),
             "snip" => self.dispatch_snip_method(target, method, args),
             _ => None,
@@ -243,7 +195,7 @@ impl Interpreter {
     }
 
     /// Dispatch the "elems" method.
-    fn dispatch_elems_method(
+    pub(crate) fn dispatch_elems_method(
         &mut self,
         target: Value,
         args: Vec<Value>,

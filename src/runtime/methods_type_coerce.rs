@@ -144,7 +144,7 @@ impl Interpreter {
     }
 
     /// Dispatch .Setty / .Baggy / .Mixy coercion method
-    pub(super) fn dispatch_setty_baggy_mixy(
+    pub(crate) fn dispatch_setty_baggy_mixy(
         &mut self,
         target: &Value,
         method: &str,

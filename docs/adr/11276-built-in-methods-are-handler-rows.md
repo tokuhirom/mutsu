@@ -3292,6 +3292,13 @@ unreachable behind the deleted `dispatch_method_by_name_2` arm and is gone. The 
 ends at the first index past the end, as Rakudo does, and an index that does not ascend dies with Rakudo's
 `Provided index N, which is lower than M`.
 
+Follow-up (`refactor/11276-match2-rest`). The rest of `dispatch_method_by_name_2` follows: `elems` (an `Any` twin),
+the quant hashes' `Setty`/`Baggy`/`Mixy` (late rows of the six owners Rakudo's `QuantHash` composes them into), and a
+`Supply`'s `list`/`Array`. `Supply.list`'s row becomes an interpreter row, `Interpreter::supply_materialize`. It covers
+the pure `listify`, the drain of a live channel-backed supply, and the stateful collection of an on-demand one. `Array`
+is `Any.Array`'s twin for a `Supply`. The MRO walk takes `list`/`Array` only for a `Supply`, so every other receiver's
+list coercion keeps its native answer. Left in that function: `pop` (a `Mut` row's concern) and `snip`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -12,7 +12,13 @@
 use super::*;
 
 /// The methods whose `Any` rows answer by the receiver's MRO.
-const ANY_LIST_BY_MRO: [&str; 50] = [
+const ANY_LIST_BY_MRO: [&str; 56] = [
+    "list",
+    "Array",
+    "elems",
+    "Setty",
+    "Baggy",
+    "Mixy",
     "toggle",
     "tree",
     "is-lazy",
@@ -79,6 +85,14 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if !ANY_LIST_BY_MRO.contains(&method)
             || matches!(target.view(), ValueView::Junction { .. })
+        {
+            return None;
+        }
+        // The list coercions of every receiver but a `Supply` keep the
+        // answers of the native paths and of the cascades after this walk;
+        // a `Supply` materializes through its own `list` (§9.136).
+        if matches!(method, "list" | "Array")
+            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
         {
             return None;
         }
