@@ -180,8 +180,12 @@ impl Interpreter {
         // A pointer return is boxed as `$rettype` itself when that is a
         // CPointer class or a mixin type (upstream's `Pointer`, `Pointer[T]`,
         // `CArray[T]`); NULL is the type object.
-        if spec.ret == crate::runtime::nativecall::CType::Pointer
-            && spec
+        // `--> CArray[T]` is such a return too (Crypt::LibGcrypt's
+        // `gcry_md_read`): boxed over the address, so its elements read C memory.
+        if matches!(
+            spec.ret,
+            crate::runtime::nativecall::CType::Pointer | crate::runtime::nativecall::CType::CArray
+        ) && spec
                 .ret_struct
                 .as_deref()
                 .is_none_or(|n| crate::runtime::cstruct_layout::pointer_parameter(n).is_some())
