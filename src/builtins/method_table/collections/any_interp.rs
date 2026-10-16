@@ -47,11 +47,13 @@ macro_rules! any_row {
 
 pub(super) static ROWS: &[MethodRow] = &[
     any_row!("Any", "collate", 0, TYPE_OK, collate),
+    // `map` reports a non-callable or a list of mappers itself
+    // (`X::Cannot::Map`), so its row takes every positional after the first.
     any_row!(
         "Any",
         "map",
         1,
-        ARGS_TYPE,
+        ARGS_TYPE.or(RowFlags::SLURPY),
         map,
         &[
             "batch", "deep", "degree", "duck", "flat", "item", "label", "node"
@@ -62,6 +64,9 @@ pub(super) static ROWS: &[MethodRow] = &[
     any_row!("Any", "reduce", 1, ARGS_TYPE, reduce),
     any_row!("Any", "produce", 1, ARGS_TYPE, produce),
     any_row!("Any", "iterator", 0, TYPE_OK, iterator),
+    // `Mu` declares `iterator` too: `Mu.iterator` and `Mu.new.iterator`
+    // iterate the one value.
+    any_row!("Mu", "iterator", 0, TYPE_OK, iterator),
     any_row!("Any", "eager", 0, TYPE_OK, eager),
     any_row!("Any", "squish", 0, ARGS_TYPE, squish, &["as", "with"]),
     any_row!(
