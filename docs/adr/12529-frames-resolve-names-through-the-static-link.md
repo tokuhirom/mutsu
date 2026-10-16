@@ -1343,6 +1343,19 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    dependent. It compares `$*EXECUTABLE-NAME` with `mutsu`, and the census
    binary had a different file name.
 
+   **Slice 30 done** (`fix/12529-quanthash-values-writeback`): the
+   container-trait entry of slice 26's census
+   (`t/routines/closure/closure-capture-keeps-container-traits.t` 21). A
+   `for` over a `$`-held mutable QuantHash's `.values`/`.kv`/`.pairs`
+   (`$_ = 7 for $b.values`) writes the updated container back to `$b` by
+   name, but the free-variable analysis did not count that as a write. So
+   a closure looping over a captured `$b` left it a plain value, and only
+   the return merge of the routine that ran the closure carried the write.
+   The loop's `TagContainerRef` of a `$` name now counts as a write
+   (`op_name_write_const_idx`), so the capture boxes `$b` into a cell and
+   the write-back goes through it. Pinned by
+   `t/routines/closure/quanthash-values-loop-in-closure-writes-back.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
