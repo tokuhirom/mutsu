@@ -29,6 +29,10 @@ impl Interpreter {
         if let Some(path) = self.io_path_subclass_cool_receiver(target, method_sym.as_str()) {
             return self.try_native_method(&path, method_sym, args);
         }
+        // A `Channel` subclass's list coercions read its channel (#13634).
+        if let Some(result) = Self::channel_subclass_coercion(target, method_sym.as_str()) {
+            return Some(result);
+        }
         // A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
         // captures (ADR-11276 §9.98).
         if let Some(list) = self.match_list_receiver(target, method_sym.as_str()) {

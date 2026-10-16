@@ -425,8 +425,9 @@ impl Interpreter {
                 publish,
             ),
             "Proc" => self.native_proc_mut(attributes, method, args, publish),
-            "Promise" => self.native_promise_mut(attributes, method, args, publish),
-            "Channel" => self.native_channel_mut(attributes, method, args, publish),
+            class @ ("Promise" | "Channel") => {
+                self.native_promise_channel_payload_mut(attributes, class, method, args)
+            }
             "Supply" => {
                 let result = self.native_supply_mut(attributes, method, args, publish);
                 self.sync_after_synchronous_delivery();
@@ -622,9 +623,10 @@ impl Interpreter {
             "Perl" | "Raku" => Ok(self.native_perl(attributes, method)),
             "Compiler" => self.native_compiler(attributes, method),
             "Perl6::SysConfig" => Self::native_sys_config(method),
-            "Promise" => self.native_promise(attributes, method, args),
+            class @ ("Promise" | "Channel") => {
+                self.native_promise_channel_payload(attributes, class, method, args)
+            }
             "Promise::Vow" => self.native_promise_vow(attributes, method, args),
-            "Channel" => Ok(self.native_channel(attributes, method)),
             "Thread" => self.native_thread(attributes, method),
             "Proc::Async" => self.native_proc_async(attributes, method, args),
             "Proc" => Ok(self.native_proc(attributes, method)),

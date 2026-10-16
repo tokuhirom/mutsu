@@ -339,19 +339,6 @@ impl Interpreter {
                     // Sync shared variables after each thread completes
                     self.sync_shared_vars_to_env();
                 }
-                // Backward compat: Instance-based Promise
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Promise" => {
-                    let result = attributes
-                        .as_map()
-                        .get("result")
-                        .cloned()
-                        .unwrap_or(Value::NIL);
-                    results.push(result);
-                }
                 ValueView::Array(elems, ..) => {
                     for elem in elems.iter() {
                         match elem.view() {
@@ -364,18 +351,6 @@ impl Interpreter {
                                     return Err(self.await_died_error(result));
                                 }
                                 let result = Self::unwrap_async_status_result(result)?;
-                                results.push(result);
-                            }
-                            ValueView::Instance {
-                                class_name,
-                                attributes,
-                                ..
-                            } if class_name == "Promise" => {
-                                let result = attributes
-                                    .as_map()
-                                    .get("result")
-                                    .cloned()
-                                    .unwrap_or(Value::NIL);
                                 results.push(result);
                             }
                             _ => results.push(elem.clone()),

@@ -138,13 +138,6 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn make_promise_instance(&self, status: &str, result: Value) -> Value {
-        let mut attrs = HashMap::new();
-        attrs.insert("status".to_string(), Value::str(status.to_string()));
-        attrs.insert("result".to_string(), result);
-        Value::make_instance(Symbol::intern("Promise"), attrs)
-    }
-
     /// A `^lookup`/`^find_method`/`.can` result for a *multi* method is a
     /// dispatcher-shaped Sub: its env carries `__mutsu_lookup_class` /
     /// `__mutsu_lookup_method` but no `__mutsu_lookup_candidate_idx` (a
