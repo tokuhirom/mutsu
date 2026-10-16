@@ -876,6 +876,15 @@ impl Interpreter {
             crate::vm::vm_stats::record_mainline_lexical_hit();
             return Some(found);
         }
+        // A package-less module file's own file-scope lexical, found by the
+        // file the running routine was declared in.
+        if !qualified && let Some(unit) = self.compunit_lexical_bucket(name) {
+            return self
+                .lexicals
+                .unit_lexicals
+                .get(unit.as_str())
+                .and_then(|m| m.get(name));
+        }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
         let cur_sym = self.current_package_sym();
@@ -1002,6 +1011,14 @@ impl Interpreter {
             // proved to exist above and only its value is handed out, so
             // nothing about the key set changes here.
             return self.unit_lexicals_cow_mut().get_value_mut(&bucket, name);
+        }
+        // Same as `unit_lexical_slot`: a package-less module file's own.
+        if split.is_none()
+            && let Some(unit) = self.compunit_lexical_bucket(name)
+        {
+            return self
+                .unit_lexicals_cow_mut()
+                .get_value_mut(unit.as_str(), name);
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.

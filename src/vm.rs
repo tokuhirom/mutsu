@@ -325,6 +325,7 @@ mod vm_quanthash_autoviv;
 mod vm_role_capture_propagate;
 mod vm_unit_hidden;
 pub(crate) mod vm_unit_lexical_meta_lanes;
+pub(crate) mod vm_compunit_lexicals;
 pub(crate) use vm_core_type_object_methods::SCHEDULER_USAGE_COLUMNS;
 mod vm_rakudo_internals;
 pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;

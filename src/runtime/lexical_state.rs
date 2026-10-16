@@ -141,6 +141,13 @@ pub(crate) struct LexicalState {
     /// of it when the load ends, like the values moving into `unit_lexicals`;
     /// the unit's routines read them here (#13086, `vm_unit_lexical_meta_lanes`).
     pub(crate) unit_lexical_meta_lanes: std::sync::Arc<PackageLexicals>,
+    /// The compunits of loaded module files with no `unit` declarator whose
+    /// own file-scope lexicals live in `unit_lexicals` under the compunit's
+    /// own key (its source path) rather than a unit package's. Their routines
+    /// run in `GLOBAL`, so no package candidate finds them; the running
+    /// frame's declaring file does (`Interpreter::compunit_lexical_bucket`,
+    /// ADR-12529 §3, slice 24). Empty unless such a module was loaded.
+    pub(crate) compunit_lexical_units: std::sync::Arc<rustc_hash::FxHashSet<Symbol>>,
     /// Bumped by [`Interpreter::unit_lexicals_cow_mut`] and
     /// [`Interpreter::package_lexicals_cow_mut`], the funnels through which
     /// `unit_lexicals` and `package_lexicals` are mutated. TRIR's per-routine
@@ -406,6 +413,7 @@ impl LexicalState {
             class_body_static_types: Default::default(),
             unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             unit_lexical_meta_lanes: std::sync::Arc::new(PackageLexicals::default()),
+            compunit_lexical_units: Default::default(),
             mainline_lexical_subs: Default::default(),
             lexsub_free_aliases: Default::default(),
             lexsub_latest_cells: Default::default(),
@@ -466,6 +474,7 @@ impl LexicalState {
             class_body_static_types: self.class_body_static_types.clone(),
             unit_lexicals: self.unit_lexicals.clone(),
             unit_lexical_meta_lanes: self.unit_lexical_meta_lanes.clone(),
+            compunit_lexical_units: self.compunit_lexical_units.clone(),
             mainline_lexical_subs: self.mainline_lexical_subs.clone(),
             lexsub_free_aliases: self.lexsub_free_aliases.clone(),
             lexsub_latest_cells: self.lexsub_latest_cells.clone(),

@@ -189,6 +189,14 @@ impl Interpreter {
         // environment, as on the untyped path: a compunit's lexical must not be
         // read through the loading scope's same-named entry. Without this,
         // every `nom-ws` call from another module routine bailed (#9072).
+        // A package-less module file's routine runs in GLOBAL, so no package
+        // names its file-scope lexicals; its declaring file does
+        // (`vm_compunit_lexicals`).
+        if let Some(&file) = chunk.def_file.get()
+            && let Some(v) = self.compunit_lexical_of_file(file, name)
+        {
+            return Some(celled(v.clone()));
+        }
         let pkg = self.current_package_sym();
         if !crate::qualified::is_global_package(pkg) {
             if let Some(v) =
