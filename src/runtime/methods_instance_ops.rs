@@ -365,6 +365,15 @@ impl Interpreter {
                     "Supplier.new(taplist => Supplier::TapList.new)".to_string(),
                 )));
             }
+            // Rakudo's `Collation` holds one `$!collation-level` attribute,
+            // which its default `.raku` lists; mutsu stores the four levels.
+            "Collation" => {
+                let settings = crate::builtins::collation::CollationSettings::from_value(target);
+                return Some(Ok(Value::str(format!(
+                    "Collation.new(collation-level => {})",
+                    settings.collation_level()
+                ))));
+            }
             "IO::Path::Parts" => {
                 let attr_map = attributes.as_map();
                 let rendered: Vec<String> = ["volume", "dirname", "basename"]

@@ -1,13 +1,13 @@
 //! `Collation`'s rows (ADR-11276 §9.131): `primary`, `secondary`, `tertiary`,
-//! `quaternary`, `collation-level`, `set`, `gist`, and its `raku`.
+//! `quaternary`, `collation-level`, `set` and `gist`.
 //!
 //! A `Collation` (`$*COLLATION`) is an instance keeping its four levels in its
 //! shared attribute cell. `set` writes them there, so every alias of the
 //! object sees the change and the row needs no receiver place (§9.126). The
 //! class has no shape: the rows are reached through their owner from the
-//! by-name dispatch. `raku` is mutsu's own: Rakudo's `Collation` holds one
-//! `$!collation-level` attribute and its default `.raku` lists it, while mutsu
-//! stores the four levels, so the row re-encodes the level.
+//! by-name dispatch. Rakudo declares no `raku` on `Collation`: the instance
+//! rendering (`methods_instance_ops.rs`) re-encodes the level its default
+//! `.raku` lists, because mutsu stores the four levels.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::collation::CollationSettings;
@@ -43,7 +43,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("collation-level", Handler::Narrow(collation_level)),
     row!("set", Handler::Named(set), LEVELS),
     row!("gist", Handler::Narrow(gist)),
-    row!("raku", Handler::Narrow(raku)),
 ];
 
 /// `Collation`'s rows for a `Collation` instance; `None` for anything else.
@@ -135,14 +134,5 @@ fn gist(target: &Value, _args: &[Value]) -> Answer {
         settings.secondary,
         settings.tertiary,
         settings.quaternary
-    ))))
-}
-
-/// `Collation.raku`: `Collation.new(collation-level => N)`.
-// Cost: O(1).
-fn raku(target: &Value, _args: &[Value]) -> Answer {
-    Some(Ok(Value::str(format!(
-        "Collation.new(collation-level => {})",
-        CollationSettings::from_value(target).collation_level()
     ))))
 }

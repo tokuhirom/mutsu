@@ -3152,9 +3152,10 @@ names.
 the result back to the variable. They are `OWNER_ONLY` rows of `Collation` (`instances/collation.rs`), found by owner
 next to `Supply`'s (§9.130) and in the mutating method call; `collation-level`, which Rakudo declares and mutsu lacked,
 is a row too. `set` writes the instance's shared attribute cell, so it is a pure-entry row (§9.126): the variable
-write-back was a re-insert of a value sharing the cell, and is gone with the special case. `raku` is mutsu's own row
-(Rakudo's default `.raku` lists its one `$!collation-level` attribute; mutsu stores the four levels and re-encodes
-the level), so it has no recognition row. `dispatch_collation_method` is deleted.
+write-back was a re-insert of a value sharing the cell, and is gone with the special case. Rakudo declares no `raku`
+on `Collation` (its default `.raku` lists the one `$!collation-level` attribute), so `raku` is no row: the instance
+rendering that answers `Supplier`'s and the schedulers' `.raku` re-encodes the level, since mutsu stores the four
+levels. `dispatch_collation_method` is deleted.
 
 Pinned in `t/oo/method/collation-method-rows.t` (which passes under `raku`): `collation-level` answers (was
 `X::Method::NotFound`), and a `set` through an array element is seen through `$*COLLATION`. The oracle snapshot gains
