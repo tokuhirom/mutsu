@@ -69,137 +69,6 @@ impl Interpreter {
                 }
                 Ok(Value::NIL)
             }
-            "emit" => {
-                // Push to supply_emit_buffer (works for on-demand callbacks)
-                let value = Self::supplier_emit_value(&args)?;
-                if Self::supply_is_terminated(attributes)
-                    || self.on_demand_quit_pending(supplier_id_from_attrs(attributes))
-                {
-                    return Ok(Value::NIL);
-                }
-                // Streaming on-demand react path (see native_supplier_mut emit).
-                if let Some(sid) = supplier_id_from_attrs(attributes)
-                    && let Some(res) = self.try_stream_emit(sid, &value)
-                {
-                    return res.map(|_| Value::NIL);
-                }
-                self.supply_emit_collect(supplier_id_from_attrs(attributes), &value)?;
-                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    // Record the emission and dispatch tap callbacks (head_limit,
-                    // unique, produce, etc.); a live tap consuming it keeps it
-                    // out of the Supplier::Preserving backlog a future tap replays.
-                    let actions = supplier_emit_collect(supplier_id, &value);
-                    for action in actions {
-                        match action {
-                            SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
-                                Self::sleep_for_supply_delay(delay_seconds);
-                                if let Err(err) = self.call_supply_tap(tap, vec![emitted], true) {
-                                    // A `return` inside the tap callback targets the
-                                    // callback's lexically enclosing routine: propagate
-                                    // the signal unchanged so that routine's call frame
-                                    // consumes it — it is not a supply failure.
-                                    if err.is_return() || err.return_value.is_some() {
-                                        return Err(err);
-                                    }
-                                    // `done`/`last` inside a whenever body ends
-                                    // the enclosing supply. Propagate the control
-                                    // signal unchanged so the supply machinery
-                                    // consumes it; falling through to the
-                                    // quit/failure path below strips the control
-                                    // flag and re-raises it as a thrown
-                                    // `X::ControlFlow`, which then surfaced on a
-                                    // channel reader thread as "done without
-                                    // supply or react" and killed the process.
-                                    if err.is_react_done()
-                                        || err.is_last()
-                                        || err.is_supply_body_done()
-                                    {
-                                        return Err(err);
-                                    }
-                                    // `next` inside a whenever body skips the rest
-                                    // of the body for THIS value (Rakudo maps it to
-                                    // a control exception the supply machinery
-                                    // absorbs) — it is not a supply failure.
-                                    if err.is_next() {
-                                        continue;
-                                    }
-                                    return Err(err);
-                                }
-                            }
-                            other => {
-                                // Every other action kind either re-emits into a
-                                // derived supplier or needs one of the shared
-                                // handlers; `drive_supplier_emit_actions` runs it
-                                // and, crucially, keeps driving the chain that
-                                // re-emit starts.
-                                self.drive_supplier_emit_actions(supplier_id, vec![other])?;
-                            }
-                        }
-                    }
-                }
-                Ok(Value::NIL)
-            }
-            "done" => {
-                // Bumped so the on-demand tap handler can tell (by comparing
-                // the count before/after running the block body) that the body
-                // itself called `done` — the supplier's own done state is reset
-                // below, so it can't be read back later. Keyed by supplier id so
-                // a concurrent pipeline's `done` cannot be mistaken for this
-                // emitter's.
-                bump_supplier_done_count(supplier_id_from_attrs(attributes));
-                let preserving = attributes.contains_key("preserving");
-                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    // With a tap already listening the done is delivered now, so
-                    // it is not left in the preserved replay list for a later
-                    // tap; with nothing listening it stays there for exactly one
-                    // (mirrors the mutable-lane arm below).
-                    if preserving && supplier_tap_count(supplier_id) > 0 {
-                        supplier_mark_terminal_delivered(supplier_id);
-                    }
-                    supplier_done(supplier_id);
-                    self.propagate_supplier_done(supplier_id)?;
-                    close_all_supplier_taps(supplier_id);
-                    // A `Supplier::Preserving` keeps its whole terminal state
-                    // (backlog + done flag) past `.done` so a tap registered
-                    // afterwards still replays it (see the mutable-lane arm's
-                    // matching comment below for the full rationale).
-                    if !preserving {
-                        supplier_reset(supplier_id);
-                    }
-                }
-                Ok(Value::NIL)
-            }
-            "quit" => {
-                // Raku wraps a non-exception quit reason (a plain Str) in
-                // X::AdHoc, so a `QUIT { default { .message } }` handler works
-                // either way. Object instances (user exception classes like
-                // `my class OMGBears is Exception`) pass through untouched —
-                // `as_exception_value`'s name-based check cannot see `is
-                // Exception` ancestry, so gate on the value shape instead.
-                let reason = args
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| Value::str_from("Died"));
-                let reason = if matches!(reason.view(), ValueView::Instance { .. }) {
-                    reason
-                } else {
-                    Self::as_exception_value(reason)
-                };
-                if let Some(supplier_id) = supplier_id_from_attrs(attributes)
-                    && self.defer_on_demand_quit(supplier_id, &reason)
-                {
-                    return Ok(Value::NIL);
-                }
-                if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    supplier_quit(supplier_id, reason.clone());
-                    self.propagate_supplier_quit(supplier_id, reason.clone())?;
-                    Self::reset_supplier_after_quit(
-                        supplier_id,
-                        attributes.contains_key("preserving"),
-                    );
-                }
-                Ok(Value::NIL)
-            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Supplier",
                 method
@@ -322,10 +191,11 @@ impl Interpreter {
                                 }
                             }
                             other => {
-                                // See the matching arm in the immutable lane
-                                // above: one shared driver for every re-emitting
-                                // action kind, so a combinator chain is driven to
-                                // its end rather than one hop.
+                                // Every other action kind either re-emits into a
+                                // derived supplier or needs one of the shared
+                                // handlers: one shared driver for every
+                                // re-emitting action kind, so a combinator chain
+                                // is driven to its end rather than one hop.
                                 self.drive_supplier_emit_actions(sid, vec![other])?;
                             }
                         }

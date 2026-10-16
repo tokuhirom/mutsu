@@ -52,19 +52,33 @@ impl Interpreter {
         _args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let class_name = &c.class_name;
-            // Shared with the VM's native fast path
-            // (`try_native_builtin_construct`).
-            let mut attrs = HashMap::new();
-            attrs.insert("emitted".to_string(), Value::array(Vec::new()));
-            attrs.insert("done".to_string(), Value::FALSE);
-            attrs.insert(
-                "supplier_id".to_string(),
-                Value::int(super::native_methods::next_supplier_id() as i64),
-            );
-            if class_name.resolve() == "Supplier::Preserving" {
-                attrs.insert("preserving".to_string(), Value::TRUE);
-            }
-            Ok(Value::make_instance(*class_name, attrs))
+        // Shared with the VM's native fast path
+        // (`try_native_builtin_construct`).
+        let mut attrs = AttrMap::new();
+        Self::seed_supplier_state(&mut attrs, class_name.resolve() == "Supplier::Preserving");
+        Ok(Value::make_instance(*class_name, attrs))
+    }
+
+    /// The state a supplier keeps in its attributes: what it emitted, whether
+    /// it is done, the id its taps are registered under and, for a
+    /// `Supplier::Preserving`, the flag that makes its supplies replay. Seeds
+    /// only the keys `attrs` lacks, so an instance of a user subclass keeps an
+    /// attribute it declares under the same name.
+    // Cost: O(1).
+    pub(crate) fn seed_supplier_state(attrs: &mut AttrMap, preserving: bool) {
+        if !attrs.contains_key("emitted") {
+            attrs.insert("emitted", Value::array(Vec::new()));
+        }
+        if !attrs.contains_key("done") {
+            attrs.insert("done", Value::FALSE);
+        }
+        attrs.insert(
+            "supplier_id",
+            Value::int(super::native_methods::next_supplier_id() as i64),
+        );
+        if preserving {
+            attrs.insert("preserving", Value::TRUE);
+        }
     }
 
     /// `ThreadPoolScheduler`, `CurrentThreadScheduler`, `Tap`.
