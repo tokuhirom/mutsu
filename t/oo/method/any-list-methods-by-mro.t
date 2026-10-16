@@ -5,7 +5,7 @@ use Test;
 # IterationBuffer-free plain list all reach the same row. Answers checked
 # against Rakudo.
 
-plan 26;
+plan 30;
 
 class Plain {}
 class PI { method iterator { (4, 5).iterator } }
@@ -40,3 +40,10 @@ is-deeply (1, 2, 3, 4).unique(:as(* % 2)).List, (1, 2), 'unique with :as';
 is (3, 1, 2).minmax(-*), 3..1, 'minmax with a mapper';
 is Plain.new.max.^name, 'Plain', 'max on an instance';
 throws-like { (1, 2).minpairs(1) }, X::Multi::NoMatch, 'minpairs takes no argument';
+
+# The junction constructors are rows of `Any`.
+is (1, 2, 3).any.raku, 'any(1, 2, 3)', 'any';
+is Int.one.raku, 'one(Int)', 'one on a type object';
+my $held = (1, 2);
+is $held.all.raku, 'all(1, 2)', 'a scalar-held list is the list';
+is Plain.new.none.^name, 'Junction', 'none on an instance';
