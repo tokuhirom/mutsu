@@ -99,6 +99,7 @@ pub(crate) use scalars::{
 
 pub(crate) use collections::accepts_open::accepts_by_smartmatch;
 pub(crate) use collections::any_subscript::at_pos as any_subscript_at_pos;
+pub(crate) use collections::early_entry_defers;
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 pub(crate) use dispatch::{
     admits, answer, answer_as, answer_shapeless, cool_text_for_shapeless, invoke, invoke_base,

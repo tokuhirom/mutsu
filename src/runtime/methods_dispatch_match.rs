@@ -63,21 +63,23 @@ impl Interpreter {
         {
             return Some(result);
         }
+        // Supply.classify / Supply.categorize are instance methods (declared
+        // `Supply:D:`); calling them on the Supply type object is an error in
+        // Rakudo, not `Any`'s method.
+        if matches!(method, "classify" | "categorize")
+            && matches!(target.view(), ValueView::Package(name) if name == "Supply")
+        {
+            return Some(Err(RuntimeError::new(format!(
+                "Cannot call '{method}' as a class method on Supply (requires a defined invocant)"
+            ))));
+        }
+        // `Any`'s iteration methods are rows, found by the receiver's MRO
+        // (ADR-11276 §9.134).
+        if let Some(result) = self.any_list_method_by_mro(&target, method, &args) {
+            return Some(result);
+        }
         match method {
             "are" => Some(self.dispatch_are(target, &args)),
-            "classify" | "categorize" if matches!(target.view(), ValueView::Package(name) if name == "Supply") =>
-            {
-                // Supply.classify / Supply.categorize are instance methods
-                // (declared `Supply:D:`); calling them on the Supply type
-                // object is an error in Rakudo.
-                Some(Err(RuntimeError::new(format!(
-                    "Cannot call '{method}' as a class method on Supply (requires a defined invocant)"
-                ))))
-            }
-            "classify" | "categorize" => self.dispatch_classify_method(target, method, args),
-            "classify-list" | "categorize-list" => {
-                Some(self.dispatch_classify_list_method(target, method, args))
-            }
             // `$obj.say`/`.print`/`.put`/`.printf` (no args) stringify and print the
             // invocant — EXCEPT on an IO::CatHandle, where these are write methods
             // that route to the native handler (which raises X::NYI on a read-only

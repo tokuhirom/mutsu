@@ -4,8 +4,9 @@
 //! `grep`, `first`, `reduce`, `produce`, `rotor`, `skip`, `squish`, `eager`,
 //! `iterator`, `match`, `classify`, `categorize`) run user code through the
 //! interpreter. Each handler calls the one `Interpreter::dispatch_*_method` the
-//! cascade's arm calls too (ADR-11276 slice 3C remainder), after declining the
-//! receivers `try_native_method_raw` deferred to the interpreter by name.
+//! cascade's arm calls too (ADR-11276 slice 3C remainder). The receivers the
+//! VM's native entry leaves to the interpreter are its veto
+//! ([`early_entry_defers`]), not the rows' (§9.134).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -15,6 +16,11 @@ use crate::value::{RuntimeError, Value, ValueView};
 const ARGS: RowFlags = RowFlags::ANY_ARGS;
 /// `match` binds the regex adverbs (`:g`, `:ov`, `:x`, ...), which are open-ended.
 const ARGS_NAMED: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::ANY_NAMED);
+/// `Any`'s iteration methods take a type object as a one-item list
+/// (`Int.map(...)`, `Int.first`); `rotor` does not (Rakudo's candidates are
+/// `Any:D:`).
+const TYPE_OK: RowFlags = RowFlags::TYPE_OBJECT_OK;
+const ARGS_TYPE: RowFlags = ARGS.or(RowFlags::TYPE_OBJECT_OK);
 
 macro_rules! any_row {
     ($owner:literal, $name:literal, $arity:literal, $flags:expr, $handler:ident) => {
@@ -33,14 +39,14 @@ macro_rules! any_row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    any_row!("Any", "collate", 0, RowFlags::NONE, collate),
-    any_row!("Any", "map", 1, ARGS, map),
-    any_row!("Any", "grep", 1, ARGS, grep, &["k", "v", "kv", "p"]),
+    any_row!("Any", "collate", 0, TYPE_OK, collate),
+    any_row!("Any", "map", 1, ARGS_TYPE, map),
+    any_row!("Any", "grep", 1, ARGS_TYPE, grep, &["k", "v", "kv", "p"]),
     any_row!(
         "Any",
         "first",
         0,
-        ARGS,
+        ARGS_TYPE,
         first,
         &["k", "v", "kv", "p", "end"]
     ),
@@ -48,15 +54,15 @@ pub(super) static ROWS: &[MethodRow] = &[
         "Any",
         "first",
         1,
-        ARGS,
+        ARGS_TYPE,
         first,
         &["k", "v", "kv", "p", "end"]
     ),
-    any_row!("Any", "reduce", 1, ARGS, reduce),
-    any_row!("Any", "produce", 1, ARGS, produce),
-    any_row!("Any", "iterator", 0, RowFlags::NONE, iterator),
-    any_row!("Any", "eager", 0, RowFlags::NONE, eager),
-    any_row!("Any", "squish", 0, ARGS, squish, &["as", "with"]),
+    any_row!("Any", "reduce", 1, ARGS_TYPE, reduce),
+    any_row!("Any", "produce", 1, ARGS_TYPE, produce),
+    any_row!("Any", "iterator", 0, TYPE_OK, iterator),
+    any_row!("Any", "eager", 0, TYPE_OK, eager),
+    any_row!("Any", "squish", 0, ARGS_TYPE, squish, &["as", "with"]),
     any_row!(
         "Any",
         "rotor",
@@ -65,7 +71,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         rotor,
         &["partial"]
     ),
-    any_row!("Any", "skip", 0, ARGS.or(RowFlags::SLURPY), skip),
+    any_row!("Any", "skip", 0, ARGS_TYPE.or(RowFlags::SLURPY), skip),
     any_row!(
         "Any",
         "match",
@@ -73,8 +79,15 @@ pub(super) static ROWS: &[MethodRow] = &[
         ARGS_NAMED.or(RowFlags::TYPE_OBJECT_OK),
         match_
     ),
-    any_row!("Any", "classify", 1, ARGS, classify, &["as", "into"]),
-    any_row!("Any", "categorize", 1, ARGS, categorize, &["as", "into"]),
+    any_row!("Any", "classify", 1, ARGS_TYPE, classify, &["as", "into"]),
+    any_row!(
+        "Any",
+        "categorize",
+        1,
+        ARGS_TYPE,
+        categorize,
+        &["as", "into"]
+    ),
     any_row!("Hash", "classify-list", 2, ARGS, classify_list, &["as"]),
     any_row!("Hash", "categorize-list", 2, ARGS, categorize_list, &["as"]),
 ];
@@ -89,22 +102,29 @@ fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
     all
 }
 
-/// Whether `try_native_method_raw` deferred this call to the interpreter
-/// before it reached the pure cascades: a receiver whose elements live behind
-/// a user `iterator`, an `IterationBuffer`, or a lazy source the interpreter
-/// turns into a pipeline stage. A row runs in front of those probes, so it
-/// declines the same calls.
+/// Whether `Any`'s row cannot serve this receiver: an associative or quantity
+/// receiver reads as its pairs, which the pure cascades build for
+/// `squish`/`eager`/`produce` and the interpreter's own routines do not.
+// Cost: O(1).
+fn reads_as_pairs(target: &Value, name: &str) -> bool {
+    matches!(name, "squish" | "eager" | "produce")
+        && matches!(
+            target.view(),
+            ValueView::Hash(..) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+        )
+}
+
+/// Whether the VM's native entry must leave `map`/`grep`/`first` to the
+/// interpreter, which runs its receiver probes (`call_method_with_values`)
+/// before it asks the table again: a receiver whose elements live behind a
+/// user `iterator` or an `IterationBuffer` (read as their elements), or a lazy
+/// source a `map`/`grep` turns into a pipeline stage. The decision belongs to
+/// that early entry, not to the row: once the probes have run, the row is the
+/// method (ADR-11276 §9.134).
 // Cost: O(1) tag probes; O(m) method-table lookups for an instance, m = MRO length.
-fn deferred_to_interpreter(interp: &mut Interpreter, target: &Value, name: &str) -> bool {
-    // An associative or quantity receiver reads as its pairs, which the pure
-    // cascades build for `squish`/`eager`/`produce` and the interpreter's own
-    // routines do not.
+pub(crate) fn early_entry_defers(interp: &mut Interpreter, target: &Value, name: &str) -> bool {
     if !matches!(name, "map" | "grep" | "first") {
-        return matches!(name, "squish" | "eager" | "produce")
-            && matches!(
-                target.view(),
-                ValueView::Hash(..) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
-            );
+        return false;
     }
     if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
         return true;
@@ -145,7 +165,7 @@ macro_rules! handler {
             args: &[Value],
             named: Named<'_>,
         ) -> Option<Result<Value, RuntimeError>> {
-            if deferred_to_interpreter(interp, target, $name) {
+            if reads_as_pairs(target, $name) {
                 return None;
             }
             let $args = joined(args, named);
