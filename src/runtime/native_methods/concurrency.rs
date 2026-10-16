@@ -339,108 +339,44 @@ impl Interpreter {
         }
     }
 
-    // --- Promise mutable ---
+    // --- Promise / Channel subclasses ---
 
-    pub(in crate::runtime) fn native_promise_mut(
-        &mut self,
-        mut attrs: AttrMap,
-        method: &str,
-        _args: Vec<Value>,
-        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
-    ) -> Result<(Value, AttrMap), RuntimeError> {
-        match method {
-            "keep" => {
-                let value = _args.first().cloned().unwrap_or(Value::NIL);
-                attrs.insert("result".to_string(), value);
-                attrs.insert("status".to_string(), Value::str_from("Kept"));
-                Ok((Value::NIL, attrs))
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No native mutable method '{}' on Promise",
-                method
-            ))),
-        }
-    }
-
-    // --- Channel mutable ---
-
-    pub(in crate::runtime) fn native_channel_mut(
-        &mut self,
-        mut attrs: AttrMap,
-        method: &str,
-        args: Vec<Value>,
-        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
-    ) -> Result<(Value, AttrMap), RuntimeError> {
-        match method {
-            "send" => {
-                let value = args.first().cloned().unwrap_or(Value::NIL);
-                let pushed = attrs.get_mut("queue").is_some_and(|q| {
-                    q.with_array_mut(|items, _k| crate::gc::Gc::make_mut(items).push(value.clone()))
-                        .is_some()
-                });
-                if !pushed {
-                    attrs.insert("queue".to_string(), Value::array(vec![value]));
-                }
-                Ok((Value::NIL, attrs))
-            }
-            "receive" => {
-                let mut value = Value::NIL;
-                if let Some(q) = attrs.get_mut("queue")
-                    && let Some(Some(removed)) = q.with_array_mut(|items, _k| {
-                        (!items.is_empty()).then(|| crate::gc::Gc::make_mut(items).remove(0))
-                    })
-                {
-                    value = removed;
-                }
-                Ok((value, attrs))
-            }
-            "close" => {
-                attrs.insert("closed".to_string(), Value::TRUE);
-                Ok((Value::NIL, attrs))
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No native mutable method '{}' on Channel",
-                method
-            ))),
-        }
-    }
-
-    // --- Promise immutable ---
-
-    pub(in crate::runtime) fn native_promise(
+    /// A built-in method of an instance of a user subclass of `Promise` or
+    /// `Channel`, reached through the class's native methods: the rows answer
+    /// it on the native promise or channel the instance carries (#13634).
+    // Cost: O(1) to find the payload, plus the row's own cost.
+    pub(in crate::runtime) fn native_promise_channel_payload(
         &mut self,
         attributes: &AttrMap,
+        class: &str,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        match method {
-            "result" => Ok(attributes.get("result").cloned().unwrap_or(Value::NIL)),
-            "status" => Ok(Self::promise_status_value(
-                &attributes
-                    .get("status")
-                    .map(|s| s.to_string_value())
-                    .unwrap_or_default(),
-            )),
-            "then" => {
-                let block = args.first().cloned().unwrap_or(Value::NIL);
-                self.bind_callable_param("&code", &block)?;
-                let status = attributes
-                    .get("status")
-                    .cloned()
-                    .unwrap_or(Value::str_from("Planned"));
-                if status.as_str() == Some("Kept") {
-                    let value = attributes.get("result").cloned().unwrap_or(Value::NIL);
-                    let result = self.call_sub_value(block, vec![value], true)?;
-                    Ok(self.make_promise_instance("Kept", result))
-                } else {
-                    Ok(self.make_promise_instance("Planned", Value::NIL))
-                }
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Promise",
-                method
-            ))),
-        }
+        let key = if class == "Channel" {
+            crate::builtins::method_table::promise_channel::CHANNEL_PAYLOAD
+        } else {
+            crate::builtins::method_table::promise_channel::PROMISE_PAYLOAD
+        };
+        let Some(payload) = attributes.get(key).cloned() else {
+            return Err(crate::runtime::methods_signature_errors::make_method_not_found_error(
+                method, class, false,
+            ));
+        };
+        self.call_method_with_values(payload, method, args)
+    }
+
+    /// [`Self::native_promise_channel_payload`] for the mutating entry: the
+    /// payload is shared, so the instance's attributes are unchanged.
+    // Cost: O(1) to find the payload, plus the row's own cost.
+    pub(in crate::runtime) fn native_promise_channel_payload_mut(
+        &mut self,
+        attrs: AttrMap,
+        class: &str,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<(Value, AttrMap), RuntimeError> {
+        let result = self.native_promise_channel_payload(&attrs, class, method, args)?;
+        Ok((result, attrs))
     }
 
     /// The native methods of a `Promise::Vow` ([`Self::promise_vow_method`]).
@@ -497,15 +433,6 @@ impl Interpreter {
             // Cost: O(s), s = the resolution's subscribers.
             "__mutsu_run_dispatch" => Some(Ok(Interpreter::run_cued_dispatch(&arg))),
             _ => None,
-        }
-    }
-
-    // --- Channel immutable ---
-
-    pub(in crate::runtime) fn native_channel(&self, attributes: &AttrMap, method: &str) -> Value {
-        match method {
-            "closed" => attributes.get("closed").cloned().unwrap_or(Value::FALSE),
-            _ => Value::NIL,
         }
     }
 

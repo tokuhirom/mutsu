@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     pub(crate) fn as_exception_value(value: Value) -> Value {
@@ -413,4 +414,52 @@ impl Interpreter {
             Value::array(items)
         })
     }
+
+    /// Seed the native promise or channel an instance of a user subclass of
+    /// `Promise` or `Channel` carries (#13634): Rakudo's subclass *is* a
+    /// promise (`await`, `.then`, `.vow` all work on it), so the rows answer
+    /// its built-in methods on this payload. A promise is bound to the
+    /// scheduler a `:scheduler` argument names, as `Promise.new`'s is.
+    // Cost: O(m), m = classes in the MRO.
+    pub(crate) fn seed_concurrency_payload(
+        &mut self,
+        attrs: &mut AttrMap,
+        class_mro: &[Symbol],
+        args: &[Value],
+    ) {
+        use crate::builtins::method_table::promise_channel::{CHANNEL_PAYLOAD, PROMISE_PAYLOAD};
+        let Some(class) = class_mro.first().copied() else {
+            return;
+        };
+        if class_mro.iter().any(|name| name == "Promise") && !attrs.contains_key(PROMISE_PAYLOAD) {
+            let explicit = Self::named_value(args, "scheduler");
+            let promise = self.new_bound_promise(class, explicit);
+            attrs.insert(PROMISE_PAYLOAD, Value::promise(promise));
+        } else if class_mro.iter().any(|name| name == "Channel")
+            && !attrs.contains_key(CHANNEL_PAYLOAD)
+        {
+            attrs.insert(CHANNEL_PAYLOAD, Value::channel(SharedChannel::new()));
+        }
+    }
+
+    /// `Any`'s `Seq`/`List`/`Array` on an instance of a user subclass of
+    /// `Channel`: read on the channel it carries (#13634), before `Any`'s
+    /// rows read the instance as one item. `None` for any other call.
+    // Cost: O(1) unless it answers; then as `channel_list_coercion`.
+    pub(crate) fn channel_subclass_coercion(
+        target: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !crate::builtins::method_table::CHANNEL_LIST_COERCIONS.contains(&method)
+            || !matches!(target.view(), ValueView::Instance { .. })
+        {
+            return None;
+        }
+        let receiver = crate::builtins::method_table::promise_channel_receiver_of(target)?;
+        let ValueView::Channel(ch) = receiver.view() else {
+            return None;
+        };
+        Some(Self::channel_list_coercion(&ch, method))
+    }
 }
+

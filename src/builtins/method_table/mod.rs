@@ -79,6 +79,7 @@ pub(crate) use instances::{
 pub(crate) use io_concurrency::promise_channel;
 pub(crate) use io_concurrency::promise_channel::{
     CHANNEL_LIST_COERCIONS, owners_of as promise_channel_owners_of,
+    receiver_of as promise_channel_receiver_of,
 };
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,

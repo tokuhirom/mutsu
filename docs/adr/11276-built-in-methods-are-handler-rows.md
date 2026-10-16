@@ -2845,6 +2845,20 @@ user subclass of `Promise` or `Channel` is an instance answered by the native-me
 `__mutsu_run_start`/`__mutsu_run_dispatch` names stay with the 3G remainder's `__mutsu_*` names.
 `method-rows-report.py --arms`: the runtime slow path loses 32 arms.
 
+### 9.119 A user subclass of `Promise` or `Channel` carries the native value (2026-10-16)
+
+`fix/13634-promise-subclass-payload` (issue #13634). §9.118 left a second representation: `P.new` for
+`class P is Promise` built an instance whose built-in methods the native-methods tier answered on its attributes
+(`native_promise`, `native_promise_mut`; `native_channel`, `native_channel_mut` for `Channel`), with no
+`get-await-handle` (so `await` died), `vow`, `andthen` or `cause`. The instance now carries a native promise
+(`__mutsu_promise_value`, bound to the scheduler a `:scheduler` argument names) or channel (`__mutsu_channel_value`),
+seeded where the scalar subclasses' payloads are (§9.79), and the `Promise`/`Channel` rows answer its built-in methods on
+that payload (`promise_channel::receiver_of`): from the native-methods tier, which the classes' `native_methods` lists
+still route to, and from the owner lookup in `call_method_with_values`. A `Channel` subclass's `Seq`/`List`/`Array` read
+its channel before `Any`'s rows read the instance as one item. The attribute representation, `make_promise_instance`
+and `await`'s two branches for an instance of `Promise` are deleted. Pinned in
+`t/concurrency/promise/promise-channel-subclass.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -71,12 +71,40 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// interpreter answers them as `Interpreter::channel_list_coercion`.
 pub(crate) const CHANNEL_LIST_COERCIONS: [&str; 3] = ["Seq", "List", "Array"];
 
+/// The attribute an instance of a user subclass of `Promise` keeps its native
+/// promise in (#13634), as `is Pair` subclasses keep their `Pair`
+/// (`builtins::native_base`).
+pub(crate) const PROMISE_PAYLOAD: &str = "__mutsu_promise_value";
+
+/// The attribute an instance of a user subclass of `Channel` keeps its native
+/// channel in (#13634).
+pub(crate) const CHANNEL_PAYLOAD: &str = "__mutsu_channel_value";
+
 /// The owners a promise's or a channel's rows are found under.
 // Cost: O(1).
 pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
     match target.view() {
         ValueView::Promise(_) => Some(&["Promise"]),
         ValueView::Channel(_) => Some(&["Channel"]),
+        _ => None,
+    }
+}
+
+/// The value the rows answer `target` on: a promise or a channel itself, or
+/// the native promise or channel an instance of a user subclass carries
+/// ([`PROMISE_PAYLOAD`], [`CHANNEL_PAYLOAD`]): Rakudo's subclass inherits
+/// every method of its base. `None` for any other value.
+// Cost: O(1), plus one attribute read for an instance.
+pub(crate) fn receiver_of(target: &Value) -> Option<Value> {
+    match target.view() {
+        ValueView::Promise(_) | ValueView::Channel(_) => Some(target.clone()),
+        ValueView::Instance { attributes, .. } => {
+            let attributes = attributes.as_map();
+            attributes
+                .get(PROMISE_PAYLOAD)
+                .or_else(|| attributes.get(CHANNEL_PAYLOAD))
+                .cloned()
+        }
         _ => None,
     }
 }

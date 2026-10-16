@@ -1633,6 +1633,7 @@ impl Interpreter {
                     &args,
                     &positional_ctor_args,
                 );
+                self.seed_concurrency_payload(&mut attrs, &class_mro, &args);
                 // `class C is BagHash { }` and its Set/Mix siblings keep their
                 // entries in `__baggy_data__`, the same way the `is Hash` and
                 // `is Array` blocks above use their own backing attributes.

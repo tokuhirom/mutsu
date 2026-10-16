@@ -798,6 +798,10 @@ impl Interpreter {
             };
             return self.call_method_with_values(Value::array(items), method, args);
         }
+        // A `Channel` subclass's list coercions read its channel (#13634).
+        if let Some(result) = Self::channel_subclass_coercion(&target, method) {
+            return result;
+        }
         // A `Match` answers `Any`'s list methods from its positional captures
         // (`Interpreter::match_list_receiver`), unless the grammar defines the
         // method.
@@ -4156,23 +4160,29 @@ impl Interpreter {
 
         // `Promise`'s and `Channel`'s methods are rows of the method table,
         // found by their owner (ADR-11276 §9.118).
-        if let Some(owners) = crate::builtins::method_table::promise_channel_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
+        // An instance of a user subclass is answered on the native promise or
+        // channel it carries (#13634).
+        if let Some(receiver) = crate::builtins::method_table::promise_channel_receiver_of(&target)
         {
-            return result;
-        }
-        // `Any`'s list coercions a `Channel` inherits read `self.list`, the
-        // lazy list that receives one value per element (`Channel.list`).
-        if let ValueView::Channel(ch) = target.view()
-            && crate::builtins::method_table::CHANNEL_LIST_COERCIONS.contains(&method)
-        {
-            return Self::channel_list_coercion(&ch, method);
+            if let Some(owners) =
+                crate::builtins::method_table::promise_channel_owners_of(&receiver)
+                && let Some(result) = crate::builtins::method_table::invoke_owner(
+                    self,
+                    owners,
+                    method,
+                    &args,
+                    || receiver.clone(),
+                )
+            {
+                return result;
+            }
+            // `Any`'s list coercions a `Channel` inherits read `self.list`, the
+            // lazy list that receives one value per element (`Channel.list`).
+            if let ValueView::Channel(ch) = receiver.view()
+                && crate::builtins::method_table::CHANNEL_LIST_COERCIONS.contains(&method)
+            {
+                return Self::channel_list_coercion(&ch, method);
+            }
         }
 
         // A `Promise::Vow`'s `keep`/`break` and the internal names a user
