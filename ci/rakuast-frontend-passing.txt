@@ -947,7 +947,6 @@ t/concurrency/concurrent-hash-assign.t
 t/concurrency/concurrent-lane-decline-routes.t
 t/concurrency/concurrent-map-grep-rw-writes-reach-live-container.t
 t/concurrency/concurrent-nested-subscript-store.t
-t/concurrency/concurrent-param-array-reader-families.t
 t/concurrency/concurrent-param-container-mutation.t
 t/concurrency/concurrent-param-hash-reader-families.t
 t/concurrency/concurrent-role-mixin-visibility.t
@@ -4695,6 +4694,7 @@ t/rakuast/rakuast-core-type-names.t
 t/rakuast/rakuast-decl-default-trait.t
 t/rakuast/rakuast-decl-postfix-tail.t
 t/rakuast/rakuast-declaration-compound-assign.t
+t/rakuast/rakuast-declaration-given-modifier.t
 t/rakuast/rakuast-declaration-headers.t
 t/rakuast/rakuast-declaration-loose-tail.t
 t/rakuast/rakuast-declaration-modifier-cohort.t
