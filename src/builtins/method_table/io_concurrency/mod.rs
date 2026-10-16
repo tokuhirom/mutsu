@@ -7,6 +7,7 @@
 
 use super::MethodRow;
 
+pub(crate) mod cathandle;
 pub(crate) mod class_methods;
 mod concurrency_state;
 mod io_handle;
@@ -40,5 +41,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     promise_channel::ROWS,
     promise_class::ROWS,
     proc_async::ROWS,
+    cathandle::ROWS,
     class_methods::ROWS,
 ];

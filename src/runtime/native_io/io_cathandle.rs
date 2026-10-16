@@ -531,6 +531,32 @@ impl Interpreter {
     /// cat, so mid-iteration attribute changes take effect and `.path`/on-switch
     /// track the current handle — matching Rakudo's lazy iterators. Returns
     /// `None` (use the eager path) for `.lines($limit)` / `.lines(:close)`.
+    /// Run `method` on a cat handle: the handler of every row of
+    /// `IO::CatHandle` (ADR-11276 §9.132). The lazy `.lines`/`.handles` hand
+    /// out a list backed by the live cat; every other method runs on a working
+    /// copy committed through the instance's shared cell. `None` for any other
+    /// receiver.
+    // Cost: the method's own.
+    pub(crate) fn cathandle_call(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Instance { attributes, .. } = target.view() else {
+            return None;
+        };
+        if let Some(lazy) = Self::cathandle_lazy_method(target, method, &args) {
+            return Some(Ok(lazy));
+        }
+        Some(self.call_native_instance_method_mut_in_place(
+            &attributes,
+            "IO::CatHandle",
+            method,
+            args,
+        ))
+    }
+
     pub(crate) fn cathandle_lazy_method(
         cat: &Value,
         method: &str,

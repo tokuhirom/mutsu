@@ -3160,6 +3160,20 @@ levels. `dispatch_collation_method` is deleted.
 Pinned in `t/oo/method/collation-method-rows.t` (which passes under `raku`): `collation-level` answers (was
 `X::Method::NotFound`), and a `set` through an array element is seen through `$*COLLATION`. The oracle snapshot gains
 `Collation`.
+### 9.132 `IO::CatHandle`'s methods are rows, found by their owner (2026-10-16)
+
+`refactor/11276-cathandle-rows` (3E remainder). A cat handle's methods were routed by two name gates: the instance
+dispatch's `class_name == "IO::CatHandle" && is_native_method` block (lazy `.lines`/`.handles`, then the mutating
+native path) and the mutating method call's `IO::CatHandle` special case inside its `is_native_method` block. The 42
+methods mutsu implements of those Rakudo declares on `IO::CatHandle` are `OWNER_ONLY | SLURPY` rows
+(`io_concurrency/cathandle.rs`), found by owner next to `Proc::Async`'s and `Supply`'s in both entries. One handler,
+`Interpreter::cathandle_call`, hands out the lazy list for `.lines`/`.handles` and runs every other method on a working
+copy committed through the shared cell, as both gates did; no row needs a place (§9.126). The two gates are gone; the
+native dispatcher's `IO::CatHandle` arm stays as the implementation's entry. A user subclass of `IO::CatHandle`
+keeps the inherited native path (`owners_of` names the class itself only), as before.
+
+No behaviour change; pinned in `t/io/cathandle-method-rows.t` (a `get` through an array element advances the cat the
+variable holds; also passes under `raku`). The recognition table and the oracle snapshot gain `IO::CatHandle`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
