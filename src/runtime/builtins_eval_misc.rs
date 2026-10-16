@@ -308,7 +308,7 @@ impl Interpreter {
         let cwd = self
             .env
             .get("*CWD")
-            .map(|v| v.to_string_value())
+            .map(|v| v.deref_container().to_string_value())
             .filter(|s| !s.is_empty())
             .or_else(|| {
                 std::env::current_dir()

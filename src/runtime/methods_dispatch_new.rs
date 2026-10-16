@@ -1284,6 +1284,7 @@ impl Interpreter {
         let default_tz = self
             .env
             .get("*TZ")
+            .map(Value::deref_container)
             .and_then(|v| {
                 if let ValueView::Int(n) = v.view() {
                     Some(n)

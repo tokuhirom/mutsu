@@ -406,8 +406,8 @@ impl Interpreter {
             return crate::builtins::collation::CollationSettings::from_value(&val);
         }
         // Also check with $* prefix
-        if let Some(val) = self.env().get("$*COLLATION") {
-            return crate::builtins::collation::CollationSettings::from_value(val);
+        if let Some(val) = self.env().get("$*COLLATION").map(Value::deref_container) {
+            return crate::builtins::collation::CollationSettings::from_value(&val);
         }
         crate::builtins::collation::CollationSettings::default()
     }

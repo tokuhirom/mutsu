@@ -21,7 +21,7 @@ impl Interpreter {
     /// observationally identical, so only a user scheduler needs the real
     /// `.cue` dispatch.
     pub(in crate::runtime) fn user_scheduler(&mut self) -> Option<Value> {
-        let sched = self.env().get("*SCHEDULER")?.clone();
+        let sched = self.env().get("*SCHEDULER")?.deref_container();
         let ValueView::Instance { class_name, .. } = sched.view() else {
             return None;
         };
@@ -38,7 +38,7 @@ impl Interpreter {
     /// inline), so the promise is already resolved when `start` returns.
     // Cost: O(1).
     pub(in crate::runtime) fn current_thread_scheduler(&mut self) -> Option<Value> {
-        let sched = self.env().get("*SCHEDULER")?.clone();
+        let sched = self.env().get("*SCHEDULER")?.deref_container();
         matches!(
             sched.view(),
             ValueView::Instance { class_name, .. } if class_name == "CurrentThreadScheduler"
@@ -96,8 +96,8 @@ impl Interpreter {
         if let Some(sched) = shared.scheduler() {
             return sched;
         }
-        match self.env().get("*SCHEDULER") {
-            Some(sched) if Self::is_builtin_scheduler(sched) => sched.clone(),
+        match self.env().get("*SCHEDULER").map(Value::deref_container) {
+            Some(sched) if Self::is_builtin_scheduler(&sched) => sched,
             _ => Value::make_instance(
                 Symbol::intern("ThreadPoolScheduler"),
                 std::collections::HashMap::new(),

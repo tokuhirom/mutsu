@@ -129,7 +129,7 @@ fn local_row(
     let tz = interp
         .env()
         .get("*TZ")
-        .and_then(|v| v.as_int())
+        .and_then(|v| v.deref_container().as_int())
         .unwrap_or(0);
     in_timezone(target, Some(&Value::int(tz)))
 }

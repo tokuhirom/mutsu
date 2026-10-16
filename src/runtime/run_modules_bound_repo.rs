@@ -32,7 +32,7 @@ impl Interpreter {
     pub(super) fn bound_repo_prefixes(&self) -> Vec<std::path::PathBuf> {
         let Some(head) = self
             .get_process_dynamic("*REPO")
-            .or_else(|| self.env.get("*REPO").cloned())
+            .or_else(|| self.env.get("*REPO").map(Value::deref_container))
         else {
             return Vec::new();
         };

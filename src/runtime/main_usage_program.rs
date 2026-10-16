@@ -15,7 +15,7 @@ impl Interpreter {
                 self.env
                     .get("*PROGRAM-NAME")
                     .or_else(|| self.env.get("$*PROGRAM-NAME"))
-                    .map(|v| v.to_string_value())
+                    .map(|v| v.deref_container().to_string_value())
             })
             .unwrap_or_else(|| "program".to_string());
         if name == "-e" {

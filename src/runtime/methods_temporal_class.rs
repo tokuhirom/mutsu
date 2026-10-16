@@ -35,6 +35,7 @@ impl Interpreter {
         let tz = self
             .env
             .get("*TZ")
+            .map(Value::deref_container)
             .and_then(|v| match v.view() {
                 ValueView::Int(n) => Some(n),
                 _ => None,

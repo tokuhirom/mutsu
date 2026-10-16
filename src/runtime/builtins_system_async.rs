@@ -38,7 +38,7 @@ impl Interpreter {
             let pid = self
                 .env
                 .get("*PID")
-                .and_then(|v| v.as_int())
+                .and_then(|v| v.deref_container().as_int())
                 .unwrap_or_else(current_pid);
             return Ok(Value::int(pid));
         }
