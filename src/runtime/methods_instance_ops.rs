@@ -298,6 +298,13 @@ impl Interpreter {
                 }
             }));
         }
+        // A bootstrap attribute of a built-in class (`Int.^attributes`) is a
+        // `BOOTSTRAPATTR` in Rakudo, which has no public attributes to render.
+        if matches!(method, "raku" | "perl")
+            && crate::runtime::attribute_identity::is_bootstrapattr(target)
+        {
+            return Some(Ok(Value::str_from("BOOTSTRAPATTR.new")));
+        }
         if class_name == Symbol::intern("ObjAt") || class_name == Symbol::intern("ValueObjAt") {
             let which = attributes.as_map().objat_which().unwrap_or_default();
             if method == "gist" {
@@ -909,401 +916,34 @@ impl Interpreter {
                 ));
             }
 
-            // A subclass's own `BIND-POS`/`push`/... (ValueList's throwing
-            // ones) override the buffer's native operations.
-            if crate::runtime::nqp_ops_list::is_iteration_buffer(&target)
+            // `IterationBuffer`'s methods are rows of the method table, found by
+            // their owner (ADR-11276 §9.121). A subclass's own `BIND-POS`/`push`/...
+            // (ValueList's throwing ones) override them.
+            if let Some(owners) = crate::builtins::method_table::iteration_buffer_owners_of(&target)
                 && !self.has_user_method(&class_name.resolve(), method)
+                && let Some(result) = crate::builtins::method_table::invoke_owner(
+                    self,
+                    owners,
+                    method,
+                    &args,
+                    || target.clone(),
+                )
             {
-                let mut items = match attributes
-                    .as_map()
-                    .get("__mutsu_iterationbuffer_items")
-                    .map(Value::view)
-                {
-                    Some(ValueView::Array(values, ..)) => values.to_vec(),
-                    Some(ValueView::Seq(values)) => values.to_vec(),
-                    Some(ValueView::Slip(values)) => values.to_vec(),
-                    _ => Vec::new(),
-                };
-                let iterationbuffer_values = |value: &Value| -> Vec<Value> {
-                    match value.view() {
-                        ValueView::Instance {
-                            class_name,
-                            attributes,
-                            ..
-                        } if class_name == "IterationBuffer" => {
-                            match attributes
-                                .as_map()
-                                .get("__mutsu_iterationbuffer_items")
-                                .map(Value::view)
-                            {
-                                Some(ValueView::Array(values, ..)) => values.to_vec(),
-                                Some(ValueView::Seq(values)) => values.to_vec(),
-                                Some(ValueView::Slip(values)) => values.to_vec(),
-                                _ => Vec::new(),
-                            }
-                        }
-                        _ => Self::value_to_list(value),
-                    }
-                };
-                let update_items = |new_items: Vec<Value>| {
-                    let mut updated_attrs = attributes.to_map();
-                    updated_attrs.insert(
-                        "__mutsu_iterationbuffer_items".to_string(),
-                        Value::real_array(new_items),
-                    );
-                    Value::write_back_sharing(&attributes, class_name, updated_attrs, target_id)
-                };
-                match method {
-                    "elems" if args.is_empty() => return Ok(Value::int(items.len() as i64)),
-                    "AT-POS" if args.len() == 1 => {
-                        let index = crate::runtime::to_int(&args[0]);
-                        if index >= 0
-                            && let Some(value) = items.get(index as usize)
-                        {
-                            return Ok(value.clone());
-                        }
-                        return Ok(Value::package(Symbol::intern("Mu")));
-                    }
-                    "BIND-POS" if args.len() == 2 => {
-                        let index = crate::runtime::to_int(&args[0]);
-                        if index >= 0 {
-                            let idx = index as usize;
-                            if idx >= items.len() {
-                                items.resize(idx + 1, Value::package(Symbol::intern("Mu")));
-                            }
-                            items[idx] = args[1].clone();
-                        }
-                        let bound = args[1].clone();
-                        update_items(items);
-                        return Ok(bound);
-                    }
-                    "push" if !args.is_empty() => {
-                        items.extend(args.iter().cloned());
-                        let result = args.last().cloned().unwrap_or(Value::NIL);
-                        update_items(items);
-                        return Ok(result);
-                    }
-                    "unshift" if !args.is_empty() => {
-                        let mut prepended = args.clone();
-                        prepended.extend(items);
-                        let result = args.last().cloned().unwrap_or(Value::NIL);
-                        update_items(prepended);
-                        return Ok(result);
-                    }
-                    "List" if args.is_empty() => return Ok(Value::array(items)),
-                    "Slip" if args.is_empty() => return Ok(Value::slip(items)),
-                    "Seq" if args.is_empty() => return Ok(Value::seq(items)),
-                    "iterator" if args.is_empty() => {
-                        return self.call_method_with_values(
-                            Value::array(items),
-                            "iterator",
-                            vec![],
-                        );
-                    }
-                    "append" if args.len() == 1 => {
-                        items.extend(iterationbuffer_values(&args[0]));
-                        return Ok(update_items(items));
-                    }
-                    "prepend" if args.len() == 1 => {
-                        let mut prepended = iterationbuffer_values(&args[0]);
-                        prepended.extend(items);
-                        return Ok(update_items(prepended));
-                    }
-                    "clear" if args.is_empty() => {
-                        update_items(Vec::new());
-                        return Ok(Value::NIL);
-                    }
-                    _ => {}
-                }
+                return result;
             }
 
-            if class_name == "Attribute" {
-                match method {
-                    "set_build" => {
-                        let build = args.first().cloned().ok_or_else(|| {
-                            RuntimeError::new("Attribute.set_build expects a build callback")
-                        })?;
-                        let map = attributes.as_map();
-                        let owner = map
-                            .get("__mutsu_attr_owner")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        let attr_name = map
-                            .get("__mutsu_attr_name")
-                            .or_else(|| map.get("name"))
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        if owner.is_empty() || attr_name.is_empty() {
-                            return Err(RuntimeError::new(
-                                "Attribute.set_build missing owner or attribute name",
-                            ));
-                        }
-                        self.registry_mut()
-                            .attribute_build_overrides
-                            .insert((owner, attr_name), build);
-                        // A build override disqualifies the class from the native
-                        // default constructor — drop any cached plan for it.
-                        self.caches.native_ctor_plan_cache.clear();
-                        return Ok(target.clone());
-                    }
-                    "name" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("name")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
-                    }
-                    "type" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("type")
-                            .cloned()
-                            .unwrap_or(Value::package(crate::symbol::Symbol::intern("Mu"))));
-                    }
-                    "has_accessor" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("has_accessor")
-                            .cloned()
-                            .unwrap_or(Value::FALSE));
-                    }
-                    "set_rw" => {
-                        // Mark the attribute as read-write. The generated accessor
-                        // for a `has $.x is rw` is already rw; for an attribute that
-                        // a custom `trait_mod:<is>` makes rw, record it on the meta
-                        // so `.rw`/`.readonly` introspection reflects the change.
-                        attributes.insert("is_rw".to_string(), Value::TRUE);
-                        return Ok(target.clone());
-                    }
-                    "rw" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("is_rw")
-                            .cloned()
-                            .unwrap_or(Value::FALSE));
-                    }
-                    "readonly" => {
-                        let is_rw = attributes
-                            .as_map()
-                            .get("is_rw")
-                            .map(|v| v.truthy())
-                            .unwrap_or(false);
-                        return Ok(Value::truth(!is_rw));
-                    }
-                    "required" => {
-                        // `Mu` (not required), `1` (bare `is required`), or the
-                        // reason string (`is required("reason")`).
-                        return Ok(attributes.as_map().get("required").cloned().unwrap_or_else(
-                            || Value::package(crate::symbol::Symbol::intern("Mu")),
-                        ));
-                    }
-                    "build" => {
-                        // `set_build` replaces what `.build` reports.
-                        {
-                            let map = attributes.as_map();
-                            let owner = map
-                                .get("__mutsu_attr_owner")
-                                .map(|v| v.to_string_value())
-                                .unwrap_or_default();
-                            let attr_name = map
-                                .get("__mutsu_attr_name")
-                                .or_else(|| map.get("name"))
-                                .map(|v| v.to_string_value())
-                                .unwrap_or_default();
-                            if let Some(over) =
-                                self.registry().attribute_build_overrides.get(&(owner, attr_name))
-                            {
-                                return Ok(over.clone());
-                            }
-                        }
-                        if let Some(build_val) = attributes.as_map().get("build") {
-                            return Ok(build_val.clone());
-                        }
-                        if attributes
-                            .as_map()
-                            .get("__mutsu_has_build")
-                            .map(|v| v.truthy())
-                            .unwrap_or(false)
-                        {
-                            return Ok(Value::TRUE);
-                        }
-                        // No initializer: the type object `Mu` (rakudo).
-                        return Ok(Value::package(crate::symbol::Symbol::intern("Mu")));
-                    }
-                    "get_value" => {
-                        let obj = args.first().ok_or_else(|| {
-                            RuntimeError::new("Attribute.get_value expects an object argument")
-                        })?;
-                        // The object may arrive wrapped in a Scalar container
-                        // (a `$`-bound alias of the instance); read through it.
-                        let obj = obj.clone().deref_container();
-                        let attr_name = attributes
-                            .as_map()
-                            .get("__mutsu_attr_name")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        // An attribute a mixed-in role declares lives in the
-                        // mixin's own role cell, not in the wrapped object.
-                        if let ValueView::Mixin(_, mixins) = obj.view() {
-                            let owner = attributes
-                                .as_map()
-                                .get("__mutsu_attr_owner")
-                                .map(|v| v.to_string_value())
-                                .unwrap_or_default();
-                            let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
-                            if let Some(v) = mixins.role_attribute(&owner, bare) {
-                                return Ok(v.deref_container());
-                            }
-                        }
-                        // A `$obj but Role` mixin keeps the object's attributes
-                        // on the value it wraps.
-                        let obj = match obj.view() {
-                            ValueView::Mixin(inner, _) => Value::clone(inner),
-                            _ => obj.clone(),
-                        };
-                        if let ValueView::Instance {
-                            attributes: obj_attrs,
-                            ..
-                        } = obj.view()
-                        {
-                            return Ok(obj_attrs.get_attribute_value(attribute_meta_storage_key(
-                                &attributes,
-                                &obj_attrs,
-                                &attr_name,
-                            )));
-                        }
-                        // An attribute has no value on a type object.
-                        if let ValueView::Package(name) = obj.view()
-                            && self.registry().classes.contains_key(name.as_str())
-                        {
-                            return Err(RuntimeError::new(format!(
-                                "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
-                                name.resolve()
-                            )));
-                        }
-                        return Ok(Value::NIL);
-                    }
-                    "set_value" => {
-                        if args.len() < 2 {
-                            return Err(RuntimeError::new(
-                                "Attribute.set_value needs an object and a value",
-                            ));
-                        }
-                        let new_val = args[1].clone();
-                        let attr_name = attributes
-                            .as_map()
-                            .get("__mutsu_attr_name")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        // Write through a Scalar container wrapper: the shared
-                        // attribute cell of the underlying instance is what the
-                        // object's methods read (a silent no-op here loses e.g.
-                        // OO::Monitors' lock installation).
-                        let obj = args[0].clone().deref_container();
-                        // An attribute a mixed-in role declares lives in the
-                        // mixin's own role cell, not in the wrapped object.
-                        if let ValueView::Mixin(_, mixins) = obj.view() {
-                            let owner = attributes
-                                .as_map()
-                                .get("__mutsu_attr_owner")
-                                .map(|v| v.to_string_value())
-                                .unwrap_or_default();
-                            let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
-                            if mixins.role_attribute(&owner, bare).is_some()
-                                && mixins.set_role_attribute(&owner, bare, new_val.clone())
-                            {
-                                return Ok(new_val);
-                            }
-                        }
-                        let obj = match obj.view() {
-                            ValueView::Mixin(inner, _) => Value::clone(inner),
-                            _ => obj.clone(),
-                        };
-                        if let ValueView::Instance {
-                            attributes: obj_attrs,
-                            ..
-                        } = obj.view()
-                        {
-                            let key = attribute_meta_storage_key(&attributes, &obj_attrs, &attr_name);
-                            return Ok(obj_attrs.set_attribute_value(key, new_val));
-                        }
-                        return Ok(Value::NIL);
-                    }
-                    "gist" | "Str" => {
-                        let type_name = attributes
-                            .as_map()
-                            .get("type")
-                            .map(|v| match v.view() {
-                                ValueView::Package(name) => name.resolve(),
-                                _ => v.to_string_value(),
-                            })
-                            .unwrap_or_else(|| "Mu".to_string());
-                        let name = attributes
-                            .as_map()
-                            .get("name")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        if method == "gist" {
-                            return Ok(Value::str(format!("{} {}", type_name, name)));
-                        }
-                        return Ok(Value::str(name));
-                    }
-                    "raku" => {
-                        let is_bootstrap = attributes
-                            .as_map()
-                            .get(crate::runtime::attribute_identity::BOOTSTRAPATTR_MARKER)
-                            .is_some_and(|v| v.truthy());
-                        if is_bootstrap {
-                            return Ok(Value::str("BOOTSTRAPATTR.new".to_string()));
-                        }
-                        return Ok(Value::str("Attribute.new".to_string()));
-                    }
-                    "package" => {
-                        let owner = attributes
-                            .as_map()
-                            .get("__mutsu_attr_owner")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_else(|| "Any".to_string());
-                        return Ok(Value::package(crate::symbol::Symbol::intern(&owner)));
-                    }
-                    "container" => {
-                        // Return a per-attribute container descriptor tagged with
-                        // the owning class + attribute name so that a custom
-                        // `trait_mod:<is>` can mix a role into it via
-                        // `$a.container.VAR does Role(...)`. The recorded mixin is
-                        // applied to each instance's attribute value at
-                        // construction (see `apply_attribute_does_role_mixins`).
-                        let map = attributes.as_map();
-                        let sigil = map
-                            .get("sigil")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_else(|| "$".to_string());
-                        let owner = map
-                            .get("__mutsu_attr_owner")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        let attr_name = map
-                            .get("__mutsu_attr_name")
-                            .or_else(|| map.get("name"))
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
-                        let mut cmeta = HashMap::new();
-                        cmeta.insert(
-                            "__mutsu_attr_container_owner".to_string(),
-                            Value::str(owner),
-                        );
-                        cmeta.insert(
-                            "__mutsu_attr_container_name".to_string(),
-                            Value::str(attr_name),
-                        );
-                        cmeta.insert(
-                            "__mutsu_attr_container_sigil".to_string(),
-                            Value::str(sigil),
-                        );
-                        return Ok(Value::make_instance(Symbol::intern("Scalar"), cmeta));
-                    }
-                    _ => {}
-                }
+            // `Attribute`'s methods are rows of the method table, found by their
+            // owner (ADR-11276 §9.121).
+            if let Some(owners) = crate::builtins::method_table::attribute_owners_of(&target)
+                && let Some(result) = crate::builtins::method_table::invoke_owner(
+                    self,
+                    owners,
+                    method,
+                    &args,
+                    || target.clone(),
+                )
+            {
+                return result;
             }
 
             // IO::Spec::CurUpDir ACCEPTS
@@ -2490,6 +2130,26 @@ impl Interpreter {
             return self.call_sub_value(callable, args, true);
         }
 
+        // The `Code` rows of a regex and the `Routine` rows of a code-class
+        // instance (`.^methods`' `Method` objects), found by their owner
+        // (ADR-12523, ADR-11276 §9.121).
+        if let Some(answer) =
+            crate::builtins::method_table::code::answer(self, &target, method, &args)
+        {
+            return answer;
+        }
+        if let Some(owners) = crate::builtins::method_table::routine_owners_of(&target)
+            && let Some(answer) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return answer;
+        }
+
         // Fallback methods
         match method {
             "DUMP" if args.is_empty() => match target.view() {
@@ -2557,29 +2217,6 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str(target.to_string_value())),
             },
-            // `Code.set_name` on a regex: rename the code object in place, so
-            // every alias of it reports the new `.name`. Answers the name, as
-            // rakudo's `set_name` does.
-            // Cost: O(n), n = chars of the new name (interned).
-            "set_name"
-                if args.len() == 1
-                    && matches!(
-                        target.view(),
-                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
-                    ) =>
-            {
-                let name = args[0].to_string_value();
-                if target.set_regex_name(Symbol::intern(&name)) {
-                    Ok(Value::str(name))
-                } else {
-                    // Unreachable for a value built by `Value::regex`, a
-                    // literal or an adverbed regex — every one of them carries
-                    // a payload with a name cell.
-                    Err(RuntimeError::new(
-                        "Cannot set_name on a regex value without a code-object payload",
-                    ))
-                }
-            }
             "name"
                 if args.is_empty()
                     && !matches!(
@@ -2649,145 +2286,6 @@ impl Interpreter {
                         "name", &target,
                     )),
                 }
-            }
-            "package" if args.is_empty() => match target.view() {
-                ValueView::Sub(data) => Ok(Value::package(data.package)),
-                // A `&Pkg::name` handle's package is the one its name spells.
-                ValueView::Routine { package, name, .. } => Ok(Value::package(
-                    crate::qualified::package_parent(name)
-                        .filter(|_| crate::qualified::is_qualified(name))
-                        .unwrap_or(package),
-                )),
-                ValueView::Nil => Ok(Value::NIL),
-                // A `Method` object built by `.^methods` for a multi's
-                // dispatcher records no package (rakudo reports a stub one).
-                ValueView::Instance { class_name, .. }
-                    if matches!(
-                        class_name.resolve().as_str(),
-                        "Method" | "Submethod" | "Sub" | "Routine" | "Code" | "Block"
-                    ) =>
-                {
-                    Ok(Value::NIL)
-                }
-                // Only `Code` declares `package` (#9776).
-                _ => Err(super::methods_signature_errors::method_not_found_for_value(
-                    "package", &target,
-                )),
-            },
-            // `Code.line`/`Code.file` on a `Regex` code object -- a regex
-            // literal (`/abc/`) or a grammar `token`/`rule` body. `Regex` is a
-            // `Code` subtype, so these must answer rather than raise
-            // `X::Method::NotFound`; mutsu records no declaration location for
-            // either shape (a regex literal is a constant in the pool, and
-            // `Registry::token_defs` keeps the declaring file but no line), so
-            // the honest answer is `Nil`. See
-            // `todo/tickets/code-line-file-on-regex-and-grammar-token.md`.
-            "line" | "file"
-                if args.is_empty()
-                    && matches!(
-                        target.view(),
-                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
-                    ) =>
-            {
-                Ok(Value::NIL)
-            }
-            // `Regex.of` / `Regex.returns` are `Code` rows (`method_table::code`).
-            "of" | "returns"
-                if args.is_empty()
-                    && matches!(
-                        target.view(),
-                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
-                    ) =>
-            {
-                crate::builtins::method_table::code::answer(self, &target, method)
-                    .unwrap_or_else(|| Ok(Value::package(Symbol::intern("Mu"))))
-            }
-            // A Raku `Regex` is a `Method`, so it answers the `Routine`
-            // introspection surface too — and with the cursor invocant and
-            // implicit `*%_` every method signature carries, so even a
-            // parameterless `rx/a/` has `:(Mu $:: *%_)`. See
-            // `methods_regex_routine.rs` and #8318.
-            "signature" | "arity" | "count"
-                if args.is_empty()
-                    && matches!(
-                        target.view(),
-                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
-                    ) =>
-            {
-                Ok(self.regex_value_routine_introspection(&target, method))
-            }
-            // `.is_dispatcher`/`.multi` on a Method/Submethod value obtained from
-            // `.^lookup`/`.^find_method`/`.can` (a `Sub`-shaped callable, not the
-            // `Method` `Instance` `.^methods` builds -- see
-            // `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`).
-            // Real Raku: the dispatcher-shaped value for a multi method answers
-            // `is_dispatcher` True and `multi` falsy; each individual
-            // `.candidates[N]` entry answers `is_dispatcher` False and `multi`
-            // True; an ordinary (non-multi) method answers both False. Verified
-            // against `raku -e` ground truth 2026-08-14 (see the linked ticket).
-            "is_dispatcher" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
-                let ValueView::Sub(data) = target.view() else {
-                    unreachable!()
-                };
-                // A `multi sub`'s dispatcher is the Sub carrying its captured
-                // candidates; each `.candidates` entry carries none.
-                Ok(Value::truth(
-                    Self::sub_multi_method_dispatcher_name(&data).is_some()
-                        || data.env.contains_key("__mutsu_multi_dispatch_candidates"),
-                ))
-            }
-            // `.dispatcher` on a multi candidate is the proto that dispatches
-            // it -- Raku generates one even when the source declares no
-            // `proto`. Answered here rather than left to fall through to
-            // ADR-0070 method composition, which handed back a
-            // `<composed-method:dispatcher>` Sub that answers `.candidates`
-            // with just itself. That is how the `NativeLibs` distribution's
-            // custom `sub EXPORT` lost the multi it was re-exporting: it hands
-            // its importers `'&trait_mod:<is>' => $candidate.dispatcher`, and
-            // the stub narrowed a whole multi to one candidate.
-            //
-            // A routine that is part of no multi has no dispatcher; Rakudo
-            // answers an NQPMu there, which is falsy, so `Nil` is the
-            // observable match (`&plain.dispatcher` is `?? !!`-tested by
-            // callers, not named).
-            //
-            // TODO: asking a dispatcher for its own `.dispatcher` should be
-            // `Nil` too. mutsu cannot yet tell `&mm` from `&mm.candidates[0]`
-            // -- neither carries the `__mutsu_is_multi_candidate` fact the
-            // `.multi` arm below reads -- so it answers a handle to itself.
-            "dispatcher" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
-                let ValueView::Sub(data) = target.view() else {
-                    unreachable!()
-                };
-                let name = data.name.resolve();
-                let qualified = crate::qualified::qualified_text(data.package.resolve(), &name)
-                    .as_str()
-                    .to_string();
-                if self.has_multi_candidates(&name) {
-                    // The dispatcher captures the candidates visible now, the
-                    // way `&name` of a multi does (`sub_value_from_multi_candidates`).
-                    // A by-name handle dangled once the candidates' scope ended:
-                    // a `multi` declared inside `sub EXPORT` is lexical to it,
-                    // so `'&trait_mod:<is>' => $t.dispatcher` reached the
-                    // importer with no candidates at all (#11530).
-                    let candidates = self.resolve_all_multi_candidates(&name);
-                    let dispatcher = self.sub_value_from_multi_candidates(&name, candidates);
-                    Ok(self.dispatcher_containing(dispatcher, &target))
-                } else if self.resolve_proto_function(&qualified).is_some()
-                    || self.resolve_proto_function_with_alias(&name).is_some()
-                {
-                    Ok(Value::routine_parts(data.package, data.name, false))
-                } else {
-                    Ok(Value::NIL)
-                }
-            }
-            "multi" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
-                let ValueView::Sub(data) = target.view() else {
-                    unreachable!()
-                };
-                Ok(Value::truth(
-                    data.env.get("__mutsu_is_multi_candidate").is_some(),
-                ))
             }
             "isa" if args.len() == 1 && matches!(target.view(), ValueView::Package(_)) => {
                 let pkg_name = match target.view() {
@@ -3915,29 +3413,4 @@ pub(super) fn format_operator_name(name: &str) -> String {
     } else {
         name.to_string()
     }
-}
-
-/// The instance-map key an `Attribute` meta object reads or writes. A private
-/// declaration whose bare name collides with another sigil's declaration is
-/// stored under `<sigil>name` (see `attribute_storage_key`); the public one
-/// and every non-colliding attribute keep the bare name.
-// Cost: O(1), two hash probes of the instance's attribute map.
-fn attribute_meta_storage_key(
-    meta: &crate::value::InstanceAttrs,
-    obj_attrs: &crate::value::InstanceAttrs,
-    attr_name: &str,
-) -> Symbol {
-    let is_public = meta.as_map().get("is_public").is_some_and(|v| v.truthy());
-    let sigil = meta
-        .as_map()
-        .get("sigil")
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
-    if !is_public && matches!(sigil.as_str(), "@" | "%" | "&" | "$") {
-        let sigil_key = Symbol::intern(&format!("{sigil}{attr_name}"));
-        if obj_attrs.as_map().contains_key(sigil_key) {
-            return sigil_key;
-        }
-    }
-    Symbol::intern(attr_name)
 }

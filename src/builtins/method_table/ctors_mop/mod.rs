@@ -7,6 +7,7 @@
 
 use super::MethodRow;
 
+pub(crate) mod attribute;
 mod class_how;
 mod grammar;
 mod mu_answers;
@@ -29,6 +30,7 @@ pub(crate) static MOP_OWNERS: &[&str] = &[
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
+    attribute::ROWS,
     class_how::ROWS,
     grammar::ROWS,
     mu_base::ROWS,

@@ -20,6 +20,7 @@ pub(crate) mod capture;
 pub(crate) mod clone;
 mod descriptor;
 mod fmt;
+pub(crate) mod iteration_buffer;
 pub(crate) mod join;
 pub(crate) mod lazy;
 pub(crate) mod list;
@@ -78,6 +79,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::FLAT_ROWS,
     list_transform::FLAT_LEVELS_ROWS,
     map::ROWS,
+    iteration_buffer::ROWS,
     positional::ROWS,
     rotate::ROWS,
     pair::ROWS,
