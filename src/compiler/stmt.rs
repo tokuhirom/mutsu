@@ -4309,6 +4309,9 @@ impl Compiler {
                 }
                 self.code
                     .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);
+                let own_scope_slots = self.own_scope_decl_slots(&free_var_decl_slots);
+                self.code
+                    .set_sub_decl_own_scope_decl_slots(idx, own_scope_slots);
                 self.code
                     .set_sub_decl_free_var_decl_slots(idx, free_var_decl_slots);
                 self.code

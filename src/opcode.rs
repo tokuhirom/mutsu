@@ -5079,6 +5079,12 @@ pub(crate) struct CompiledSubDeclPlan {
     /// seeds the cell the declaration later adopts (#9911; see
     /// `vm/vm_hoist_capture_cells.rs`). Set on the hoisted plan only.
     pub(crate) hoist_seed_slots: Vec<u32>,
+    /// The same set on the IN-SEQUENCE plan: the free variables whose `my`
+    /// the sub's own scope declares before it, so the in-sequence
+    /// registration finds that scope's own binding in the slot. A slot
+    /// sibling scopes share (`CompiledCode::multi_scope_slots`) may be boxed
+    /// from what it holds only then (ADR-12529 §3, slice 23).
+    pub(crate) own_scope_decl_slots: Vec<u32>,
     /// A sub declared inside a routine body: one entry per free variable,
     /// naming the hidden local of the DECLARING frame that each activation
     /// binds to that variable's cell (mutsu#9111; see
@@ -6931,8 +6937,11 @@ pub(crate) struct CompiledCode {
     /// capture boxes the declaring scope's slot into a shared cell, and boxing
     /// a slot two sibling scopes take turns owning fuses their two independent
     /// bindings into one. Such a slot is recorded here at declaration time so
-    /// that capture can decline it (`roast/S02-names-vars/variables-and-packages.t`,
-    /// three sibling blocks each declaring `my $a` plus a sub over it).
+    /// that capture can decline to box what the slot holds
+    /// (`roast/S02-names-vars/variables-and-packages.t`, three sibling blocks
+    /// each declaring `my $a` plus a sub over it) -- except a binding known to
+    /// be the capturing scope's own: the hoisted pass's seed, or a slot that
+    /// scope's `my` already filled (`CompiledSubDeclPlan::own_scope_decl_slots`).
     pub(crate) multi_scope_slots: std::collections::HashSet<u32>,
     /// Per statement-position `OpCode::BlockScope` (keyed by the op's index):
     /// the slots of every name the block shadows that belong to a STILL-LIVE
@@ -12420,6 +12429,7 @@ impl CompiledCode {
             frame_lexical_value: false,
             free_var_decl_slots: Vec::new(),
             hoist_seed_slots: Vec::new(),
+            own_scope_decl_slots: Vec::new(),
             lexsub_free_aliases: Vec::new(),
             multi: *multi,
             is_rw: *is_rw,
@@ -12533,6 +12543,15 @@ impl CompiledCode {
             panic!("declaration plan is not a sub");
         };
         self.sub_decl_plans[*plan_idx as usize].hoist_seed_slots = slots;
+    }
+
+    /// Set an in-sequence sub plan's `CompiledSubDeclPlan::own_scope_decl_slots`.
+    pub(crate) fn set_sub_decl_own_scope_decl_slots(&mut self, decl_idx: u32, slots: Vec<u32>) {
+        let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            panic!("declaration plan is not a sub");
+        };
+        self.sub_decl_plans[*plan_idx as usize].own_scope_decl_slots = slots;
     }
 
     /// Companion of [`Self::set_sub_decl_free_var_decl_slots`] for the

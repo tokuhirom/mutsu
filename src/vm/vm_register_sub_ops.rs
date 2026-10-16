@@ -207,6 +207,7 @@ impl Interpreter {
             compiled_routine_keys,
             free_var_decl_slots,
             hoist_seed_slots,
+            own_scope_decl_slots,
             lexsub_free_aliases: _,
             multi,
             is_rw,
@@ -790,17 +791,6 @@ impl Interpreter {
                     if self.type_constrained_unboxable(&name) {
                         continue;
                     }
-                    // A slot two SIBLING block scopes take turns owning must not
-                    // be boxed: the cell would outlive the first block and fuse
-                    // its `my $a` with the next block's independent one. Only
-                    // the block arm is affected — mainline's own lexicals are
-                    // never a sibling of anything, and a genuine inner shadow
-                    // gets its own slot. See `CompiledCode::multi_scope_slots`.
-                    if unit_key != crate::runtime::MAINLINE_UNIT_KEY
-                        && code.multi_scope_slots.contains(&(slot_idx as u32))
-                    {
-                        continue;
-                    }
                     // The hoisted pass runs before a declaration in the sub's
                     // own scope has: seed the cell that declaration adopts, so
                     // a call made before the in-sequence registration (even
@@ -820,6 +810,25 @@ impl Interpreter {
                     } else {
                         None
                     };
+                    // A slot two SIBLING block scopes take turns owning must not
+                    // be boxed from what it holds: a cell left there would
+                    // outlive the first block and fuse its `my $a` with the
+                    // next block's independent one. Only the block arm is
+                    // affected — mainline's own lexicals are never a sibling of
+                    // anything, and a genuine inner shadow gets its own slot.
+                    // Two exceptions, both bindings of this entry of the sub's
+                    // own scope: the hoisted pass's seed, a fresh cell that
+                    // scope's declaration adopts, and, in sequence, a slot that
+                    // scope's own `my` has already filled (ADR-12529 §3, slice
+                    // 23). See `CompiledCode::multi_scope_slots`.
+                    if seeded.is_none()
+                        && (is_hoisted_pass
+                            || !own_scope_decl_slots.contains(&(slot_idx as u32)))
+                        && unit_key != crate::runtime::MAINLINE_UNIT_KEY
+                        && code.multi_scope_slots.contains(&(slot_idx as u32))
+                    {
+                        continue;
+                    }
                     let cur = self.locals[slot_idx].clone();
                     let mut cell = if let Some(seeded) = seeded {
                         seeded
