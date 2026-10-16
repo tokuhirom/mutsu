@@ -1386,6 +1386,30 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `t/types/named-sub-rebinds-typed-outer-container.t` and
    `t/modules/module-nested-sub-captures-routine-array.t`.
 
+   A fourth census (slice 21's method on top of slices 27-32: the merge of
+   every plain user lexical, sigil-less scalar keys included, switched off
+   in both return merges; every `t/` file and every whitelisted roast file)
+   leaves four `t/` files and no roast file depending on the merge:
+   `t/regex/regex-decl-self-referential-slash.t` (12),
+   `t/control/begin-lift-names-inner-type-with-body.t` (2-3),
+   `t/oo/role/role-body-composition-timing.t` (6-7, 20) and
+   `t/vm/codegen/adr0112-trir-caller-frames.t` (1).
+   `t/vm/underscore-kebab-var.t` is slice 29's false positive; the roast
+   files that timed out under the parallel debug run pass with the merge off
+   when run alone.
+
+   **Slice 33 done** (`fix/12529-smartmatch-subst-cell`): the
+   `regex-decl-self-referential-slash.t` entry of the fourth census.
+   `$x ~~ s///` (and `tr///`) writes the modified topic back to `$x` by
+   name (`SmartMatchLhs::Var`), but the free-variable analysis did not
+   count that as a write of `$x`, so a closure doing it read `$x` as a
+   snapshot upvalue, and the write-back replaced the closure's own env
+   entry. The analysis now counts a smartmatch whose right-hand side holds
+   a `Subst`/`Transliterate` as a write of its left-hand variable
+   (`smartmatch_writeback_name`), and the write-back stores into the
+   variable's cell when it has one. Pinned by
+   `t/regex/subst/closure-substitution-on-captured-var-writes-through-cell.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

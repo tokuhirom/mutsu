@@ -9975,6 +9975,30 @@ impl CompiledCode {
             || name.starts_with("%.")
     }
 
+    /// The variable a `$x ~~ s///` / `$x ~~ tr///` at `pos` writes back by
+    /// name once its destructive right-hand side has rewritten the topic
+    /// alias (`SmartMatchLhs::Var`). A closure doing that to a captured `$x`
+    /// writes `$x`, which must therefore be a shared cell (ADR-12529 §3,
+    /// slice 33).
+    // Cost: O(r), r = ops in the smartmatch's right-hand side.
+    fn smartmatch_writeback_name(&self, pos: usize, op: &OpCode) -> Option<String> {
+        let OpCode::SmartMatchExpr {
+            lhs: Some(lhs),
+            rhs_end,
+            ..
+        } = op
+        else {
+            return None;
+        };
+        let SmartMatchLhs::Var { name, .. } = lhs.as_ref() else {
+            return None;
+        };
+        let rhs = self.ops.get(pos + 1..*rhs_end as usize)?;
+        rhs.iter()
+            .any(|op| matches!(op, OpCode::Subst { .. } | OpCode::Transliterate { .. }))
+            .then(|| name.clone())
+    }
+
     fn op_name_write_const_idx(&self, op: &OpCode) -> Option<u32> {
         match op {
             OpCode::GetScalarContainer { name_idx: idx, .. }
@@ -10440,7 +10464,7 @@ impl CompiledCode {
         let mut captured_in_decl_closures: Vec<(u32, Symbol)> = Vec::new();
         let mut self_capture_closures: Vec<(u32, Symbol)> = Vec::new();
         let mut pending_decl = false;
-        for op in &self.ops {
+        for (pos, op) in self.ops.iter().enumerate() {
             // `S///` / `s///` / `tr///` work on the implicit topic without
             // naming it, so they reference `$_` exactly as an explicit `$_`
             // does. Unrecorded, a closure such as `{ S{$^a} = 'X' }` -- whose
@@ -10596,10 +10620,16 @@ impl CompiledCode {
                 free.insert(Symbol::intern(&name));
             }
             // Name-based writes: either a free-var write or an own-local mutation.
-            if let Some(idx) = self.op_name_write_const_idx(op)
-                && let Some(ValueView::Str(name)) =
-                    self.constants.get(idx as usize).map(Value::view)
-            {
+            let written = self
+                .op_name_write_const_idx(op)
+                .and_then(
+                    |idx| match self.constants.get(idx as usize).map(Value::view) {
+                        Some(ValueView::Str(name)) => Some(name.to_string()),
+                        _ => None,
+                    },
+                )
+                .or_else(|| self.smartmatch_writeback_name(pos, op));
+            if let Some(name) = written {
                 if own.contains(name.as_str()) {
                     self_mutated.insert(Symbol::intern(&name));
                 } else if self.expr_declared_syms.contains(&Symbol::intern(&name)) {
