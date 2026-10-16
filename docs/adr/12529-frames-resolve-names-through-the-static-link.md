@@ -1370,6 +1370,21 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    that cell. Pinned by
    `t/routines/closure/cas-in-closure-celled-store-reaches-declarer.t`.
 
+   **Slice 32 done** (`fix/12529-bind-adopts-source-type`): the
+   `t/vm/writeback/container-bind-free-var-aliases-source.t` entry of
+   slice 26's census (16-17). A named sub's capture of an outer lexical
+   gives it a cell at the sub's registration (ADR-0024), but
+   `type_constrained_unboxable` kept every name with a non-native type
+   constraint out of it. That rule is about a `$` variable, whose
+   constraint is re-checked by name on each store; an `@`/`%` name's
+   constraint is its element type, checked by every element store whether
+   the container sits in a cell or not (a closure's typed container already
+   takes one at its declaration). So `sub f { @declared := @src }` with a
+   `my Cool @declared` rebound only the sub's own entry. An `@`/`%` is now
+   kept out of the cell only for a native element type, as
+   `box_decl_local_container_cell` does. Pinned by
+   `t/types/named-sub-rebinds-typed-outer-container.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

@@ -1632,7 +1632,20 @@ impl Interpreter {
     /// predicate). Shared between closure-capture boxing
     /// (`box_captured_lexicals`) and mainline `my` capture at named-sub
     /// registration (ADR-0024, `exec_register_sub_op`).
+    ///
+    /// An `@`/`%` name's constraint is its ELEMENT type, which every element
+    /// store checks whether or not the container sits in a cell (a typed
+    /// container declared in a closure's scope takes one at its declaration,
+    /// `box_decl_local_container_cell`); only a native element type, whose
+    /// elements are native slots, stays out of a cell. Without the cell a
+    /// named sub's `:=` of a typed `my Cool @a` rebound only the sub's own
+    /// entry (ADR-12529 §3, slice 32).
     pub(super) fn type_constrained_unboxable(&mut self, s: &str) -> bool {
+        if s.starts_with(['@', '%']) {
+            return self
+                .container_element_type_constraint(s)
+                .is_some_and(|t| Self::is_native_element_type(&t));
+        }
         let mut tc = loan_env!(self, var_type_constraint(s));
         if tc.is_none() {
             tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
