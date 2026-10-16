@@ -652,6 +652,9 @@ impl Interpreter {
         // there is no stale-copy hazard; pass `None` as the pre-snapshot to force
         // the mirror.
         let r = self.exec_assign_expr_op_inner(code, name_idx, dot_twigil_rmw);
+        if r.is_ok() {
+            self.record_foreign_dynamic_write(code, code.const_sym(name_idx));
+        }
         // Phase 3 Stage 2: mirror name-based attribute writes into the shared cell.
         if r.is_ok()
             && let ValueView::Str(name) = code.constants[name_idx as usize].view()

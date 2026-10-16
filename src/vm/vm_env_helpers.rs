@@ -1898,14 +1898,6 @@ impl Interpreter {
         if self.unit_scope_lexical_write(name, name_sym, &value) {
             return;
         }
-        // A by-name write of a dynamic (`$*x = v`, `$*x := v`) reaches the
-        // binding of the frame that declares it, which may be a caller (or a
-        // `$*x` parameter of one): carry it back across every return, as a
-        // runtime-named write is (ADR-12529 §3, slice 40). The value is read
-        // at each return; a name the returning frame declares stays behind.
-        if crate::env::is_dynamic_var_env_key(name) {
-            self.record_runtime_name_write(name);
-        }
         // `$PROCESS::OUT` maps to the sigilless `*OUT`: a write to the process
         // stash, which every thread reads — including one already running
         // (ADR-11318, #11318). It is mirrored into this env below (the pseudo-

@@ -906,6 +906,12 @@ impl Interpreter {
                 let callee_private =
                     |n: &str| cf.is_callee_local_sym(crate::symbol::Symbol::intern(n));
                 self.propagate_pending_caller_writes(&mut restored_env, &callee_private);
+                // A name this frame declares was its own: the write has reached
+                // its binding, so there is nothing left to carry further up
+                // (ADR-12529 §3, slice 40).
+                if !self.pending_runtime_name_writes.is_empty() {
+                    self.pending_runtime_name_writes.retain(|n| !callee_private(n));
+                }
             }
             *self.env_mut() = restored_env;
         }

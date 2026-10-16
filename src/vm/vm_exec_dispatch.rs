@@ -1424,6 +1424,7 @@ impl Interpreter {
                     Some(s) => s,
                     None => unreachable!("SetGlobal name must be a string constant"),
                 };
+                self.record_foreign_dynamic_write(code, code.const_sym(*name_idx));
                 // ADR-0058: assigning a Seq to an `@`/`%` target reifies it
                 // (raku list semantics) -- the same rule `exec_set_local_op_inner`
                 // applies. An anonymous `my @ = EXPR` inside a nested block
