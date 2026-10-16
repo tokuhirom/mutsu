@@ -2748,6 +2748,18 @@ test-only arity probe asks the owner chain of a value with no shape (an immutabl
 in `t/oo/method/two-arg-method-rows.t`.
 `method-rows-report.py --arms`: the pure arity cascades lose four arms.
 
+### 9.115 Slice 5: `CompUnit::DependencySpecification` has one representation and its methods are rows (2026-10-16)
+
+`refactor/11276-depspec-rows`. A depspec had two representations: a native value kind (`ValueRepr::CompUnitDepSpec`,
+built when the constructor got no matcher), whose `.^name` was `Any` and which `methods_0arg/mod.rs` answered through five
+arms, and an instance (built when a matcher was given), which the slow path's `methods_instance_ops` answered through
+five more. The native kind is gone (`Kind`, `ValueRepr`, `ValueView`, serde and the nanbox codecs): every depspec is an
+instance. A closed `DispatchShape::CompUnitDepSpec` reaches the rows Rakudo declares on the class (`short-name`,
+`version-matcher`, `auth-matcher`, `api-matcher`, `from`, `Str`, `raku`), and both sets of arms are deleted. Behaviour
+changes toward Rakudo, pinned in `t/oo/method/depspec-method-rows.t`: `.^name` is the class; `.Str` names the given
+matchers (`Foo:ver<1.0+>:auth<zef:x>`, was `Foo`); `.raku` renders the constructor call; `.from` is `Perl6`. Left:
+`.gist` is the default instance rendering where Rakudo's is `.raku`, and a version matcher stays the string it was given
+where Rakudo coerces it to a `Version`.
 ### 9.116 Slice 5: `Uni`'s `chars`, `comb` and `perl` arms are gone (2026-10-16)
 
 `refactor/11276-uni-arms`. The last three `Uni` arms of `methods_0arg/mod.rs`: `chars` and `comb` are rows of `Uni`

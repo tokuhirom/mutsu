@@ -625,17 +625,6 @@ pub(crate) fn native_method_0arg_cascade(
             method,
         ));
     }
-    // CompUnit::DependencySpecification methods
-    if let ValueView::CompUnitDepSpec { short_name } = target.view() {
-        return match method {
-            "short-name" => Some(Ok(Value::str(short_name.resolve()))),
-            "version-matcher" => Some(Ok(Value::TRUE)),
-            "auth-matcher" => Some(Ok(Value::TRUE)),
-            "api-matcher" => Some(Ok(Value::TRUE)),
-            "Str" | "gist" => Some(Ok(Value::str(short_name.resolve()))),
-            _ => None,
-        };
-    }
     // Try core string/numeric/array methods first
     if let result @ Some(_) = dispatch_core(target, method) {
         return result;

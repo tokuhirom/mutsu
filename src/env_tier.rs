@@ -112,6 +112,12 @@ pub(crate) struct Tier {
     /// frame resolves those names there first, past its callers and the
     /// per-name routine stores (ADR-12529 phase 3, #12692).
     activation_capture: bool,
+    /// On a frame root marked `outer_is_unit` (`Env::mark_outer_is_unit`):
+    /// the plain user lexicals the program scope binds that are not visible
+    /// to the running code -- those of mainline blocks that do not enclose it
+    /// and those a block-scoped `use` imported. A lookup that would continue
+    /// at the program scope for one of them finds nothing (#13604).
+    unit_hidden: Option<Arc<rustc_hash::FxHashSet<Symbol>>>,
 }
 
 /// What a closure capture takes from one wide env tier, built once per
@@ -145,6 +151,7 @@ impl Clone for Tier {
             program_scope_capture: self.program_scope_capture,
             program_scope_block_names: self.program_scope_block_names.clone(),
             activation_capture: self.activation_capture,
+            unit_hidden: self.unit_hidden.clone(),
         }
     }
 }
@@ -260,6 +267,7 @@ impl Tier {
             program_scope_capture: false,
             program_scope_block_names: None,
             activation_capture: false,
+            unit_hidden: None,
         }
     }
 
@@ -309,6 +317,19 @@ impl Tier {
     #[inline]
     pub(crate) fn static_link(&self) -> Option<&crate::env::static_link::StaticLink> {
         self.static_link.as_deref()
+    }
+
+    /// See the `unit_hidden` field.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn unit_hidden(&self) -> Option<&Arc<rustc_hash::FxHashSet<Symbol>>> {
+        self.unit_hidden.as_ref()
+    }
+
+    /// See the `unit_hidden` field.
+    // Cost: O(1).
+    pub(crate) fn set_unit_hidden(&mut self, hidden: Option<Arc<rustc_hash::FxHashSet<Symbol>>>) {
+        self.unit_hidden = hidden;
     }
 
     /// Install this frame root's static link.

@@ -140,7 +140,6 @@ impl Value {
                 "Promise"
             }
             ValueView::Channel(_) => "Channel",
-            ValueView::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             ValueView::Whatever => "Whatever",
             ValueView::HyperWhatever => "HyperWhatever",
             ValueView::Capture { .. } => "Capture",

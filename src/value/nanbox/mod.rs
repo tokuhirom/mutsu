@@ -202,10 +202,9 @@ pub(in crate::value) enum Kind {
     HyperWhatever,
     Bool,
     Package,
-    CompUnitDepSpec,
 }
 
-pub(in crate::value) const KIND_COUNT: u8 = Kind::CompUnitDepSpec as u8 + 1;
+pub(in crate::value) const KIND_COUNT: u8 = Kind::Package as u8 + 1;
 
 // 13 kind pages x 8 subkinds.
 const _: () = assert!(KIND_COUNT as u64 <= (0xFFFF - KIND_PAGE_BASE + 1) * 8);
@@ -512,12 +511,7 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
 /// never disagree about which kinds are payload-free.
 macro_rules! payload_free_kinds {
     () => {
-        Kind::Nil
-            | Kind::Whatever
-            | Kind::HyperWhatever
-            | Kind::Bool
-            | Kind::Package
-            | Kind::CompUnitDepSpec
+        Kind::Nil | Kind::Whatever | Kind::HyperWhatever | Kind::Bool | Kind::Package
     };
 }
 use payload_free_kinds;
@@ -608,12 +602,7 @@ pub(crate) mod jit_words {
             Classified::Int(_) | Classified::Num(_) => true,
             Classified::Kind(k) => matches!(
                 k,
-                Kind::Nil
-                    | Kind::Whatever
-                    | Kind::HyperWhatever
-                    | Kind::Bool
-                    | Kind::Package
-                    | Kind::CompUnitDepSpec
+                Kind::Nil | Kind::Whatever | Kind::HyperWhatever | Kind::Bool | Kind::Package
             ),
         }
     }

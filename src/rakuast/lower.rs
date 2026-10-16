@@ -4343,6 +4343,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::DoStmt(Box::new(lower_stmt(node)?)))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
+        // An inline subset term declares its generated name and yields it.
+        RakuAstClass::TypeSubset => Ok(crate::ast::inline_subset_term::expand(lower_subset(node)?)),
         RakuAstClass::VarCompilerBlock => Ok(Expr::CodeVar("?BLOCK".to_string())),
         RakuAstClass::VarCompilerRoutine => Ok(Expr::CodeVar("?ROUTINE".to_string())),
         // `class { }` / `role { }` / `grammar { }` as a term: the parser carries

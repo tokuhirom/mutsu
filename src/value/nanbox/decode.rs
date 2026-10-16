@@ -271,8 +271,5 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::HyperWhatever => ValueRepr::HyperWhatever,
         Kind::Bool => ValueRepr::Bool(inline_payload(bits) != 0),
         Kind::Package => ValueRepr::Package(Symbol::from_id(inline_payload(bits))),
-        Kind::CompUnitDepSpec => ValueRepr::CompUnitDepSpec {
-            short_name: Symbol::from_id(inline_payload(bits)),
-        },
     }
 }

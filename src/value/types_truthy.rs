@@ -91,7 +91,6 @@ impl Value {
                 EnumValue::Str(s) => !s.is_empty(),
                 EnumValue::Generic(v) => v.as_ref().truthy(),
             },
-            ValueView::CompUnitDepSpec { .. } => true,
             ValueView::Package(_) | ValueView::ParametricRole { .. } => false,
             ValueView::Routine { .. } => true,
             ValueView::Sub(_) | ValueView::WeakSub(_) => true,

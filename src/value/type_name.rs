@@ -127,7 +127,6 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             }
         }
         ValueView::Package(_) => "Package",
-        ValueView::CompUnitDepSpec { .. } => "Any",
         ValueView::Enum { .. } => "Int",
         ValueView::Instance { .. } => "Any",
         ValueView::Junction { .. } => "Junction",

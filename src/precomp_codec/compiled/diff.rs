@@ -191,6 +191,20 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
     }
     // Hash sets and maps compare as sorted element lists: their encoding is
     // sorted, their iteration order is not.
+    let hidden = |c: &CompiledCode| {
+        c.unit_hidden_lexicals.as_ref().map(|set| {
+            let mut names: Vec<String> = set.iter().map(|s| s.resolve()).collect();
+            names.sort();
+            names
+        })
+    };
+    if hidden(a) != hidden(b) {
+        return Some(format!(
+            "unit_hidden_lexicals: {:?} != {:?}",
+            hidden(a),
+            hidden(b)
+        ));
+    }
     cmp_sorted!(
         param_locals,
         atomic_target_syms,

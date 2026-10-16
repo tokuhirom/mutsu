@@ -141,7 +141,6 @@ impl Interpreter {
                 _ => "Sub",
             },
             ValueView::WeakSub(_) => "Sub",
-            ValueView::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             ValueView::Instance { class_name, .. } => {
                 if crate::runtime::attribute_identity::is_bootstrapattr(target) {
                     return Ok(Value::package(Symbol::intern("BOOTSTRAPATTR")));

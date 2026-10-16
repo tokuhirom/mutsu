@@ -234,7 +234,11 @@ Consequences that pin the design:
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
   - A non-trivial proto keeps its registry alias.
-  - Classes and variables keep the `ImportScope` rollback.
+  - Classes and variables keep the `ImportScope` rollback. A top-level
+    routine that names a variable by string (`EVAL '$v'`, `::('$v')`) no
+    longer sees a block-scoped import of it when the block calls it
+    (ADR-12529 phase 3 slice 20, #13604): its frame hides the open block
+    imports' variables from the program scope.
 
 ## 5. Acceptance
 
