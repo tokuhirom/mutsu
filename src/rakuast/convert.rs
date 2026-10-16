@@ -394,6 +394,32 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         }
         // A signature declaration (`my ($a, @b) = …`): the parser keeps its
         // source form as the expansion's first statement.
+        Stmt::SyntheticBlock(stmts)
+            if matches!(
+                stmts.as_slice(),
+                [
+                    Stmt::SubDecl { .. },
+                    Stmt::Given {
+                        is_statement_modifier: true,
+                        ..
+                    }
+                ]
+            ) =>
+        {
+            let [declaration, Stmt::Given { topic, .. }] = stmts.as_slice() else {
+                unreachable!("guarded declaration modifier shape")
+            };
+            let mut statement = convert_stmt(declaration)?
+                .ok_or_else(|| unsupported("empty declaration modifier"))?;
+            statement.fields.push(node_field(
+                Some("loop-modifier"),
+                RakuAstNode {
+                    class: RakuAstClass::StatementModifierGiven,
+                    fields: vec![node_field(None, convert_expr(topic)?)],
+                },
+            ));
+            Ok(Some(statement))
+        }
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
             Some(crate::ast::SourceForm::DeclarationModifier {
                 declaration,

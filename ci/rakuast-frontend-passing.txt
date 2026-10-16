@@ -4695,6 +4695,7 @@ t/rakuast/rakuast-core-type-names.t
 t/rakuast/rakuast-decl-default-trait.t
 t/rakuast/rakuast-decl-postfix-tail.t
 t/rakuast/rakuast-declaration-compound-assign.t
+t/rakuast/rakuast-declaration-given-modifier.t
 t/rakuast/rakuast-declaration-headers.t
 t/rakuast/rakuast-declaration-loose-tail.t
 t/rakuast/rakuast-declaration-modifier-cohort.t
