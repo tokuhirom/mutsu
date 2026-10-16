@@ -345,7 +345,7 @@ impl Interpreter {
     /// `$/`, a dynamic, `__mutsu_*`) is per-frame by construction and replaying it
     /// into a caller corrupts that caller's own binding.
     pub(crate) fn record_runtime_name_write(&mut self, name: &str) {
-        if !crate::env::is_plain_user_lexical(name) {
+        if !crate::env::is_plain_user_lexical(name) && !crate::env::is_dynamic_var_env_key(name) {
             return;
         }
         self.record_caller_var_writeback(name);

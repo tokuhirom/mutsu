@@ -170,6 +170,9 @@ impl Interpreter {
                     // write, propagated back as `::('$*x') = v`'s is.
                     self.env_mut().insert(key.to_string(), value.clone());
                     self.note_caller_env_write(key);
+                    // Carried back to the declaring frame across every
+                    // return (ADR-12529 §3, slice 40).
+                    self.record_runtime_name_write(key);
                 }
                 Ok(value)
             }
