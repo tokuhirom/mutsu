@@ -239,9 +239,10 @@ impl Interpreter {
     }
 
     /// `Str`'s, `Cool`'s and `Any`'s text methods for a call no
-    /// receiver-specific answer took: the row the receiver's MRO declares
-    /// first, as `.^can` walks it (ADR-11276 §9.129). A `Cool` instance with a
-    /// `Str` of its own is read through it, as Rakudo's `self.Str.METHOD` does.
+    /// receiver-specific answer took: the first row of the receiver's MRO, as
+    /// `.^can` walks it, that binds the call (ADR-11276 §9.129). An instance
+    /// with a `Str` of its own whose method is `Cool`'s or `Any`'s is read
+    /// through it, as Rakudo's `self.Str.METHOD` does.
     /// A junction autothreads elsewhere; a receiver no owner of which declares
     /// the name is `X::Method::NotFound`.
     // Cost: O(m) for the MRO, m = its length, plus `invoke_mro`'s.
@@ -273,7 +274,7 @@ impl Interpreter {
         let first = owners
             .iter()
             .find(|owner| crate::builtins::method_table::owner_declares(owner, method_sym));
-        if first == Some(&"Cool")
+        if matches!(first, Some(&"Cool" | &"Any"))
             && let ValueView::Instance { class_name, .. } = target.view()
             && self.has_user_method(&class_name.resolve(), "Str")
         {
@@ -283,7 +284,7 @@ impl Interpreter {
             };
             return crate::builtins::method_table::invoke_mro(
                 self,
-                &["Str", "Cool"],
+                &["Str", "Cool", "Any"],
                 method,
                 args,
                 &text,

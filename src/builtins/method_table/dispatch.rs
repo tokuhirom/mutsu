@@ -426,11 +426,23 @@ pub(crate) fn invoke_mro(
         .cloned()
         .partition(|arg| arg.is_string_pair_value());
     let type_object = matches!(target.view(), crate::value::ValueView::Package(_));
-    owners.iter().find_map(|owner| {
+    let mut declared = false;
+    let answer = owners.iter().find_map(|owner| {
+        declared |= super::owner_declares(owner, method);
         let row = row(super::owner_row(Symbol::intern(owner), method, arity)?);
+        // An interpreter row reads any argument the way its routine does (a
+        // `Seq` of pairs for `trans`, a list of needles for `index`); only a
+        // `Junction`, which must autothread, is refused.
+        let admitted = if matches!(row.handler, Handler::Interp(_)) {
+            !positional
+                .iter()
+                .any(|arg| matches!(arg.view(), crate::value::ValueView::Junction { .. }))
+        } else {
+            admits_row(row, &positional)
+        };
         if (type_object && !row.flags.contains(RowFlags::TYPE_OBJECT_OK))
             || !named.iter().all(|pair| names_declared(row, pair))
-            || !admits_row(row, &positional)
+            || !admitted
         {
             return None;
         }
@@ -442,7 +454,20 @@ pub(crate) fn invoke_mro(
             Named::new(&named),
         )
         .map(|(result, _)| result)
-    })
+    });
+    // An owner declares the method, but no candidate of any owner takes this
+    // many arguments: Rakudo's multi dispatch finds none (`"".subst`).
+    if answer.is_none()
+        && declared
+        && !owners
+            .iter()
+            .any(|owner| super::owner_row(Symbol::intern(owner), method, arity).is_some())
+    {
+        return Some(Err(
+            crate::runtime::methods_signature_errors::make_multi_no_match_error(method.as_str()),
+        ));
+    }
+    answer
 }
 
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,

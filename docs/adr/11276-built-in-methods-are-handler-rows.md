@@ -3028,6 +3028,45 @@ protocol name answers a `Method` of the role whatever the receiver (a variable r
 name as a `Str`). `method-rows-report.py --arms`: the runtime slow path goes
 from 399 arms to 383.
 
+### 9.129 A declined call walks the receiver's MRO; `Str`'s and `Cool`'s text rows take every argument form (2026-10-16)
+
+`refactor/11276-cool-text-arms`. `dispatch_method_by_name_1` answered fifteen text methods by name for every receiver
+the rows had not taken: `match`, `subst`, `wordcase`, `comb`, `IO`, `contains`, `starts-with`, `ends-with`, `index`,
+`indices`, `rindex`, `substr-eq`, `substr`, `substr-rw` and `trans`. Two kinds of call reached them. A `Str`/`Cool`
+receiver whose argument the pure rows did not bind (a `Regex` needle, `:i`, a position, a `Range`, a `:filter`), and a
+receiver the rows did not reach at all: an `IO::Path`, a `Range` or `Map` with a regex, an enum member, a `Seq`, a
+type object, a `Cool` instance, but also a `Pair`, a `Version`, a `Capture` and a plain instance, which Rakudo refuses
+(`X::Method::NotFound`, they are not `Cool`) and the arms answered from their string form.
+
+Decisions.
+
+1. **The rows take every argument form.** `contains`/`index`/`rindex` (arity 1 and 2), `starts-with`, `ends-with`,
+   `substr` (1, 2), `substr-eq` (1, 2), `comb` (1, 2) and `wordcase` (0, `:filter`/`:where`) of `Str` and `Cool` are
+   `Handler::Interp` rows (`scalars/str_search_interp.rs`, `ANY_ARGS | ANY_NAMED`) whose handler answers a plain
+   needle by the pure candidate it replaced and every other form by the interpreter routine the arm called. The
+   pure rows of those names are gone; the pure candidates stay as functions.
+2. **A declined call walks the receiver's MRO** (`method_table::invoke_mro`): the owners `.^can` walks
+   (`classhow_mro_unhidden_names`), the first row that binds the call answers. A row binds when it takes the arity,
+   declares the named arguments (or `ANY_NAMED`), admits a type object only with `TYPE_OBJECT_OK`, admits the
+   arguments (an interpreter row any but a `Junction`, a pure row as the guard step does) and its handler does not
+   decline; otherwise the walk goes on, as a parent's multi candidate stays a candidate in Rakudo
+   (`(1..5).contains(/3/)` is `Cool`'s although `Range` declares `contains`). When an owner declares the name but no
+   owner has a row at the call's arity, the answer is `X::Multi::NoMatch` (`"".subst`). An instance with a `Str` of
+   its own whose method is `Cool`'s or `Any`'s is read through it (`self.Str.METHOD`). An enum member walks its base
+   type's owners, because `.^mro` omits the base (#13667). The step answers only the fifteen names above
+   (`TEXT_METHODS_BY_MRO`), where the arms were; widening it to other names is the next use of the mechanism.
+3. `Str.IO`/`Cool.IO` and `Any.match` are `TYPE_OBJECT_OK` (`Str.IO`, `Int.IO`, `Str.match(/b/)` answer as in Rakudo,
+   which the arms did).
+
+Behaviour toward Rakudo, pinned in `t/oo/method/cool-text-methods-by-mro.t` (which passes under `raku`): a plain
+instance, a `Pair`, a `Version` and a `Capture` have none of these methods (`X::Method::NotFound`, they answered a
+text made of their string form); a `Cool` instance's `IO` and `match` read its own `Str`. A probe of 22 calls (every
+argument form above) over 26 receivers (`Str`, `Int`, `Rat`, a `Cool` instance with a `Str`, a `Str` subclass, a plain
+instance, an enum member, a `List`, an `Array`, a `Hash`, a `Pair`, a `Set`, a `Range`, a `Seq`, four type objects,
+`Nil`, a junction, a `Match`, an `IO::Path`, a `Version`, a `Capture`, a `Num`, an allomorph, a lazy `Seq`) against
+the pre-change binary and `raku`: no answer that matched Rakudo before differs now, and 26 answers moved to Rakudo's.
+`method-rows-report.py --arms`: the runtime slow path goes from 373 to 368 arms.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

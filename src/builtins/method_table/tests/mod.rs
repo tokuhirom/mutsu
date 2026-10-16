@@ -392,9 +392,9 @@ fn rows_are_declared_by_rakudo() {
 /// that name takes is refused before any lookup.
 #[test]
 fn the_name_test_knows_the_arity() {
-    let index = Symbol::intern("index");
-    assert!(names_a_row(index, 1));
-    assert!(!names_a_row(index, 2));
+    let samecase = Symbol::intern("samecase");
+    assert!(names_a_row(samecase, 1));
+    assert!(!names_a_row(samecase, 2));
     let substr = Symbol::intern("substr");
     assert!(names_a_row(substr, 1) && names_a_row(substr, 2));
     assert!(!names_a_row(Symbol::intern("elems"), 1));
@@ -488,11 +488,11 @@ fn argument_admission_follows_the_row_flags() {
     assert!(try_dispatch(&list, combinations, &[junction]).is_none());
     let seq = Value::seq(vec![Value::int(1)]);
     assert!(try_dispatch(&list, combinations, &[seq]).is_none());
-    // `Str.index` has no ANY_ARGS: a Range is not a plain scalar.
+    // `Str.samecase` has no ANY_ARGS: a Range is not a plain scalar.
     let text = sample(DispatchShape::Str);
-    assert!(try_dispatch(&text, Symbol::intern("index"), &[Value::range(1, 2)]).is_none());
+    assert!(try_dispatch(&text, Symbol::intern("samecase"), &[Value::range(1, 2)]).is_none());
     assert!(matches!(
-        try_dispatch(&text, Symbol::intern("index"), &[Value::str_from("b")]),
+        try_dispatch(&text, Symbol::intern("samecase"), &[Value::str_from("b")]),
         Some(Ok(_))
     ));
 }
