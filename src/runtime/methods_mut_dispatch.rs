@@ -1102,6 +1102,19 @@ impl Interpreter {
                 }
             }
 
+            // `Proc::Async`'s methods are rows, found by their owner; they commit
+            // through the instance's shared cell (ADR-11276 §9.128).
+            if let Some(owners) = crate::builtins::method_table::proc_async_owners_of(&target)
+                && let Some(result) = crate::builtins::method_table::invoke_owner(
+                    self,
+                    owners,
+                    method,
+                    &args,
+                    || target.clone(),
+                )
+            {
+                return result;
+            }
             if self.is_native_method(&class_name.resolve(), method) {
                 crate::vm::vm_stats::record_dispatch_entry_outcome(
                     "callmethodmutwithvalues",

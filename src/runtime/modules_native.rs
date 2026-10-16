@@ -18,7 +18,7 @@ pub(crate) mod map_grep_plan;
 mod method_type_decls;
 mod native_io_special;
 pub(crate) mod native_methods;
-mod native_proc_async;
+pub(crate) mod native_proc_async;
 pub(crate) mod proc_spawn;
 pub(crate) mod tcp_core;
 mod native_proc_async_refusal;
