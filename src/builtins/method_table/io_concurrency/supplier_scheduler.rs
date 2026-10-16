@@ -64,18 +64,30 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("CurrentThreadScheduler", "uncaught_handler", 1, ONE, true),
 ];
 
+/// The attribute marking an instance of a user subclass of `Supplier`: it
+/// carries a supplier's state (seeded at construction, as `Promise`'s and
+/// `Channel`'s subclasses carry their payloads), so `Supplier`'s rows answer
+/// it like any supplier.
+pub(crate) const SUPPLIER_SUBCLASS: &str = "__mutsu_supplier_subclass";
+
 /// The owner whose rows answer `target`: `Supplier` for a supplier (a
-/// `Supplier::Preserving` included), the scheduler's own class for a scheduler;
-/// `None` for anything else.
+/// `Supplier::Preserving` or an instance of a user subclass included), the
+/// scheduler's own class for a scheduler; `None` for anything else.
 // Cost: O(1).
 pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let ValueView::Instance { class_name, .. } = target.view() else {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
         return None;
     };
     Some(match class_name.as_str() {
         "Supplier" | "Supplier::Preserving" => &["Supplier"],
         "ThreadPoolScheduler" => &["ThreadPoolScheduler"],
         "CurrentThreadScheduler" => &["CurrentThreadScheduler"],
+        _ if attributes.as_map().contains_key(SUPPLIER_SUBCLASS) => &["Supplier"],
         _ => return None,
     })
 }

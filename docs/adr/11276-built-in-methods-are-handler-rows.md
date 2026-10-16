@@ -3197,6 +3197,14 @@ Behaviour: an attribute or temporary receiver's `emit`/`done`/`quit` runs the mu
 variable's). Pinned in `t/concurrency/supply/supplier-scheduler-method-rows.t` (passes under `raku`). The recognition
 table and the oracle snapshot gain the three owners.
 
+Follow-up (`fix/supplier-subclass-rows`). An instance of a user subclass of `Supplier` (`class T is Supplier`) was
+built with none of a supplier's state, so its `emit` reached no tap. A supplier's state is its attributes, so
+`seed_concurrency_payload` seeds them at construction (`Interpreter::seed_supplier_state`, shared with
+`Supplier.new`'s constructor) and marks the instance (`SUPPLIER_SUBCLASS`); `owners_of` answers `Supplier` for a marked
+instance, so the rows reach it as they reach `Supplier::Preserving`. With every supplier receiver on the rows, the
+reading copies of `emit`/`done`/`quit` in `native_supplier` had no caller left and are deleted. Pinned in
+`t/concurrency/supply/supplier-subclass-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

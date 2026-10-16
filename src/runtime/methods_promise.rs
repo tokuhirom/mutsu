@@ -419,7 +419,9 @@ impl Interpreter {
     /// `Promise` or `Channel` carries (#13634): Rakudo's subclass *is* a
     /// promise (`await`, `.then`, `.vow` all work on it), so the rows answer
     /// its built-in methods on this payload. A promise is bound to the
-    /// scheduler a `:scheduler` argument names, as `Promise.new`'s is.
+    /// scheduler a `:scheduler` argument names, as `Promise.new`'s is. An
+    /// instance of a user subclass of `Supplier` carries a supplier's state
+    /// itself (ADR-11276 §9.133).
     // Cost: O(m), m = classes in the MRO.
     pub(crate) fn seed_concurrency_payload(
         &mut self,
@@ -428,6 +430,7 @@ impl Interpreter {
         args: &[Value],
     ) {
         use crate::builtins::method_table::promise_channel::{CHANNEL_PAYLOAD, PROMISE_PAYLOAD};
+        use crate::builtins::method_table::supplier_scheduler::SUPPLIER_SUBCLASS;
         let Some(class) = class_mro.first().copied() else {
             return;
         };
@@ -439,6 +442,14 @@ impl Interpreter {
             && !attrs.contains_key(CHANNEL_PAYLOAD)
         {
             attrs.insert(CHANNEL_PAYLOAD, Value::channel(SharedChannel::new()));
+        } else if class_mro.iter().any(|name| name == "Supplier")
+            && !attrs.contains_key(SUPPLIER_SUBCLASS)
+        {
+            // A supplier's state is its attributes, so the subclass instance
+            // carries them itself.
+            let preserving = class_mro.iter().any(|name| name == "Supplier::Preserving");
+            Self::seed_supplier_state(attrs, preserving);
+            attrs.insert(SUPPLIER_SUBCLASS, Value::TRUE);
         }
     }
 
