@@ -18,6 +18,7 @@ mod io_path_misc;
 mod io_path_parts;
 mod io_path_stat;
 mod io_spec;
+pub(crate) mod class_methods;
 mod io_special;
 pub(crate) mod promise_channel;
 mod promise_class;
@@ -37,4 +38,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     concurrency_state::ROWS,
     promise_channel::ROWS,
     promise_class::ROWS,
+    class_methods::ROWS,
 ];

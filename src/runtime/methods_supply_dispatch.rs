@@ -326,7 +326,7 @@ impl Interpreter {
     }
 
     /// Handle Supply.from-list class method
-    pub(super) fn dispatch_supply_from_list(
+    pub(crate) fn dispatch_supply_from_list(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -404,7 +404,7 @@ impl Interpreter {
     }
 
     /// Handle Supply.on-demand class method
-    pub(super) fn dispatch_supply_on_demand(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_supply_on_demand(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let callback = args.first().cloned().unwrap_or(Value::NIL);
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));

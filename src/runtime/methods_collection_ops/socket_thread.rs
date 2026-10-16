@@ -73,7 +73,7 @@ impl Interpreter {
     }
 
     /// IO::Socket::INET.listen($host, $port, family => ...)
-    pub(in crate::runtime) fn dispatch_socket_inet_listen(
+    pub(crate) fn dispatch_socket_inet_listen(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -118,7 +118,7 @@ impl Interpreter {
     }
 
     /// IO::Socket::INET.connect($host, $port, family => ...)
-    pub(in crate::runtime) fn dispatch_socket_inet_connect(
+    pub(crate) fn dispatch_socket_inet_connect(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -164,7 +164,7 @@ impl Interpreter {
         self.dispatch_socket_connect(&positional)
     }
 
-    pub(in crate::runtime) fn dispatch_socket_async_listen(
+    pub(crate) fn dispatch_socket_async_listen(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -194,7 +194,7 @@ impl Interpreter {
     }
 
     // Cost: O(h + a), h = host-name length, a = resolved addresses; excludes network waits.
-    pub(in crate::runtime) fn dispatch_socket_async_connect(
+    pub(crate) fn dispatch_socket_async_connect(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -305,7 +305,7 @@ impl Interpreter {
     }
 
     /// IO::Socket::Async.bind-udp($host, $port)
-    pub(in crate::runtime) fn dispatch_socket_async_bind_udp(
+    pub(crate) fn dispatch_socket_async_bind_udp(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -352,7 +352,7 @@ impl Interpreter {
     }
 
     /// IO::Socket::Async.udp() - create an unbound UDP socket for sending
-    pub(in crate::runtime) fn dispatch_socket_async_udp(
+    pub(crate) fn dispatch_socket_async_udp(
         &mut self,
         _args: &[Value],
     ) -> Result<Value, RuntimeError> {
