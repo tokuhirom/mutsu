@@ -3028,6 +3028,33 @@ protocol name answers a `Method` of the role whatever the receiver (a variable r
 name as a `Str`). `method-rows-report.py --arms`: the runtime slow path goes
 from 399 arms to 383.
 
+### 9.128 `Proc::Async`'s methods are rows, found by their owner (2026-10-16)
+
+`refactor/11276-proc-async-rows`. `Proc::Async` was answered by name in six places: two name lists in the instance
+dispatch (`methods_instance_ops.rs`) that sent the mutating names to `call_native_instance_method_mut_in_place` and the
+reading ones to `call_native_instance_method`, the `Proc::Async` arms and MRO candidates of both native dispatchers
+(`native_methods/mod.rs`), the name `match`es of the implementation (`native_proc_async_mut`, `native_proc_async`), and
+the VM's two skip lists (`vm_call_method_ops.rs`, `vm_call_method_mut_ops.rs`) that kept the cascades off those names.
+§9.23 left it for "a third place kind" because its mutators publish through `AttrPublisher` (#7923). As with the
+iterators (§9.126) no place is needed: the publisher writes the instance's shared attribute cell, which every alias
+reads, so a pure-entry row commits for all of them.
+
+Decision. `Proc::Async`'s `start`, `kill`, `write`, `print`, `put`, `say`, `close-stdin`, `bind-stdin`, `bind-stdout`,
+`bind-stderr`, `ready`, `stdout`, `stderr`, `Supply`, `command`, `started`, `w` and `pid` are
+`OWNER_ONLY | SLURPY` `Handler::Interp` rows (`io_concurrency/proc_async.rs`; the methods read positional and named
+arguments as one list, `start(:ENV, :cwd)`, `stdout(:bin)`). Their one handler, `Interpreter::proc_async_call`, runs
+the implementation on a working copy and commits it through the cell with an `AttrPublisher`, as
+`call_native_instance_method_mut_in_place` did; the implementation dispatches on a `ProcAsyncOp`, not on the name. The
+instance dispatch and the mutating method call find the rows by owner where the lists and the `is_native_method`
+gate were; the native dispatchers no longer name `Proc::Async`; the VM's skip lists ask `owner_declares`. The reading
+methods' copies of `stdout`, `stderr` and `Supply` (unreachable: the lists sent those names to the mutating path) are
+gone. The recognition table and the oracle snapshot gain `Proc::Async`.
+
+No behaviour change; pinned in `t/concurrency/proc-async-method-rows.t` (a start through an array element is seen
+through the variable). Found: #13665 (a user subclass of `Proc::Async` cannot be constructed with positional
+arguments, so `proc_async::owners_of` names the class itself only). `method-rows-report.py --arms` does not count the
+removed lists (they are `matches!` lists and the implementation's file is not a cascade).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
