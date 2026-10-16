@@ -32,7 +32,7 @@ impl Parser {
             return None;
         }
         self.skip_whitespace();
-        let mut regex = self.parse_atom(&[], true, false)?;
+        let mut regex = self.parse_atom(&[], false)?;
         // An alias on a `<?before …>` / `<?after …>` assertion drops its zero
         // width marker: Rakudo's `subrule_alias` resets the aliased subrule's
         // subtype to `capture`, so `$<a>=<?before x>` is `$<a>=<before x>` and

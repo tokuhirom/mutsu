@@ -1,0 +1,1 @@
+RakuAST now round-trips a beginning-of-string anchor after an earlier regex atom. The regex tree preserves the anchor's position while matching continues to treat it as an assertion about the start of the input.

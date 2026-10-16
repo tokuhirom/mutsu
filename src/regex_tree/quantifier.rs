@@ -284,7 +284,7 @@ impl Parser {
         }
         let trailing = self.consume_if('%');
         self.skip_whitespace();
-        let Some(mut node) = self.parse_atom(&[], false, false) else {
+        let Some(mut node) = self.parse_atom(&[], false) else {
             self.pos = start;
             return None;
         };
