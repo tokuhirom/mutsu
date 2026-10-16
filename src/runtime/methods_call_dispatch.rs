@@ -2594,6 +2594,18 @@ impl Interpreter {
                 return Ok(Value::str(gist_item(self, &target)));
             }
         }
+        // `Supply`'s methods are rows, found by their owner (ADR-11276 §9.130).
+        if let Some(owners) = crate::builtins::method_table::supply_owners_of(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return result;
+        }
         // An instance-only Supply method invoked on the `Supply` TYPE OBJECT is
         // an X::Parameter::InvalidConcreteness (the invocant is `Supply:D`). These
         // ones otherwise fall through to the generic `Any` list methods (e.g.
@@ -2633,28 +2645,6 @@ impl Interpreter {
                 "Cannot call .{} on a Supply type object",
                 method
             )));
-        }
-        // Supply.merge/zip as class methods
-        if method == "merge"
-            && matches!(target.view(), ValueView::Package(name) if name == "Supply")
-        {
-            return self.dispatch_supply_merge(&args);
-        }
-        if method == "zip" && matches!(target.view(), ValueView::Package(name) if name == "Supply")
-        {
-            return self.dispatch_supply_zip_class(&args);
-        }
-        if method == "zip-latest"
-            && matches!(target.view(), ValueView::Package(name) if name == "Supply")
-        {
-            return self.dispatch_supply_zip_latest_class(&args);
-        }
-        // Supply.delayed with non-positive delay
-        if method == "delayed"
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
-            && args.first().is_some_and(|delay| delay.to_f64() <= 0.0)
-        {
-            return Ok(target);
         }
         // Array-specific methods: EXISTS-POS, ASSIGN-POS, BIND-POS, DELETE-POS, clone
         // Cost (preamble, paid by every method that reaches this block on an Array):
@@ -3157,7 +3147,6 @@ impl Interpreter {
         }
         if method == "tail"
             && !bypass_native_fastpath
-            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
             // `Mu` is no `Any`: it has no `tail`.
             && !matches!(target.view(), ValueView::Package(name) if name == "Mu")
         {
@@ -3376,7 +3365,7 @@ impl Interpreter {
         // Skip for Supply (handled by Supply pipeline) and IO::Handle/IO::Pipe
         // (handled by native IO dispatch which reads the content first).
         if method == "split"
-            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
+            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
             && !matches!(target.view(), ValueView::Package(name) if name.as_str().starts_with("IO::Spec"))
         {
             // `IO::Path.split` splits the file's contents, not the path (the

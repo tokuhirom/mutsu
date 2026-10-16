@@ -37,6 +37,7 @@ mod methods_sub_prec;
 mod methods_sub_rw_proxy;
 mod methods_subscript_protocol;
 mod methods_supply_dispatch;
+pub(crate) mod methods_supply_rows;
 mod methods_temporal;
 mod methods_trans;
 mod methods_type_coerce;

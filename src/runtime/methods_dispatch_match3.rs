@@ -91,18 +91,6 @@ impl Interpreter {
             // for the supplies whose constructor happened to store one, so a
             // combinator result died with "No such method 'live'"
             // (`$s1.Supply.merge($s2.Supply).live`).
-            "live" if args.is_empty() => {
-                if let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = target.view()
-                    && class_name == "Supply"
-                {
-                    return Some(self.native_supply(&(attributes).as_map(), "live", Vec::new()));
-                }
-                None
-            }
             "slice" => Some(self.dispatch_slice_method(target, args)),
             "grab" => self.dispatch_grab_method(target, args),
             "skip" => Some(self.dispatch_skip_method(target, args)),
@@ -160,14 +148,7 @@ impl Interpreter {
             "AT-KEY" if args.len() == 1 => self.dispatch_at_key_method(&target, &args),
             "EXISTS-KEY" if args.len() == 1 => self.dispatch_match_exists_key(&target, &args),
             "EXISTS-POS" if args.len() == 1 => self.dispatch_match_exists_pos(&target, &args),
-            "rotate" => {
-                if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
-                {
-                    Some(self.dispatch_supply_transform(target, "rotate", &args))
-                } else {
-                    Some(self.dispatch_rotate(target, &args))
-                }
-            }
+            "rotate" => Some(self.dispatch_rotate(target, &args)),
             _ => None,
         }
     }
@@ -230,10 +211,6 @@ impl Interpreter {
         if !args.is_empty() {
             return Some(self.dispatch_first(target, &args));
         }
-        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
-        {
-            return Some(self.dispatch_first(target, &args));
-        }
         // `.first` with no matcher is the first element of the invocant's
         // list (`Any.first` smartmatches `True`).
         Some(Ok(crate::builtins::method_table::terminals::first_one(&target)))
@@ -250,22 +227,14 @@ impl Interpreter {
             .or_else(|| Some(self.dispatch_eager_method(target)))
     }
 
-    /// Dispatch the "grab" method (`Supply.grab`; the QuantHash `grab` is a
-    /// `Handler::Mut` row, ADR-11276 §9.23).
+    /// `.grab` on the `Supply` type object (`Supply.grab` of an instance is a
+    /// row, ADR-11276 §9.130; the QuantHash `grab` is a `Handler::Mut` row,
+    /// §9.23).
     fn dispatch_grab_method(
         &mut self,
         target: Value,
-        args: Vec<Value>,
+        _args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name == "Supply"
-        {
-            return Some(self.dispatch_supply_grab(&(attributes).as_map(), &args));
-        }
         if let ValueView::Package(class_name) = target.view()
             && class_name == "Supply"
         {
@@ -286,15 +255,6 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name == "Supply"
-        {
-            return self.dispatch_supply_skip(&(attributes).as_map(), &args);
-        }
         // Consumption is handled centrally, before dispatch reaches here
         // (ADR-0034 §2.3: `.skip` is a consuming method AND one of the two
         // that burns a single read even on a body built already-`Reified` —
