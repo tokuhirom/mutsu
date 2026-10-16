@@ -1181,6 +1181,25 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    handler installed by a light caller resolves its free names through the
    caller chain with static links suppressed.
 
+   **Slice 23 done** (`fix/12529-sibling-slot-cells`): the sibling-slot
+   entry of slice 21's census. Sibling blocks that each declare `my $a`
+   share one slot (`multi_scope_slots`), and ADR-0024's block capture
+   declined to box such a slot at all, because a cell left there by the
+   first block would fuse its `$a` with the next block's. So a sub over the
+   second block's `$a` wrote it only by name, and only the return merge
+   carried the write to the block.
+
+   The decline now covers only what the slot holds when it may be another
+   scope's leftover. Two bindings are known to be this scope entry's own:
+   - the hoisted pass's seed (#9911), a fresh cell the scope's declaration
+     adopts;
+   - in sequence, a slot the scope's own `my` has already filled. The
+     compiler records those as `CompiledSubDeclPlan::own_scope_decl_slots`
+     on the in-sequence plan, the same set `hoist_seed_slots` is on the
+     hoisted one.
+
+   Pinned by `t/routines/call/sibling-block-subs-capture-own-cell.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
