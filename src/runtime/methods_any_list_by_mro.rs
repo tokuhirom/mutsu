@@ -12,7 +12,15 @@
 use super::*;
 
 /// The methods whose `Any` rows answer by the receiver's MRO.
-const ANY_LIST_BY_MRO: [&str; 19] = [
+const ANY_LIST_BY_MRO: [&str; 27] = [
+    "min",
+    "max",
+    "minmax",
+    "minpairs",
+    "maxpairs",
+    "sort",
+    "unique",
+    "repeated",
     "map",
     "flatmap",
     "deepmap",

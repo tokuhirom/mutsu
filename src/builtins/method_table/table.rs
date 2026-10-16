@@ -250,6 +250,36 @@ pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<R
     (arity >= usize::from(ALL[usize::from(id)].arity)).then_some(RowId(id))
 }
 
+/// Every row `owner` declares for `method` that takes `arity` positional
+/// arguments, in registration order: a fixed-arity row, then a slurpy one
+/// whose arity it reaches. [`owner_row`] is the first of them; the MRO walk
+/// (`invoke_mro`) tries each in turn, as a pure row's interpreter twin
+/// (ADR-11276 §9.135) answers the receivers the pure one declines.
+// Cost: O(k), k = rows named `method` (a string compare of the owner each).
+pub(crate) fn owner_rows_at(
+    owner: Symbol,
+    method: Symbol,
+    arity: usize,
+) -> impl Iterator<Item = RowId> {
+    let rows = name_index(method).map_or(&[][..], rows_named);
+    let owner = owner.as_str();
+    let fixed = rows.iter().copied().filter(move |&id| {
+        let row = ALL[usize::from(id)];
+        row.owner == owner
+            && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+            && u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
+    });
+    let slurpy = rows.iter().copied().filter(move |&id| {
+        let row = ALL[usize::from(id)];
+        row.owner == owner
+            && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+            && row.flags.contains(RowFlags::SLURPY)
+            && !u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
+            && arity >= usize::from(row.arity)
+    });
+    fixed.chain(slurpy).map(RowId)
+}
+
 /// Whether `owner` declares a row for `method` at any arity: what `.can` asks
 /// of an owner a shapeless receiver's rows are found under.
 // Cost: O(k), k = rows named `method`.

@@ -167,6 +167,11 @@ impl Interpreter {
             SupplyOp::Min | SupplyOp::Max => {
                 self.dispatch_supply_running_extrema(target, op.name(), &args)
             }
+            // A mapper is a transform; the running `minmax` of the values
+            // themselves is the native supply's.
+            SupplyOp::Minmax if args.is_empty() => {
+                self.native_supply(&attributes.as_map(), op.name(), args)
+            }
             SupplyOp::Minmax => self.dispatch_minmax_method(target, op.name(), args)?,
             SupplyOp::Grab => self.dispatch_supply_grab(&attributes.as_map(), &args),
             SupplyOp::Skip => self.dispatch_supply_skip(&attributes.as_map(), &args),

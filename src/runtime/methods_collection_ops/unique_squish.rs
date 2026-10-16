@@ -181,7 +181,7 @@ impl Interpreter {
     /// comparisons when keys are of any other kind (u = distinct keys; see
     /// `IdentityIndex`). `:with` is O(e * u) comparator calls, as in Rakudo.
     /// A lazy invocant is forced whole. Rakudo: O(e) without `:with` -- see #9161.
-    pub(in crate::runtime) fn dispatch_unique(
+    pub(crate) fn dispatch_unique(
         &mut self,
         target: Value,
         args: &[Value],
@@ -218,7 +218,7 @@ impl Interpreter {
     /// Cost: same as `Interpreter::dispatch_unique`: O(e) average for
     /// Int/BigInt/Str/Bool/Num keys, O(e * u) for any other kind, O(e * u)
     /// comparator calls under `:with`. Rakudo: O(e) without `:with` -- see #9161.
-    pub(in crate::runtime) fn dispatch_repeated(
+    pub(crate) fn dispatch_repeated(
         &mut self,
         target: Value,
         args: &[Value],

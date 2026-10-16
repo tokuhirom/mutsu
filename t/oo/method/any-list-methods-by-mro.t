@@ -5,7 +5,7 @@ use Test;
 # IterationBuffer-free plain list all reach the same row. Answers checked
 # against Rakudo.
 
-plan 18;
+plan 26;
 
 class Plain {}
 class PI { method iterator { (4, 5).iterator } }
@@ -29,3 +29,14 @@ is-deeply (1, 2).flatmap({ ($_, $_) }).List, (1, 1, 2, 2), 'flatmap';
 is-deeply [1, [2, 3]].deepmap(* * 2), [2, [4, 6]], 'deepmap keeps the structure';
 is-deeply (1, (2, 3)).duckmap(-> Int $x { $x + 1 }).List, (2, (3, 4)), 'duckmap';
 throws-like { (1, 2).flatmap(* + 1, * + 2) }, X::Multi::NoMatch, 'flatmap takes one mapper';
+
+# A pure row's interpreter twin answers what the pure row declines (§9.135).
+class PIs { method iterator { (3, 1, 2).iterator } }
+is-deeply PIs.new.sort.List, (1, 2, 3), 'sort through a user iterator';
+is-deeply Int.sort.List, (Int,), 'sort on a type object';
+is (3, 1, 2).max(-*), 1, 'max with a mapper';
+is-deeply (3, 1, 2).sort(-*).List, (3, 2, 1), 'sort with a mapper';
+is-deeply (1, 2, 3, 4).unique(:as(* % 2)).List, (1, 2), 'unique with :as';
+is (3, 1, 2).minmax(-*), 3..1, 'minmax with a mapper';
+is Plain.new.max.^name, 'Plain', 'max on an instance';
+throws-like { (1, 2).minpairs(1) }, X::Multi::NoMatch, 'minpairs takes no argument';
