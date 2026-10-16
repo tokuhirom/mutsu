@@ -1283,7 +1283,7 @@ impl Interpreter {
     /// in that function can call the identical logic instead of duplicating
     /// it a second time within the same function body -- see
     /// `news/2026-08/light-call-state-leak-on-panic-unwind.md`.
-    fn finish_positional_light_env(
+    pub(super) fn merge_positional_light_env(
         &mut self,
         cf: &CompiledFunction,
         caller_env: Option<crate::env::Env>,

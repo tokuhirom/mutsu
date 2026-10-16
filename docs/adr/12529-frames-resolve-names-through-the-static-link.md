@@ -1437,6 +1437,18 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    closure's. Pinned by
    `t/oo/class/class-body-in-routine-writes-outer-lexical.t`.
 
+   **Slice 36 done** (`fix/12529-light-runtime-name-writes`): the
+   `t/vm/codegen/adr0112-trir-caller-frames.t` entry of the fourth census,
+   its last. A write whose target name exists only at run time
+   (`CALLER::CALLER::.BIND-KEY($name, ...)`, `$::($n) = v`) lands in the
+   writing frame's env and is recorded in `pending_runtime_name_writes`.
+   The named return path carries those into the caller env
+   (`propagate_pending_caller_writes`); the light paths had no such step
+   and relied on their plain-lexical merge. Both light paths now read the
+   pending writes before their merge and store them into the restored
+   caller env after it (`vm_call_light_runtime_names.rs`). Pinned by
+   `t/vm/frames/light-call-carries-runtime-name-writes.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

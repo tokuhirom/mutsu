@@ -896,7 +896,11 @@ impl Interpreter {
     /// `finish_positional_light_env` in `vm_call_light.rs`; this cousin has
     /// no `my_declared_enum_sym` check, matching that difference in the
     /// original inline code.)
-    fn finish_light_env(&mut self, cf: &CompiledFunction, caller_env: Option<crate::env::Env>) {
+    pub(super) fn merge_light_env(
+        &mut self,
+        cf: &CompiledFunction,
+        caller_env: Option<crate::env::Env>,
+    ) {
         let bang_is_callee_private = cf.code.is_routine;
         let is_callee_private = |k: Symbol| {
             k == "_"
