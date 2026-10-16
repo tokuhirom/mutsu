@@ -1256,6 +1256,41 @@ regresses one of those rows is fixed on its branch, not landed with a note.
 
    Pinned by `t/routines/closure/closure-rebinds-captured-container-through-cell.t`.
 
+   **Slice 26 done** (`fix/12529-infix-closure-operand-escapes`): the
+   infix-operand entry of slice 21's census, and a third census.
+   `compile_expr_infix_func` compiled a closure literal operand of a user
+   operator (`{ $n++ } xxx 3`) in a non-escaping position, so a lexical it
+   writes stayed a copy and only the call's return merge carried the write.
+   It now passes `is_closure_literal_arg` as the operand's `escaping`, as a
+   call argument does; an operator that keeps the closure and runs it after
+   the statement is pinned too
+   (`t/routines/closure/user-infix-closure-operand-escapes.t`).
+
+   The third census reran slice 21's method (the merge of plain user
+   lexicals switched off in both the named and the light return merges,
+   every `t/` file and every whitelisted roast file, on top of slices
+   22-26). Twelve files still depend on the merge, down from 26:
+   - `S04-blocks-and-statements/pointy-rw.t` 8 and `S32-hash/kv.t` 27:
+     the aliases `$pair.values` / `$pair.kv` hand out must stay `rw`.
+   - `S04-phasers/in-eval.t` (10 tests): phasers inside `EVAL`.
+   - `t/control/begin-lift-names-inner-type-with-body.t`,
+     `t/oo/role/role-body-composition-timing.t`: a BEGIN-lifted type body
+     and a role body's composition-time write.
+   - `t/regex/regex-decl-self-referential-slash.t`: a regex declaration's
+     `s///` on an outer string.
+   - `t/routines/closure/closure-capture-keeps-container-traits.t`,
+     `t/routines/signature/quanthash-parameterized.t`: a container-trait
+     cell and a `QuantHash` rebind.
+   - `t/types/cas-typed-constraint.t`: `cas` on a typed aggregate.
+   - `t/vm/codegen/adr0112-trir-caller-frames.t`: TRIR's caller frames.
+   - `t/vm/underscore-kebab-var.t`: the `_`/`-` spelling alias of a name.
+   - `t/vm/writeback/container-bind-free-var-aliases-source.t`: `:=` of a
+     free container variable to a source.
+
+   The temporary instrument is a two-line gate in each merge loop (skip a
+   key that is a plain user lexical when `MUTSU_NO_LEXMERGE` is set); it is
+   not committed.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
