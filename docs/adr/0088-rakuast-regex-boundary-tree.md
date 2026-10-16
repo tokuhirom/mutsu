@@ -1620,3 +1620,14 @@ previous parser accepted it only as the first atom, so patterns such as
 `t/rakuast/rakuast-regex-mid-pattern-anchor.t` pins the node order and EVAL
 semantics, and `t/regex/regex-caret-mid-pattern.t` checks the existing cases
 through the frontend round trip.
+
+## 67. Ratchet after a block-range quantifier (2026-10-16)
+
+A colon following a `** { ... }` code-count quantifier is parsed as the
+backtracking modifier on the quantified atom. The regex tree preserves Rakudo's
+`BacktrackModifiedAtom` around the aliased atom, with the `BlockRange` inside
+the alias. The quantifier parser previously rejected the colon as a duplicated
+modifier before the outer atom parser could classify it. The focused
+`t/rakuast/rakuast-regex-block-range-ratchet.t` pins the measured structure and
+EVAL behavior; `t/regex/regex-alias-repeat-code-count.t` exercises the cohort
+through the frontend mode.
