@@ -1514,27 +1514,13 @@ impl Interpreter {
             skip_native = true;
         }
         if !skip_native
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
-            && matches!(
-                method,
-                "start"
-                    | "kill"
-                    | "write"
-                    | "close-stdin"
-                    | "bind-stdin"
-                    | "bind-stdout"
-                    | "bind-stderr"
-                    | "ready"
-                    | "print"
-                    | "say"
-                    | "command"
-                    | "started"
-                    | "w"
-                    | "pid"
-                    | "stdout"
-                    | "stderr"
-                    | "Supply"
-            )
+            && crate::builtins::method_table::proc_async_owners_of(&target).is_some_and(|owners| {
+                // `Proc::Async`'s rows answer through the interpreter's owner
+                // lookup (ADR-11276 §9.128); the cascades must not.
+                owners.iter().any(|owner| {
+                    crate::builtins::method_table::owner_declares(owner, Symbol::intern(method))
+                })
+            })
         {
             skip_native = true;
         }

@@ -20,6 +20,7 @@ mod io_path_parts;
 mod io_path_stat;
 mod io_spec;
 mod io_special;
+pub(crate) mod proc_async;
 pub(crate) mod promise_channel;
 mod promise_class;
 
@@ -38,5 +39,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     concurrency_state::ROWS,
     promise_channel::ROWS,
     promise_class::ROWS,
+    proc_async::ROWS,
     class_methods::ROWS,
 ];

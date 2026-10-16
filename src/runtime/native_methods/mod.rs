@@ -383,7 +383,6 @@ impl Interpreter {
                 | "Supply"
                 | "Supplier"
                 | "Proc"
-                | "Proc::Async"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 // `IO::Socket::Async::Listener` has no native MUTABLE method (its
@@ -409,7 +408,6 @@ impl Interpreter {
                             | "Supply"
                             | "Supplier"
                             | "Proc"
-                            | "Proc::Async"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                     )
@@ -438,7 +436,6 @@ impl Interpreter {
                 self.sync_after_synchronous_delivery();
                 result
             }
-            "Proc::Async" => self.native_proc_async_mut(attributes, method, args, publish),
             "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
                 Interpreter::native_scheduler_mut(attributes, method, args, publish)
             }
@@ -501,7 +498,6 @@ impl Interpreter {
                 | "Promise::Vow"
                 | "Channel"
                 | "Thread"
-                | "Proc::Async"
                 | "Proc"
                 | "Supply"
                 | "Supplier"
@@ -549,7 +545,6 @@ impl Interpreter {
                             | "Promise::Vow"
                             | "Channel"
                             | "Thread"
-                            | "Proc::Async"
                             | "Proc"
                             | "Supply"
                             | "Supplier"
@@ -628,7 +623,6 @@ impl Interpreter {
             }
             "Promise::Vow" => self.native_promise_vow(attributes, method, args),
             "Thread" => self.native_thread(attributes, method),
-            "Proc::Async" => self.native_proc_async(attributes, method, args),
             "Proc" => Ok(self.native_proc(attributes, method)),
             "Supply" => {
                 let result = self.native_supply(attributes, method, args);

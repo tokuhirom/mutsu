@@ -157,6 +157,57 @@ fn send_chunk(text: String, sinks: &ChunkSinks, collected: &mut String) {
 /// `X::Proc::Async::MustBeStarted.new(:method<say>)` render identically; the
 /// old code stored the bare class name there, which shadowed the formatter and
 /// made every one of these exceptions stringify as its own type name.
+/// A method of `Proc::Async`, as its rows in
+/// `method_table/io_concurrency/proc_async.rs` name it (ADR-11276 §9.128).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProcAsyncOp {
+    Start,
+    Kill,
+    Write,
+    CloseStdin,
+    BindStdin,
+    BindStdout,
+    BindStderr,
+    Ready,
+    Stdout,
+    Stderr,
+    Supply,
+    Print,
+    Put,
+    Say,
+    Command,
+    Started,
+    W,
+    Pid,
+}
+
+impl ProcAsyncOp {
+    /// The method's name, for the exceptions that report it.
+    // Cost: O(1).
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            ProcAsyncOp::Start => "start",
+            ProcAsyncOp::Kill => "kill",
+            ProcAsyncOp::Write => "write",
+            ProcAsyncOp::CloseStdin => "close-stdin",
+            ProcAsyncOp::BindStdin => "bind-stdin",
+            ProcAsyncOp::BindStdout => "bind-stdout",
+            ProcAsyncOp::BindStderr => "bind-stderr",
+            ProcAsyncOp::Ready => "ready",
+            ProcAsyncOp::Stdout => "stdout",
+            ProcAsyncOp::Stderr => "stderr",
+            ProcAsyncOp::Supply => "Supply",
+            ProcAsyncOp::Print => "print",
+            ProcAsyncOp::Put => "put",
+            ProcAsyncOp::Say => "say",
+            ProcAsyncOp::Command => "command",
+            ProcAsyncOp::Started => "started",
+            ProcAsyncOp::W => "w",
+            ProcAsyncOp::Pid => "pid",
+        }
+    }
+}
+
 pub(in crate::runtime) fn proc_async_error(
     class_name: &str,
     attrs: &[(&str, Value)],
@@ -189,15 +240,40 @@ impl Interpreter {
     /// — long before this handler returns and the dispatcher commits. Publishing
     /// those two *before* the keep is what makes `await $p.ready; $p.kill`
     /// well-defined (tokuhirom/mutsu#7923).
-    pub(super) fn native_proc_async_mut(
+    /// Run `op` on a `Proc::Async` instance: the handler of every row of
+    /// `Proc::Async`. The handler works on a copy of the attributes and
+    /// commits it through the instance's shared cell; a handler that must
+    /// make a write visible before it returns (`start` keeps `.ready` while
+    /// it spawns) publishes it through the same cell (ADR-11276 §9.128).
+    // Cost: the method's own (`start` spawns the child).
+    pub(crate) fn proc_async_call(
+        &mut self,
+        attributes: &crate::value::InstanceAttrs,
+        op: ProcAsyncOp,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let working = attributes.to_map();
+        let mut publisher =
+            crate::runtime::native_methods::AttrPublisher::new(Some(attributes), working.bits_image());
+        let (result, updated) = self.native_proc_async_mut(working, op, args, &mut publisher)?;
+        publisher.commit(&updated);
+        Ok(result)
+    }
+
+    fn native_proc_async_mut(
         &mut self,
         mut attrs: AttrMap,
-        method: &str,
+        op: ProcAsyncOp,
         args: Vec<Value>,
         publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
-        match method {
-            "start" => {
+        let method = op.name();
+        match op {
+            ProcAsyncOp::Command | ProcAsyncOp::Started | ProcAsyncOp::W | ProcAsyncOp::Pid => {
+                let value = self.native_proc_async_read(&attrs, op)?;
+                Ok((value, attrs))
+            }
+            ProcAsyncOp::Start => {
                 if attrs.get("started").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error("X::Proc::Async::AlreadyStarted", &[]));
                 }
@@ -974,7 +1050,7 @@ impl Interpreter {
 
                 Ok((ret, attrs))
             }
-            "kill" => {
+            ProcAsyncOp::Kill => {
                 // `started` and `pid` are written into `.start`'s own copy of
                 // the instance attributes, so a thread that did not call
                 // `.start` never sees them -- `start { await $p.ready; $p.kill }`
@@ -1031,7 +1107,7 @@ impl Interpreter {
                 }
                 Ok((Value::NIL, attrs))
             }
-            "write" => {
+            ProcAsyncOp::Write => {
                 if !attrs.get("w").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::OpenForWriting",
@@ -1100,7 +1176,7 @@ impl Interpreter {
                 p.keep(Value::TRUE, String::new(), String::new());
                 Ok((Value::promise(p), attrs))
             }
-            "close-stdin" => {
+            ProcAsyncOp::CloseStdin => {
                 let started = attrs.get("started").is_some_and(|v| v.truthy());
                 let has_pid = attrs.contains_key("pid");
                 if !started {
@@ -1125,7 +1201,7 @@ impl Interpreter {
                 }
                 Ok((Value::TRUE, attrs))
             }
-            "bind-stdin" => {
+            ProcAsyncOp::BindStdin => {
                 if attrs.get("w").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
@@ -1139,8 +1215,8 @@ impl Interpreter {
                 attrs.insert("stdin_bind".to_string(), bound);
                 Ok((Value::NIL, attrs))
             }
-            "bind-stdout" | "bind-stderr" => {
-                let handle_name = if method == "bind-stdout" {
+            ProcAsyncOp::BindStdout | ProcAsyncOp::BindStderr => {
+                let handle_name = if op == ProcAsyncOp::BindStdout {
                     "stdout"
                 } else {
                     "stderr"
@@ -1173,7 +1249,7 @@ impl Interpreter {
                 attrs.insert(format!("{}_bind", handle_name), bound);
                 Ok((Value::NIL, attrs))
             }
-            "ready" => {
+            ProcAsyncOp::Ready => {
                 // If spawn failed, return a broken promise with the error
                 if let Some(err) = attrs.get("spawn_error").cloned() {
                     let promise = SharedPromise::new();
@@ -1201,7 +1277,7 @@ impl Interpreter {
                 }
                 Ok((Value::promise(ready), attrs))
             }
-            "stdout" | "stderr" => {
+            ProcAsyncOp::Stdout | ProcAsyncOp::Stderr => {
                 if attrs
                     .get(format!("{}_bind", method))
                     .is_some_and(|v| !v.is_nil())
@@ -1233,7 +1309,7 @@ impl Interpreter {
                         ));
                     }
                 }
-                if method == "stdout" {
+                if op == ProcAsyncOp::Stdout {
                     attrs.insert("stdout_selected".to_string(), Value::TRUE);
                 } else {
                     attrs.insert("stderr_selected".to_string(), Value::TRUE);
@@ -1282,7 +1358,7 @@ impl Interpreter {
                 };
                 Ok((value, attrs))
             }
-            "Supply" => {
+            ProcAsyncOp::Supply => {
                 if attrs.get("stdout_bind").is_some_and(|v| !v.is_nil()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
@@ -1309,7 +1385,7 @@ impl Interpreter {
                 attrs.insert("supply_selected".to_string(), Value::TRUE);
                 Ok((attrs.get("supply").cloned().unwrap_or(Value::NIL), attrs))
             }
-            "print" | "put" | "say" => {
+            ProcAsyncOp::Print | ProcAsyncOp::Put | ProcAsyncOp::Say => {
                 if !attrs.get("w").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::OpenForWriting",
@@ -1334,7 +1410,7 @@ impl Interpreter {
                 // `:enc` (`say`/`put` add a trailing newline).
                 let data = args.first().cloned().unwrap_or(Value::NIL);
                 let mut s = data.to_string_value();
-                if method == "say" || method == "put" {
+                if matches!(op, ProcAsyncOp::Say | ProcAsyncOp::Put) {
                     s.push('\n');
                 }
                 let enc = attrs
@@ -1363,10 +1439,6 @@ impl Interpreter {
                 p.keep(Value::TRUE, String::new(), String::new());
                 Ok((Value::promise(p), attrs))
             }
-            _ => Err(RuntimeError::new(format!(
-                "No native mutable method '{}' on Proc::Async",
-                method
-            ))),
         }
     }
 }

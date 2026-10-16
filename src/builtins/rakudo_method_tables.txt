@@ -188,6 +188,9 @@ only	Num	Bridge	Capture	Complex	FatRat	Int	Num	Range	Rat	UPGRADE-RAT	abs	acosec	
 declared	Pair	ACCEPTS	AT-KEY	Capture	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	Pair	Str	WHICH	abs-value	add-value	antipair	antipairs	clone	fmt	freeze	gist	invert	iterator	key	keyof	keys	kv	new	of	pairs	raku	value	values
 methods	Pair	ACCEPTS	AT-KEY	Capture	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	POPULATE	Pair	Str	WHICH	abs-value	add-value	antipair	antipairs	clone	fmt	freeze	gist	invert	iterator	key	keyof	keys	kv	new	of	pairs	raku	value	values
 only	Pair	Capture	FLATTENABLE_HASH	FLATTENABLE_LIST	Pair	abs-value	add-value	antipair	freeze	iterator	key	keyof	of	value
+declared	Proc::Async	Supply	arg0	args	bind-stderr	bind-stdin	bind-stdout	close-stdin	command	enc	kill	new	path	pid	print	pty	pty-cols	pty-rows	put	ready	resize-pty	say	start	started	stderr	stdout	translate-nl	w	win-verbatim-args	write
+methods	Proc::Async	POPULATE	Supply	TWEAK	arg0	args	bind-stderr	bind-stdin	bind-stdout	close-stdin	command	enc	kill	new	path	pid	print	pty	pty-cols	pty-rows	put	ready	resize-pty	say	start	started	stderr	stdout	translate-nl	w	win-verbatim-args	write
+only	Proc::Async	arg0	args	bind-stderr	bind-stdout	close-stdin	command	enc	path	pid	print	pty	pty-cols	pty-rows	put	ready	resize-pty	say	start	started	translate-nl	w	win-verbatim-args	write
 declared	Promise	Bool	Supply	allof	andthen	anyof	at	break	broken	cause	get-await-handle	in	keep	kept	orelse	result	scheduler	sink	start	status	then	vow
 methods	Promise	BUILD	Bool	POPULATE	Supply	allof	andthen	anyof	at	break	broken	cause	get-await-handle	in	keep	kept	new	orelse	result	scheduler	sink	start	status	then	vow
 only	Promise	allof	andthen	anyof	at	cause	get-await-handle	in	orelse	result	scheduler	sink	start	status	then	vow

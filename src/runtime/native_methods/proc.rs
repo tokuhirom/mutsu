@@ -69,15 +69,14 @@ impl Interpreter {
 
     // --- Proc::Async immutable ---
 
-    pub(in crate::runtime) fn native_proc_async(
+    pub(in crate::runtime) fn native_proc_async_read(
         &self,
         attributes: &AttrMap,
-        method: &str,
-        args: Vec<Value>,
+        op: crate::runtime::native_proc_async::ProcAsyncOp,
     ) -> Result<Value, RuntimeError> {
-        use crate::runtime::native_proc_async::proc_async_error;
-        match method {
-            "command" => {
+        use crate::runtime::native_proc_async::ProcAsyncOp;
+        match op {
+            ProcAsyncOp::Command => {
                 let mut cmd = attributes
                     .get("cmd")
                     .cloned()
@@ -111,9 +110,9 @@ impl Interpreter {
                     Ok(cmd)
                 }
             }
-            "started" => Ok(attributes.get("started").cloned().unwrap_or(Value::FALSE)),
-            "w" => Ok(attributes.get("w").cloned().unwrap_or(Value::FALSE)),
-            "pid" => {
+            ProcAsyncOp::Started => Ok(attributes.get("started").cloned().unwrap_or(Value::FALSE)),
+            ProcAsyncOp::W => Ok(attributes.get("w").cloned().unwrap_or(Value::FALSE)),
+            ProcAsyncOp::Pid => {
                 if let Some(ValueView::Int(pid)) = attributes.get("pid").map(Value::view) {
                     let promise = SharedPromise::new();
                     promise.keep(Value::int(pid), String::new(), String::new());
@@ -125,39 +124,6 @@ impl Interpreter {
                 } else {
                     Ok(Value::promise(SharedPromise::new()))
                 }
-            }
-            "stdout" | "stderr" => {
-                if attributes
-                    .get("supply_selected")
-                    .is_some_and(|v| v.truthy())
-                {
-                    return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
-                }
-                if attributes.get("started").is_some_and(|v| v.truthy()) {
-                    return Err(proc_async_error(
-                        "X::Proc::Async::TapBeforeSpawn",
-                        &[("handle", Value::str_from(method))],
-                    ));
-                }
-                if !args.is_empty() {
-                    return Err(proc_async_error(
-                        "X::Proc::Async::CharsOrBytes",
-                        &[("handle", Value::str_from(method))],
-                    ));
-                }
-                Ok(attributes.get(method).cloned().unwrap_or(Value::NIL))
-            }
-            "Supply" => {
-                if attributes
-                    .get("stdout_selected")
-                    .is_some_and(|v| v.truthy())
-                    || attributes
-                        .get("stderr_selected")
-                        .is_some_and(|v| v.truthy())
-                {
-                    return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
-                }
-                Ok(attributes.get("supply").cloned().unwrap_or(Value::NIL))
             }
             _ => Ok(Value::NIL),
         }

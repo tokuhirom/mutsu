@@ -1008,42 +1008,18 @@ impl Interpreter {
                 let results = self.collect_can_methods(&target, &method_name);
                 return Ok(Value::array(results));
             }
-            if class_name == "Proc::Async" {
-                if matches!(
+            // `Proc::Async`'s methods are rows, found by their owner; they commit
+            // through the instance's shared cell (ADR-11276 §9.128).
+            if let Some(owners) = crate::builtins::method_table::proc_async_owners_of(&target)
+                && let Some(result) = crate::builtins::method_table::invoke_owner(
+                    self,
+                    owners,
                     method,
-                    "start"
-                        | "kill"
-                        | "write"
-                        | "close-stdin"
-                        | "bind-stdin"
-                        | "bind-stdout"
-                        | "bind-stderr"
-                        | "ready"
-                        | "print"
-                        | "put"
-                        | "say"
-                        | "stdout"
-                        | "stderr"
-                        | "Supply"
-                ) {
-                    return self.call_native_instance_method_mut_in_place(
-                        &attributes,
-                        &class_name.resolve(),
-                        method,
-                        args,
-                    );
-                }
-                if matches!(
-                    method,
-                    "command" | "started" | "w" | "pid" | "stdout" | "stderr" | "Supply"
-                ) {
-                    return self.call_native_instance_method(
-                        &class_name.resolve(),
-                        &(attributes).as_map(),
-                        method,
-                        args,
-                    );
-                }
+                    &args,
+                    || target.clone(),
+                )
+            {
+                return result;
             }
             if class_name == "IO::CatHandle" && self.is_native_method(&class_name.resolve(), method)
             {
