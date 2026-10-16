@@ -71,7 +71,6 @@ pub(crate) use collections::{
 };
 pub(crate) use ctors_mop::attribute::owners_of as attribute_owners_of;
 pub(crate) use instances::compunit::owners_of as compunit_owners_of;
-pub(crate) use io_concurrency::class_methods::owners_of as class_method_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
@@ -80,6 +79,7 @@ pub(crate) use instances::{
     backtrace, code, exception, failure, regex_match, signature, supply, temporal_edit,
     temporal_shift,
 };
+pub(crate) use io_concurrency::class_methods::owners_of as class_method_owners_of;
 pub(crate) use io_concurrency::promise_channel;
 pub(crate) use io_concurrency::promise_channel::{
     CHANNEL_LIST_COERCIONS, owners_of as promise_channel_owners_of,

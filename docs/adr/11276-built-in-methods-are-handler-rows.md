@@ -2905,6 +2905,30 @@ answers (`DUMP`, `gist`, `raku`, `name`, `isa`, `REPR`, `Str`, `Numeric`, `EVAL`
 junctions and plain values), and the proxy-subclass array mutators. `method-rows-report.py --arms`: the runtime slow
 path goes from 459 arms to 428.
 
+### 9.122 Slice 5: built-in classes' class methods are rows (2026-10-16)
+
+`refactor/11276-class-method-rows`. `dispatch_method_by_name_3` answered thirteen class methods by name, each arm asking
+whether the receiver is one class's type object: `Supply`'s `from-list` and `on-demand`,
+`CompUnit::RepositoryRegistry`'s `repository-for-name`, `repository-for-spec` and `run-script`, `Encoding::Registry`'s
+`find` and `register`, `IO::Socket::INET`'s `connect` and `listen`, and `IO::Socket::Async`'s `connect`, `listen`,
+`bind-udp` and `udp`. They are `OWNER_ONLY | TYPE_OBJECT_OK | SLURPY` rows of those classes
+(`io_concurrency/class_methods.rs`), found by their owner at the top of that dispatch for the owner's own type object
+(`class_methods::owners_of`), as §9.120 did for `Promise`. The implementations read the positional and named arguments
+as one list, so the handlers hand them back that way; the registry's two lookups are `Interpreter` methods in
+`runtime/methods_repo_registry.rs`. The snapshot gains `CompUnit::RepositoryRegistry`, `Encoding::Registry`,
+`IO::Socket::INET` and `IO::Socket::Async`. A second, unreachable `Numeric` arm of the same dispatch is deleted.
+
+Behaviour toward Rakudo: `from-list` and `on-demand` called on a `Supply` instance die with Rakudo's "Invocant of method
+'on-demand' must be a type object of type 'Supply', ..." (was mutsu's own "Cannot call on-demand on a Supply instance",
+and nothing for `from-list`); `owners_of` names `Supply` for an instance too, so the handlers see it.
+Pinned in `t/oo/method/class-method-rows.t`. Left: `Supply.signal` (Rakudo declares no such method; the arm stays as
+mutsu's spelling of `signal()`), `DateTime.now`, `Date.today`, `Date.new-from-daycount` and the type objects'
+`Date`/`DateTime` coercions (the instance rows of the same names in `instances/date.rs`/`datetime.rs` would need
+`TYPE_OBJECT_OK` and a receiver test, and a user subclass's type object needs its MRO), `Thread.run` and `Supply.live`.
+Found on the way: #13651 (`Encoding::Registry.find(...).name` spells `utf-8`, Rakudo `utf8`); `repository-for-name`
+of a `file#` path answers a `FileSystem` repository where Rakudo answers `Nil` (kept). `method-rows-report.py --arms`:
+the runtime slow path goes from 428 arms to 416.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

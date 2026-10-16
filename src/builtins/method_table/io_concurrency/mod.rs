@@ -7,6 +7,7 @@
 
 use super::MethodRow;
 
+pub(crate) mod class_methods;
 mod concurrency_state;
 mod io_handle;
 mod io_path_content;
@@ -18,7 +19,6 @@ mod io_path_misc;
 mod io_path_parts;
 mod io_path_stat;
 mod io_spec;
-pub(crate) mod class_methods;
 mod io_special;
 pub(crate) mod promise_channel;
 mod promise_class;

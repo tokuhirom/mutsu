@@ -66,8 +66,13 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// the classes above.
 // Cost: O(1).
 pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let ValueView::Package(name) = target.view() else {
-        return None;
+    let name = match target.view() {
+        ValueView::Package(name) => name,
+        // `Supply`'s class methods refuse an instance with Rakudo's message.
+        ValueView::Instance { class_name, .. } if class_name == "Supply" => {
+            return Some(&["Supply"]);
+        }
+        _ => return None,
     };
     Some(match name.as_str() {
         "Supply" => &["Supply"],
@@ -88,15 +93,35 @@ fn all_args(args: &[Value], named: Named<'_>) -> Vec<Value> {
     all
 }
 
+/// Rakudo's refusal of a class method (`method m(Supply:U: ...)`) called on
+/// an instance; `None` for a type object.
+// Cost: O(1).
+fn type_object_only(target: &Value, method: &str) -> Option<RuntimeError> {
+    let ValueView::Instance { class_name, .. } = target.view() else {
+        return None;
+    };
+    let class = class_name.resolve();
+    Some(RuntimeError::new(format!(
+        "Invocant of method '{method}' must be a type object of type '{class}', not an object \
+         instance of type '{class}'. Did you forget a 'multi'?"
+    )))
+}
+
 /// `Supply.from-list(*@values)`.
 // Cost: O(n), n = values (a lazy source is pulled).
-fn supply_from_list(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+fn supply_from_list(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    if let Some(e) = type_object_only(t, "from-list") {
+        return Some(Err(e));
+    }
     Some(i.dispatch_supply_from_list(&all_args(args, named)))
 }
 
 /// `Supply.on-demand(&producer, ...)`: the producer must be callable.
 // Cost: O(1).
-fn supply_on_demand(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+fn supply_on_demand(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    if let Some(e) = type_object_only(t, "on-demand") {
+        return Some(Err(e));
+    }
     if let Err(e) = i.bind_callable_param("&producer", &args[0]) {
         return Some(Err(e));
     }
