@@ -104,11 +104,12 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
         mut parents,
         does_roles,
         parent_args,
+        is_rw: clauses_is_rw,
     } = clauses;
     // Same `also is Parent` / `also is rw` extraction the statement path does:
     // `PDF::COS.loader = class PDF::Class::Loader { also is PDF::COS::Loader; … }`
     // otherwise left `also is …` behind as a runtime "Two terms in a row".
-    let mut class_is_rw = false;
+    let mut class_is_rw = clauses_is_rw;
     let mut implicit_grammar_parent = false;
     let mut body_parents: Vec<String> = Vec::new();
     body.retain(|stmt| {
@@ -159,6 +160,8 @@ struct AnonClassClauses {
     parents: Vec<String>,
     does_roles: Vec<String>,
     parent_args: Vec<(String, Vec<Expr>)>,
+    /// `is rw`: a class trait, not a parent class.
+    is_rw: bool,
 }
 
 /// Parse the `is` / `does` clauses after a class expression's name (or `::`).
@@ -171,7 +174,11 @@ fn parse_anon_class_clauses(mut r: &str) -> PResult<'_, AnonClassClauses> {
         if let Some(r2) = keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, parent) = parse_qualified_ident_with_hyphens(r2)?;
-            clauses.parents.push(parent);
+            if parent == "rw" {
+                clauses.is_rw = true;
+            } else {
+                clauses.parents.push(parent);
+            }
             let (r2, _) = ws(r2)?;
             r = r2;
         } else if let Some(r2) = keyword("does", r) {
