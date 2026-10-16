@@ -5,7 +5,7 @@ use Test;
 # IterationBuffer-free plain list all reach the same row. Answers checked
 # against Rakudo.
 
-plan 30;
+plan 37;
 
 class Plain {}
 class PI { method iterator { (4, 5).iterator } }
@@ -47,3 +47,12 @@ is Int.one.raku, 'one(Int)', 'one on a type object';
 my $held = (1, 2);
 is $held.all.raku, 'all(1, 2)', 'a scalar-held list is the list';
 is Plain.new.none.^name, 'Junction', 'none on an instance';
+
+# The coercions, `slice` and `take` are late rows of `Any`/`Mu`.
+is Plain.new.Set.elems, 1, 'Set on an instance';
+is Int.Bag.raku, '(Int=>1).Bag', 'Bag on a type object';
+is (1, 1, 2).BagHash.^name, 'BagHash', 'BagHash';
+is Bag.new-from-pairs("a" => 2, "b" => 1)<a>, 2, 'new-from-pairs counts the values';
+is-deeply (gather { 42.take }).List, (42,), 'take';
+is-deeply (1, 2, 3).Seq.slice(0, 2).List, (1, 3), 'slice';
+throws-like { Int.slice(0, 2) }, X::Multi::NoMatch, 'slice wants a defined invocant';

@@ -3263,6 +3263,25 @@ the call's adverbs, the twin takes it through the routine the arm called. The ei
 `any_list_method_by_mro`, and their arms are gone. A call no candidate takes is `X::Multi::NoMatch`
 (`.minpairs(1)`), as in Rakudo. Pinned in `t/oo/method/any-list-methods-by-mro.t`.
 
+### 9.136 Late rows: `OWNER_ONLY` interpreter rows only the MRO walk reaches (2026-10-17)
+
+`refactor/11276-any-coercion-rows`. `Any`'s coercions `Seq`, `List`, `Set`, `SetHash`, `Bag`, `BagHash`, `Mix`,
+`MixHash`, `Map`, `Hash` and `hash`, `Any.slice`, `Mu.take` and `Bag`/`BagHash.new-from-pairs` were arms in
+`dispatch_method_by_name_2`. A plain receiver of most of them is answered natively before the cascade: by the pure
+cascades, or by a pure row (`Any.List`, `Any.hash`). A row placed in the guard step's shape tables would have run ahead
+of that native answer and changed it.
+
+Decision. They are *late rows* (`collections/any_coerce_late.rs`): `Handler::Interp`, `OWNER_ONLY`, registered after
+any pure row of the same owner, name and arity (a §9.135 twin when there is one). The shape tables never list an
+`OWNER_ONLY` row, so every native answer is unchanged. Only the by-name cascade's MRO walk (`any_list_method_by_mro`)
+reaches these rows, for the receivers and calls the native paths decline. Their handlers are the deleted arms' bodies.
+
+`invoke_mro` also reports `X::Multi::NoMatch` when every row that takes the call's arity turned it down only because
+the receiver is a type object. That is Rakudo's `Any:D` candidate not binding `Any:U` (`Int.slice(0, 2)`,
+`Int.rotor(2)`), where the walk used to fall through to an unrelated answer. A call with arguments no candidate takes
+(`.Set(1)`) is `X::Multi::NoMatch` too. 12 arms leave `dispatch_method_by_name_2`. Pinned in
+`t/oo/method/any-list-methods-by-mro.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

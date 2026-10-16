@@ -12,7 +12,21 @@
 use super::*;
 
 /// The methods whose `Any` rows answer by the receiver's MRO.
-const ANY_LIST_BY_MRO: [&str; 31] = [
+const ANY_LIST_BY_MRO: [&str; 45] = [
+    "Seq",
+    "List",
+    "Set",
+    "SetHash",
+    "Bag",
+    "BagHash",
+    "Mix",
+    "MixHash",
+    "Map",
+    "Hash",
+    "hash",
+    "slice",
+    "take",
+    "new-from-pairs",
     "any",
     "all",
     "one",

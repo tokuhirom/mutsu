@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn dispatch_to_set_with_what(
+    pub(crate) fn dispatch_to_set_with_what(
         &mut self,
         target: Value,
         what: &str,
@@ -176,7 +176,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn dispatch_to_bag_with_what(
+    pub(crate) fn dispatch_to_bag_with_what(
         &mut self,
         target: Value,
         what: &str,
@@ -205,7 +205,7 @@ impl Interpreter {
         crate::builtins::quanthash_coerce::to_mix(target, "Mix")
     }
 
-    pub(super) fn dispatch_to_mix_with_what(
+    pub(crate) fn dispatch_to_mix_with_what(
         &mut self,
         target: Value,
         what: &str,
@@ -217,7 +217,7 @@ impl Interpreter {
 
     /// `.Hash` coercion — delegates to the single pure impl shared with the VM
     /// native path (`builtins::map_hash_coerce::to_hash`).
-    pub(super) fn dispatch_to_hash(&self, target: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_to_hash(&self, target: Value) -> Result<Value, RuntimeError> {
         crate::builtins::map_hash_coerce::to_hash(target, true)
     }
 }

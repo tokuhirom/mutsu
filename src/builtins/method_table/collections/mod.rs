@@ -10,6 +10,7 @@ use super::{Handler, MethodRow, RowFlags};
 mod accepts;
 pub(crate) mod accepts_open;
 pub(crate) mod any_coerce;
+mod any_coerce_late;
 pub(crate) mod any_collection;
 mod any_interp;
 mod any_interp_twins;
@@ -82,6 +83,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::FLAT_LEVELS_ROWS,
     // After the pure rows of the same owner, name and arity (§9.135).
     any_interp_twins::ROWS,
+    any_coerce_late::ROWS,
     map::ROWS,
     iteration_buffer::ROWS,
     positional::ROWS,
