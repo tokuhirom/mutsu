@@ -1632,7 +1632,17 @@ impl Interpreter {
     /// predicate). Shared between closure-capture boxing
     /// (`box_captured_lexicals`) and mainline `my` capture at named-sub
     /// registration (ADR-0024, `exec_register_sub_op`).
+    ///
+    /// An `@`/`%` name is never unboxable: its constraint is its ELEMENT
+    /// type, which every element store checks whether or not the container
+    /// sits in a cell, and a native element type (`my str @out`) already
+    /// took the cell as a value type. Keeping an object element type (`my
+    /// Cool @a`) out of it made a named sub's `:=` of the variable rebind
+    /// only the sub's own entry (ADR-12529 §3, slice 32).
     pub(super) fn type_constrained_unboxable(&mut self, s: &str) -> bool {
+        if s.starts_with(['@', '%']) {
+            return false;
+        }
         let mut tc = loan_env!(self, var_type_constraint(s));
         if tc.is_none() {
             tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
