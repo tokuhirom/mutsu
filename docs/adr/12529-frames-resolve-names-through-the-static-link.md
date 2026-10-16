@@ -1291,6 +1291,22 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    key that is a plain user lexical when `MUTSU_NO_LEXMERGE` is set); it is
    not committed.
 
+   **Slice 27 done** (`fix/12529-pair-values-rw-alias`): the first entry of
+   slice 26's census (`pointy-rw.t` 8, `S32-hash/kv.t` 27). `k => my $ = v`
+   built a Pair whose value was a `WrapScalar` item, not the anonymous
+   scalar's container, so the value was not writable at all
+   (`(a => my $ = 42).value = 5` died "Cannot modify an immutable Any";
+   rakudo assigns). An `is rw` alias over `.value`/`.kv` then wrote a
+   rebuilt Pair back by name into the closure's env, which only the return
+   merge carried to the frame that held `$pair`.
+
+   Such a Pair now holds the container: the FatArrow compile flags its
+   value (`Compiler::anon_scalar_as_cell`, `is_untyped_anon_scalar_decl`),
+   and the anonymous declaration emits a `Mu`-typed `WrapTypedContainer`
+   cell in place of `WrapScalar`. Both `WrapScalar` and that cell store the
+   default (`Any`) for a `Nil` initializer, as an untyped `my $` does.
+   Pinned by `t/collections/range-pair/pair-value-anon-scalar-container.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

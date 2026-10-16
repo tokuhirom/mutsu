@@ -3589,7 +3589,12 @@ impl Interpreter {
                 // Wrap the top-of-stack value in a Scalar container.
                 // Used for `my $ = expr` (anonymous scalar) in argument position
                 // so the container is preserved when stored in an immutable List.
-                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let mut val = self.stack.pop().unwrap_or(Value::NIL);
+                // Its only producer is an untyped `my $ = expr`, whose
+                // container holds its default after a `Nil` store.
+                if val.is_nil() {
+                    val = Value::package(crate::symbol::wk::any());
+                }
                 self.stack.push(Value::scalar(val));
                 *ip += 1;
             }
@@ -3599,7 +3604,12 @@ impl Interpreter {
                 // and record its `of`-type, so the constraint travels with the
                 // value (e.g. into a Pair value) and is enforced on assignment.
                 let type_name = Self::const_str(code, *type_idx).to_string();
-                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let mut val = self.stack.pop().unwrap_or(Value::NIL);
+                // An untyped anonymous scalar (`k => my $ = Nil`) holds its
+                // default after a `Nil` store, as any `my $` does.
+                if val.is_nil() && type_name == "Mu" {
+                    val = Value::package(crate::symbol::wk::any());
+                }
                 let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(val));
                 crate::value::register_container_constraint(&cell, &type_name);
                 self.stack.push(Value::container_ref(cell));

@@ -942,7 +942,17 @@ impl Compiler {
                 // turned a flattening consumer (e.g. a `Z` zip, or binding into a
                 // typed positional parameter) into a one-item read of the whole
                 // aggregate.
-                if name == "__ANON_STATE__" && type_constraint.is_none() && !is_constant_decl {
+                if name == "__ANON_STATE__"
+                    && type_constraint.is_none()
+                    && !is_constant_decl
+                    && std::mem::take(&mut self.anon_scalar_as_cell)
+                {
+                    // The value of a Pair (`k => my $ = v`): the container
+                    // itself, writable (see `Compiler::anon_scalar_as_cell`).
+                    let tc_idx = self.code.add_constant(Value::str("Mu".to_string()));
+                    self.code.emit(OpCode::WrapTypedContainer(tc_idx));
+                } else if name == "__ANON_STATE__" && type_constraint.is_none() && !is_constant_decl
+                {
                     self.code.emit(OpCode::WrapScalar);
                 } else if name == "__ANON_STATE__"
                     && !is_constant_decl
