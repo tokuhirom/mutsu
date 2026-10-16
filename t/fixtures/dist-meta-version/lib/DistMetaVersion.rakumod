@@ -8,3 +8,5 @@ sub dist-meta() is export { $?DISTRIBUTION.meta }
 class Agent is export {
     has Str $.agent = self.^name ~ '/' ~ $?DISTRIBUTION.meta<ver> ~ ' Raku';
 }
+
+sub dist() is export { $?DISTRIBUTION }

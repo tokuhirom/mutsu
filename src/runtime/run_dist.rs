@@ -106,13 +106,7 @@ impl Interpreter {
     fn build_resources_from_dist(&self, dist: &Value) -> Value {
         let meta = match dist.view() {
             ValueView::Instance { attributes, .. } => {
-                // Try "meta" first (Distribution::Installation from detect_inst_distribution),
-                // then fall back to "$!meta" (plain Distribution from detect_distribution).
-                let map = attributes.as_map();
-                map.get("meta")
-                    .or_else(|| map.get("$!meta"))
-                    .cloned()
-                    .unwrap_or(Value::NIL)
+                attributes.as_map().get("meta").cloned().unwrap_or(Value::NIL)
             }
             _ => Value::NIL,
         };
@@ -217,7 +211,7 @@ impl Interpreter {
     /// Used where a false-positive synthetic match would be worse than a miss
     /// — e.g. `build_resources_for_package`'s def_file-based lookup must not
     /// out-rank an already-registered `package_distributions` entry (which
-    /// could be an *installed* module's `Distribution::Installation`, whose
+    /// could be an *installed* module's `LazyDistribution`, whose
     /// resources come from a `files` hash, not a plain-filesystem META6.json)
     /// just because some frame's source file happens to sit under an
     /// unrelated directory tree with no META6.json anywhere above it.
@@ -264,15 +258,7 @@ impl Interpreter {
         Self::normalize_meta_identity(&mut meta_hash);
         // Store the distribution prefix in meta so %?RESOURCES can build absolute paths.
         meta_hash.insert("prefix".to_string(), Value::str(dist_prefix.to_string()));
-        let mut attrs = HashMap::new();
-        attrs.insert(
-            "$!meta".to_string(),
-            Value::hash_with_data(Value::hash_arc(meta_hash)),
-        );
-        Some(Value::make_instance_without_destroy(
-            crate::symbol::Symbol::intern("Distribution"),
-            attrs,
-        ))
+        Some(Self::repository_distribution(meta_hash))
     }
 
     fn build_distribution_from_lib_dir(lib_dir: &Path) -> Value {
@@ -293,12 +279,22 @@ impl Interpreter {
             Value::hash_with_data(Value::hash_arc(ValueMap::default()))
         };
         meta.insert("resources".to_string(), resources);
+        Self::repository_distribution(meta)
+    }
+
+    /// The `CompUnit::Repository::Distribution` a module's `$?DISTRIBUTION`
+    /// is: its `meta` (which carries the distribution's `prefix`, so
+    /// `%?RESOURCES` can build absolute paths).
+    fn repository_distribution(meta: ValueMap) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert(
-            "$!meta".to_string(),
+            "meta".to_string(),
             Value::hash_with_data(Value::hash_arc(meta)),
         );
-        Value::make_instance_without_destroy(crate::symbol::Symbol::intern("Distribution"), attrs)
+        Value::make_instance_without_destroy(
+            crate::symbol::Symbol::intern("CompUnit::Repository::Distribution"),
+            attrs,
+        )
     }
 
     fn scan_lib_provides(lib_dir: &Path) -> Value {

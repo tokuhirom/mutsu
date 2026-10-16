@@ -1327,17 +1327,6 @@ impl Interpreter {
                 let pkg = Value::package(class_name);
                 return self.call_method_with_values(pkg, method, args);
             }
-            // Distribution::Path / ::Hash / ::Installation
-            if class_name.as_str().starts_with("Distribution::")
-                && let Some(result) = self.dispatch_distribution_method(
-                    &class_name.resolve(),
-                    &(attributes).as_map(),
-                    method,
-                    args.clone(),
-                )
-            {
-                return result;
-            }
             // The compile-time resolver `$*R` and its attach targets
             // (`runtime::attach_target`).
             if matches!(

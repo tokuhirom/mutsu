@@ -597,9 +597,10 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     // in their `.^mro` (verified 2026-08-10: both are `(Type, Any, Mu)`); both
     // compose `Distribution::Locally` and `Distribution` as roles (verified
     // 2026-09-27: `.^roles` is `(Distribution::Locally Distribution)`).
-    // `Distribution::Installation` is the class mutsu hands back for an installed
-    // distribution (rakudo keeps its equivalent private); it is shaped like its
-    // two public siblings.
+    // `CompUnit::Repository::Distribution` is a module's `$?DISTRIBUTION`, and
+    // `CompUnit::Repository::Installation::LazyDistribution` (a `my class` in
+    // Rakudo, so not a resolvable name there) an installed distribution
+    // (verified 2026-10-16: `.^mro` `(Type, Any, Mu)`, roles as listed).
     row!(
         "Distribution::Path",
         mro: ["Distribution::Path", "Any", "Mu"],
@@ -613,8 +614,14 @@ static CATALOG: &[BuiltinTypeInfo] = &[
         owner: "",
     ),
     row!(
-        "Distribution::Installation",
-        mro: ["Distribution::Installation", "Any", "Mu"],
+        "CompUnit::Repository::Distribution",
+        mro: ["CompUnit::Repository::Distribution", "Any", "Mu"],
+        roles: ["Distribution"],
+        owner: "",
+    ),
+    row!(
+        "CompUnit::Repository::Installation::LazyDistribution",
+        mro: ["CompUnit::Repository::Installation::LazyDistribution", "Any", "Mu"],
         roles: ["Distribution::Locally", "Distribution"],
         owner: "",
     ),

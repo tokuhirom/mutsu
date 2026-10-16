@@ -31,6 +31,7 @@ pub(crate) mod dateish;
 pub(crate) mod dateish_io;
 pub(crate) mod datetime;
 pub(crate) mod depspec;
+pub(crate) mod distribution;
 pub(crate) mod exception;
 pub(crate) mod failure;
 pub(crate) mod instant;
@@ -70,4 +71,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     unicode_data::ROWS,
     depspec::ROWS,
     compunit_repo::ROWS,
+    distribution::ROWS,
 ];

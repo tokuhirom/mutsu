@@ -9,7 +9,6 @@ use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 use super::methods_distribution_helpers::{hash_strings, parse_json_value};
-use crate::value::AttrMap;
 
 impl Interpreter {
     /// Parse a JSON string into a Hash.
@@ -65,64 +64,6 @@ impl Interpreter {
             }
         }
         Value::NIL
-    }
-
-    /// Distribution method dispatch.
-    pub(crate) fn dispatch_distribution_method(
-        &self,
-        _class_name: &str,
-        attributes: &AttrMap,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Option<Result<Value, RuntimeError>> {
-        match method {
-            "prefix" => Some(Ok(attributes.get("prefix").cloned().unwrap_or(Value::NIL))),
-            "meta" => Some(Ok(attributes.get("meta").cloned().unwrap_or(Value::NIL))),
-            "content" => {
-                let path_arg = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let prefix = attributes
-                    .get("prefix")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                // Look up path in the files hash first (handles platform-specific library
-                // names: resources/libraries/foo -> $prefix/resources/libraries/libfoo.so)
-                let files_value = attributes
-                    .get("files")
-                    .cloned()
-                    .or_else(|| attributes.get("meta").and_then(|m| m.hash_get_str("files")));
-                let actual_path = files_value
-                    .and_then(|files| files.hash_get_str(&path_arg))
-                    .map(|v| v.to_string_value());
-                let full_path = if let Some(abs_path) = actual_path {
-                    if std::path::Path::new(&abs_path).is_absolute() {
-                        abs_path
-                    } else {
-                        std::path::Path::new(&prefix)
-                            .join(&abs_path)
-                            .to_string_lossy()
-                            .to_string()
-                    }
-                } else {
-                    std::path::Path::new(&prefix)
-                        .join(&path_arg)
-                        .to_string_lossy()
-                        .to_string()
-                };
-                Some(Ok(self.make_io_path_instance(&full_path)))
-            }
-            "Str" | "gist" => {
-                let name = attributes
-                    .get("meta")
-                    .and_then(|m| m.hash_get_str("name"))
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| "Distribution".to_string());
-                Some(Ok(Value::str(name)))
-            }
-            _ => None,
-        }
     }
 
     /// `CompUnit::Repository::Installation.install` / `.uninstall`: both take
@@ -248,7 +189,7 @@ impl Interpreter {
                     attrs.insert("meta".to_string(), meta);
                     attrs.insert("dist-id".to_string(), Value::str(dist_id));
                     results.push(Value::make_instance(
-                        crate::symbol::Symbol::intern("Distribution::Installation"),
+                        crate::symbol::Symbol::intern("CompUnit::Repository::Installation::LazyDistribution"),
                         attrs,
                     ));
                 }

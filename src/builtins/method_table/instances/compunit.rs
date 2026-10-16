@@ -55,8 +55,9 @@ pub(super) static ROWS: &[MethodRow] = &[
 ];
 
 /// The owners the rows reachable from `target` are found under: a
-/// `CompUnit` or `CompUnit::Handle` instance, or a repository
-/// ([`super::compunit_repo::owners_of`]).
+/// `CompUnit` or `CompUnit::Handle` instance, a repository
+/// ([`super::compunit_repo::owners_of`]) or a distribution
+/// ([`super::distribution::owners_of`]).
 // Cost: O(1).
 pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
     match target.view() {
@@ -64,7 +65,8 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
             Some(&["CompUnit::Handle"])
         }
         ValueView::Instance { class_name, .. } if class_name == "CompUnit" => Some(&["CompUnit"]),
-        _ => super::compunit_repo::owners_of(target),
+        _ => super::compunit_repo::owners_of(target)
+            .or_else(|| super::distribution::owners_of(target)),
     }
 }
 

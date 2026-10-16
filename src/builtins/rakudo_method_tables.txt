@@ -41,12 +41,15 @@ only	Code	Capture	arity	associative	assuming	bytecode-size	cando	clone	count	fil
 declared	CompUnit	Str	WHICH	api	auth	distribution	from	gist	handle	precompiled	repo	repo-id	short-name	unit	version
 methods	CompUnit	POPULATE	Str	WHICH	api	auth	distribution	from	gist	handle	precompiled	repo	repo-id	short-name	unit	version
 only	CompUnit	api	auth	distribution	from	handle	precompiled	repo	repo-id	short-name	unit	version
-declared	CompUnit::Handle	ctxsave	export-how-package	export-package	export-sub	globalish-package	unit
-methods	CompUnit::Handle	POPULATE	ctxsave	export-how-package	export-package	export-sub	from-unit	globalish-package	new	unit
-only	CompUnit::Handle	ctxsave	export-how-package	export-package	export-sub	globalish-package	unit
 declared	CompUnit::DependencySpecification	Str	WHICH	api-matcher	auth-matcher	from	raku	short-name	stringified	version-matcher
 methods	CompUnit::DependencySpecification	POPULATE	Str	TWEAK	WHICH	api-matcher	auth-matcher	from	raku	short-name	stringified	version-matcher
 only	CompUnit::DependencySpecification	Str	api-matcher	auth-matcher	from	short-name	stringified	version-matcher
+declared	CompUnit::Handle	ctxsave	export-how-package	export-package	export-sub	globalish-package	unit
+methods	CompUnit::Handle	POPULATE	ctxsave	export-how-package	export-package	export-sub	from-unit	globalish-package	new	unit
+only	CompUnit::Handle	ctxsave	export-how-package	export-package	export-sub	globalish-package	unit
+declared	CompUnit::Repository::Distribution	Str	content	dist	dist-id	files	from-precomp	id	meta	new	prefix	raku	repo	repo-name	serialize
+methods	CompUnit::Repository::Distribution	POPULATE	Str	TWEAK	content	dist	dist-id	files	from-precomp	id	meta	new	prefix	raku	repo	repo-name	serialize
+only	CompUnit::Repository::Distribution	content	dist	dist-id	files	from-precomp	id	meta	new	prefix	repo	repo-name	serialize
 declared	CompUnit::Repository::FileSystem	Str	WHICH	abspath	candidates	distribution	extensions	files	gist	id	load	loaded	need	new	next-repo	path-spec	precomp-repository	precomp-store	prefix	raku	repo-chain	resolve	resource	short-id	source-file
 methods	CompUnit::Repository::FileSystem	POPULATE	Str	TWEAK	WHICH	abspath	candidates	distribution	extensions	files	gist	id	load	loaded	need	new	next-repo	path-spec	precomp-repository	precomp-store	prefix	raku	repo-chain	resolve	resource	short-id	source-file
 only	CompUnit::Repository::FileSystem	abspath	distribution	extensions	id	load	loaded	need	new	next-repo	path-spec	precomp-repository	precomp-store	prefix	repo-chain	resolve	resource	short-id	source-file
@@ -65,6 +68,12 @@ only	Date	Date	IO	MOVE-DAYS	clone	day	day-of-month	day-of-week	day-of-year	dayco
 declared	DateTime	ACCEPTS	Date	DateTime	IO	Instant	Numeric	Real	Str	WHICH	clone	day	day-fraction	day-of-month	day-of-week	day-of-year	daycount	days-in-month	days-in-year	dd-mm-yyyy	earlier	formatter	gist	hh-mm-ss	hour	in-timezone	is-leap-year	julian-date	later	local	minute	mm-dd	mm-dd-yyyy	modified-julian-date	month	move-by-unit	new	now	offset	offset-in-hours	offset-in-minutes	posix	raku	second	timezone	truncated-to	utc	week	week-number	week-year	weekday-of-month	whole-second	year	yyyy-mm	yyyy-mm-dd
 methods	DateTime	ACCEPTS	Date	DateTime	IO	Instant	Numeric	POPULATE	Real	Str	WHICH	clone	day	day-fraction	day-of-month	day-of-week	day-of-year	daycount	days-in-month	days-in-year	dd-mm-yyyy	earlier	formatter	gist	hh-mm-ss	hour	in-timezone	is-leap-year	julian-date	later	local	minute	mm-dd	mm-dd-yyyy	modified-julian-date	month	move-by-unit	new	now	offset	offset-in-hours	offset-in-minutes	posix	raku	second	timezone	truncated-to	utc	week	week-number	week-year	weekday-of-month	whole-second	year	yyyy-mm	yyyy-mm-dd
 only	DateTime	DateTime	IO	Instant	clone	day	day-fraction	day-of-month	day-of-week	day-of-year	daycount	dd-mm-yyyy	formatter	hh-mm-ss	hour	in-timezone	is-leap-year	julian-date	local	minute	mm-dd	mm-dd-yyyy	modified-julian-date	month	move-by-unit	now	offset	offset-in-hours	offset-in-minutes	second	timezone	truncated-to	utc	week	week-number	week-year	weekday-of-month	whole-second	year	yyyy-mm	yyyy-mm-dd
+declared	Distribution::Hash	content	meta	new	prefix	raku
+methods	Distribution::Hash	POPULATE	content	meta	new	prefix	raku
+only	Distribution::Hash	content	meta	new	prefix
+declared	Distribution::Path	content	meta	meta-file	new	prefix	raku
+methods	Distribution::Path	POPULATE	TWEAK	content	meta	meta-file	new	prefix	raku
+only	Distribution::Path	content	meta	meta-file	new	prefix
 declared	Duration	ACCEPTS	Bool	Bridge	Complex	DUMP	FatRat	Int	Num	Numeric	Rat	Real	Str	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atan2	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	exp	floor	from-posix-nanos	gist	isNaN	log	log10	log2	narrow	new	polymod	pred	raku	rand	roots	round	sec	sech	sign	sin	sinh	sqrt	succ	tai	tan	tanh	to-nanos	truncate	unpolar
 methods	Duration	ACCEPTS	Bool	Bridge	Complex	DUMP	FatRat	Int	Num	Numeric	POPULATE	Rat	Real	Str	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atan2	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	exp	floor	from-posix-nanos	gist	isNaN	log	log10	log2	narrow	new	polymod	pred	raku	rand	roots	round	sec	sech	sign	sin	sinh	sqrt	succ	tai	tan	tanh	to-nanos	truncate	unpolar
 only	Duration	Bridge	Complex	FatRat	Int	Num	Rat	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	floor	from-posix-nanos	isNaN	log10	log2	narrow	polymod	pred	rand	roots	sec	sech	sign	sin	sinh	succ	tai	tan	tanh	to-nanos	truncate	unpolar
