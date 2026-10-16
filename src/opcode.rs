@@ -10622,10 +10622,12 @@ impl CompiledCode {
             // Name-based writes: either a free-var write or an own-local mutation.
             let written = self
                 .op_name_write_const_idx(op)
-                .and_then(|idx| match self.constants.get(idx as usize).map(Value::view) {
-                    Some(ValueView::Str(name)) => Some(name.to_string()),
-                    _ => None,
-                })
+                .and_then(
+                    |idx| match self.constants.get(idx as usize).map(Value::view) {
+                        Some(ValueView::Str(name)) => Some(name.to_string()),
+                        _ => None,
+                    },
+                )
                 .or_else(|| self.smartmatch_writeback_name(pos, op));
             if let Some(name) = written {
                 if own.contains(name.as_str()) {
