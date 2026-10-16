@@ -933,68 +933,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // IO::Path::Parts does Associative, Positional, and Iterable, but Rakudo's
-    // inherited fallback methods itemize the object: `.list`/`.List`/`.values`
-    // contain self, `.keys` contains 0, `.pairs`/`.kv` use 0 => self, and
-    // `.elems` is 1.
-    // Its explicit `.flat`/`.Slip`/`.cache`/`.eager` methods still expose the
-    // three ordered part Pairs, while `.hash`/`.Hash`/`.Map` expose the parts
-    // by name.
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name.resolve() == "IO::Path::Parts"
-    {
-        let attrs = attributes.as_map();
-        let keys = crate::runtime::io_path_parts_keys();
-        let part = |key: &str| attrs.get(key).cloned().unwrap_or(Value::NIL);
-        let make_list = |items: Vec<Value>| {
-            Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                crate::value::ArrayKind::List,
-            )
-        };
-        let pairs = || -> Vec<Value> {
-            // ADR-0021 I2: data-minted pairs default positional.
-            keys.iter()
-                .map(|k| Value::value_pair(Value::str((*k).to_string()), part(k)))
-                .collect()
-        };
-        match method {
-            "hash" | "Hash" | "Map" => {
-                let map: ValueMap = keys.iter().map(|k| (k.to_string(), part(k))).collect();
-                return Some(Ok(Value::hash(map)));
-            }
-            "list" | "List" | "Array" => {
-                return Some(Ok(make_list(vec![target.clone()])));
-            }
-            "flat" | "Slip" | "cache" | "eager" => {
-                return Some(Ok(make_list(pairs())));
-            }
-            "keys" => {
-                return Some(Ok(make_list(vec![Value::int(0)])));
-            }
-            "values" => {
-                return Some(Ok(make_list(vec![target.clone()])));
-            }
-            "pairs" => {
-                return Some(Ok(make_list(vec![Value::value_pair(
-                    Value::int(0),
-                    target.clone(),
-                )])));
-            }
-            "kv" => {
-                return Some(Ok(make_list(vec![Value::int(0), target.clone()])));
-            }
-            "elems" => {
-                return Some(Ok(Value::int(1)));
-            }
-            _ => {}
-        }
-    }
-
     // Match object methods
     if let ValueView::Instance { .. } = target.view()
         && target.is_match_instance()

@@ -163,13 +163,17 @@ pub(crate) enum DispatchShape {
     /// A `CompUnit::DependencySpecification` (closed): a handler reads its
     /// `short-name` and matcher attributes (ADR-11276 §9.115).
     CompUnitDepSpec,
+    /// An `IO::Path::Parts` (closed): a handler reads its `volume`, `dirname`
+    /// and `basename` attributes. `Any`'s list rows read it as one item, as
+    /// Rakudo's do (ADR-11276 §9.114).
+    IoPathParts,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 39] = [
+    pub(crate) const ALL: [DispatchShape; 40] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -209,6 +213,7 @@ impl DispatchShape {
         DispatchShape::BacktraceFrame,
         DispatchShape::Unicode,
         DispatchShape::CompUnitDepSpec,
+        DispatchShape::IoPathParts,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -255,6 +260,7 @@ impl DispatchShape {
             DispatchShape::BacktraceFrame => "Backtrace::Frame",
             DispatchShape::Unicode => "Unicode",
             DispatchShape::CompUnitDepSpec => "CompUnit::DependencySpecification",
+            DispatchShape::IoPathParts => "IO::Path::Parts",
         }
     }
 
@@ -407,6 +413,13 @@ impl DispatchShape {
             return self.reaches_audited_any_method(method);
         }
         if const_str_eq(owner, "Mu") {
+            // An `IO::Path::Parts` renders as an object (`IO::Path::Parts<id>`),
+            // which only the interpreter's default representation answers.
+            if matches!(self, DispatchShape::IoPathParts)
+                && (const_str_eq(method, "Str") || const_str_eq(method, "Stringy"))
+            {
+                return false;
+            }
             return const_list_contains(&MU_FOR_CLOSED_SHAPES, method)
                 || self.reaches_mu_numeric(method);
         }
@@ -705,14 +718,18 @@ const fn const_list_contains(list: &[&str], name: &str) -> bool {
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 35] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 35]> = OnceLock::new();
+fn instance_shapes() -> &'static [(Symbol, DispatchShape); 36] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 36]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
             (
                 Symbol::intern("CompUnit::DependencySpecification"),
                 DispatchShape::CompUnitDepSpec,
+            ),
+            (
+                Symbol::intern("IO::Path::Parts"),
+                DispatchShape::IoPathParts,
             ),
             (Symbol::intern("Backtrace"), DispatchShape::Backtrace),
             (
