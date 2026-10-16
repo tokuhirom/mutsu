@@ -1410,6 +1410,20 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    variable's cell when it has one. Pinned by
    `t/regex/subst/closure-substitution-on-captured-var-writes-through-cell.t`.
 
+   **Slice 34 done** (`fix/12529-role-body-outer-cells`): the
+   `t/oo/role/role-body-composition-timing.t` entry of the fourth census
+   (see slice 33). A role's deferred body runs at composition, in whatever
+   frame composes the role, and reached the variables it does not declare
+   by name: `role R { $count++ }` composed inside a sub wrote the sub's
+   env, and only the sub's return merge carried the write to the declaring
+   block (a composer's own `my $count` took the write instead). #11087
+   already gave a body `:=` source a declaration-site cell
+   (`RoleDef::body_bind_cells`); the role plan now gives one to every
+   outer lexical the deferred body names (`role_body_outer_ref_slots`, an
+   `ast_visit::Visit` over the deferred statements), so each run of the
+   body reads and writes the declaration site's variable. Pinned by
+   `t/oo/role/role-body-writes-declaration-site-lexicals.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
