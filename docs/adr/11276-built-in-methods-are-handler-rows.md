@@ -3205,6 +3205,29 @@ instance, so the rows reach it as they reach `Supplier::Preserving`. With every 
 reading copies of `emit`/`done`/`quit` in `native_supplier` had no caller left and are deleted. Pinned in
 `t/concurrency/supply/supplier-subclass-rows.t`.
 
+### 9.134 `Any`'s iteration methods are rows found by the MRO; the early entry, not the row, defers (2026-10-16)
+
+`refactor/11276-any-list-rows`. `Any`'s `Handler::Interp` rows (`collections/any_interp.rs`: `map`, `grep`, `first`,
+`reduce`, `produce`, `iterator`, `eager`, `squish`, `rotor`, `skip`, `collate`, `classify`, `categorize`,
+`classify-list`, `categorize-list`) each call the one `dispatch_*` routine the by-name cascades' arm called too, so the
+arms stayed only for the calls the table entry does not answer: an instance, a type object, a call the row declined.
+The `map`/`grep`/`first` rows declined a receiver whose elements live behind a user `iterator`, an `IterationBuffer`,
+a mixin's `iterator` or a lazy-pipe source, because the VM's native entry (`try_native_method`) asks the table before
+`call_method_with_values` runs the probes that turn such a receiver into its elements. The §9.129 MRO walk could not
+replace the arms while the rows declined those receivers: the walk runs after the probes, where the decline is wrong.
+
+Decision. Deferring is a property of the call site, not of the row. `early_entry_defers` is the VM entry's veto
+(beside the `augment` veto, in both of its `try_dispatch_in` calls); the rows keep only what is theirs, declining an
+associative receiver for `squish`/`eager`/`produce` (the pure cascades read it as pairs). The arms are gone: the by-name
+cascade asks `any_list_method_by_mro`, which walks the receiver's MRO with `invoke_mro` before its other arms (after the
+`Supply` type-object guard for `classify`/`categorize`). The rows that Rakudo's `Any:U` candidates cover take a type
+object (`TYPE_OBJECT_OK`: `Int.map`, `Int.first`, `Int.eager`); `rotor` does not. A call no row binds is
+`X::Multi::NoMatch` (`.reduce()`, `.squish(1)`, `.iterator(1)`), as in Rakudo, where the arms answered some with an
+ad-hoc error or a wrong result. Remaining divergence: `.map()` with no callable is `X::Multi::NoMatch` here and
+`X::Cannot::Map` in Rakudo (it was a wrong success before), and `Int.rotor(2)` is `X::Method::NotFound` rather than
+`X::Multi::NoMatch` (`invoke_mro` reports no match only when no owner has a row of the arity). Pinned in
+`t/oo/method/any-list-methods-by-mro.t`. 14 arms leave the runtime cascades.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
