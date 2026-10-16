@@ -109,8 +109,7 @@ impl Interpreter {
             let inner = self.control.control_handlers.split_off(idx);
             let outcome = self.run_control_handler_inline(
                 &code,
-                control_begin,
-                end,
+                (control_begin, end),
                 &fns,
                 message,
                 resume_safe,
@@ -141,8 +140,7 @@ impl Interpreter {
     fn run_control_handler_inline(
         &mut self,
         code: &CompiledCode,
-        control_begin: usize,
-        end: usize,
+        (control_begin, end): (usize, usize),
         fns: &CompiledFns,
         message: &str,
         resume_safe: bool,
