@@ -44,9 +44,15 @@ fn isa(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
         _ => crate::value::types::what_type_name(arg),
     };
     if type_name.contains('[') {
+        // A parameterized built-in class instance (`Buf[uint8]`) is its own type.
+        let is_own_class = matches!(
+            target.view(),
+            ValueView::Instance { class_name, .. } if class_name.resolve() == type_name
+        );
         return Some(Ok(Value::truth(
-            crate::runtime::embedded_container_type_name(target).as_deref()
-                == Some(type_name.as_str()),
+            is_own_class
+                || crate::runtime::embedded_container_type_name(target).as_deref()
+                    == Some(type_name.as_str()),
         )));
     }
     Some(Ok(Value::truth(target.isa_check(&type_name))))

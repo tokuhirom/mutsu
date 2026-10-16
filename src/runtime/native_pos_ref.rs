@@ -122,6 +122,18 @@ pub(crate) fn is_native_pos_ref(v: &Value) -> bool {
         )
 }
 
+/// The element value `v` currently addresses when `v` is one of these
+/// references, `None` for any other value. For a caller that has no interpreter
+/// to run the Proxy's FETCH with (`Blob.new($carray[^4])`).
+// Cost: O(1).
+pub(crate) fn fetch_native_pos_ref(v: &Value) -> Option<Value> {
+    if is_native_pos_ref(v) {
+        fetch(std::slice::from_ref(v)).ok()
+    } else {
+        None
+    }
+}
+
 /// The storage holder, index and kind a native reference addresses.
 // Cost: O(1).
 fn parts(proxy: &Value) -> Result<(Value, i64, NativeRefKind), RuntimeError> {

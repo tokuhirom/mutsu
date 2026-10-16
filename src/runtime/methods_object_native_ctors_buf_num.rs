@@ -68,6 +68,11 @@ impl Interpreter {
     /// map payloads.  The old one-level flattening converted an inner list to
     /// its numeric element count instead of appending its bytes.
     fn flatten_native_buf_arg(value: &Value, out: &mut Vec<Value>) {
+        // An element of a `CArray[uint8]` slice is a slot reference
+        // (`Blob.new($carray[^4])`); the byte is the value it addresses.
+        if let Some(fetched) = crate::runtime::native_pos_ref::fetch_native_pos_ref(value) {
+            return Self::flatten_native_buf_arg(&fetched, out);
+        }
         match value.view() {
             ValueView::Int(i) => out.push(Value::int(i)),
             ValueView::Array(items, ..) => {
