@@ -78,15 +78,20 @@ fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
 /// adverb.
 // Cost: O(1).
 fn one_plain_needle(args: &[Value], named: Named<'_>) -> bool {
-    named.pairs().is_empty()
-        && args.len() == 1
-        && !matches!(
-            args[0].view(),
-            crate::value::ValueView::Regex(..)
-                | crate::value::ValueView::RegexWithAdverbs(..)
-                | crate::value::ValueView::Package(_)
-                | crate::value::ValueView::Array(..)
-        )
+    named.pairs().is_empty() && args.len() == 1 && plain_needle(&args[0])
+}
+
+/// Whether a needle is one the pure candidates read through its string form:
+/// not a pattern, a type object (which binds no candidate) or a list.
+// Cost: O(1).
+fn plain_needle(arg: &Value) -> bool {
+    !matches!(
+        arg.view(),
+        crate::value::ValueView::Regex(..)
+            | crate::value::ValueView::RegexWithAdverbs(..)
+            | crate::value::ValueView::Package(_)
+            | crate::value::ValueView::Array(..)
+    )
 }
 
 /// `contains($needle, $pos?, :i, :m)`.
@@ -140,6 +145,7 @@ fn rindex(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> A
 // Cost: O(k) amortized, k = chars returned.
 fn substr(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
     if named.pairs().is_empty()
+        && args.iter().all(plain_needle)
         && let Some(answer) = super::str_search::substr(t, args)
     {
         return Some(answer);
@@ -151,6 +157,7 @@ fn substr(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> A
 // Cost: O(m), m = chars of the needle.
 fn substr_eq(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
     if named.pairs().is_empty()
+        && args.iter().all(plain_needle)
         && let Some(answer) = super::str_args::substr_eq(t, args)
     {
         return Some(answer);
