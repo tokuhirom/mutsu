@@ -427,13 +427,14 @@ pub(crate) fn destructure_binds(
     }
 }
 
-/// The key a named sub-parameter reads: its name without an `@`/`%` sigil or
-/// a `!`/`.` twigil (`:@dists` reads `dists`).
+/// The key a named sub-parameter reads: its name without an `@`/`%`/`&` sigil
+/// or a `!`/`.` twigil (`:@dists` reads `dists`, `:&run!` reads `run`).
 // Cost: O(1).
 fn named_lookup_name(name: &str) -> String {
     let after_sigil = name
         .strip_prefix('@')
         .or_else(|| name.strip_prefix('%'))
+        .or_else(|| name.strip_prefix('&'))
         .unwrap_or(name);
     after_sigil
         .strip_prefix('!')
