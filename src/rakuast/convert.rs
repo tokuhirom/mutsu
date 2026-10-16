@@ -577,6 +577,20 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         Stmt::Redo(Some(label)) => Ok(Some(statement_expression(labelled_control_call(
             "redo", label,
         )))),
+        // `goto LABEL` is represented as a bare call by RakuAST, with a
+        // Term::Name argument for a bare label. Computed targets stay
+        // ordinary expressions.
+        Stmt::Goto(Expr::Literal(value) | Expr::LiteralSrc(value, _))
+            if let ValueView::Str(label) = value.view() =>
+        {
+            Ok(Some(statement_expression(labelled_control_call(
+                "goto", &label,
+            ))))
+        }
+        Stmt::Goto(expr) => Ok(Some(statement_expression(control_call(
+            "goto",
+            std::slice::from_ref(expr),
+        )?))),
         // `die`/`fail EXPR` are also modelled as bare calls.
         Stmt::Die(expr) => Ok(Some(statement_expression(control_call(
             "die",
