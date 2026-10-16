@@ -851,7 +851,7 @@ impl Interpreter {
             .env
             .get("$*SPEC")
             .or_else(|| self.env.get("*SPEC"))
-            .cloned()
+            .map(Value::deref_container)
             .or_else(|| self.get_dynamic_var("*SPEC").ok());
         if let Some(spec) = spec
             && !spec.is_nil()

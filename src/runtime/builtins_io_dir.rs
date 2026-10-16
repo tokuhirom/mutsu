@@ -228,7 +228,7 @@ impl Interpreter {
         Ok(self
             .env
             .get("$*TMPDIR")
-            .cloned()
+            .map(Value::deref_container)
             .unwrap_or_else(|| Value::str(String::new())))
     }
 

@@ -12,7 +12,7 @@ impl Interpreter {
         let settings = self
             .get_dynamic_var("*COLLATION")
             .ok()
-            .or_else(|| self.env.get("$*COLLATION").cloned())
+            .or_else(|| self.env.get("$*COLLATION").map(Value::deref_container))
             .map(|v| CollationSettings::from_value(&v))
             .unwrap_or_default();
 

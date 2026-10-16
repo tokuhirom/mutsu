@@ -1504,6 +1504,32 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    new `symbol::flags::UPPER_IDENT_KEY` with `PLAIN_USER_LEXICAL`. Pinned
    by `t/routines/call/return-merge-skips-uppercase-keys.t`.
 
+   A sixth census switched the named and light return merges off
+   entirely, on top of slice 38. Nine `t/` files and two roast files
+   depended on them (`t/vm/underscore-kebab-var.t` is slice 29's false
+   positive): the dynamic-variable writes below, and
+   `t/vm/binding/bind-rebind-alias-leaves-source.t`,
+   `t/vm/scope/nqp-lexical-outer-ops.t`,
+   `t/vm/scope/dynamic-var-bound-missing-elem-push-autoviv.t` (a callee's
+   `$*t :=` rebind), `roast/S02-names/is_dynamic.t` and
+   `roast/APPENDICES/A01-limits/misc.t`.
+
+   **Slice 39 done** (`fix/12529-dynamic-var-decl-cell`): a callee's write
+   to a caller-declared dynamic (`sub w { $*x = 5 }` called inside `my
+   $*x = 99`) reached the declaring frame only through the merge. A
+   dynamic declaration (`CompiledCode::dynamic_declared_sym`) now takes a
+   shared cell when it is stored, like a lexical a named sub captures, so
+   the callee's by-name write goes through it. The built-in readers of a
+   dynamic (`$*TZ`, `$*SCHEDULER`, `$*PROGRAM-NAME`, `$*SPEC`, `$*REPO`,
+   `$*COLLATION`, ..., and `get_dynamic_var`) dereference the cell. With
+   the merges off, this takes `closure-dynamic-var-restored-writeback.t`,
+   `dynamic-var-not-found.t`, `module-load-writes-caller-dynamic.t`,
+   `dynamic-var-writeback-coherence.t`, `regex-literal-is-a-closure.t`,
+   `whatever-rw-and-currying.t` and `A01-limits/misc.t` off the list. A rebind of a caller's dynamic (`$*t := ...`) still needs the
+   merge: a binding cell at the declaration broke the rebind itself and
+   was left out. Pinned by
+   `t/vm/scope/dynamic-var-written-by-callee-through-cell.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

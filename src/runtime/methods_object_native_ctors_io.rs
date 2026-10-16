@@ -170,7 +170,7 @@ impl Interpreter {
             .env
             .get("$*SPEC")
             .or_else(|| self.env.get("*SPEC"))
-            .cloned()
+            .map(Value::deref_container)
             .or_else(|| self.get_dynamic_var("*SPEC").ok())
         {
             // No explicit `:SPEC` — default to the dynamic `$*SPEC` (Raku:

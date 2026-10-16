@@ -475,14 +475,14 @@ impl Interpreter {
             if let Some(val) = env.get(name)
                 && self.is_var_dynamic(name)
             {
-                return Ok(val.clone());
+                return Ok(val.deref_container());
             }
         }
         // Also check current env
         if let Some(val) = self.env.get(name)
             && self.is_var_dynamic(name)
         {
-            return Ok(val.clone());
+            return Ok(val.deref_container());
         }
         Err(RuntimeError::new(format!(
             "Cannot find dynamic variable '${name}'"

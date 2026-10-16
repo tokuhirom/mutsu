@@ -98,7 +98,7 @@ impl Interpreter {
 
     /// The last link of `$*REPO`'s chain.
     fn repo_chain_tail(&self) -> Option<Value> {
-        let mut cursor = self.env.get("*REPO").cloned()?;
+        let mut cursor = self.env.get("*REPO").map(Value::deref_container)?;
         loop {
             let ValueView::Instance { attributes, .. } = cursor.view() else {
                 return Some(cursor);

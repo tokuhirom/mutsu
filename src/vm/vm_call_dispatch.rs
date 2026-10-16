@@ -41,7 +41,7 @@ impl Interpreter {
         let file = self
             .env()
             .get("*PROGRAM-NAME")
-            .map(|v| v.to_string_value())
+            .map(|v| v.deref_container().to_string_value())
             .unwrap_or_default();
         let line = cl.unwrap_or(self.cur_source_line);
         crate::runtime::deprecation::record_deprecation(kind, name, package, msg, &file, line);

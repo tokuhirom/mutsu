@@ -14,7 +14,7 @@ impl Interpreter {
             let file = self
                 .env
                 .get("*PROGRAM-NAME")
-                .map(|v| v.to_string_value())
+                .map(|v| v.deref_container().to_string_value())
                 .unwrap_or_default();
             let line = callsite_line.unwrap_or(self.cur_source_line);
             let kind = def.declarator.callable_type().unwrap_or("Sub");
@@ -46,7 +46,7 @@ impl Interpreter {
         let file = self
             .env
             .get("*PROGRAM-NAME")
-            .map(|v| v.to_string_value())
+            .map(|v| v.deref_container().to_string_value())
             .unwrap_or_default();
         let line = callsite_line.unwrap_or(self.cur_source_line);
         super::deprecation::record_deprecation("Method", name, package, message, &file, line);
