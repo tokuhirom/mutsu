@@ -432,11 +432,13 @@ pub(crate) fn invoke_mro(
         let row = row(super::owner_row(Symbol::intern(owner), method, arity)?);
         // An interpreter row reads any argument the way its routine does (a
         // `Seq` of pairs for `trans`, a list of needles for `index`); only a
-        // `Junction`, which must autothread, is refused.
+        // `Junction`, which must autothread, is refused, unless the row's
+        // parameters are `Mu` (`JUNCTION_ARGS`).
         let admitted = if matches!(row.handler, Handler::Interp(_)) {
-            !positional
-                .iter()
-                .any(|arg| matches!(arg.view(), crate::value::ValueView::Junction { .. }))
+            row.flags.contains(RowFlags::JUNCTION_ARGS)
+                || !positional
+                    .iter()
+                    .any(|arg| matches!(arg.view(), crate::value::ValueView::Junction { .. }))
         } else {
             admits_row(row, &positional)
         };

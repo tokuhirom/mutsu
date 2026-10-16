@@ -21,6 +21,13 @@ const ARGS_NAMED: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::ANY_NAMED);
 /// `Any:D:`).
 const TYPE_OK: RowFlags = RowFlags::TYPE_OBJECT_OK;
 const ARGS_TYPE: RowFlags = ARGS.or(RowFlags::TYPE_OBJECT_OK);
+/// `grep`'s and `first`'s matcher is `Mu`: a `Junction` matches as itself.
+/// They validate their adverbs and arity themselves (`X::Adverb`, the
+/// `grep(List:D: )` no-match), so their rows take every call.
+const MU_ARGS: RowFlags = ARGS_TYPE
+    .or(RowFlags::SLURPY)
+    .or(RowFlags::ANY_NAMED)
+    .or(RowFlags::JUNCTION_ARGS);
 
 macro_rules! any_row {
     ($owner:literal, $name:literal, $arity:literal, $flags:expr, $handler:ident) => {
@@ -40,24 +47,18 @@ macro_rules! any_row {
 
 pub(super) static ROWS: &[MethodRow] = &[
     any_row!("Any", "collate", 0, TYPE_OK, collate),
-    any_row!("Any", "map", 1, ARGS_TYPE, map),
-    any_row!("Any", "grep", 1, ARGS_TYPE, grep, &["k", "v", "kv", "p"]),
     any_row!(
         "Any",
-        "first",
-        0,
-        ARGS_TYPE,
-        first,
-        &["k", "v", "kv", "p", "end"]
-    ),
-    any_row!(
-        "Any",
-        "first",
+        "map",
         1,
         ARGS_TYPE,
-        first,
-        &["k", "v", "kv", "p", "end"]
+        map,
+        &[
+            "batch", "deep", "degree", "duck", "flat", "item", "label", "node"
+        ]
     ),
+    any_row!("Any", "grep", 0, MU_ARGS, grep),
+    any_row!("Any", "first", 0, MU_ARGS, first),
     any_row!("Any", "reduce", 1, ARGS_TYPE, reduce),
     any_row!("Any", "produce", 1, ARGS_TYPE, produce),
     any_row!("Any", "iterator", 0, TYPE_OK, iterator),
@@ -88,8 +89,86 @@ pub(super) static ROWS: &[MethodRow] = &[
         categorize,
         &["as", "into"]
     ),
-    any_row!("Hash", "classify-list", 2, ARGS, classify_list, &["as"]),
-    any_row!("Hash", "categorize-list", 2, ARGS, categorize_list, &["as"]),
+    any_row!(
+        "Hash",
+        "classify-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        classify_list,
+        &["as"]
+    ),
+    any_row!(
+        "Hash",
+        "categorize-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        categorize_list,
+        &["as"]
+    ),
+    any_row!(
+        "Bag",
+        "classify-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        classify_list,
+        &["as"]
+    ),
+    any_row!(
+        "Bag",
+        "categorize-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        categorize_list,
+        &["as"]
+    ),
+    any_row!(
+        "BagHash",
+        "classify-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        classify_list,
+        &["as"]
+    ),
+    any_row!(
+        "BagHash",
+        "categorize-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        categorize_list,
+        &["as"]
+    ),
+    any_row!(
+        "Mix",
+        "classify-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        classify_list,
+        &["as"]
+    ),
+    any_row!(
+        "Mix",
+        "categorize-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        categorize_list,
+        &["as"]
+    ),
+    any_row!(
+        "MixHash",
+        "classify-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        classify_list,
+        &["as"]
+    ),
+    any_row!(
+        "MixHash",
+        "categorize-list",
+        1,
+        ARGS.or(RowFlags::SLURPY),
+        categorize_list,
+        &["as"]
+    ),
 ];
 
 /// The call's arguments as the cascades take them: the positional ones, then

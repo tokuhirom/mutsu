@@ -153,6 +153,11 @@ impl RowFlags {
     /// the arguments [`Self::ANY_ARGS`] admits; `invoke_unadmitted` hands it
     /// every other one but a `Junction`, a `Failure` and a named argument.
     pub(crate) const OBJECT_ARGS: RowFlags = RowFlags(1 << 10);
+    /// The row's parameters are `Mu`: a `Junction` argument binds as itself
+    /// (`grep(any(...))` matches against the junction) instead of
+    /// autothreading the call. Only the MRO walk (`invoke_mro`) reads it; the
+    /// guard step still leaves a `Junction` to the cascades.
+    pub(crate) const JUNCTION_ARGS: RowFlags = RowFlags(1 << 11);
 
     /// The flags of both.
     // Cost: O(1).

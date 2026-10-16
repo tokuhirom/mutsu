@@ -3228,6 +3228,14 @@ ad-hoc error or a wrong result. Remaining divergence: `.map()` with no callable 
 `X::Multi::NoMatch` (`invoke_mro` reports no match only when no owner has a row of the arity). Pinned in
 `t/oo/method/any-list-methods-by-mro.t`. 14 arms leave the runtime cascades.
 
+What the walk needed from the rows, since the arms took every call the routine takes: `grep` and `first` validate
+their adverbs and arity themselves (`X::Adverb`, the detailed `grep(List:D: )` no-match), so their rows are one
+`SLURPY`, `ANY_NAMED` row each; their matcher is `Mu`, so a new flag, `JUNCTION_ARGS`, lets `invoke_mro` bind a
+`Junction` argument as itself (`@log.grep('a' | 'b')`) instead of refusing it for autothreading; `map` declares the
+eight adverbs `accepted_nameds` keeps (a `:label` must still rank the built-in before an augmented capture-only
+candidate); `classify-list`/`categorize-list` are `SLURPY` from arity 1 and gain the rows Rakudo declares on `Bag`,
+`BagHash`, `Mix` and `MixHash` (`MixHash.new.classify-list(@mapper, 1, 2, 3)`).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
