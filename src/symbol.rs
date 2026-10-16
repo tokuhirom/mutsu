@@ -309,6 +309,13 @@ pub(crate) mod flags {
     pub(crate) const EVER_ENV_KEY: u16 = 1 << 7;
     /// Set once the flag word has been computed (so a symbol with no flags is
     /// not recomputed on every lookup).
+    /// An env key spelled as an identifier that starts with an uppercase
+    /// ASCII letter, optionally `::`-qualified: a type name (`Foo`,
+    /// `NativeCall::T`), a package-qualified variable (`$GLOBAL::n` is the
+    /// key `GLOBAL::n`) or an uppercase-named scalar (`my $F` is the key
+    /// `F`). The return merges never copy one back to the caller
+    /// (ADR-12529 §3, slice 38).
+    pub(crate) const UPPER_IDENT_KEY: u16 = 1 << 14;
     pub(crate) const COMPUTED: u16 = 1 << 15;
 }
 
@@ -480,6 +487,12 @@ fn compute_flags(s: &str) -> u16 {
     }
     if crate::env::is_dynamic_var_env_key(s) {
         f |= flags::DYNAMIC_VAR_ENV_KEY;
+    }
+    if s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
+    {
+        f |= flags::UPPER_IDENT_KEY;
     }
     f
 }

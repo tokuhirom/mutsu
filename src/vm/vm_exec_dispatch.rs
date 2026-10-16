@@ -464,6 +464,8 @@ impl Interpreter {
                         && !(self.process_dynamics_published()
                             && (b0 == Some(b'*') || name.starts_with("PROCESS::")))
                         && (name == "_" || !name.contains('_'))
+                        // A package-qualified name reads `our_vars` first.
+                        && !crate::qualified::is_qualified(code.const_sym(*name_idx))
                         && self.lexicals.escaping_our_lexical_names.is_empty()
                         && !self.mainline_lexical_frame_active()
                         && !self.lexsub_alias_frame_active()
@@ -515,6 +517,19 @@ impl Interpreter {
                     // `escaping_our_read` — short-circuiting the env lookup.
                     .or_else(|| self.escaping_our_read(name))
                     .or_else(|| self.package_scope_lexical(name))
+                    // A package-qualified variable lives in `our_vars`; an env
+                    // entry under its name is a copy some frame left behind
+                    // (a by-name write stores both), which a later write from
+                    // another frame does not update. The return merges no
+                    // longer carry such a copy back (ADR-12529 §3, slice 38),
+                    // so read the package store first.
+                    .or_else(|| {
+                        if crate::qualified::is_qualified(code.const_sym(*name_idx)) {
+                            self.get_our_var(name).cloned()
+                        } else {
+                            None
+                        }
+                    })
                     // NB: `get_env_with_main_alias` is also where a file-scope `my`
                     // of the running routine's own compunit resolves — `env` is not
                     // authoritative for that name. See `unit_lexicals`.

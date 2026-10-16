@@ -1490,6 +1490,20 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    without the caller chain; the merge and the `scoped_child(caller)`
    overlay go when the list is empty.
 
+   **Slice 38 done** (`refactor/12529-drop-type-name-merge`): the type-name
+   row of the fifth census. A census that also skipped every key spelled
+   as an identifier starting with an uppercase ASCII letter (optionally
+   `::`-qualified: a type name, a package-qualified variable such as
+   `$GLOBAL::n`'s key `GLOBAL::n`, an uppercase-named scalar such as `my
+   $F`'s key `F`) found one dependent in `t/` and none in roast:
+   `t/oo/role/role-body-qualified-incdec-from-routine.t`, whose second call
+   of `sub body { my class K { $GLOBAL::k1++ } }` read the copy the first
+   call left in the env instead of the package store (`our_vars`) the `++`
+   had written. A package-qualified scalar read (`GetGlobal`, fast path
+   included) now consults `our_vars` before the env. The merges skip the
+   new `symbol::flags::UPPER_IDENT_KEY` with `PLAIN_USER_LEXICAL`. Pinned
+   by `t/routines/call/return-merge-skips-uppercase-keys.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
