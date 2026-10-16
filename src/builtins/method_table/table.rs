@@ -23,6 +23,9 @@ pub(super) static GROUPS: &[&[&[MethodRow]]] = &[
     io_concurrency::FAMILIES,
     mutating::FAMILIES,
     ctors_mop::FAMILIES,
+    // Last, so a twin or late row stands behind every pure row it shares an
+    // owner, name and arity with (ADR-11276 §9.136).
+    collections::LATE_FAMILIES,
 ];
 
 /// Every row of every group, in registration order.

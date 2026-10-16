@@ -417,7 +417,7 @@ impl Interpreter {
         Ok(Value::seq(result))
     }
 
-    pub(in crate::runtime) fn dispatch_tree(
+    pub(crate) fn dispatch_tree(
         &mut self,
         target: Value,
         args: &[Value],

@@ -3282,6 +3282,16 @@ the receiver is a type object. That is Rakudo's `Any:D` candidate not binding `A
 (`.Set(1)`) is `X::Multi::NoMatch` too. 12 arms leave `dispatch_method_by_name_2`. Pinned in
 `t/oo/method/any-list-methods-by-mro.t`.
 
+Follow-up (`refactor/11276-match3-late-rows`). The twins and late rows are a group of their own,
+`collections::LATE_FAMILIES`, listed last in `table::GROUPS`. A twin must stand behind a pure row that may live in
+another group (`Mu.is-lazy`'s is in `instances`), and only the last group can guarantee that. The late rows gain
+`toggle`, `tree` with a depth spec, `is-lazy`, `List`/`Seq.rotate`, `Thread.join` and `Any.join`. `Any.join` is an
+only-method, so its row takes every arity and reports a surplus separator as Rakudo's arity error (`Too many positionals
+passed`). `Any.slice` keeps a single implementation, the late row. Its duplicate in `dispatch_method_by_name_3` was
+unreachable behind the deleted `dispatch_method_by_name_2` arm and is gone. The late row now flattens its indices and
+ends at the first index past the end, as Rakudo does, and an index that does not ascend dies with Rakudo's
+`Provided index N, which is lower than M`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

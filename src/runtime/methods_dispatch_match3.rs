@@ -91,7 +91,6 @@ impl Interpreter {
             // for the supplies whose constructor happened to store one, so a
             // combinator result died with "No such method 'live'"
             // (`$s1.Supply.merge($s2.Supply).live`).
-            "slice" => Some(self.dispatch_slice_method(target, args)),
             "grab" => self.dispatch_grab_method(target, args),
             "run" if args.is_empty() => {
                 // `Thread.run` starts a `Thread.new`-constructed thread. Handled
@@ -118,33 +117,11 @@ impl Interpreter {
                 Some(Ok(Value::str(String::new())))
             }
             "Str" | "Stringy" if args.is_empty() => self.dispatch_list_str_method(target),
-            "join" if args.len() <= 1 => {
-                // `.join` on a Thread blocks until the thread completes and syncs
-                // its shared captured variables back to the parent (Raku
-                // `Thread.join`). Route it to the real thread join before the
-                // generic list-`join` stringifies the Thread instance to
-                // "Thread(...)" without waiting.
-                if let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = target.view()
-                    && class_name == "Thread"
-                {
-                    let attrs = attributes.as_map().clone();
-                    return Some(self.dispatch_thread_finish(&attrs));
-                }
-                self.dispatch_join_method(target, args)
-            }
-            "toggle" => Some(self.dispatch_toggle(target, &args)),
-            "is-lazy" if args.is_empty() => Some(Ok(self.dispatch_is_lazy_method(&target))),
-            "tree" if !args.is_empty() => Some(self.dispatch_tree(target, &args)),
             "keys" if args.is_empty() => self.dispatch_keys_method(target),
             "values" if args.is_empty() => Some(self.dispatch_values_method(target)),
             "AT-KEY" if args.len() == 1 => self.dispatch_at_key_method(&target, &args),
             "EXISTS-KEY" if args.len() == 1 => self.dispatch_match_exists_key(&target, &args),
             "EXISTS-POS" if args.len() == 1 => self.dispatch_match_exists_pos(&target, &args),
-            "rotate" => Some(self.dispatch_rotate(target, &args)),
             _ => None,
         }
     }
@@ -375,7 +352,7 @@ impl Interpreter {
     }
 
     /// Dispatch the "join" method.
-    fn dispatch_join_method(
+    pub(crate) fn dispatch_join_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
@@ -619,7 +596,7 @@ impl Interpreter {
     /// Cost: O(e) on a list/array, e = elements of the invocant (each element is
     /// checked for a lazy tail); O(1) on a LazyList or Range. Plain `@a.is-lazy`
     /// is answered O(1) by the native arm in `dispatch_core_str.rs` first.
-    fn dispatch_is_lazy_method(&self, target: &Value) -> Value {
+    pub(crate) fn dispatch_is_lazy_method(&self, target: &Value) -> Value {
         let value_is_lazy = |v: &Value| match v.view() {
             ValueView::LazyList(list) => list.is_genuinely_lazy(),
             ValueView::Array(_, kind) if kind.is_lazy() => true,
@@ -890,65 +867,5 @@ impl Interpreter {
             }
             _ => None,
         }
-    }
-
-    /// Dispatch the "slice" method on Seq/Array/List.
-    /// Returns a Seq of elements at the given indices.
-    /// With no args, returns an empty Seq.
-    pub(crate) fn dispatch_slice_method(
-        &mut self,
-        target: Value,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        let items = crate::runtime::utils::value_to_list(&target);
-        if args.is_empty() {
-            return Ok(Value::seq(Vec::new()));
-        }
-        // Collect all indices from args (flattening lists/arrays)
-        let mut indices: Vec<usize> = Vec::new();
-        for arg in &args {
-            match arg.view() {
-                ValueView::Int(i) => {
-                    if i >= 0 {
-                        indices.push(i as usize);
-                    }
-                }
-                ValueView::Array(elems, _) => {
-                    for elem in elems.iter() {
-                        let i = elem.to_f64() as i64;
-                        if i >= 0 {
-                            indices.push(i as usize);
-                        }
-                    }
-                }
-                ValueView::Seq(elems) => {
-                    for elem in elems.iter() {
-                        let i = elem.to_f64() as i64;
-                        if i >= 0 {
-                            indices.push(i as usize);
-                        }
-                    }
-                }
-                ValueView::Slip(elems) => {
-                    for elem in elems.iter() {
-                        let i = elem.to_f64() as i64;
-                        if i >= 0 {
-                            indices.push(i as usize);
-                        }
-                    }
-                }
-                _ => {
-                    let i = arg.to_f64() as i64;
-                    if i >= 0 {
-                        indices.push(i as usize);
-                    }
-                }
-            }
-        }
-        let result: Vec<Value> = indices
-            .into_iter()
-            .map(|i| items.get(i).cloned().unwrap_or(Value::NIL))
-            .collect();
-        Ok(Value::seq(result))
     }
 }
