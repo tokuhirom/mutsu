@@ -169,6 +169,33 @@ pub(crate) fn stash_symbols(v: &Value) -> Option<Value> {
     }
 }
 
+/// The hash an instance coerces to by its keys: a package stash's symbols, or
+/// an `IO::Path::Parts`'s three parts by name (Rakudo hashes it through its
+/// `iterator`, which yields the part pairs; ADR-11276 §9.114).
+// Cost: O(1) for a stash (its symbol map, shared); O(1) for the three parts.
+pub(crate) fn hash_contents(v: &Value) -> Option<Value> {
+    if let Some(symbols) = stash_symbols(v) {
+        return Some(symbols);
+    }
+    if v.dispatch_shape() != Some(crate::value::DispatchShape::IoPathParts) {
+        return None;
+    }
+    let ValueView::Instance { attributes, .. } = v.view() else {
+        return None;
+    };
+    let attrs = attributes.as_map();
+    let parts: ValueMap = crate::runtime::utils::io_path_parts_keys()
+        .iter()
+        .map(|key| {
+            (
+                key.to_string(),
+                attrs.get(*key).cloned().unwrap_or(Value::NIL),
+            )
+        })
+        .collect();
+    Some(Value::hash(parts))
+}
+
 /// Convert a slice of items to a Hash, optionally checking for odd element count.
 fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError> {
     // An itemized Pair (`$(:a(1))` = `Scalar`) or a Pair held in a `:=` element
@@ -255,7 +282,7 @@ where
 /// O(1) on a plain Hash (identity).
 pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeError> {
     // A stash is a Map of its symbols (`Test::EXPORT::ALL::.Hash`).
-    if let Some(symbols) = stash_symbols(&target) {
+    if let Some(symbols) = hash_contents(&target) {
         return to_hash(symbols, check_odd);
     }
     match target.view() {
@@ -357,7 +384,7 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
 /// on an existing Map (identity).
 pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
     // A stash is a Map of its symbols: `sub EXPORT(--> Map()) { Mod::EXPORT::ALL:: }`.
-    if let Some(symbols) = stash_symbols(&target) {
+    if let Some(symbols) = hash_contents(&target) {
         return to_map(symbols);
     }
     let mut result = 'hash: {

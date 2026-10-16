@@ -47,7 +47,8 @@ pub(crate) fn hash_of(target: &Value) -> Result<Value, RuntimeError> {
 /// The `Any.hash` row. A type object has no contents, so its `.hash` is the
 /// empty hash (`Hash.hash` is `Hash` itself, and `Mu`, which is no `Any`, never
 /// reaches the row); `Nil` is the empty hash too; a hash is itself, de-itemized;
-/// a package stash is the Map of its symbols. It declines an instance of any
+/// a package stash is the Map of its symbols, an `IO::Path::Parts` the hash of
+/// its parts. It declines an instance of any
 /// other class (a user class may have its own `hash` accessor) and a lazy list
 /// (forced by the interpreter).
 // Cost: O(e), e = elements of the invocant (O(1) for a scalar: an odd-element error).
@@ -60,7 +61,7 @@ fn hash(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> 
             super::quanthash::hash(target, &[])
         }
         ValueView::Instance { .. }
-            if crate::builtins::map_hash_coerce::stash_symbols(target).is_some() =>
+            if crate::builtins::map_hash_coerce::hash_contents(target).is_some() =>
         {
             Some(crate::builtins::map_hash_coerce::to_hash(
                 target.clone(),
