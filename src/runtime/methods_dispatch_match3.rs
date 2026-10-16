@@ -93,7 +93,6 @@ impl Interpreter {
             // (`$s1.Supply.merge($s2.Supply).live`).
             "slice" => Some(self.dispatch_slice_method(target, args)),
             "grab" => self.dispatch_grab_method(target, args),
-            "skip" => Some(self.dispatch_skip_method(target, args)),
             "run" if args.is_empty() => {
                 // `Thread.run` starts a `Thread.new`-constructed thread. Handled
                 // here (rather than in `native_thread`) because it must return
@@ -137,11 +136,8 @@ impl Interpreter {
                 }
                 self.dispatch_join_method(target, args)
             }
-            "grep" => self.dispatch_grep_method(target, args),
             "toggle" => Some(self.dispatch_toggle(target, &args)),
-            "eager" if args.is_empty() => self.dispatch_eager_row(target),
             "is-lazy" if args.is_empty() => Some(Ok(self.dispatch_is_lazy_method(&target))),
-            "first" => self.dispatch_first_method(target, args),
             "tree" if !args.is_empty() => Some(self.dispatch_tree(target, &args)),
             "keys" if args.is_empty() => self.dispatch_keys_method(target),
             "values" if args.is_empty() => Some(self.dispatch_values_method(target)),

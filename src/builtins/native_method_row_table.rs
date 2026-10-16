@@ -2173,6 +2173,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Any", "HOW", 8, 4),
     ("Any", "WHY", 8, 4),
     ("Any", "iterator", 8, 28),
+    ("Mu", "iterator", 8, 28),
     ("Any", "flat", 1, 24),
     ("Any", "eager", 8, 28),
     ("Any", "map", 8, 28),

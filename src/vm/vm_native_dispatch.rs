@@ -103,7 +103,14 @@ impl Interpreter {
         // stays the same memoized gate the general path applies.
         if let Some(result) = crate::builtins::method_table::try_dispatch_in(
             self,
-            |vm| !vm.native_lever_a_user_override_sym(target, method_sym),
+            |vm| {
+                !vm.native_lever_a_user_override_sym(target, method_sym)
+                    && !crate::builtins::method_table::early_entry_defers(
+                        vm,
+                        target,
+                        method_sym.as_str(),
+                    )
+            },
             target,
             method_sym,
             args,
@@ -740,7 +747,14 @@ impl Interpreter {
         if let Some(stripped) = stripped.as_deref()
             && let Some(result) = crate::builtins::method_table::try_dispatch_in(
                 self,
-                |vm| !vm.native_lever_a_user_override_sym(target, method_sym),
+                |vm| {
+                    !vm.native_lever_a_user_override_sym(target, method_sym)
+                        && !crate::builtins::method_table::early_entry_defers(
+                            vm,
+                            target,
+                            method_sym.as_str(),
+                        )
+                },
                 target,
                 method_sym,
                 stripped,

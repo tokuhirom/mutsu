@@ -12,6 +12,7 @@ pub(crate) mod accepts_open;
 pub(crate) mod any_coerce;
 pub(crate) mod any_collection;
 mod any_interp;
+pub(crate) use any_interp::early_entry_defers;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
 pub(crate) mod any_subscript;

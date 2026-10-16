@@ -244,11 +244,7 @@ impl Interpreter {
                     Some(Ok(Value::seq(result)))
                 }
             }
-            "iterator" if args.is_empty() => Some(self.dispatch_iterator_method(target)),
-            "produce" => self.dispatch_produce_method(target, args),
-            "reduce" => Some(self.dispatch_reduce_method(target, args)),
             "elems" => self.dispatch_elems_method(target, args),
-            "map" => Some(self.dispatch_map_method(target, args)),
             // Cost: O(e + r), e = invocant elements (one mapper call each), r =
             // elements the mapper results flatten to (a returned gather is run
             // to completion here).
@@ -330,14 +326,8 @@ impl Interpreter {
             "sort" => Some(self.dispatch_sort_method(target, args)),
             "unique" => Some(self.dispatch_unique(target, &args)),
             "repeated" => Some(self.dispatch_repeated(target, &args)),
-            "squish" => Some(self.dispatch_squish_method(target, args)),
             "minmax" => self.dispatch_minmax_method(target, method, args),
             "snip" => self.dispatch_snip_method(target, method, args),
-            // `Any.collate` for the receivers the method table has no shape
-            // for; a plain one is answered by the `Any.collate` row
-            // (`method_table::collections::any_interp`), which calls the same
-            // `dispatch_collate`.
-            "collate" if args.is_empty() => Some(self.dispatch_collate(target)),
             "take" if args.is_empty() => {
                 match self.take_value(target.clone()) {
                     Ok(_) => {}
@@ -345,7 +335,6 @@ impl Interpreter {
                 }
                 Some(Ok(target))
             }
-            "rotor" => Some(self.dispatch_rotor_method(target, args)),
             _ => None,
         }
     }
