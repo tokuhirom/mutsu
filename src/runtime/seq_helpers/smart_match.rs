@@ -457,6 +457,16 @@ impl Interpreter {
         match (left.view(), right.view()) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
             (_, ValueView::Whatever) => true,
+            // `Nil` on the RHS accepts only Nil itself and a Failure (a Nil
+            // subclass). It must not fall through to the string comparison
+            // below, where `Nil` stringifies to "" and so matched `''`, `[]`
+            // and `{}`.
+            (_, ValueView::Nil) => match left.view() {
+                ValueView::Nil => true,
+                ValueView::Instance { class_name, .. } => class_name.as_str() == "Failure",
+                ValueView::Package(name) => name == "Nil",
+                _ => false,
+            },
             // A Match on the RHS is an already-decided match result, so it
             // passes through like a Bool regardless of the topic. This is
             // used by dispatch-time `where $<capture>` predicates, where the
