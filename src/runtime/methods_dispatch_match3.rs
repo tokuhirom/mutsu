@@ -13,6 +13,20 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // The class methods of `Supply`, `CompUnit::RepositoryRegistry`,
+        // `Encoding::Registry` and the sockets are rows of the method table,
+        // found by their owner for the type object (ADR-11276 §9.122).
+        if let Some(owners) = crate::builtins::method_table::class_method_owners_of(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return Some(result);
+        }
         match method {
             "Numeric" if args.is_empty() => {
                 // Seq.Numeric: if backed by a PredictiveIterator, call count-only.
@@ -26,177 +40,11 @@ impl Interpreter {
                 }
                 None
             }
-            "from-list" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "Supply"
-                {
-                    return Some(self.dispatch_supply_from_list(&args));
-                }
-                None
-            }
-            "repository-for-name" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "CompUnit::RepositoryRegistry"
-                {
-                    let name = args.first().map(Value::to_string_value).unwrap_or_default();
-                    if let Some(prefix) = name.strip_prefix("file#") {
-                        let new_args = vec![Value::pair(
-                            "prefix".to_string(),
-                            Value::str(prefix.to_string()),
-                        )];
-                        return Some(self.call_method_with_values(
-                            Value::package(Symbol::intern("CompUnit::Repository::FileSystem")),
-                            "new",
-                            new_args,
-                        ));
-                    }
-                    if matches!(name.as_str(), "site" | "home" | "vendor" | "perl" | "core")
-                        && let Some(dir) = self.default_repo_dir(&name)
-                    {
-                        let mut new_args = vec![Value::pair(
-                            "prefix".to_string(),
-                            Value::str(dir.display().to_string()),
-                        )];
-                        // Rakudo's core repository holds the modules it ships
-                        // (`Test`, ...); mutsu bundles those as a battery, so
-                        // chain that battery behind it (#9071).
-                        if name == "core"
-                            && let Some(bundled) = self.bundled_core_repo()
-                        {
-                            new_args.push(Value::pair("next-repo".to_string(), bundled));
-                        }
-                        return Some(self.call_method_with_values(
-                            Value::package(Symbol::intern("CompUnit::Repository::Installation")),
-                            "new",
-                            new_args,
-                        ));
-                    }
-                    return Some(Ok(Value::NIL));
-                }
-                None
-            }
-            "repository-for-spec" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "CompUnit::RepositoryRegistry"
-                {
-                    let spec = args.first().map(Value::to_string_value).unwrap_or_default();
-                    if let Some(prefix) = spec.strip_prefix("inst#") {
-                        let new_args = vec![Value::pair(
-                            "prefix".to_string(),
-                            Value::str(prefix.to_string()),
-                        )];
-                        return Some(self.call_method_with_values(
-                            Value::package(Symbol::intern("CompUnit::Repository::Installation")),
-                            "new",
-                            new_args,
-                        ));
-                    }
-                    if let Some(prefix) = spec.strip_prefix("file#") {
-                        let new_args = vec![Value::pair(
-                            "prefix".to_string(),
-                            Value::str(prefix.to_string()),
-                        )];
-                        return Some(self.call_method_with_values(
-                            Value::package(Symbol::intern("CompUnit::Repository::FileSystem")),
-                            "new",
-                            new_args,
-                        ));
-                    }
-                    return Some(Ok(Value::NIL));
-                }
-                None
-            }
-            "run-script" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "CompUnit::RepositoryRegistry"
-                {
-                    let script_name = args.first().map(Value::to_string_value).unwrap_or_default();
-                    return Some(self.run_script_from_repos(&script_name));
-                }
-                None
-            }
             "signal" => {
                 if let ValueView::Package(class_name) = target.view()
                     && class_name == "Supply"
                 {
                     return Some(self.dispatch_supply_signal(&args));
-                }
-                None
-            }
-            "on-demand" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "Supply"
-                {
-                    let producer = args.first().cloned().unwrap_or(Value::NIL);
-                    if let Err(e) = self.bind_callable_param("&producer", &producer) {
-                        return Some(Err(e));
-                    }
-                    return Some(self.dispatch_supply_on_demand(&args));
-                }
-                if let ValueView::Instance { class_name, .. } = target.view()
-                    && class_name == "Supply"
-                {
-                    return Some(Err(RuntimeError::new(
-                        "Cannot call on-demand on a Supply instance",
-                    )));
-                }
-                None
-            }
-            "find" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "Encoding::Registry"
-                {
-                    return Some(self.dispatch_encoding_registry_find(&args));
-                }
-                None
-            }
-            "register" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "Encoding::Registry"
-                {
-                    return Some(self.dispatch_encoding_registry_register(&args));
-                }
-                None
-            }
-            "connect" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "IO::Socket::INET"
-                {
-                    return Some(self.dispatch_socket_inet_connect(&args));
-                }
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "IO::Socket::Async"
-                {
-                    return Some(self.dispatch_socket_async_connect(&args));
-                }
-                None
-            }
-            "listen" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "IO::Socket::INET"
-                {
-                    return Some(self.dispatch_socket_inet_listen(&args));
-                }
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "IO::Socket::Async"
-                {
-                    return Some(self.dispatch_socket_async_listen(&args));
-                }
-                None
-            }
-            "bind-udp" => {
-                if let ValueView::Package(cn) = target.view()
-                    && cn == "IO::Socket::Async"
-                {
-                    return Some(self.dispatch_socket_async_bind_udp(&args));
-                }
-                None
-            }
-            "udp" => {
-                if let ValueView::Package(cn) = target.view()
-                    && cn == "IO::Socket::Async"
-                {
-                    return Some(self.dispatch_socket_async_udp(&args));
                 }
                 None
             }
@@ -284,18 +132,6 @@ impl Interpreter {
                         ];
                         return Some(self.dispatch_new(target.clone(), date_args));
                     }
-                }
-                None
-            }
-            "Numeric" if args.is_empty() => {
-                if let ValueView::Seq(items) = target.view() {
-                    // Check for PredictiveIterator-backed Seq (stored by Seq.new)
-                    let seq_id = items.identity();
-                    if let Some(iter) = self.predictive_seq_iter_for(seq_id) {
-                        // Call count-only on the PredictiveIterator
-                        return Some(self.call_method_with_values(iter, "count-only", vec![]));
-                    }
-                    return Some(Ok(Value::int(items.len() as i64)));
                 }
                 None
             }

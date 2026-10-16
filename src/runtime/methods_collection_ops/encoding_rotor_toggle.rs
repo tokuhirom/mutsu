@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    pub(in crate::runtime) fn dispatch_encoding_registry_find(
+    pub(crate) fn dispatch_encoding_registry_find(
         &self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -38,7 +38,7 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn dispatch_encoding_registry_register(
+    pub(crate) fn dispatch_encoding_registry_register(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
