@@ -822,8 +822,7 @@ impl Interpreter {
                     // scope's own `my` has already filled (ADR-12529 §3, slice
                     // 23). See `CompiledCode::multi_scope_slots`.
                     if seeded.is_none()
-                        && (is_hoisted_pass
-                            || !own_scope_decl_slots.contains(&(slot_idx as u32)))
+                        && (is_hoisted_pass || !own_scope_decl_slots.contains(&(slot_idx as u32)))
                         && unit_key != crate::runtime::MAINLINE_UNIT_KEY
                         && code.multi_scope_slots.contains(&(slot_idx as u32))
                     {
