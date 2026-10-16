@@ -9992,6 +9992,14 @@ impl CompiledCode {
             // variable, which must therefore be a shared cell (ADR-0018). A
             // bareword target (`Apple does R`) names an enum key or a type.
             OpCode::DoesVar(idx, _, false) => Some(*idx),
+            // A `for` over a `$`-held container's `.values`/`.kv`/`.pairs`
+            // (`$_ = 7 for $b.values` on a BagHash) may write the updated
+            // container back to `$b` by name (`vm_for_loop_body`), so a
+            // closure that loops over a captured `$b` writes it
+            // (ADR-12529 §3, slice 30). A `@`/`%` source is written in place.
+            OpCode::TagContainerRef(idx, _) | OpCode::TagContainerRefReversed(idx, _) if matches!(self.constants.get(*idx as usize).map(Value::view), Some(ValueView::Str(name)) if !name.starts_with(['@', '%', '&'])) => {
+                Some(*idx)
+            }
             // `$obj<key> = value` may copy-on-write a user-class instance,
             // so its scalar container is a real write target for closure
             // capture analysis. `@`/`%` element stores remain in the separate
