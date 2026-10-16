@@ -1017,11 +1017,12 @@ impl Interpreter {
                 let results = self.collect_can_methods(&target, &method_name);
                 return Ok(Value::array(results));
             }
-            // `Proc::Async`'s and `Supply`'s methods are rows, found by their owner;
-            // they commit through the instance's shared cell (ADR-11276 §9.128,
-            // §9.130).
+            // `Proc::Async`'s, `Supply`'s and `IO::CatHandle`'s methods are rows,
+            // found by their owner; they commit through the instance's shared
+            // cell (ADR-11276 §9.128, §9.130, §9.132).
             if let Some(owners) = crate::builtins::method_table::proc_async_owners_of(&target)
                 .or_else(|| crate::builtins::method_table::supply_owners_of(&target))
+                .or_else(|| crate::builtins::method_table::cathandle_owners_of(&target))
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,
@@ -1031,25 +1032,6 @@ impl Interpreter {
                 )
             {
                 return result;
-            }
-            if class_name == "IO::CatHandle" && self.is_native_method(&class_name.resolve(), method)
-            {
-                // Lazy `.lines` (no `$limit`/`:close`) and `.handles` return a
-                // lazy list backed by the live cat (sharing its attribute cell),
-                // so mid-iteration `.chomp`/`.nl-in`/`.encoding` changes apply and
-                // `.path`/on-switch track the current handle (Rakudo semantics).
-                if let Some(lazy) = Self::cathandle_lazy_method(&target, method, &args) {
-                    return Ok(lazy);
-                }
-                // Every IO::CatHandle method advances internal read state, so route
-                // through the mutable path and commit the updated attributes back to
-                // the receiver's shared cell.
-                return self.call_native_instance_method_mut_in_place(
-                    &attributes,
-                    &class_name.resolve(),
-                    method,
-                    args,
-                );
             }
             // A user-defined method shadows an inherited native one: for a user
             // subclass of a builtin (`class S is IO::Handle { method Str {...} }`),

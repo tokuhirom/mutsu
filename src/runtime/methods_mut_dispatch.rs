@@ -1102,11 +1102,12 @@ impl Interpreter {
                 }
             }
 
-            // `Proc::Async`'s and `Supply`'s methods are rows, found by their owner;
-            // they commit through the instance's shared cell (ADR-11276 §9.128,
-            // §9.130).
+            // `Proc::Async`'s, `Supply`'s and `IO::CatHandle`'s methods are rows,
+            // found by their owner; they commit through the instance's shared
+            // cell (ADR-11276 §9.128, §9.130, §9.132).
             if let Some(owners) = crate::builtins::method_table::proc_async_owners_of(&target)
                 .or_else(|| crate::builtins::method_table::supply_owners_of(&target))
+                .or_else(|| crate::builtins::method_table::cathandle_owners_of(&target))
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,
@@ -1122,16 +1123,6 @@ impl Interpreter {
                     "callmethodmutwithvalues",
                     "native",
                 );
-                // Lazy `IO::CatHandle.lines` (no `$limit`/`:close`) / `.handles`
-                // return a lazy list backed by the live cat (sharing its cell),
-                // so mid-iteration `.chomp`/`.nl-in`/`.encoding` changes apply and
-                // `.path`/on-switch track the current handle (Rakudo semantics).
-                if class_name == "IO::CatHandle" {
-                    let cat = Value::instance_sharing_cell(&attributes, class_name, target_id);
-                    if let Some(lazy) = Self::cathandle_lazy_method(&cat, method, &args) {
-                        return Ok(lazy);
-                    }
-                }
                 // Try mutable dispatch first; if no mutable handler, fall back to immutable
                 match self.call_native_instance_method_mut_in_place(
                     &attributes,
