@@ -90,7 +90,22 @@ impl Interpreter {
         // would convert the signal into a thrown `X::ControlFlow` and silently
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
-        match self.call_react_callback(&sub.callback.clone(), vec![value.clone()]) {
+        // Re-establish the supply whose `whenever` body is running. A callback
+        // can call a subroutine containing a bare `emit`; that subroutine is
+        // compiled independently and cannot rely on the lexical `supply`
+        // rewrite. Keep this on the VM callback path rather than routing it
+        // through the runtime tap path.
+        let (emitter, _) = crate::runtime::Interpreter::whenever_tap_emitter(&sub.callback);
+        if let Some(ref emitter) = emitter {
+            self.async_state
+                .active_supply_emitters
+                .push(emitter.clone());
+        }
+        let callback_result = self.call_react_callback(&sub.callback.clone(), vec![value.clone()]);
+        if emitter.is_some() {
+            self.async_state.active_supply_emitters.pop();
+        }
+        match callback_result {
             Ok(_) => Ok(false),
             Err(e) if e.is_react_done() => Ok(true),
             Err(e) if e.is_next() => Ok(false),
