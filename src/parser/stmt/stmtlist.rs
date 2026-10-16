@@ -61,10 +61,24 @@ pub(crate) fn method_block(input: &str) -> PResult<'_, Vec<Stmt>> {
 /// is lexically nested within it (#8452) — a fresh package body has no `self`
 /// of its own.
 pub(crate) fn package_body_block(input: &str) -> PResult<'_, Vec<Stmt>> {
+    package_body_block_with_terms(input, &[])
+}
+
+/// [`package_body_block`] for a body whose signature declared sigilless
+/// parameters (`role R[\m] { method of { m } }`): each name is a term inside
+/// the body, so a bare `m` / `s` / `y` is the parameter and not a quote-like
+/// operator.
+pub(crate) fn package_body_block_with_terms<'a>(
+    input: &'a str,
+    terms: &[&str],
+) -> PResult<'a, Vec<Stmt>> {
     let (input, _) =
         parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
     simple::push_scope();
     simple::clear_current_scope_self_available();
+    for term in terms {
+        simple::register_user_term_symbol(term);
+    }
     hoisted_methods::push_frame();
     let mut result = block_inner(input);
     // Named methods declared in expression position inside the body
