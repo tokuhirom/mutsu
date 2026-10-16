@@ -27,6 +27,20 @@ impl Interpreter {
         {
             return Some(result);
         }
+        // `Date.today`, `Date.new-from-daycount` and `DateTime.now` are rows of
+        // the method table, found by their owner for the type object of the
+        // class or a subclass (ADR-11276 §9.123).
+        if let Some(owners) = self.temporal_class_owners(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return Some(result);
+        }
         match method {
             "Numeric" if args.is_empty() => {
                 // Seq.Numeric: if backed by a PredictiveIterator, call count-only.
@@ -48,7 +62,6 @@ impl Interpreter {
                 }
                 None
             }
-            "now" => self.dispatch_datetime_now(&target, &args),
             "Date" if args.is_empty() => {
                 if let ValueView::Package(class_name) = target.view() {
                     let cn = class_name.resolve();
@@ -69,68 +82,6 @@ impl Interpreter {
                         || mro.iter().any(|name| name == "Date")
                     {
                         return Some(Ok(Value::package(Symbol::intern("DateTime"))));
-                    }
-                }
-                None
-            }
-            "today" if args.is_empty() => {
-                if let ValueView::Package(class_name) = target.view() {
-                    let cn = class_name.resolve();
-                    let is_date_like =
-                        cn == "Date" || self.class_mro(&cn).iter().any(|name| name == "Date");
-                    if is_date_like {
-                        use crate::builtins::methods_0arg::temporal;
-                        // Date.today uses the local timezone ($*TZ), matching
-                        // rakudo. Without the offset the date would be UTC, which
-                        // differs from DateTime.now.Date in non-UTC zones.
-                        let tz = self
-                            .env
-                            .get("*TZ")
-                            .and_then(|v| {
-                                if let ValueView::Int(n) = v.view() {
-                                    Some(n)
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or(0i64);
-                        let secs = crate::value::current_time_secs_f64() as i64 + tz;
-                        let epoch_days = secs.div_euclid(86400);
-                        let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
-                        if cn == "Date" {
-                            return Some(Ok(temporal::make_date(y, m, d)));
-                        }
-                        // For Date subclasses, construct via the subclass constructor
-                        let date_args = vec![
-                            Value::pair("year".to_string(), Value::int(y)),
-                            Value::pair("month".to_string(), Value::int(m)),
-                            Value::pair("day".to_string(), Value::int(d)),
-                        ];
-                        return Some(self.dispatch_new(target.clone(), date_args));
-                    }
-                }
-                None
-            }
-            "new-from-daycount" if args.len() == 1 => {
-                if let ValueView::Package(class_name) = target.view() {
-                    let cn = class_name.resolve();
-                    let is_date_like =
-                        cn == "Date" || self.class_mro(&cn).iter().any(|name| name == "Date");
-                    if is_date_like {
-                        use crate::builtins::methods_0arg::temporal;
-                        // `.daycount` is the Modified Julian Day (epoch_days + 40587);
-                        // invert it to civil y/m/d.
-                        let daycount = crate::runtime::to_int(&args[0]);
-                        let (y, m, d) = temporal::epoch_days_to_civil(daycount - 40587);
-                        if cn == "Date" {
-                            return Some(Ok(temporal::make_date(y, m, d)));
-                        }
-                        let date_args = vec![
-                            Value::pair("year".to_string(), Value::int(y)),
-                            Value::pair("month".to_string(), Value::int(m)),
-                            Value::pair("day".to_string(), Value::int(d)),
-                        ];
-                        return Some(self.dispatch_new(target.clone(), date_args));
                     }
                 }
                 None
