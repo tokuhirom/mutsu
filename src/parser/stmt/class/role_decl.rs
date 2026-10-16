@@ -496,6 +496,28 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             true
         }
     });
+    // `also is Parent;` in the role body is the header's `role R is Parent`
+    // (Gnome::Gio::EmblemedIcon: `unit role ...; also is Gnome::GObject::Object;`).
+    let mut also_parents: Vec<String> = Vec::new();
+    body.retain(|stmt| {
+        if let Some(parent) = stmt_also_is_parent(stmt) {
+            also_parents.push(parent);
+            false
+        } else {
+            true
+        }
+    });
+    for parent in also_parents.into_iter().rev() {
+        body.insert(
+            0,
+            Stmt::DoesDecl {
+                name: Symbol::intern(&parent),
+                args: None,
+                from_is: true,
+                also: false,
+            },
+        );
+    }
     if is_hidden_role {
         body.insert(
             0,
