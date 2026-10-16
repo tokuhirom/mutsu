@@ -742,6 +742,17 @@ impl Interpreter {
                 {
                     continue;
                 }
+                // A plain user lexical is never merged back (ADR-12529 §3,
+                // slice 37): a frame resolves an outer lexical through its
+                // static link, and every write a callee makes to one reaches
+                // the declaring frame through the variable's shared cell (or,
+                // for a name known only at run time, through
+                // `propagate_pending_caller_writes` below). Copying the
+                // callee's binding of the name back is how a callee's write
+                // used to reach a caller's same-named, unrelated lexical.
+                if kflags & crate::symbol::flags::PLAIN_USER_LEXICAL != 0 {
+                    continue;
+                }
                 // Only a key the caller already has can be merged back, and
                 // only if the callee actually REBOUND it: a key whose value is
                 // the same binding (same immediate, or the same heap
