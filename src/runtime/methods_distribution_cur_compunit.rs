@@ -200,7 +200,7 @@ impl Interpreter {
             }
             let mut attrs = HashMap::new();
             attrs.insert("short-name".to_string(), Value::str(name.clone()));
-            attrs.insert("from".to_string(), Value::str_from("Raku"));
+            attrs.insert("from".to_string(), Value::str_from("Perl6"));
             attrs.insert("repo-id".to_string(), Value::str(name.clone()));
             loaded.push(Value::make_instance(Symbol::intern("CompUnit"), attrs));
         }
@@ -214,45 +214,5 @@ impl Interpreter {
             .entry(prefix.to_string())
             .or_default()
             .push(compunit);
-    }
-
-    /// Methods of a `CompUnit` instance (from `need` or `resolve`).
-    pub(crate) fn dispatch_compunit_method(
-        &mut self,
-        attributes: &AttrMap,
-        method: &str,
-    ) -> Option<Result<Value, RuntimeError>> {
-        let attr = |key: &str| attributes.get(key).cloned();
-        let value = match method {
-            "short-name" | "name" | "Str" | "gist" => attr("short-name").unwrap_or(Value::NIL),
-            "version" | "api" => {
-                attr(method).unwrap_or_else(|| Value::package(Symbol::intern("Version")))
-            }
-            "auth" => attr("auth").unwrap_or_else(|| Value::package(Symbol::intern("Str"))),
-            "from" => attr("from").unwrap_or_else(|| Value::str_from("Perl6")),
-            "repo" | "repo-id" | "distribution" => attr(method).unwrap_or(Value::NIL),
-            "precompiled" => attr("precompiled").unwrap_or(Value::FALSE),
-            // A resolved-but-unloaded CompUnit carries the `CompUnit::Handle`
-            // type object, as in Rakudo. A loaded one (from `need`) gets a
-            // handle carrying the symbols it loaded, so they can later be
-            // merged into GLOBAL via `merge-symbols`.
-            "handle" => match attr("handle") {
-                Some(handle) => handle,
-                None => {
-                    let mut handle_attrs = HashMap::new();
-                    if let Some(syms) = attributes.get("globalish-symbols") {
-                        handle_attrs.insert("globalish-symbols".to_string(), syms.clone());
-                    }
-                    // The unit the handle belongs to, for `export-package`.
-                    if let Some(name) = attributes.get("short-name") {
-                        handle_attrs.insert("unit-name".to_string(), name.clone());
-                    }
-                    Value::make_instance(Symbol::intern("CompUnit::Handle"), handle_attrs)
-                }
-            },
-            "globalish-package" => self.make_globalish_package(attributes.get("globalish-symbols")),
-            _ => return None,
-        };
-        Some(Ok(value))
     }
 }

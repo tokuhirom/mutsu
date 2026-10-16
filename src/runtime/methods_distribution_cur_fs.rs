@@ -140,7 +140,7 @@ impl Interpreter {
                 crate::runtime::cow_table_mut(&mut self.module.loaded_modules)
                     .insert(short_name_str.clone());
                 let mut attrs = HashMap::new();
-                attrs.insert("from".to_string(), Value::str_from("Raku"));
+                attrs.insert("from".to_string(), Value::str_from("Perl6"));
                 // Same `.repo` / `.repo-id` / `.distribution` as a
                 // `resolve` of this spec reports (a module found only
                 // outside the prefix has no distribution here).

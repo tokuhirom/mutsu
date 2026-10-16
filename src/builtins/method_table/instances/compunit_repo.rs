@@ -3,7 +3,7 @@
 //!
 //! A repository has no dispatch shape: the rows are reached through their owner
 //! (`RowFlags::OWNER_ONLY`, `invoke_owner`) from the method-call fallback, as
-//! `CompUnit::Handle`'s are ([`super::compunit_handle::owners_of`]). Every row
+//! `CompUnit::Handle`'s are ([`super::compunit::owners_of`]). Every row
 //! needs the interpreter (it reads the file system, loads a module or walks the
 //! repository chain); the implementations are `Interpreter` methods in
 //! `runtime/methods_distribution*.rs`. A repository instance carries its

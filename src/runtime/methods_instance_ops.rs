@@ -1364,16 +1364,6 @@ impl Interpreter {
             {
                 return result;
             }
-            if class_name == "CompUnit"
-                && let Some(result) = self.dispatch_compunit_method(&attributes.as_map(), method)
-            {
-                return result;
-            }
-            if class_name == "CompUnit::Handle" && method == "globalish-package" {
-                return Ok(
-                    self.make_globalish_package(attributes.as_map().get("globalish-symbols"))
-                );
-            }
             if is_stash_class_name(class_name.as_str()) && method == "merge-symbols" {
                 let pkg = args.first().cloned().unwrap_or(Value::NIL);
                 return Ok(self.merge_global_symbols(&pkg));
@@ -2337,21 +2327,6 @@ impl Interpreter {
                     Some(target.clone()),
                 )?;
                 return Ok(result);
-            }
-        }
-
-        if let ValueView::Package(type_name) = target.view() {
-            match (type_name.resolve().as_str(), method) {
-                ("CompUnit", "handle") => {
-                    return Ok(Value::make_instance(
-                        Symbol::intern("CompUnit::Handle"),
-                        HashMap::new(),
-                    ));
-                }
-                ("CompUnit", "globalish-package") | ("CompUnit::Handle", "globalish-package") => {
-                    return Ok(Value::package(Symbol::intern("GLOBAL")));
-                }
-                _ => {}
             }
         }
 

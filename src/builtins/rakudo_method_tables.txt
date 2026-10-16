@@ -38,6 +38,12 @@ only	Capture	Capture	FLATTENABLE_HASH	FLATTENABLE_LIST	from-args	hash	list
 declared	Code	ACCEPTS	Capture	POSITIONS	Str	arity	associative	assuming	bytecode-size	cando	clone	count	file	id	iffy	is-implementation-detail	line	name	new	of	outer	prec	precedence	reducer	returns	set_name	signature	static_id	thunky
 methods	Code	<anon>	ACCEPTS	Capture	POPULATE	POSITIONS	Str	arity	associative	assuming	bytecode-size	cando	count	file	iffy	is-implementation-detail	line	new	of	outer	prec	precedence	reducer	returns	signature	static_id	thunky
 only	Code	Capture	arity	associative	assuming	bytecode-size	cando	clone	count	file	id	iffy	is-implementation-detail	line	name	of	outer	precedence	reducer	returns	set_name	signature	static_id	thunky
+declared	CompUnit	Str	WHICH	api	auth	distribution	from	gist	handle	precompiled	repo	repo-id	short-name	unit	version
+methods	CompUnit	POPULATE	Str	WHICH	api	auth	distribution	from	gist	handle	precompiled	repo	repo-id	short-name	unit	version
+only	CompUnit	api	auth	distribution	from	handle	precompiled	repo	repo-id	short-name	unit	version
+declared	CompUnit::Handle	ctxsave	export-how-package	export-package	export-sub	globalish-package	unit
+methods	CompUnit::Handle	POPULATE	ctxsave	export-how-package	export-package	export-sub	from-unit	globalish-package	new	unit
+only	CompUnit::Handle	ctxsave	export-how-package	export-package	export-sub	globalish-package	unit
 declared	CompUnit::DependencySpecification	Str	WHICH	api-matcher	auth-matcher	from	raku	short-name	stringified	version-matcher
 methods	CompUnit::DependencySpecification	POPULATE	Str	TWEAK	WHICH	api-matcher	auth-matcher	from	raku	short-name	stringified	version-matcher
 only	CompUnit::DependencySpecification	Str	api-matcher	auth-matcher	from	short-name	stringified	version-matcher
