@@ -3,16 +3,34 @@
 //! `sink-all`, `skip-one`, `skip-at-least`, `skip-at-least-pull-one`) over a
 //! built-in `Iterator` instance's materialized `items` prefix.
 //!
-//! Two dispatch paths consume this single implementation: the mutating path
-//! (`methods_mut_dispatch.rs`, variable receiver — writes the advanced `index`
-//! back into the instance) and the non-variable receiver path
-//! (`methods_call_dispatch.rs` — an array element or a temporary; it commits
-//! the advanced cursor through the instance's shared attribute cell, so every
-//! alias of the iterator sees it).
+//! The protocol methods are rows of the `Iterator` and `PredictiveIterator`
+//! roles (ADR-11276 §9.126, `method_table/instances/iterator.rs`); their one
+//! implementation (`iterator_protocol_call.rs`) commits the advanced cursor
+//! through the instance's shared attribute cell, so every alias of the
+//! iterator sees it, whatever the receiver was (a variable, an array element,
+//! a temporary).
 //!
 //! Spec: <https://docs.raku.org/type/Iterator>
 
 use crate::value::{Value, ValueView};
+
+/// One method of the `Iterator` / `PredictiveIterator` protocol, as the rows
+/// of those roles name it (ADR-11276 §9.126). The stepping logic below and the
+/// stream iterator dispatch on this, never on the method's name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum IterOp {
+    PullOne,
+    PushExactly,
+    PushAtLeast,
+    PushAll,
+    PushUntilLazy,
+    SinkAll,
+    SkipOne,
+    SkipAtLeast,
+    SkipAtLeastPullOne,
+    CountOnly,
+    BoolOnly,
+}
 
 pub(crate) struct IterProtoStep {
     /// The method's return value.
@@ -23,11 +41,11 @@ pub(crate) struct IterProtoStep {
     pub append: Option<std::ops::Range<usize>>,
 }
 
-/// Compute the state transition for one Iterator-protocol method call.
-/// Returns `None` for methods outside this family (caller falls through to
-/// its generic dispatch).
+/// Compute the state transition for one index-advancing protocol call.
+/// Returns `None` for `count-only` and `bool-only`, which advance nothing.
+// Cost: O(1), plus O(k) for the `push-*` family's appended range, k = its length.
 pub(crate) fn step(
-    method: &str,
+    op: IterOp,
     items: &[Value],
     index: usize,
     args: &[Value],
@@ -37,8 +55,8 @@ pub(crate) fn step(
     let arg_int = |v: Option<&Value>, default: i64| -> usize {
         v.map(crate::runtime::to_int).unwrap_or(default).max(0) as usize
     };
-    let step = match method {
-        "pull-one" => {
+    let step = match op {
+        IterOp::PullOne => {
             if index < len {
                 IterProtoStep {
                     ret: items[index].clone(),
@@ -56,7 +74,7 @@ pub(crate) fn step(
         // push-exactly(@target, n) / push-at-least(@target, n): append up to n
         // elements; return the count delivered, or IterationEnd when the
         // source ran dry before reaching n.
-        "push-exactly" | "push-at-least" => {
+        IterOp::PushExactly | IterOp::PushAtLeast => {
             let want = arg_int(args.get(1), 1);
             let take = len.saturating_sub(index).min(want);
             IterProtoStep {
@@ -69,17 +87,17 @@ pub(crate) fn step(
                 append: (take > 0).then(|| index..index + take),
             }
         }
-        "push-all" | "push-until-lazy" => IterProtoStep {
+        IterOp::PushAll | IterOp::PushUntilLazy => IterProtoStep {
             ret: end(),
             new_index: len.max(index),
             append: (index < len).then_some(index..len),
         },
-        "sink-all" => IterProtoStep {
+        IterOp::SinkAll => IterProtoStep {
             ret: end(),
             new_index: len.max(index),
             append: None,
         },
-        "skip-one" => {
+        IterOp::SkipOne => {
             if index < len {
                 IterProtoStep {
                     ret: Value::int(1),
@@ -94,7 +112,7 @@ pub(crate) fn step(
                 }
             }
         }
-        "skip-at-least" => {
+        IterOp::SkipAtLeast => {
             let want = arg_int(args.first(), 0);
             let available = len.saturating_sub(index);
             if available >= want {
@@ -111,7 +129,7 @@ pub(crate) fn step(
                 }
             }
         }
-        "skip-at-least-pull-one" => {
+        IterOp::SkipAtLeastPullOne => {
             let want = arg_int(args.first(), 0);
             let available = len.saturating_sub(index);
             if available >= want && index + want < len {
@@ -128,27 +146,28 @@ pub(crate) fn step(
                 }
             }
         }
-        _ => return None,
+        IterOp::CountOnly | IterOp::BoolOnly => return None,
     };
     Some(step)
 }
 
 /// How many elements of `items` a protocol call needs to see before it can
 /// answer, or `None` when the method wants the whole source.
-pub(super) fn needed_len(method: &str, index: usize, args: &[Value]) -> Option<usize> {
+// Cost: O(1).
+pub(super) fn needed_len(op: IterOp, index: usize, args: &[Value]) -> Option<usize> {
     let arg_int = |v: Option<&Value>, default: i64| -> usize {
         v.map(crate::runtime::to_int).unwrap_or(default).max(0) as usize
     };
-    match method {
-        "pull-one" | "skip-one" => Some(index + 1),
-        "push-exactly" | "push-at-least" => Some(index + arg_int(args.get(1), 1)),
-        "skip-at-least" => Some(index + arg_int(args.first(), 0)),
+    match op {
+        IterOp::PullOne | IterOp::SkipOne => Some(index + 1),
+        IterOp::PushExactly | IterOp::PushAtLeast => Some(index + arg_int(args.get(1), 1)),
+        IterOp::SkipAtLeast => Some(index + arg_int(args.first(), 0)),
         // The value *after* the skipped run, so one more than the skip itself.
-        "skip-at-least-pull-one" => Some(index + arg_int(args.first(), 0) + 1),
+        IterOp::SkipAtLeastPullOne => Some(index + arg_int(args.first(), 0) + 1),
         // `push-until-lazy` exists precisely to stop at a lazy boundary, so it
         // must not force; the rest consume the source to exhaustion.
-        "push-all" | "sink-all" => None,
-        _ => Some(index),
+        IterOp::PushAll | IterOp::SinkAll => None,
+        IterOp::PushUntilLazy | IterOp::CountOnly | IterOp::BoolOnly => Some(index),
     }
 }
 
@@ -173,7 +192,7 @@ impl crate::Interpreter {
     pub(crate) fn iterator_topup_from_lazy_source(
         &mut self,
         source: Option<&Value>,
-        method: &str,
+        op: IterOp,
         index: usize,
         args: &[Value],
         have: usize,
@@ -185,10 +204,10 @@ impl crate::Interpreter {
         // nothing, so `sink-all` need not generate them: `(42 xx *).iterator
         // .sink-all` returns at once, as Rakudo's repeat iterator does
         // (S03-operators/repeat.t), instead of forcing an infinite source.
-        if method == "sink-all" && Self::lazy_source_sink_is_inert(&list) {
+        if op == IterOp::SinkAll && Self::lazy_source_sink_is_inert(&list) {
             return Ok(None);
         }
-        let pulled = match needed_len(method, index, args) {
+        let pulled = match needed_len(op, index, args) {
             Some(need) if need <= have => return Ok(None),
             Some(need) => self.force_lazy_list_vm_n(&list, need)?,
             None => self.force_lazy_list_vm(&list)?,
@@ -217,7 +236,7 @@ impl crate::Interpreter {
         };
         if let Some(more) = self.iterator_topup_from_lazy_source(
             attrs.get("lazy_source"),
-            "push-all",
+            IterOp::PushAll,
             index,
             &[],
             all.len(),

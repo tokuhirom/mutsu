@@ -19,6 +19,7 @@
 //!
 //! Spec: <https://docs.raku.org/type/Iterator>
 
+use super::iterator_protocol::IterOp;
 use crate::symbol::Symbol;
 use crate::value::{InstanceAttrs, RuntimeError, SeqSource, Value, ValueView};
 use std::collections::HashMap;
@@ -105,34 +106,17 @@ fn read_state(attributes: &InstanceAttrs) -> Option<StreamState> {
 
 impl crate::Interpreter {
     /// Run an Iterator-protocol call on a stream-backed built-in `Iterator`.
-    /// `None` when `attributes` is not one, or for a method outside the
-    /// protocol family (`can`, `is-lazy`, ... go through ordinary dispatch).
+    /// `None` when `attributes` is not one.
     // Cost: one callback call per source element the call consumes, plus
     // O(w), w = elements in the window.
     pub(crate) fn map_grep_stream_protocol_call(
         &mut self,
         attributes: &InstanceAttrs,
-        method: &str,
+        op: IterOp,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(
-            method,
-            "pull-one"
-                | "push-exactly"
-                | "push-at-least"
-                | "push-all"
-                | "push-until-lazy"
-                | "sink-all"
-                | "skip-one"
-                | "skip-at-least"
-                | "skip-at-least-pull-one"
-                | "count-only"
-                | "bool-only"
-        ) {
-            return None;
-        }
         let state = read_state(attributes)?;
-        Some(self.map_grep_stream_call(attributes, state, method, args))
+        Some(self.map_grep_stream_call(attributes, state, op, args))
     }
 
     // Cost: one callback call per source element the call consumes, plus
@@ -142,17 +126,18 @@ impl crate::Interpreter {
         &mut self,
         attributes: &InstanceAttrs,
         state: StreamState,
-        method: &str,
+        op: IterOp,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let need = match method {
-            // Rakudo's map iterator is not a PredictiveIterator; answering
-            // from what the source still produces is the honest count.
-            "count-only" => None,
-            "bool-only" => Some(state.index + 1),
+        let need = match op {
+            // Rakudo's map iterator is not a PredictiveIterator (the rows
+            // never send it these two); answering from what the source still
+            // produces is the honest count.
+            IterOp::CountOnly => None,
+            IterOp::BoolOnly => Some(state.index + 1),
             // Over a finite source `push-until-lazy` is `push-all`.
-            "push-until-lazy" if !state.lazy => None,
-            _ => super::iterator_protocol::needed_len(method, state.index, args),
+            IterOp::PushUntilLazy if !state.lazy => None,
+            _ => super::iterator_protocol::needed_len(op, state.index, args),
         };
         let StreamState {
             stream,
@@ -177,11 +162,11 @@ impl crate::Interpreter {
             (None, ValueView::Array(values, ..)) => values.items(),
             (None, _) => &[],
         };
-        let ret = match method {
-            "count-only" => Value::int((items.len() - index) as i64),
-            "bool-only" => Value::truth(index < items.len()),
+        let ret = match op {
+            IterOp::CountOnly => Value::int((items.len() - index) as i64),
+            IterOp::BoolOnly => Value::truth(index < items.len()),
             _ => {
-                let step = super::iterator_protocol::step(method, items, index, args)
+                let step = super::iterator_protocol::step(op, items, index, args)
                     .expect("every other method in the family is a stepping method");
                 if let Some(range) = step.append {
                     let vals = items[range].to_vec();

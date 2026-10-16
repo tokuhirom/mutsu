@@ -193,137 +193,20 @@ impl Interpreter {
         Some(crate::builtins::iterator_construct::build_iterator_instance(target))
     }
 
-    /// Interpreter-native Iterator protocol over a self-contained, array-backed `Iterator`
-    /// instance (`items` Array + `index` Int, no `squish_source` callbacks).
-    /// Handles the index-advancing protocol methods `pull-one`/`skip-one`/
-    /// `skip-at-least`/`skip-at-least-pull-one`/`sink-all`, mirroring the
-    /// interpreter's mutating iterator dispatch in `methods_mut.rs` exactly,
-    /// including the identity-based writeback (env + locals) so the receiver
-    /// variable and any aliases observe the advance. Behavior-invariant.
-    ///
-    /// Returns `None` (fall through to the interpreter) for: non-`Iterator`
-    /// receivers; squish iterators (which invoke user `as`/`with` callbacks);
-    /// predictive / coroutine iterators (no concrete `items` array); the
-    /// `push-*` family (it writes pulled elements into an external buffer arg,
-    /// needing array-identity writeback handled by the interpreter); and
-    /// `count-only`/`bool-only` (left to the interpreter's predictive handling).
-    ///
-    /// A `.map`/`.grep` stream iterator is served here too, by the one
-    /// `map_grep_stream_protocol_call` routine every dispatch path shares.
-    // Cost: O(1) for an array-backed iterator; for a stream, one callback call
-    // per source element the call consumes (see `map_grep_stream_call`).
+    /// The Iterator protocol on a built-in `Iterator` instance, answered by the
+    /// rows of the `Iterator` and `PredictiveIterator` roles found by their
+    /// owner (ADR-11276 §9.126): the one implementation every dispatch path
+    /// shares, which commits the advance through the instance's shared cell.
+    /// `None` (fall through to the interpreter) for any other receiver or name.
+    // Cost: O(1) to find the row; the row's own cost (see
+    // `Interpreter::builtin_iterator_call`).
     pub(super) fn try_native_iterator(
         &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(
-            method,
-            "pull-one" | "skip-one" | "skip-at-least" | "skip-at-least-pull-one" | "sink-all"
-        ) {
-            return None;
-        }
-        let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-        else {
-            return None;
-        };
-        if class_name.resolve() != "Iterator" {
-            return None;
-        }
-        // A `.map`/`.grep` stream (#10217): the same protocol step every
-        // other dispatch path runs, called straight from here so a pull skips
-        // the compiled-method fallback chain. Its callback re-enters the VM
-        // exactly as it does from that chain, and the step commits through the
-        // instance's shared cell, so every alias sees the advance.
-        if let Some(result) = self.map_grep_stream_protocol_call(&attributes, method, args) {
-            return Some(result);
-        }
-        if attributes.contains_key("squish_source") || attributes.contains_key("is_lazy") {
-            // squish iterators invoke user callbacks, and lazy iterators (gather /
-            // lazy Seq) pull through interpreter-owned coroutine state rather than
-            // a materialized `items` snapshot — leave both to the interpreter.
-            return None;
-        }
-        // Only a concrete array-backed iterator (excludes predictive/coroutine
-        // iterators whose state lives off the instance). Snapshot the (cheap Arc
-        // clone of the) backing array and the start index, then drop the read
-        // guard before the writeback below write-locks the same cell.
-        let (items, start_index) = {
-            let map = attributes.as_map();
-            let Some(ValueView::Array(items, ..)) = map.get("items").map(Value::view) else {
-                return None;
-            };
-            let start_index = match map.get("index").map(Value::view) {
-                Some(ValueView::Int(i)) if i >= 0 => i as usize,
-                _ => 0,
-            };
-            (items.clone(), start_index)
-        };
-        let len = items.len();
-        let mut index = start_index;
-        let ret = match method {
-            "pull-one" => {
-                if index < len {
-                    let out = items[index].clone();
-                    index += 1;
-                    out
-                } else {
-                    Value::iteration_end()
-                }
-            }
-            "sink-all" => {
-                index = len;
-                Value::iteration_end()
-            }
-            "skip-one" => {
-                if index < len {
-                    index += 1;
-                    Value::int(1)
-                } else {
-                    Value::int(0)
-                }
-            }
-            "skip-at-least" => {
-                let want = args.first().map(crate::runtime::to_int).unwrap_or(0).max(0) as usize;
-                if len.saturating_sub(index) >= want {
-                    index += want;
-                    Value::int(1)
-                } else {
-                    index = len;
-                    Value::int(0)
-                }
-            }
-            "skip-at-least-pull-one" => {
-                let want = args.first().map(crate::runtime::to_int).unwrap_or(0).max(0) as usize;
-                if len.saturating_sub(index) >= want {
-                    index += want;
-                    if index < len {
-                        let out = items[index].clone();
-                        index += 1;
-                        out
-                    } else {
-                        Value::iteration_end()
-                    }
-                } else {
-                    index = len;
-                    Value::iteration_end()
-                }
-            }
-            _ => unreachable!(),
-        };
-        // Write the advanced index back by instance identity (env + locals), as
-        // the interpreter's mutating iterator dispatch does, so the receiver
-        // variable and aliases see the advance.
-        if index != start_index {
-            // Write through the shared cell in place: every alias of this
-            // iterator instance (caller var, locals) sees the advance directly.
-            attributes.insert("index".to_string(), Value::int(index as i64));
-        }
-        Some(Ok(ret))
+        let owners = crate::builtins::method_table::iterator_owners_of(target)?;
+        crate::builtins::method_table::invoke_owner(self, owners, method, args, || target.clone())
     }
 }

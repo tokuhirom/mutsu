@@ -36,6 +36,7 @@ pub(crate) mod enumeration;
 pub(crate) mod exception;
 pub(crate) mod failure;
 pub(crate) mod instant;
+pub(crate) mod iterator;
 pub(crate) mod rakuast_node;
 pub(crate) mod regex_match;
 pub(crate) mod routine;
@@ -64,6 +65,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     backtrace::ROWS,
     exception::ROWS,
     enumeration::ROWS,
+    iterator::ROWS,
     code::ROWS,
     routine::ROWS,
     failure::ROWS,

@@ -850,6 +850,22 @@ impl Interpreter {
             self.mixin_of_can_entry(target, method_name, &mut results);
             return results;
         }
+        // A built-in iterator does `Iterator` and, when it knows its count,
+        // `PredictiveIterator`: its protocol methods are those roles' rows, found
+        // by owner for the instance's kind (ADR-11276 §9.126).
+        if let Some(owners) = crate::builtins::method_table::iterator_owners_of(target) {
+            let method = Symbol::intern(method_name);
+            if let Some(owner) = owners
+                .iter()
+                .find(|owner| crate::builtins::method_table::owner_declares(owner, method))
+            {
+                return vec![Value::routine_parts(
+                    Symbol::intern(owner),
+                    method,
+                    false,
+                )];
+            }
+        }
         let class_name = match target.view() {
             ValueView::RakuAst(node) => node.class.printed_name().to_string(),
             ValueView::Enum { enum_type, .. } => enum_type.resolve(),
