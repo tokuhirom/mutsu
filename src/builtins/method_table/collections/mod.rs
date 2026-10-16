@@ -14,6 +14,7 @@ mod any_coerce_late;
 pub(crate) mod any_collection;
 mod any_interp;
 mod any_interp_twins;
+mod any_list_late;
 pub(crate) use any_interp::early_entry_defers;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
@@ -81,9 +82,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::LIST_ROWS,
     list_transform::FLAT_ROWS,
     list_transform::FLAT_LEVELS_ROWS,
-    // After the pure rows of the same owner, name and arity (§9.135).
-    any_interp_twins::ROWS,
-    any_coerce_late::ROWS,
     map::ROWS,
     iteration_buffer::ROWS,
     positional::ROWS,
@@ -106,4 +104,14 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     terminals::ROWS,
     type_params::ROWS,
     truth::ROWS,
+];
+
+/// The interpreter twins and late rows (ADR-11276 §9.135, §9.136). They are a
+/// group of their own, registered after every other group, so each stands
+/// behind any pure row of the same owner, name and arity wherever that row
+/// lives.
+pub(super) static LATE_FAMILIES: &[&[MethodRow]] = &[
+    any_interp_twins::ROWS,
+    any_coerce_late::ROWS,
+    any_list_late::ROWS,
 ];

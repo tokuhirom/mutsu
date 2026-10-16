@@ -164,11 +164,26 @@ fn hash(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
     Some(i.dispatch_to_hash(t.clone()))
 }
 
-/// `Seq.slice(@indices)`: the elements at the given 0-based indices, a
-/// `Range` contributing every index it spans; no index is the empty `Seq`.
+/// `Any.slice(*@indices)`: the elements at the given 0-based indices, in
+/// order. The indices are flattened (a list or a `Range` contributes each of
+/// its elements) and must ascend strictly, as Rakudo's iterator demands
+/// (`Provided index 0, which is lower than 3`); the first index past the end
+/// ends the slice. No index is the empty `Seq`.
 // Cost: O(n + k), n = elements of the receiver, k = indices requested.
 fn slice(_: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
-    if args.is_empty() {
+    let mut indices = Vec::new();
+    for arg in args {
+        if matches!(
+            arg.view(),
+            ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
+        ) || arg.is_range()
+        {
+            indices.extend(crate::runtime::utils::value_to_list(arg));
+        } else {
+            indices.push(arg.clone());
+        }
+    }
+    if indices.is_empty() {
         return Some(Ok(Value::seq(Vec::new())));
     }
     let items = if let ValueView::Seq(arc) = t.view() {
@@ -176,21 +191,20 @@ fn slice(_: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer
     } else {
         crate::runtime::utils::value_to_list(t)
     };
-    let mut result = Vec::with_capacity(args.len());
-    for arg in args {
-        let indices: Vec<usize> = match arg.view() {
-            ValueView::Int(i) if i >= 0 => vec![i as usize],
-            ValueView::Num(n) if n >= 0.0 => vec![n as usize],
-            _ if arg.is_range() => crate::runtime::utils::value_to_list(arg)
-                .iter()
-                .filter_map(|v| match v.view() {
-                    ValueView::Int(i) if i >= 0 => Some(i as usize),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
+    let mut result = Vec::with_capacity(indices.len());
+    let mut next_min: i64 = 0;
+    for index in indices {
+        let index = index.to_f64().floor() as i64;
+        if index < next_min {
+            return Some(Err(RuntimeError::new(format!(
+                "Provided index {index}, which is lower than {next_min}"
+            ))));
+        }
+        let Some(item) = usize::try_from(index).ok().and_then(|i| items.get(i)) else {
+            break;
         };
-        result.extend(indices.into_iter().filter_map(|i| items.get(i).cloned()));
+        result.push(item.clone());
+        next_min = index + 1;
     }
     Some(Ok(Value::seq(result)))
 }

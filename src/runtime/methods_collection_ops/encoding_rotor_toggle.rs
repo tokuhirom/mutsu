@@ -347,7 +347,7 @@ impl Interpreter {
     /// Each value is tested by the current condition; the switch is set to the
     /// result. When the switch toggles (changes state), the next condition is
     /// used. Values are emitted when the switch is "on".
-    pub(in crate::runtime) fn dispatch_toggle(
+    pub(crate) fn dispatch_toggle(
         &mut self,
         target: Value,
         args: &[Value],

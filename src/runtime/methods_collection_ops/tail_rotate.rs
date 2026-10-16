@@ -215,7 +215,7 @@ impl Interpreter {
     }
 
     /// Cost: see [`rotate_value`](crate::builtins::method_table::collection_rotate::rotate_value).
-    pub(in crate::runtime) fn dispatch_rotate(
+    pub(crate) fn dispatch_rotate(
         &self,
         target: Value,
         args: &[Value],
