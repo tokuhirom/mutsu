@@ -1742,6 +1742,7 @@ impl Interpreter {
         cc: &Option<std::sync::Arc<CompiledCode>>,
     ) {
         let Some(cc) = cc else { return };
+        self.cell_eval_captured_caller_lexicals(code, cc);
         // A dynamically registered method's body is compiled separately from
         // its Method literal, so the ordinary analysis cannot see that a
         // nested closure captures one of the method's own free variables. Give
