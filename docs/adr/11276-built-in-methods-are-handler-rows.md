@@ -2763,6 +2763,18 @@ interpreter's default representation. Left: `.^roles` lists nothing (the class's
 and `.Str` is `IO::Path::Parts()` where Rakudo writes `IO::Path::Parts<id>`. `method-rows-report.py --arms`: the pure
 arity cascades go to 31 arms.
 
+### 9.115 Slice 5: `CompUnit::DependencySpecification` has one representation and its methods are rows (2026-10-16)
+
+`refactor/11276-depspec-rows`. A depspec had two representations: a native value kind (`ValueRepr::CompUnitDepSpec`,
+built when the constructor got no matcher), whose `.^name` was `Any` and which `methods_0arg/mod.rs` answered through five
+arms, and an instance (built when a matcher was given), which the slow path's `methods_instance_ops` answered through
+five more. The native kind is gone (`Kind`, `ValueRepr`, `ValueView`, serde and the nanbox codecs): every depspec is an
+instance. A closed `DispatchShape::CompUnitDepSpec` reaches the rows Rakudo declares on the class (`short-name`,
+`version-matcher`, `auth-matcher`, `api-matcher`, `from`, `Str`, `raku`), and both sets of arms are deleted. Behaviour
+changes toward Rakudo, pinned in `t/oo/method/depspec-method-rows.t`: `.^name` is the class; `.Str` names the given
+matchers (`Foo:ver<1.0+>:auth<zef:x>`, was `Foo`); `.raku` renders the constructor call; `.from` is `Perl6`. Left:
+`.gist` is the default instance rendering where Rakudo's is `.raku`, and a version matcher stays the string it was given
+where Rakudo coerces it to a `Version`.
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

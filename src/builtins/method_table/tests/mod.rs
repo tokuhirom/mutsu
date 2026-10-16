@@ -82,6 +82,14 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::IoSpecCygwin => type_sample("IO::Spec::Cygwin"),
         DispatchShape::IoSpecQnx => type_sample("IO::Spec::QNX"),
         DispatchShape::Unicode => type_sample("Unicode"),
+        DispatchShape::CompUnitDepSpec => {
+            let mut attributes = crate::value::AttrMap::new();
+            attributes.insert("short-name".to_string(), Value::str_from("Foo"));
+            Value::make_instance(
+                Symbol::intern("CompUnit::DependencySpecification"),
+                attributes,
+            )
+        }
         DispatchShape::IoPathParts => {
             let mut attributes = crate::value::AttrMap::new();
             attributes.insert("volume".to_string(), Value::str_from(""));

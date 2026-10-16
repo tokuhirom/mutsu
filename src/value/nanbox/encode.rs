@@ -24,9 +24,6 @@ impl NanBox {
             ValueRepr::Whatever => pack_inline(Kind::Whatever, 0),
             ValueRepr::HyperWhatever => pack_inline(Kind::HyperWhatever, 0),
             ValueRepr::Package(sym) => pack_inline(Kind::Package, sym.id()),
-            ValueRepr::CompUnitDepSpec { short_name } => {
-                pack_inline(Kind::CompUnitDepSpec, short_name.id())
-            }
             ValueRepr::Range(a, b) => pack_arc(Kind::Range, Arc::new(I64Pair(a, b))),
             ValueRepr::RangeExcl(a, b) => pack_arc(Kind::RangeExcl, Arc::new(I64Pair(a, b))),
             ValueRepr::RangeExclStart(a, b) => {

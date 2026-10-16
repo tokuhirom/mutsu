@@ -1417,46 +1417,6 @@ impl Interpreter {
             {
                 return result;
             }
-            if class_name == "CompUnit::DependencySpecification" {
-                match method {
-                    "short-name" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("short-name")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
-                    }
-                    "auth-matcher" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("auth-matcher")
-                            .cloned()
-                            .unwrap_or(Value::TRUE));
-                    }
-                    "version-matcher" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("version-matcher")
-                            .cloned()
-                            .unwrap_or(Value::TRUE));
-                    }
-                    "api-matcher" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("api-matcher")
-                            .cloned()
-                            .unwrap_or(Value::TRUE));
-                    }
-                    "Str" | "gist" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("short-name")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
-                    }
-                    _ => {}
-                }
-            }
             if class_name == "CompUnit::Repository::FileSystem" {
                 match method {
                     // mutsu loads modules from source (precompilation is a
@@ -1587,12 +1547,9 @@ impl Interpreter {
                         return Ok(compunit);
                     }
                     "need" => {
-                        // A depspec may arrive either as the native `CompUnitDepSpec`
-                        // value (short-name only) or as a full
-                        // `CompUnit::DependencySpecification` instance carrying
-                        // auth/api/version matchers (zef's plugin loader builds the
-                        // latter). Extract the short-name from either form; the
-                        // FileSystem repo resolves purely by name.
+                        // A depspec is a `CompUnit::DependencySpecification`
+                        // instance, or a bare short-name string. Extract the
+                        // short-name; the FileSystem repo resolves purely by name.
                         let depspec = args.first().cloned().unwrap_or(Value::NIL);
                         let (short_name_str, ..) = self.extract_depspec_fields(&depspec);
                         if short_name_str.is_empty() {

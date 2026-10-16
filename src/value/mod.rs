@@ -2536,9 +2536,6 @@ pub(in crate::value) enum ValueRepr {
     Bag(crate::gc::Gc<BagData>, bool),
     /// Mix (immutable) or MixHash (mutable). The bool is `true` for mutable (MixHash).
     Mix(crate::gc::Gc<MixData>, bool),
-    CompUnitDepSpec {
-        short_name: Symbol,
-    },
     Package(Symbol),
     Routine {
         package: Symbol,

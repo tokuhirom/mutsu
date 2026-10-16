@@ -160,6 +160,9 @@ pub(crate) enum DispatchShape {
     /// The `Unicode` class (closed), a type object only: its `version` and
     /// `NFG` describe the Unicode data this runtime ships.
     Unicode,
+    /// A `CompUnit::DependencySpecification` (closed): a handler reads its
+    /// `short-name` and matcher attributes (ADR-11276 §9.115).
+    CompUnitDepSpec,
     /// An `IO::Path::Parts` (closed): a handler reads its `volume`, `dirname`
     /// and `basename` attributes. `Any`'s list rows read it as one item, as
     /// Rakudo's do (ADR-11276 §9.114).
@@ -170,7 +173,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 39] = [
+    pub(crate) const ALL: [DispatchShape; 40] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -209,6 +212,7 @@ impl DispatchShape {
         DispatchShape::Backtrace,
         DispatchShape::BacktraceFrame,
         DispatchShape::Unicode,
+        DispatchShape::CompUnitDepSpec,
         DispatchShape::IoPathParts,
     ];
 
@@ -255,6 +259,7 @@ impl DispatchShape {
             DispatchShape::Backtrace => "Backtrace",
             DispatchShape::BacktraceFrame => "Backtrace::Frame",
             DispatchShape::Unicode => "Unicode",
+            DispatchShape::CompUnitDepSpec => "CompUnit::DependencySpecification",
             DispatchShape::IoPathParts => "IO::Path::Parts",
         }
     }
@@ -713,11 +718,15 @@ const fn const_list_contains(list: &[&str], name: &str) -> bool {
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 35] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 35]> = OnceLock::new();
+fn instance_shapes() -> &'static [(Symbol, DispatchShape); 36] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 36]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
+            (
+                Symbol::intern("CompUnit::DependencySpecification"),
+                DispatchShape::CompUnitDepSpec,
+            ),
             (
                 Symbol::intern("IO::Path::Parts"),
                 DispatchShape::IoPathParts,

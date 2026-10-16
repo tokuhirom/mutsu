@@ -48,9 +48,6 @@ pub enum ValueView<'a> {
     Set(GcRef<'a, SetData>, bool),
     Bag(GcRef<'a, BagData>, bool),
     Mix(GcRef<'a, MixData>, bool),
-    CompUnitDepSpec {
-        short_name: Symbol,
-    },
     Package(Symbol),
     Routine {
         package: Symbol,
@@ -410,12 +407,6 @@ impl Value {
             minus,
             text,
         })
-    }
-
-    /// Construct a `CompUnitDepSpec` from its short name.
-    #[inline]
-    pub(crate) fn comp_unit_dep_spec(short_name: Symbol) -> Self {
-        Value::from_repr(ValueRepr::CompUnitDepSpec { short_name })
     }
 
     /// Construct a `RegexWithAdverbs` from its adverb payload (boxing it).
