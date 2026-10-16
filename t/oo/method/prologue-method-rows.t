@@ -3,7 +3,7 @@ use Test;
 # ADR-11276 §9.111: the receiver-specific arms of `methods_0arg`'s prologue
 # are rows, and the receivers they answered reach them.
 
-plan 43;
+plan 47;
 
 # `Unicode` is a type object only (`DispatchShape::Unicode`).
 isa-ok Unicode.version, Version, 'Unicode.version';
@@ -78,3 +78,10 @@ is Nil.message, Nil, 'Nil.message';
 is Nil.payload, Nil, 'Nil.payload';
 "ab" ~~ /a/;
 ok $/.Capture === $/, 'Match.Capture is the match';
+
+# `Uni`'s roast-pinned `chars`/`comb` are rows; `.perl` is `.raku`.
+my $nfc = "ẛ̣".NFC;
+is $nfc.chars, 2, 'NFC.chars is the codepoint count';
+is $nfc.comb.elems, 2, 'NFC.comb is the codepoints';
+is $nfc.perl, $nfc.raku, 'NFC.perl is NFC.raku';
+is "ab".NFD.comb.join, 'ab', 'NFD.comb';

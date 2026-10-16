@@ -2775,6 +2775,15 @@ changes toward Rakudo, pinned in `t/oo/method/depspec-method-rows.t`: `.^name` i
 matchers (`Foo:ver<1.0+>:auth<zef:x>`, was `Foo`); `.raku` renders the constructor call; `.from` is `Perl6`. Left:
 `.gist` is the default instance rendering where Rakudo's is `.raku`, and a version matcher stays the string it was given
 where Rakudo coerces it to a `Version`.
+### 9.116 Slice 5: `Uni`'s `chars`, `comb` and `perl` arms are gone (2026-10-16)
+
+`refactor/11276-uni-arms`. The last three `Uni` arms of `methods_0arg/mod.rs`: `chars` and `comb` are rows of `Uni`
+(the codepoint count, and the codepoints as one-character strings). Current Rakudo declares neither on `Uni`, but roast
+pins both (`S15-string-types/NF-types.t`, `NFK-types.t`: `NFC.chars`, `NFC.comb`), and roast is the spec, so the rows
+exist and `rows_are_declared_by_rakudo` names the two as its one roast-pinned exemption (the recognition table does not
+claim them, so `.^can` keeps Rakudo's answer). `perl` is `Mu.perl`, i.e. `.raku`: the rendering cascade's `Uni` case
+answers it with the `Uni.raku` row's handler. Pinned in `t/oo/method/prologue-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

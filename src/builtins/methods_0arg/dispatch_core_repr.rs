@@ -231,6 +231,10 @@ pub(super) fn dispatch(
             Some(Ok(Value::str(raku_value(target))))
         }
         ValueView::Junction { .. } if method == "raku" || method == "perl" => None,
+        // `Uni.perl` is `Mu.perl`, `.raku`: the `Uni.raku` row's rendering.
+        ValueView::Uni(_) if method == "perl" => {
+            Some(crate::builtins::method_table::uni::raku(target, &[]))
+        }
         // A WhateverCode (`*+1`, `*.abs`) renders as `WhateverCode.new` for
         // `.gist`/`.raku`/`.perl`, not the generic closure form.
         ValueView::Sub(data)
