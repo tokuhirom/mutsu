@@ -177,11 +177,10 @@ impl Parser {
         // unconsumed so the whole tree declines: taking only the first `*`
         // let an aliased atom's `$<a>=x**2` become `(x*)*` then a literal `2`
         // (#9198).
-        if self
-            .chars
-            .get(self.pos)
-            .is_some_and(|next| matches!(next, '*' | '+' | '?' | '!' | ':'))
-        {
+        if self.chars.get(self.pos).is_some_and(|next| {
+            matches!(next, '*' | '+' | '?' | '!' | ':')
+                && !(matches!(&kind, QuantifierKind::Block(_)) && *next == ':')
+        }) {
             self.pos = start;
             return None;
         }
