@@ -1096,6 +1096,54 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      call does not reuse its caller's empty unit frame for such a routine,
      since the hide needs a root of its own.
 
+   **Slice 21 done** (`fix/12529-merge-census`): a second census of the
+   lexical category, and one fix from it. The census logged every plain
+   user lexical the named and light return merges carried back with a
+   different binding, over every `t/` file and every whitelisted roast file:
+   83 files. A second run of those 83 with the merge of plain lexicals
+   switched off showed which ones actually depend on it: 26. By shape:
+   - **A sub-signature's defaults and `where` constraints** (`*@ ($x where
+     { $c++ })`, `[$a, $b = $x]`). The binder evaluates them from the AST at
+     call time, and `fold_decl_time_param_captures` folded only top-level
+     parameters' expressions into the routine's free variables. So a
+     sub-signature's expression resolved its outer lexicals through the
+     caller chain: it read a caller's same-named lexical, and its writes
+     reached the declaration only through the merge. Fixed: the fold
+     descends into `sub_signature` and `outer_sub_signature`.
+   - **A closure literal as a user infix operand** (`{ $n++ } xxx 3`,
+     `t/control/bare-block-infix-operand.t`). `compile_infix_func` compiled
+     the operands in a non-escaping position, unlike a call argument
+     (`is_closure_literal_arg`), so a lexical the closure writes stays a
+     copy. Not visible while the merge runs; the fix (pass
+     `is_closure_literal_arg` as the operands' `escaping`) goes with the
+     slice that drops the merge.
+   - **A resuming `CATCH` handler run at the throw site** (ADR-0072,
+     `t/exceptions/catch-resume-across-jit-frame.t`): its write to a lexical
+     of the installing block (`$caught = True`) is lost.
+     `leave_installing_frame` writes the installing frame's live slot and the
+     throw site's env, and only the merge carries the env write past the
+     callee frames. CONTROL handlers (`control-warn-handler-write-through-
+     aggregate-arg-call.t`) have the same shape.
+   - **Two sibling blocks sharing a slot** (`multi_scope_slots`): a sub each
+     block declares over the same name (`{ my $a; sub foo { $a++ } } { my $a
+     = 3; sub bar { $a++ } }`, then another statement) gets no cell, because
+     the block arm declines to box a slot two scopes own, and its writes
+     reach the block only through the merge
+     (`t/routines/call/hoisted-sub-captures-later-my.t`).
+   - **Binding** (`:=` aliases and rebinds that reach a caller,
+     `t/vm/binding/bind-alias-reverse-write.t`,
+     `bind-source-tracks-through-call-chain.t`,
+     `t/vm/scope/bind-rebind-outer-lexical-leaves-earlier-alias.t`,
+     `closure-rebind-reaches-declaring-frame-through-linked-callee.t`).
+   - The rest, one or two files each: `cas` on a typed aggregate, a
+     container-trait cell (`BagHash` `.values`), `substr-rw` bound in a
+     routine, a regex declaration's `s///` on an outer string, a role body's
+     composition-time write, a `QuantHash` rebind, a BEGIN-lifted type body,
+     JSON::Tiny's grammar actions, and roast `S02-names-vars/
+     variables-and-packages.t`, `S02-types/array-shapes.t`,
+     `S04-blocks-and-statements/pointy-rw.t`, `S04-phasers/in-eval.t`,
+     `S32-hash/kv.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
