@@ -3144,6 +3144,23 @@ Left: the generic `grep` and `minmax` routines keep their `Supply` branches (a l
 `X::Parameter::InvalidConcreteness`); `Supply.snip` (Rakudo has none) still answers. The recognition table gains the 50
 names.
 
+### 9.131 `Collation`'s methods are rows, found by their owner (2026-10-16)
+
+`refactor/11276-collation-rows`. `$*COLLATION`'s `primary`, `secondary`, `tertiary`, `quaternary`, `set`, `gist` and
+`raku` were answered by one name `match` (`dispatch_collation_method`), reached from an arm of
+`dispatch_method_by_name_2` and, for `set` on a variable, from a special case of the mutating method call that wrote
+the result back to the variable. They are `OWNER_ONLY` rows of `Collation` (`instances/collation.rs`), found by owner
+next to `Supply`'s (§9.130) and in the mutating method call; `collation-level`, which Rakudo declares and mutsu lacked,
+is a row too. `set` writes the instance's shared attribute cell, so it is a pure-entry row (§9.126): the variable
+write-back was a re-insert of a value sharing the cell, and is gone with the special case. Rakudo declares no `raku`
+on `Collation` (its default `.raku` lists the one `$!collation-level` attribute), so `raku` is no row: the instance
+rendering that answers `Supplier`'s and the schedulers' `.raku` re-encodes the level, since mutsu stores the four
+levels. `dispatch_collation_method` is deleted.
+
+Pinned in `t/oo/method/collation-method-rows.t` (which passes under `raku`): `collation-level` answers (was
+`X::Method::NotFound`), and a `set` through an array element is seen through `$*COLLATION`. The oracle snapshot gains
+`Collation`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

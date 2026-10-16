@@ -2594,8 +2594,10 @@ impl Interpreter {
                 return Ok(Value::str(gist_item(self, &target)));
             }
         }
-        // `Supply`'s methods are rows, found by their owner (ADR-11276 §9.130).
+        // `Supply`'s and `Collation`'s methods are rows, found by their owner
+        // (ADR-11276 §9.130, §9.131).
         if let Some(owners) = crate::builtins::method_table::supply_owners_of(&target)
+            .or_else(|| crate::builtins::method_table::collation_owners_of(&target))
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
                 owners,

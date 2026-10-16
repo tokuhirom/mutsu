@@ -438,18 +438,18 @@ impl Interpreter {
             return Ok(Value::package(Symbol::intern(&type_name)));
         }
 
-        // Collation.set — mutates the Collation instance in the variable
-        if method == "set"
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Collation")
+        // `Collation.set` writes the instance's shared cell, so every alias of
+        // the variable sees it (ADR-11276 §9.131).
+        if let Some(owners) = crate::builtins::method_table::collation_owners_of(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
         {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmutwithvalues",
-                "collation-set",
-            );
-            let result = self.dispatch_collation_method(target, method, &args)?;
-            // Update the variable in the environment to reflect the mutation
-            self.env.insert(target_var.to_string(), result.clone());
-            return Ok(result);
+            return result;
         }
 
         // A receiver-mutating built-in method answered from its row
