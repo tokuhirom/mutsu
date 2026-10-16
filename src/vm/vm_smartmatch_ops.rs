@@ -250,6 +250,15 @@ impl Interpreter {
             // leave the local slot alone (it holds that same cell).
             if let Some(arc) = topic_cell {
                 Self::cell_store_preserving_container_identity(var_name, &arc, &modified_topic);
+            } else if let Some(ValueView::ContainerRef(cell)) =
+                self.env().get(var_name).map(Value::view)
+            {
+                // A variable a closure captured is bound through its shared
+                // cell: store into it, so the declaring frame and every other
+                // closure see the substitution (ADR-12529 §3, slice 33).
+                // Replacing the env entry would cut this closure loose.
+                let cell = Self::value_cell_of(&cell);
+                Self::cell_store_preserving_container_identity(var_name, &cell, &modified_topic);
             } else {
                 self.env_mut()
                     .insert(var_name.clone(), modified_topic.clone());
