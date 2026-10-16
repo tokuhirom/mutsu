@@ -117,6 +117,11 @@ impl Interpreter {
         if table.is_empty() || !table.contains_name(lane_name) {
             return None;
         }
+        if let Some(unit) = self.running_compunit_lexical_unit()
+            && let Some(found) = table.get(unit.as_str()).and_then(|m| m.get(lane_name))
+        {
+            return Some(found);
+        }
         let owner = self.routine_stack().last().and_then(|frame| {
             self.lexical_package_for_frame(frame.def_file)
                 .or(frame.lexical_package)

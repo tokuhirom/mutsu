@@ -468,6 +468,10 @@ impl Interpreter {
                         && !self.mainline_lexical_frame_active()
                         && !self.lexsub_alias_frame_active()
                         && self.current_package_is_global()
+                        // A package-less module file's routine runs in GLOBAL
+                        // too, and its file-scope lexicals are not in `env`
+                        // (`vm_compunit_lexicals`).
+                        && self.compunit_lexical_bucket(name).is_none()
                     {
                         match self.env().get_sym(code.const_sym(*name_idx)) {
                             Some(val)

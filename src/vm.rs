@@ -207,6 +207,7 @@ mod vm_backtrace_lazy;
 mod vm_check_read_only;
 pub(crate) mod vm_class_body_static_types;
 mod vm_closure_build;
+pub(crate) mod vm_compunit_lexicals;
 mod vm_core_type_object_methods;
 mod vm_data_ops;
 mod vm_data_push_ops;
