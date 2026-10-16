@@ -5,6 +5,64 @@ use crate::value::ValueMap;
 use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
+    /// A push-family call on a variable bound to a MISSING hash entry
+    /// (`my $t := %h<a>; $t.push: {}`, or the dynamic `$*t := $*t<a>`) is a
+    /// write THROUGH its binding: a shared cell holding the new Array is
+    /// installed at the entry and the variable is rebound to it, so it reads
+    /// as the new Array afterwards (a plain write would leave the deferred
+    /// token reading `Any`, see `hash_entry_read`). Returns the Array the call
+    /// should run on, or `None` when `name` holds no deferred entry token.
+    // Cost: O(1) plus the entry lookup.
+    fn vivify_bound_entry_variable(&mut self, code: &CompiledCode, name: &str) -> Option<Value> {
+        let local_slot = self.resolve_local_slot(code, None, name);
+        let token = match local_slot {
+            Some(slot) => self.locals[slot].clone(),
+            None => self.env().get(name)?.clone(),
+        };
+        // A dynamic variable's slot is a shared cell around the binding.
+        let token = match token.view() {
+            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            _ => token,
+        };
+        if !matches!(token.view(), ValueView::HashEntryRef { .. }) {
+            return None;
+        }
+        let mut held = token.clone();
+        let missing = {
+            let current = token.hash_entry_read();
+            current.is_nil() || matches!(current.view(), ValueView::Package(_))
+        };
+        if missing
+            && token.hash_entry_locate().and_then(|t| t.peek()).is_none()
+            && let Some(terminal) = token.hash_entry_terminal()
+        {
+            let cell = Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                crate::value::ArrayKind::ItemArray,
+            )
+            .into_container_ref();
+            terminal.insert(cell.clone());
+            match local_slot {
+                Some(slot) => self.locals[slot] = cell.clone(),
+                // A dynamic variable's cell stays the binding's identity:
+                // its content becomes the new Array (shared storage).
+                None => {
+                    let shared = self.env().get(name).cloned();
+                    match shared {
+                        Some(var) if var.assign_into_container(cell.deref_container()) => {}
+                        _ => self.set_env_with_main_alias(name, cell.clone()),
+                    }
+                }
+            }
+            held = cell;
+        }
+        Some(if held.is_container_ref() {
+            held.deref_container()
+        } else {
+            held
+        })
+    }
+
     /// The invocant of a `.&sub(...)` call is always bound positionally to the
     /// sub's first parameter, even when it is a literal colonpair (`:42foo.&f`).
     /// A bare `Pair` in an argument list is otherwise splatted into a
@@ -525,38 +583,9 @@ impl Interpreter {
         // autovivify the entry (`hash_entry_invocant`).
         let target = if matches!(method, "push" | "append" | "unshift" | "prepend")
             && !target_name.is_empty()
-            && (target.is_nil() || matches!(target.view(), ValueView::Package(_)))
-            && let Some(slot) = self.resolve_local_slot(code, None, target_name)
-            && matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
+            && let Some(held) = self.vivify_bound_entry_variable(code, target_name)
         {
-            let token = self.locals[slot].clone();
-            // Autovivifying through the variable is a write THROUGH its binding
-            // (`my $t := %h<a>; $t.push: {}`): install a shared cell at the
-            // entry and rebind the slot to it, so `$t` reads as the new Array
-            // afterwards (a plain write would leave the deferred token
-            // reading `Any`, see `hash_entry_read`).
-            let missing = {
-                let current = token.hash_entry_read();
-                current.is_nil() || matches!(current.view(), ValueView::Package(_))
-            };
-            if missing
-                && token.hash_entry_locate().and_then(|t| t.peek()).is_none()
-                && let Some(terminal) = token.hash_entry_terminal()
-            {
-                let cell = Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                    crate::value::ArrayKind::ItemArray,
-                )
-                .into_container_ref();
-                terminal.insert(cell.clone());
-                self.locals[slot] = cell;
-            }
-            let held = self.locals[slot].clone();
-            if held.is_container_ref() {
-                held.deref_container()
-            } else {
-                held
-            }
+            held
         } else {
             target
         };
