@@ -951,7 +951,8 @@ impl Compiler {
                     // itself, writable (see `Compiler::anon_scalar_as_cell`).
                     let tc_idx = self.code.add_constant(Value::str("Mu".to_string()));
                     self.code.emit(OpCode::WrapTypedContainer(tc_idx));
-                } else if name == "__ANON_STATE__" && type_constraint.is_none() && !is_constant_decl {
+                } else if name == "__ANON_STATE__" && type_constraint.is_none() && !is_constant_decl
+                {
                     self.code.emit(OpCode::WrapScalar);
                 } else if name == "__ANON_STATE__"
                     && !is_constant_decl
