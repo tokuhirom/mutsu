@@ -1008,9 +1008,11 @@ impl Interpreter {
                 let results = self.collect_can_methods(&target, &method_name);
                 return Ok(Value::array(results));
             }
-            // `Proc::Async`'s methods are rows, found by their owner; they commit
-            // through the instance's shared cell (ADR-11276 §9.128).
+            // `Proc::Async`'s and `Supply`'s methods are rows, found by their owner;
+            // they commit through the instance's shared cell (ADR-11276 §9.128,
+            // §9.130).
             if let Some(owners) = crate::builtins::method_table::proc_async_owners_of(&target)
+                .or_else(|| crate::builtins::method_table::supply_owners_of(&target))
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,

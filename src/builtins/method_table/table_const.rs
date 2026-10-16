@@ -77,6 +77,10 @@ const fn flatten() -> [&'static MethodRow; N] {
     out
 }
 
+// A `const`, not a `static`: the compile-time index below (`NAME_ORDER`,
+// `OWNER_ORDER`, ...) is computed from it in `const fn`s, which cannot read a
+// static. Only `ALL` exists at run time, so the array is not copied per use.
+#[allow(clippy::large_const_arrays)]
 const ROWS: [&MethodRow; N] = flatten();
 
 /// Every row once, indexed by [`RowId`](super::RowId).

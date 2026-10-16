@@ -134,7 +134,7 @@ impl Interpreter {
             "note" if args.is_empty() => Some(self.dispatch_note(&target)),
             "snitch" if args.len() <= 1 => self.dispatch_snitch(&target, &args),
             "return-rw" if args.is_empty() => Some(Ok(target)),
-            "encode" if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") => {
+            "encode" => {
                 Some(self.dispatch_encode(&target, &args))
             }
             "decode" => self.dispatch_decode(&target, &args),

@@ -328,35 +328,11 @@ impl Interpreter {
             }
             "pop" => Some(self.dispatch_pop_method(target, args)),
             "sort" => Some(self.dispatch_sort_method(target, args)),
-            "unique" => {
-                if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
-                {
-                    Some(self.dispatch_unique(target, &args))
-                } else {
-                    None
-                }
-            }
-            "repeated" => {
-                if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
-                {
-                    Some(self.dispatch_repeated(target, &args))
-                } else {
-                    None
-                }
-            }
+            "unique" => Some(self.dispatch_unique(target, &args)),
+            "repeated" => Some(self.dispatch_repeated(target, &args)),
             "squish" => Some(self.dispatch_squish_method(target, args)),
             "minmax" => self.dispatch_minmax_method(target, method, args),
             "snip" => self.dispatch_snip_method(target, method, args),
-            "head" | "flat" | "batch" | "throttle" | "comb" | "words" | "wait" | "zip"
-            | "zip-latest" | "stable" => {
-                if let ValueView::Instance { class_name, .. } = target.view()
-                    && class_name == "Supply"
-                {
-                    Some(self.dispatch_supply_transform(target, method, &args))
-                } else {
-                    None
-                }
-            }
             "set" | "primary" | "secondary" | "tertiary" | "quaternary" | "gist" | "raku" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Collation") => {
                 Some(self.dispatch_collation_method(target, method, &args))
             }
@@ -450,13 +426,7 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Supply"
-        {
-            self.dispatch_supply_transform(target, "rotor", &args)
-        } else {
-            self.dispatch_rotor(target, &args)
-        }
+        self.dispatch_rotor(target, &args)
     }
 
     /// Dispatch the "squish" method: the `Any.squish` row's handler and the
@@ -467,13 +437,7 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Supply"
-        {
-            self.dispatch_supply_transform(target, "squish", &args)
-        } else {
-            self.dispatch_squish(target, &args)
-        }
+        self.dispatch_squish(target, &args)
     }
 
     /// Dispatch the "produce" method.
@@ -482,11 +446,6 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Supply"
-        {
-            return Some(self.dispatch_supply_transform(target, "produce", &args));
-        }
         let callable = match args.first().cloned() {
             Some(c) => c,
             None => return Some(Err(RuntimeError::new("produce expects a callable"))),
@@ -519,16 +478,6 @@ impl Interpreter {
             .first()
             .cloned()
             .ok_or_else(|| RuntimeError::new("reduce expects a callable"))?;
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name == "Supply"
-        {
-            let attrs_clone = attributes.to_map();
-            return self.dispatch_supply_reduce(target, &attrs_clone, callable);
-        }
         // `.reduce` on an *undefined* invocant — a bare type object (`Range`,
         // `Str`, `Any`) or `Nil` — is `Nil`, because `Any.reduce` is guarded on a
         // defined invocant. (A type object passed as a list *element*, e.g.
@@ -546,15 +495,6 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name == "Supply"
-        {
-            return Some(self.dispatch_supply_elems(&(attributes).as_map(), &args));
-        }
         // .elems on a Seq caches it (makes it available for multiple calls)
         if let ValueView::Seq(items) = target.view() {
             items.mark_cache_requested();
@@ -679,15 +619,6 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let target = Self::mixin_iteration_target(target);
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name == "Supply"
-        {
-            return self.dispatch_supply_map(&target, &(attributes).as_map(), &args);
-        }
         Self::validate_map_callable(args.first(), &target)?;
         // A not-yet-run `.map`/`.grep` receiver: chain onto its source so the
         // two callbacks interleave per element (#11176). A map run inside a
@@ -819,11 +750,6 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Supply"
-        {
-            return self.dispatch_supply_running_extrema(target, method, &args);
-        }
         // Range.min/.max with adverbs (`:k`/`:kv`/`:p`/`:v`): a Range's extremum
         // is always its first (min) / last (max) element, so report the index
         // analytically rather than materialising (which can't handle `n..Inf`).
@@ -913,16 +839,11 @@ impl Interpreter {
     }
 
     /// Dispatch the "sort" method.
-    fn dispatch_sort_method(
+    pub(super) fn dispatch_sort_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Supply"
-        {
-            return self.dispatch_supply_transform(target, "sort", &args);
-        }
         if let ValueView::Package(name) = target.view()
             && name == "Supply"
         {
@@ -939,7 +860,7 @@ impl Interpreter {
     }
 
     /// Dispatch the "minmax" method.
-    fn dispatch_minmax_method(
+    pub(super) fn dispatch_minmax_method(
         &mut self,
         target: Value,
         method: &str,

@@ -3117,6 +3117,32 @@ instance, an enum member, a `List`, an `Array`, a `Hash`, a `Pair`, a `Set`, a `
 `Nil`, a junction, a `Match`, an `IO::Path`, a `Version`, a `Capture`, a `Num`, an allomorph, a lazy `Seq`) against
 the pre-change binary and `raku`: no answer that matched Rakudo before differs now, and 26 answers moved to Rakudo's.
 `method-rows-report.py --arms`: the runtime slow path goes from 373 to 368 arms.
+### 9.130 `Supply`'s methods are rows, found by their owner (2026-10-16)
+
+`refactor/11276-supply-rows` (3E remainder). A `Supply` instance's methods were answered by name in a dozen places that
+each asked whether the receiver was a `Supply`: the transform list of `dispatch_method_by_name_2` (`head`, `flat`,
+`batch`, `throttle`, `comb`, `words`, `wait`, `zip`, `zip-latest`, `stable`), the `Supply` branches of the generic
+`map`/`reduce`/`produce`/`elems`/`min`/`max`/`sort`/`rotor`/`squish`/`skip`/`grab`/`first` routines and of the `live`,
+`rotate`, `unique`/`repeated`, `encode`, `tail` and `split` arms, the class-method arms for `Supply.merge`/`zip`/
+`zip-latest` and the `delayed(0)` shortcut of `call_method_with_values`, and the native dispatchers reached through the
+`is_native_method` gate (where a variable receiver took the mutating path and a temporary the reading one).
+
+Decision. Every method mutsu implements of the 63 Rakudo declares on `Supply` is an `OWNER_ONLY | SLURPY` row of
+`Supply` (`instances/supply.rs`, besides the `list` row of §9.55 and the `start`, `from-list` and `on-demand` rows of
+§9.122/§9.124), found by owner (`supply_owners_of`) at the top of the by-name dispatch, in the mutating method call
+and in the instance dispatch. One handler, `Interpreter::supply_call` (`runtime/methods_supply_rows.rs`), dispatches on
+a `SupplyOp` to the routine that answered the method before: the dedicated `dispatch_supply_*` routines, the
+subscribing `tap`/`act`/`on-close` through the instance's shared cell (`call_native_instance_method_mut_in_place`), and
+the transforms through `dispatch_supply_transform`. `merge`, `zip` and `zip-latest` are `TYPE_OBJECT_OK` and answer the
+type object with the class routines. The `Supply` branches listed above are deleted. `serialize` and `sanitize` are new
+rows answering the supply itself (a synchronous supply is already serial and well-formed), as Rakudo's do for one.
+
+No other behaviour change: a probe of 71 calls (every row, the class methods, the type object's refusals) answers as
+before but for `serialize`/`sanitize` (were `X::Method::NotFound`). Pinned in `t/concurrency/supply/supply-method-rows.t`.
+Left: the generic `grep` and `minmax` routines keep their `Supply` branches (a live supplier-backed `grep`, the 0-arg
+`minmax`); the type object's instance-method refusals stay in `call_method_with_values` (Rakudo's
+`X::Parameter::InvalidConcreteness`); `Supply.snip` (Rakudo has none) still answers. The recognition table gains the 50
+names.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
