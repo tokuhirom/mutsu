@@ -34,6 +34,9 @@ impl Default for CollationSettings {
 impl CollationSettings {
     /// Extract collation settings from a `$*COLLATION` Value (Instance).
     pub fn from_value(val: &Value) -> Self {
+        // A declared `my $*COLLATION` holds its value in a shared cell
+        // (ADR-12529 §3, slice 39).
+        let val = &val.deref_container();
         match val.view() {
             ValueView::Instance { attributes, .. } => {
                 let get_i64 = |name: &str| -> i64 {
