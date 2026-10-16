@@ -265,7 +265,7 @@ impl Interpreter {
                 attrs.insert("meta".to_string(), meta);
                 attrs.insert("dist-id".to_string(), Value::str(dist_id));
                 results.push(Value::make_instance(
-                    crate::symbol::Symbol::intern("Distribution::Installation"),
+                    crate::symbol::Symbol::intern("CompUnit::Repository::Installation::LazyDistribution"),
                     attrs,
                 ));
             }

@@ -15,8 +15,6 @@ pub(crate) use crate::value::raku_repr;
 pub(crate) mod temporal;
 pub(crate) mod temporal_dispatch;
 
-use crate::value::ValueMap;
-
 /// Create an X::Multi::NoMatch error for a method called on a type object.
 pub(crate) fn make_no_match_error(method_name: &str) -> RuntimeError {
     let msg = format!("Cannot resolve caller {}", method_name);
@@ -861,28 +859,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // `Any.values` is `self.list`, and a buffer's `list` its `Blob` row's.
     if method == "values" && crate::runtime::Interpreter::is_buf_value(target) {
         return crate::builtins::method_table::blob::list(target, &[]);
-    }
-
-    // Distribution methods: meta, Str, gist, defined
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Distribution"
-    {
-        match method {
-            "meta" => {
-                return Some(Ok(attributes.as_map().get("$!meta").cloned().unwrap_or(
-                    Value::hash_with_data(Value::hash_arc(ValueMap::default())),
-                )));
-            }
-            "Str" | "gist" => {
-                return Some(Ok(Value::str(format!("Distribution<{}>", class_name))));
-            }
-            "defined" => return Some(Ok(Value::TRUE)),
-            _ => {}
-        }
     }
 
     // `Signature`'s `arity`, `count`, `params` and `returns` are rows of the method
