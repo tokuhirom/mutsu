@@ -63,11 +63,13 @@ mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
+pub(crate) use collections::iteration_buffer::owners_of as iteration_buffer_owners_of;
 pub(crate) use collections::{
     any_collection, clone as collection_clone, lazy, list, list_aggregate, map, positional,
     quanthash, range, render as collection_render, render_names as collection_render_names,
     rotate as collection_rotate, subscript, terminals,
 };
+pub(crate) use ctors_mop::attribute::owners_of as attribute_owners_of;
 pub(crate) use instances::compunit::owners_of as compunit_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
