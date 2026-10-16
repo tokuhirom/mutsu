@@ -1355,6 +1355,7 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    (`op_name_write_const_idx`), so the capture boxes `$b` into a cell and
    the write-back goes through it. Pinned by
    `t/routines/closure/quanthash-values-loop-in-closure-writes-back.t`.
+
    **Slice 31 done** (`fix/12529-cas-code-form-cell`): the
    `t/types/cas-typed-constraint.t` entry of slice 26's census (11). The
    first `cas` on an element of an `@`/`%` variable moves the variable
