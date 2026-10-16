@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 7.28,
+        "secs": 32.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 9.23,
+        "secs": 8.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 5.03,
+        "secs": 5.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,29 +46,30 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 12.1,
+        "secs": 10.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 7,
+        "first_failure": "on the json-fast backend, a plain parse never loads JSON::Native::Raku",
+        "nok": 1,
+        "ok": 6,
         "plan": 7,
-        "secs": 0.77,
+        "secs": 0.75,
         "skip": 1,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/03-backends.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 5.45,
+        "secs": 4.7,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +82,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.89,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -93,7 +94,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.5,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,7 +104,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.45,
+        "secs": 4.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,10 +118,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-15",
+    "date": "2026-10-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "97286619",
+    "mutsu_commit": "86258491",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -131,13 +132,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/SO/JSON_NATIVE/70fb4ea08e299d08ada50d42a9b7b9765e7346af.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 65,
     "baseline_files": 4,
-    "mutsu_assertions": 65,
-    "parity_files": 4,
-    "regressed_files": 0
+    "mutsu_assertions": 64,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "0.1.0"
 }

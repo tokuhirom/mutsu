@@ -3,10 +3,10 @@
   "files": [],
   "measured": {
     "attempts": 3,
-    "date": "2026-10-15",
+    "date": "2026-10-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "97286619",
+    "mutsu_commit": "86258491",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -16,7 +16,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/G/OT/GOTO/8a4e59f4ee32509c5827fd5f9392edbfb5f2a2d8.tar.gz"
+    "url": "https://360.zef.pm/G/OT/GOTO/e85d3f19513ca058a006e1918999dac3f58978f8.tar.gz"
   },
   "status": "skipped",
   "totals": {
@@ -26,5 +26,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.1.59"
+  "version": "0.1.71"
 }

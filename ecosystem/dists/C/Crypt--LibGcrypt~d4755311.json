@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.88,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -41,7 +41,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.4,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.43,
+        "secs": 5.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +63,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.69,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -73,30 +73,29 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 3.74,
+        "secs": 6.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "MD5",
-        "nok": 30,
-        "ok": 2,
+        "nok": 0,
+        "ok": 32,
         "plan": 32,
-        "secs": 0.51,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/03-md.t",
       "raku": {
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 2.04,
+        "secs": 5.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,7 +107,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.41,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,7 +117,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.52,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +129,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.49,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +139,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.42,
+        "secs": 2.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,7 +151,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 0.65,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -162,7 +161,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 3.04,
+        "secs": 5.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -174,7 +173,7 @@
         "nok": 0,
         "ok": 68,
         "plan": 68,
-        "secs": 0.88,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,53 +183,51 @@
         "nok": 0,
         "ok": 68,
         "plan": 68,
-        "secs": 2.49,
+        "secs": 4.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Hex Hash of MD5",
-        "nok": 30,
-        "ok": 2,
+        "nok": 0,
+        "ok": 32,
         "plan": 32,
-        "secs": 0.76,
+        "secs": 1.93,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/08-simple-hashes.t",
       "raku": {
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 1.03,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Encrypt IDEA",
-        "nok": 22,
-        "ok": 44,
+        "nok": 0,
+        "ok": 66,
         "plan": 66,
-        "secs": 1.05,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/09-simple-ciphers.t",
       "raku": {
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 0.7,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -252,10 +249,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-15",
+    "date": "2026-10-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "97286619",
+    "mutsu_commit": "86258491",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -266,13 +263,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/RY/CRYPT_LIBGCRYPT/aabe6e9762c9efc6c3ff184ec9f4b98d71732f5e.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 270,
     "baseline_files": 9,
-    "mutsu_assertions": 188,
-    "parity_files": 6,
-    "regressed_files": 3
+    "mutsu_assertions": 270,
+    "parity_files": 9,
+    "regressed_files": 0
   },
   "version": "1.0.11"
 }

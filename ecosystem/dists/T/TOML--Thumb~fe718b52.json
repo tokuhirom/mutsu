@@ -15,7 +15,7 @@
         "nok": 1,
         "ok": 176,
         "plan": 187,
-        "secs": 0.47,
+        "secs": 0.64,
         "skip": 0,
         "todo": 10,
         "verdict": "fail"
@@ -25,29 +25,30 @@
         "nok": 0,
         "ok": 177,
         "plan": 187,
-        "secs": 4.05,
+        "secs": 3.9,
         "skip": 0,
         "todo": 10,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 176,
+        "first_failure": "datetime/local",
+        "nok": 2,
+        "ok": 174,
         "plan": 194,
-        "secs": 1.35,
+        "secs": 1.08,
         "skip": 0,
         "todo": 18,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/valid.t",
       "raku": {
         "nok": 0,
         "ok": 176,
         "plan": 194,
-        "secs": 2.2,
+        "secs": 1.73,
         "skip": 0,
         "todo": 18,
         "verdict": "pass"
@@ -59,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-15",
+    "date": "2026-10-16",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "97286619",
+    "mutsu_commit": "86258491",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -73,13 +74,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/OM/TOML_THUMB/c0cd9f8ed32da1db691dfc4cc40865ed08698af0.tar.gz"
   },
-  "status": "partial",
+  "status": "red",
   "totals": {
     "baseline_assertions": 353,
     "baseline_files": 2,
-    "mutsu_assertions": 352,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 350,
+    "parity_files": 0,
+    "regressed_files": 2
   },
   "version": "0.2"
 }
