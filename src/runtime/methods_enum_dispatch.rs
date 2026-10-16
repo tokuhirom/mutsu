@@ -1,5 +1,4 @@
 use super::*;
-use crate::symbol::Symbol;
 
 
 impl Interpreter {
@@ -41,12 +40,33 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let owners = crate::builtins::method_table::enumeration_owners_of(target)?;
+        // `Mu.perl` is `self.raku`, so the row of `raku` answers it.
+        let method = if method == "perl" { "raku" } else { method };
         if let Some(base) = Self::enum_aggregate_base(target, method) {
             return Some(self.call_method_with_values(base, method, args.to_vec()));
         }
-        crate::builtins::method_table::invoke_owner(self, owners, method, args, || {
-            target.clone()
-        })
+        if let Some(result) =
+            crate::builtins::method_table::invoke_owner(self, owners, method, args, || {
+                target.clone()
+            })
+        {
+            return Some(result);
+        }
+        // A member is a value of its base type (Rakudo's enum type inherits from
+        // it): a method the enumeration roles do not declare is the base type's
+        // row, answered on the member's value (`y.Num`, `y.is-prime`, `p.uc`).
+        let ValueView::Enum { value, .. } = target.view() else {
+            return None;
+        };
+        let base: &[&str] = match value {
+            EnumValue::Int(_) => &["Int"],
+            EnumValue::Str(_) => &["Str"],
+            EnumValue::Generic(_) => return None,
+        };
+        if crate::builtins::native_method_row::native_method_declared("Enumeration", method) {
+            return None;
+        }
+        crate::builtins::method_table::invoke_owner(self, base, method, args, || value.to_value())
     }
 
     /// Dispatch collection methods (.pairs, .keys, .values, .kv, .antipairs, .invert)

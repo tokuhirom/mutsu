@@ -141,10 +141,11 @@ fn stringy_str(target: &Value, _args: &[Value]) -> Answer {
 // Cost: O(1), one registry lookup.
 fn neighbour(interp: &Interpreter, target: &Value, offset: isize) -> Answer {
     let (enum_type, _, _, index) = parts(target)?;
+    let registry = interp.registry();
     let neighbour = index
         .checked_add_signed(offset)
         .and_then(|i| {
-            let variants = interp.registry().enum_types.get(&enum_type.resolve())?;
+            let variants = registry.enum_types.get(&enum_type.resolve())?;
             let (key, value) = variants.get(i)?;
             Some(Value::enum_parts(
                 enum_type,

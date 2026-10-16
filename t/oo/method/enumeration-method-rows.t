@@ -4,7 +4,7 @@ use Test;
 # `NumericEnumeration`, `StringyEnumeration`) are rows of the method table,
 # found by their owner (ADR-11276 §9.125).
 
-plan 23;
+plan 27;
 
 enum E <x y z>;
 enum S (p => 'q', r => 's');
@@ -16,6 +16,7 @@ is-deeply y.kv, ('y', 1), 'kv';
 is y.pair.key ~ '=' ~ y.pair.value, 'y=1', 'pair';
 is y.gist, 'y', 'gist';
 is y.raku, 'E::y', 'raku';
+is y.perl, 'E::y', 'perl is raku';
 is y.Str, 'y', 'Str of an Int-valued member is its key';
 is p.Str, 'q', 'Str of a Str-valued member is its value';
 is p.gist, 'p', 'gist of a Str-valued member is its key';
@@ -30,6 +31,9 @@ is y.Int, 1, 'Int';
 is y.Numeric, 1, 'Numeric';
 is y.Real, 1, 'Real';
 is cool.Int, 42, 'Int of a Str-valued member coerces the value';
+is y.Num, 1e0, "a method of the base type answers on the value";
+is p.uc, 'Q', "a Str-valued member answers Str's methods";
+is y.WHICH.Str, 'E|1', "WHICH is the enumeration's, not the base type's";
 
 role Greet { method hello { 'hi ' ~ self.key } }
 enum G does Greet <g h>;

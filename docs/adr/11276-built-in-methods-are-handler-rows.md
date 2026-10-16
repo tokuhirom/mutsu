@@ -2962,6 +2962,36 @@ row for an instance (§9.22); the row admits the type object now and answers for
 `dispatch_promise_start` is deleted. Behaviour toward Rakudo: `Seq.from_loop` is gone (Rakudo has no such method; no
 caller in the tree). Pinned in `t/concurrency/thread-lock/thread-seq-class-method-rows.t`.
 
+### 9.125 An enum member's methods are rows of `Enumeration`; the base type answers what it does not declare (2026-10-16)
+
+`refactor/11276-enumeration-rows`. `dispatch_enum_method` answered an enum member's methods by name (`key`, `value`,
+`kv`, `pair`, `gist`, `raku`/`perl`, `Str`, `pred`, `succ`, `ACCEPTS`, the numeric coercions, `WHAT`: 14 arms). The
+§9.105-era status notes left it for a design, because Rakudo composes the methods per enum type: every enum type does
+the role `Enumeration`, and `NumericEnumeration` (an `Int`-valued enum) or `StringyEnumeration` (a `Str`-valued one).
+
+Decision. mutsu's member is one value kind for every enum (`ValueView::Enum`), so the rows belong to the roles, not to
+the enum types: `Enumeration`'s `key`, `value`, `kv`, `pair`, `gist`, `raku`, `pred`, `succ`, `ACCEPTS`, `Int`,
+`Numeric`, `Real`, and the `Str` of `NumericEnumeration` (the key) and `StringyEnumeration` (the value)
+(`instances/enumeration.rs`). They are `OWNER_ONLY` rows found by owner from `dispatch_enum_method`;
+`enumeration::owners_of` names a member's roles, the more specific first. No dispatch shape: an enum type is a user
+declaration, and the receiver kind already identifies the roles. The recognition table records the roles' declared
+names (from `Enumeration.^pun.^method_table`), including the ones with no row yet (`WHICH`, `clone`, `pick`, `roll`,
+`new`, `enums`, `CALL-ME`, `COERCE`); the snapshot generator skips roles, so the rows carry no `ONLY_METHOD` bit (an
+`augment` cannot target a role).
+
+A member is a value of its base type (Rakudo's enum type inherits from it), so a method the three roles do not declare
+is now the base type's row, answered on the member's value: `Int`'s rows for an `Int`-valued member (`y.Num`,
+`y.Rat`, `y.Complex`, which were arms forwarding to the value, and every other `Int` row, `y.is-prime`), `Str`'s for a
+`Str`-valued one (`p.uc`). The recognition table's `DECLARED` bits for `Enumeration` keep a name the role declares
+(`WHICH` answers `E|1`, not `Int`'s `Int|1`) from reaching the base. `perl` is looked up as `raku` (`Mu.perl` is
+`self.raku`), as the `IO::Path` rows do. The `WHAT` arm is gone: the general pseudo-method answers it. An
+`Array`/`Hash`-valued member keeps `enum_aggregate_base`, whose name list is the base type's collection methods.
+
+Pinned in `t/oo/method/enumeration-method-rows.t`. Left: an `Array`-valued member's `Str` is its key where Rakudo
+answers the array's (`1 2`), as before; the enum type object's `pairs`/`keys`/`values`/`kv`/`antipairs`/`invert` stay
+in `call_method_with_values` (Rakudo answers them through the enum type's HOW, not `Enumeration`).
+`method-rows-report.py --arms`: the runtime slow path loses 14 arms.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
