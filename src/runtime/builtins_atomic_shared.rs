@@ -89,7 +89,7 @@ impl Interpreter {
             shared.insert(atomic_key.to_string(), celled.clone());
             shared.insert(name.to_string(), celled.clone());
             drop(shared);
-            self.env.insert(name.to_string(), celled);
+            self.store_celled_atomic_container(name, celled);
             if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
                 dirty.insert(atomic_key.to_string());
                 dirty.insert(name.to_string());
@@ -145,8 +145,26 @@ impl Interpreter {
         shared.insert(atomic_key.to_string(), updated.clone());
         shared.insert(hash_name.to_string(), updated.clone());
         drop(shared);
-        self.env.insert(hash_name.to_string(), updated);
+        self.store_celled_atomic_container(hash_name, updated);
         cell
+    }
+
+    /// Make the variable `name` hold `celled`, the celled atomic store of its
+    /// container. A variable a closure captured is bound through its shared
+    /// cell (ADR-0039), so the store goes into that cell, which the declaring
+    /// block and every other closure read: replacing the closure's own env
+    /// entry would leave them on the uncelled container, whose elements the
+    /// atomic ops no longer write (ADR-12529 §3, slice 31).
+    // Cost: O(c), c = binding cells chained in front of the variable's container.
+    fn store_celled_atomic_container(&mut self, name: &str, celled: Value) {
+        if let Some(ValueView::ContainerRef(cell)) = self.env.get(name).map(Value::view) {
+            let cell = Self::value_cell_of(&cell);
+            *cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = celled;
+        } else {
+            self.env.insert(name.to_string(), celled);
+        }
     }
 
     /// The element cell at `idx` in the celled atomic array store, creating it
