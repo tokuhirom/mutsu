@@ -2,7 +2,8 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Promise.start / Thread.start dispatch
+    /// `Supply.start` / `Thread.start`; `Promise.start` is a row of the method
+    /// table ([`Self::promise_class_start`]).
     pub(super) fn dispatch_promise_start(
         &mut self,
         target: &Value,
@@ -13,20 +14,6 @@ impl Interpreter {
         {
             return Some(self.dispatch_supply_transform(target.clone(), "start", args));
         }
-        if let Some(cls) = self.promise_class_name(target) {
-            // `Promise.start(:scheduler($s), { ... })`: the block is the first
-            // positional, wherever the named argument sits.
-            let block = args
-                .iter()
-                .find(|a| !matches!(a.view(), ValueView::Pair(..)))
-                .cloned()
-                .unwrap_or(Value::NIL);
-            if let Err(e) = self.bind_callable_param("&code", &block) {
-                return Some(Err(e));
-            }
-            let scheduler = self.promise_scheduler_binding(Self::named_value(args, "scheduler"));
-            return Some(self.start_callable_promise(block, Symbol::intern(&cls), scheduler));
-        }
         // Thread.start
         if let ValueView::Package(class_name) = target.view()
             && class_name == "Thread"
@@ -34,6 +21,27 @@ impl Interpreter {
             return Some(self.dispatch_thread_start(args));
         }
         None
+    }
+
+    /// `Promise.start(&code, :$scheduler)`: a promise kept with the block's
+    /// result, run on the scheduler.
+    pub(crate) fn promise_class_start(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let cls = self.promise_class_name(target)?;
+        // The block is the first positional, wherever the named argument sits.
+        let block = args
+            .iter()
+            .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+            .cloned()
+            .unwrap_or(Value::NIL);
+        if let Err(e) = self.bind_callable_param("&code", &block) {
+            return Some(Err(e));
+        }
+        let scheduler = self.promise_scheduler_binding(Self::named_value(args, "scheduler"));
+        Some(self.start_callable_promise(block, Symbol::intern(&cls), scheduler))
     }
 
     /// Keep `promise` with True once `secs` have elapsed, via the shared
@@ -93,7 +101,7 @@ impl Interpreter {
     }
 
     /// Promise.in dispatch
-    pub(super) fn dispatch_promise_in(
+    pub(crate) fn dispatch_promise_in(
         &mut self,
         target: &Value,
         args: &[Value],
@@ -133,7 +141,7 @@ impl Interpreter {
     }
 
     /// Promise.at dispatch
-    pub(super) fn dispatch_promise_at(
+    pub(crate) fn dispatch_promise_at(
         &mut self,
         target: &Value,
         args: &[Value],
@@ -189,7 +197,7 @@ impl Interpreter {
     }
 
     /// Promise.kept dispatch
-    pub(super) fn dispatch_promise_kept(
+    pub(crate) fn dispatch_promise_kept(
         &mut self,
         target: &Value,
         args: &[Value],
@@ -204,7 +212,7 @@ impl Interpreter {
     }
 
     /// Promise.broken dispatch
-    pub(super) fn dispatch_promise_broken(
+    pub(crate) fn dispatch_promise_broken(
         &mut self,
         target: &Value,
         args: &[Value],
@@ -222,7 +230,7 @@ impl Interpreter {
     }
 
     /// Promise.allof dispatch
-    pub(super) fn dispatch_promise_allof(
+    pub(crate) fn dispatch_promise_allof(
         &mut self,
         target: &Value,
         args: &[Value],
@@ -268,7 +276,7 @@ impl Interpreter {
     }
 
     /// Promise.anyof dispatch
-    pub(super) fn dispatch_promise_anyof(
+    pub(crate) fn dispatch_promise_anyof(
         &mut self,
         target: &Value,
         args: &[Value],

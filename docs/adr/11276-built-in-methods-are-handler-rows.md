@@ -2859,6 +2859,17 @@ its channel before `Any`'s rows read the instance as one item. The attribute rep
 and `await`'s two branches for an instance of `Promise` are deleted. Pinned in
 `t/concurrency/promise/promise-channel-subclass.t`.
 
+### 9.120 Slice 3E remainder: `Promise`'s class methods are rows (2026-10-16)
+
+`refactor/11276-promise-class-rows`. `Promise.start`, `.in`, `.at`, `.kept`, `.broken`, `.allof` and `.anyof` were six
+quoted-name arms of `dispatch_method_by_name_1` (and the `Promise` part of its `start` arm), each asking whether the
+receiver is a `Promise` class (`promise_class_name`). They are `OWNER_ONLY | TYPE_OBJECT_OK` rows of `Promise`
+(`io_concurrency/promise_class.rs`; `allof`/`anyof` `SLURPY`, `kept`/`broken` at arity 0 and 1), found by their owner at
+the top of that dispatch for a type-object receiver; a handler declines a type object that is no `Promise` class and the
+dispatch goes on as before. The handlers hand the implementations the positional and named arguments back as one list,
+which is how they read `:scheduler`. The `start` arm keeps `Supply.start` and `Thread.start`. No behaviour change;
+pinned in `t/concurrency/promise/promise-class-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
