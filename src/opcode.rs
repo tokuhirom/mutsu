@@ -1,4 +1,5 @@
 mod attribute_decl;
+mod class_body_free_vars;
 mod proto_decl;
 mod role_body_outer_refs;
 
@@ -10874,6 +10875,25 @@ impl CompiledCode {
                 own_rebinds.push(*sym);
             } else {
                 free_rebinds.insert(*sym);
+            }
+        }
+        // A class body declared here runs its statements as chunks of their
+        // own when the class is declared, in this code's frame. The outer
+        // lexicals they name are free variables of this code, so a named sub
+        // that declares `my class K { $log ~= 'x' }` captures `$log` (and its
+        // cell) like any other free variable it writes (ADR-12529 §3, slice
+        // 35). Without this the chunk reached `$log` by name through the
+        // caller chain, and only the sub's return merge carried the write.
+        for chunk in self.class_body_chunk_codes() {
+            for sym in &chunk.free_var_syms {
+                if !sym.with_str(|s| own.contains(s)) {
+                    free.insert(*sym);
+                }
+            }
+            for sym in &chunk.free_var_writes {
+                if !sym.with_str(|s| own.contains(s)) {
+                    free_writes.insert(*sym);
+                }
             }
         }
         // Fold nested closures: their free vars are ours unless we declare them;
