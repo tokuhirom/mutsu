@@ -60,19 +60,26 @@ macro_rules! shared_rows {
 pub(super) static STR_ROWS: &[MethodRow] = shared_rows!("Str");
 pub(super) static STR_MATCH_ROWS: &[MethodRow] = &[row!("Str", "match", 1, ARGS_NAMED, match_)];
 pub(super) static COOL_ROWS: &[MethodRow] = shared_rows!("Cool");
+/// A `Cool` type object formats as its (empty, warning) string, as Rakudo's
+/// `Cool.sprintf` does (`Int.sprintf("%s")` is a directive-count error, not a
+/// missing method).
 pub(super) static COOL_FORMAT_ROWS: &[MethodRow] = &[
     row!(
         "Cool",
         "sprintf",
         0,
-        RowFlags::ANY_ARGS.or(RowFlags::SLURPY),
+        RowFlags::ANY_ARGS
+            .or(RowFlags::SLURPY)
+            .or(RowFlags::TYPE_OBJECT_OK),
         sprintf
     ),
     row!(
         "Cool",
         "printf",
         0,
-        RowFlags::ANY_ARGS.or(RowFlags::SLURPY),
+        RowFlags::ANY_ARGS
+            .or(RowFlags::SLURPY)
+            .or(RowFlags::TYPE_OBJECT_OK),
         printf
     ),
 ];

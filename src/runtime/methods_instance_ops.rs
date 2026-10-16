@@ -3110,7 +3110,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn dispatch_are(
+    pub(crate) fn dispatch_are(
         &mut self,
         target: Value,
         args: &[Value],

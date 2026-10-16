@@ -2938,4 +2938,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("MixHash", "Setty", 8, 28),
     ("MixHash", "Baggy", 8, 28),
     ("MixHash", "Mixy", 8, 28),
+    ("Mu", "can", 8, 60),
+    ("Mu", "does", 8, 60),
+    ("Mu", "return-rw", 8, 60),
 ];

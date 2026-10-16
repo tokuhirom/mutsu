@@ -3299,6 +3299,14 @@ the pure `listify`, the drain of a live channel-backed supply, and the stateful 
 is `Any.Array`'s twin for a `Supply`. The MRO walk takes `list`/`Array` only for a `Supply`, so every other receiver's
 list coercion keeps its native answer. Left in that function: `pop` (a `Mut` row's concern) and `snip`.
 
+Follow-up, same branch. `dispatch_method_by_name_1`'s answers for any receiver become late rows too
+(`collections/mu_late.rs`): `Mu.say`/`print`/`put`/`note` without an argument, `Mu.return-rw`, `Mu.can`, `Mu.does`,
+`Any.are` and `Array.shape`. `Cool.printf`/`sprintf` and the `polymod` rows already existed; their arms only covered
+receivers without a shape, and the MRO walk now reaches those rows instead. The walk lets a receiver whose MRO lacks
+the owner fall through, so `Plain.new.sprintf` and `(1, 2).shape` are `X::Method::NotFound`, as in Rakudo, where the
+receiver-blind arms answered. `Cool.printf`/`sprintf` take a type object (`Int.sprintf('%s')` is Rakudo's
+directive-count error). A `say`/`put` with arguments is a class acting as `$*OUT` and stays the cascade's.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
