@@ -1,7 +1,7 @@
 //! `Any` rows whose handlers need the interpreter (`Handler::Interp`).
 //!
 //! `collate` reads the dynamic `$*COLLATION`; the iteration methods (`map`,
-//! `grep`, `first`, `reduce`, `produce`, `rotor`, `skip`, `squish`, `eager`,
+//! `flatmap`, `deepmap`, `duckmap`, `nodemap`, `grep`, `first`, `reduce`, `produce`, `rotor`, `skip`, `squish`, `eager`,
 //! `iterator`, `match`, `classify`, `categorize`) run user code through the
 //! interpreter. Each handler calls the one `Interpreter::dispatch_*_method` the
 //! cascade's arm calls too (ADR-11276 slice 3C remainder). The receivers the
@@ -61,6 +61,10 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     any_row!("Any", "grep", 0, MU_ARGS, grep),
     any_row!("Any", "first", 0, MU_ARGS, first),
+    any_row!("Any", "flatmap", 1, ARGS_TYPE, flatmap),
+    any_row!("Any", "deepmap", 1, ARGS_TYPE, deepmap),
+    any_row!("Any", "duckmap", 1, ARGS_TYPE, duckmap),
+    any_row!("Any", "nodemap", 1, ARGS_TYPE, nodemap),
     any_row!("Any", "reduce", 1, ARGS_TYPE, reduce),
     any_row!("Any", "produce", 1, ARGS_TYPE, produce),
     any_row!("Any", "iterator", 0, TYPE_OK, iterator),
@@ -308,6 +312,18 @@ handler!(eager, "eager", |interp, target, args| args
     .then(|| interp.dispatch_eager_row(target))
     .flatten());
 // Cost: O(e) comparisons, e = elements of the invocant.
+handler!(flatmap, "flatmap", |interp, target, args| Some(
+    interp.dispatch_flatmap_method(target, args)
+));
+handler!(deepmap, "deepmap", |interp, target, args| Some(
+    interp.deepmap_iterate(&args[0], &target)
+));
+handler!(duckmap, "duckmap", |interp, target, args| Some(
+    interp.duckmap_iterate(&args[0], &target)
+));
+handler!(nodemap, "nodemap", |interp, target, args| Some(
+    interp.nodemap_iterate(&args[0], &target)
+));
 handler!(squish, "squish", |interp, target, args| Some(
     interp.dispatch_squish_method(target, args)
 ));

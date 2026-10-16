@@ -5,7 +5,7 @@ use Test;
 # IterationBuffer-free plain list all reach the same row. Answers checked
 # against Rakudo.
 
-plan 14;
+plan 18;
 
 class Plain {}
 class PI { method iterator { (4, 5).iterator } }
@@ -25,3 +25,7 @@ is-deeply (1, 2, 3).rotor(2, :partial).List, ((1, 2), (3,)), 'rotor with :partia
 throws-like { (1, 2, 3).reduce() }, X::Multi::NoMatch, 'reduce without a callable';
 throws-like { (1, 2, 3).squish(1) }, X::Multi::NoMatch, 'squish with a positional';
 is (1, 2, 3).skip(1).List, (2, 3), 'skip';
+is-deeply (1, 2).flatmap({ ($_, $_) }).List, (1, 1, 2, 2), 'flatmap';
+is-deeply [1, [2, 3]].deepmap(* * 2), [2, [4, 6]], 'deepmap keeps the structure';
+is-deeply (1, (2, 3)).duckmap(-> Int $x { $x + 1 }).List, (2, (3, 4)), 'duckmap';
+throws-like { (1, 2).flatmap(* + 1, * + 2) }, X::Multi::NoMatch, 'flatmap takes one mapper';

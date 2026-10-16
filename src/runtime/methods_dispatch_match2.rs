@@ -245,66 +245,6 @@ impl Interpreter {
                 }
             }
             "elems" => self.dispatch_elems_method(target, args),
-            // Cost: O(e + r), e = invocant elements (one mapper call each), r =
-            // elements the mapper results flatten to (a returned gather is run
-            // to completion here).
-            "flatmap" => {
-                // flatmap is equivalent to .map(...).flat
-                Some(self.dispatch_map_method(target, args).and_then(|mapped| {
-                    // ADR-0058: `.map` now hands back a Seq whose callback has
-                    // not run; the flattening below reads its elements through
-                    // pure code, so pull it here.
-                    self.reify_map_grep_seq(&mapped)?;
-                    let items = Self::value_to_list(&mapped);
-                    let mut flat_items = Vec::new();
-                    for item in items {
-                        self.reify_map_grep_seq(&item)?;
-                        self.reify_gather_seq(&item)?;
-                        match item.view() {
-                            ValueView::Array(sub_items, _) => {
-                                flat_items.extend(sub_items.iter().cloned());
-                            }
-                            ValueView::Seq(sub_items) => {
-                                flat_items.extend(sub_items.iter().cloned());
-                            }
-                            // Ranges are iterable values too. A mapper can
-                            // return a Range (for example, `* * 2` applied to
-                            // a Range), and `.flatmap` must flatten that
-                            // result just like `.flat` does.
-                            ValueView::Range(..)
-                            | ValueView::RangeExcl(..)
-                            | ValueView::RangeExclStart(..)
-                            | ValueView::RangeExclBoth(..)
-                            | ValueView::GenericRange { .. } => {
-                                flat_items.extend(crate::runtime::utils::value_to_list(&item));
-                            }
-                            // A mapper returning a `gather` (Getopt::Long's
-                            // `make-receivers` for a Bool option) hands back an
-                            // unforced coroutine; flattening means iterating it,
-                            // which only the interpreter can do. A `lazy`-marked
-                            // or infinite list stays a single element rather
-                            // than hanging the eager flatten.
-                            ValueView::LazyList(ll) if !ll.is_genuinely_lazy() => {
-                                flat_items.extend(self.force_lazy_list_vm(&ll)?);
-                            }
-                            _ => flat_items.push(item.clone()),
-                        }
-                    }
-                    Ok(Value::seq(flat_items))
-                }))
-            }
-            "duckmap" => {
-                let block = args.first().cloned().unwrap_or(Value::NIL);
-                Some(self.duckmap_iterate(&block, &target))
-            }
-            "deepmap" => {
-                let block = args.first().cloned().unwrap_or(Value::NIL);
-                Some(self.deepmap_iterate(&block, &target))
-            }
-            "nodemap" => {
-                let block = args.first().cloned().unwrap_or(Value::NIL);
-                Some(self.nodemap_iterate(&block, &target))
-            }
             "max" | "min" if args.is_empty() => {
                 let result = if method == "max" {
                     crate::builtins::method_table::list_aggregate::max(&target, &args)
