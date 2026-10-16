@@ -37,6 +37,7 @@ pub(crate) mod failure;
 pub(crate) mod instant;
 pub(crate) mod rakuast_node;
 pub(crate) mod regex_match;
+pub(crate) mod routine;
 pub(crate) mod signature;
 pub(crate) mod supply;
 pub(crate) mod temporal;
@@ -61,6 +62,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     backtrace::ROWS,
     exception::ROWS,
     code::ROWS,
+    routine::ROWS,
     failure::ROWS,
     signature::ROWS,
     supply::ROWS,

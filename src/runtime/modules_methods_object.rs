@@ -8,6 +8,7 @@ mod methods_pick_roll;
 mod methods_promise;
 mod methods_attribute_meta;
 mod methods_promise_class;
+mod methods_routine_rows;
 mod methods_promise_scheduler;
 mod methods_qualified;
 mod methods_quanthash_ctor;

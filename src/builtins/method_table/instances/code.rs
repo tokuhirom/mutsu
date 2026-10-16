@@ -37,6 +37,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("file", file),
     row!("name", name),
     row!("Str", str_),
+    MethodRow {
+        owner: "Code",
+        name: "set_name",
+        arity: 1,
+        handler: Handler::Interp(set_name),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
     // The pure rows: they read nothing but the value, so the zero-argument
     // cascade reaches them through [`pure_answer`].
     MethodRow {
@@ -64,15 +72,24 @@ pub(crate) fn answer(
     interp: &mut Interpreter,
     target: &Value,
     method: &str,
+    args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     if !matches!(
         method,
-        "of" | "returns" | "arity" | "count" | "signature" | "line" | "file" | "name" | "Str"
+        "of" | "returns"
+            | "arity"
+            | "count"
+            | "signature"
+            | "line"
+            | "file"
+            | "name"
+            | "Str"
+            | "set_name"
     ) || !is_code(target)
     {
         return None;
     }
-    crate::builtins::method_table::invoke_owner(interp, &["Code"], method, &[], || target.clone())
+    crate::builtins::method_table::invoke_owner(interp, &["Code"], method, args, || target.clone())
 }
 
 /// The answer of the pure `Code` row for `method` (`Capture` or `clone`), or
@@ -230,6 +247,39 @@ fn str_(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     interp.code_str(target)
+}
+
+/// `Code.set_name($name)`: renames the code object itself, so every alias of
+/// it (and a method `^add_method` installed from it) reports the new name
+/// (#9479, PDF::COS::Tie's `&accessor.set_name($key)`). Answers the name.
+// Cost: O(n), n = chars of the new name (interned), plus
+// `Interpreter::rename_code`'s for a routine.
+fn set_name(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let name = args[0].to_string_value();
+    match target.view() {
+        ValueView::Sub(_) => {
+            interp.rename_code(target, &name);
+            Some(Ok(Value::str(name)))
+        }
+        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => {
+            if target.set_regex_name(Symbol::intern(&name)) {
+                Some(Ok(Value::str(name)))
+            } else {
+                // Unreachable for a value built by `Value::regex`, a literal
+                // or an adverbed regex: every one of them carries a payload
+                // with a name cell.
+                Some(Err(RuntimeError::new(
+                    "Cannot set_name on a regex value without a code-object payload",
+                )))
+            }
+        }
+        _ => None,
+    }
 }
 
 /// `Code.Capture`: a code object cannot be unpacked.

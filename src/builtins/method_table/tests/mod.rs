@@ -360,7 +360,9 @@ fn receivers_pack_into_distinct_bytes() {
 /// A row's owner is the type Rakudo declares the method on, so `.^can`
 /// (which reads the same owner from the recognition catalog) agrees with
 /// where the table finds it. The catalog folds some owners (`FatRat` into
-/// `Rat`, ADR-11276 §8), so a row is checked under its folded owner.
+/// `Rat`, ADR-11276 §8), so a row is checked under its own owner or, failing
+/// that, its folded one (`Routine` folds into `Code`, but its rows are
+/// recorded under `Routine`, ADR-11276 §9.121).
 #[test]
 fn rows_are_declared_by_rakudo() {
     let undeclared: Vec<String> = rows()
@@ -375,7 +377,8 @@ fn rows_are_declared_by_rakudo() {
                     "" => row.owner,
                     folded => folded,
                 };
-            !crate::builtins::native_method_row::native_method_declared(owner, row.name)
+            !crate::builtins::native_method_row::native_method_declared(row.owner, row.name)
+                && !crate::builtins::native_method_row::native_method_declared(owner, row.name)
         })
         .map(|row| format!("{}.{}", row.owner, row.name))
         .collect();

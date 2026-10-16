@@ -57,9 +57,22 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // `of`, `returns`, `arity`, `count`, `signature`, `line` and `file` are `Code` rows (`method_table::code`, ADR-12523).
-        if args.is_empty()
-            && let Some(answer) = crate::builtins::method_table::code::answer(self, target, method)
+        // `of`, `returns`, `arity`, `count`, `signature`, `line`, `file` and
+        // `set_name` are `Code` rows (`method_table::code`, ADR-12523), and
+        // `is_dispatcher`, `dispatcher`, `multi` and `package` are `Routine`
+        // rows (`method_table::routine`, ADR-11276 §9.121).
+        if let Some(answer) = crate::builtins::method_table::code::answer(self, target, method, args)
+        {
+            return Some(answer);
+        }
+        if let Some(owners) = crate::builtins::method_table::routine_owners_of(target)
+            && let Some(answer) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                args,
+                || target.clone(),
+            )
         {
             return Some(answer);
         }
@@ -320,45 +333,6 @@ impl Interpreter {
             && let Some(answer) = self.routine_handle_render(target, name, package, method)
         {
             return Some(answer);
-        }
-        if method == "dispatcher" && args.is_empty() {
-            let qualified = crate::qualified::qualified_text(package, name)
-                .as_str()
-                .to_string();
-            // A `proto` declaration makes the dispatcher explicit, but a set of
-            // `multi`s written without one still has a dispatcher (Raku
-            // generates it), and `.dispatcher` on a candidate returns it in
-            // either case. Without the third arm this returned the *candidate*,
-            // whose `.candidates` is then just itself -- so re-exporting
-            // `.dispatcher` under the routine's name (the `NativeLibs`
-            // custom-`EXPORT` idiom, which hands its importers
-            // `'&trait_mod:<is>' => $candidate.dispatcher`) silently narrowed
-            // the multi to the one candidate that was introspected.
-            if self.resolve_proto_function(&qualified).is_some()
-                || self.resolve_proto_function_with_alias(name).is_some()
-                || self.has_multi_candidates(name)
-            {
-                return Some(Ok(Value::routine_parts(
-                    Symbol::intern(package),
-                    Symbol::intern(name),
-                    false,
-                )));
-            }
-            return Some(Ok(target.clone()));
-        }
-        // A `Routine` handle names a whole multi, so it *is* the dispatcher --
-        // which is what `.dispatcher` above hands back. Rakudo answers `True`
-        // for `.is_dispatcher` and a falsy `.multi` on it; without these the
-        // `Sub`-shaped arms in `methods_instance_ops.rs` never see the value
-        // and the call dies with "No such method".
-        if matches!(method, "is_dispatcher" | "multi") && args.is_empty() {
-            let qualified = crate::qualified::qualified_text(package, name)
-                .as_str()
-                .to_string();
-            let is_multi = self.resolve_proto_function(&qualified).is_some()
-                || self.resolve_proto_function_with_alias(name).is_some()
-                || self.has_multi_candidates(name);
-            return Some(Ok(Value::truth(is_multi && method == "is_dispatcher")));
         }
         // Cost: O(n), n = requested method-name length.
         if method == "can" {
@@ -829,20 +803,6 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        // `Code.set_name`: rename the code object itself, so every alias of it
-        // (and a method `^add_method` installed from it) reports the new name.
-        // Without this arm the call fell through to method composition and
-        // answered a `<composed-method:set_name>` Sub while the name stayed
-        // empty (#9479, PDF::COS::Tie's `&accessor.set_name($key)`).
-        // Cost: as `Interpreter::rename_code`.
-        if method == "set_name"
-            && let [new_name] = args.as_slice()
-            && matches!(target.view(), ValueView::Sub(_))
-        {
-            let name = new_name.to_string_value();
-            self.rename_code(target, &name);
-            return Some(Ok(Value::str(name)));
-        }
         // WhateverCode's ACCEPTS is its predicate interface: invoke the
         // placeholder with the value being tested and return the result as a
         // Bool. This is what paths' `:file(* eq $name)` matcher relies on;

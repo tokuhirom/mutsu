@@ -2130,6 +2130,26 @@ impl Interpreter {
             return self.call_sub_value(callable, args, true);
         }
 
+        // The `Code` rows of a regex and the `Routine` rows of a code-class
+        // instance (`.^methods`' `Method` objects), found by their owner
+        // (ADR-12523, ADR-11276 §9.121).
+        if let Some(answer) =
+            crate::builtins::method_table::code::answer(self, &target, method, &args)
+        {
+            return answer;
+        }
+        if let Some(owners) = crate::builtins::method_table::routine_owners_of(&target)
+            && let Some(answer) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return answer;
+        }
+
         // Fallback methods
         match method {
             "DUMP" if args.is_empty() => match target.view() {
@@ -2197,29 +2217,6 @@ impl Interpreter {
                 }
                 _ => Ok(Value::str(target.to_string_value())),
             },
-            // `Code.set_name` on a regex: rename the code object in place, so
-            // every alias of it reports the new `.name`. Answers the name, as
-            // rakudo's `set_name` does.
-            // Cost: O(n), n = chars of the new name (interned).
-            "set_name"
-                if args.len() == 1
-                    && matches!(
-                        target.view(),
-                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
-                    ) =>
-            {
-                let name = args[0].to_string_value();
-                if target.set_regex_name(Symbol::intern(&name)) {
-                    Ok(Value::str(name))
-                } else {
-                    // Unreachable for a value built by `Value::regex`, a
-                    // literal or an adverbed regex — every one of them carries
-                    // a payload with a name cell.
-                    Err(RuntimeError::new(
-                        "Cannot set_name on a regex value without a code-object payload",
-                    ))
-                }
-            }
             "name"
                 if args.is_empty()
                     && !matches!(
@@ -2289,145 +2286,6 @@ impl Interpreter {
                         "name", &target,
                     )),
                 }
-            }
-            "package" if args.is_empty() => match target.view() {
-                ValueView::Sub(data) => Ok(Value::package(data.package)),
-                // A `&Pkg::name` handle's package is the one its name spells.
-                ValueView::Routine { package, name, .. } => Ok(Value::package(
-                    crate::qualified::package_parent(name)
-                        .filter(|_| crate::qualified::is_qualified(name))
-                        .unwrap_or(package),
-                )),
-                ValueView::Nil => Ok(Value::NIL),
-                // A `Method` object built by `.^methods` for a multi's
-                // dispatcher records no package (rakudo reports a stub one).
-                ValueView::Instance { class_name, .. }
-                    if matches!(
-                        class_name.resolve().as_str(),
-                        "Method" | "Submethod" | "Sub" | "Routine" | "Code" | "Block"
-                    ) =>
-                {
-                    Ok(Value::NIL)
-                }
-                // Only `Code` declares `package` (#9776).
-                _ => Err(super::methods_signature_errors::method_not_found_for_value(
-                    "package", &target,
-                )),
-            },
-            // `Code.line`/`Code.file` on a `Regex` code object -- a regex
-            // literal (`/abc/`) or a grammar `token`/`rule` body. `Regex` is a
-            // `Code` subtype, so these must answer rather than raise
-            // `X::Method::NotFound`; mutsu records no declaration location for
-            // either shape (a regex literal is a constant in the pool, and
-            // `Registry::token_defs` keeps the declaring file but no line), so
-            // the honest answer is `Nil`. See
-            // `todo/tickets/code-line-file-on-regex-and-grammar-token.md`.
-            "line" | "file"
-                if args.is_empty()
-                    && matches!(
-                        target.view(),
-                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
-                    ) =>
-            {
-                Ok(Value::NIL)
-            }
-            // `Regex.of` / `Regex.returns` are `Code` rows (`method_table::code`).
-            "of" | "returns"
-                if args.is_empty()
-                    && matches!(
-                        target.view(),
-                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
-                    ) =>
-            {
-                crate::builtins::method_table::code::answer(self, &target, method)
-                    .unwrap_or_else(|| Ok(Value::package(Symbol::intern("Mu"))))
-            }
-            // A Raku `Regex` is a `Method`, so it answers the `Routine`
-            // introspection surface too — and with the cursor invocant and
-            // implicit `*%_` every method signature carries, so even a
-            // parameterless `rx/a/` has `:(Mu $:: *%_)`. See
-            // `methods_regex_routine.rs` and #8318.
-            "signature" | "arity" | "count"
-                if args.is_empty()
-                    && matches!(
-                        target.view(),
-                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
-                    ) =>
-            {
-                Ok(self.regex_value_routine_introspection(&target, method))
-            }
-            // `.is_dispatcher`/`.multi` on a Method/Submethod value obtained from
-            // `.^lookup`/`.^find_method`/`.can` (a `Sub`-shaped callable, not the
-            // `Method` `Instance` `.^methods` builds -- see
-            // `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`).
-            // Real Raku: the dispatcher-shaped value for a multi method answers
-            // `is_dispatcher` True and `multi` falsy; each individual
-            // `.candidates[N]` entry answers `is_dispatcher` False and `multi`
-            // True; an ordinary (non-multi) method answers both False. Verified
-            // against `raku -e` ground truth 2026-08-14 (see the linked ticket).
-            "is_dispatcher" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
-                let ValueView::Sub(data) = target.view() else {
-                    unreachable!()
-                };
-                // A `multi sub`'s dispatcher is the Sub carrying its captured
-                // candidates; each `.candidates` entry carries none.
-                Ok(Value::truth(
-                    Self::sub_multi_method_dispatcher_name(&data).is_some()
-                        || data.env.contains_key("__mutsu_multi_dispatch_candidates"),
-                ))
-            }
-            // `.dispatcher` on a multi candidate is the proto that dispatches
-            // it -- Raku generates one even when the source declares no
-            // `proto`. Answered here rather than left to fall through to
-            // ADR-0070 method composition, which handed back a
-            // `<composed-method:dispatcher>` Sub that answers `.candidates`
-            // with just itself. That is how the `NativeLibs` distribution's
-            // custom `sub EXPORT` lost the multi it was re-exporting: it hands
-            // its importers `'&trait_mod:<is>' => $candidate.dispatcher`, and
-            // the stub narrowed a whole multi to one candidate.
-            //
-            // A routine that is part of no multi has no dispatcher; Rakudo
-            // answers an NQPMu there, which is falsy, so `Nil` is the
-            // observable match (`&plain.dispatcher` is `?? !!`-tested by
-            // callers, not named).
-            //
-            // TODO: asking a dispatcher for its own `.dispatcher` should be
-            // `Nil` too. mutsu cannot yet tell `&mm` from `&mm.candidates[0]`
-            // -- neither carries the `__mutsu_is_multi_candidate` fact the
-            // `.multi` arm below reads -- so it answers a handle to itself.
-            "dispatcher" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
-                let ValueView::Sub(data) = target.view() else {
-                    unreachable!()
-                };
-                let name = data.name.resolve();
-                let qualified = crate::qualified::qualified_text(data.package.resolve(), &name)
-                    .as_str()
-                    .to_string();
-                if self.has_multi_candidates(&name) {
-                    // The dispatcher captures the candidates visible now, the
-                    // way `&name` of a multi does (`sub_value_from_multi_candidates`).
-                    // A by-name handle dangled once the candidates' scope ended:
-                    // a `multi` declared inside `sub EXPORT` is lexical to it,
-                    // so `'&trait_mod:<is>' => $t.dispatcher` reached the
-                    // importer with no candidates at all (#11530).
-                    let candidates = self.resolve_all_multi_candidates(&name);
-                    let dispatcher = self.sub_value_from_multi_candidates(&name, candidates);
-                    Ok(self.dispatcher_containing(dispatcher, &target))
-                } else if self.resolve_proto_function(&qualified).is_some()
-                    || self.resolve_proto_function_with_alias(&name).is_some()
-                {
-                    Ok(Value::routine_parts(data.package, data.name, false))
-                } else {
-                    Ok(Value::NIL)
-                }
-            }
-            "multi" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
-                let ValueView::Sub(data) = target.view() else {
-                    unreachable!()
-                };
-                Ok(Value::truth(
-                    data.env.get("__mutsu_is_multi_candidate").is_some(),
-                ))
             }
             "isa" if args.len() == 1 && matches!(target.view(), ValueView::Package(_)) => {
                 let pkg_name = match target.view() {
