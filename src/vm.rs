@@ -441,6 +441,12 @@ pub(crate) struct ControlHandlerEntry {
     /// decide whether a `take` inside a `gather` must raise the control
     /// exception instead of appending to the gather buffer directly.
     pub handles_take: bool,
+    /// `self.locals.base()` and `call_frames.len()` of the installing
+    /// activation, as on `CatchHandlerEntry`: an inline run at a deeper raise
+    /// site seeds the handler's slots from that activation's live slots and
+    /// writes its changes straight back into them (`enter_installing_frame`).
+    pub installing_base: usize,
+    pub installing_call_depth: usize,
 }
 
 /// Self-contained bytecode for running a CONTROL handler inline. The `code` is

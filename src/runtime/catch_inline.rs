@@ -22,220 +22,7 @@
 use super::*;
 use crate::value::{CatchInlinePayload, CatchInlineVerdict};
 
-/// Saved execution state for a handler run against the *installing* frame's
-/// lexicals while `self.locals` belongs to the deep throw/raise site.
-pub(crate) struct InstallingFrame {
-    /// Absolute slot index of the installing frame's slot 0 when its live
-    /// slots seeded the run, so the flush writes the handler's changes
-    /// straight back into them.
-    live_base: Option<usize>,
-    saved_locals_base: crate::runtime::locals::CallerFrame,
-    saved_upvalues: Vec<Option<Value>>,
-    /// The reconstructed locals as seeded, so the flush writes back only slots
-    /// the handler actually changed.
-    seeded: Vec<Value>,
-}
-
 impl Interpreter {
-    /// Swap `self.locals` for the locals of the frame that installed `code`,
-    /// reconstructed from `env` by name (`code.locals[i]` names slot `i`).
-    ///
-    /// `installing_base` is the installing frame's base on the shared slot
-    /// stack, when the caller knows it (a CATCH region records it). That
-    /// frame is suspended below the throw site with its slots intact, so a
-    /// non-`Nil` slot is taken from there: an env lookup by name at the throw
-    /// site would find a same-named lexical of the dying routine instead.
-    ///
-    /// A handler's bytecode addresses the *installing* frame's slots, but at an
-    /// inline run `self.locals` is the deep raise/throw site's array. `env` is the
-    /// cross-frame-visible store, so it is where the installing frame's values can
-    /// be found; this mirrors `reconcile_locals_from_env_at_site`. The upvalue
-    /// array is cleared for the same reason: a `GetUpvalue` in the handler range
-    /// must fall back to the env read rather than index the wrong frame's array.
-    // Cost: O(l), l = the installing code's locals.
-    pub(crate) fn enter_installing_frame(
-        &mut self,
-        code: &CompiledCode,
-        installing: Option<(usize, usize)>,
-    ) -> InstallingFrame {
-        let installing_base = installing.map(|(base, _)| base);
-        // The installing activation's upvalue array, saved by the call frame
-        // it pushed next -- when that frame really is its own (its caller
-        // base is the installing base). Without it a `GetUpvalue` in the
-        // handler falls back to an env read at the throw site, where a
-        // same-named lexical of the dying routine shadows the capture.
-        let installing_upvalues = installing.and_then(|(base, depth)| {
-            self.installing_call_frame(base, depth)
-                .map(|f| f.saved_upvalues.clone())
-        });
-        // The installing frame lies wholly below the executing one, or its
-        // region cannot be trusted (a code object that grew after install).
-        let live_base = installing_base.filter(|&b| b + code.locals.len() <= self.locals.base());
-        let handler_locals: Vec<Value> = code
-            .locals
-            .iter()
-            .enumerate()
-            .map(|(i, name)| {
-                if let Some(b) = live_base {
-                    let v = &self.locals.all_slots()[b + i];
-                    if !v.is_nil() {
-                        return v.clone();
-                    }
-                }
-                self.env().get(name).cloned().unwrap_or_else(|| {
-                    name.strip_prefix('$')
-                        .or_else(|| name.strip_prefix('@'))
-                        .or_else(|| name.strip_prefix('%'))
-                        .or_else(|| name.strip_prefix('&'))
-                        .and_then(|bare| self.env().get(bare).cloned())
-                        .unwrap_or(Value::NIL)
-                })
-            })
-            .collect();
-        let seeded = handler_locals.clone();
-        let saved_locals_base = self.locals.push_frame_from(&handler_locals);
-        let saved_upvalues =
-            std::mem::replace(&mut self.upvalues, installing_upvalues.unwrap_or_default());
-        InstallingFrame {
-            live_base,
-            saved_locals_base,
-            saved_upvalues,
-            seeded,
-        }
-    }
-
-    /// Restore the raise-site registers and flush back every slot the handler
-    /// changed, so the installing frame (and any intervening by-name reader)
-    /// observes the handler's writes. Only changed slots are written, to keep the
-    /// blast radius minimal.
-    pub(crate) fn leave_installing_frame(&mut self, code: &CompiledCode, st: InstallingFrame) {
-        let InstallingFrame {
-            live_base,
-            saved_locals_base,
-            saved_upvalues,
-            seeded,
-        } = st;
-        // The flush below reads the handler's slots, so copy them out before
-        // closing the frame — a frame's slots do not outlive it (ADR-0077).
-        let handler_locals = self.locals.to_vec();
-        self.locals.pop_frame(saved_locals_base);
-        self.upvalues = saved_upvalues;
-        for (i, name) in code.locals.iter().enumerate() {
-            if name.is_empty() {
-                continue;
-            }
-            if handler_locals[i] != seeded[i] {
-                if let Some(b) = live_base {
-                    *self.locals.absolute_slot_mut(b + i) = handler_locals[i].clone();
-                }
-                self.env_mut()
-                    .insert(name.clone(), handler_locals[i].clone());
-                // The handler mutated the installing frame's lexical `name` by
-                // writing `env` here. Record the name for the precise drain
-                // (`apply_pending_rw_writeback`) every call site runs: drop-on-miss
-                // for the same frame, plus retain-on-miss so a deeper raise site
-                // carries it up to the installing frame.
-                self.pending_rw_writeback_sources.push(name.clone());
-                self.record_caller_var_writeback(name);
-                // The value must also survive each frame exit between the raise
-                // site and the installing frame (a callee whose argument is an
-                // aggregate variable restores its caller's env on return and
-                // would otherwise drop the write), which is what a run-time
-                // named write needs.
-                self.record_runtime_name_write(name);
-                // This env write happened without a call opcode, so a leaf closure
-                // between the raise site and the installing frame would otherwise
-                // drop it on return. See `inline_control_env_writes`.
-                self.inline_control_env_writes
-                    .push(crate::symbol::Symbol::intern(name));
-            }
-        }
-    }
-
-    /// The call frame the installing activation (slot base `base`) pushed
-    /// when it made its call at depth `depth`, if that is really its own.
-    // Cost: O(1).
-    fn installing_call_frame(&self, base: usize, depth: usize) -> Option<&crate::vm::VmCallFrame> {
-        self.call_frames
-            .get(depth)
-            .filter(|f| f.saved_locals_base.as_ref().map(|c| c.base()) == Some(base))
-    }
-
-    /// Make the installing activation's env the executing one for an inline
-    /// handler run, so the handler's by-name reads (`GetGlobal`,
-    /// `GetHashVar`, ...) resolve its own lexicals: at the throw site a
-    /// same-named lexical of the dying routine would shadow them. That env is
-    /// the one the installing activation saved in the call frame it pushed
-    /// next (`call_frames[depth]`, when its caller base proves it is that
-    /// activation's). The dynamics declared on the way to the throw stay
-    /// visible, copied into the handler's overlay: rakudo runs the handler in
-    /// the dynamic scope of the throw. `None` when there is no such frame; the
-    /// handler then runs in the throw site's env, as before.
-    // Cost: O(e), e = entries in the throw site's env tiers.
-    fn enter_installing_env(&mut self, base: usize, depth: usize) -> Option<HandlerEnv> {
-        let installing = self.installing_call_frame(base, depth)?.saved_env.clone();
-        let dynamics = self.env().tier_dynamic_entries();
-        let mut env = crate::env::Env::scoped_child(installing);
-        for (k, v) in &dynamics {
-            env.insert_sym(*k, v.clone());
-        }
-        let throw_env = std::mem::replace(self.env_mut(), env);
-        Some(HandlerEnv {
-            throw_env,
-            dynamics,
-        })
-    }
-
-    /// Undo [`Self::enter_installing_env`] and route the handler's writes. A
-    /// write to a lexical the throw site sees as the same variable also goes
-    /// to the throw site's env (the by-name store the frames in between hand
-    /// back up on return, as before); one the throw site shadows goes only to
-    /// the installing activation's saved env. Dynamics go to the throw site.
-    // Cost: O(w), w = names the handler wrote.
-    fn leave_installing_env(&mut self, depth: usize, st: HandlerEnv) {
-        let HandlerEnv {
-            throw_env,
-            dynamics,
-        } = st;
-        let handler_env = std::mem::replace(self.env_mut(), throw_env);
-        let topic = crate::symbol::Symbol::intern("_");
-        let bang = crate::symbol::Symbol::intern("!");
-        for (k, v) in handler_env.overlay_iter() {
-            if *k == topic || *k == bang {
-                continue;
-            }
-            if k.is_dynamic_var_env_key() {
-                if dynamics
-                    .iter()
-                    .any(|(dk, dv)| dk == k && dv.same_binding(v))
-                {
-                    continue;
-                }
-                self.env_mut().insert_sym(*k, v.clone());
-                continue;
-            }
-            // "The same variable" is binding identity, never structural
-            // equality: `PartialEq` walks container and object contents, so
-            // two same-shaped cyclic object graphs (a tree whose nodes point
-            // back at their parent) recursed until the stack overflowed (#11014).
-            let installing = self.call_frames.get(depth).map(|f| &f.saved_env);
-            let same_var = match (
-                self.env().get_sym(*k),
-                installing.and_then(|e| e.get_sym(*k)),
-            ) {
-                (None, _) => true,
-                (Some(a), Some(b)) => a.same_binding(b),
-                (Some(_), None) => false,
-            };
-            if same_var {
-                self.env_mut().insert_sym(*k, v.clone());
-            }
-            if let Some(f) = self.call_frames.get_mut(depth) {
-                f.saved_env.insert_sym(*k, v.clone());
-            }
-        }
-    }
-
     /// Whether `err` is an ordinary (catchable) exception rather than a control
     /// signal. Control signals — `return`, `last`, `next`, `warn`, `take`, `fail`,
     /// `succeed` — have their own routing and must never be diverted into a CATCH
@@ -426,7 +213,7 @@ impl Interpreter {
         // inside the handler the exception is the topic, and the enclosing scope's
         // `$!` has not been written yet.
         let handler_env = (!same_frame)
-            .then(|| self.enter_installing_env(installing_base, installing_call_depth));
+            .then(|| self.enter_handler_env(code, (installing_base, installing_call_depth)));
         let handler_env = handler_env.flatten();
         self.env_mut().assign_error_var(Value::NIL);
         self.env_mut().insert("_".to_string(), err_val.clone());
@@ -439,14 +226,17 @@ impl Interpreter {
         // The handler runs on the throw site's operand stack; isolate its effects
         // so the suspended computation's stack is left exactly as it was.
         let saved_stack = self.stack.len();
+        let carrier = self.suspend_carrier_for_handler(handler_env.is_some());
         let result = self.run_handler_range(code, catch_begin, control_begin, fns, Some(err_val.clone()));
+        self.resume_carrier_after_handler(carrier);
         self.stack.truncate(saved_stack);
         let handled = self.when_matched();
         if let Some(frame) = frame {
-            self.leave_installing_frame(code, frame);
+            let on_installing = handler_env.as_ref().is_some_and(|h| h.on_installing);
+            self.leave_installing_frame(code, frame, on_installing);
         }
         if let Some(st) = handler_env {
-            self.leave_installing_env(installing_call_depth, st);
+            self.leave_installing_env(code, installing_call_depth, st);
         }
 
         self.set_when_matched(saved_when);
@@ -480,15 +270,6 @@ impl Interpreter {
             Err(ce) => CatchRunOutcome::Raised(ce),
         }
     }
-}
-
-/// The throw site's env, set aside while an inline handler runs in the
-/// installing activation's (see `Interpreter::enter_installing_env`).
-struct HandlerEnv {
-    throw_env: crate::env::Env,
-    /// The throw site's dynamics as copied into the handler's overlay, so only
-    /// the ones the handler changed are written back.
-    dynamics: Vec<(crate::symbol::Symbol, Value)>,
 }
 
 /// What one inline `CATCH` handler run decided.
