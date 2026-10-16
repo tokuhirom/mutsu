@@ -5,14 +5,13 @@ impl Parser {
     pub(super) fn parse_atom(
         &mut self,
         stops: &[char],
-        at_sequence_start: bool,
         sequential_interpolation: bool,
     ) -> Option<RegexNode> {
         if self.atom_depth >= 128 {
             return None;
         }
         self.atom_depth += 1;
-        let result = self.parse_atom_inner(stops, at_sequence_start, sequential_interpolation);
+        let result = self.parse_atom_inner(stops, sequential_interpolation);
         self.atom_depth -= 1;
         result
     }
@@ -20,7 +19,6 @@ impl Parser {
     fn parse_atom_inner(
         &mut self,
         stops: &[char],
-        at_sequence_start: bool,
         sequential_interpolation: bool,
     ) -> Option<RegexNode> {
         let ch = *self.chars.get(self.pos)?;
@@ -70,7 +68,7 @@ impl Parser {
                 self.pos += 2;
                 Some(RegexNode::AnchorBeginningOfLine)
             }
-            '^' if at_sequence_start => {
+            '^' => {
                 self.pos += 1;
                 Some(RegexNode::AnchorBeginningOfString)
             }
@@ -133,7 +131,7 @@ impl Parser {
                 self.pos += 2;
                 Some(RegexNode::AnchorRightWordBoundary)
             }
-            '|' | '+' | '*' | '?' | '^' | '>' => None,
+            '|' | '+' | '*' | '?' | '>' => None,
             // `<::(EXPR)>` is a symbolic subrule call, not a `<:prop>` class.
             '<' if self.chars[self.pos + 1..].starts_with(&[':', ':', '('])
                 || self.chars[self.pos + 1..].starts_with(&['.', ':', ':', '(']) =>

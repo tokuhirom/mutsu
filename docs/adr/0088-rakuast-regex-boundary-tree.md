@@ -1609,3 +1609,14 @@ three remain unsupported and are refused. The tree retains the same
 continues to execute the original pattern text. The focused regression in
 `t/rakuast/rakuast-regex-source-cohort.t` pins the tree and round-trip match,
 and `t/regex/null-regex.t` covers source execution in the frontend mode.
+
+## 66. Beginning-of-string anchor after an atom (2026-10-16)
+
+The static parser accepts `^` anywhere in a regex sequence and represents it
+as `AnchorBeginningOfString`. Its position in the sequence is preserved; the
+anchor still tests the beginning of the input when the tree is lowered. The
+previous parser accepted it only as the first atom, so patterns such as
+`/z ^ abc/` lost their static tree and were refused by RakuAST conversion.
+`t/rakuast/rakuast-regex-mid-pattern-anchor.t` pins the node order and EVAL
+semantics, and `t/regex/regex-caret-mid-pattern.t` checks the existing cases
+through the frontend round trip.

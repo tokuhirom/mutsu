@@ -2006,10 +2006,7 @@ impl Parser {
                 self.push_term(&mut nodes, tilde, saw_whitespace);
                 continue;
             }
-            let at_start = nodes
-                .iter()
-                .all(|n| matches!(n, RegexNode::InternalModifier { .. }));
-            let mut atom = self.parse_atom(stops, at_start, sequential_interpolation)?;
+            let mut atom = self.parse_atom(stops, sequential_interpolation)?;
             // Rakudo marks only the first interpolation after `||`; nested
             // groups and later atoms retain their ordinary non-sequential
             // interpolation shape.
@@ -2874,11 +2871,11 @@ impl Parser {
     fn parse_tilde(&mut self, stops: &[char]) -> Option<RegexNode> {
         self.pos += 1; // '~'
         self.skip_whitespace();
-        let goal = self.parse_atom(stops, false, false)?;
+        let goal = self.parse_atom(stops, false)?;
         let before = self.pos;
         self.skip_whitespace();
         let goal = spaced(goal, self.pos != before);
-        let expr = self.parse_atom(stops, false, false)?;
+        let expr = self.parse_atom(stops, false)?;
         let expr = self.parse_quantified_tail(expr)?;
         let before = self.pos;
         self.skip_whitespace();
