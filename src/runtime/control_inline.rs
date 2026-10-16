@@ -68,6 +68,8 @@ impl Interpreter {
                 handler,
                 handles_take,
                 token,
+                installing_base: self.locals.base(),
+                installing_call_depth: self.call_frames.len(),
             });
     }
 
@@ -95,6 +97,7 @@ impl Interpreter {
             let control_begin = entry.handler.control_begin;
             let end = entry.handler.end;
             let fns = entry.handler.compiled_fns.clone();
+            let installing = (entry.installing_base, entry.installing_call_depth);
             // The handler runs with only the handlers outside it registered, so
             // a `warn` inside it goes outward rather than back into itself.
             // `control_handler_depth` deliberately stays put: the run loop
@@ -104,22 +107,14 @@ impl Interpreter {
             // with no outer handler registered reaches the default handler at
             // the end of this function.
             let inner = self.control.control_handlers.split_off(idx);
-            // The handler's body belongs to the frame that registered it, but
-            // runs on the raise site's env, where that frame is a caller: its
-            // lexicals are reachable only through the caller chain, so the
-            // run ignores the static links in between (ADR-12529 phase 3).
-            // TODO: run the handler on its own frame's env instead; the
-            // caller chain also shows it the names of the frames in between.
-            let outcome = crate::env::with_static_links_suppressed(|| {
-                self.run_control_handler_inline(
-                    &code,
-                    control_begin,
-                    end,
-                    &fns,
-                    message,
-                    resume_safe,
-                )
-            });
+            let outcome = self.run_control_handler_inline(
+                &code,
+                (control_begin, end),
+                &fns,
+                message,
+                resume_safe,
+                installing,
+            );
             self.control.control_handlers.extend(inner);
             match outcome {
                 ControlInlineOutcome::Resumed => return Ok(Value::NIL),
@@ -145,17 +140,24 @@ impl Interpreter {
     fn run_control_handler_inline(
         &mut self,
         code: &CompiledCode,
-        control_begin: usize,
-        end: usize,
+        (control_begin, end): (usize, usize),
         fns: &CompiledFns,
         message: &str,
         resume_safe: bool,
+        installing: (usize, usize),
     ) -> ControlInlineOutcome {
         // Present the warning to the handler as a `CX::Warn` topic in `$_`,
         // mirroring the unwinding path in `exec_try_catch_op_inner`.
         let warn_signal = RuntimeError::warn_signal(message.to_string());
         let topic = Self::control_signal_topic_value(&warn_signal);
         let saved_topic = self.env().get("_").cloned();
+        // The handler's body belongs to the frame that registered it, so it
+        // runs on that activation's env, as an inline `CATCH` handler does
+        // (`enter_installing_env`): its by-name reads resolve its own
+        // lexicals, and a same-named lexical of a frame between it and the
+        // raise site neither shadows them nor takes its writes.
+        let handler_env = self.enter_handler_env(code, installing);
+        let on_installing = handler_env.as_ref().is_some_and(|h| h.on_installing);
         if let Some(t) = topic.clone() {
             self.env_mut().insert("_".to_string(), t);
         }
@@ -164,18 +166,38 @@ impl Interpreter {
 
         // The handler's bytecode belongs to the CONTROL-installing frame and
         // addresses *that* frame's local slots, but `self.locals` is the raise
-        // site's. `enter_installing_frame` reconstructs the installing frame's
-        // locals from `env`, and `leave_installing_frame` flushes the slots the
-        // handler changed back, so the installing frame (and any intervening
-        // by-name reader) observes the handler's writes.
-        let frame = self.enter_installing_frame(code, None);
+        // site's. `enter_installing_frame` seeds the handler's slots from the
+        // installing frame's live slots (from `env` for a warn raised in that
+        // frame itself), and `leave_installing_frame` writes the slots the
+        // handler changed back, so the installing frame observes them.
+        let frame = self.enter_installing_frame(code, Some(installing));
         // The handler runs on the raise site's operand stack; isolate its
         // effects so the suspended computation's stack is left untouched.
         let saved_stack = self.stack.len();
-        let result = self.run_handler_range(code, control_begin, end, fns, topic);
+        let carrier = self.suspend_carrier_for_handler(handler_env.is_some());
+        let result = if on_installing {
+            self.run_handler_range(code, control_begin, end, fns, topic)
+        } else {
+            // No call frame of the installing activation to take its env
+            // from: the handler runs on the raise site's env (or a private
+            // overlay of it), where that activation is a caller, so its
+            // lexicals are reachable only through the caller chain and the
+            // static links in between are ignored (ADR-12529 phase 3).
+            // TODO: give the light call paths a record of their caller's env,
+            // so the handler always runs on the installing activation's own;
+            // the caller chain also shows it the names of the frames in
+            // between.
+            crate::env::with_static_links_suppressed(|| {
+                self.run_handler_range(code, control_begin, end, fns, topic)
+            })
+        };
+        self.resume_carrier_after_handler(carrier);
         self.stack.truncate(saved_stack);
         let matched = self.when_matched();
-        self.leave_installing_frame(code, frame);
+        self.leave_installing_frame(code, frame, on_installing);
+        if let Some(st) = handler_env {
+            self.leave_installing_env(code, installing.1, st);
+        }
 
         self.set_when_matched(saved_when);
         if let Some(v) = saved_topic {

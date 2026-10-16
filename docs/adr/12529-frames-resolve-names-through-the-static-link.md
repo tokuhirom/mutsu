@@ -1144,6 +1144,43 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      `S04-blocks-and-statements/pointy-rw.t`, `S04-phasers/in-eval.t`,
      `S32-hash/kv.t`.
 
+   **Slice 22 done** (`fix/12529-resume-handler-writes`): the resuming
+   `CATCH`/`CONTROL` entry of slice 21's census. An inline handler
+   (ADR-0072) now writes the installing block's lexicals into that block's
+   live slots and nowhere else, so the return merge no longer carries them.
+   The shared machinery moved to `src/runtime/handler_frame.rs`.
+
+   - **The drain clobbered the slot.** `leave_installing_frame` already
+     wrote the live slot, but it also queued the name for the call site's
+     drain (`pending_rw_writeback_sources` and kin). The drain reads the
+     installing frame's env, which only the merge had updated, so with the
+     merge off it put the old value back. A slot written live is no longer
+     queued.
+   - **CONTROL records its installing activation** (`ControlHandlerEntry::
+     installing_base`/`installing_call_depth`, as CATCH did). It seeds and
+     flushes the live slots, and runs on the installing activation's env
+     when its call frame has it (`enter_handler_env`).
+   - **No write to the throw site's env.** A write to one of the handler's
+     own locals no longer lands in the env of the frame that threw. A
+     same-named lexical of that frame or of one in between took it before:
+     `sub w { my $m = 'callee'; warn 'W'; $m }` returned `W`, and the
+     handler's own `$m` stayed empty once the raise site had its own `$m`.
+     When the installing activation's env is not reachable (it made a light
+     call, which keeps no call frame), the handler runs on a private overlay
+     of the throw site's env, seeded with the installing slots' values for
+     its by-name reads. A dynamic, or a lexical captured from further out,
+     still goes to the throw site.
+   - **The carrier log.** `warn` and `EVAL` are carrier calls, which log
+     by-name writes and reconcile the caller's slots from env afterwards.
+     The handler's writes are not the throw site's, so the log is set aside
+     while it runs (`suspend_carrier_for_handler`). Only what is written back
+     to the throw site's env is logged.
+
+   Pinned by `t/exceptions/catch-control-inline-handler-writes.t`. Still
+   open: the light call paths keep no record of their caller's env, so a
+   handler installed by a light caller resolves its free names through the
+   caller chain with static links suppressed.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
