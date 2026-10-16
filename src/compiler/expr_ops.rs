@@ -897,7 +897,18 @@ impl Compiler {
             && (matches!(left, Expr::Index { .. })
                 || right.iter().any(|r| matches!(r, Expr::Index { .. }))))
         .then(|| format!("infix:<{name}>"));
-        self.compile_named_callee_arg(infix_callee.as_deref(), Some(0), left, false);
+        // A closure literal operand (`{ $n++ } xxx 3`) is handed to the
+        // operator's routine exactly as a call argument is, so it is an
+        // escaping closure (`is_closure_literal_arg`): a lexical it writes is
+        // boxed into a cell the creating frame shares, rather than reaching
+        // that frame only through the call's return merge (ADR-12529 §3,
+        // slice 26).
+        self.compile_named_callee_arg(
+            infix_callee.as_deref(),
+            Some(0),
+            left,
+            Self::is_closure_literal_arg(left),
+        );
         for (i, r) in right.iter().enumerate() {
             // ADR-0021 I2/I3: a trailing colonpair adverb (`1 / 3 :round`,
             // appended into `right` by `attach_trailing_adverbs`) is a
@@ -911,7 +922,12 @@ impl Compiler {
             {
                 self.mint_named_pair = true;
             }
-            self.compile_named_callee_arg(infix_callee.as_deref(), Some(i as u32 + 1), r, false);
+            self.compile_named_callee_arg(
+                infix_callee.as_deref(),
+                Some(i as u32 + 1),
+                r,
+                Self::is_closure_literal_arg(r),
+            );
         }
         // A binary operator an enclosing block's `use` may have imported
         // (ADR-8751 stage 2).
