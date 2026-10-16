@@ -2784,6 +2784,37 @@ exist and `rows_are_declared_by_rakudo` names the two as its one roast-pinned ex
 claim them, so `.^can` keeps Rakudo's answer). `perl` is `Mu.perl`, i.e. `.raku`: the rendering cascade's `Uni` case
 answers it with the `Uni.raku` row's handler. Pinned in `t/oo/method/prologue-method-rows.t`.
 
+### 9.117 Slice 5: the `CompUnit` family's methods are rows, found by their owner (2026-10-16)
+
+`refactor/11276-distribution-rows`. The repository API was answered by name in four places: a block of
+`methods_instance_ops` (the `CompUnit::Repository` base methods, `resolve`, and the whole of
+`CompUnit::Repository::FileSystem`), `dispatch_cur_installation_method`, `dispatch_compunit_method` with the
+`CompUnit::Handle.globalish-package` arm, and the distributions' `dispatch_distribution_method` plus a `Distribution`
+block in `methods_0arg/mod.rs`. Every one is now an `OWNER_ONLY` row of the class Rakudo declares it on, in three
+family modules (`instances/compunit.rs`, `compunit_repo.rs`, `distribution.rs`), reached through the owner lookup of
+the method-call fallback as `CompUnit::Handle.export-package` already was (`compunit::owners_of` names every owner of
+the family). No class of the family gets a dispatch shape: the calls are not hot, several take a user object or a
+named argument (`install($dist, :force)`, `files($file, :ver)`) that the guard step would refuse, and the owner entry
+accepts any argument as the arms did. A repository's handlers copy its attributes before they run, because
+`next-repo` writes the lazily built bundled chain back into the instance.
+
+Two representations change toward Rakudo. A module's `$?DISTRIBUTION` was an instance of the `Distribution` *role*
+carrying `$!meta`; it is a `CompUnit::Repository::Distribution` with a `meta` attribute. An installed distribution was
+mutsu's own `Distribution::Installation`; it is a `CompUnit::Repository::Installation::LazyDistribution` (a `my class`
+in Rakudo, so its recognition rows claim no only-method bit: the snapshot cannot list it). Both carry the catalog's
+roles, so `~~ Distribution` holds.
+
+Behaviour changes toward Rakudo, pinned in `t/modules/compunit/{compunit-repo,compunit,distribution}-method-rows.t`:
+`FileSystem.prefix` is an `IO::Path` and `FileSystem.short-id` a row; a FileSystem repository has no `install`
+(`X::Method::NotFound`, was an `X::AdHoc`); `CompUnit.name` and `CompUnit.globalish-package` and the type-object arms
+`CompUnit.handle` / `CompUnit::Handle.globalish-package` (which Rakudo refuses) are gone; a FileSystem `need`'s
+`CompUnit.from` is `Perl6`; `$?DISTRIBUTION.Str` and `.dist-id` are the identity
+`name:ver<..>:auth<..>:api<..>` (was `Distribution<Distribution>`); `Distribution::Hash.Str`/`.gist` are the default
+instance rendering (were the distribution's name). Left: `.content` answers an `IO::Path` where Rakudo opens an
+`IO::Handle`; `CompUnit::Repository::Distribution.id`/`.files`/`.repo` and the other repository methods mutsu never
+implemented (`abspath`, `resource`, `name`, ...) have no row. `method-rows-report.py --arms`: the pure arity cascades go
+from 23 arms to 20, the runtime slow path from 536 to 497.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

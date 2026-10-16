@@ -251,7 +251,14 @@ Consequences that pin the design:
   - A user candidate of a built-in operator (`multi infix:<+>`,
     `multi prefix:<->`) and `postcircumfix` keep the registry alias: their
     opcodes find user candidates there. So a callee outside the block still
-    sees them.
+    sees them, and a closure taken out of the block loses them. Such a
+    family was nevertheless bound in the set as a dispatcher over the
+    imported candidates alone, which does not fall back to the built-in: a
+    candidate's own `-$i` on an Int found no match inside the block. Now
+    neither `bind_family_lexically` nor the candidate capture takes one
+    (`extends_builtin_operator`, `fix/8751-import-builtin-op-candidates`).
+    The lexical form needs the operator's opcode to consult the set with
+    the built-in as the fallback.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
   - Classes and variables keep the `ImportScope` rollback. A top-level

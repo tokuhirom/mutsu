@@ -734,7 +734,7 @@ impl Interpreter {
         None
     }
 
-    /// Build a `Distribution::Installation` instance from an installed dist's
+    /// Build a `CompUnit::Repository::Installation::LazyDistribution` instance from an installed dist's
     /// meta, with its "files" entries resolved to absolute paths under `prefix`.
     fn build_inst_distribution(prefix: &str, meta_val: &Value) -> Value {
         use std::collections::HashMap;
@@ -771,7 +771,7 @@ impl Interpreter {
         );
         attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
         Value::make_instance_without_destroy(
-            crate::symbol::Symbol::intern("Distribution::Installation"),
+            crate::symbol::Symbol::intern("CompUnit::Repository::Installation::LazyDistribution"),
             attrs,
         )
     }

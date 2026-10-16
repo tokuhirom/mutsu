@@ -123,6 +123,7 @@ impl Interpreter {
     ) -> bool {
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
+            || extends_builtin_operator(name)
             || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
                 capture.block_multis.contains(&Symbol::intern(name))
             })
@@ -258,6 +259,7 @@ impl Interpreter {
         if let Some(capture) = self.module.lexical_import_capture.as_mut()
             && capture.unit == importer
             && !capture.block_multis.contains(&Symbol::intern(name))
+            && !extends_builtin_operator(name)
         {
             capture
                 .multi_defs
@@ -334,6 +336,16 @@ impl Interpreter {
             .iter()
             .find_map(|id| self.module.lexical_import_sets.get(id)?.get(&name).cloned())
     }
+}
+
+/// Whether `name` is a built-in operator (`prefix:<->`, `infix:<+>`) that a
+/// user `multi` adds candidates to. The import keeps such a family on the
+/// registry path: a dispatcher value over the imported candidates alone would
+/// not fall back to the built-in, so a candidate's own `-$a.v` on an Int found
+/// no match once the family was bound in the block's set (ADR-8751 stage 2).
+// Cost: O(m), m = bytes of `name`.
+fn extends_builtin_operator(name: &str) -> bool {
+    name.contains(":<") && !Interpreter::lexically_bindable_operator(name)
 }
 
 /// Whether a proto body only dispatches: it is `{*}` or empty. Such a proto

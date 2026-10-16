@@ -31,6 +31,7 @@ mod methods_text_rows;
 mod methods_distribution;
 mod methods_distribution_cur_compunit;
 mod methods_distribution_cur_files;
+mod methods_distribution_cur_fs;
 mod methods_distribution_cur_inst;
 mod methods_distribution_cur_resolve;
 mod methods_distribution_helpers;
