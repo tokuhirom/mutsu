@@ -343,6 +343,31 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(next))
     }
 
+    /// `dispatcher` (a [`Self::sub_value_from_multi_candidates`] value) running
+    /// the family's `proto` first, when its body does more than `{*}`: a call
+    /// through the value runs the proto, whose `{*}` comes back to the
+    /// captured candidates (ADR-8751 stage 2). An only-star proto adds nothing
+    /// the candidates do not already answer
+    /// ([`crate::runtime::lexical_imports::proto_body_only_dispatches`]).
+    // Cost: O(e), e = the proto's captured env (one code object built).
+    pub(crate) fn with_dispatch_proto(
+        &self,
+        dispatcher: Value,
+        proto: &crate::runtime::FunctionDef,
+    ) -> Value {
+        if crate::runtime::lexical_imports::proto_body_only_dispatches(&proto.body) {
+            return dispatcher;
+        }
+        let ValueView::Sub(data) = dispatcher.view() else {
+            return dispatcher;
+        };
+        let proto_value = self.sub_value_from_function_def(proto.clone());
+        let mut next: crate::value::SubData = (**data).clone();
+        next.env
+            .insert_sym(crate::symbol::wk::multi_dispatch_proto(), proto_value);
+        Value::sub_value(crate::gc::Gc::new(next))
+    }
+
     pub(crate) fn sub_value_from_multi_candidates(
         &self,
         name: &str,
@@ -802,7 +827,11 @@ impl Interpreter {
             {
                 return self.sub_value_from_function_def((*candidates[0]).clone());
             }
-            self.sub_value_from_multi_candidates(lookup_name, candidates)
+            let dispatcher = self.sub_value_from_multi_candidates(lookup_name, candidates);
+            match self.resolve_proto_function(lookup_name) {
+                Some(proto) => self.with_dispatch_proto(dispatcher, &proto),
+                None => dispatcher,
+            }
         } else if self.has_proto(lookup_name)
             || self.resolve_token_defs(lookup_name).is_some()
             || self.has_proto_token(lookup_name)

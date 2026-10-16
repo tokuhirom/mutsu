@@ -52,6 +52,9 @@ pub(crate) struct LexicalImportCapture {
     /// The multi families the importing block declares itself: the import
     /// merges with them, so they keep the registry path.
     block_multis: HashSet<Symbol>,
+    /// The proto of each family in `multi_defs` whose body does more than
+    /// dispatch: the family's dispatcher value runs it.
+    protos: HashMap<Symbol, std::sync::Arc<crate::ast::FunctionDef>>,
 }
 
 impl Interpreter {
@@ -76,6 +79,7 @@ impl Interpreter {
             amp_env_keys: HashSet::new(),
             lexical_defs: HashMap::new(),
             multi_defs: HashMap::new(),
+            protos: HashMap::new(),
         };
         self.module.lexical_import_capture.replace(capture)
     }
@@ -107,10 +111,9 @@ impl Interpreter {
     /// Whether the running import binds the multi family `name` (its
     /// candidates `entries`, `proto` its proto if it exported one) lexically
     /// rather than aliasing it into the registry, and if so record the
-    /// candidates as the family's binding (ADR-8751 stage 2). The family's
-    /// dispatcher value is built from the candidates alone, so a proto that
-    /// does more than dispatch (a body beyond `{*}`, a signature beyond a
-    /// capture) keeps the registry alias, as an operator does.
+    /// candidates as the family's binding (ADR-8751 stage 2). A proto whose
+    /// body does more than `{*}` is recorded too: the family's dispatcher
+    /// value runs it, and its `{*}` comes back to the candidates.
     // Cost: O(c), c = candidates.
     pub(crate) fn bind_family_lexically(
         &mut self,
@@ -123,7 +126,6 @@ impl Interpreter {
             || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
                 capture.block_multis.contains(&Symbol::intern(name))
             })
-            || proto.is_some_and(|proto| !proto_only_dispatches(proto))
         {
             return false;
         }
@@ -138,6 +140,11 @@ impl Interpreter {
             Symbol::intern(name),
             entries.iter().map(|(_, def)| std::sync::Arc::clone(def)).collect(),
         );
+        if let Some(proto) = proto.filter(|proto| !proto_body_only_dispatches(&proto.body)) {
+            capture
+                .protos
+                .insert(Symbol::intern(name), std::sync::Arc::new(proto.clone()));
+        }
         true
     }
 
@@ -200,9 +207,12 @@ impl Interpreter {
                 // closure keeps after the block's registry aliases are gone.
                 // Neither the `&name` env key nor the proto's plain key may
                 // answer instead: a call through either re-dispatches by name.
-                Some(LexicalImport::Code(
-                    self.sub_value_from_multi_candidates(&name.resolve(), candidates.clone()),
-                ))
+                let dispatcher =
+                    self.sub_value_from_multi_candidates(&name.resolve(), candidates.clone());
+                Some(LexicalImport::Code(match capture.protos.get(&name) {
+                    Some(proto) => self.with_dispatch_proto(dispatcher, proto),
+                    None => dispatcher,
+                }))
             } else if capture.amp_env_keys.contains(&amp) {
                 self.env
                     .get_sym(amp)
@@ -326,21 +336,17 @@ impl Interpreter {
     }
 }
 
-/// Whether `proto` only dispatches: its body is `{*}` (or empty) and its
-/// signature is a bare capture (`proto f(|) {*}`), so its candidates alone
-/// answer every call exactly as it does.
-// Cost: O(p + s), p = parameters, s = body statements.
-fn proto_only_dispatches(proto: &crate::ast::FunctionDef) -> bool {
+/// Whether a proto body only dispatches: it is `{*}` or empty. Such a proto
+/// adds nothing to a call its candidates answer: mutsu checks an only-star
+/// proto's signature only for literal arguments (`call_proto_function`), so
+/// a captured-candidate dispatcher does not run it (ADR-8751 stage 2).
+// Cost: O(s), s = body statements.
+pub(crate) fn proto_body_only_dispatches(body: &[crate::ast::Stmt]) -> bool {
     use crate::ast::{Expr, Stmt};
-    let significant: Vec<&Stmt> = proto.body.iter().filter(|s| !s.is_marker()).collect();
-    let trivial_body = match significant.as_slice() {
+    let significant: Vec<&Stmt> = body.iter().filter(|s| !s.is_marker()).collect();
+    match significant.as_slice() {
         [] => true,
         [Stmt::Expr(expr)] => matches!(expr, Expr::Whatever) || expr.is_onlystar_dispatch(),
         _ => false,
-    };
-    trivial_body
-        && proto
-            .param_defs
-            .iter()
-            .all(|param| param.slurpy && param.sigilless && !param.named)
+    }
 }

@@ -299,6 +299,85 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(next))
     }
 
+    /// Dispatch `call_args` over the candidates `candidates` of the
+    /// captured-candidate dispatcher `func` (family `family_name`), ranked as
+    /// a by-name call ranks them (#12474), without resolving the family by
+    /// name: the `{*}` of a proto the dispatcher ran (ADR-8751 stage 2), or a
+    /// call made where the family is out of scope.
+    // Cost: O(c * p), c = candidates, p = parameters bound per candidate.
+    pub(crate) fn call_captured_candidates(
+        &mut self,
+        func: &Value,
+        candidates: &[Value],
+        family_name: Option<&str>,
+        call_args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some((candidate, remaining)) = self.pick_captured_multi_candidate(
+            family_name.unwrap_or(""),
+            candidates,
+            &call_args,
+        )? {
+            let candidate = Self::bind_family_dispatcher(&candidate, family_name, func);
+            return self.call_captured_multi_winner(
+                family_name.unwrap_or(""),
+                candidate,
+                remaining,
+                call_args,
+                func.clone(),
+            );
+        }
+        // Slurpy catch-all
+        for candidate in candidates {
+            if let ValueView::Sub(cand_data) = candidate.view()
+                && cand_data.param_defs.iter().any(|pd| pd.slurpy)
+            {
+                let candidate = Self::bind_family_dispatcher(candidate, family_name, func);
+                    return self.call_sub_value(candidate, call_args, false);
+            }
+        }
+        // None of the captured candidates accepts the call. For a family
+        // that is X::Multi::NoMatch, not the first candidate's own
+        // binding error: a caller that treats "no candidate" as "try
+        // something else" (a trait application through an imported
+        // `&trait_mod:<is>`) tells the two apart by it.
+        if candidates.len() > 1
+            && let Some(family) = family_name
+        {
+            return Err(self.multi_no_match_error(family, &call_args));
+        }
+        if let Some(candidate) = candidates.first() {
+            let candidate = Self::bind_family_dispatcher(candidate, family_name, func);
+                    return self.call_sub_value(candidate, call_args, false);
+        }
+        Err(self.multi_no_match_error(family_name.unwrap_or(""), &call_args))
+    }
+
+    /// The `{*}` of a proto a captured-candidate dispatcher ran
+    /// ([`Self::push_proto_dispatch_frame_over`]): `args` go to that
+    /// dispatcher's own candidates (ADR-8751 stage 2).
+    // Cost: O(c * p), as [`Self::call_captured_candidates`].
+    pub(crate) fn call_proto_frame_dispatcher(
+        &mut self,
+        dispatcher: &Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let ValueView::Sub(data) = dispatcher.view() else {
+            return self.call_sub_value(dispatcher.clone(), args, false);
+        };
+        let candidates: Vec<Value> = data
+            .env
+            .get_sym(crate::symbol::wk::multi_dispatch_candidates())
+            .cloned()
+            .and_then(Value::into_array)
+            .map(|(items, _)| items.iter().cloned().collect())
+            .unwrap_or_default();
+        let family = match data.env.get("__mutsu_multi_dispatch_name").map(Value::view) {
+            Some(ValueView::Str(name)) => Some(name.to_string()),
+            _ => None,
+        };
+        self.call_captured_candidates(dispatcher, &candidates, family.as_deref(), args)
+    }
+
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
@@ -727,45 +806,26 @@ impl Interpreter {
                         self.current_unit = saved_unit;
                     }
                 }
-                // Candidates are out of scope -- dispatch through captured
-                // Subs, ranked as a by-name call ranks them (#12474).
-                if let Some((candidate, remaining)) = self.pick_captured_multi_candidate(
-                    family_name.as_deref().unwrap_or(""),
-                    &candidates,
-                    &call_args,
-                )? {
-                    let candidate = Self::bind_family_dispatcher(&candidate, family_name.as_deref(), &func_for_family);
-                    return self.call_captured_multi_winner(
-                        family_name.as_deref().unwrap_or(""),
-                        candidate,
-                        remaining,
-                        call_args,
+                // A proto that does more than dispatch runs first; its `{*}`
+                // comes back to the captured candidates (ADR-8751 stage 2).
+                if let Some(proto) = data.env.get_sym(crate::symbol::wk::multi_dispatch_proto()).cloned()
+                {
+                    self.push_proto_dispatch_frame_over(
+                        family_name.clone().unwrap_or_default(),
+                        call_args.clone(),
                         func_for_family,
                     );
+                    let result = self.call_sub_value(proto, call_args, false);
+                    self.pop_proto_dispatch_frame();
+                    return result;
                 }
-                // Slurpy catch-all
-                for candidate in &candidates {
-                    if let ValueView::Sub(cand_data) = candidate.view()
-                        && cand_data.param_defs.iter().any(|pd| pd.slurpy)
-                    {
-                        let candidate = Self::bind_family_dispatcher(candidate, family_name.as_deref(), &func_for_family);
-                            return self.call_sub_value(candidate, call_args, false);
-                    }
-                }
-                // None of the captured candidates accepts the call. For a family
-                // that is X::Multi::NoMatch, not the first candidate's own
-                // binding error: a caller that treats "no candidate" as "try
-                // something else" (a trait application through an imported
-                // `&trait_mod:<is>`) tells the two apart by it.
-                if candidates.len() > 1
-                    && let Some(ValueView::Str(family)) =
-                        data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
-                {
-                    return Err(self.multi_no_match_error(&family, &call_args));
-                }
-                if let Some(candidate) = candidates.first() {
-                    let candidate = Self::bind_family_dispatcher(candidate, family_name.as_deref(), &func_for_family);
-                            return self.call_sub_value(candidate, call_args, false);
+                if !candidates.is_empty() {
+                    return self.call_captured_candidates(
+                        &func_for_family,
+                        &candidates,
+                        family_name.as_deref(),
+                        call_args,
+                    );
                 }
             }
             // The identity function `[∘]` yields for an empty operand list.

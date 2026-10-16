@@ -33,7 +33,24 @@ impl Interpreter {
             method_ctx,
             dispatch_token,
             method_depth: self.dispatch.method_call_depth,
+            dispatcher: None,
         });
+    }
+
+    /// [`Self::push_proto_dispatch_frame`] for a proto a captured-candidate
+    /// dispatcher value runs: its `{*}` redispatches to `dispatcher`'s
+    /// candidates (ADR-8751 stage 2).
+    // Cost: O(1).
+    pub(crate) fn push_proto_dispatch_frame_over(
+        &mut self,
+        name: String,
+        args: Vec<Value>,
+        dispatcher: Value,
+    ) {
+        self.push_proto_dispatch_frame(name, args, None);
+        if let Some(frame) = self.dispatch.proto_dispatch_stack.last_mut() {
+            frame.dispatcher = Some(dispatcher);
+        }
     }
 
     /// Leave the proto body entered by `push_proto_dispatch_frame`.
