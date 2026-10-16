@@ -3027,6 +3027,30 @@ temporary now steps (the fallback's copy knew only the array-backed kind, and an
 protocol name answers a `Method` of the role whatever the receiver (a variable receiver answered a list holding the
 name as a `Str`). `method-rows-report.py --arms`: the runtime slow path goes
 from 399 arms to 383.
+### 9.127 A `Date`/`DateTime` instance the shape lookup did not take answers through the owner rows (2026-10-16)
+
+`refactor/11276-temporal-instance-rows`. `runtime/methods_temporal.rs` answered `later`/`earlier`/`truncated-to`/
+`in-timezone` and a name `match` (`yyyy-mm-dd`, `mm-dd-yyyy`, `dd-mm-yyyy` with a separator, `clone`, `Date`'s
+`in-timezone`, `first-date-in-month`, `last-date-in-month`, `utc`, `posix($x)`) for any instance carrying date
+attributes: a subclass instance, which has no shape, or a call the guard step declined (named overrides, a list of
+pairs). Session 30 left it for a mechanism that keeps the subclass in results. The mechanism was already there: every
+derived-value handler re-blesses into the receiver's class (`rebless_date_result`/`rebless_datetime_result`), so what
+was missing were rows for the names only the `match` answered.
+
+- New rows: `Date.clone` and `DateTime.clone` (`Handler::Named`, `ANY_NAMED`: the overrides are `*%_`); `later` and
+  `earlier` of arity 1 (the units as one positional list of pairs, `ANY_ARGS`); `DateTime.posix` at arity 0 and 1 with
+  `:real`. `DateTime.utc` re-blesses a subclass instance's result, so the 0-arg cascade no longer declines `utc` for a
+  subclass, and the method-call fallback's `local` arm (a copy of the `local` row) is gone.
+- `dispatch_temporal_method` is one owner lookup (`Interpreter::temporal_instance_owners`: `Date` or `DateTime` for an
+  instance of the class or of a subclass, by the class's MRO, not by its attribute names, so a user class with a
+  `year`/`month`/`day` no longer reaches these handlers).
+
+Behaviour toward Rakudo, pinned in `t/types/temporal/date-subclass-narg-rows.t` (which passes under `raku`):
+`Date.in-timezone` is `X::Method::NotFound` (Rakudo has no such method; mutsu answered a `DateTime`);
+`DateTime.posix($ignore-timezone)` reads its positional as Rakudo's `$ignore-timezone` (mutsu read it as `:real`), and
+`posix(:real)` answers a `Rat` (was a `Num`). Not followed: Rakudo dies on a `Date` subclass's `truncated-to`,
+`first-date-in-month` and `last-date-in-month` (`P6opaque: no such attribute '$!day'`); mutsu answers them.
+`method-rows-report.py --arms`: the runtime slow path loses 10 arms.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 

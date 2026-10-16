@@ -2,12 +2,11 @@
 //! the helpers the derived-value rows share (`keep_formatter`, the subclass
 //! re-bless).
 //!
-//! The rows are `Handler::Named`: the units are the call's named arguments
-//! (`.later(:2days, :1hour)`), so a call that spells them as a positional
-//! list of pairs (`.later((:2hours, :30minutes))`) is outside the row's
-//! signature and takes the cascade, which reads both spellings. The cascade
-//! (`runtime/methods_temporal.rs`) calls [`later_earlier`] too, for the
-//! receivers the table has no shape for (an instance of a subclass).
+//! The units are the call's named arguments (`.later(:2days, :1hour)`, a
+//! `Handler::Named` row) or one positional list of pairs
+//! (`.later((:2hours, :30minutes))`, the order of application; a row of arity
+//! 1). An instance of a subclass, which has no shape, reaches the same rows
+//! through their owner (`runtime/methods_temporal.rs`, ADR-11276 §9.127).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -37,7 +36,35 @@ pub(super) static ROWS: &[MethodRow] = &[
     row("Date", "earlier", Handler::Named(earlier_row)),
     row("DateTime", "later", Handler::Named(later_row)),
     row("DateTime", "earlier", Handler::Named(earlier_row)),
+    list_row("Date", "later", later_list_row),
+    list_row("Date", "earlier", earlier_list_row),
+    list_row("DateTime", "later", later_list_row),
+    list_row("DateTime", "earlier", earlier_list_row),
 ];
+
+/// A row taking the units as one positional list of pairs.
+const fn list_row(
+    owner: &'static str,
+    name: &'static str,
+    handler: crate::builtins::method_table::NarrowFn,
+) -> MethodRow {
+    MethodRow {
+        owner,
+        name,
+        arity: 1,
+        handler: Handler::Narrow(handler),
+        flags: RowFlags::ANY_ARGS,
+        named: &[],
+    }
+}
+
+fn later_list_row(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    later_earlier(target, "later", args)
+}
+
+fn earlier_list_row(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    later_earlier(target, "earlier", args)
+}
 
 fn later_row(
     target: &Value,

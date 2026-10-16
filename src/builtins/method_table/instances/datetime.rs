@@ -22,7 +22,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     super::narrow_row!("DateTime", "offset-in-minutes", 0, offset_in_minutes_row),
     super::narrow_row!("DateTime", "whole-second", 0, whole_second_row),
     super::narrow_row!("DateTime", "hh-mm-ss", 0, hh_mm_ss_row),
-    super::narrow_row!("DateTime", "posix", 0, posix_row),
+    posix_row(0),
+    posix_row(1),
     super::narrow_row!("DateTime", "utc", 0, utc_row),
     super::narrow_row!("DateTime", "julian-date", 0, julian_date_row),
     super::narrow_row!(
@@ -97,12 +98,57 @@ pub(crate) fn hh_mm_ss(attributes: &AttrMap) -> Value {
     ))
 }
 
-/// `DateTime.posix`: the POSIX timestamp, whole seconds.
+/// `DateTime.posix($ignore-timezone?, :$real)`: the seconds since the epoch, of
+/// the wall-clock time read as UTC when `$ignore-timezone` is true, with the
+/// fractional second as a `Rat` under `:real`.
 // Cost: O(a), a = attributes of the instance.
-pub(crate) fn posix(attributes: &AttrMap) -> Value {
+pub(crate) fn posix_of(attributes: &AttrMap, ignore_timezone: bool, real: bool) -> Value {
     let (year, month, day, hour, minute, second, timezone) = datetime_attrs(attributes);
-    let posix = temporal::datetime_to_posix(year, month, day, hour, minute, second, timezone);
-    Value::int(posix.floor() as i64)
+    let whole_second = second.floor();
+    let offset = if ignore_timezone { 0 } else { timezone };
+    let posix = temporal::datetime_to_posix(year, month, day, hour, minute, whole_second, offset)
+        .floor() as i64;
+    let fraction = second - whole_second;
+    if !real || fraction == 0.0 {
+        return Value::int(posix);
+    }
+    // The second's own decimal spelling (`1.2345`), not the difference of two
+    // floats, which is off in the last place.
+    match f64_to_decimal_rat(second).view() {
+        ValueView::Rat(numerator, denominator) => Value::rat_raw(
+            posix
+                .saturating_sub(whole_second as i64)
+                .saturating_mul(denominator)
+                .saturating_add(numerator),
+            denominator,
+        ),
+        _ => Value::num(posix as f64 + fraction),
+    }
+}
+
+/// A `posix` row taking `arity` positional arguments (none, or
+/// `$ignore-timezone`) and the `:real` adverb.
+const fn posix_row(arity: u8) -> MethodRow {
+    MethodRow {
+        owner: "DateTime",
+        name: "posix",
+        arity,
+        handler: Handler::Named(posix_handler),
+        flags: RowFlags::NONE,
+        named: &["real"],
+    }
+}
+
+fn posix_handler(
+    target: &Value,
+    args: &[Value],
+    named: crate::builtins::method_table::Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ignore_timezone = args.first().is_some_and(Value::truthy);
+    let real = named.get("real").is_some_and(|v| v.truthy());
+    with_attrs(target, |attributes| {
+        posix_of(attributes, ignore_timezone, real)
+    })
 }
 
 /// `DateTime.utc` (`in-timezone(0)`): the same instant at offset zero, keeping
@@ -254,8 +300,26 @@ macro_rules! class_row_fns {
     };
 }
 
+/// `DateTime.utc`: a subclass instance keeps its class and attributes, as
+/// Rakudo's `in-timezone(0)` clone does.
+fn utc_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
+        return None;
+    };
+    let result = utc(&attributes.as_map(), "DateTime");
+    Some(Ok(super::temporal_shift::rebless_datetime_result(
+        result,
+        class_name,
+        &attributes,
+    )))
+}
+
 class_row_fns! {
-    utc_row => utc,
     which_row => which,
     raku_row => raku,
 }
@@ -277,7 +341,6 @@ attr_row_fns! {
     offset_in_minutes_row => offset_in_minutes,
     whole_second_row => whole_second,
     hh_mm_ss_row => hh_mm_ss,
-    posix_row => posix,
     day_fraction_row => day_fraction,
     to_date_row => to_date,
     to_datetime_row => to_datetime,

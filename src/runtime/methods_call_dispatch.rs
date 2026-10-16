@@ -2258,20 +2258,9 @@ impl Interpreter {
             return result;
         }
 
-        // DateTime.local — convert to $*TZ timezone
-        if method == "local"
-            && args.is_empty()
-            && matches!(target.view(), ValueView::Instance { attributes, .. }
-                if attributes.contains_key("hour") && attributes.contains_key("timezone"))
-        {
-            let tz = self.env.get("*TZ").and_then(|v| v.as_int()).unwrap_or(0i64);
-            return self.call_method_with_values(target, "in-timezone", vec![Value::int(tz)]);
-        }
-
-        // Dispatch temporal n-arg methods
-        if let Some(result) =
-            super::methods_temporal::dispatch_temporal_method(&target, method, &args)
-        {
+        // A `Date`/`DateTime` instance the shape lookup did not take (a
+        // subclass instance): the rows, found by owner (ADR-11276 §9.127).
+        if let Some(result) = self.dispatch_temporal_method(&target, method, &args) {
             return result;
         }
 

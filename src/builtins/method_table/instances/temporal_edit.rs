@@ -1,10 +1,10 @@
-//! `Date`'s and `DateTime`'s `truncated-to`, `in-timezone` and `local` rows, and
-//! `clone` (ADR-11276 §9.34).
+//! `Date`'s and `DateTime`'s `truncated-to`, `in-timezone`, `local` and `clone`
+//! rows (ADR-11276 §9.34, §9.127).
 //!
-//! The functions take the receiver and read its attributes. The cascade
-//! (`runtime/methods_temporal.rs`) calls the same ones for the receivers the
-//! table has no shape for (an instance of a subclass), which keep their class
-//! through [`rebless_date_result`] / [`rebless_datetime_result`].
+//! The functions take the receiver and read its attributes, so an instance of a
+//! subclass (which has no shape) is answered by the same rows through their
+//! owner (`runtime/methods_temporal.rs`), and keeps its class through
+//! [`rebless_date_result`] / [`rebless_datetime_result`].
 
 use super::temporal_shift::{
     has_date_attrs, has_datetime_attrs, keep_formatter, rebless_date_result,
@@ -20,6 +20,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     super::narrow_row!("Date", "truncated-to", 1, truncated_to_row),
     super::narrow_row!("DateTime", "truncated-to", 1, truncated_to_row),
     super::narrow_row!("DateTime", "in-timezone", 1, in_timezone_row),
+    clone_row("Date", date_clone_row),
+    clone_row("DateTime", datetime_clone_row),
     MethodRow {
         owner: "DateTime",
         name: "local",
@@ -29,6 +31,85 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
 ];
+
+/// A `clone` row: the overrides are the call's named arguments, every one of
+/// them (Rakudo's `clone(*%_)`).
+const fn clone_row(
+    owner: &'static str,
+    handler: crate::builtins::method_table::NamedFn,
+) -> MethodRow {
+    MethodRow {
+        owner,
+        name: "clone",
+        arity: 0,
+        handler: Handler::Named(handler),
+        flags: RowFlags::ANY_NAMED,
+        named: &[],
+    }
+}
+
+/// `Date.clone(*%overrides)`; a subclass keeps its class and attributes.
+// Cost: O(a + n), a = attributes of the instance, n = named arguments.
+fn date_clone_row(
+    target: &Value,
+    _args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
+        return None;
+    };
+    if !has_date_attrs(&attributes) || has_datetime_attrs(&attributes) {
+        return None;
+    }
+    let (year, month, day) = temporal::date_attrs(&attributes.as_map());
+    let formatter = attributes.as_map().get("formatter").cloned();
+    Some(
+        date_clone(year, month, day, formatter, named.pairs())
+            .map(|v| rebless_date_result(v, class_name, &attributes)),
+    )
+}
+
+/// `DateTime.clone(*%overrides)`; a subclass keeps its class and attributes.
+// Cost: O(a + n), a = attributes of the instance, n = named arguments.
+fn datetime_clone_row(
+    target: &Value,
+    _args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
+        return None;
+    };
+    if !has_datetime_attrs(&attributes) {
+        return None;
+    }
+    let (year, month, day, hour, minute, second, timezone) =
+        temporal::datetime_attrs(&attributes.as_map());
+    let formatter = attributes.as_map().get("formatter").cloned();
+    Some(
+        datetime_clone(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            timezone,
+            formatter,
+            named.pairs(),
+        )
+        .map(|v| rebless_datetime_result(v, class_name, &attributes)),
+    )
+}
 
 fn truncated_to_row(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     truncated_to(target, args)
