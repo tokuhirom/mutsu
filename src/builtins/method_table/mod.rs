@@ -76,6 +76,10 @@ pub(crate) use instances::{
     backtrace, code, exception, failure, regex_match, signature, supply, temporal_edit,
     temporal_shift,
 };
+pub(crate) use io_concurrency::promise_channel;
+pub(crate) use io_concurrency::promise_channel::{
+    CHANNEL_LIST_COERCIONS, owners_of as promise_channel_owners_of,
+};
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
     str_args, str_numeric, str_search, truth, uni,

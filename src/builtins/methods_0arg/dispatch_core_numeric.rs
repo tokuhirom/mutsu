@@ -150,10 +150,11 @@ pub(super) fn dispatch(
                     }
                     Value::int(crate::value::value_buf::buf_len_or_zero(&attributes) as i64)
                 }
+                // The `Channel.elems` row's implementation.
                 ValueView::Channel(_) => {
-                    return Some(Some(Err(RuntimeError::new(
-                        "Cannot call '.elems' on a Channel instance".to_string(),
-                    ))));
+                    return Some(
+                        crate::builtins::method_table::promise_channel::channel_elems(target, &[]),
+                    );
                 }
                 // The `Range.elems` row's implementation (`method_table::range`).
                 _ if target.is_range() => {

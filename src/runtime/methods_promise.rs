@@ -1,6 +1,5 @@
 use super::*;
 use crate::symbol::Symbol;
-use crate::value::AttrMap;
 
 impl Interpreter {
     pub(crate) fn as_exception_value(value: Value) -> Value {
@@ -154,229 +153,156 @@ impl Interpreter {
         ret
     }
 
-    pub(super) fn dispatch_promise_method(
-        &mut self,
-        shared: &SharedPromise,
-        method: &str,
-        args: Vec<Value>,
-        target: &Value,
-    ) -> Result<Value, RuntimeError> {
-        shared.mark_observed();
-        match method {
-            // Promise and Channel are the native Awaitable handles themselves.
-            // Exposing the protocol method lets user-defined Awaitable classes
-            // delegate to a native handle just as they do on Rakudo.
-            "get-await-handle" => Ok(Value::promise(shared.clone())),
-            "result" => {
-                // Wait for the promise to resolve (blocks if Planned)
-                let (result, _, _) = shared.wait();
-                self.sync_shared_vars_to_env();
-                // Blocking on a promise is a synchronization point: any output a
-                // `.then`/`.andthen`/`.orelse` callback produced on its worker
-                // thread must be flushed to real stdout before we return, so it
-                // interleaves in the same order Rakudo produces (callback output
-                // appears while the main thread is blocked in `.result`).
-                self.drain_shared_thread_output();
-                let status = shared.status();
-                if status == "Broken" {
-                    // .result on a Broken promise re-throws the cause. A
-                    // plain Str reason (e.g. `Promise.break("oops")`) gets
-                    // wrapped in X::AdHoc; an object instance (a user
-                    // exception the promise was broken with, e.g. via a
-                    // whenever LAST-phaser die propagated through
-                    // `SinkEvent::Quit`) passes through with its real type
-                    // intact — same fix as `.cause` above, and the same
-                    // shape-based check `Supplier.quit()` already uses,
-                    // since a name-based "is this an exception" check cannot
-                    // see a user class's `is Exception` ancestry.
-                    let msg = result.to_string_value();
-                    let ex = if Self::is_exception_object(&result) {
-                        result
-                    } else {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("payload".to_string(), Value::str(msg.clone()));
-                        attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-                    };
-                    // Rakudo composes `X::Promise::Broken` into the cause on
-                    // the way out of `.result`, so the thrown exception is the
-                    // anonymous mixin `X::AdHoc+{X::Promise::Broken}` (or
-                    // `MyEx+{X::Promise::Broken}` for a user exception) while
-                    // `.cause` keeps handing back the *un*mixed original.
-                    // `.message`/`.Str` are unchanged by the mixin; only
-                    // `.gist` gains the "Tried to get the result of a broken
-                    // Promise" wrapper.
-                    let ex = self.compose_promise_broken_role(ex);
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    Err(err)
-                } else {
-                    // Replay deferred taps for Proc::Async results — the
-                    // promise's own, or those of a settled component of an
-                    // allof/anyof composite.
-                    self.replay_settled_proc_taps(shared, &result);
-                    Ok(result)
-                }
-            }
-            // Cost: O(1).
-            "status" => Ok(Self::promise_status_value(&shared.status())),
-            // Cost: O(1).
-            "scheduler" => Ok(self.promise_scheduler_value(shared)),
-            "then" => {
-                let block = args.into_iter().next().unwrap_or(Value::NIL);
-                self.bind_callable_param("&code", &block)?;
-                // .then always runs the callback regardless of Kept/Broken
-                Ok(self.promise_chain_method(shared, block, |_| true, true))
-            }
-            "andthen" => {
-                let block = args.into_iter().next().unwrap_or(Value::NIL);
-                self.bind_callable_param("&code", &block)?;
-                // .andthen runs callback only if Kept; propagates Broken
-                Ok(self.promise_chain_method(shared, block, |s| s == "Kept", false))
-            }
-            "orelse" => {
-                let block = args.into_iter().next().unwrap_or(Value::NIL);
-                self.bind_callable_param("&code", &block)?;
-                // .orelse runs callback only if Broken; propagates Kept
-                Ok(self.promise_chain_method(shared, block, |s| s == "Broken", true))
-            }
-            "keep" | "break" => {
-                // Rakudo's `Promise.keep`/`.break` take the promise's single
-                // vow before resolving it, so the *second* call through the
-                // Promise (and any call after an explicit `.vow`) reports
-                // X::Promise::Vowed rather than X::Promise::Resolved. Only a
-                // promise resolved behind mutsu's back (`Promise.kept`/
-                // `Promise.broken`, whose vow is never taken) can still reach
-                // the X::Promise::Resolved arm below.
-                if !shared.take_vow() {
-                    return Err(Self::promise_vowed_error(shared));
-                }
-                let kept = method == "keep";
-                let value = if kept {
-                    args.into_iter().next().unwrap_or(Value::TRUE)
-                } else {
-                    args.into_iter()
-                        .next()
-                        .unwrap_or_else(|| Value::str_from("Died"))
-                };
-                let res = self.resolve_promise_dispatching(shared, kept, value, None)?;
-                match res {
-                    Ok(()) => Ok(Value::NIL),
-                    Err(status) => Err(Self::promise_resolved_error(shared, &status)),
-                }
-            }
-            "cause" => {
-                let status = shared.status();
-                if status != "Broken" {
-                    let mut attrs = HashMap::new();
-                    attrs.insert("status".to_string(), Value::str(status.clone()));
-                    attrs.insert("promise".to_string(), Value::promise(shared.clone()));
-                    let ex = Value::make_instance(
-                        Symbol::intern("X::Promise::CauseOnlyValidOnBroken"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(format!(
-                        "Can only call cause on a broken promise (status: {})",
-                        status
-                    ));
-                    err.exception = Some(Box::new(ex));
-                    Err(err)
-                } else {
-                    // Broken
-                    let (result, _, _) = shared.wait();
-                    Ok(Self::promise_cause_value(result))
-                }
-            }
-            "Bool" => Ok(Value::truth(shared.is_resolved())),
-            "vow" => {
-                // A promise has exactly one vow to give away. Taking it twice
-                // — or taking it after `.keep`/`.break` already consumed it —
-                // is X::Promise::Vowed.
-                if !shared.take_vow() {
-                    return Err(Self::promise_vowed_error(shared));
-                }
+    /// `Promise.result`: wait for the promise to resolve (blocks while it is
+    /// `Planned`); a broken promise re-throws its cause.
+    // Cost: O(1) after the wait, plus the replay of settled `Proc::Async` taps.
+    pub(crate) fn promise_result(&mut self, shared: &SharedPromise) -> Result<Value, RuntimeError> {
+        let (result, _, _) = shared.wait();
+        self.sync_shared_vars_to_env();
+        // Blocking on a promise is a synchronization point: any output a
+        // `.then`/`.andthen`/`.orelse` callback produced on its worker
+        // thread must be flushed to real stdout before we return, so it
+        // interleaves in the same order Rakudo produces (callback output
+        // appears while the main thread is blocked in `.result`).
+        self.drain_shared_thread_output();
+        let status = shared.status();
+        if status == "Broken" {
+            // .result on a Broken promise re-throws the cause. A plain Str
+            // reason (e.g. `Promise.break("oops")`) gets wrapped in X::AdHoc;
+            // an object instance (a user exception the promise was broken
+            // with, e.g. via a whenever LAST-phaser die propagated through
+            // `SinkEvent::Quit`) passes through with its real type intact --
+            // same fix as `.cause`, and the same shape-based check
+            // `Supplier.quit()` already uses, since a name-based "is this an
+            // exception" check cannot see a user class's `is Exception`
+            // ancestry.
+            let msg = result.to_string_value();
+            let ex = if Self::is_exception_object(&result) {
+                result
+            } else {
                 let mut attrs = HashMap::new();
-                attrs.insert("promise".to_string(), target.clone());
-                Ok(Value::make_instance(Symbol::intern("Promise::Vow"), attrs))
-            }
-            "WHAT" => Ok(Value::package(shared.class_name())),
-            "raku" | "perl" | "gist" => Ok(Value::str(
-                crate::builtins::methods_0arg::raku_repr::promise_raku_repr(&shared.status()),
-            )),
-            "Str" => Ok(Value::str(format!("Promise({})", shared.status()))),
-            "isa" => {
-                let arg = args.first().cloned().unwrap_or(Value::NIL);
-                let target_name = match arg.view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Str(name) => name.to_string(),
-                    _ => arg.to_string_value(),
-                };
-                let cn = shared.class_name().resolve();
-                let is_match = cn == target_name
-                    || target_name == "Promise"
-                    || target_name == "Any"
-                    || target_name == "Mu"
-                    || self
-                        .class_mro(&cn)
-                        .contains(&crate::symbol::Symbol::intern(&target_name));
-                Ok(Value::truth(is_match))
-            }
-            _ => Err(super::methods_signature_errors::make_method_not_found_error(
-                method, "Promise", false,
-            )),
+                attrs.insert("payload".to_string(), Value::str(msg.clone()));
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+            };
+            // Rakudo composes `X::Promise::Broken` into the cause on the way
+            // out of `.result`, so the thrown exception is the anonymous mixin
+            // `X::AdHoc+{X::Promise::Broken}` (or `MyEx+{X::Promise::Broken}`
+            // for a user exception) while `.cause` keeps handing back the
+            // *un*mixed original. `.message`/`.Str` are unchanged by the
+            // mixin; only `.gist` gains the "Tried to get the result of a
+            // broken Promise" wrapper.
+            let ex = self.compose_promise_broken_role(ex);
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            Err(err)
+        } else {
+            // Replay deferred taps for Proc::Async results -- the promise's
+            // own, or those of a settled component of an allof/anyof
+            // composite.
+            self.replay_settled_proc_taps(shared, &result);
+            Ok(result)
         }
     }
 
-    pub(super) fn dispatch_promise_vow_method(
+    /// `Promise.then` / `.andthen` / `.orelse`: a promise resolved by
+    /// `block`'s outcome. `.then` always runs the block, `.andthen` only on a
+    /// kept promise (it propagates a broken one), `.orelse` only on a broken
+    /// one (it propagates a kept one).
+    // Cost: O(1) excluding the callback, which runs user code.
+    pub(crate) fn promise_chain(
         &mut self,
-        attributes: &AttrMap,
+        shared: &SharedPromise,
         method: &str,
-        args: Vec<Value>,
+        block: Value,
     ) -> Result<Value, RuntimeError> {
-        let promise = attributes
-            .get("promise")
-            .cloned()
-            .ok_or_else(|| RuntimeError::new("Promise::Vow has no backing promise"))?;
-        let ValueView::Promise(shared) = promise.view() else {
-            return Err(RuntimeError::new(
-                "Promise::Vow backing value is not a Promise",
-            ));
-        };
-        match method {
-            "keep" | "break" => {
-                let value = if method == "keep" {
-                    args.into_iter().next().unwrap_or(Value::TRUE)
-                } else {
-                    args.into_iter()
-                        .next()
-                        .unwrap_or_else(|| Value::str_from("Died"))
-                };
-                let res =
-                    self.resolve_promise_dispatching(&shared, method == "keep", value, None)?;
-                match res {
-                    Ok(()) => Ok(Value::NIL),
-                    Err(status) => Err(Self::promise_resolved_error(&shared, &status)),
-                }
-            }
-            // The body of the block a user scheduler is cued with for `start`
-            // (see `promise_start_thunk`).
-            "__mutsu_run_start" => {
-                let block = args.into_iter().next().unwrap_or(Value::NIL);
-                self.run_cued_start_body(&shared, block)
-            }
-            // The body of the block a user scheduler is cued with to dispatch
-            // a resolution's subscribers (ADR-0105 D2).
-            // Cost: O(s), s = the resolution's subscribers.
-            "__mutsu_run_dispatch" => Ok(Self::run_cued_dispatch(
-                &args.into_iter().next().unwrap_or(Value::NIL),
-            )),
-            "WHAT" => Ok(Value::package(Symbol::intern("Promise::Vow"))),
-            "Str" | "gist" => Ok(Value::str("(Vow)".to_string())),
-            _ => Err(RuntimeError::new(format!(
-                "No method '{}' on Promise::Vow",
-                method
-            ))),
+        self.bind_callable_param("&code", &block)?;
+        Ok(match method {
+            "andthen" => self.promise_chain_method(shared, block, |s| s == "Kept", false),
+            "orelse" => self.promise_chain_method(shared, block, |s| s == "Broken", true),
+            _ => self.promise_chain_method(shared, block, |_| true, true),
+        })
+    }
+
+    /// `Promise.keep` / `.break`: take the promise's single vow, then resolve
+    /// it with `value` (`True` / `"Died"` when none is given). Rakudo's
+    /// `keep`/`break` take the vow before resolving, so the *second* call
+    /// through the Promise (and any call after an explicit `.vow`) reports
+    /// X::Promise::Vowed rather than X::Promise::Resolved. Only a promise
+    /// resolved behind mutsu's back (`Promise.kept`/`Promise.broken`, whose
+    /// vow is never taken) can still reach the X::Promise::Resolved error.
+    // Cost: O(s), s = the resolution's subscribers.
+    pub(crate) fn promise_keep_or_break(
+        &mut self,
+        shared: &SharedPromise,
+        kept: bool,
+        value: Option<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if !shared.take_vow() {
+            return Err(Self::promise_vowed_error(shared));
         }
+        self.promise_resolve_through_vow(shared, kept, value)
+    }
+
+    /// Resolve `shared` with `value` (`True` / `"Died"` when none is given),
+    /// its vow already held: `Promise::Vow.keep`/`.break`, and the second half
+    /// of `Promise.keep`/`.break`. Only an already-settled promise is an
+    /// error.
+    // Cost: O(s), s = the resolution's subscribers.
+    pub(crate) fn promise_resolve_through_vow(
+        &mut self,
+        shared: &SharedPromise,
+        kept: bool,
+        value: Option<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let value = value.unwrap_or_else(|| {
+            if kept {
+                Value::TRUE
+            } else {
+                Value::str_from("Died")
+            }
+        });
+        match self.resolve_promise_dispatching(shared, kept, value, None)? {
+            Ok(()) => Ok(Value::NIL),
+            Err(status) => Err(Self::promise_resolved_error(shared, &status)),
+        }
+    }
+
+    /// `Promise.cause`: the exception a broken promise holds;
+    /// X::Promise::CauseOnlyValidOnBroken for any other status.
+    // Cost: O(1).
+    pub(crate) fn promise_cause(shared: &SharedPromise) -> Result<Value, RuntimeError> {
+        let status = shared.status();
+        if status != "Broken" {
+            let mut attrs = HashMap::new();
+            attrs.insert("status".to_string(), Value::str(status.clone()));
+            attrs.insert("promise".to_string(), Value::promise(shared.clone()));
+            let ex = Value::make_instance(
+                Symbol::intern("X::Promise::CauseOnlyValidOnBroken"),
+                attrs,
+            );
+            let mut err = RuntimeError::new(format!(
+                "Can only call cause on a broken promise (status: {})",
+                status
+            ));
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        let (result, _, _) = shared.wait();
+        Ok(Self::promise_cause_value(result))
+    }
+
+    /// `Promise.vow`: a promise has exactly one vow to give away. Taking it
+    /// twice -- or taking it after `.keep`/`.break` already consumed it -- is
+    /// X::Promise::Vowed.
+    // Cost: O(1).
+    pub(crate) fn promise_vow(shared: &SharedPromise, target: &Value) -> Result<Value, RuntimeError> {
+        if !shared.take_vow() {
+            return Err(Self::promise_vowed_error(shared));
+        }
+        let mut attrs = HashMap::new();
+        attrs.insert("promise".to_string(), target.clone());
+        Ok(Value::make_instance(Symbol::intern("Promise::Vow"), attrs))
     }
 
     /// `Channel.send`'s delivery, shared with a `Supply.Channel` forwarding
@@ -396,98 +322,95 @@ impl Interpreter {
         let _ = self.pump_channel_taps(ch);
     }
 
-    pub(super) fn dispatch_channel_method(
+    /// `Channel.send`: queue `value`; X::Channel::SendOnClosed on a closed
+    /// channel.
+    // Cost: O(v * t), as `channel_send_value`.
+    pub(crate) fn channel_send(&mut self, ch: &SharedChannel, value: Value) -> Result<Value, RuntimeError> {
+        if !ch.can_send() {
+            return Err(Self::channel_send_closed_error());
+        }
+        self.channel_send_value(ch, value);
+        Ok(Value::NIL)
+    }
+
+    /// `Channel.receive`: the next value, blocking until one arrives;
+    /// X::Channel::ReceiveOnClosed once the channel is closed and drained, the
+    /// failure once it failed.
+    // Cost: O(1) after the wait.
+    pub(crate) fn channel_receive(ch: &SharedChannel) -> Result<Value, RuntimeError> {
+        match ch.receive_result() {
+            Ok(v) if v.is_nil() => Err(Self::channel_receive_closed_error()),
+            Ok(value) => Ok(value),
+            Err(cause) => {
+                let ex = Self::as_exception_value(cause);
+                let mut err = RuntimeError::new(ex.to_string_value());
+                err.exception = Some(Box::new(ex));
+                Err(err)
+            }
+        }
+    }
+
+    /// `Channel.close` / `.fail($reason)`: closing (or failing) the channel
+    /// completes each tap of its Supplies once the values still queued have
+    /// been delivered.
+    // Cost: O(v * t), v = values still queued, t = the channel's taps.
+    pub(crate) fn channel_close(
         &mut self,
         ch: &SharedChannel,
-        method: &str,
-        args: Vec<Value>,
+        failure: Option<Value>,
     ) -> Result<Value, RuntimeError> {
-        match method {
-            "get-await-handle" => Ok(Value::channel(ch.clone())),
-            "send" => {
-                if !ch.can_send() {
-                    return Err(Self::channel_send_closed_error());
-                }
-                let value = args.into_iter().next().unwrap_or(Value::NIL);
-                self.channel_send_value(ch, value);
-                Ok(Value::NIL)
-            }
-            "receive" => match ch.receive_result() {
-                Ok(v) if v.is_nil() => Err(Self::channel_receive_closed_error()),
-                Ok(value) => Ok(value),
+        match failure {
+            Some(reason) => ch.fail(Self::as_exception_value(reason)),
+            None => ch.close(),
+        }
+        self.pump_channel_taps(ch)?;
+        Ok(Value::NIL)
+    }
+
+    /// `Channel.list`: a lazy list that pulls one `receive` per element, on
+    /// demand, so a consumer sees each item as it arrives (#12727).
+    // Cost: O(1).
+    pub(crate) fn channel_list(ch: &SharedChannel) -> Value {
+        let mut ll = crate::value::LazyList::new_cat_pull(
+            Value::channel(ch.clone()),
+            crate::value::CatPullMode::ChannelReceive,
+        );
+        ll.list_context = true;
+        Value::lazy_list(crate::gc::Gc::new(ll))
+    }
+
+    /// `Any`'s `Seq`, `List` and `Array` on a channel (`self.list.METHOD`):
+    /// `.Seq` pulls one `receive` per element, on demand, like `.list`;
+    /// `.List` and `.Array` are the eager forms and drain until the close.
+    // Cost: O(1) for `Seq`; O(v) for the eager forms, v = values received.
+    pub(crate) fn channel_list_coercion(
+        ch: &SharedChannel,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        if method == "Seq" {
+            let ll = crate::value::LazyList::new_cat_pull(
+                Value::channel(ch.clone()),
+                crate::value::CatPullMode::ChannelReceive,
+            );
+            return Ok(Value::lazy_list(crate::gc::Gc::new(ll)));
+        }
+        let mut items = Vec::new();
+        loop {
+            match ch.receive_result() {
+                Ok(v) if v.is_nil() => break,
+                Ok(value) => items.push(value),
                 Err(cause) => {
                     let ex = Self::as_exception_value(cause);
                     let mut err = RuntimeError::new(ex.to_string_value());
                     err.exception = Some(Box::new(ex));
-                    Err(err)
+                    return Err(err);
                 }
-            },
-            "poll" => match ch.poll_result() {
-                Ok(Some(value)) => Ok(value),
-                Ok(None) => Ok(Value::NIL),
-                Err(_) => Ok(Value::NIL),
-            },
-            // Closing (or failing) the channel completes each tap of its
-            // Supplies once the values still queued have been delivered.
-            "close" => {
-                ch.close();
-                self.pump_channel_taps(ch)?;
-                Ok(Value::NIL)
             }
-            "fail" => {
-                let reason = args
-                    .into_iter()
-                    .next()
-                    .unwrap_or_else(|| Value::str_from("Died"));
-                ch.fail(Self::as_exception_value(reason));
-                self.pump_channel_taps(ch)?;
-                Ok(Value::NIL)
-            }
-            // `.list`/`.Seq` pull one `receive` per element, on demand, so a
-            // consumer sees each item as it arrives (#12727); `.List` and
-            // `.Array` are the eager forms and drain until the close.
-            "list" | "Seq" => {
-                let mut ll =
-                    crate::value::LazyList::new_cat_pull(
-                    Value::channel(ch.clone()),
-                    crate::value::CatPullMode::ChannelReceive,
-                );
-                ll.list_context = method == "list";
-                Ok(Value::lazy_list(crate::gc::Gc::new(ll)))
-            }
-            "List" | "Array" => {
-                // Drain the channel into a list (blocks until closed)
-                let mut items = Vec::new();
-                loop {
-                    match ch.receive_result() {
-                        Ok(v) if v.is_nil() => break,
-                        Ok(value) => items.push(value),
-                        Err(cause) => {
-                            let ex = Self::as_exception_value(cause);
-                            let mut err = RuntimeError::new(ex.to_string_value());
-                            err.exception = Some(Box::new(ex));
-                            return Err(err);
-                        }
-                    }
-                }
-                Ok(if method == "Array" {
-                    Value::real_array(items)
-                } else {
-                    Value::array(items)
-                })
-            }
-            "closed" => Ok(Value::promise(ch.closed_promise())),
-            "elems" => Err(RuntimeError::new(
-                "Cannot call '.elems' on a Channel instance".to_string(),
-            )),
-            "Supply" => Ok(Self::make_channel_supply(ch)),
-            "Bool" => Ok(Value::TRUE),
-            "WHAT" => Ok(Value::package(Symbol::intern("Channel"))),
-            "Str" | "gist" => Ok(Value::str_from("Channel")),
-            _ => Err(RuntimeError::new(format!(
-                "No method '{}' on Channel",
-                method
-            ))),
         }
+        Ok(if method == "Array" {
+            Value::real_array(items)
+        } else {
+            Value::array(items)
+        })
     }
 }

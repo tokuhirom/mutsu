@@ -443,60 +443,60 @@ impl Interpreter {
         }
     }
 
+    /// The native methods of a `Promise::Vow` ([`Self::promise_vow_method`]).
+    // Cost: O(1) to find the row, plus the handler's own cost.
     pub(in crate::runtime) fn native_promise_vow(
         &mut self,
         attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let promise = attributes
-            .get("promise")
-            .ok_or_else(|| RuntimeError::new("Promise::Vow missing promise"))?;
+        self.promise_vow_method(attributes, method, args).unwrap_or_else(|| {
+            Err(crate::runtime::methods_signature_errors::make_method_not_found_error(
+                method,
+                "Promise::Vow",
+                false,
+            ))
+        })
+    }
+
+    /// The methods of a `Promise::Vow`: `keep` and `break` are rows of the
+    /// method table, reached through their owner (ADR-11276 §9.118); the two
+    /// internal names run the bodies a user scheduler is cued with. `None` for
+    /// any other name.
+    // Cost: O(1) to find the row, plus the handler's own cost.
+    pub(in crate::runtime) fn promise_vow_method(
+        &mut self,
+        attributes: &AttrMap,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if let Some(result) = crate::builtins::method_table::invoke_owner(
+            self,
+            &["Promise::Vow"],
+            method,
+            &args,
+            || Value::make_instance(Symbol::intern("Promise::Vow"), attributes.clone()),
+        ) {
+            return Some(result);
+        }
+        let promise = attributes.get("promise")?.clone();
         let ValueView::Promise(shared) = promise.view() else {
-            return Err(RuntimeError::new("Promise::Vow promise is not a Promise"));
+            return None;
         };
+        let arg = args.into_iter().next().unwrap_or(Value::NIL);
         match method {
-            // A `Vow` resolves its promise unconditionally -- holding the vow
-            // IS the permission -- so neither arm consults the vow flag; only
-            // an already-settled promise is an error. Both share the one
-            // `X::Promise::Resolved` builder so the message stays in a single
-            // place (`format_exception_message`), rather than being baked into
-            // a `message` attribute that would shadow it.
-            "keep" => {
-                let value = args.into_iter().next().unwrap_or(Value::TRUE);
-                if let Err(status) = self.resolve_promise_dispatching(&shared, true, value, None)? {
-                    return Err(Interpreter::promise_resolved_error(&shared, &status));
-                }
-                Ok(Value::NIL)
-            }
-            "break" => {
-                let reason = args
-                    .into_iter()
-                    .next()
-                    .unwrap_or_else(|| Value::str_from("Died"));
-                if let Err(status) =
-                    self.resolve_promise_dispatching(&shared, false, reason, None)?
-                {
-                    return Err(Interpreter::promise_resolved_error(&shared, &status));
-                }
-                Ok(Value::NIL)
-            }
             // The body of the block a user scheduler is cued with for `start`
             // (see `promise_start_thunk`).
-            "__mutsu_run_start" => {
-                let block = args.into_iter().next().unwrap_or(Value::NIL);
-                self.run_cued_start_body(&shared, block)
-            }
+            // TODO: compile to bytecode -- the cue thunk should call a native
+            // routine, not a method by name (ADR-11276 3G remainder, the
+            // `__mutsu_*` names).
+            "__mutsu_run_start" => Some(self.run_cued_start_body(&shared, arg)),
             // The body of the block a user scheduler is cued with to dispatch
             // a resolution's subscribers (ADR-0105 D2).
             // Cost: O(s), s = the resolution's subscribers.
-            "__mutsu_run_dispatch" => Ok(Interpreter::run_cued_dispatch(
-                &args.into_iter().next().unwrap_or(Value::NIL),
-            )),
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Promise::Vow",
-                method
-            ))),
+            "__mutsu_run_dispatch" => Some(Ok(Interpreter::run_cued_dispatch(&arg))),
+            _ => None,
         }
     }
 
