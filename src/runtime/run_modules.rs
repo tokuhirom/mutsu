@@ -1180,11 +1180,12 @@ impl Interpreter {
             // both ways. Snapshot whatever the caller has under those names so the
             // module's own initializers cannot clobber them, and move the module's
             // values into `unit_lexicals` once the body has run.
-            let unit_lex_names: Vec<String> = if unit_name.is_some() {
-                facts.unit_lexical_names.clone()
-            } else {
-                Vec::new()
-            };
+            //
+            // A file without `unit` gets the same treatment: its file-scope
+            // lexicals are just as much its own, and they move into a bucket
+            // keyed by the compunit itself (ADR-12529 §3, slice 24; see
+            // `vm_compunit_lexicals`).
+            let unit_lex_names: Vec<String> = facts.unit_lexical_names.clone();
             let saved_unit_lex: Vec<(String, Option<Value>)> = unit_lex_names
                 .iter()
                 .map(|n| (n.clone(), self.env.get(n).cloned()))
@@ -1201,7 +1202,7 @@ impl Interpreter {
                     .chain(facts.unit_our_var_names.iter().cloned());
                 self.snapshot_type_markers(unit_lex_names.iter().cloned().chain(dropped))
             } else {
-                Vec::new()
+                self.snapshot_type_markers(unit_lex_names.iter().cloned())
             };
             // The module's own `my $*x` file-scope declarations (#8241) --
             // collected regardless of `unit_name`, since a bare-file module
@@ -1543,7 +1544,16 @@ impl Interpreter {
             // names. They stay out of `module_scope_names` so there is a single
             // authoritative store for them (that one is a last-resort read-only
             // snapshot, and a stale copy of a mutable lexical is worse than a miss).
-            if let Some(unit) = unit_name.as_deref()
+            // A file without `unit` keys its bucket by the compunit, its
+            // source path, which no package name can collide with.
+            let lexical_bucket = unit_name.clone().or_else(|| {
+                (!unit_lex_names.is_empty()).then(|| {
+                    crate::runtime::cow_table_mut(&mut self.lexicals.compunit_lexical_units)
+                        .insert(module_unit_for_loading_stack);
+                    module_unit_for_loading_stack.resolve()
+                })
+            });
+            if let Some(unit) = lexical_bucket.as_deref()
                 && !unit_lex_names.is_empty()
             {
                 for name in &unit_lex_names {

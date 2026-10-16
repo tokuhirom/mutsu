@@ -1199,6 +1199,62 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      hoisted one.
 
    Pinned by `t/routines/call/sibling-block-subs-capture-own-cell.t`.
+   Slice 23 also took the first two binding files of slice 21's census off
+   the merge (`bind-alias-reverse-write.t`,
+   `bind-source-tracks-through-call-chain.t`): their sibling blocks each
+   declare the bound names.
+
+   **Slice 24 done** (`fix/12529-bind-through-cells`): the module half of
+   the binding entry of slice 21's census
+   (`bind-rebind-outer-lexical-leaves-earlier-alias.t` 14-17). A module file
+   with no `unit` declarator (Rakudo's `Telemetry.rakumod` shape) runs its
+   body in the loader's env, and its file-scope lexicals stayed there:
+   only a `unit` file had them moved into `unit_lexicals`, under its
+   package. Its routines run in `GLOBAL`, so they read those names through
+   the caller chain. A caller's own same-named lexical answered instead
+   (`sub c { my $count = 'caller'; module-count() }`), a rebind inside one
+   routine reached its siblings only through the return merge, and the
+   importer's `EVAL '$x'` saw the module's variable.
+
+   - **The bucket.** Such a file's file-scope lexicals now move into
+     `unit_lexicals` too, keyed by the compunit itself (its source path,
+     which no package name collides with), and the compunit is recorded in
+     `LexicalState::compunit_lexical_units`.
+   - **The lookup.** `unit_lexical_slot` and its `_mut` twin, and the
+     `@`/`%` type lanes, find the bucket by the file the running routine was
+     declared in, walking past inlined block frames
+     (`running_compunit_lexical_unit`, `src/vm/vm_compunit_lexicals.rs`).
+     TRIR pushes no routine frame, so its outer-binding seed asks by the
+     chunk's `def_file` (`compunit_lexical_of_file`).
+   - **The `GetGlobal` scalar shortcut** read `env` directly for any routine
+     running in `GLOBAL`. A `unit` module's routine never qualified (it runs
+     in its own package); a package-less module's does, so the shortcut now
+     also steps aside for a name the running compunit's bucket holds.
+
+   Pinned by `t/modules/package-less-module-file-scope-lexicals.t`.
+   Remaining in the binding entry: a rebind in a block handed to a routine
+   (`closure-rebind-reaches-declaring-frame-through-linked-callee.t`).
+
+   **Slice 25 done** (`fix/12529-closure-rebind-cell`): the last binding
+   file of slice 21's census
+   (`closure-rebind-reaches-declaring-frame-through-linked-callee.t`). A
+   closure that rebinds an `@`/`%` of the frame that created it
+   (`run-it({ @y := [3] })`) rebound only its own env entry: a scalar the
+   closure rebinds gets a binding cell at the capture (#9307), but a
+   container takes its cell at the declaration, and the declaration asked
+   for one only when an escaping closure captured it. So the return merge
+   of `run-it` was what carried `[3]` to the block.
+
+   - The compiler now adds an own `@`/`%` a nested closure rebinds to the
+     declaration-site container lane (`needs_cell_unvouched_containers`),
+     escaping or not.
+   - That declaration's cell is a binding cell when the slot is rebound
+     (`box_decl_local_container_cell`), so a sibling closure made before the
+     rebind shares the binding too, and a name bound to the old container
+     keeps it. The capture wraps a plain cell it still finds
+     (`bind_rebound_captured_containers`).
+
+   Pinned by `t/routines/closure/closure-rebinds-captured-container-through-cell.t`.
 
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,

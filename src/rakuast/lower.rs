@@ -763,6 +763,15 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 "return" => Ok(Stmt::Return(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
+                "goto" => {
+                    let target = match args.as_slice() {
+                        [expr] => super::label_context::expression_name(expr)
+                            .map(|name| Expr::Literal(Value::str(name)))
+                            .unwrap_or_else(|| expr.clone()),
+                        _ => args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
+                    };
+                    Ok(Stmt::Goto(target))
+                }
                 // A value or a slip (`last $v`, `next |$c`) is not a label:
                 // the parser keeps that statement as the expression form.
                 "last" | "next" | "redo" => match loop_label(node, args) {

@@ -1,7 +1,8 @@
 # ADR-10723: RakuAST is mutsu's frontend IR — the parser emits RakuAST, the internal AST becomes the lowered form
 
 - **Status**: Proposed (2026-10-02). Supersedes [ADR-0011](0011-rakuast-model-layer-and-phasing.md)
-  once accepted. Stage 0's mode and CI ratchet have landed (§6); Stages 1–4 have not started.
+  once accepted. Stage 0's mode and CI ratchet have landed (§6); Stage 1 round-trip slices are
+  ongoing; Stages 2–4 have not started.
 - **Date**: 2026-10-02
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#10723](https://github.com/tokuhirom/mutsu/issues/10723). Roadmap:
@@ -1237,3 +1238,11 @@ converter renders that infix shape and lowering calls the same expansion
 builder. The reverse operator map recognizes `:=` as `TokenKind::Bind`, and the
 regressions cover type errors, multi-parameter binding, and one-time RHS
 evaluation.
+
+### 6.63 S10: goto statement (2026-10-16)
+
+`Stmt::Goto` converts to the RakuAST shape measured in Rakudo: a
+`RakuAST::Statement::Expression` containing `Call::Name::WithoutParentheses`, with a bare label as
+`Term::Name` and a computed target as an ordinary expression. Lowering maps that call back to
+`Stmt::Goto`. The focused structural regression is `t/rakuast/rakuast-goto-statement.t`; the
+ordinary execution regression remains `t/control/goto-statement.t`.
