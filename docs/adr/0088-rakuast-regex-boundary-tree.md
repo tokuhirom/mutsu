@@ -432,6 +432,16 @@ compatibility string. Other regex entry points that currently accept only a
 pattern string, declaration normalization, captures, subrules, and dynamic
 regex nodes remain follow-up slices.
 
+## 11. NUL escape followed by a digit (2026-10-16)
+
+The source-tree parser treats `\0` as the NUL character class even when the next
+source character is a digit. That digit remains a separate literal atom, as
+Rakudo's AST and matching behavior require. Previously the parser declined the
+entire tree for this spelling, making RakuAST conversion refuse an otherwise
+static regex. `t/rakuast/rakuast-regex-nul-followed-by-digit.t` pins the two
+nodes and evaluates the constructed tree; `t/regex/regex-backslash-zero-nul.t`
+exercises it through the frontend round trip.
+
 ## 10. Declaration source-whitespace and execution-provenance slice (2026-09-12)
 
 Declaration trees now retain the source whitespace boundary that RakuAST

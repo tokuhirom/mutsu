@@ -1,0 +1,1 @@
+The RakuAST regex tree now keeps `\0` followed by a digit as a NUL character class and a separate literal digit. The parser previously rejected this source shape, so `.AST` could not round-trip programs that used it. The focused RakuAST test checks the node structure and matching behavior.

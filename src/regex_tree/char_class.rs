@@ -150,8 +150,6 @@ impl Parser {
                     _ => None,
                 }
             }
-            // `\0` followed by a digit is not the NUL class.
-            '0' if self.chars.get(self.pos).is_some_and(char::is_ascii_digit) => None,
             c => match BackslashClass::from_letter(c) {
                 Some((class, negated)) => Some(RegexNode::CharClass(CharClassAtom::Backslash {
                     class,
