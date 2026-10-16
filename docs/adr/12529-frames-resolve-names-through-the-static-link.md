@@ -1333,7 +1333,10 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    variable bound to an immutable Set, Bag, Map or List (`my %qh :=
    Set.new(1, 2)`) and rebound in a closure still rebound only the
    closure's copy. A rebound slot now takes its binding cell whatever it
-   holds. Pinned by
+   holds, except a mutable QuantHash: its `.values`/`.kv` write-back stores
+   the new weights by name and does not see through a binding cell yet
+   (roast `S02-types/quanthash.t` 97), so a closure's rebind of a `%`
+   bound to a SetHash/BagHash/MixHash still depends on the merge. Pinned by
    `t/routines/closure/closure-rebinds-captured-immutable-container.t`.
 
    Correction to slice 26's census: `t/vm/underscore-kebab-var.t` is not a

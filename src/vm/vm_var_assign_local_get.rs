@@ -817,7 +817,14 @@ impl Interpreter {
         // its binding cell whatever it holds now: an immutable Set, Bag or
         // Map is a binding to replace, not a container to write through
         // (ADR-12529 §3, slice 29).
-        let rebound = code.rebound_slots.contains(&(idx as u32));
+        // A mutable QuantHash is left out: its `.values`/`.kv` write-back
+        // (`vm_for_loop_body`) stores the updated weights by name and does not
+        // see through a binding cell yet.
+        let rebound = code.rebound_slots.contains(&(idx as u32))
+            && !matches!(
+                cur.view(),
+                ValueView::Set(_, true) | ValueView::Bag(_, true) | ValueView::Mix(_, true)
+            );
         if !rebound && !matches!(cur.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return;
         }
