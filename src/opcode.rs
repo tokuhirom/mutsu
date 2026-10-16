@@ -10813,6 +10813,15 @@ impl CompiledCode {
         // are not ours, plus every nested closure's, bubble up to the chunk
         // that declares the name, which records the name's slots as rebound
         // (see `free_var_rebinds`).
+        // The own names a nested closure rebinds (see the container lane of
+        // `needs_cell_unvouched_containers` below).
+        let nested_rebound_own: Vec<Symbol> = self
+            .closure_compiled_codes
+            .iter()
+            .flat_map(|n| n.free_var_rebinds.iter())
+            .filter(|sym| sym.with_str(|s| own.contains(s)))
+            .copied()
+            .collect();
         let mut free_rebinds: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
         let mut own_rebinds: Vec<Symbol> = Vec::new();
         for sym in self.rebound_free_names.iter().chain(
@@ -11289,16 +11298,22 @@ impl CompiledCode {
         // to a same-named caller local. `exec_apply_var_trait_op` reads and
         // writes through the cell now (`read_var_trait_target` /
         // `write_var_trait_target`), so the name scan is gone.
-        self.needs_cell_unvouched_containers = sorted_by_name(
-            escaping_captured_own
-                .into_iter()
-                .filter(|sym| !vouched.contains(sym))
-                .filter(|sym| {
-                    sym.with_str(|s| {
-                        crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%'])
-                    })
-                }),
-        );
+        //
+        // An own `@`/`%` a nested closure REBINDS (`{ @y := [3] }`) takes the
+        // decl-site cell too, escaping or not: the capture then wraps it in a
+        // binding cell (`box_captured_lexicals`), which the closure's rebind
+        // reseats and this frame's slot shares. Without it the rebind landed
+        // in the closure's env alone, and only the call's return merge carried
+        // it back (ADR-12529 §3, slice 25).
+        let mut decl_cell_containers: std::collections::HashSet<Symbol> = escaping_captured_own
+            .into_iter()
+            .filter(|sym| !vouched.contains(sym))
+            .collect();
+        decl_cell_containers.extend(nested_rebound_own);
+        self.needs_cell_unvouched_containers =
+            sorted_by_name(decl_cell_containers.into_iter().filter(|sym| {
+                sym.with_str(|s| crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%']))
+            }));
         for nested in &mut self.closure_compiled_codes {
             let authoritative: Vec<Symbol> = nested
                 .free_var_syms
