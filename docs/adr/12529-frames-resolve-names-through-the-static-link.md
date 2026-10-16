@@ -1424,6 +1424,19 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    body reads and writes the declaration site's variable. Pinned by
    `t/oo/role/role-body-writes-declaration-site-lexicals.t`.
 
+   **Slice 35 done** (`fix/12529-class-body-free-vars`): the
+   `t/control/begin-lift-names-inner-type-with-body.t` entry of the fourth
+   census. A `my class` declared inside a routine runs its body statements
+   when the routine runs, each as a precompiled chunk of its own
+   (`ClassBodyOp`), so the routine's op scan never saw the outer lexicals
+   a body names: `sub f { my class K { $log ~= 'body;' } }` did not
+   capture `$log`, the chunk reached it by name through the caller chain,
+   and only `f`'s return merge carried the write. `compute_free_vars` now
+   folds the class-body chunks' free variables and free writes into the
+   declaring code's (`class_body_chunk_codes`), as it folds a nested
+   closure's. Pinned by
+   `t/oo/class/class-body-in-routine-writes-outer-lexical.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
