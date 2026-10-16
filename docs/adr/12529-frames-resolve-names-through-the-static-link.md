@@ -1465,6 +1465,31 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    per-frame metadata work and of phase 4. Pinned by
    `t/routines/call/return-merge-skips-plain-lexicals.t`.
 
+   A fifth census, after slice 37, logged every key the named and light
+   return merges still write back with a binding that differs from the
+   caller's, over every `t/` file and every whitelisted roast file: 3351
+   writes in 382 files. By file count:
+   - type names (`NativeCall::T`, `Test::A`, a `my class` the callee
+     declared): 122 files;
+   - frame metadata: `__mutsu_callable_id` 39, `__mutsu_for_chunk` 36,
+     `__mutsu_sigilless_alias` 25, `__mutsu_block_lexical_sub` 23,
+     `__mutsu_scalar_bind_no_container` 22, `__mutsu_sigilless_readonly`
+     21, `__mutsu_module_merge` 19, `__mutsu_type` 18, `__mutsu_state_key`
+     17, `__mutsu_rw_map_topic__` 16, `__mutsu_var_source_name` 15,
+     `__mutsu_var_meta` 13, `__mutsu_lexical_dynamic` 13,
+     `__mutsu_constant_var` 10, `__mutsu_bound_decont` 9, and a tail of
+     single-digit keys;
+   - dynamic variables (`*REPO`, `*CRO-UNHANDLED-ERROR-REPORTER`): 24;
+   - Pod blocks (`=pod`): 21;
+   - compiler temporaries (`@__destructure_tmp__`, `__begin_value_N`,
+     placeholders `^a`) and `&?BLOCK`: a handful each.
+
+   These are phase 1's per-frame metadata (ADR-0084, #7817) and the type
+   and dynamic names that §2 moves to the symbol table and the call-frame
+   stack. Each category leaves the merge when its owner resolves it
+   without the caller chain; the merge and the `scoped_child(caller)`
+   overlay go when the list is empty.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
