@@ -23,7 +23,7 @@ use super::*;
 pub(crate) const SLURPY_SENTRY_ROLE: &str = "X::AdHoc::SlurpySentry";
 
 impl Interpreter {
-    pub(super) fn dispatch_adhoc_from_slurpy(
+    pub(crate) fn dispatch_adhoc_from_slurpy(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {

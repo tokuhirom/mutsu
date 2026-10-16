@@ -30,13 +30,14 @@ impl Interpreter {
         if quoted_pseudo {
             self.dispatch.skip_pseudo_method_native = None;
         }
-        // `Promise`'s class methods (`start`, `in`, `at`, `kept`, `broken`,
-        // `allof`, `anyof`) are rows of the method table, found by their owner
-        // for a `Promise` type object or a subclass's (ADR-11276 §9.120).
-        if matches!(target.view(), ValueView::Package(_))
+        // The class methods of `Promise` (`start`, `in`, `at`, `kept`, `broken`,
+        // `allof`, `anyof`; ADR-11276 §9.120), `Seq.from-loop`, `Thread.start`,
+        // `Thread.is-initial-thread` and `X::AdHoc.from-slurpy` (§9.124) are
+        // rows of the method table, found by their owner for the type object.
+        if let Some(owners) = crate::builtins::method_table::early_class_method_owners_of(&target)
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
-                &["Promise"],
+                owners,
                 method,
                 &args,
                 || target.clone(),
@@ -58,9 +59,6 @@ impl Interpreter {
             "classify" | "categorize" => self.dispatch_classify_method(target, method, args),
             "classify-list" | "categorize-list" => {
                 Some(self.dispatch_classify_list_method(target, method, args))
-            }
-            "from-loop" | "from_loop" if matches!(target.view(), ValueView::Package(name) if name == "Seq") => {
-                Some(self.dispatch_seq_from_loop(args))
             }
             // `$obj.say`/`.print`/`.put`/`.printf` (no args) stringify and print the
             // invocant — EXCEPT on an IO::CatHandle, where these are write methods
@@ -160,18 +158,6 @@ impl Interpreter {
                     self.type_matches_value(&type_name, &target),
                 )))
             }
-            "start" => self.dispatch_promise_start(&target, &args),
-            "is-initial-thread" => {
-                if matches!(target.view(), ValueView::Package(cn) if cn == "Thread")
-                    || matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Thread")
-                {
-                    Some(Ok(Value::truth(
-                        super::methods_collection_ops::is_initial_thread(),
-                    )))
-                } else {
-                    None
-                }
-            }
             "THREAD" => {
                 if let ValueView::Junction { values, .. } = target.view() {
                     let code = args.first().cloned().unwrap_or(Value::NIL);
@@ -194,12 +180,6 @@ impl Interpreter {
                     return Some(Ok(Value::NIL));
                 }
                 None
-            }
-            // `X::AdHoc.from-slurpy(3, False, "Not here")` — the documented
-            // class method that builds an `X::AdHoc` out of a slurpy argument
-            // list, variadic, so not in the arity-keyed native tables.
-            "from-slurpy" if matches!(target.view(), ValueView::Package(n) if n == "X::AdHoc") => {
-                Some(self.dispatch_adhoc_from_slurpy(&args))
             }
             "WHAT" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_what(&target, args)),
             "HOW" if !quoted_pseudo => Some(self.dispatch_how(&target, &args)),

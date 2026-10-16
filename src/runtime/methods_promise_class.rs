@@ -2,27 +2,6 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// `Supply.start` / `Thread.start`; `Promise.start` is a row of the method
-    /// table ([`Self::promise_class_start`]).
-    pub(super) fn dispatch_promise_start(
-        &mut self,
-        target: &Value,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Supply"
-        {
-            return Some(self.dispatch_supply_transform(target.clone(), "start", args));
-        }
-        // Thread.start
-        if let ValueView::Package(class_name) = target.view()
-            && class_name == "Thread"
-        {
-            return Some(self.dispatch_thread_start(args));
-        }
-        None
-    }
-
     /// `Promise.start(&code, :$scheduler)`: a promise kept with the block's
     /// result, run on the scheduler.
     pub(crate) fn promise_class_start(
