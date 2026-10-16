@@ -3175,6 +3175,28 @@ keeps the inherited native path (`owners_of` names the class itself only), as be
 No behaviour change; pinned in `t/io/cathandle-method-rows.t` (a `get` through an array element advances the cat the
 variable holds; also passes under `raku`). The recognition table and the oracle snapshot gain `IO::CatHandle`.
 
+### 9.133 `Supplier`'s and the schedulers' methods are rows; a row names the native path it runs (2026-10-16)
+
+`refactor/11276-supplier-scheduler-rows` (3E remainder). `Supplier`, `ThreadPoolScheduler` and
+`CurrentThreadScheduler` were reached through the `is_native_method` gates, where the receiver picked the
+implementation: a variable took the mutating native path first (falling back to the reading one), a temporary or an
+attribute (`$!supplier.emit`) the reading one. For `Supplier.emit`, `done` and `quit` those are two copies, and the
+reading copy lacks the serialize guard of `Supply.serialize` and the timed buffer the mutating one keeps; for a
+scheduler's `uncaught_handler` the mutating copy is the setter, which a variable receiver's getter call could reach with
+no argument and so clear the handler.
+
+Decision. Their methods are `OWNER_ONLY` rows (`io_concurrency/supplier_scheduler.rs`): `Supplier`'s `emit`, `done`,
+`quit` and `Supply` (`Supplier::Preserving` reaches them through `owners_of`), the schedulers' `cue`, `loads`,
+`max_threads`, `usage` and `uncaught_handler`. A row states which native path it runs, mutating (a working copy
+committed through the shared cell) or reading (a snapshot of the attributes), through one handler,
+`Interpreter::native_owner_call`; `uncaught_handler` is a reading row at arity 0 and a mutating row at arity 1. They are
+found by owner next to `Proc::Async`'s and `Supply`'s in the instance dispatch and the mutating method call. The
+reading copies of `emit`/`done`/`quit` are now reached by no row; they stay for the dispatcher's other callers.
+
+Behaviour: an attribute or temporary receiver's `emit`/`done`/`quit` runs the mutating copy (serialized like a
+variable's). Pinned in `t/concurrency/supply/supplier-scheduler-method-rows.t` (passes under `raku`). The recognition
+table and the oracle snapshot gain the three owners.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

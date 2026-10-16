@@ -327,6 +327,37 @@ impl Interpreter {
         method == "finish"
     }
 
+    /// Run `method` on an instance through the native dispatcher of its class:
+    /// the handler of the rows whose implementation is one (ADR-11276 §9.133).
+    /// A `mutating` row runs on a working copy committed through the
+    /// instance's shared cell; a reading row runs on a snapshot of the
+    /// attributes, so a method that blocks or runs user code holds no lock on
+    /// them. `None` for a receiver that is no instance.
+    // Cost: the method's own, plus O(a) to copy a attributes.
+    pub(crate) fn native_owner_call(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: Vec<Value>,
+        mutating: bool,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        let class = class_name.resolve();
+        Some(if mutating {
+            self.call_native_instance_method_mut_in_place(&attributes, &class, method, args)
+        } else {
+            let snapshot = attributes.to_map();
+            self.call_native_instance_method(&class, &snapshot, method, args)
+        })
+    }
+
     pub(super) fn call_native_instance_method_mut_in_place(
         &mut self,
         attributes: &crate::value::InstanceAttrs,
