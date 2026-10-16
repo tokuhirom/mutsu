@@ -1307,6 +1307,24 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    default (`Any`) for a `Nil` initializer, as an untyped `my $` does.
    Pinned by `t/collections/range-pair/pair-value-anon-scalar-container.t`.
 
+   **Slice 28 done** (`fix/12529-eval-closure-cells`): the
+   `S04-phasers/in-eval.t` entry of slice 26's census. An `EVAL`'d unit is
+   compiled on its own, so a lexical of the code that called `EVAL` is not
+   one of its locals: it reads and writes the name on the env it runs on,
+   which is the caller's. A closure the unit created captured the plain
+   value from that env, so its write (`EVAL '$handle = { $h ~= "x" }'`,
+   later run by `lives-ok`) reached `$h` only through the return merge of
+   the routine that ran it.
+
+   Creating such a closure now promotes each name it writes that the
+   creating code has no slot for, and that the env binds to a plain user
+   lexical, to a shared cell in that env, inside an `EVAL` only
+   (`cell_eval_captured_caller_lexicals`, `src/vm/vm_eval_capture_cells.rs`).
+   It logs the name for the `EVAL` carrier, whose call site moves the cell
+   into the caller's slot (`writeback_carrier_writes`), so the caller, the
+   closure and its siblings share one container. Pinned by
+   `t/routines/closure/eval-closure-writes-caller-lexical-cell.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

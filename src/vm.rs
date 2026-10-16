@@ -215,6 +215,7 @@ mod vm_dispatch_helpers;
 pub(crate) mod vm_do_block;
 mod vm_element_producers;
 mod vm_env_helpers;
+mod vm_eval_capture_cells;
 mod vm_exec_dispatch;
 mod vm_exec_route;
 pub(crate) mod vm_flipflop_ops;
