@@ -806,8 +806,7 @@ impl Interpreter {
             // `self.DateTime::later(...)` etc.: the temporal methods build their
             // result with `self.new`, so it stays the receiver's subclass.
             if matches!(qualifier, "Date" | "DateTime")
-                && let Some(res) =
-                    super::methods_temporal::dispatch_temporal_method(target, actual_method, &args)
+                && let Some(res) = self.dispatch_temporal_method(target, actual_method, &args)
             {
                 return Some(res);
             }
