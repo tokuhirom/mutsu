@@ -250,6 +250,18 @@ pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<R
     (arity >= usize::from(ALL[usize::from(id)].arity)).then_some(RowId(id))
 }
 
+/// Whether `owner` declares a row for `method` at any arity: what `.can` asks
+/// of an owner a shapeless receiver's rows are found under.
+// Cost: O(k), k = rows named `method`.
+pub(crate) fn owner_declares(owner: &str, method: Symbol) -> bool {
+    name_index(method).is_some_and(|name| {
+        rows_named(name).iter().any(|&id| {
+            let row = ALL[usize::from(id)];
+            row.owner == owner && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+        })
+    })
+}
+
 /// The [`RowFlags::DEFERRAL_BASE`] row `owner` declares for `method`: the base
 /// candidate of a user override's deferral chain. No arity: the receiver comes
 /// first and the rest is the override's own argument list.

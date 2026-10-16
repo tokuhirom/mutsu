@@ -2992,6 +2992,42 @@ answers the array's (`1 2`), as before; the enum type object's `pairs`/`keys`/`v
 in `call_method_with_values` (Rakudo answers them through the enum type's HOW, not `Enumeration`).
 `method-rows-report.py --arms`: the runtime slow path loses 14 arms.
 
+### 9.126 A built-in iterator's protocol methods are rows of `Iterator` and `PredictiveIterator` (2026-10-16)
+
+`refactor/11276-iterator-protocol-rows`. The protocol of mutsu's built-in iterator (one class, `Iterator`, for every
+kind) was answered by name in three copies: the mutating method call (`methods_mut_dispatch.rs`, a variable receiver),
+the method-call fallback (`methods_call_dispatch.rs`, an array element or a temporary) and the VM's
+`try_native_iterator` (`CallMethodMut`, a subset of the names re-implemented). Session 30's status read the first copy
+as needing `Handler::Mut` because it wrote the advanced state back to the variable. It did not need to: an iterator's
+state is its instance's shared attribute cell, and every copy already committed through it (the variable write-back was
+a re-insert of a value sharing the same cell).
+
+Decision. A protocol method on a reference object whose state lives in its shared attribute cell is a pure-entry row
+(`Handler::Interp`), not a `Handler::Mut`: the place of the receiver is never needed, because no copy of the receiver
+exists to update. The protocol methods are `OWNER_ONLY` rows of the roles Rakudo declares them on
+(`instances/iterator.rs`): `Iterator`'s `pull-one`, `push-exactly`, `push-at-least`, `push-all`, `push-until-lazy`,
+`sink-all`, `skip-one`, `skip-at-least`, `skip-at-least-pull-one`, and `PredictiveIterator`'s `count-only` and
+`bool-only`. Every handler is the one implementation (`runtime/iterator_protocol_call.rs`) for the three kinds the
+instance's attributes tell apart: a `.map`/`.grep` stream, a `squish` scan with callbacks, an array-backed cursor topped
+up from a lazy source. The stepping logic (`iterator_protocol::step`, `needed_len`, the stream's call) takes an
+`IterOp`, not the method's name. The three dispatch places ask `iterator::owners_of` and `invoke_owner`; the VM's copy
+is gone.
+
+`owners_of` names `PredictiveIterator` only for a kind that knows its count, as Rakudo's iterator classes do: an
+array-backed cursor with no lazy source or a known count. A stream (Rakudo's map iterator), a `squish` scan
+(`Any::Squish-With`) and a cursor over a lazy source with no known count (a `gather`, an unending range) are `Iterator`
+only. `.can` of a built-in iterator answers from the same owners (`collect_can_methods`, `owner_declares`), so
+`Test::Iterator`'s `$iterator.can('count-only')` guard reads what the iterator does. The recognition table gains the
+two roles' declared names.
+
+Behaviour toward Rakudo, pinned in `t/collections/lazy-seq/iterator-protocol-rows.t`: `count-only`/`bool-only` of a
+`squish` scan with callbacks are `X::Method::NotFound` (were a count); `.can('count-only')` of a map stream is empty; a
+`squish` scan's `push-exactly` answers the count it pushed (was `Nil`); a `squish` scan held in an array element or a
+temporary now steps (the fallback's copy knew only the array-backed kind, and answered `IterationEnd`). `.can` of a
+protocol name answers a `Method` of the role whatever the receiver (a variable receiver answered a list holding the
+name as a `Str`). `method-rows-report.py --arms`: the runtime slow path goes
+from 399 arms to 383.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

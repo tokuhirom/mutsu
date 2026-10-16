@@ -1868,92 +1868,21 @@ impl Interpreter {
         {
             return self.dispatch_instance_and_fallback(target, method, args);
         }
-        // Iterator predictive methods
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name == "Iterator"
-        {
-            if let Some(result) = self.map_grep_stream_protocol_call(&attributes, method, &args) {
-                return result;
-            }
-            match method {
-                "count-only" if args.is_empty() => {
-                    if let Some(value) =
-                        self.iterator_count_only_from_attrs(&(attributes.as_ref()).as_map())?
-                    {
-                        return Ok(value);
-                    }
-                }
-                "bool-only" if args.is_empty() => {
-                    if let Some(value) =
-                        self.iterator_bool_only_from_attrs(&(attributes.as_ref()).as_map())?
-                    {
-                        return Ok(value);
-                    }
-                }
-                "can"
-                    if args.len() == 1
-                        && Self::iterator_supports_predictive_methods(
-                            &(attributes.as_ref()).as_map(),
-                        ) =>
-                {
-                    let method_name = args[0].to_string_value();
-                    if matches!(method_name.as_str(), "count-only" | "bool-only") {
-                        return Ok(Value::array(vec![Value::str(method_name)]));
-                    }
-                }
-                _ => {}
-            }
-            // Index-advancing protocol methods on a receiver that is not a
-            // variable (`@its[0].pull-one`, `@!iterators[$i].pull-one`,
-            // `@a.iterator.pull-one`). An Iterator is a reference object whose
-            // attributes live in a shared cell, so the advanced cursor (and any
-            // prefix pulled from a lazy source) is committed through that cell
-            // in place: every alias of the iterator — an array element, the
-            // variable it was copied from — sees the step. Discarding it made
-            // an iterator held in an array replay its first element forever
-            // (MergeOrderedSeqs hung). Shares the single stepping implementation
-            // with the mutating (variable receiver) path.
-            let mut items = match attributes.as_map().get("items").map(|v| v.view()) {
-                Some(ValueView::Array(values, ..)) => values.to_vec(),
-                _ => Vec::new(),
-            };
-            let index = match attributes.as_map().get("index").map(|v| v.view()) {
-                Some(ValueView::Int(i)) if i >= 0 => i as usize,
-                _ => 0,
-            };
-            // A lazy source may not have produced the elements this call needs
-            // yet; the grown prefix is committed along with the cursor below.
-            let lazy_source = attributes.as_map().get("lazy_source").cloned();
-            let mut topped_up = false;
-            if let Some(more) = self.iterator_topup_from_lazy_source(
-                lazy_source.as_ref(),
+        // A built-in iterator's protocol methods are rows of the `Iterator` and
+        // `PredictiveIterator` roles, found by their owner (ADR-11276 §9.126).
+        // They commit through the instance's shared attribute cell, so an
+        // iterator held in an array element or a temporary advances in place
+        // and every alias sees the step.
+        if let Some(owners) = crate::builtins::method_table::iterator_owners_of(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
                 method,
-                index,
                 &args,
-                items.len(),
-            )? {
-                items = more;
-                topped_up = true;
-            }
-            if let Some(step) = super::iterator_protocol::step(method, &items, index, &args) {
-                if let Some(range) = step.append.clone() {
-                    let vals = items[range].to_vec();
-                    self.iterator_append_to_array_arg(&args, &vals);
-                }
-                let mut ops = vec![(
-                    Symbol::intern("index"),
-                    Some(Value::int(step.new_index as i64)),
-                )];
-                if topped_up {
-                    ops.push((Symbol::intern("items"), Some(Value::array(items))));
-                }
-                attributes.write_keys(ops);
-                return Ok(step.ret);
-            }
+                || target.clone(),
+            )
+        {
+            return result;
         }
         // DateTime/Date formatter rendering. The formatter runs against this
         // invocant on every stringification (nothing is cached), so a value

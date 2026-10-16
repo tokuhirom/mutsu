@@ -74,6 +74,7 @@ pub(crate) use instances::compunit::owners_of as compunit_owners_of;
 pub(crate) use instances::enumeration::owners_of as enumeration_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
+pub(crate) use instances::iterator::owners_of as iterator_owners_of;
 pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
 pub(crate) use instances::routine::owners_of as routine_owners_of;
 pub(crate) use instances::{
@@ -111,7 +112,8 @@ use table::all_rows;
 #[cfg(test)]
 pub(crate) use table::names_a_mut_row;
 pub(crate) use table::{
-    Receiver, RowId, base_row, max_row_arity, names_a_row, owner_row, resolve, row, shape_has_row,
+    Receiver, RowId, base_row, max_row_arity, names_a_row, owner_declares, owner_row, resolve, row,
+    shape_has_row,
 };
 pub(crate) use unadmitted::invoke_unadmitted;
 

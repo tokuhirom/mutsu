@@ -108,20 +108,7 @@ impl Interpreter {
         attributes.contains_key("lazy_source") && !attributes.contains_key("known_count")
     }
 
-    pub(super) fn iterator_supports_predictive_methods(attributes: &AttrMap) -> bool {
-        if Self::iterator_is_unpredictive_lazy(attributes) {
-            return false;
-        }
-        matches!(
-            attributes.get("items").map(Value::view),
-            Some(ValueView::Array(..))
-        ) || matches!(
-            attributes.get("squish_source").map(Value::view),
-            Some(ValueView::Array(..))
-        )
-    }
-
-    pub(super) fn iterator_count_only_from_attrs(
+    pub(crate) fn iterator_count_only_from_attrs(
         &mut self,
         attributes: &AttrMap,
     ) -> Result<Option<Value>, RuntimeError> {
@@ -203,16 +190,6 @@ impl Interpreter {
         }
 
         Ok(Some(Value::int(remaining as i64)))
-    }
-
-    pub(super) fn iterator_bool_only_from_attrs(
-        &mut self,
-        attributes: &AttrMap,
-    ) -> Result<Option<Value>, RuntimeError> {
-        let Some(count) = self.iterator_count_only_from_attrs(attributes)? else {
-            return Ok(None);
-        };
-        Ok(Some(Value::truth(super::to_int(&count) > 0)))
     }
 
     /// Resolve `splice`'s start/elems arguments when they are `Callable`s —
