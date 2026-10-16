@@ -3241,6 +3241,10 @@ arms. They are now `Any` rows on the same routines (`flatmap`'s inline arm body 
 `Interpreter::dispatch_flatmap_method`), reached through the same MRO walk. `flatmap` takes one mapper, so
 `.flatmap(&a, &b)` is `X::Multi::NoMatch`, as in Rakudo; before, the second mapper was silently dropped.
 
+Follow-up (`refactor/11276-any-junction-rows`). `any`, `all`, `one` and `none` had only an arm, which built a junction
+of the receiver's list. They are now pure `Any` rows (`collections/any_misc.rs`, `TYPE_OBJECT_OK`) found by the guard
+step and the MRO walk. A scalar-held list is deitemized first, as the cascade's scalar-transparent entry did.
+
 ### 9.135 A pure row's interpreter twin: an owner's rows at one arity are candidates in turn (2026-10-16)
 
 `refactor/11276-any-aggregate-twins`. `Any.min`, `max`, `minmax`, `minpairs`, `maxpairs`, `sort`, `unique` and

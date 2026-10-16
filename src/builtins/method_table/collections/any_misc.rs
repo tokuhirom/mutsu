@@ -2,11 +2,31 @@
 //! #12389 item 4). Each handler is the one body the cascade's arm calls too.
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::value::JunctionKind;
+
+macro_rules! junction_row {
+    ($name:literal, $handler:ident) => {
+        MethodRow {
+            owner: "Any",
+            name: $name,
+            arity: 0,
+            handler: Handler::Pure($handler),
+            flags: RowFlags::TYPE_OBJECT_OK,
+            named: &[],
+        }
+    };
+}
 use crate::builtins::method_table::Named;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
+    // `Any.any`/`all`/`one`/`none`: a junction of the receiver's list
+    // (ADR-11276 §9.134); a type object is a one-item list.
+    junction_row!("any", any),
+    junction_row!("all", all),
+    junction_row!("one", one),
+    junction_row!("none", none),
     // `Any.tree`: an `Iterable`'s elements treed level by level, any other
     // value itself (ADR-11276 §9.112).
     MethodRow {
@@ -243,4 +263,35 @@ pub(crate) fn supply_of(target: &Value) -> Option<Value> {
 // or Range, e = elements of the first level.
 fn tree(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(crate::value::flat::tree_to_depth(target, usize::MAX))
+}
+
+/// A junction of `kind` over `target`'s list. A list held in a scalar
+/// (`my $l = (1, 2); $l.any`) is the list, not one item of it.
+// Cost: O(n), n = elements of the receiver's list.
+fn junction_of(kind: JunctionKind, target: &Value) -> Result<Value, RuntimeError> {
+    let target = target.clone().deitemize_for_sigil_bind();
+    Ok(Value::junction(
+        kind,
+        crate::runtime::Interpreter::value_to_list(&target),
+    ))
+}
+
+// Cost: O(n), n = elements of the receiver's list.
+fn any(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    junction_of(JunctionKind::Any, target)
+}
+
+// Cost: O(n), n = elements of the receiver's list.
+fn all(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    junction_of(JunctionKind::All, target)
+}
+
+// Cost: O(n), n = elements of the receiver's list.
+fn one(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    junction_of(JunctionKind::One, target)
+}
+
+// Cost: O(n), n = elements of the receiver's list.
+fn none(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    junction_of(JunctionKind::None, target)
 }

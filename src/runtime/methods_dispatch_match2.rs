@@ -196,16 +196,6 @@ impl Interpreter {
             "hash" if args.is_empty() && !matches!(target.view(), ValueView::Instance { .. }) => {
                 Some(self.dispatch_to_hash(target))
             }
-            "any" | "all" | "one" | "none" if args.is_empty() => {
-                let kind = match method {
-                    "any" => JunctionKind::Any,
-                    "all" => JunctionKind::All,
-                    "one" => JunctionKind::One,
-                    _ => JunctionKind::None,
-                };
-                let values = Self::value_to_list(&target);
-                Some(Ok(Value::junction(kind, values)))
-            }
             "slice" => {
                 // Seq.slice(@indices) — return elements at the given indices as a Seq.
                 // Seq.slice() with no args returns an empty Seq.
