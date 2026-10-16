@@ -2870,6 +2870,41 @@ dispatch goes on as before. The handlers hand the implementations the positional
 which is how they read `:scheduler`. The `start` arm keeps `Supply.start` and `Thread.start`. No behaviour change;
 pinned in `t/concurrency/promise/promise-class-method-rows.t`.
 
+### 9.121 Slice 5: `Attribute`, `IterationBuffer` and `Routine` are rows, found by their owner (2026-10-16)
+
+`refactor/11276-instance-ops-rows`. Three families were answered by name in `methods_instance_ops.rs`: the
+`Attribute` metaobject's methods and `IterationBuffer`'s, each a block of `dispatch_instance_and_fallback` behind a
+class-name test, and `Routine`'s `is_dispatcher`, `dispatcher`, `multi` and `package` in the arms that end the method
+call when nothing else answered; `dispatch_routine_method` (`methods_sub.rs`) kept a second copy of the first three for a
+`&name` handle. Every one is now an `OWNER_ONLY` row of the class Rakudo declares it on, with §9.117's mechanism: no
+shape, an `owners_of` per family, and `invoke_owner` at the place the arms were, so the order against the rest of the
+dispatch is unchanged.
+
+- `Attribute` (`ctors_mop/attribute.rs`): `name`, `type`, `has_accessor`, `rw`, `readonly`, `required`, `package`,
+  `gist`, `Str`, `container`, `set_rw`, `build`, `set_build`, `get_value`, `set_value`. The ones that read the registry
+  or the class table are `Interpreter` methods in `runtime/methods_attribute_meta.rs`. Rakudo declares no `raku` on
+  `Attribute` (`Attribute.new` is `Mu.raku`), so the arm is gone with no row; the default instance rendering answers
+  `BOOTSTRAPATTR.new` for a bootstrap attribute (`Int.^attributes`), as Rakudo does.
+- `IterationBuffer` (`collections/iteration_buffer.rs`): `elems`, `AT-POS`, `BIND-POS`, `push`, `unshift`, `append`,
+  `prepend`, `clear`, `List`, `Slip`, `Seq`, `iterator`, for a buffer or an instance of a subclass that does not declare
+  the method itself (ValueList's throwing `BIND-POS`/`push` still win). The snapshot gains `IterationBuffer`.
+- `Routine` (`instances/routine.rs`, implementations in `runtime/methods_routine_rows.rs`): one implementation per
+  method answers a `Sub` and a `Routine` handle, reached from `dispatch_callable_method` next to the `Code` rows, and
+  `package` answers the code-class instances `.^methods` builds from the fallback. The snapshot gains `Routine`. The
+  catalog folds `Routine` into `Code` (`canonical_builtin_owner`), so `rows_are_declared_by_rakudo` now checks a row
+  under its own owner before its folded one.
+- `Code.set_name` is one row for a `Sub` (`rename_code`) and a regex (`set_regex_name`); the `dispatch_sub_method`
+  arm and the fallback's regex arm are gone. The fallback's regex arms for `line`, `file`, `of`, `returns`,
+  `signature`, `arity` and `count` are gone too: the `Code` rows (ADR-12523) already answer a regex, and the fallback
+  asks them (`code::answer`, which now takes the call's arguments).
+
+No behaviour change; pinned in `t/oo/attribute/attribute-method-rows.t`, `t/collections/lazy-seq/iterationbuffer-rows.t`
+and `t/routines/code-routine-rows.t`. Left in `methods_instance_ops.rs`: the `Proc::Async` routing to the native-methods
+tier (its implementation is the name `match` of `native_methods/proc.rs`; 3E remainder), the fallback's universal
+answers (`DUMP`, `gist`, `raku`, `name`, `isa`, `REPR`, `Str`, `Numeric`, `EVAL`, `new_type`, for type objects,
+junctions and plain values), and the proxy-subclass array mutators. `method-rows-report.py --arms`: the runtime slow
+path goes from 459 arms to 428.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
