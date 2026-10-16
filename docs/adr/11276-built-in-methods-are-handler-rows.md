@@ -3236,6 +3236,11 @@ eight adverbs `accepted_nameds` keeps (a `:label` must still rank the built-in b
 candidate); `classify-list`/`categorize-list` are `SLURPY` from arity 1 and gain the rows Rakudo declares on `Bag`,
 `BagHash`, `Mix` and `MixHash` (`MixHash.new.classify-list(@mapper, 1, 2, 3)`).
 
+Follow-up (`refactor/11276-any-maps-rows`). `flatmap`, `deepmap`, `duckmap` and `nodemap` had no row at all, only
+arms. They are now `Any` rows on the same routines (`flatmap`'s inline arm body became
+`Interpreter::dispatch_flatmap_method`), reached through the same MRO walk. `flatmap` takes one mapper, so
+`.flatmap(&a, &b)` is `X::Multi::NoMatch`, as in Rakudo; before, the second mapper was silently dropped.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
