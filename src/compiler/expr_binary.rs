@@ -889,6 +889,24 @@ impl Compiler {
             return;
         }
 
+        // `key => my $ = v`: the Pair's value is the anonymous scalar's
+        // container, so `.value = x` writes it (`anon_scalar_as_cell`).
+        if matches!(op, TokenKind::FatArrow)
+            && !self.suppress_pair_capture
+            && Self::is_untyped_anon_scalar_decl(right)
+        {
+            self.compile_expr(left);
+            self.anon_scalar_as_cell = true;
+            self.compile_expr(right);
+            self.anon_scalar_as_cell = false;
+            self.code.emit(if mint_named_pair {
+                OpCode::MakeNamedArg
+            } else {
+                OpCode::MakePair
+            });
+            return;
+        }
+
         // `key => @a[i]`: the Pair's value must alias the ELEMENT container, so
         // `$p.value = "x"` writes through to the array (ADR-0036 §1.3 row 10).
         // Compile the subscript in the same container-producing mode `=:=`
@@ -1186,5 +1204,29 @@ impl Compiler {
         let left_signed = self.native_int_operand_signedness(left)?;
         let right_signed = self.native_int_operand_signedness(right)?;
         (left_signed == right_signed).then_some(!left_signed)
+    }
+
+    /// Whether `expr` is an expression-position `my $ = ...` with no type,
+    /// user trait or `state`: the anonymous scalar whose container a Pair
+    /// keeps. Internal `__` markers (`__has_initializer`) do not count.
+    // Cost: O(1).
+    fn is_untyped_anon_scalar_decl(expr: &Expr) -> bool {
+        let Expr::DoStmt(stmt) = expr else {
+            return false;
+        };
+        matches!(
+            stmt.as_ref(),
+            crate::ast::Stmt::VarDecl {
+                name,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                custom_traits,
+                where_constraint: None,
+                ..
+            } if name == "__ANON_STATE__"
+                && custom_traits.iter().all(|(t, _)| t.starts_with("__"))
+        )
     }
 }

@@ -1915,6 +1915,12 @@ pub(crate) struct Compiler {
     /// Standalone Pair literals (`my $p = (k => $v)`) still capture for
     /// write-through (S02:1704).
     suppress_pair_capture: bool,
+    /// Set while compiling the value of a `key => my $ = expr` Pair: the
+    /// anonymous scalar's container becomes the Pair's value as a writable
+    /// cell (`WrapTypedContainer` of `Mu`) instead of a `WrapScalar` item, so
+    /// `.value = v` and an `is rw` alias over `.value`/`.kv` write it, as in
+    /// rakudo. Consumed by the first anonymous declaration compiled.
+    anon_scalar_as_cell: bool,
     /// When set, an `ArrayLiteral` does NOT box its scalar-variable elements into
     /// aliasing `ContainerRef` cells (the List container-aliasing behavior). Set
     /// while compiling a `for`-loop's synthetic single-element iterable wrap
@@ -2117,6 +2123,7 @@ impl Compiler {
             is_mainline: false,
             lexical_scope_known: false,
             suppress_pair_capture: false,
+            anon_scalar_as_cell: false,
             suppress_list_var_alias: false,
             sunk_list_assign_result: false,
             expr_depth: 0,
