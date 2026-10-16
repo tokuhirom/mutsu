@@ -1297,10 +1297,13 @@ impl Interpreter {
         // lexicals too, but it gets no local slot, so `is_callee_local_sym` does
         // not see it and the binding leaked into the caller -- clobbering a
         // same-named outer symbol for the rest of the program.
+        // A plain user lexical is never merged back either (ADR-12529 §3,
+        // slice 37; see `call_compiled_function_named_inner`).
         let is_callee_private = |k: Symbol| {
             k == "_"
                 || k == "@_"
                 || k == "%_"
+                || k.flags() & crate::symbol::flags::PLAIN_USER_LEXICAL != 0
                 || k.with_str(|s| s.starts_with('?'))
                 || (bang_is_callee_private
                     && k.with_str(crate::symbol::is_routine_scoped_implicit_var))

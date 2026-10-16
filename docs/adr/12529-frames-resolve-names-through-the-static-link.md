@@ -1449,6 +1449,22 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    caller env after it (`vm_call_light_runtime_names.rs`). Pinned by
    `t/vm/frames/light-call-carries-runtime-name-writes.t`.
 
+   **Slice 37 done** (`refactor/12529-drop-plain-lexical-merge`): the
+   plain-lexical return merge is gone. With slices 33-36 merged, a run of
+   every `t/` file with the merge of plain user lexicals switched off left
+   no dependent (the fourth census's roast run had none already), so the
+   named merge loop (`call_compiled_function_named_inner`) and both light
+   merges (`merge_positional_light_env`, `merge_light_env`) now skip every
+   key `symbol::flags::PLAIN_USER_LEXICAL` marks, permanently. A callee's
+   write to an outer lexical reaches the declaring frame through the
+   variable's shared cell, and a runtime-named write through
+   `propagate_pending_caller_writes` (named) or
+   `vm_call_light_runtime_names.rs` (light). What the merges still carry
+   is system names and metadata (`__mutsu_*`, `$!`-style implicits handled
+   per their own rules, dynamics, type names), the subject of phase 1's
+   per-frame metadata work and of phase 4. Pinned by
+   `t/routines/call/return-merge-skips-plain-lexicals.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
