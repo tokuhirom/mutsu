@@ -55,7 +55,9 @@ pub(super) use idents::{keyword, parse_raku_ident};
 
 // Re-export the block/statement-list parsers moved to `stmtlist`.
 pub(in crate::parser) use stmtlist::partial_parse_skips;
-use stmtlist::{block, method_block, package_body_block, package_body_block_with_terms, routine_block};
+use stmtlist::{
+    block, method_block, package_body_block, package_body_block_with_terms, routine_block,
+};
 pub(super) use stmtlist::{block_inner, stmt_list_partial};
 pub(in crate::parser) use stmtlist::{stmt_list_pub, stmt_list_with_lines_pub};
 
