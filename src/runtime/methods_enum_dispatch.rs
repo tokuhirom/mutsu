@@ -61,8 +61,8 @@ impl Interpreter {
             return None;
         };
         let base: &[&str] = match value {
-            EnumValue::Int(_) => &["Int"],
-            EnumValue::Str(_) => &["Str"],
+            EnumValue::Int(_) => &["Int", "Cool"],
+            EnumValue::Str(_) => &["Str", "Cool"],
             EnumValue::Generic(_) => &[],
         };
         if !base.is_empty()

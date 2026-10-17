@@ -2299,10 +2299,12 @@ impl Interpreter {
 
                 // Before giving up, check if this is a mutating array method
                 // and we have a pending Proxy subclass attribute reference.
-                if matches!(
-                    method,
-                    "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
-                ) && matches!(target.view(), ValueView::Array(..))
+                if matches!(target.view(), ValueView::Array(..))
+                    && self.types.pending_proxy_subclass_attr.is_some()
+                    && crate::builtins::method_table::names_a_mut_row(
+                        Symbol::intern(method),
+                        args.len(),
+                    )
                     && let Some((attrs_ref, attr_name)) =
                         self.types.pending_proxy_subclass_attr.take()
                 {
@@ -2826,7 +2828,10 @@ impl Interpreter {
         None
     }
 
-    /// Mutate an array attribute in a Proxy subclass's shared storage.
+    /// Mutate an array attribute in a Proxy subclass's shared storage: the
+    /// `Array` mutator rows on the stored array as a detached place
+    /// (ADR-11276 §9.147), written back so every alias of the storage sees it.
+    // Cost: the row's own cost, plus one lock round trip.
     pub(crate) fn proxy_subclass_array_mutate(
         &mut self,
         attrs_ref: &Arc<std::sync::Mutex<ValueMap>>,
@@ -2834,61 +2839,30 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let mut attrs = attrs_ref.lock().unwrap();
-        let arr = attrs
+        // The lock is not held across the row, which may run user code.
+        let mut array = attrs_ref
+            .lock()
+            .unwrap()
             .entry(attr_name.to_string())
-            .or_insert_with(|| Value::real_array(Vec::new()));
-        if let Some(result) = arr.with_array_mut(|items, _| -> Result<Value, RuntimeError> {
-            let items = crate::value::gc_data_mut(items);
-            match method {
-                "push" => {
-                    for arg in args {
-                        items.push(arg.clone());
-                    }
-                }
-                "pop" => {
-                    if items.is_empty() {
-                        return Ok(make_empty_array_failure("pop"));
-                    }
-                    return Ok(items.pop().unwrap_or(Value::NIL));
-                }
-                "shift" => {
-                    return Ok(if items.is_empty() {
-                        make_empty_array_failure("shift")
-                    } else {
-                        items.remove(0)
-                    });
-                }
-                "unshift" => {
-                    for (i, arg) in args.iter().enumerate() {
-                        items.insert(i, arg.clone());
-                    }
-                }
-                "append" => {
-                    items.extend(flatten_append_args(args.to_vec()));
-                }
-                "prepend" => {
-                    let mut new_items: Vec<Value> = Vec::new();
-                    for arg in args {
-                        match arg.view() {
-                            ValueView::Array(vals, _) => new_items.extend(vals.iter().cloned()),
-                            _ => new_items.push(arg.clone()),
-                        }
-                    }
-                    new_items.append(items.items_mut());
-                    *items = crate::value::ArrayData::new(new_items);
-                }
-                _ => {}
-            }
-            Ok(Value::real_array(items.clone().into_items()))
-        }) {
-            result
-        } else {
-            Err(RuntimeError::new(format!(
+            .or_insert_with(|| Value::real_array(Vec::new()))
+            .clone();
+        let answer = crate::builtins::method_table::invoke_mut(
+            self,
+            &mut crate::builtins::method_table::ReceiverPlace::Detached(&mut array),
+            Symbol::intern(method),
+            args,
+        );
+        let Some(answer) = answer else {
+            return Err(RuntimeError::new(format!(
                 "Cannot call '{}' on non-Array attribute",
                 method
-            )))
-        }
+            )));
+        };
+        attrs_ref
+            .lock()
+            .unwrap()
+            .insert(attr_name.to_string(), array);
+        answer
     }
 
     pub(crate) fn dispatch_are(
