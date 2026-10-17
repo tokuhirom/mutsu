@@ -1275,3 +1275,13 @@ original type spelling. Parsing now retains both forms: conversion preserves
 the measured subset node and its predicate, and lowering uses the retained
 source to rebuild the keyed-hash constraint. The focused regression checks
 the RakuAST tree, accepted and rejected keys, and the value-type archetypes.
+
+### 6.67 S4: hidden and type-valued routine traits (2026-10-17)
+
+Routine `Trait::Is` uses its `name` field for named traits such as
+`hidden-from-backtrace`, and its `type` field for type-valued traits such as
+`is Foo::Bar(:tag<x>)`. Conversion now preserves that distinction for subs,
+anonymous subs, and methods; lowering maps a type-valued trait back to the
+existing routine trait binder while the hidden marker remains internal. The
+regressions cover the measured fields, named and anonymous dispatch, method
+dispatch, and hidden backtrace frames.

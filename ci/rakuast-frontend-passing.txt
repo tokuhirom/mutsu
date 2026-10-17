@@ -1721,6 +1721,7 @@ t/exceptions/parse-failure-syntax-exception-class.t
 t/exceptions/perl5var-special.t
 t/exceptions/phaser-begin-nested-eval-error.t
 t/exceptions/private-method-binding-error.t
+t/exceptions/proto-method-hidden-from-backtrace.t
 t/exceptions/proto-without-candidates-error.t
 t/exceptions/readonly-assign-exception-taxonomy.t
 t/exceptions/repeat-call-backtrace-frame.t
@@ -1739,6 +1740,7 @@ t/exceptions/seq-raku-rethrows-a-failed-pull.t
 t/exceptions/start-unhandled-exception-exits.t
 t/exceptions/str-numeric-error.t
 t/exceptions/stringify-propagates-user-str-exception.t
+t/exceptions/sub-hidden-from-backtrace.t
 t/exceptions/suppressed-type-vs-local-decl.t
 t/exceptions/throws-like-colonpair-fat-arrow.t
 t/exceptions/throws-like-gather-sink.t
@@ -4655,6 +4657,7 @@ t/oo/trait/nested-class-custom-trait-compile-time.t
 t/oo/trait/param-trait-mixin-persists.t
 t/oo/trait/param-trait-word-quote-arg.t
 t/oo/trait/proto-method-trait-is-dispatcher.t
+t/oo/trait/routine-qualified-type-trait.t
 t/oo/trait/runtime-trait-persistence.t
 t/oo/trait/shadow-slot-var-trait.t
 t/oo/trait/signature-literal-custom-param-trait.t
@@ -4968,6 +4971,7 @@ t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-arg-blocks.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
+t/rakuast/rakuast-routine-custom-traits.t
 t/rakuast/rakuast-routine-trait-order.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sequential-interpolation.t

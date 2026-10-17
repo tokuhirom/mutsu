@@ -62,6 +62,34 @@ pub(super) fn trait_is(name: &str, argument: Option<RakuAstNode>) -> RakuAstNode
     }
 }
 
+/// Build an `is TYPE` trait, whose AST stores a type node rather than a name.
+// Cost: O(n + a), n = type name length, a = argument node size.
+pub(super) fn trait_is_type(
+    name: &str,
+    argument: Option<RakuAstNode>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = vec![node_field(
+        Some("type"),
+        super::type_build::build_type_node(name)?,
+    )];
+    if let Some(argument) = argument {
+        fields.push(node_field(Some("argument"), argument));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::TraitIs,
+        fields,
+    })
+}
+
+/// Raku treats a qualified name or a capitalized identifier in an `is` trait
+/// position as a type; lowercase names are custom trait names.
+// Cost: O(n), n = trait name length.
+pub(super) fn is_type_trait_name(name: &str) -> bool {
+    name != "DEPRECATED"
+        && (crate::qualified::is_qualified_str(name)
+            || name.chars().next().is_some_and(char::is_uppercase))
+}
+
 fn colon_pair_true(tag: &str) -> Value {
     Value::rakuast(Box::new(RakuAstNode {
         class: RakuAstClass::ColonPairTrue,
@@ -237,7 +265,10 @@ pub(super) fn deprecated_message(name: &str) -> Option<&str> {
 
 /// Whether the converter renders the custom trait `name` as a `Trait::Is`.
 fn is_renderable_trait_name(name: &str) -> bool {
-    is_generic_trait_name(name) || deprecated_message(name).is_some()
+    name == "__hidden_from_backtrace"
+        || is_type_trait_name(name)
+        || is_generic_trait_name(name)
+        || deprecated_message(name).is_some()
 }
 
 /// Whether `custom_traits` holds a trait that renders as a plain `Trait::Is`.
@@ -321,7 +352,18 @@ pub(super) fn add_custom(
         if !is_renderable_trait_name(name) {
             continue;
         }
-        let item = if let Some(message) = deprecated_message(name) {
+        let item = if name == "__hidden_from_backtrace" {
+            Value::rakuast(Box::new(trait_is("hidden-from-backtrace", None)))
+        } else if is_type_trait_name(name) {
+            let argument =
+                match argument {
+                    None => None,
+                    Some(argument) => Some(custom_argument(argument)?.ok_or_else(|| {
+                        unsupported("type trait with an angle-word list argument")
+                    })?),
+                };
+            Value::rakuast(Box::new(trait_is_type(name, argument)?))
+        } else if let Some(message) = deprecated_message(name) {
             let argument = if message.is_empty() {
                 None
             } else {
@@ -373,19 +415,29 @@ pub(super) fn add_custom(
 
 /// Lower a `Trait::Is` that names a plain custom trait into the parser's
 /// `custom_traits` entry; `None` for a name the parser would not leave there.
-// Cost: O(a), a = size of the argument.
+// Cost: O(n + a), n = type name length, a = size of the argument.
 pub(super) fn lower_custom(
     owner: &RakuAstNode,
     t: &RakuAstNode,
 ) -> Result<Option<(String, Option<Expr>)>, RuntimeError> {
-    let name = positional_leaf(named_child(t, "name")?)?;
-    let ValueView::Str(name) = name.view() else {
-        return Ok(None);
+    let type_name = named_child(t, "type")
+        .ok()
+        .map(|type_node| super::type_lower::type_constraint(owner, type_node))
+        .transpose()?;
+    let is_type = type_name.is_some();
+    let name = if let Some(type_name) = type_name {
+        type_name
+    } else {
+        let name = positional_leaf(named_child(t, "name")?)?;
+        let ValueView::Str(name) = name.view() else {
+            return Ok(None);
+        };
+        name.to_string()
     };
-    if name.as_str() == "hidden-from-backtrace" && t.fields.len() == 1 {
+    if name == "hidden-from-backtrace" && t.fields.len() == 1 {
         return Ok(Some(("__hidden_from_backtrace".to_string(), None)));
     }
-    if name.as_str() == "DEPRECATED" {
+    if name == "DEPRECATED" {
         // `DEPRECATED` / `DEPRECATED:message`, as the parser keeps it.
         return match named_child(t, "argument") {
             Err(_) if t.fields.len() == 1 => Ok(Some(("DEPRECATED".to_string(), None))),
@@ -401,7 +453,7 @@ pub(super) fn lower_custom(
             Err(_) => Ok(None),
         };
     }
-    if !is_generic_trait_name(&name) {
+    if !is_type && !is_generic_trait_name(&name) {
         return Ok(None);
     }
     let argument = match named_child(t, "argument") {
@@ -415,7 +467,7 @@ pub(super) fn lower_custom(
         Err(_) if t.fields.len() == 1 => None,
         Err(_) => return Ok(None),
     };
-    Ok(Some((name.to_string(), argument)))
+    Ok(Some((name, argument)))
 }
 
 // Cost: O(a), a = size of the argument.

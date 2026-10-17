@@ -1146,12 +1146,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                             && !is_return_spelling_marker(t)
                             && t != OUR_SCOPED
                             && t != crate::parser::ANON_DECL_TRAIT
+                            && t != "__hidden_from_backtrace"
                             // The operator-precedence record the parser derives
                             // from `is assoc` / `is tighter`; lowering rebuilds it.
                             && t != OP_PREC_TRAIT
-                            || crate::qualified::is_qualified_str(t)
                     }),
-                    "sub with an internal or qualified trait",
+                    "sub with an internal trait",
                 ),
             ];
             if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
@@ -1245,10 +1245,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 ),
                 (
                     custom_traits.iter().any(|(t, _)| {
-                        t.starts_with("__") && !is_return_spelling_marker(t)
-                            || crate::qualified::is_qualified_str(t)
+                        t.starts_with("__")
+                            && !is_return_spelling_marker(t)
+                            && t != "__hidden_from_backtrace"
                     }),
-                    "method with an internal or qualified trait",
+                    "method with an internal trait",
                 ),
             ];
             if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {

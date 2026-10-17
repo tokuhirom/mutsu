@@ -40,7 +40,11 @@ pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, Runti
                         Some(super::attribute::paren_argument(expr)?)
                     }
                 };
-                super::routine_traits::trait_is(name, argument)
+                if super::routine_traits::is_type_trait_name(name) {
+                    super::routine_traits::trait_is_type(name, argument)?
+                } else {
+                    super::routine_traits::trait_is(name, argument)
+                }
             }
             RoutineTrait::Returns(ty) | RoutineTrait::Of(ty) => RakuAstNode {
                 class: if matches!(item, RoutineTrait::Returns(_)) {
@@ -150,38 +154,47 @@ pub(super) fn retain(node: &RakuAstNode, body: &mut Vec<Stmt>) -> Result<(), Run
                 RoutineTrait::Handles(super::lower::lower_expr(named_child_or_positional(item)?)?)
             }
             RakuAstClass::TraitIs => {
-                let name = positional_leaf(named_child(item, "name")?)?;
-                let ValueView::Str(name) = name.view() else {
-                    return Err(super::lower::unsupported(node));
-                };
-                let argument = match named_child(item, "argument") {
-                    Err(_) => None,
-                    Ok(argument) if name.as_str() == "export" => {
-                        let tags = super::routine_traits::export_tags(argument)?
-                            .ok_or_else(|| super::lower::unsupported(node))?;
-                        Some(TraitArgument::ExportTags(tags))
+                if named_child(item, "type").is_ok() {
+                    let (name, argument) = super::routine_traits::lower_custom(node, item)?
+                        .ok_or_else(|| super::lower::unsupported(node))?;
+                    RoutineTrait::Is {
+                        name,
+                        argument: argument.map(TraitArgument::Parentheses),
                     }
-                    Ok(argument) if argument.class == RakuAstClass::QuotedString => {
-                        let segments = list_field(argument, "segments")?;
-                        let [segment] = segments else {
-                            return Err(super::lower::unsupported(node));
-                        };
-                        let ValueView::RakuAst(segment) = segment.view() else {
-                            return Err(super::lower::unsupported(node));
-                        };
-                        let value = positional_leaf(segment)?;
-                        let ValueView::Str(text) = value.view() else {
-                            return Err(super::lower::unsupported(node));
-                        };
-                        Some(TraitArgument::Words(text.to_string()))
+                } else {
+                    let name = positional_leaf(named_child(item, "name")?)?;
+                    let ValueView::Str(name) = name.view() else {
+                        return Err(super::lower::unsupported(node));
+                    };
+                    let argument = match named_child(item, "argument") {
+                        Err(_) => None,
+                        Ok(argument) if name.as_str() == "export" => {
+                            let tags = super::routine_traits::export_tags(argument)?
+                                .ok_or_else(|| super::lower::unsupported(node))?;
+                            Some(TraitArgument::ExportTags(tags))
+                        }
+                        Ok(argument) if argument.class == RakuAstClass::QuotedString => {
+                            let segments = list_field(argument, "segments")?;
+                            let [segment] = segments else {
+                                return Err(super::lower::unsupported(node));
+                            };
+                            let ValueView::RakuAst(segment) = segment.view() else {
+                                return Err(super::lower::unsupported(node));
+                            };
+                            let value = positional_leaf(segment)?;
+                            let ValueView::Str(text) = value.view() else {
+                                return Err(super::lower::unsupported(node));
+                            };
+                            Some(TraitArgument::Words(text.to_string()))
+                        }
+                        Ok(argument) => Some(TraitArgument::Parentheses(
+                            super::attribute::lower_paren_argument(node, argument)?,
+                        )),
+                    };
+                    RoutineTrait::Is {
+                        name: name.to_string(),
+                        argument,
                     }
-                    Ok(argument) => Some(TraitArgument::Parentheses(
-                        super::attribute::lower_paren_argument(node, argument)?,
-                    )),
-                };
-                RoutineTrait::Is {
-                    name: name.to_string(),
-                    argument,
                 }
             }
             _ => return Err(super::lower::unsupported(node)),
