@@ -2551,8 +2551,7 @@ impl Env {
                 // (`DeclaredConstraint::Untyped`, ADR-13757).
                 if let Some(outer) = cur.static_skip(key)
                     && key.shadow_meta_subject().is_none_or(|subject| {
-                        self.get_sym_in_frame(subject).is_none()
-                            && outer.get_sym(subject).is_some()
+                        self.get_sym_in_frame(subject).is_none() && outer.get_sym(subject).is_some()
                     })
                 {
                     cur = outer;
