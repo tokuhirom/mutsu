@@ -555,11 +555,11 @@ pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) mod render_guard;
 mod varref_declared;
-pub(crate) use varref_declared::VarRefDeclared;
 pub(crate) use dispatch_shape::{
     ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
     ROLES_WITH_ROWS, const_str_eq, cool_numeric_method,
 };
+pub(crate) use varref_declared::VarRefDeclared;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
 mod entry_path;

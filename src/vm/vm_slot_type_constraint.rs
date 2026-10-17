@@ -62,7 +62,8 @@ impl Interpreter {
         slot: u32,
         name_sym: Symbol,
     ) -> VarRefDeclared {
-        if slot != u32::MAX && code.declared_constraint(slot as usize) == DeclaredConstraint::Untyped
+        if slot != u32::MAX
+            && code.declared_constraint(slot as usize) == DeclaredConstraint::Untyped
         {
             return VarRefDeclared::Resolved(None);
         }
@@ -86,7 +87,11 @@ impl Interpreter {
 
     /// [`Self::varref_type_constraint_value`] as an owned `String`.
     // Cost: as `varref_type_constraint_value`, plus a copy of the name.
-    pub(crate) fn varref_type_constraint(&self, varref: &Value, name_sym: Symbol) -> Option<String> {
+    pub(crate) fn varref_type_constraint(
+        &self,
+        varref: &Value,
+        name_sym: Symbol,
+    ) -> Option<String> {
         match self.varref_type_constraint_value(varref, name_sym)?.view() {
             crate::value::ValueView::Str(tc) => Some(tc.as_str().to_owned()),
             _ => None,
