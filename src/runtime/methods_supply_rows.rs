@@ -146,6 +146,8 @@ impl Interpreter {
                     SupplyOp::Merge => Some(self.dispatch_supply_merge(&args)),
                     SupplyOp::Zip => Some(self.dispatch_supply_zip_class(&args)),
                     SupplyOp::ZipLatest => Some(self.dispatch_supply_zip_latest_class(&args)),
+                    // `grab` is an instance method; the type object refuses it.
+                    SupplyOp::Grab => self.dispatch_grab_method(target.clone(), args),
                     _ => None,
                 };
             }

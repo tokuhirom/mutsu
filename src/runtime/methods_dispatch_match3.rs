@@ -1,7 +1,22 @@
 use super::*;
-use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::types::is_stash_class_name;
+
+/// The methods `dispatch_method_by_name_3` answers from a late row of the
+/// receiver's MRO (ADR-11276 §9.139).
+const MATCH3_LATE_BY_MRO: [&str; 11] = [
+    "Numeric",
+    "run",
+    "Date",
+    "DateTime",
+    "Str",
+    "Stringy",
+    "keys",
+    "values",
+    "AT-KEY",
+    "EXISTS-KEY",
+    "EXISTS-POS",
+];
 
 impl Interpreter {
     /// Dispatch remaining methods by name (Supply, networking, temporal, misc).
@@ -41,89 +56,23 @@ impl Interpreter {
         {
             return Some(result);
         }
-        match method {
-            "Numeric" if args.is_empty() => {
-                // Seq.Numeric: if backed by a PredictiveIterator, call count-only.
-                // Otherwise return the element count.
-                if let ValueView::Seq(items) = target.view() {
-                    let seq_id = items.identity();
-                    if let Some(iter) = self.predictive_seq_iter_for(seq_id) {
-                        return Some(self.call_method_with_values(iter, "count-only", vec![]));
-                    }
-                    return Some(Ok(Value::int(items.len() as i64)));
-                }
-                None
-            }
-            "signal" => {
-                if let ValueView::Package(class_name) = target.view()
-                    && class_name == "Supply"
-                {
-                    return Some(self.dispatch_supply_signal(&args));
-                }
-                None
-            }
-            "Date" if args.is_empty() => {
-                if let ValueView::Package(class_name) = target.view() {
-                    let cn = class_name.resolve();
-                    let mro = self.class_mro(&cn);
-                    if mro.iter().any(|name| name == "DateTime")
-                        || mro.iter().any(|name| name == "Date")
-                    {
-                        return Some(Ok(Value::package(Symbol::intern("Date"))));
-                    }
-                }
-                None
-            }
-            "DateTime" if args.is_empty() => {
-                if let ValueView::Package(class_name) = target.view() {
-                    let cn = class_name.resolve();
-                    let mro = self.class_mro(&cn);
-                    if mro.iter().any(|name| name == "DateTime")
-                        || mro.iter().any(|name| name == "Date")
-                    {
-                        return Some(Ok(Value::package(Symbol::intern("DateTime"))));
-                    }
-                }
-                None
-            }
-            // `Supply.live` is a real method (`method live(Supply:D: --> Bool:D)`),
-            // not an attribute accessor. Reading it as an attribute only answered
-            // for the supplies whose constructor happened to store one, so a
-            // combinator result died with "No such method 'live'"
-            // (`$s1.Supply.merge($s2.Supply).live`).
-            "grab" => self.dispatch_grab_method(target, args),
-            "run" if args.is_empty() => {
-                // `Thread.run` starts a `Thread.new`-constructed thread. Handled
-                // here (rather than in `native_thread`) because it must return
-                // the invocant itself, not a rebuilt copy.
-                if let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = target.view()
-                    && class_name == "Thread"
-                {
-                    let attrs = attributes.as_map().clone();
-                    return Some(self.dispatch_thread_run(&target, &attrs));
-                }
-                None
-            }
-            // A `Regex` in string context warns and yields the empty string --
-            // see `regex_str_coercion`. Checked before the generic list/`Str`
-            // renderer, which would hand back the source text.
-            "Str" | "Stringy" if args.is_empty() && self.regex_str_coercion(&target).is_some() => {
-                // The probe above already warned; re-running it would warn
-                // twice, so answer directly.
-                Some(Ok(Value::str(String::new())))
-            }
-            "Str" | "Stringy" if args.is_empty() => self.dispatch_list_str_method(target),
-            "keys" if args.is_empty() => self.dispatch_keys_method(target),
-            "values" if args.is_empty() => Some(self.dispatch_values_method(target)),
-            "AT-KEY" if args.len() == 1 => self.dispatch_at_key_method(&target, &args),
-            "EXISTS-KEY" if args.len() == 1 => self.dispatch_match_exists_key(&target, &args),
-            "EXISTS-POS" if args.len() == 1 => self.dispatch_match_exists_pos(&target, &args),
-            _ => None,
+        // The late rows of the receiver's MRO (ADR-11276 §9.139): a `Seq`'s
+        // `Numeric`, the temporal type objects' coercions, `Thread.run`, a
+        // list's or a regex's `Str`, and the hash-likes' `keys`/`values`/
+        // `AT-KEY`/`EXISTS-*`. `Mu`'s late rows are the cascade's last resort,
+        // reached only after the user methods this step precedes (§9.138).
+        if MATCH3_LATE_BY_MRO.contains(&method) {
+            let mro = self.classhow_mro_unhidden_names(&target);
+            let owners: Vec<&str> = mro
+                .iter()
+                .map(String::as_str)
+                .filter(|owner| *owner != "Mu")
+                .collect();
+            return crate::builtins::method_table::invoke_mro_late(
+                self, &owners, method, &args, &target,
+            );
         }
+        None
     }
 
     /// Dispatch the "grep" method: the `Any.grep` row's handler and the
@@ -203,7 +152,7 @@ impl Interpreter {
     /// `.grab` on the `Supply` type object (`Supply.grab` of an instance is a
     /// row, ADR-11276 §9.130; the QuantHash `grab` is a `Handler::Mut` row,
     /// §9.23).
-    fn dispatch_grab_method(
+    pub(crate) fn dispatch_grab_method(
         &mut self,
         target: Value,
         _args: Vec<Value>,
@@ -340,7 +289,7 @@ impl Interpreter {
     /// SAME pure renderer, so the list-shape rules (space separation, nested
     /// flattening) stay in one place -- only the per-element stringification
     /// moves.
-    fn dispatch_list_str_method(&mut self, target: Value) -> Option<Result<Value, RuntimeError>> {
+    pub(crate) fn dispatch_list_str_method(&mut self, target: Value) -> Option<Result<Value, RuntimeError>> {
         if !Self::list_str_needs_interpreter(&target) {
             return None;
         }
@@ -618,7 +567,7 @@ impl Interpreter {
     }
 
     /// Dispatch "keys" method.
-    fn dispatch_keys_method(&mut self, target: Value) -> Option<Result<Value, RuntimeError>> {
+    pub(crate) fn dispatch_keys_method(&mut self, target: Value) -> Option<Result<Value, RuntimeError>> {
         match target.view() {
             ValueView::Instance {
                 class_name,
@@ -672,7 +621,7 @@ impl Interpreter {
 
     /// Dispatch "values" method.
     /// Cost: O(e), e = elements (or hash values) of the invocant, copied into a Seq.
-    fn dispatch_values_method(&self, target: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_values_method(&self, target: Value) -> Result<Value, RuntimeError> {
         match target.view() {
             // `Foo::.values` — the stash's symbol values (enum members, nested
             // packages, ...), mirroring the Stash arm of dispatch_keys_method.
@@ -707,7 +656,7 @@ impl Interpreter {
     /// or a Stash (does the package have the named symbol?). `CORE::.EXISTS-KEY`
     /// is used by dists (e.g. head-skip-tail) to detect a symbol clash before
     /// exporting. Returns None for other targets so they fall through.
-    fn dispatch_match_exists_key(
+    pub(crate) fn dispatch_match_exists_key(
         &self,
         target: &Value,
         args: &[Value],
@@ -745,7 +694,7 @@ impl Interpreter {
 
     /// Dispatch "EXISTS-POS" on a Match: is the positional capture index in range?
     /// Returns None for non-Match targets so they fall through to other handlers.
-    fn dispatch_match_exists_pos(
+    pub(crate) fn dispatch_match_exists_pos(
         &self,
         target: &Value,
         args: &[Value],
@@ -766,7 +715,7 @@ impl Interpreter {
     /// Dispatch "AT-KEY" method.
     // Cost: O(k * b), k = indexed keys (1 for a scalar key), b = bytes per key;
     // each Stash symbol-table lookup is an expected constant-time hash probe.
-    fn dispatch_at_key_method(
+    pub(crate) fn dispatch_at_key_method(
         &self,
         target: &Value,
         args: &[Value],

@@ -600,6 +600,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Seq", "sink", 1, 48),
     ("Seq", "Slip", 1, 16),
     ("Seq", "Str", 1, 16),
+    ("Seq", "Numeric", 8, 60),
     ("Seq", "tail", 3, 0),
     ("Seq", "unique", 1, 0),
     ("Seq", "values", 1, 0),

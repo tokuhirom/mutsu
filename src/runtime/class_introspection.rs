@@ -151,8 +151,12 @@ impl Interpreter {
             return true;
         }
         // Thread native methods: rows of the method table (ADR-11276 §9.22).
+        // `run` answers the invocant itself, which the native path's copy
+        // rebuilt from the attributes is not: its late row is reached by the
+        // receiver's MRO (§9.139).
         if class_name == "Thread"
-            && (method_name == "WHAT" || owner_declares_row(&["Thread"], method_name))
+            && (method_name == "WHAT"
+                || (method_name != "run" && owner_declares_row(&["Thread"], method_name)))
         {
             return true;
         }
