@@ -28,4 +28,27 @@ impl Env {
             cur = cur.parent.as_deref()?;
         }
     }
+
+    /// A variable's type record (`__mutsu_type::x` and kin) when the running
+    /// code declares the variable itself (ADR-13757 step 4): the record was
+    /// written in this frame, so the lookup ends at the frame root and never
+    /// reads a same-named record of a frame that called it. A key removed in
+    /// a tier of the frame (an untyped parameter's shadowing) answers `None`.
+    /// The whole chain when no tier is a frame root (the program scope).
+    // Cost: O(d), d = the frame's tiers.
+    pub(crate) fn get_record_in_frame(&self, key: Symbol) -> Option<&Value> {
+        let mut cur = self;
+        loop {
+            if let Some(v) = cur.inner.get(&key) {
+                return Some(v);
+            }
+            if cur.is_tombstoned(key) || cur.frame_root {
+                return None;
+            }
+            match cur.parent.as_deref() {
+                Some(parent) => cur = parent,
+                None => return cur.base_get(key),
+            }
+        }
+    }
 }

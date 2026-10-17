@@ -41,21 +41,30 @@ impl BlockRoutineness {
 /// routine classification goes: an EVAL'd unit's mainline (ADR-0037), a body a
 /// code object owns (its recorded classification, ADR-0050), or a body nothing
 /// owns (the ambient fallback).
+/// An owned body also carries the code its owner was compiled to, when it
+/// has one: the recompile sees that code's lexical import chain (ADR-8751).
 #[derive(Clone, Copy)]
-enum CarrierBody {
+enum CarrierBody<'a> {
     EvalUnit,
-    Owned(BlockRoutineness),
+    Owned(BlockRoutineness, Option<&'a crate::opcode::CompiledCode>),
     Unowned,
 }
 
-impl CarrierBody {
+impl<'a> CarrierBody<'a> {
     fn is_eval_unit(self) -> bool {
         matches!(self, CarrierBody::EvalUnit)
     }
 
     fn routineness(self) -> Option<BlockRoutineness> {
         match self {
-            CarrierBody::Owned(routineness) => Some(routineness),
+            CarrierBody::Owned(routineness, _) => Some(routineness),
+            CarrierBody::EvalUnit | CarrierBody::Unowned => None,
+        }
+    }
+
+    fn origin(self) -> Option<&'a crate::opcode::CompiledCode> {
+        match self {
+            CarrierBody::Owned(_, origin) => origin,
             CarrierBody::EvalUnit | CarrierBody::Unowned => None,
         }
     }
@@ -242,6 +251,19 @@ impl Interpreter {
         is_eval_unit: bool,
         routineness: Option<BlockRoutineness>,
     ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
+        self.compile_block_value_opts_under(body, is_eval_unit, routineness, None)
+    }
+
+    /// [`Self::compile_block_value_opts`] for a body `origin` was compiled
+    /// from: the recompile sees the import sets of the `use`-blocks around
+    /// it, as `origin` did (ADR-8751).
+    pub(crate) fn compile_block_value_opts_under(
+        &self,
+        body: &[Stmt],
+        is_eval_unit: bool,
+        routineness: Option<BlockRoutineness>,
+        origin: Option<&crate::opcode::CompiledCode>,
+    ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
         // Entered before the compiler exists: `Compiler::new` builds the
         // top-level chunk, which takes its unit stamp from this guard (see
         // the ADR-0106 note at the compile below).
@@ -254,6 +276,8 @@ impl Interpreter {
             // block imported (ADR-8751): its bareword calls read the sets of
             // the blocks running around it.
             compiler.seed_lexical_import_chain(self.active_lexical_import_chain());
+        } else if let Some(origin) = origin {
+            compiler.seed_lexical_import_chain_from(origin);
         }
         // For an EVAL'd compilation unit's mainline the question is whether a
         // *routine* lexically encloses the `EVAL` call — and a mainline
@@ -394,10 +418,13 @@ impl Interpreter {
         &mut self,
         body: &std::sync::Arc<Vec<Stmt>>,
         routineness: Option<BlockRoutineness>,
+        origin: Option<&crate::opcode::CompiledCode>,
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             body,
-            routineness.map_or(CarrierBody::Unowned, CarrierBody::Owned),
+            routineness.map_or(CarrierBody::Unowned, |routineness| {
+                CarrierBody::Owned(routineness, origin)
+            }),
             false,
             Some(CarrierCacheKey::Site(std::sync::Arc::clone(body))),
             None,
@@ -584,6 +611,7 @@ impl Interpreter {
         routineness: Option<BlockRoutineness>,
         cache_id: CarrierCacheKey,
         post: &CarrierPostCompile,
+        origin: Option<&crate::opcode::CompiledCode>,
     ) -> (
         std::sync::Arc<crate::opcode::CompiledCode>,
         std::sync::Arc<crate::opcode::CompiledFns>,
@@ -596,7 +624,8 @@ impl Interpreter {
             return (code.clone(), fns.clone());
         }
         crate::vm::vm_stats::record_carrier_compile(false);
-        let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit, routineness);
+        let (mut code, fns) =
+            self.compile_block_value_opts_under(body, is_eval_unit, routineness, origin);
         // The three per-`SubData` mutations, applied BEFORE the chunk is shared.
         // They are part of the key above, so an entry served from the cache is
         // byte-identical to what this fresh path produces for the same key --
@@ -645,13 +674,14 @@ impl Interpreter {
     fn eval_block_value_inner(
         &mut self,
         body: &[Stmt],
-        kind: CarrierBody,
+        kind: CarrierBody<'_>,
         record_free_var_writes: bool,
         cache_id: Option<CarrierCacheKey>,
         free_var_writes_out: Option<&mut Vec<String>>,
         precompiled: Option<&crate::opcode::CompiledDeclExpr>,
     ) -> Result<Value, RuntimeError> {
         let is_eval_unit = kind.is_eval_unit();
+        let origin = kind.origin();
         let routineness = kind.routineness();
         // Taken first, unconditionally: it belongs to THIS body's compile only
         // (see the field doc), and an empty body must not leave it armed.
@@ -734,10 +764,11 @@ impl Interpreter {
             // caller was about to compile, never to a signature expression.
             (chunk.code.clone(), chunk.fns.clone())
         } else if let Some(id) = cache_id {
-            self.compile_block_value_cached(body, is_eval_unit, routineness, id, &post)
+            self.compile_block_value_cached(body, is_eval_unit, routineness, id, &post, origin)
         } else {
             crate::vm::vm_stats::record_carrier_compile_uncached();
-            let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit, routineness);
+            let (mut code, fns) =
+                self.compile_block_value_opts_under(body, is_eval_unit, routineness, origin);
             post.apply(&mut code);
             (std::sync::Arc::new(code), std::sync::Arc::new(fns))
         };

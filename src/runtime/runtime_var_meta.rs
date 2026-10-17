@@ -554,7 +554,25 @@ impl Interpreter {
         let meta_key = self.type_meta_key_cached(name_sym);
         // A unit's own `@`/`%` lexical keeps its lane in the unit's record
         // once its load ended (#13086).
-        let stored = self.declared_meta_lane(meta_key)?;
+        Self::type_record_constraint(self.declared_meta_lane(meta_key)?)
+    }
+
+    /// [`Self::var_type_constraint_value_sym`] for a variable the running code
+    /// declares itself (`BindingDesc::declared_here`): its record is in the
+    /// running frame, so the lookup ends at the frame root (ADR-13757 step 4).
+    // Cost: O(1) for a name no typed declaration has used; else O(d), d = the
+    // running frame's tiers.
+    pub(crate) fn own_var_type_constraint_value_sym(&self, name_sym: Symbol) -> Option<Value> {
+        if !Self::env_type_constraint_seen_for(name_sym) {
+            return None;
+        }
+        let meta_key = self.type_meta_key_cached(name_sym);
+        Self::type_record_constraint(self.env().get_record_in_frame(meta_key)?)
+    }
+
+    /// The constraint a `__mutsu_type::*` record holds.
+    // Cost: O(1).
+    fn type_record_constraint(stored: &Value) -> Option<Value> {
         match stored.view() {
             ValueView::Str(_) => Some(stored.clone()),
             // A `:=` rebind override (`runtime_var_bind_meta`): the value half

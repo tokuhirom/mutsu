@@ -368,6 +368,26 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(next))
     }
 
+    /// `dispatcher` (a [`Self::sub_value_from_multi_candidates`] value over
+    /// user candidates of the built-in operator `name`, `infix:<+>`) falling
+    /// back to the operator itself when no captured candidate accepts a call
+    /// (`multi_dispatch_builtin_fallback`, ADR-8751 stage 2). The value never
+    /// takes the by-name call path: the registry does not hold its
+    /// candidates.
+    // Cost: O(e), e = the dispatcher's captured env (one code object built).
+    pub(crate) fn with_builtin_operator_fallback(dispatcher: Value) -> Value {
+        let ValueView::Sub(data) = dispatcher.view() else {
+            return dispatcher;
+        };
+        let mut next: crate::value::SubData = (**data).clone();
+        next.env.remove("__mutsu_multi_dispatch_gen");
+        next.env.insert_sym(
+            crate::symbol::wk::multi_dispatch_builtin_fallback(),
+            Value::TRUE,
+        );
+        Value::sub_value(crate::gc::Gc::new(next))
+    }
+
     pub(crate) fn sub_value_from_multi_candidates(
         &self,
         name: &str,

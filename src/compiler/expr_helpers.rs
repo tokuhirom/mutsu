@@ -227,6 +227,7 @@ impl Compiler {
         // escape-box the operand, which is wrong for a scalar binary operand.
         self.compile_expr(right);
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        self.emit_lex_import_builtin_compound(compound_op);
         self.code.emit(OpCode::AtomicCompoundVar {
             name_idx,
             op: compound_op,

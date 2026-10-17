@@ -174,6 +174,14 @@ pub(crate) struct BindingDesc {
     /// see [`DeclaredConstraint`]. `Unrecorded` (the default) means "ask the
     /// env", which is what every slot did before.
     pub(crate) declared_constraint: DeclaredConstraint,
+    /// This chunk declares the slot's variable itself: a `my`/`state`
+    /// declaration of any sigil, or a parameter that does not alias the
+    /// caller's container (not sigilless, `is rw` or `is raw`). Its type
+    /// record, if it has one, was written in the frame that runs this chunk,
+    /// so a lookup of it never continues into the frames that called it
+    /// (ADR-13757 step 4). `false` for a slot the chunk only uses (a free
+    /// variable, an aliasing parameter, a compiler temporary).
+    pub(crate) declared_here: bool,
     pub(crate) flags: BindingFlags,
 }
 

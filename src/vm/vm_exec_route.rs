@@ -220,6 +220,7 @@ impl Interpreter {
             | OpCode::CallMethodMut { .. }
             | OpCode::CallOnCodeVar { .. }
             | OpCode::CallOnValue { .. }
+            | OpCode::LexImportBuiltinOp { .. }
             | OpCode::LexImportCall { .. }
             | OpCode::LexImportInfix { .. }
             | OpCode::LexImportMeta { .. }

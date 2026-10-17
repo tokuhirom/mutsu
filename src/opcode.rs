@@ -4462,6 +4462,15 @@ pub(crate) enum OpCode {
     /// the hyper applies, the bound routine instead of resolving the
     /// operator by name, and the op at `ip + 1` is skipped. Stack: as that op.
     LexImportMeta { chain_idx: u32, name_idx: u32 },
+    /// Prefix of an op at `ip + 1` that applies the built-in operator
+    /// `name_idx` (the constant `infix:<+>`): its own opcode (`Add`), a
+    /// compound assignment, a reduction or a hyper, inside a block that
+    /// `use`s a module (ADR-8751 stage 2). When one of the chain's import sets
+    /// binds the operator's user candidates, the op at `ip + 1` runs with them
+    /// in scope: a candidate that accepts the operands answers, and the
+    /// built-in answers the rest. Otherwise the op runs as it is. Stack: as
+    /// that op.
+    LexImportBuiltinOp { chain_idx: u32, name_idx: u32 },
     /// `import Module :TAGS`: import the exports of an already-loaded module.
     /// Stack: `[] → []`. Operands as [`Self::UseModule`]; runs the runtime
     /// `import_module`.
@@ -8972,6 +8981,14 @@ impl CompiledCode {
             })
     }
 
+    /// Whether this chunk declares slot `idx`'s variable itself — see
+    /// [`crate::binding_desc::BindingDesc::declared_here`]. `false` for a slot
+    /// with no descriptor (a hand-built chunk).
+    #[inline]
+    pub(crate) fn declares_slot(&self, idx: usize) -> bool {
+        self.binding_descs.get(idx).is_some_and(|d| d.declared_here)
+    }
+
     /// Record that `name`'s declaration constrains it to `tc` — see
     /// [`Self::pending_declared_constraints`]. Called once per `SetVarType*`
     /// the compiler emits.
@@ -8983,6 +9000,14 @@ impl CompiledCode {
     /// [`crate::binding_desc::DeclaredConstraint::Untyped`].
     pub(crate) fn note_untyped_declaration(&mut self, name: &str) {
         self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Untyped);
+    }
+
+    /// Record that this chunk declares `name` without settling its
+    /// constraint for the store fast path (a typed parameter, an `@`/`%`
+    /// variable): only [`crate::binding_desc::BindingDesc::declared_here`]
+    /// follows from it.
+    pub(crate) fn note_declared_local(&mut self, name: &str) {
+        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Unrecorded);
     }
 
     /// Record that `name` is out of the bake's reach — a trait was applied to
@@ -9044,11 +9069,17 @@ impl CompiledCode {
         }
         // Fold the name-keyed declaration records onto their slots and drop
         // them: compile-time scaffolding, like `const_index` below.
+        // Every name in the map is declared by this chunk; only a plain-scalar
+        // slot takes the constraint (the store fast path's bake, see
+        // `Compiler::emit_set_var_type_op`).
         let pending = std::mem::take(&mut self.pending_declared_constraints);
         if !pending.is_empty() {
             for (desc, name) in self.binding_descs.iter_mut().zip(self.locals.iter()) {
                 if let Some(&c) = pending.get(name.as_str()) {
-                    desc.declared_constraint = c;
+                    desc.declared_here = true;
+                    if desc.flags.simple_scalar_local() {
+                        desc.declared_constraint = c;
+                    }
                 }
             }
         }
