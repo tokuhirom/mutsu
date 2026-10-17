@@ -7,8 +7,9 @@
 //! `.raku`), a `Str` quotes and escapes itself, and a `Bool` spells its enum
 //! constant. `WHICH` is [`which_of`], the one
 //! identity routine every layer shares. A rational with a zero denominator
-//! cannot be rendered by a pure handler (its `gist` throws with the
-//! interpreter's context), so those rows decline it.
+//! has no decimal form: its `gist` throws `X::Numeric::DivideByZero` and its
+//! `raku` is the literal (`<1/0>`, `FatRat.new(1, 0)`). `FatRat` shares the
+//! rows of `Rat`, which Rakudo composes from the same `Rational` role.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::methods_0arg::which::which_of;
@@ -32,20 +33,11 @@ pub(super) static ROWS: &[MethodRow] = rows! {
     "Int" => ["gist" => gist, "raku" => raku, "WHICH" => which],
     "Num" => ["gist" => gist, "raku" => raku, "WHICH" => which],
     "Rat" => ["gist" => gist, "raku" => raku, "WHICH" => which],
+    "FatRat" => ["gist" => gist, "raku" => raku],
     "Complex" => ["gist" => gist, "raku" => raku, "WHICH" => which],
     "Bool" => ["gist" => gist, "raku" => raku, "Str" => gist],
     "Str" => ["gist" => gist, "raku" => raku, "WHICH" => which],
 };
-
-/// Whether the receiver is a rational whose denominator is zero.
-// Cost: O(1).
-fn is_zero_denominator(target: &Value) -> bool {
-    match target.view() {
-        ValueView::Rat(_, 0) | ValueView::FatRat(_, 0) => true,
-        ValueView::BigRat(_, d) => num_traits::Zero::is_zero(d),
-        _ => false,
-    }
-}
 
 /// `.gist` (and `Bool.Str`): the receiver's string value; a `Str` is itself.
 // Cost: O(1) for a `Str` (shared, not copied) and a `Bool`; O(n) for a
@@ -54,18 +46,24 @@ pub(crate) fn gist(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     match target.view() {
         ValueView::Str(_) => Some(Ok(target.clone())),
         ValueView::Bool(b) => Some(Ok(Value::str_from(if b { "True" } else { "False" }))),
-        _ if is_zero_denominator(target) => None,
+        ValueView::Rat(n, 0) | ValueView::FatRat(n, 0) => Some(Err(
+            RuntimeError::rational_to_str_divide_by_zero(Value::int(n)),
+        )),
+        ValueView::BigRat(n, d) if num_traits::Zero::is_zero(d) => Some(Err(
+            RuntimeError::rational_to_str_divide_by_zero(Value::from_bigint(n.clone())),
+        )),
         ValueView::Int(_)
         | ValueView::BigInt(_)
         | ValueView::Num(_)
         | ValueView::Rat(..)
+        | ValueView::FatRat(..)
         | ValueView::BigRat(..)
         | ValueView::Complex(..) => Some(Ok(Value::str(target.to_string_value()))),
         _ => None,
     }
 }
 
-/// `.raku` (the cascade also answers `.perl` with it): the receiver as source text.
+/// `.raku`: the receiver as source text.
 // Cost: O(n), n = chars of the rendering.
 pub(crate) fn raku(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
@@ -75,7 +73,11 @@ pub(crate) fn raku(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         } else {
             "Bool::False"
         }))),
-        _ if is_zero_denominator(target) => None,
+        ValueView::Rat(n, 0) => Some(Ok(Value::str(format!("<{n}/0>")))),
+        ValueView::FatRat(n, d) => Some(Ok(Value::str(format!("FatRat.new({n}, {d})")))),
+        ValueView::BigRat(n, d) if target.is_bigfatrat() => {
+            Some(Ok(Value::str(format!("FatRat.new({n}, {d})"))))
+        }
         ValueView::Int(_)
         | ValueView::BigInt(_)
         | ValueView::Num(_)

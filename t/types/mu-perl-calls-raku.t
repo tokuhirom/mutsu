@@ -4,7 +4,7 @@ use Test;
 # user-declared `perl` in reach is a call to `raku`, so every receiver
 # answers `.perl` exactly as it answers `.raku`, a user `raku` included.
 
-plan 26;
+plan 28;
 
 # Built-in values: `.perl` and `.raku` agree.
 for 42, 1.5, 1e10, <1/0>, 3+4i, "a\"b", True, Nil, Any, Int, (1, 2), [1, [2]],
@@ -34,3 +34,10 @@ is any(1, 2).perl, any(1, 2).raku, 'Junction.perl is .raku';
 
 # `.perl` inside a list's rendering of a user object reaches its `raku`.
 is (R.new,).perl, (R.new,).raku, 'nested .perl reaches the user raku';
+
+# A user `perl`'s `callsame` reaches `Mu.perl`, which is `self.raku`.
+class Q { method raku { "Qr" }; method perl { "P:" ~ callsame } }
+is Q.new.perl, "P:Qr", 'callsame out of a user perl calls the receiver\'s raku';
+
+# `.^find_method('perl')` is `Mu.perl`.
+is R.^find_method('perl')(R.new), "R!", 'Mu.perl called as a code object';

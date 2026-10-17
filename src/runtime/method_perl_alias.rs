@@ -16,8 +16,9 @@ impl Interpreter {
     /// The method a call to `method` on `target` dispatches as: `raku` for a
     /// `perl` that no user-declared `perl` answers, `method` otherwise.
     // Cost: O(1) for every name but `perl` (one symbol compare); for `perl`,
-    // O(1) amortized for a built-in value (one memoized probe), O(d) for an
-    // instance or a type object, d = MRO depth, plus O(m) for a mixin, m =
+    // O(w) to scan the wrap chains, w = wrapped methods, plus O(1) amortized
+    // for the user-method probe (memoized) and, when some role declares
+    // `perl`, O(r + d), r = roles, d = MRO depth; a mixin adds O(m), m =
     // mixed-in roles.
     pub(crate) fn perl_as_raku(&mut self, target: &Value, method: Symbol) -> Symbol {
         if method != wk::perl() || self.user_perl_in_reach(target) {
@@ -28,11 +29,17 @@ impl Interpreter {
     }
 
     /// Whether a user-declared `perl` (a class's, a composed or mixed-in
-    /// role's, an `augment`'s or a `.wrap` of `Mu.perl`) answers a call to
+    /// role's, an `augment`'s or a `.wrap` of a `perl`) answers a call to
     /// `perl` on `target`.
     fn user_perl_in_reach(&mut self, target: &Value) -> bool {
         let perl = wk::perl();
-        if self.registry().has_any_method_wrap_chains() {
+        // A `.wrap` of a `perl` method (`Mu.perl`'s included) runs before it.
+        if self
+            .registry()
+            .method_wrap_chains
+            .iter()
+            .any(|((_, name, _), chain)| name == "perl" && !chain.is_empty())
+        {
             return true;
         }
         let target = target.descalarize();

@@ -1,19 +1,8 @@
-/// Representation methods: gist, raku, perl
+/// Representation methods: `gist` and `raku` of the receivers no row answers.
 use crate::value::{RuntimeError, Value, ValueView};
 
 use super::raku_repr::{promise_raku_repr, raku_value};
 use crate::value::types::is_stash_class_name;
-
-/// The scalar rendering rows' handlers: `gist` for `gist`, `raku` for
-/// `raku`/`perl`. The table and this cascade share them.
-fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    use crate::builtins::method_table::scalars::render;
-    if method == "gist" {
-        render::gist(target, &[])
-    } else {
-        render::raku(target, &[])
-    }
-}
 
 pub(super) fn dispatch(
     target: &Value,
@@ -38,46 +27,10 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(name)))
             }
         }
-        ValueView::Bool(_) => render(target, method),
         // raku/perl and gist of the Nil value are all "Nil". (Uninitialized
         // variables hold the Any type object since PLAN 8.5, so a runtime
         // Nil here is a genuine Nil, not an uninit placeholder.)
         ValueView::Nil => Some(Ok(Value::str_from("Nil"))),
-        ValueView::FatRat(n, d) => {
-            if d == 0 && (method == "gist" || method == "Str") {
-                Some(Err(RuntimeError::rational_to_str_divide_by_zero(
-                    Value::int(n),
-                )))
-            } else if method == "gist" {
-                Some(Ok(Value::str(target.to_string_value())))
-            } else {
-                Some(Ok(Value::str(format!("FatRat.new({}, {})", n, d))))
-            }
-        }
-        ValueView::BigRat(n, d) => {
-            use num_traits::Zero;
-            if d.is_zero() && (method == "gist" || method == "Str") {
-                Some(Err(RuntimeError::rational_to_str_divide_by_zero(
-                    Value::from_bigint(n.clone()),
-                )))
-            } else if method == "gist" {
-                Some(Ok(Value::str(target.to_string_value())))
-            } else if target.is_bigfatrat() {
-                Some(Ok(Value::str(format!("FatRat.new({}, {})", n, d))))
-            } else {
-                Some(Ok(Value::str(raku_value(target))))
-            }
-        }
-        ValueView::Rat(n, 0) => {
-            if method == "raku" {
-                Some(Ok(Value::str(format!("<{}/0>", n))))
-            } else {
-                Some(Err(RuntimeError::rational_to_str_divide_by_zero(
-                    Value::int(n),
-                )))
-            }
-        }
-        ValueView::Rat(..) => render(target, method),
         // The `Signature` rows' renderings (`method_table::signature`).
         ValueView::Instance { class_name, .. } if class_name == "Signature" => {
             crate::builtins::method_table::signature::answer(target, method)
@@ -184,32 +137,6 @@ pub(super) fn dispatch(
             }
         }
         ValueView::Instance { .. } | ValueView::Enum { .. } => None,
-        ValueView::Version {
-            parts,
-            plus,
-            minus,
-            text,
-        } => {
-            let s = text
-                .map(str::to_string)
-                .unwrap_or_else(|| Value::version_parts_to_string(parts));
-            let suffix = if plus {
-                "+"
-            } else if minus {
-                "-"
-            } else {
-                ""
-            };
-            let full = format!("{}{}", s, suffix);
-            // .gist always keeps the `v` prefix (`vTrue`); only .raku/.perl
-            // switch to the constructor form for a non-literal version.
-            if method == "gist" {
-                Some(Ok(Value::str(format!("v{}", full))))
-            } else {
-                Some(Ok(Value::str(super::raku_repr::version_raku_repr(&full))))
-            }
-        }
-        ValueView::Str(_) => render(target, method),
         // The `raku` rows' renderer (`method_table::collection_render_names`).
         ValueView::Array(..) | ValueView::Seq(_) if method == "raku" => {
             crate::builtins::method_table::collection_render_names::raku(target, &[])
@@ -237,36 +164,6 @@ pub(super) fn dispatch(
         // `gist` was answered by `collection_gist` above.
         ValueView::Pair(..) | ValueView::ValuePair(..) => {
             crate::builtins::method_table::collection_render_names::raku(target, &[])
-        }
-        ValueView::BigInt(i) => {
-            // A BigInt is an integer (its `.^name` is `Int`); `.raku` must render
-            // the plain integer, not a float (`100000000000000000000`, not
-            // `100000000000000000000.0`), so it round-trips as an Int.
-            Some(Ok(Value::str(i.to_string())))
-        }
-        ValueView::Int(i) => Some(Ok(Value::str(format!("{}", i)))),
-        ValueView::Num(_f) => {
-            if method == "raku" {
-                Some(Ok(Value::str(raku_value(target))))
-            } else {
-                // gist == Str for a Num: use the canonical Num→Str formatter,
-                // which renders Inf/-Inf/NaN with their proper casing and applies
-                // scientific notation for very large / small magnitudes. The raw
-                // `format!("{}", f)` produced Rust's lowercase `inf`/`-inf` and
-                // never switched to scientific (e.g. `1e20.gist` was the full
-                // 21-digit integer instead of `1e+20`).
-                Some(Ok(Value::str(target.to_string_value())))
-            }
-        }
-        ValueView::Complex(r, i) => {
-            if method == "raku" {
-                Some(Ok(Value::str(format!(
-                    "<{}>",
-                    crate::value::format_complex(r, i)
-                ))))
-            } else {
-                Some(Ok(Value::str(crate::value::format_complex(r, i))))
-            }
         }
         // Delegate to raku_value which has cycle detection for self-referencing
         // hashes (e.g. %h<b> = %h).
@@ -296,6 +193,9 @@ pub(super) fn dispatch(
         ValueView::Promise(p) => Some(Ok(Value::str(promise_raku_repr(&p.status())))),
         // Channel likewise; its bare string value reads as a type object.
         ValueView::Channel(_) => Some(Ok(Value::str_from("Channel.new"))),
+        // A value with a shape is its rows' (`method_table::scalars::render`
+        // and the other rendering rows): nothing here answers it.
+        _ if target.dispatch_shape().is_some() => None,
         _ => Some(Ok(Value::str(target.to_string_value()))),
     })
 }
