@@ -428,13 +428,9 @@ impl Interpreter {
                 // `Str`/`gist` are NOT native: Rakudo's Proc has no stringifier
                 // of its own, so the default instance repr applies (`Proc.new`),
                 // not the exitcode number the old native arm rendered.
-                native_methods: [
-                    "exitcode", "signal", "command", "pid", "err", "out", "in", "Numeric", "Int",
-                    "Bool", "spawn", "shell", "run",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+                native_methods: crate::builtins::method_table::handle_names("Proc")
+                    .map(str::to_string)
+                    .collect(),
                 mro: sym_mro(&["Proc"]),
                 attribute_types,
                 attribute_smileys: HashMap::new(),
@@ -450,11 +446,29 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: ["cancel", "close", "socket-port", "socket-host"]
-                    .iter()
-                    .map(|s| s.to_string())
+                native_methods: crate::builtins::method_table::handle_names("Tap")
+                    .map(str::to_string)
                     .collect(),
                 mro: sym_mro(&["Tap"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                embedded_attributes: HashSet::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: ValueMap::default(),
+            },
+        );
+        // The `Tap` a listening socket's supply answers (ADR-11276 §9.157).
+        classes.insert(
+            "IO::Socket::Async::ListenSocket".to_string(),
+            ClassDef {
+                parents: vec!["Tap".to_string()],
+                attributes: Vec::new(),
+                native_methods: crate::builtins::method_table::handle_names("IO::Socket::Async::ListenSocket")
+                    .map(str::to_string)
+                    .collect(),
+                mro: sym_mro(&["IO::Socket::Async::ListenSocket", "Tap"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -682,9 +696,8 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: ["cancel", "cancelled"]
-                    .iter()
-                    .map(|s| s.to_string())
+                native_methods: crate::builtins::method_table::handle_names("Cancellation")
+                    .map(str::to_string)
                     .collect(),
                 mro: sym_mro(&["Cancellation"]),
                 attribute_types: HashMap::new(),
@@ -702,9 +715,9 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 // `new` is Lock's own constructor in rakudo (#9340).
-                native_methods: ["new", "protect", "lock", "unlock", "condition"]
-                    .iter()
-                    .map(|s| s.to_string())
+                native_methods: std::iter::once("new")
+                    .chain(crate::builtins::method_table::handle_names("Lock"))
+                    .map(str::to_string)
                     .collect(),
                 mro: sym_mro(&["Lock"]),
                 attribute_types: HashMap::new(),
@@ -721,7 +734,9 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Lock".to_string()],
                 attributes: Vec::new(),
-                native_methods: HashSet::new(),
+                native_methods: crate::builtins::method_table::handle_names("Lock::Async")
+                    .map(str::to_string)
+                    .collect(),
                 mro: sym_mro(&["Lock::Async", "Lock"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -753,9 +768,8 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: ["wait", "signal", "signal_all"]
-                    .iter()
-                    .map(|s| s.to_string())
+                native_methods: crate::builtins::method_table::handle_names("Lock::ConditionVariable")
+                    .map(str::to_string)
                     .collect(),
                 mro: sym_mro(&["Lock::ConditionVariable"]),
                 attribute_types: HashMap::new(),

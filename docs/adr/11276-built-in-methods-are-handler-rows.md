@@ -3864,6 +3864,37 @@ Not done:
 
 Pinned in `t/types/string/encoding-decoder-rows.t`.
 
+### 9.157 The handle classes' methods are rows: `Lock`, `Cancellation`, `Tap`, `Proc` (2026-10-17)
+
+`refactor/11276-lock-tap-proc-rows` (3E remainder). `Lock`, `Lock::Async`, `Lock::ConditionVariable`,
+`Cancellation`, `Tap` and `Proc` stand for live OS state by an id into the runtime's tables. Their methods were
+by-name `match`es in `runtime/native_methods/` (`native_lock`, `native_condition_variable`, `native_cancellation`,
+`native_tap`, `native_proc`, `native_proc_mut`), each behind a hand-written `native_methods` list in
+`runtime_init`.
+
+Decision.
+
+- Every method is an `OWNER_ONLY` row of its class (`io_concurrency/lock_rows.rs`, `tap_proc_rows.rs`), reached
+  by `invoke_owner` from the owner blocks of the two instance entries (for the classes themselves) and from the
+  native-instance entry (for a user subclass). Each `match` arm became one `Interpreter` method (`lock_protect`,
+  `lock_lock`, `lock_unlock`, `lock_condition`, `condition_wait`, `condition_signal`, `cancellation_cancel`,
+  `cancellation_cancelled`, `tap_close`, `proc_respawn`, `proc_live_stream`). A handler reads the ids off a
+  snapshot of the attributes, so a method that blocks or runs user code holds no lock on them.
+- `Proc.spawn` and `Proc.shell` left the mutating native entry: the row writes what the re-run changed into the
+  instance's shared attribute cell (`write_keys`), as the decoder rows do (§9.156).
+- `runtime_init`'s `native_methods` lists are derived from the rows (`handle_names`).
+- The names follow Rakudo's declarations. `Lock::Async` is its own owner, with no `condition`.
+  `Tap` declares only `close`; mutsu's `Tap.cancel` alias is gone. `Proc.Int` and `Proc.run` are gone too:
+  Rakudo has neither, and `Proc.new.Int` dies there. The tap a listening socket answers is now an
+  `IO::Socket::Async::ListenSocket`, a `Tap` subclass that declares `socket-port` and `socket-host`, as in Rakudo.
+- The recognition table gains the 26 rows and the oracle snapshot the new owners' lists.
+
+Not done. `Lock.protect`'s VM fast path, which writes back to the calling frame, is untouched. The names Rakudo
+declares that mutsu does not implement (`Lock::Async.protect-or-queue-on-recursion`,
+`with-lock-hidden-from-recursion-check`, `Proc.os-error` as a method, `Proc.sink`) stay unanswered by rows.
+`Proc.new.exitcode` is `Nil` here and 1 in Rakudo, and `Proc.command` keeps `IO::Path` words unstringified. Both
+are pre-existing. Pinned in `t/concurrency/thread-lock/lock-tap-proc-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

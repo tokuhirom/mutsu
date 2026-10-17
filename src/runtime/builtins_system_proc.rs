@@ -107,10 +107,6 @@ impl Interpreter {
     }
 
     /// Create an IO::Pipe instance wrapping captured content.
-    pub(super) fn make_io_pipe(content: String) -> Value {
-        Self::make_io_pipe_bin(content, false)
-    }
-
     pub(super) fn make_io_pipe_bin(content: String, bin: bool) -> Value {
         use std::sync::atomic::{AtomicI64, Ordering};
         static NEXT_PIPE_ID: AtomicI64 = AtomicI64::new(1);
