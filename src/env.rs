@@ -2544,6 +2544,16 @@ impl Env {
                     return found;
                 }
                 if let Some(outer) = cur.static_skip(key) {
+                    // The record of a variable the frame binds itself ends
+                    // here: the program scope's same-named variable is a
+                    // different one (a module routine's own `$desc` under a
+                    // mainline `my Array $desc`).
+                    if key
+                        .shadow_meta_subject()
+                        .is_some_and(|subject| self.get_sym_in_frame(subject).is_some())
+                    {
+                        return found;
+                    }
                     cur = outer;
                     continue;
                 }

@@ -1631,7 +1631,11 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    source-name and hash-key records) are now lexically scoped like the
    variable, so a static link skips the caller frames for them too. Before,
    `push-it()` pushing to the program's `my @a` through EVAL failed the
-   type check of its caller's unrelated `my Int @a`. Pinned by
+   type check of its caller's unrelated `my Int @a`. A record whose
+   variable the frame binds itself ends at the frame root, so a module
+   routine's own `$desc` does not pick up a mainline `my Array $desc`'s type
+   through the link (`t/lang/adverbs/colon-args-list-infix-precedence.t`
+   caught that in Test's `proclaim`). Pinned by
    `t/lang/eval-store-ignores-caller-type-of-same-name.t`. Found on the
    way and filed as #13746: such an EVAL'd store also misses the program
    variable's own type (`my Int $n`, before and after this slice).
