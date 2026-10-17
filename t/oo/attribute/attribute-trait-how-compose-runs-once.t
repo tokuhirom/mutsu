@@ -6,10 +6,10 @@ use Test;
 
 plan 3;
 
-my $composed = 0;
+my @log;
 my role CountingHOW {
     method compose(Mu \type) {
-        $composed++;
+        @log.push: 1;
         for type.^attributes.grep(*.name eq '$!z') {
             die "accessor already exists" if "z" ~~ type.^method_table;
             type.^add_method("z", method { 42 });
@@ -24,6 +24,6 @@ class C {
     method Bool { True }
 }
 
-is $composed, 1, 'the HOW compose hook ran once';
+is @log.elems, 1, 'the HOW compose hook ran once';
 is C.new.z, 42, 'the accessor the hook added works';
 ok C.new.Bool, 'other methods are unaffected';
