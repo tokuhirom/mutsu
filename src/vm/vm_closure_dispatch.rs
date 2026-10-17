@@ -1910,7 +1910,19 @@ impl Interpreter {
             // name was never really mutated.
             let inline_control_written =
                 &self.inline_control_env_writes[inline_control_writes_at_entry..];
-            for (k, v) in self.env().iter() {
+            // Only the names the closure itself writes are carried back:
+            // every other binding in its env is the closure's own or reached
+            // the caller through a shared cell (ADR-12529 §3, slices 43-44).
+            // What is left is a write to a captured variable that has no cell
+            // -- one whose creating code ran at match time (a grammar
+            // subrule's argument).
+            let env_now = self.env();
+            let carried: Vec<(&Symbol, &Value)> = cc
+                .free_var_writes
+                .iter()
+                .filter_map(|k| env_now.get_sym(*k).map(|v| (k, v)))
+                .collect();
+            for (k, v) in carried {
                 if unchanged_free.contains(k) {
                     continue;
                 }

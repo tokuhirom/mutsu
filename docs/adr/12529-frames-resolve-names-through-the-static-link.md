@@ -1594,6 +1594,34 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `t/routines/closure/closure-call-writes-through-cell.t` and
    `t/concurrency/concurrent-start-then-dynamic-push.t`.
 
+   **Slice 43 done** (`fix/12529-closure-copyback-free-var-writes`): the
+   closure call's copy-back no longer walks the closure's plain bindings.
+   It carries back the names in the closure's own `free_var_writes`, under the
+   same filters as before (unchanged frees, parameters, the closure's own
+   declarations, captures the caller does not have). That narrow carry is
+   what the grammar subrule-argument case needs: the closure's creating
+   code is compiled at match time, so no frame can give the captured
+   variable a cell, and the argument evaluator reads the write back from
+   the env the closure returns into. The dynamics in the closure's env are
+   carried too: the bundled Cro::HTTP router lost its `@*BIND-FAILS`
+   (401 answered as 404) without them, because a push from inside an
+   EVAL'd regex assertion rebinds the dynamic to a new array in the
+   running frame instead of extending the declared one (#13732); phase 4
+   retires that carry with the dynamic chain. With slice 42 in place, a
+   re-run of every census dependent passes on this build. Pinned by
+   `t/routines/closure/closure-return-carries-only-own-writes.t`.
+
+   **Slice 44 done** (`fix/13732-dynamic-push-in-regex-assertion`): the
+   dynamic carry slice 43 kept is gone, so a closure's return carries back
+   only its own `free_var_writes`. What it covered was #13732: once a
+   thread had started while a frame's `my @*x` was visible, the name-keyed
+   shared store held a seed entry for `@*x`, and a later push to `@*x`
+   (`push_to_existing_shared_array`, `push_to_shared_var`) went into that
+   entry and rebound the running frame's name to it, never the array the
+   frame declared. A dynamic is per frame, so the shared store no longer
+   stands in for an `@*` name. Pinned by
+   `t/concurrency/concurrent-start-then-dynamic-push-from-block.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

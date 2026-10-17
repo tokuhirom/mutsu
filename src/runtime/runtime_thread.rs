@@ -741,6 +741,7 @@ impl Interpreter {
             // the push on a detached copy, written by name into whatever frame
             // runs the push instead of the declaring frame's array.
             && self.threads.shared_vars.contains_key(key)
+            && !is_dynamic_array_name(key)
         {
             // Attribute / twigil'd arrays keep the base-key in-place path
             // (per-instance identity — see `push_to_existing_shared_array`).
@@ -872,7 +873,11 @@ impl Interpreter {
         key: &str,
         values: Vec<Value>,
     ) -> Option<Value> {
-        if !key.starts_with('@') || !self.threads.shared_vars_active {
+        // A dynamic (`@*x`) is per frame: an entry the name-keyed store holds
+        // for it is a seed from some thread's spawn, not the binding this
+        // frame sees, and pushing there rebound the name to that array
+        // (#13732).
+        if !key.starts_with('@') || !self.threads.shared_vars_active || is_dynamic_array_name(key) {
             return None;
         }
         // A plain lexical `@name` routes through the `__mutsu_atomic_arr::`
@@ -940,4 +945,11 @@ impl Interpreter {
 fn is_attribute_alias_name(key: &str) -> bool {
     let bare = key.trim_start_matches(['$', '@', '%', '&']);
     bare.len() > 1 && bare.starts_with('!')
+}
+
+/// Whether `key` names a dynamic array (`@*x`), which the name-keyed shared
+/// store must not stand in for.
+// Cost: O(1).
+fn is_dynamic_array_name(key: &str) -> bool {
+    key.as_bytes().get(1) == Some(&b'*')
 }
