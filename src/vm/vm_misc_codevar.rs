@@ -276,6 +276,21 @@ impl Interpreter {
         if val.is_nil() && name_is_qualified {
             val = Value::package(crate::symbol::wk::any());
         }
+        // A `&*name` no frame in the dynamic scope declares (and no
+        // `PROCESS::<&name>`) is the lazy X::Dynamic::NotFound Failure, as a
+        // `$*name` read is (`GetGlobal`'s miss branch, whose
+        // `dynamic_declared_sym` exception it shares).
+        if val.is_nil()
+            && name.starts_with('*')
+            && !crate::runtime::utils::is_builtin_dynamic_var(name)
+            && !code
+                .dynamic_declared_sym
+                .contains(&code.const_sym(name_idx))
+        {
+            val = self.fail_error_to_failure_value(
+                &crate::runtime::utils::dynamic_not_found_error(&format!("&{name}")),
+            );
+        }
         self.stack.push(val);
         Ok(())
     }
