@@ -73,6 +73,7 @@ pub(crate) use ctors_mop::attribute::owners_of as attribute_owners_of;
 pub(crate) use instances::collation::owners_of as collation_owners_of;
 pub(crate) use instances::compunit::owners_of as compunit_owners_of;
 pub(crate) use instances::enumeration::owners_of as enumeration_owners_of;
+pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::iterator::owners_of as iterator_owners_of;

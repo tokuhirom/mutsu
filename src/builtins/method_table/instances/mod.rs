@@ -36,6 +36,7 @@ pub(crate) mod distribution;
 pub(crate) mod enumeration;
 pub(crate) mod exception;
 pub(crate) mod failure;
+pub(crate) mod hyper_seq;
 pub(crate) mod instant;
 pub(crate) mod iterator;
 pub(crate) mod rakuast_node;
@@ -51,6 +52,8 @@ pub(crate) mod unicode_data;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
+    hyper_seq::HYPER_ROWS,
+    hyper_seq::RACE_ROWS,
     temporal::DATE_ROWS,
     temporal::DATETIME_ROWS,
     dateish::DATE_ROWS,
