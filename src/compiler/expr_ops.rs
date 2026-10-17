@@ -704,6 +704,7 @@ impl Compiler {
                         self.compile_expr(operand);
                     }
                 }
+                self.emit_lex_import_builtin_meta(op);
                 self.code.emit(OpCode::MetaOpNary {
                     meta: meta_kind,
                     op: Symbol::intern(op),
@@ -719,6 +720,7 @@ impl Compiler {
             self.compile_expr(left);
             self.compile_expr(right);
         }
+        self.emit_lex_import_builtin_meta(op.trim_start_matches('R'));
         self.code.emit(OpCode::MetaOp {
             meta: meta_kind,
             op: Symbol::intern(op),

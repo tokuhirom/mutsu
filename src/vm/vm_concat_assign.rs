@@ -183,7 +183,9 @@ impl Interpreter {
         if !matches!(current.view(), ValueView::Str(_)) || !current.is_plain_scalar_store_slot() {
             return Ok(false);
         }
-        if crate::opcode::reflective_name_access_possible() {
+        // A user `infix:<~>` candidate must see the operands (#13791).
+        if crate::opcode::reflective_name_access_possible() || self.user_infix_override("infix:<~>")
+        {
             return Ok(false);
         }
         let mirrored = code.needs_env_sync.get(idx).copied().unwrap_or(true);

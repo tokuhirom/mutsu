@@ -14,9 +14,13 @@
 //!   (`prefix:<->($x)`) once a candidate is imported, and which
 //!   `LexImportCall` reads.
 //!
+//! The string operators (`~`, `eq` ... `ge`, `leg`) are infixes of the first
+//! kind: `infix_concat`, `str_cmp_values` and `str_leg` ask `try_user_infix`
+//! before they stringify their operands.
+//!
 //! Every other built-in operator keeps its imported candidates in the
-//! registry: its uses reach them by name (`~` through `infix_concat`, a
-//! postfix, `postcircumfix`).
+//! registry: its uses reach them by name (the set operators, a postfix,
+//! `postcircumfix`).
 
 use crate::opcode::{CompoundBaseOp, OpCode};
 
@@ -61,6 +65,14 @@ fn is_lexical_infix(op: &str) -> bool {
             | "eqv"
             | "min"
             | "max"
+            | "~"
+            | "eq"
+            | "ne"
+            | "lt"
+            | "gt"
+            | "le"
+            | "ge"
+            | "leg"
     )
 }
 
@@ -97,6 +109,14 @@ pub(crate) fn infix_of_opcode(op: &OpCode) -> Option<&'static str> {
         OpCode::Eqv => "infix:<eqv>",
         OpCode::InfixMin => "infix:<min>",
         OpCode::InfixMax => "infix:<max>",
+        OpCode::Concat => "infix:<~>",
+        OpCode::StrEq => "infix:<eq>",
+        OpCode::StrNe => "infix:<ne>",
+        OpCode::StrLt => "infix:<lt>",
+        OpCode::StrGt => "infix:<gt>",
+        OpCode::StrLe => "infix:<le>",
+        OpCode::StrGe => "infix:<ge>",
+        OpCode::Leg => "infix:<leg>",
         _ => return None,
     })
 }
@@ -118,6 +138,7 @@ pub(crate) fn infix_of_compound(op: CompoundBaseOp) -> Option<&'static str> {
         CompoundBaseOp::Lcm => "infix:<lcm>",
         CompoundBaseOp::InfixMin => "infix:<min>",
         CompoundBaseOp::InfixMax => "infix:<max>",
+        CompoundBaseOp::Concat => "infix:<~>",
         _ => return None,
     })
 }
