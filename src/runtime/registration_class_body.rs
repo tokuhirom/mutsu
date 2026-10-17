@@ -481,6 +481,7 @@ impl Interpreter {
             let result = self.call_method_with_values(receiver, "compose", vec![type_obj]);
             if gate_accessors {
                 self.types.classes_composing_accessors.remove(&owner);
+                self.registry_mut().attr_trait_composed.insert(owner);
             }
             result?;
         }

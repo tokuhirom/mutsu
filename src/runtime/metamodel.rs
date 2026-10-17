@@ -559,6 +559,10 @@ impl Interpreter {
             return;
         }
         let mut reg = self.registry_mut();
+        // An attribute trait that mixed the hook in already ran it once.
+        if reg.attr_trait_composed.remove(class_name) {
+            return;
+        }
         if !reg.pending_class_compose.iter().any(|c| c == class_name) {
             reg.pending_class_compose.push(class_name.to_string());
         }
