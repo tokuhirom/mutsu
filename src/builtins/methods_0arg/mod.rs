@@ -226,27 +226,6 @@ pub(crate) fn native_method_0arg_cascade(
         return Some(Ok(message.clone()));
     }
 
-    // Cost: O(n), n = bytes in the format string scanned for directives.
-    if method == "directives"
-        && let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-        && class_name == "Format"
-    {
-        let fmt = attributes
-            .as_map()
-            .get("format")
-            .map(Value::to_string_value)
-            .unwrap_or_default();
-        let directives = crate::runtime::sprintf::sprintf_arg_specs(&fmt)
-            .into_iter()
-            .map(|(_, spec)| Value::str(spec.to_string()))
-            .collect();
-        return Some(Ok(Value::array(directives)));
-    }
-
     // A lazy Match the table has no shape for (a grammar cursor) answers
     // `Match`'s rows here, straight from the capture node, so the probe
     // gauntlet in between (each a `view()`, which would materialize the Match)

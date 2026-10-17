@@ -24,6 +24,21 @@ pub(crate) use crate::value::numeric_payload::{
     INT_PAYLOAD, NUM_PAYLOAD, RAT_PAYLOAD, numeric_payload_of, numeric_subclass_payload,
 };
 
+/// Whether the receiver is a built-in class with a shape of its own and a
+/// payload (`Format`, a `Str` subclass; ADR-11276 §9.153) whose own row
+/// answers `method`: the payload answers only what the class does not declare.
+// Cost: O(1), a tag probe and one table lookup.
+fn own_row_answers(target: &Value, method: crate::symbol::Symbol, arity: usize) -> bool {
+    target.dispatch_shape().is_some_and(|shape| {
+        crate::builtins::method_table::resolve(
+            crate::builtins::method_table::Receiver::instance(shape),
+            method,
+            arity,
+        )
+        .is_some()
+    })
+}
+
 /// Methods whose answer is about the subclass instance itself (its type,
 /// identity or representation), which the payload must not answer for it.
 // Cost: O(1), one match on the name.
@@ -119,7 +134,7 @@ pub(crate) fn dispatch(
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.as_str();
-    if answered_by_the_instance(method) {
+    if answered_by_the_instance(method) || own_row_answers(target, method_sym, args.len()) {
         return None;
     }
     let payload = subclass_payload(target)?;

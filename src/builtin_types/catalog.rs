@@ -70,6 +70,11 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("UInt", mro: ["UInt", "Int", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Int"),
     row!("Num", mro: ["Num", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Num"),
     row!("Str", mro: ["Str", "Cool", "Any", "Mu"], roles: ["Stringy"], owner: "Str"),
+    // 6.e's `Format` and `Formatter` (ADR-11276 §9.153). raku 2026.09 under
+    // `use v6.e.PREVIEW` lists `Callable` in `Format.^mro` too, after `Cool`;
+    // it is a role here, as everywhere in this catalog.
+    row!("Format", mro: ["Format", "Str", "Cool", "Any", "Mu"], roles: ["Stringy", "Callable"], owner: ""),
+    row!("Formatter", mro: ["Formatter", "Any", "Mu"], roles: [], owner: ""),
     // ---- Native types (NativeHOW): each is a subtype of its boxed type, so
     // `int32 ~~ Int` and `num ~~ Num` hold and the boxed type's methods answer.
     // raku: `int32.^mro` is `int32, Int, Cool, Any, Mu`; NativeHOW has no `.^roles`.

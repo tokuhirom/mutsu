@@ -1970,9 +1970,20 @@ impl Interpreter {
                     return false;
                 }
             }
-            if Self::type_matches(constraint, cn)
-                || Self::type_matches(constraint, &crate::value::user_facing_type_name(cn))
-            {
+            // A declared class that shadows a built-in type's name (`my class
+            // Instant {}`) is not that built-in: the static rules below know
+            // the built-in by name, so only its own name matches here and its
+            // parents answer the rest (ADR-11276 §9.153).
+            let shown = crate::value::user_facing_type_name(cn);
+            let shadows_builtin = crate::builtin_types::catalog::builtin_type_info(&shown)
+                .is_some()
+                && (self.types.user_declared_classes.contains(cn)
+                    || self.types.user_declared_classes.contains(shown.as_ref()));
+            if shadows_builtin {
+                if constraint == cn || constraint == shown.as_ref() || constraint == "Mu" {
+                    return true;
+                }
+            } else if Self::type_matches(constraint, cn) || Self::type_matches(constraint, &shown) {
                 return true;
             }
             // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
@@ -2014,9 +2025,10 @@ impl Interpreter {
             }
             // Check MRO (handles built-in type hierarchies like Match -> Capture -> Cool)
             let mro = self.class_mro(cn);
-            if mro
-                .iter()
-                .any(|parent| Self::type_matches(constraint, parent.as_str()))
+            if mro.iter().any(|parent| {
+                !(shadows_builtin && (parent.as_str() == cn || parent.as_str() == shown.as_ref()))
+                    && Self::type_matches(constraint, parent.as_str())
+            })
             {
                 return true;
             }

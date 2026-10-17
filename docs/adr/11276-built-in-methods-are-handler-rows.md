@@ -3715,6 +3715,42 @@ into `scalars::render`. `FatRat` gains `gist`/`raku` rows on the same handlers, 
 `to_string_value` catch-all now declines any receiver with a shape, so a shape without a rendering row is never
 answered by stringification (`Capture.raku` read as its `Str`). Pinned in `t/types/fatrat-render-rows.t`.
 
+### 9.153 `Format` is a `Str` subclass with rows; `Formatter`'s are rows (2026-10-17)
+
+`refactor/13738-format-rows` (#13738, item 2).
+
+6.e's `Format` is `class Format is Str does Callable`. mutsu modelled it as an instance with a `format` attribute and
+answered its methods in one by-name `match` (`dispatch_format_method`: `Str`/`gist`/`Stringy`, `arity`/`count`,
+`Callable`, `raku`, `CALL-ME`, plus `Formatter.new`/`CODE`/`AST`, `Formatter::Syntax.parse` and `Format.new`). It was
+not a `Str`: `$f ~~ Str` was `False`, and `$f.chars` and `$f.uc` were `X::Method::NotFound`.
+
+Decision.
+
+- A `Format` is a native `Str` subclass value. Its string is the `Str` payload (`__mutsu_str_value`) that a user
+  `is Str` subclass carries, so every method it inherits answers on the string through `builtins::native_base`.
+  The type catalog gains `Format` (`Format, Str, Cool, Any, Mu`, roles `Stringy` and `Callable`) and `Formatter`.
+  Rakudo also lists `Callable` in `Format.^mro`; here it is a role, as everywhere in the catalog.
+- `Format` and `Formatter` are closed dispatch shapes; `Formatter` has type objects only. `Format`'s own methods are
+  rows: `raku`, `arity`, `count`, `directives`, `Callable`, `CALL-ME` and `AST`. `Formatter`'s `CODE` and `AST`
+  are type-object rows. `native_base` declines a method that the receiver's own shape has a row for, so the payload
+  answers only what `Format` does not declare. The debug cross-check caught `.AST` answered by `Str.AST` on the
+  string. `call_method_with_values` reaches the same rows by owner.
+- Both `new`s are `native_ctor` entries.
+- The recognition catalog gains the rows as `REVISION_E`. The oracle snapshot gains `Format`'s and `Formatter`'s
+  `.e` lines. `scripts/gen-rakudo-method-tables.raku` emits the lists of an owner that only 6.e has.
+- `dispatch_format_method` is gone. What stays is `Formatter::Syntax.parse`/`subparse` for the type object, with a
+  `TODO`. In Rakudo it is `Grammar.parse` running the format grammar's rules; mutsu answers a `Match` of the whole
+  string. The fix is a real grammar, not a row: Rakudo declares no `parse` on `Formatter::Syntax`.
+- `Format.WHICH` stays `Mu`'s object identity, where Rakudo's is the `Str` value's (`Format|x`).
+- `Format` still exists under 6.d in mutsu, as before. Rakudo has it only under 6.e.
+
+A declared class that shadows a built-in name (`class Format {}`, `my class Instant {}`) was given the built-in's
+ancestry. `compute_class_mro` supplies a catalog type's real parent for an `augment` with no `is` clause, and it
+did the same for a new declaration: `class Instant {}` was `Instant, Cool, Any, Mu`. The smartmatch also matched
+the class's own name against the built-in's static rules (`Instant.new ~~ Cool`). Now `register_class_decl` gives
+such a class `Any` as its parent, and `type_matches_value` matches its own name only against itself. Pinned in
+`t/types/string/format-str-subclass-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

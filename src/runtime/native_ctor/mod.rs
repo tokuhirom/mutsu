@@ -80,6 +80,8 @@ static CTORS: &[(&str, CtorFn, bool, bool)] = &[
     ("Failure", Interpreter::ctor_failure, false, false),
     ("FakeScheduler", Interpreter::ctor_fakescheduler, false, true),
     ("FatRat", Interpreter::ctor_fatrat, false, true),
+    ("Format", Interpreter::ctor_format, false, true),
+    ("Formatter", Interpreter::ctor_formatter, false, false),
     ("Hash", Interpreter::ctor_hash, false, false),
     ("HyperWhatever", Interpreter::ctor_hyperwhatever, false, false),
     ("IO::CatHandle", Interpreter::ctor_io_cathandle, true, false),

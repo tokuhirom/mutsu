@@ -727,7 +727,10 @@ impl NanBox {
         match classify(bits) {
             Classified::Kind(Kind::Package) => {
                 let sym = crate::symbol::Symbol::from_id(inline_payload(bits));
+                // A shape whose values answer on their payload has a type object
+                // with none (`Format`): it is an ordinary type object.
                 crate::value::DispatchShape::from_type_name(sym.as_str())
+                    .filter(|shape| !shape.answers_on_payload())
             }
             _ => None,
         }

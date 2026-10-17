@@ -963,15 +963,6 @@ impl Value {
                     .map(|v: &Value| v.to_string_value())
                     .unwrap_or_else(|| format!("{}()", class_name))
             }
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Format" => attributes
-                .as_map()
-                .get("format")
-                .map(|v: &Value| v.to_string_value())
-                .unwrap_or_else(|| format!("{}()", class_name)),
             ValueView::Instance { attributes, .. }
                 if attributes.contains_key("year")
                     && attributes.contains_key("month")

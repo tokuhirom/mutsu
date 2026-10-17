@@ -36,8 +36,10 @@
 //! - **A type object is not an instance.** [`DispatchShape::from_type_name`]
 //!   decodes `Package("Int")`; only a row flagged `TYPE_OBJECT_OK` answers it.
 
+mod instances;
+
 use crate::symbol::Symbol;
-use std::sync::OnceLock;
+use instances::instance_shapes;
 
 /// The shape of a plain receiver, or of the type object of such a type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -167,13 +169,21 @@ pub(crate) enum DispatchShape {
     /// and `basename` attributes. `Any`'s list rows read it as one item, as
     /// Rakudo's do (ADR-11276 §9.114).
     IoPathParts,
+    /// A `Format` (closed), Rakudo's 6.e `Str` subclass that is also a
+    /// `Callable`: its string lives in the `Str` payload of a native subclass
+    /// (`__mutsu_str_value`), which every method but its own rows reads
+    /// (ADR-11276 §9.153).
+    Format,
+    /// The `Formatter` class (closed), a type object only: `CODE` and `AST`
+    /// compile a format string.
+    Formatter,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 40] = [
+    pub(crate) const ALL: [DispatchShape; 42] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -214,6 +224,8 @@ impl DispatchShape {
         DispatchShape::Unicode,
         DispatchShape::CompUnitDepSpec,
         DispatchShape::IoPathParts,
+        DispatchShape::Format,
+        DispatchShape::Formatter,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -261,6 +273,8 @@ impl DispatchShape {
             DispatchShape::Unicode => "Unicode",
             DispatchShape::CompUnitDepSpec => "CompUnit::DependencySpecification",
             DispatchShape::IoPathParts => "IO::Path::Parts",
+            DispatchShape::Format => "Format",
+            DispatchShape::Formatter => "Formatter",
         }
     }
 
@@ -275,6 +289,7 @@ impl DispatchShape {
                 | DispatchShape::IoSpecCygwin
                 | DispatchShape::IoSpecQnx
                 | DispatchShape::Unicode
+                | DispatchShape::Formatter
         )
     }
 
@@ -326,7 +341,16 @@ impl DispatchShape {
         ) && const_str_eq(owner, "Cool"))
             || (matches!(self, DispatchShape::Match) && const_str_eq(owner, "Capture"))
             || (self.reaches_audited_any() && const_str_eq(owner, "Any"))
-            || (!self.inherits() && const_str_eq(owner, "Mu"))
+            || (!self.inherits() && !self.answers_on_payload() && const_str_eq(owner, "Mu"))
+    }
+
+    /// Whether this shape's inherited methods are answered on the native
+    /// payload its values carry (`Format`'s `Str`, `builtins::native_base`),
+    /// so no ancestor row reaches it (ADR-11276 §9.153). Its type object has
+    /// no payload and so no shape (`NanBox::type_object_shape`).
+    // Cost: O(1).
+    pub(crate) const fn answers_on_payload(self) -> bool {
+        matches!(self, DispatchShape::Format)
     }
 
     /// Whether this closed shape reaches some of `Any`'s list rows
@@ -334,7 +358,7 @@ impl DispatchShape {
     /// says which).
     // Cost: O(1).
     const fn reaches_audited_any(self) -> bool {
-        !self.inherits() && self.has_instances()
+        !self.inherits() && self.has_instances() && !self.answers_on_payload()
     }
 
     /// Whether `Any`'s list row `method` reaches this closed shape. None
@@ -714,61 +738,6 @@ const fn const_list_contains(list: &[&str], name: &str) -> bool {
         i += 1;
     }
     false
-}
-
-/// The shapes whose values are `Instance`s of a built-in class, by interned
-/// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 36] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 36]> = OnceLock::new();
-    SHAPES.get_or_init(|| {
-        [
-            (Symbol::intern("Date"), DispatchShape::Date),
-            (
-                Symbol::intern("CompUnit::DependencySpecification"),
-                DispatchShape::CompUnitDepSpec,
-            ),
-            (
-                Symbol::intern("IO::Path::Parts"),
-                DispatchShape::IoPathParts,
-            ),
-            (Symbol::intern("Backtrace"), DispatchShape::Backtrace),
-            (
-                Symbol::intern("Backtrace::Frame"),
-                DispatchShape::BacktraceFrame,
-            ),
-            (Symbol::intern("DateTime"), DispatchShape::DateTime),
-            (Symbol::intern("Instant"), DispatchShape::Instant),
-            (Symbol::intern("Duration"), DispatchShape::Duration),
-            (Symbol::intern("Match"), DispatchShape::Match),
-            (Symbol::intern("IO::Path"), DispatchShape::IoPath),
-            (Symbol::intern("IO::Path::Unix"), DispatchShape::IoPath),
-            (Symbol::intern("IO::Path::Win32"), DispatchShape::IoPath),
-            (Symbol::intern("IO::Path::Cygwin"), DispatchShape::IoPath),
-            (Symbol::intern("IO::Path::QNX"), DispatchShape::IoPath),
-            (Symbol::intern("IO::Handle"), DispatchShape::IoHandle),
-            (Symbol::intern("Blob"), DispatchShape::Blob),
-            (Symbol::intern("Buf"), DispatchShape::Buf),
-            (Symbol::intern("utf8"), DispatchShape::Blob),
-            (Symbol::intern("utf16"), DispatchShape::Blob),
-            (Symbol::intern("utf32"), DispatchShape::Blob),
-            (Symbol::intern("Blob[uint8]"), DispatchShape::Blob),
-            (Symbol::intern("Blob[uint16]"), DispatchShape::Blob),
-            (Symbol::intern("Blob[uint32]"), DispatchShape::Blob),
-            (Symbol::intern("Blob[uint64]"), DispatchShape::Blob),
-            (Symbol::intern("Blob[int8]"), DispatchShape::Blob),
-            (Symbol::intern("Blob[int16]"), DispatchShape::Blob),
-            (Symbol::intern("Blob[int32]"), DispatchShape::Blob),
-            (Symbol::intern("Blob[int64]"), DispatchShape::Blob),
-            (Symbol::intern("Buf[uint8]"), DispatchShape::Buf),
-            (Symbol::intern("Buf[uint16]"), DispatchShape::Buf),
-            (Symbol::intern("Buf[uint32]"), DispatchShape::Buf),
-            (Symbol::intern("Buf[uint64]"), DispatchShape::Buf),
-            (Symbol::intern("Buf[int8]"), DispatchShape::Buf),
-            (Symbol::intern("Buf[int16]"), DispatchShape::Buf),
-            (Symbol::intern("Buf[int32]"), DispatchShape::Buf),
-            (Symbol::intern("Buf[int64]"), DispatchShape::Buf),
-        ]
-    })
 }
 
 /// `a == b` for a `const fn`, where `==` on `str` is not yet available.

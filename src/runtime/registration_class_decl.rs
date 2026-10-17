@@ -220,6 +220,21 @@ impl Interpreter {
             .iter()
             .map(|p| self.resolved_type_capture_name(&strip_colons(p)))
             .collect();
+        // A declared class (not an `augment`) that shadows a built-in type's
+        // name and names no parent class is an ordinary class: it inherits
+        // from `Any`, not from the built-in's own parent, which the catalog
+        // fallback of `compute_class_mro` would otherwise supply for it
+        // (`class Instant {}` is `Instant, Any, Mu`; ADR-11276 §9.153).
+        let parents: Vec<String> = if crate::builtin_types::catalog::builtin_type_info(name)
+            .is_some()
+            && !parents.iter().any(|p| {
+                let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p);
+                !self.registry().roles.contains_key(base)
+            }) {
+            parents.iter().cloned().chain(["Any".to_string()]).collect()
+        } else {
+            parents
+        };
         let parents = parents.as_slice();
         // Source order of every parent, header and `also is` alike, before the
         // deferred ones are split off below.
