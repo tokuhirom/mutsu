@@ -5,7 +5,7 @@ use Test;
 # write reaches the variable without a copy-back when the closure returns
 # (ADR-12529 §3, slice 42). Checked against rakudo.
 
-plan 6;
+plan 8;
 
 {
     my $a = 0;
@@ -47,4 +47,11 @@ plan 6;
     my $count = 0;
     for 1..2 { { $count++; @seen.push($count) }() }
     is-deeply @seen, [1, 2], 'a nested block called inside a loop';
+}
+
+{
+    my %h = a => { b => { c => 1, d => 2 } };
+    sub assign-through(\target, \values) { subtest 'assign' => { plan 1; ok (target = values) } }
+    assign-through(%h{'a';'b';<c d>}, (7, 8));
+    is-deeply %h, { a => { b => { c => 7, d => 8 } } }, 'a sigilless parameter assigned from a block stays an alias';
 }

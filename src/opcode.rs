@@ -11049,8 +11049,12 @@ impl CompiledCode {
                     // Every closure that writes the capture gets the cell, not
                     // only an escaping one: the write reaches this frame
                     // through the cell, never through a copy-back when the
-                    // closure returns (ADR-12529 §3, slice 42).
-                    if declared_at_emit {
+                    // closure returns (ADR-12529 §3, slice 42). A sigilless
+                    // binding (`\target`) is an alias of its argument's
+                    // container, which the write already reaches; a cell would
+                    // cut the alias (roast S32-hash/multislice-6e.t).
+                    let sigilless = sym.with_str(|s| s.starts_with('\\'));
+                    if declared_at_emit && (escapes || self_captured || !sigilless) {
                         needs_cell.insert(*sym);
                     }
                 }
@@ -11078,7 +11082,10 @@ impl CompiledCode {
                 // is NOT our local: that var needs a cell in the ancestor that
                 // owns it. Bubble it up. (Mutation is checked against the union
                 // of free-var writes folded in above.)
-                if !is_own && free_writes.contains(sym) {
+                if !is_own
+                    && free_writes.contains(sym)
+                    && (escapes || !sym.with_str(|s| s.starts_with('\\')))
+                {
                     needs_cell_free.insert(*sym);
                 }
             }
