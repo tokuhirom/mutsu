@@ -3600,9 +3600,10 @@ It redispatches the method on those elements, unless the receiver declares the m
 declines a user instance whose class declares `iterator` or `list`, so the step sees it. Now mutsu agrees with
 Rakudo on every name of both sets.
 
-Not changed: a `list`-only class also iterates its list for `values`, where Rakudo does not. `for` and list
-assignment keep their own rule (`try_iterable_instance_items`), which still requires `Iterable` for a `list`-only
-class, although Rakudo's `for` iterates it.
+Not changed: `values` of a `list`-only class is a `Seq` of the list, where Rakudo answers the `List` itself
+(`Any.values` is `self.list`). List assignment keeps its own rule (`try_iterable_instance_items`), which requires
+`Iterable` for a `list`-only class, as Rakudo's does. `for` read the same rule; since #13748 it iterates a
+`list`-only class, as Rakudo's `.map` does.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
