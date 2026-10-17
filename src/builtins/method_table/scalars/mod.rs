@@ -29,6 +29,7 @@ mod rational;
 pub(crate) mod real;
 pub(crate) mod real_misc;
 pub(crate) mod render;
+mod revision_e;
 pub(crate) mod str;
 pub(crate) mod str_args;
 pub(crate) mod str_interp;
@@ -70,6 +71,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rational::RAT_ROWS,
     rational::FAT_RAT_ROWS,
     complex::ROWS,
+    revision_e::ROWS,
     real::INT_ROWS,
     real::NUM_ROWS,
     real::RAT_ROWS,
