@@ -25,6 +25,9 @@
   enumerated-class, quantifier-range, backtracking-modifier, separator,
   sigspace/ratchet-modifier, word-boundary, outer-adverb, match-marker,
   Unicode-property, and quoted-escape slices implemented 2026-10-03;
+  beginning-of-string anchors after atoms, block-range ratchets, dynamic
+  match-position adverbs, regex expression arguments, and regex literal source
+  form implemented 2026-10-16 through 2026-10-17;
   direct hash interpolation is reserved by Rakudo and mutsu;
   explicit block signatures, other complex block
   values, other dynamic contents, and the complete execution-tree
@@ -1654,3 +1657,14 @@ parentheses, and lowering reconstructs its source for the existing property
 matcher. The focused regression pins both shapes and EVAL behavior;
 `regex-engine-gaps.t` and `regex-unicode-property-name-and-class-lookup.t`
 exercise them through the frontend mode.
+
+## 70. Regex literal source form (2026-10-17)
+
+Rakudo 2026.09 renders both `rx/a/` and `/a/` as the same public
+`QuotedRegex(body => Regex::Literal("a"))` tree, but their origin determines
+the resulting `Regex.gist`. Conversion retains that source origin in an
+internal tag on the otherwise identical node; the tag is not an AST field and
+does not change the public class or constructor shape. Lowering reconstructs
+the corresponding runtime regex value on the existing compiler path.
+`t/rakuast/rakuast-regex-source-form.t` pins the shared measured shape and the
+two distinct execution results.

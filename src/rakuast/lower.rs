@@ -4304,7 +4304,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::Substitution => super::substitution::lower_substitution(node),
         RakuAstClass::Transliteration => super::substitution::lower_transliteration(node),
-        RakuAstClass::QuotedRegex => {
+        RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
+            let is_rx_literal = node.class == RakuAstClass::QuotedRegexRx;
             let body = named_child(node, "body")?;
             let match_immediately = bool_field(node, "match-immediately")?;
             let lowered_adverbs = super::substitution::lower_match_adverbs(node)?;
@@ -4314,7 +4315,15 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 adverbs: lowered_adverbs.adverbs,
                 declaration_kind: None,
             };
-            let value = regex_execution_value(&tree)?;
+            let value = if is_rx_literal {
+                crate::parser::rx_execution_value(tree.to_source(), &tree.adverbs)
+                    .map(|value| value.with_regex_source_tree(tree.clone()))
+                    .ok_or_else(|| {
+                        RuntimeError::new("RakuAST: unsupported rx adverb".to_string())
+                    })?
+            } else {
+                regex_execution_value(&tree)?
+            };
             if lowered_adverbs.pos_expr.is_some() || lowered_adverbs.continue_expr.is_some() {
                 if !tree.match_immediately {
                     return Err(unsupported(node));

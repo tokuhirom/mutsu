@@ -183,3 +183,22 @@ pub(crate) fn regex_execution_value(body: String, adverbs: &[RegexAdverb]) -> Op
         Value::regex(pattern)
     })
 }
+
+/// Build the source-level value of an `rx/.../` term. Even when its adverbs
+/// can be folded into inline pattern modifiers, retain the RegexWithAdverbs
+/// wrapper because `.gist` and `.raku` distinguish it from `/.../`.
+pub(crate) fn rx_execution_value(body: String, adverbs: &[RegexAdverb]) -> Option<Value> {
+    if adverbs.is_empty() {
+        return Some(build_regex_with_adverbs(
+            body,
+            &parse_match_adverbs("", "m").ok()?.1,
+        ));
+    }
+    let written = written_adverbs(adverbs);
+    let (rest, parsed) = parse_match_adverbs(&written, "m").ok()?;
+    if !rest.is_empty() {
+        return None;
+    }
+    let pattern = apply_inline_match_adverbs(body, &parsed);
+    Some(build_regex_with_adverbs(pattern, &parsed))
+}

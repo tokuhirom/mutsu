@@ -301,7 +301,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("of", Absent::TypeObject("RakuAST::Type")),
             ("term", Absent::Required),
         ],
-        QuotedRegex => &[
+        QuotedRegex | QuotedRegexRx => &[
             ("match-immediately", Absent::False),
             ("body", Absent::Required),
             ("adverbs", Absent::EmptyList),

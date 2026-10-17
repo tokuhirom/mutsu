@@ -3248,9 +3248,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Subst { .. } | Expr::NonDestructiveSubst { .. } | Expr::Transliterate { .. } => {
             super::substitution::convert(expr)
         }
-        Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
-            quoted_regex_node(tree)
+        Expr::RegexLiteral { value, tree } => {
+            let mut node = quoted_regex_node(tree)?;
+            if matches!(value.view(), ValueView::RegexWithAdverbs(_)) {
+                node.class = RakuAstClass::QuotedRegexRx;
+            }
+            Ok(node)
         }
+        Expr::MatchRegexTree { tree, .. } => quoted_regex_node(tree),
         Expr::MatchRegexDynamicAdverbs { value, .. } => value
             .regex_source_tree()
             .ok_or_else(|| unsupported("dynamic match regex without a source tree"))
