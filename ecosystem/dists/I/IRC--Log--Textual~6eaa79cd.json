@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 73,
         "plan": 73,
-        "secs": 0.93,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,29 +28,30 @@
         "nok": 0,
         "ok": 73,
         "plan": 73,
-        "secs": 11.23,
+        "secs": 8.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 46,
+        "first_failure": "Checking '\\(:lt-target(\"2021-04-22Z08:01-0001\"))'",
+        "nok": 5,
+        "ok": 41,
         "plan": 46,
-        "secs": 0.89,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/02-search.rakutest",
       "raku": {
         "nok": 0,
         "ok": 46,
         "plan": 46,
-        "secs": 1.27,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,10 +63,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-16",
+    "date": "2026-10-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86258491",
+    "mutsu_commit": "ce113a66",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -76,13 +77,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/RC/IRC_LOG_TEXTUAL/51e30e7a368d70198ed37c3b33bc22f4c64aeac5.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 119,
     "baseline_files": 2,
-    "mutsu_assertions": 119,
-    "parity_files": 2,
-    "regressed_files": 0
+    "mutsu_assertions": 114,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.18"
 }

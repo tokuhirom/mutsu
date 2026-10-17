@@ -13,23 +13,23 @@
   "dist": "GD",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $lib; expected Callable but got Str (\"libgd.so.3\")",
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "rectangle",
+        "nok": 1,
+        "ok": 8,
         "plan": 9,
-        "secs": 0.92,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/010-load.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 10.79,
+        "secs": 10.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 2,
-        "secs": 0.85,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -52,30 +52,30 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.17,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $lib; expected Callable but got Str (\"libgd.so.3\")",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.85,
+        "first_failure": "create polygons",
+        "nok": 1,
+        "ok": 1,
+        "plan": 2,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/030-polygon.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.25,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 1.11,
+        "secs": 1.24,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -97,7 +97,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 1.11,
+        "secs": 0.93,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -109,10 +109,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-16",
+    "date": "2026-10-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86258491",
+    "mutsu_commit": "ce113a66",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -127,7 +127,7 @@
   "totals": {
     "baseline_assertions": 15,
     "baseline_files": 4,
-    "mutsu_assertions": 2,
+    "mutsu_assertions": 10,
     "parity_files": 1,
     "regressed_files": 3
   },

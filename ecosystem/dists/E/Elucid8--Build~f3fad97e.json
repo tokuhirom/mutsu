@@ -47,10 +47,10 @@
   "files": [],
   "measured": {
     "attempts": 3,
-    "date": "2026-10-16",
+    "date": "2026-10-17",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "86258491",
+    "mutsu_commit": "ce113a66",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -59,7 +59,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/E/LU/ELUCID8_BUILD/b4555b690f43f54f897619ed5b3e59b5b82ce1fa.tar.gz"
+    "url": "https://360.zef.pm/E/LU/ELUCID8_BUILD/0e9283fd780db7afb710837e5b6ab82d670f7c8c.tar.gz"
   },
   "status": "blocked_dep",
   "totals": {
@@ -69,5 +69,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.13.1"
+  "version": "0.13.2"
 }
