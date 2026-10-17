@@ -3895,6 +3895,36 @@ declares that mutsu does not implement (`Lock::Async.protect-or-queue-on-recursi
 `Proc.new.exitcode` is `Nil` here and 1 in Rakudo, and `Proc.command` keeps `IO::Path` words unstringified. Both
 are pre-existing. Pinned in `t/concurrency/thread-lock/lock-tap-proc-rows.t`.
 
+### 9.158 The socket classes' instance methods are rows (2026-10-17)
+
+`refactor/11276-socket-inet-rows` (3E remainder). `IO::Socket::INET` (a blocking TCP socket) and `IO::Socket::Async`
+(a TCP connection or a bound UDP socket) answered their instance methods through by-name `match`es
+(`native_socket_inet`, `native_socket_async`, `native_socket_async_udp`), gated by hand-written `native_methods`
+lists.
+
+Decision.
+
+- Every method is an `OWNER_ONLY` row of its class (`io_concurrency/socket_rows.rs`), reached like the handle
+  classes' (§9.157): `handle_owners_of` covers both classes. Each arm became one `Interpreter` method:
+  - `IO::Socket::INET`: `inet_getpeername`, `inet_close`, `inet_accept`, `inet_print`, `inet_write`, `inet_recv`,
+    `inet_read`, `inet_get`, `inet_lines`, `inet_nl_in`. `localport` reads its attribute.
+  - `IO::Socket::Async`: `async_socket_close` and `async_socket_supply`, which branch on whether the socket is a UDP
+    one; `async_socket_send` (`print`/`write`, TCP only); `async_socket_send_to` (`print-to`/`write-to`, UDP
+    only); `async_socket_native_descriptor`. The address methods read their attributes.
+- `runtime_init`'s name lists are derived from the rows.
+- The names follow Rakudo's declarations. `IO::Socket::INET` has no `say` of its own, so the native `say` alias is
+  gone. `getpeername` stays a row although Rakudo does not declare it: roast pins it (`S16-unfiled/getpeername.t`),
+  and `rows_are_declared_by_rakudo` exempts it as it exempts `VM.properties`.
+
+Not done:
+
+- `IO::Socket::INET.nl-in` answers a `List` in mutsu's separator order, where Rakudo answers an `Array` in its own.
+- The names Rakudo declares that mutsu answers only as attributes or not at all: `backlog`, `encoding`, `family`,
+  `host`, `nl-out`, `port`, `proto`, `type`, `native-descriptor`, `listening`, and `IO::Socket::Async.enc`.
+- The mutsu-only `IO::Socket::Async::Listener` class, which stands in for the `Supply` Rakudo's `listen` answers.
+
+Pinned in `t/io/socket-inet-rows.t` and `t/concurrency/socket-async-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

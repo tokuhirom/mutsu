@@ -5,71 +5,84 @@ use super::state::*;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    pub(in crate::runtime) fn native_socket_async(
+    /// The id of a TCP connection's stream, `None` for a UDP socket.
+    // Cost: O(1).
+    fn async_conn_id(attributes: &AttrMap) -> Option<u64> {
+        attributes
+            .get("conn-id")
+            .and_then(|v| v.as_int().map(|i| i as u64))
+    }
+
+    /// Whether an `IO::Socket::Async` receiver is a UDP socket (made by
+    /// `bind-udp` / `udp`).
+    // Cost: O(1).
+    pub(crate) fn async_socket_is_udp(attributes: &AttrMap) -> bool {
+        attributes.get("is-udp").and_then(Value::as_bool) == Some(true)
+    }
+
+    /// `IO::Socket::Async.native-descriptor`: the OS-level file descriptor of
+    /// the underlying TCP stream, used by NativeCall consumers
+    /// (Cro::TCP::NoDelay's setsockopt); -1 when there is none.
+    // Cost: O(1).
+    pub(crate) fn async_socket_native_descriptor(attributes: &AttrMap) -> Value {
+        #[cfg(unix)]
+        if let Some(id) = Self::async_conn_id(attributes)
+            && let Some(stream) = get_tcp_stream(id)
+            && let Ok(s) = stream.lock()
+        {
+            use std::os::unix::io::AsRawFd;
+            return Value::int(s.as_raw_fd() as i64);
+        }
+        #[cfg(not(unix))]
+        let _ = attributes;
+        Value::int(-1)
+    }
+
+    /// `IO::Socket::Async.close`.
+    // Cost: O(1), plus O(s) for a UDP socket, s = its supplies.
+    pub(crate) fn async_socket_close(&mut self, attributes: &AttrMap) -> Value {
+        if Self::async_socket_is_udp(attributes) {
+            self.udp_socket_close(attributes);
+        } else if let Some(id) = Self::async_conn_id(attributes) {
+            if let Some(stream) = get_tcp_stream(id)
+                && let Ok(s) = stream.lock()
+            {
+                let _ = s.shutdown(std::net::Shutdown::Both);
+            }
+            remove_tcp_stream(id);
+        }
+        Value::NIL
+    }
+
+    /// `IO::Socket::Async.Supply(:bin, :enc)`: what the socket receives.
+    // Cost: O(1) to set up; the reads run on a worker.
+    pub(crate) fn async_socket_supply(
         &mut self,
         attributes: &AttrMap,
-        method: &str,
-        args: Vec<Value>,
+        args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        // Dispatch to UDP handler if this is a UDP socket
-        if attributes.get("is-udp").and_then(Value::as_bool) == Some(true) {
-            return self.native_socket_async_udp(attributes, method, args);
+        if Self::async_socket_is_udp(attributes) {
+            return self.udp_socket_supply(attributes);
         }
+        self.async_socket_supply_real_tcp(Self::async_conn_id(attributes), args, attributes)
+    }
 
-        let conn_id = attributes
-            .get("conn-id")
-            .and_then(|v| v.as_int().map(|i| i as u64));
-
-        match method {
-            "socket-port" => Ok(attributes
-                .get("socket-port")
-                .cloned()
-                .unwrap_or(Value::int(0))),
-            "peer-port" => Ok(attributes
-                .get("peer-port")
-                .cloned()
-                .unwrap_or(Value::int(0))),
-            "socket-host" => Ok(attributes
-                .get("socket-host")
-                .cloned()
-                .unwrap_or_else(|| Value::str_from("0.0.0.0"))),
-            "peer-host" => Ok(attributes
-                .get("peer-host")
-                .cloned()
-                .unwrap_or_else(|| Value::str_from("0.0.0.0"))),
-            // The OS-level file descriptor of the underlying TCP stream, used
-            // by NativeCall consumers (Cro::TCP::NoDelay's setsockopt).
-            "native-descriptor" => {
-                #[cfg(unix)]
-                if let Some(id) = conn_id
-                    && let Some(stream) = get_tcp_stream(id)
-                    && let Ok(s) = stream.lock()
-                {
-                    use std::os::unix::io::AsRawFd;
-                    return Ok(Value::int(s.as_raw_fd() as i64));
-                }
-                Ok(Value::int(-1))
-            }
-            "close" => {
-                if let Some(id) = conn_id {
-                    if let Some(stream) = get_tcp_stream(id)
-                        && let Ok(s) = stream.lock()
-                    {
-                        let _ = s.shutdown(std::net::Shutdown::Both);
-                    }
-                    remove_tcp_stream(id);
-                }
-                Ok(Value::NIL)
-            }
-            "Supply" => self.async_socket_supply_real_tcp(conn_id, &args, attributes),
-            "write" | "print" => {
-                self.async_socket_write_real_tcp(conn_id, method, &args, attributes)
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No method '{}' on IO::Socket::Async",
-                method
-            ))),
+    /// `IO::Socket::Async.write($buf)` / `.print($str)` on a TCP connection.
+    // Cost: O(n), n = bytes sent.
+    pub(crate) fn async_socket_send(
+        &mut self,
+        attributes: &AttrMap,
+        args: &[Value],
+        text: bool,
+    ) -> Result<Value, RuntimeError> {
+        let method = if text { "print" } else { "write" };
+        if Self::async_socket_is_udp(attributes) {
+            return Err(crate::runtime::did_you_mean::method_not_found(
+                method,
+                "IO::Socket::Async",
+            ));
         }
+        self.async_socket_write_real_tcp(Self::async_conn_id(attributes), method, args, attributes)
     }
 
     /// The socket's text encoding: `.Supply(:enc(...))` / `.print(:enc(...))`
