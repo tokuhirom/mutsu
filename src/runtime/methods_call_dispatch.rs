@@ -1580,6 +1580,7 @@ impl Interpreter {
 
         // Junction auto-threading
         if Self::should_autothread_method(method)
+            && method != "map"
             && let ValueView::Junction { kind, values } = target.view()
         {
             let mut results = Vec::with_capacity(values.len());

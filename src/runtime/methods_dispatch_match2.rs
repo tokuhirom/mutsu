@@ -273,9 +273,10 @@ impl Interpreter {
         func: Option<&Value>,
         target: &Value,
     ) -> Result<(), RuntimeError> {
-        let Some(func) = func else {
-            return Ok(());
-        };
+        let using = func.map_or_else(|| "''".to_string(), |func| {
+            format!("'{}'", crate::value::raku_repr::raku_value(func))
+        });
+        if let Some(func) = func {
         // Look through a role-mixed callable (`&foo but R1`) the same way
         // `call_sub_value` does when actually invoking it.
         let unwrapped = Self::unwrap_callable_mixin(func.clone());
@@ -291,21 +292,14 @@ impl Interpreter {
         if is_callable {
             return Ok(());
         }
+        }
         let mut attrs = HashMap::new();
-        attrs.insert(
-            "message".to_string(),
-            Value::str(format!(
-                "Cannot map a {} to a {}, it's not callable.",
-                super::value_type_name(func),
-                super::value_type_name(target),
-            )),
-        );
+        let what = super::value_type_name(target);
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("using".to_string(), Value::str(using.clone()));
+        attrs.insert("message".to_string(), Value::str(format!("Cannot map a {what} using {using}")));
         let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Cannot::Map"), attrs);
-        let mut err = RuntimeError::new(format!(
-            "X::Cannot::Map: Cannot map a {} to a {}",
-            super::value_type_name(func),
-            super::value_type_name(target),
-        ));
+        let mut err = RuntimeError::new(format!("X::Cannot::Map: Cannot map a {what} using {using}"));
         err.exception = Some(Box::new(ex));
         Err(err)
     }

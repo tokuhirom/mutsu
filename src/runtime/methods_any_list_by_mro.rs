@@ -100,7 +100,7 @@ impl Interpreter {
         // "gist-using routines do not thread Junctions").
         if !ANY_LIST_BY_MRO.contains(&method)
             || (matches!(target.view(), ValueView::Junction { .. })
-                && !matches!(method, "say" | "print" | "put" | "note"))
+                && !matches!(method, "map" | "say" | "print" | "put" | "note"))
         {
             return None;
         }
