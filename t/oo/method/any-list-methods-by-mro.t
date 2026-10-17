@@ -5,7 +5,7 @@ use Test;
 # IterationBuffer-free plain list all reach the same row. Answers checked
 # against Rakudo.
 
-plan 44;
+plan 57;
 
 class Plain {}
 class PI { method iterator { (4, 5).iterator } }
@@ -66,3 +66,22 @@ is-deeply (1, 2, 3, 2, 1).toggle(* < 3).List, (1, 2), 'toggle';
 is-deeply (1, 2).Seq.rotate.List, (2, 1), 'rotate on a Seq';
 throws-like { (1, 2).join('a', 'b') }, Exception, message => /'Too many positionals'/, 'join takes one separator';
 is Supply.from-list(1, 2).tree.^name, 'Supply', 'tree on a Supply is the Supply';
+
+# A Supply's list coercions, `elems` and the quant hashes' family coercions.
+my $sup = Supply.from-list(1, 2);
+is-deeply $sup.list, (1, 2), 'Supply.list';
+is $sup.Array.raku, '[1, 2]', 'Supply.Array';
+is Plain.new.elems, 1, 'elems on an instance';
+is SetHash.Baggy.^name, 'BagHash', 'SetHash.Baggy keeps the hashiness';
+is Set.Mixy.^name, 'Mix', 'Set.Mixy';
+is bag(1).Setty.raku, 'Set.new(1)', 'Bag.Setty';
+
+# `Mu`'s and `Cool`'s answers for an instance, reached by the MRO walk.
+is Plain.new.can('Str').elems, 1, 'can';
+ok Plain.new.does(Plain), 'does';
+is (1, 2).are.^name, 'Int', 'are';
+my @shaped[2;3];
+is @shaped.shape, (2, 3), 'shape';
+throws-like { (1, 2).shape }, X::Method::NotFound, 'a List has no shape';
+throws-like { Plain.new.sprintf('%s') }, X::Method::NotFound, 'sprintf is Cool\'s';
+is Duration.new(3725).polymod(60, 60).List, (5, 2, 1), 'polymod through Real';

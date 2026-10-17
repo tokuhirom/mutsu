@@ -792,7 +792,7 @@ impl Interpreter {
     /// Collect all methods named `method_name` across the MRO of `target`.
     /// Returns a list of callable Sub values, one per class in the MRO that
     /// defines the method. This implements `.can(method-name)`.
-    pub(super) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
+    pub(crate) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
         if method_name == "DEPRECATED"
             && let ValueView::Instance {
                 class_name,

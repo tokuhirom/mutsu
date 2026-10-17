@@ -79,16 +79,6 @@ impl Interpreter {
             return Some(result);
         }
         match method {
-            "are" => Some(self.dispatch_are(target, &args)),
-            // `$obj.say`/`.print`/`.put`/`.printf` (no args) stringify and print the
-            // invocant — EXCEPT on an IO::CatHandle, where these are write methods
-            // that route to the native handler (which raises X::NYI on a read-only
-            // cat). Without this guard the generic form would silently print the
-            // cat's gist instead of throwing.
-            // Cost: O(n), n = chars of the gist of the invocant (rendered, then written).
-            "say" if args.is_empty() && !Self::is_io_cathandle(&target) => {
-                Some(self.dispatch_say(&target))
-            }
             // `Mu.say(\x)` / `Mu.say(|)` (and `put`): the fallback for a class that acts as
             // `$*OUT`/`$*ERR` by declaring its own `print` but no `say`/`put` -- the
             // arguments are gisted (`say`) or stringified (`put`), joined, followed by
@@ -119,23 +109,8 @@ impl Interpreter {
                     self.call_method_with_values(target.clone(), "print", vec![Value::str(text)])
                 })())
             }
-            // Cost: O(n), n = chars of the stringified invocant (rendered, then written).
-            "print" if args.is_empty() && !Self::is_io_cathandle(&target) => {
-                Some(self.dispatch_print(&target))
-            }
-            // Cost: O(n), n = chars of the stringified invocant (rendered, then written).
-            "put" if args.is_empty() && !Self::is_io_cathandle(&target) => {
-                Some(self.dispatch_put(&target))
-            }
-            // `Cool.printf` / `Cool.sprintf`: the rows' handlers too
-            // (`method_table::str_interp`).
-            "printf" => self.dispatch_printf_row(&target, &args),
-            "sprintf" => self.dispatch_sprintf_row(&target, &args),
-            "shape" if args.is_empty() => self.dispatch_shape(&target),
             "default" if args.is_empty() => Self::dispatch_default(&target),
-            "note" if args.is_empty() => Some(self.dispatch_note(&target)),
             "snitch" if args.len() <= 1 => self.dispatch_snitch(&target, &args),
-            "return-rw" if args.is_empty() => Some(Ok(target)),
             "encode" => {
                 Some(self.dispatch_encode(&target, &args))
             }
@@ -150,33 +125,12 @@ impl Interpreter {
             // reads any value as a number), so a receiver whose ancestry
             // declares no `polymod` (`Str`, `Complex`, ...) falls through to
             // normal resolution and `X::Method::NotFound`, as in Rakudo.
-            "polymod" if !self.e2_native_method_exists(&target, "polymod") => None,
-            // The `polymod` rows' implementation; an `Instant` or `Duration`
-            // gets `polymod` from its `Real` role, which divides the receiver's
-            // seconds. Reached for a receiver with no shape (a mixin, a subclass).
-            "polymod" => Some(self.polymod_answer(&target, &args)),
             "VAR" if args.is_empty() => {
                 // Proxy .VAR returns a decontainerized copy
                 if matches!(target.view(), ValueView::Proxy { .. }) {
                     return Some(Ok(Value::proxy_var_object(target, String::new())));
                 }
                 Some(Ok(target))
-            }
-            "can" if args.len() == 1 => {
-                let method_name = args[0].to_string_value();
-                let results = self.collect_can_methods(&target, &method_name);
-                Some(Ok(Value::array(results)))
-            }
-            "does" if args.len() == 1 => {
-                let type_name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Str(name) => name.to_string(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => args[0].to_string_value(),
-                };
-                Some(Ok(Value::truth(
-                    self.type_matches_value(&type_name, &target),
-                )))
             }
             "THREAD" => {
                 if let ValueView::Junction { values, .. } = target.view() {

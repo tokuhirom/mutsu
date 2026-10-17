@@ -12,7 +12,25 @@
 use super::*;
 
 /// The methods whose `Any` rows answer by the receiver's MRO.
-const ANY_LIST_BY_MRO: [&str; 50] = [
+const ANY_LIST_BY_MRO: [&str; 68] = [
+    "are",
+    "say",
+    "print",
+    "put",
+    "note",
+    "printf",
+    "sprintf",
+    "shape",
+    "return-rw",
+    "polymod",
+    "can",
+    "does",
+    "list",
+    "Array",
+    "elems",
+    "Setty",
+    "Baggy",
+    "Mixy",
     "toggle",
     "tree",
     "is-lazy",
@@ -77,8 +95,30 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // A junction's methods autothread elsewhere, except `Mu`'s printing
+        // routines, which write the junction's own gist or `Str` (Rakudo's
+        // "gist-using routines do not thread Junctions").
         if !ANY_LIST_BY_MRO.contains(&method)
-            || matches!(target.view(), ValueView::Junction { .. })
+            || (matches!(target.view(), ValueView::Junction { .. })
+                && !matches!(method, "say" | "print" | "put" | "note"))
+        {
+            return None;
+        }
+        // `Mu.say`/`print`/`put`/`note` take no argument; a call with some is a
+        // class acting as `$*OUT` (its own `print`), answered by the cascade.
+        if matches!(method, "say" | "print" | "put" | "note") && !args.is_empty() {
+            return None;
+        }
+        // `.^can($name)` / `.^does($type)` is the HOW's two-argument call
+        // (`$obj.HOW.can($obj, $name)`), answered by the metaobject.
+        if matches!(method, "can" | "does") && args.len() != 1 {
+            return None;
+        }
+        // The list coercions of every receiver but a `Supply` keep the
+        // answers of the native paths and of the cascades after this walk;
+        // a `Supply` materializes through its own `list` (§9.136).
+        if matches!(method, "list" | "Array")
+            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
         {
             return None;
         }

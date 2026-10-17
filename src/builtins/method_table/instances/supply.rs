@@ -64,7 +64,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         owner: "Supply",
         name: "list",
         arity: 0,
-        handler: Handler::Narrow(list),
+        handler: Handler::Interp(list),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
@@ -132,10 +132,16 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
     }
 }
 
-/// `Supply.list`.
-// Cost: O(e), e = values emitted so far.
-fn list(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    listify(target, false)
+/// `Supply.list`: the values materialized, drained from a live channel, or
+/// collected by running an on-demand body (`Interpreter::supply_materialize`).
+// Cost: O(e), e = values the supply emits until done.
+fn list(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    interp.supply_materialize(target, false)
 }
 
 /// The values of a `Supply` as a List (`want_array` false) or a real Array, or

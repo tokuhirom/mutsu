@@ -356,7 +356,7 @@ impl Interpreter {
         None
     }
 
-    pub(super) fn dispatch_shape(&self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+    pub(crate) fn dispatch_shape(&self, target: &Value) -> Option<Result<Value, RuntimeError>> {
         if let ValueView::Array(_, kind) = target.view() {
             if kind == crate::value::ArrayKind::Shaped
                 && let Some(shape) = Self::infer_array_shape(target)
