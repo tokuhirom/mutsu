@@ -3895,7 +3895,14 @@ impl Interpreter {
         }
         // A `my $*name` is this frame's own binding of the dynamic, not the
         // process-level one `PROCESS::<$name>` reports (`process_stash_entries`).
-        if dynamic && (name.starts_with('*') || name.starts_with("@*") || name.starts_with("%*")) {
+        // So is a `my &*name`: without the mark its first store published the
+        // callable as the process binding, which outlived the frame (#13705).
+        if dynamic
+            && (name.starts_with('*')
+                || name.starts_with("@*")
+                || name.starts_with("%*")
+                || name.starts_with("&*"))
+        {
             self.env_mut()
                 .insert(MetaNs::LexicalDynamic.owned_key_for_str(name), Value::TRUE);
         }
