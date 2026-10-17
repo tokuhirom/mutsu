@@ -287,12 +287,35 @@ Consequences that pin the design:
     (`compile_block_value_opts_under`). The inline sort comparator
     (`detect_simple_cmp_block`) declines in a `use`-block.
 
+  **Slice 6 done** (`fix/8751-string-ops-lexical`, 2026-10-18): the string
+  operators join the list: `~`, `eq`, `ne`, `lt`, `gt`, `le`, `ge` and
+  `leg`. A callee written outside the block no longer sees their imported
+  candidates through a reduction, a hyper or `&infix:<leg>`.
+  - **Their ops ask the user candidates.** `infix_concat` (the `Concat`
+    op, `~=`, a reduction's fold), `str_cmp_values` and `str_leg` ask
+    `try_user_infix` before they stringify the operands, as the arithmetic
+    ops do. A Junction operand of `~` threads first, and each eigenstate
+    asks again; a string comparison leaves a Junction to the built-in.
+    `ConcatAssignLocal`'s in-place append declines when a user `infix:<~>`
+    is in scope. This also fixes `$x ~= $y` against a candidate the unit
+    declares itself (#13791).
+  - **The prefix covers the fused and meta forms.** `ConcatAssignLocal` and
+    the `X`/`Z`/`R` meta-ops over a built-in operator of the list get the
+    `LexImportBuiltinOp` prefix too (`emit_lex_import_builtin_meta`).
+  - **A dispatcher sorts as a comparator.** `.sort(&infix:<leg>)` in the
+    block passed the dispatcher value, whose capture signature has no
+    positional arity, so `sort` took it as a key mapper. A built-in
+    operator's dispatcher now reports the operator's arity to `sort`
+    (`builtin_operator_dispatcher_arity`); `.sort(&infix:<cmp>)` from
+    slice 5 had the same gap.
+
   Left for stage 2:
-  - The built-in operators outside that list (`~` is reached through
-    `infix_concat`; the string comparisons, the set operators, `postfix`,
-    `postcircumfix`) keep their imported candidates in the registry. A
-    callee outside the block still sees those, and a closure taken out of the
-    block loses them.
+  - The built-in operators outside that list (the set operators, `x`,
+    `postfix`, `postcircumfix`) keep their imported candidates in the
+    registry. A callee outside the block still sees those, and a closure
+    taken out of the block loses them.
+  - A dispatcher value's `.arity`/`.count` is still the capture's (`0`/`Inf`);
+    rakudo reports the operator proto's (`2`/`2` for `&infix:<cmp>`).
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
   - Classes and variables keep the `ImportScope` rollback. A top-level

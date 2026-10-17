@@ -342,6 +342,13 @@ impl Interpreter {
         {
             return self.eval_concat_with_junctions(left, right);
         }
+        // A user `infix:<~>` candidate sees the operands before they are
+        // stringified: one the unit declares or imports, or one a block-scoped
+        // `use` bound for this op (ADR-8751 stage 2). `$x ~= $y` and the
+        // reductions over `~` come here too (#13791).
+        if let Some(value) = self.try_user_concat(&left, &right)? {
+            return Ok(value);
+        }
         // Infix `~` stringifies an operand via `.Stringy` (falling back to `.Str`),
         // so an operand whose class defines a user `Stringy`/`Str` must dispatch it
         // — the pure `concat_values` only knows `.gist` (rendering `Foo()`). This is
@@ -599,6 +606,11 @@ impl Interpreter {
                 .map(|v| self.eval_concat_with_junctions(left.clone(), v))
                 .collect::<Result<Vec<_>, _>>()?;
             return Ok(Value::junction(kind, results));
+        }
+        // Each eigenstate asks the user candidates again, as the threaded
+        // arithmetic ops do.
+        if let Some(value) = self.try_user_concat(&left, &right)? {
+            return Ok(value);
         }
         Self::concat_values(left, right)
     }

@@ -5,7 +5,7 @@ use Test;
 # inside the block, in every form the block uses it, and only there: a callee
 # written outside the block does not see them, and a closure made in the
 # block keeps them after it exited. Checked against rakudo.
-plan 23;
+plan 24;
 
 use lib 't/lib';
 
@@ -40,6 +40,8 @@ my $Pt;
         'a candidate as narrow as the core one is ambiguous with it';
     is (sort { $^a cmp $^b }, ($p, $q)).map(*.gist).join(','), 'Pt(2),Pt(1)',
         'a comparator block a built-in calls';
+    is ($p, $q).sort(&infix:<cmp>).map(*.gist).join(','), 'Pt(2),Pt(1)',
+        'the operator as a sort comparator';
     is outside-plus($p, $q), 'no candidate', 'a callee written outside the block does not see them';
     &keeps-plus = -> $a, $b { ($a + $b).gist };
     &keeps-cmp = -> $a, $b { $a cmp $b };
