@@ -1266,6 +1266,7 @@ impl Interpreter {
         // (#12882).
         // Junction auto-threading: thread method calls over junction values
         if let ValueView::Junction { kind, values } = target.view()
+            && method != "map"
             && !matches!(
                 method,
                 "Bool"
@@ -1315,6 +1316,20 @@ impl Interpreter {
             // slots; drain the accumulated writeback into the caller's local slots
             // (env already holds every eigenstate's value).
             self.apply_pending_caller_var_writeback(code);
+            return Ok(());
+        }
+
+        // `Any.map` takes a Junction as one item instead of threading its
+        // invocant over each eigenstate.
+        if method == "map" && matches!(target.view(), ValueView::Junction { .. }) {
+            if let Some(result) = self.maybe_autothread_method_args(&target, method, &args)? {
+                self.stack.push(result);
+                self.drain_and_reconcile_after_cached_call(code);
+                return Ok(());
+            }
+            let result = self.dispatch_map_method(target.clone(), args.clone())?;
+            self.stack.push(result);
+            self.drain_and_reconcile_after_cached_call(code);
             return Ok(());
         }
 

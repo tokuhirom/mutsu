@@ -52,7 +52,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     any_row!(
         "Any",
         "map",
-        1,
+        0,
         ARGS_TYPE.or(RowFlags::SLURPY),
         map,
         &[
