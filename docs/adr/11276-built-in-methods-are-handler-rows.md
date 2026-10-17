@@ -3563,6 +3563,7 @@ An enum value's base-type rows (`dispatch_enum_method`) are its base type's and 
 MRO has them (`Int`/`Str`, then `Cool`). The `sign` arm of the pure cascade, which answered an enum value
 from its integer, is deleted. `Cool.sign` numifies the value, so a `Str`-valued value that is not a
 number dies as it does in Rakudo; the arm answered 0 for it.
+
 ### 9.148 `Any`'s list methods read the receiver's own `iterator` or `list` (2026-10-17)
 
 `refactor/11276-own-iteration-view`. Rakudo writes `Any`'s list methods on two primitives:
