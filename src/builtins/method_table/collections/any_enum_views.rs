@@ -12,7 +12,9 @@
 //!
 //! The rows are `OWNER_ONLY`: [`invoke`] reaches them for a type object from
 //! the by-name dispatch and for an enum value from the enum dispatch
-//! (`dispatch_enum_method`), after the enumeration roles' rows.
+//! (`dispatch_enum_method`), after the enumeration roles' rows. `keys` and
+//! `values` are also the late rows of the hash-likes the pure rows decline
+//! (§9.139), which the walk of `dispatch_method_by_name_3` reaches.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -136,14 +138,17 @@ fn pairs(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
     answer(i, t, View::Pairs)
 }
 
-// Cost: O(v), v = values of the enumeration.
+/// Also the hash-likes' keys the pure rows decline (a `Stash`, an object
+/// hash, a `Match`, a `Capture`, a `Pair`; §9.139).
+// Cost: O(v), v = values of the enumeration, or the hash-like's keys.
 fn keys(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    answer(i, t, View::Keys)
+    answer(i, t, View::Keys).or_else(|| i.dispatch_keys_method(t.clone()))
 }
 
-// Cost: O(v), v = values of the enumeration.
+/// Also the hash-likes' values the pure rows decline (§9.139).
+// Cost: O(v), v = values of the enumeration, or the receiver's values.
 fn values(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    answer(i, t, View::Values)
+    answer(i, t, View::Values).or_else(|| Some(i.dispatch_values_method(t.clone())))
 }
 
 /// `kv` of a defined enum value is `Enumeration.kv` (its own key and value);
