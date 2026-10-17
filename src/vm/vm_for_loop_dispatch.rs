@@ -736,24 +736,16 @@ impl Interpreter {
     }
 
     /// Like [`Self::try_iterable_instance_items`], but does not require the
-    /// class to compose `Iterable`. Used only by the "Any iteration methods"
-    /// dispatch arm, restricted to `.map`/`.grep`/`.first`/`.sort`/`.head`/
-    /// `.tail`: Rakudo routes those through `self.iterator` for ANY class
-    /// defining its own override, `does Iterable` or not (#8547 — measured
-    /// against `raku`: a plain class with only `method iterator {...}`, no
-    /// `does Iterable`, decomposes for exactly these methods the same way a
-    /// `does Iterable` class does). `.flat` does NOT extend the same way
-    /// (measured: `$obj.flat` on such a plain class stays one item, unlike
-    /// the `does Iterable` case) — the caller excludes it from the method set
-    /// it drives through this helper. `.list`/`@`-assignment do not extend
-    /// either (measured: `$obj.list` on such a plain class still yields the
-    /// instance as one item) — those stay on
-    /// [`Self::try_iterable_instance_items`]'s stricter Iterable-role gate,
-    /// which is why this is a separate, narrower-scoped helper rather than a
-    /// relaxation of the shared one. `for` is the one statement that uses it:
-    /// `for $obj` is one item only because `$obj` is a Scalar container
-    /// (rakudo's `.map(:item(iscont(..)))`), so a bare `for Obj.new` /
-    /// `for $registry.view` iterates the override (Game::Entities).
+    /// class to compose `Iterable`: Rakudo's `.map` reads `self.iterator` for
+    /// any class with its own `iterator`, and `Any.iterator` is
+    /// `self.list.iterator` for one with its own `list` (#8547, #13748). `.list`
+    /// and `@`-assignment do not extend the same way (measured: `$obj.list` on
+    /// such a plain class still yields the instance as one item), so they stay
+    /// on [`Self::try_iterable_instance_items`]'s stricter Iterable-role gate.
+    /// `for` uses this helper: `for $obj` is one item only because `$obj` is
+    /// a Scalar container (rakudo's `.map(:item(iscont(..)))`), so a bare
+    /// `for Obj.new` / `for $registry.view` iterates (Game::Entities); so does
+    /// `.are`. The method dispatch uses `own_iteration_view` (ADR-11276 §9.148).
     pub(crate) fn try_user_iterator_items(
         &mut self,
         iterable: &Value,
@@ -773,12 +765,11 @@ impl Interpreter {
         }
         let cn = class_name.as_str().to_string();
         if !self.has_user_method(&cn, "iterator") {
-            // Same inherited-`Any.iterator` route as
-            // `try_iterable_instance_items`: `does Iterable` + `list` and no
-            // `iterator` at all. Kept on the Iterable-role gate even though
-            // this helper's `iterator` route deliberately is not — a plain
-            // class with only a `list` method is one item to `.map` in rakudo.
-            if self.class_does_role(&cn, "Iterable") && self.has_user_method(&cn, "list") {
+            // The inherited `Any.iterator` is `self.list.iterator`, so a class
+            // that declares only `list` iterates it, `Iterable` or not
+            // (measured against Rakudo 2026.09: `for WithList.new` runs once
+            // per element, #13748; ADR-11276 §9.148).
+            if self.has_user_method(&cn, "list") {
                 let list =
                     self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
                 return Ok(Some(crate::runtime::utils::value_to_list(&list)));
