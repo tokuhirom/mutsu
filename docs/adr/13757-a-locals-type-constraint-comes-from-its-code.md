@@ -112,6 +112,19 @@ HTTP::UserAgent files caught slice 45's regressions).
   - Still on the by-name record, for later slices: the `@`/`%` slots (the
     bake stays scalar-only), the element, compound and push-family readers,
     and `vm_call_method_compiled_cache`.
+- **Step 4, second slice** (`fix/13757-array-hash-slot-constraint`). The
+  element stores read the by-name record, and two shapes still reached a
+  caller's record:
+  - An element store into a captured variable seeds the cell's container
+    under its name in the running frame, so the frame looked like it bound
+    the variable. A record now takes the static link when the frame's
+    binding is the program scope's own container (`same_variable`).
+  - A closure's frame root has no static link, so its record lookup walked
+    on into the frames that called it. A closure whose capture holds the
+    variable now ends the record lookup at that capture.
+  - Nothing reads these slots yet: element stores on a local, the
+    push family and the compound stores keep the by-name record, and they
+    are correct as long as it resolves where the variable does.
 
 ## 4. Consequences
 
