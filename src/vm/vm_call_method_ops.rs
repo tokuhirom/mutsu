@@ -1721,129 +1721,33 @@ impl Interpreter {
         } else {
             target
         };
-        // .hyper/.race with named arguments (batch, degree): validate and wrap
+        // .hyper/.race with named arguments (batch, degree): validated and
+        // remembered for `.configuration` (ADR-11276 §9.137).
         if matches!(method, "hyper" | "race") && !args.is_empty() {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "hyper-race-config");
-            // Extract named args (batch, degree) and validate
-            let mut batch: Option<i64> = None;
-            let mut degree: Option<i64> = None;
-            for arg in &args {
-                let (key, val) = match arg.view() {
-                    ValueView::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
-                    ValueView::ValuePair(k, v) => (k.to_string_value(), crate::runtime::to_int(v)),
-                    _ => continue,
-                };
-                match key.as_str() {
-                    "batch" => batch = Some(val),
-                    "degree" => degree = Some(val),
-                    _ => {}
-                }
-            }
-            // Validate batch
-            if let Some(b) = batch
-                && b <= 0
-            {
-                let mut attrs = ValueMap::default();
-                attrs.insert("method".to_string(), Value::str(method.to_string()));
-                attrs.insert("name".to_string(), Value::str("batch".to_string()));
-                attrs.insert("value".to_string(), Value::int(b));
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
-                );
-                return Err(RuntimeError::typed("X::Invalid::Value", attrs));
-            }
-            // Validate degree
-            if let Some(d) = degree
-                && d <= 0
-            {
-                let mut attrs = ValueMap::default();
-                attrs.insert("method".to_string(), Value::str(method.to_string()));
-                attrs.insert("name".to_string(), Value::str("degree".to_string()));
-                attrs.insert("value".to_string(), Value::int(d));
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(format!(
-                        "Invalid value '{}' for 'degree' on '{}'",
-                        d, method
-                    )),
-                );
-                return Err(RuntimeError::typed("X::Invalid::Value", attrs));
-            }
-            // Materialize and wrap
-            let items = crate::runtime::value_to_list(&target);
-            let body = crate::value::SeqBody::reified(items);
-            // Remember the requested batch/degree so `.configuration` can report
-            // them (the HyperSeq/RaceSeq does not carry the config).
-            body.set_hyper_config(batch, degree);
-            let result = if method == "hyper" {
-                Value::hyper_seq_body(body)
-            } else {
-                Value::race_seq_body(body)
-            };
+            let result = self.hyperize_with_config(&target, method, &args)?;
             self.stack.push(result);
             // Pure value wrap (no env write): no env_dirty mark needed.
             return Ok(());
         }
-        // HyperSeq/RaceSeq delegation: unwrap, dispatch on inner list, wrap back for map/grep
-        let hyper_race_wrap = if matches!(
+        // HyperSeq/RaceSeq: the methods they declare are their rows
+        // (ADR-11276 §9.137); every other method reads the sequence as its
+        // `List`, below.
+        if let Some(owners) = crate::builtins::method_table::hyper_seq_owners_of(&target)
+            && let Some(result) =
+                crate::builtins::method_table::invoke_owner(self, owners, method, &args, || {
+                    target.clone()
+                })
+        {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "hyperseq-row");
+            self.stack.push(result?);
+            return Ok(());
+        }
+        if matches!(
             target.view(),
             ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
         ) {
             match method {
-                "hyper" => {
-                    let items_arc = match target.view() {
-                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
-                        _ => unreachable!(),
-                    };
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-hyper",
-                    );
-                    self.stack.push(Value::hyper_seq_body(items_arc));
-                    // Pure rewrap (no env write): no env_dirty mark needed.
-                    return Ok(());
-                }
-                "race" => {
-                    let items_arc = match target.view() {
-                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
-                        _ => unreachable!(),
-                    };
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-race",
-                    );
-                    self.stack.push(Value::race_seq_body(items_arc));
-                    // Pure rewrap (no env write): no env_dirty mark needed.
-                    return Ok(());
-                }
-                "is-lazy" => {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-is-lazy",
-                    );
-                    self.stack.push(Value::FALSE);
-                    // Pure reflection (no env write): no env_dirty mark needed.
-                    return Ok(());
-                }
-                "configuration" if args.is_empty() => {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-configuration",
-                    );
-                    // `HyperSeq.configuration` — expose the `.batch`/`.degree` the
-                    // sequence was hyperized with (defaults otherwise). Used by the
-                    // `hyperize` dist.
-                    let items_arc = match target.view() {
-                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
-                        _ => unreachable!(),
-                    };
-                    let (batch, degree) = items_arc.hyper_config().unwrap_or((None, None));
-                    self.stack
-                        .push(Interpreter::make_hyper_configuration(batch, degree));
-                    // Pure value (no env write): no env_dirty mark needed.
-                    return Ok(());
-                }
                 "^name" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethod",
@@ -1901,79 +1805,9 @@ impl Interpreter {
                     // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
-                "map" | "grep" => {
-                    let items_arc = match target.view() {
-                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
-                        _ => unreachable!(),
-                    };
-                    // For small lists, use parallel execution so inter-item
-                    // synchronization (e.g. Promise await chains) works.
-                    // For large lists, fall through to the sequential array
-                    // map/grep path.  The worker batches retain every expanded
-                    // result until their join, which makes the large Slip-heavy
-                    // stress shape GC-bound rather than faster.
-                    if items_arc.len() < 1000 {
-                        let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
-                        let block = if !args.is_empty() {
-                            args[0].clone()
-                        } else {
-                            Value::NIL
-                        };
-                        let is_map = method == "map";
-                        let result =
-                            self.exec_hyper_race_map_grep(&items_arc, block, is_map, is_hyper)?;
-                        let wrapped = if is_hyper {
-                            Value::hyper_seq(result)
-                        } else {
-                            Value::race_seq(result)
-                        };
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethod",
-                            "hyperseq-map-grep",
-                        );
-                        self.stack.push(wrapped);
-                        return Ok(());
-                    }
-                    // Large list: fall through to array-based dispatch.
-                    Some(matches!(target.view(), ValueView::HyperSeq(_)))
-                }
-                "iterator" if args.is_empty() => {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-iterator",
-                    );
-                    // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
-                    // a second `.iterator` throws X::Seq::Consumed. The consumed-state
-                    // is tracked on the inner Arc via the shared Seq registry.
-                    let items_arc = match target.view() {
-                        ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
-                        _ => unreachable!(),
-                    };
-                    let type_name = if matches!(target.view(), ValueView::HyperSeq(_)) {
-                        "HyperSeq"
-                    } else {
-                        "RaceSeq"
-                    };
-                    // Atomic check-and-mark under one lock, so concurrent workers
-                    // racing for the single iterator resolve to exactly one winner
-                    // (rakudo #4413 concurrency contract). Orthogonal to
-                    // ADR-0034's reify/consume split — see `claim_hyper_iterator_once`.
-                    if items_arc.claim_hyper_iterator_once().is_err() {
-                        return Err(crate::value::seq_consumed_error_for(type_name));
-                    }
-                    let list = Value::array_with_kind(
-                        crate::value::Value::array_arc(items_arc.to_vec()),
-                        crate::value::ArrayKind::List,
-                    );
-                    let iter = crate::builtins::iterator_construct::build_iterator_instance(&list);
-                    self.stack.push(iter);
-                    return Ok(());
-                }
-                _ => None,
+                _ => {}
             }
-        } else {
-            None
-        };
+        }
         // Convert HyperSeq/RaceSeq to List for method dispatch
         let target = match target.view() {
             ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => Value::array_with_kind(
@@ -2548,23 +2382,6 @@ impl Interpreter {
                 // to the caller's local slots (precise, reverse-sync-independent)
                 // before the env_dirty-gated blanket reconcile.
                 self.drain_and_reconcile_after_cached_call(code);
-                // Wrap map/grep results back into HyperSeq/RaceSeq
-                if let Some(is_hyper) = hyper_race_wrap
-                    && let Some(result) = self.stack.pop()
-                {
-                    // ADR-0058: a large HyperSeq/RaceSeq `.map`/`.grep` falls
-                    // through to the ordinary array dispatch, which now returns
-                    // a Seq whose callback has not run; `value_to_list` below
-                    // reads it through pure code.
-                    self.reify_map_grep_seq(&result)?;
-                    let result_items = crate::runtime::value_to_list(&result);
-                    let wrapped = if is_hyper {
-                        Value::hyper_seq(result_items)
-                    } else {
-                        Value::race_seq(result_items)
-                    };
-                    self.stack.push(wrapped);
-                }
             }
         }
         Ok(())

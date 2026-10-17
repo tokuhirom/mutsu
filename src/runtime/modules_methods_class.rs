@@ -24,6 +24,7 @@ mod methods_collection;
 pub(crate) mod methods_collection_ops;
 mod methods_definitehow;
 mod methods_any_list_by_mro;
+mod methods_hyper_seq_rows;
 mod methods_dispatch_match;
 mod methods_dispatch_match2;
 mod methods_dispatch_match3;

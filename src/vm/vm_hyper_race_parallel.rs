@@ -174,7 +174,7 @@ impl Interpreter {
     /// Parallel map/grep for HyperSeq/RaceSeq.
     /// Each item is processed in its own thread to support concurrent
     /// operations like `await` inside the map/grep block.
-    pub(super) fn exec_hyper_race_map_grep(
+    pub(crate) fn exec_hyper_race_map_grep(
         &mut self,
         items: &[Value],
         block: Value,
