@@ -11,7 +11,7 @@
 //! parenthesised expression.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::regex_tree::{CharClassElement, EnumerationElement, PropertyPredicate};
+use crate::regex_tree::{CharClassElement, EnumerationElement, PropertyPredicate, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn named(name: &'static str, value: Value) -> RakuAstField {
@@ -146,6 +146,26 @@ fn predicate_text(value: &RakuAstNode) -> Option<String> {
                 })
                 .collect();
             Some(format!("\"{escaped}\""))
+        }
+        RakuAstClass::QuotedRegex => {
+            if super::lower::bool_field(value, "match-immediately").ok()? {
+                return None;
+            }
+            if value
+                .fields
+                .iter()
+                .any(|field| field.name == Some("adverbs"))
+            {
+                return None;
+            }
+            let body = super::lower::named_child(value, "body").ok()?;
+            let tree = RegexTree {
+                body: super::lower::lower_regex_node(body).ok()?,
+                match_immediately: false,
+                adverbs: Vec::new(),
+                declaration_kind: None,
+            };
+            Some(format!("/{}/", tree.to_source()))
         }
         _ => None,
     }

@@ -1642,3 +1642,15 @@ expression for every match. Literal integer offsets continue through the
 ordinary static-adverb path. The focused RakuAST test pins the node fields and
 EVAL lowering; `t/regex/regex-dynamic-pos-adverb.t` exercises dynamic position
 and continue behavior through the frontend mode.
+
+## 69. Regex expression arguments (2026-10-17)
+
+Expression-shaped regex arguments retain their nested RakuAST structure. The
+`m:st(1|8)` ordinal is a `ColonPair::Value` whose parenthesized expression is
+`ApplyListInfix("|")`; lowering renders that value back through the existing
+regex-adverb parser. A Unicode property predicate such as
+`<:name(/:s LATIN SMALL LETTER/)>` keeps the nested `QuotedRegex` beneath its
+parentheses, and lowering reconstructs its source for the existing property
+matcher. The focused regression pins both shapes and EVAL behavior;
+`regex-engine-gaps.t` and `regex-unicode-property-name-and-class-lookup.t`
+exercise them through the frontend mode.

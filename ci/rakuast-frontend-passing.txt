@@ -1074,6 +1074,8 @@ t/concurrency/supply/supplier-preserving-backlog.t
 t/concurrency/supply/supplier-preserving-derived-race.t
 t/concurrency/supply/supplier-preserving-derived-replay.t
 t/concurrency/supply/supplier-preserving-done-replay.t
+t/concurrency/supply/supplier-scheduler-method-rows.t
+t/concurrency/supply/supplier-subclass-rows.t
 t/concurrency/supply/supply-act-serializes.t
 t/concurrency/supply/supply-act.t
 t/concurrency/supply/supply-await-static-whenever.t
@@ -3784,6 +3786,7 @@ t/oo/method/any-interp-callsame-method-rows.t
 t/oo/method/any-interp-method-rows.t
 t/oo/method/any-join-method-rows.t
 t/oo/method/any-list-hash-method-rows.t
+t/oo/method/any-list-methods-by-mro.t
 t/oo/method/any-misc-method-rows.t
 t/oo/method/any-view-method-rows.t
 t/oo/method/assign-missing-method-not-found.t
@@ -3826,6 +3829,7 @@ t/oo/method/coercion-method-rows.t
 t/oo/method/coercion-param-type-object-user-method.t
 t/oo/method/coercion-qualified-method-name.t
 t/oo/method/coercion-str-method-dispatch.t
+t/oo/method/collation-method-rows.t
 t/oo/method/collection-aggregate-method-rows.t
 t/oo/method/collection-clone-method-rows.t
 t/oo/method/collection-fmt-method-rows.t
@@ -4753,6 +4757,7 @@ t/rakuast/rakuast-declared-sub-bareword.t
 t/rakuast/rakuast-desugar-boundary.t
 t/rakuast/rakuast-do-whenever.t
 t/rakuast/rakuast-dotty-term-method.t
+t/rakuast/rakuast-dynamic-match-adverbs.t
 t/rakuast/rakuast-elsif.t
 t/rakuast/rakuast-enum-term.t
 t/rakuast/rakuast-enum.t
@@ -4910,6 +4915,7 @@ t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-react-whenever-done.t
 t/rakuast/rakuast-reduction.t
 t/rakuast/rakuast-regex-arg-expressions.t
+t/rakuast/rakuast-regex-argument-expressions.t
 t/rakuast/rakuast-regex-argumented-aliases.t
 t/rakuast/rakuast-regex-argumented-subrules.t
 t/rakuast/rakuast-regex-assertions-and-backrefs.t
@@ -5099,6 +5105,7 @@ t/regex/match/match-nonregex-matcher.t
 t/regex/match/match-not-associative.t
 t/regex/match/match-nth-ordinal.t
 t/regex/match/match-numeric-text-rows.t
+t/regex/match/match-pos-continue-crlf-grapheme-offsets.t
 t/regex/match/match-positional-iteration.t
 t/regex/match/match-quantified-group-capture-semantics.t
 t/regex/match/match-raku-in-collection.t
@@ -5271,12 +5278,14 @@ t/regex/regex-declarative-modifiers.t
 t/regex/regex-declarator-block-comment.t
 t/regex/regex-dq-atom-qq-interpolation.t
 t/regex/regex-dq-hex-escape.t
+t/regex/regex-dynamic-pos-adverb.t
 t/regex/regex-dynamic-var-interpolation.t
 t/regex/regex-embedded-code-blocks.t
 t/regex/regex-embedded-code-fragments-repeated.t
 t/regex/regex-embedded-comment-brackets.t
 t/regex/regex-embedded-my-decl-value.t
 t/regex/regex-empty-array-interpolation.t
+t/regex/regex-engine-gaps.t
 t/regex/regex-engine-only-compiled.t
 t/regex/regex-exhaustive-repetition.t
 t/regex/regex-graph-excludes-symbols.t
@@ -5413,6 +5422,7 @@ t/regex/regex-tree-named-array-lookaround.t
 t/regex/regex-tree-static-execution.t
 t/regex/regex-tree-value-provenance.t
 t/regex/regex-undefined-assertion.t
+t/regex/regex-unicode-property-name-and-class-lookup.t
 t/regex/regex-unicode-property-value.t
 t/regex/regex-unicode-quoted-literal-is-opaque.t
 t/regex/regex-unicode-single-quotes.t
@@ -7471,6 +7481,7 @@ t/vm/scope/dynamic-var-read-not-found.t
 t/vm/scope/dynamic-var-sigil-alias-block-restore.t
 t/vm/scope/dynamic-var-start-leak.t
 t/vm/scope/dynamic-var-write-through-block-persists.t
+t/vm/scope/dynamic-var-written-by-callee-through-cell.t
 t/vm/scope/dynamic-var.t
 t/vm/scope/dynamic-vars-base-tier.t
 t/vm/scope/escaped-our-sub-lexical-write.t

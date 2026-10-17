@@ -266,14 +266,16 @@ fn argument_text(node: &RakuAstNode) -> Option<String> {
         }
         RakuAstClass::ApplyListInfix => {
             let op = text_of(positional_leaf(named_child(node, "infix").ok()?).ok()?)?;
-            if op != "," {
-                return None;
-            }
+            let separator = match op.as_str() {
+                "," => ",",
+                "|" => "|",
+                _ => return None,
+            };
             let mut parts = Vec::new();
             for operand in list_field(node, "operands").ok()? {
                 parts.push(argument_text(rakuast_node_of(operand)?)?);
             }
-            Some(parts.join(","))
+            Some(parts.join(separator))
         }
         _ => None,
     }
