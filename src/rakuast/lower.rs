@@ -1196,13 +1196,47 @@ pub(super) fn lower_dotty_assign(
 ) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let call = named_child(node, "right")?;
-    if !is_method_call(call) && !super::dynamic_method::is_dynamic(call) {
-        return Err(unsupported(node));
-    }
-    // The call over a placeholder invocant; each target the expansion reaches
-    // gets its own copy.
-    let template = lower_method_postfix(Expr::Literal(Value::NIL), call)?;
-    let method_call = move |invocant: Expr| super::dynamic_method::retarget(&template, invocant);
+    let template = if call.class == RakuAstClass::MetaPostfixHyper {
+        let inner = named_child_or_positional(call)?;
+        if !is_method_call(inner) {
+            return Err(unsupported(node));
+        }
+        let (name, quoted) = if inner.class == RakuAstClass::CallQuotedMethod {
+            (quoted_method_name(inner)?, true)
+        } else {
+            (call_name_str(inner)?, false)
+        };
+        Expr::HyperMethodCall {
+            target: Box::new(Expr::Literal(Value::NIL)),
+            name: crate::symbol::Symbol::intern(&name),
+            args: arg_exprs(inner)?,
+            modifier: dispatch_modifier(inner)?,
+            quoted,
+        }
+    } else {
+        if !is_method_call(call) && !super::dynamic_method::is_dynamic(call) {
+            return Err(unsupported(node));
+        }
+        // The call over a placeholder invocant; each target the expansion reaches
+        // gets its own copy.
+        lower_method_postfix(Expr::Literal(Value::NIL), call)?
+    };
+    let method_call = move |invocant: Expr| match &template {
+        Expr::HyperMethodCall {
+            name,
+            args,
+            modifier,
+            quoted,
+            ..
+        } => Expr::HyperMethodCall {
+            target: Box::new(invocant),
+            name: *name,
+            args: args.clone(),
+            modifier: *modifier,
+            quoted: *quoted,
+        },
+        _ => super::dynamic_method::retarget(&template, invocant),
+    };
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
         return Ok(crate::parser::topic_dot_assign(method_call(target)));
     }

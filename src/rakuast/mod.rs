@@ -44,6 +44,7 @@ mod fields;
 mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
+mod hyper_dotty_writeback;
 mod hyper_prefix;
 mod immediate_call;
 mod infix_func;

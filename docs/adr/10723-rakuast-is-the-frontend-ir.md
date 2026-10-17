@@ -1294,3 +1294,12 @@ Conversion now preserves that node and keeps mutsu's native-declaration marker
 internal. Lowering restores the marker and routes `ctype`, `unsigned`, and
 `nativesize` through the existing NativeHOW trait handling. The focused
 regression covers tree shape, construction, and native type semantics.
+
+### 6.69 S10: hyper call assignment to a nested subscript (2026-10-17)
+
+For `@b[0]>>.=uc`, Rakudo exposes `ApplyDottyInfix` over the original
+subscript, with `MetaPostfix::Hyper(Call::Method(dispatch => ".="))` on the
+right. The parser expands this into a temporary-index writeback block. The
+converter now recognizes that expansion structurally and restores the measured
+tree; lowering routes it through the existing `.=` expansion with a hyper
+method call. The regression checks the node shape and mutation after EVAL.
