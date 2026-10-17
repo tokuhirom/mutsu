@@ -1246,3 +1246,12 @@ evaluation.
 `Term::Name` and a computed target as an ordinary expression. Lowering maps that call back to
 `Stmt::Goto`. The focused structural regression is `t/rakuast/rakuast-goto-statement.t`; the
 ordinary execution regression remains `t/control/goto-statement.t`.
+
+### 6.64 S4: anonymous destructuring parameter modifiers (2026-10-17)
+
+An anonymous positional destructuring parameter may carry an outer default,
+`where` constraint, or `is` trait alongside its nested `Signature`. The
+converter now preserves those fields in Rakudo's measured order, and lowering
+reuses the existing parameter binder for where constraints and traits. The
+focused regression checks the field presence, default omission of `optional`,
+constraint enforcement, and EVAL of the constraint and trait forms.
