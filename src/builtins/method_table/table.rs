@@ -216,6 +216,9 @@ pub(crate) fn resolve(receiver: Receiver, method: Symbol, arity: usize) -> Optio
     if arity >= 8 || ARITIES[name] & (1 << arity) == 0 || !shape_has_row(receiver, method) {
         return None;
     }
+    if let Some(id) = revision_row(receiver, name, method, arity) {
+        return Some(id);
+    }
     let key = u16::from(receiver.to_bits()) << 8 | arity as u16;
     let (lo, hi) = (
         usize::from(ENTRY_START[name]),
@@ -223,6 +226,41 @@ pub(crate) fn resolve(receiver: Receiver, method: Symbol, arity: usize) -> Optio
     );
     let at = ENTRY_KEYS[lo..hi].binary_search(&key).ok()?;
     Some(RowId(ENTRY_IDS[lo + at]))
+}
+
+/// The [`RowFlags::REVISION_E`] row the receiver's own type declares for
+/// `method` at `arity`, when the program's revision is 6.e: language revision
+/// 6.e adds a method over one a shaped type answers from an ancestor under
+/// 6.d (`Complex.sign`, `Int.pick`; ADR-11276 §9.149). The shape tables are
+/// static, so it is looked up here, ahead of the shape's entry.
+// Cost: O(1) for a name with no such row (one memoized bit); otherwise a
+// thread-local read and O(k) to find the row, k = rows named `method`.
+#[inline]
+fn revision_row(receiver: Receiver, name: usize, method: Symbol, arity: usize) -> Option<RowId> {
+    if receiver.type_object || !revision_names()[name] {
+        return None;
+    }
+    let owner = Symbol::intern(receiver.shape.type_name());
+    owner_row(owner, method, arity).filter(|&id| row(id).flags.contains(RowFlags::REVISION_E))
+}
+
+/// Per entry of [`NAMES`], whether some [`RowFlags::REVISION_E`] row has the
+/// name. Built on the first lookup, not on the startup path.
+// Cost: O(1) after the first call; that call is O(r), r = rows.
+fn revision_names() -> &'static [bool] {
+    static NAMES_WITH_REVISION: std::sync::OnceLock<Vec<bool>> = std::sync::OnceLock::new();
+    NAMES_WITH_REVISION.get_or_init(|| {
+        let mut with = vec![false; NAMES.len()];
+        for row in ALL
+            .iter()
+            .filter(|row| row.flags.contains(RowFlags::REVISION_E))
+        {
+            if let Ok(idx) = NAMES.binary_search(&row.name) {
+                with[idx] = true;
+            }
+        }
+        with
+    })
 }
 
 /// The ids of the rows named `NAMES[name]`, in registration order.

@@ -156,7 +156,11 @@ fn const_index_matches_the_runtime_builder() {
                             .then(|| old.rows.get(&(receiver, sym, a)).copied())
                             .flatten()
                     });
+                    // The shape entries themselves: a 6.e row of the shape's own
+                    // type is looked up ahead of them (§9.149), not stored in them.
+                    crate::parser::set_current_language_version("6.d");
                     let got = resolve(receiver, sym, arity);
+                    crate::parser::set_current_language_version("6.e");
                     assert_eq!(
                         got.map(RowId::to_bits),
                         legacy_id.map(RowId::to_bits),

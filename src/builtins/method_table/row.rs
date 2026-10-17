@@ -172,11 +172,14 @@ impl RowFlags {
     }
 
     /// Whether the debug cross-checks cannot run this row's call a second
-    /// time and compare the rendered answers: a random one ([`Self::RANDOM`])
-    /// or a lazy view of the receiver ([`Self::LIVE_VIEW`]).
+    /// time and compare the rendered answers: a random one ([`Self::RANDOM`]),
+    /// a lazy view of the receiver ([`Self::LIVE_VIEW`]) or one of language
+    /// revision 6.e ([`Self::REVISION_E`]).
     // Cost: O(1).
     pub(crate) const fn skips_cross_check(self) -> bool {
-        self.0 & (Self::RANDOM.0 | Self::LIVE_VIEW.0) != 0
+        // The cascades know no language revision: a `REVISION_E` row's answer
+        // is not theirs.
+        self.0 & (Self::RANDOM.0 | Self::LIVE_VIEW.0 | Self::REVISION_E.0) != 0
     }
 
     /// Whether the row exists in the program's language revision: always,

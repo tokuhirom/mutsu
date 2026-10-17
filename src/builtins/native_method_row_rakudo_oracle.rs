@@ -55,6 +55,15 @@ fn rakudo_tables() -> BTreeMap<&'static str, BTreeMap<&'static str, BTreeSet<&'s
     tables
 }
 
+/// Whether language revision 6.e adds `name` to `owner`'s method table: the
+/// `declared.e` lines a `REVISION_E` method row is checked against.
+pub(crate) fn declared_in_revision_e(owner: &str, name: &str) -> bool {
+    rakudo_tables()
+        .get("declared.e")
+        .and_then(|owners| owners.get(owner))
+        .is_some_and(|names| names.contains(name))
+}
+
 fn row_flags(owner: &str, name: &str) -> Option<(u8, NativeRowFlags)> {
     RAW_ROWS
         .iter()

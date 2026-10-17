@@ -428,6 +428,15 @@ fn rows_are_declared_by_rakudo() {
         // Roast pins `NFC.chars`/`NFC.comb` (`S15-string-types/NF-types.t`),
         // which current Rakudo no longer declares (ADR-11276 §9.116).
         .filter(|row| !(row.owner == "Uni" && matches!(row.name, "chars" | "comb")))
+        // A method of language revision 6.e is checked against what 6.e adds
+        // (`declared.e`), which the catalog need not record for a name 6.d
+        // already recognizes on the owner (`Complex.sign`).
+        .filter(|row| {
+            !(row.flags.contains(RowFlags::REVISION_E)
+                && crate::builtins::native_method_row_rakudo_oracle::declared_in_revision_e(
+                    row.owner, row.name,
+                ))
+        })
         .filter(|row| {
             let owner =
                 match crate::builtins::builtin_type_methods::canonical_builtin_owner(row.owner) {
