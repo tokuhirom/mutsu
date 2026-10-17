@@ -255,7 +255,37 @@ fn native_method_1arg_cascade(
     {
         return Some(result);
     }
+    // A positional index of a receiver whose row binds it (`Int:D`, and every
+    // other index as Rakudo's candidates do) is the row's alone, through
+    // `method_table::index_arg` (ADR-11276 §9.105).
+    // Cost: O(1), a bit test, a tag probe and one hash lookup.
+    if matches!(method, "AT-POS" | "EXISTS-POS")
+        && crate::builtins::method_table::index_arg::binds(target, method_sym)
+    {
+        return None;
+    }
     match method {
+        // A list with no settled shape (a lazy or unreified `Seq`, a
+        // `LazyList`) reads its element through the `AT-POS`/`EXISTS-POS`
+        // rows' implementation (`method_table::positional`); any other
+        // receiver with no shape is `answer_shapeless`'s (§9.154).
+        "AT-POS" => {
+            // Any other index is bound through its `.Int` (`index_arg`).
+            if !matches!(
+                arg.view(),
+                ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..) | ValueView::Str(_)
+            ) {
+                return None;
+            }
+            let idx = match crate::builtins::method_table::positional::at_pos_index(arg) {
+                Ok(idx) => idx,
+                Err(answer) => return answer,
+            };
+            crate::builtins::method_table::positional::at_pos_of(target, idx)
+        }
+        "EXISTS-POS" => {
+            crate::builtins::method_table::positional::exists_pos(target, std::slice::from_ref(arg))
+        }
         // ACCEPTS for allomorphic types (IntStr, RatStr, NumStr, ComplexStr)
         "ACCEPTS" if matches!(target.view(), ValueView::Mixin(_, m) if m.contains_key("Str")) => {
             // Instance args need the interpreter to call .Numeric, so return None

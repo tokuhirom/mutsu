@@ -18,6 +18,16 @@ use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value, ValueView};
 
+/// Whether `target`'s shape resolves `method` with one argument to a row that
+/// binds its index here: the cascades decline such a call, so its only
+/// answer is the row's.
+// Cost: O(1), a bit test, a tag probe and one hash lookup.
+pub(crate) fn binds(target: &Value, method: Symbol) -> bool {
+    Receiver::of_settled(target.descalarize())
+        .and_then(|receiver| resolve(receiver, method, 1))
+        .is_some_and(|id| row(id).flags.contains(RowFlags::INDEX_ARG))
+}
+
 /// Answer a one-argument call of an [`RowFlags::INDEX_ARG`] row whose
 /// argument is not an `Int`. `None` when the receiver resolves no such row,
 /// or the argument is one the call must not bind here: a `Junction` (which
@@ -47,6 +57,14 @@ pub(crate) fn invoke(
     let flags = row(id).flags;
     if !flags.contains(RowFlags::INDEX_ARG) {
         return None;
+    }
+    // `Any:U`'s `EXISTS-POS(|)` binds any index without coercing it: nothing
+    // exists in a type object or in `Nil` (§9.154).
+    if method == "EXISTS-POS"
+        && row(id).owner == "Any"
+        && (target.is_nil() || matches!(target.view(), ValueView::Package(_)))
+    {
+        return Some(Ok(Value::FALSE));
     }
     if arg.dispatch_shape() == Some(DispatchShape::Int) {
         // An `Int` the row's handler declined: nothing else binds it.

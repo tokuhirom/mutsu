@@ -3778,11 +3778,19 @@ the cascades.
   `Mu.AT-KEY` is now `X::Method::NotFound`, as in Rakudo.
 - **A hash or quant hash with no settled shape** answers `AT-KEY`/`EXISTS-KEY` from its type's rows (`Hash`, `Set`,
   `Bag`, `Mix` and the mutable forms).
-- **An instance** reaches `Any`'s row through `shapeless_row`'s MRO walk, which it already did.
+- **An instance** with no subscript protocol of its own reaches `Any`'s row through `shapeless_row`'s MRO walk.
+  It takes `Any`'s row wherever the walk finds it, and falls back to it when nothing in the MRO declares the method.
+  The fallback is needed because the registered MRO of `class P does Positional` is `P, Positional`, without `Any`
+  (#13769). A class declared `is Mu` has none.
 - **A `CArray`** over a buffer is a `Blob` shape receiver (§9.107).
+- **`Any:U.EXISTS-POS(|)`** binds any index without coercing it. `index_arg` answers `False` for a type object or
+  `Nil` before it calls the index's `.Int`, so `Nil.EXISTS-POS("x")` is `False`.
 
-The cascade's arms and `index_arg::binds`, their guard, are deleted. `dispatch_1arg` keeps one quoted-name arm:
-the allomorph `ACCEPTS`. Pinned in `t/collections/subscript/shapeless-subscript-rows.t`.
+`dispatch_1arg`'s `Nil`, type object, unshaped-hash, instance and `CArray` arms are deleted. Its `AT-POS` and
+`EXISTS-POS` arms keep only the list with no settled shape: a lazy or unreified `Seq` and a `LazyList`, read
+through `method_table::positional`. `shapeless_row` leaves those receivers to the interpreter (§9.106), so this
+arm stays until a `Seq` with consumption state is a receiver the rows can take. Pinned in
+`t/collections/subscript/shapeless-subscript-rows.t`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 

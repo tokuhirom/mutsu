@@ -46,14 +46,17 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
 ];
 
-/// `Nil.AT-POS` and `Nil.AT-KEY`: `Nil`, whatever the index or key.
+/// `Nil.AT-POS` and `Nil.AT-KEY`: `Nil`, whatever the index or key. `Nil` has
+/// no shape (§9.66): `answer_shapeless` finds them by owner.
 pub(super) static NIL_ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "Nil",
         name: "AT-POS",
         arity: 1,
         handler: Handler::Narrow(nil_at),
-        flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
+        flags: RowFlags::ANY_ARGS
+            .or(RowFlags::OBJECT_ARGS)
+            .or(RowFlags::OWNER_ONLY),
         named: &[],
     },
     MethodRow {
@@ -61,7 +64,9 @@ pub(super) static NIL_ROWS: &[MethodRow] = &[
         name: "AT-KEY",
         arity: 1,
         handler: Handler::Narrow(nil_at),
-        flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
+        flags: RowFlags::ANY_ARGS
+            .or(RowFlags::OBJECT_ARGS)
+            .or(RowFlags::OWNER_ONLY),
         named: &[],
     },
 ];

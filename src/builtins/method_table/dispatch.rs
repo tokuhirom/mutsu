@@ -860,6 +860,7 @@ pub(crate) fn shapeless_row(
                 // answers (§9.106).
                 if subscript
                     && class != cool
+                    && class != any
                     && crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
                         .is_some()
                 {
@@ -872,7 +873,9 @@ pub(crate) fn shapeless_row(
                     // `ACCEPTS` (`class DD is Date`) answers from that row,
                     // and so does an instance of the built-in class itself
                     // that has no shape (`Supply.list`, §9.110).
-                    if method == "ACCEPTS" || class == class_name {
+                    // An instance with no subscript protocol of its own is
+                    // the one-element list holding itself (`Any`'s, §9.154).
+                    if method == "ACCEPTS" || class == class_name || (subscript && class == any) {
                         owner = Some(class);
                     }
                     break;
@@ -881,6 +884,20 @@ pub(crate) fn shapeless_row(
             // An `Exception` subclass's MRO ends at `Exception`, whose
             // catalog chain (`Any`, `Mu`) is not spelled out in it: `Any`
             // answers what no closer class declared.
+            // An instance with no subscript protocol in its MRO is the
+            // one-element list holding itself (`Any`'s, §9.154), unless its
+            // class is declared `is Mu`.
+            if owner.is_none()
+                && exhausted
+                && subscript
+                && !interp
+                    .registry()
+                    .classes
+                    .get(class_name.as_str())
+                    .is_some_and(|def| def.parents.iter().any(|parent| parent == "Mu"))
+            {
+                owner = Some(any);
+            }
             if owner.is_none() && exhausted && list && !coerce {
                 let is_any = |class: &Symbol| {
                     crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
