@@ -29,7 +29,8 @@ pub(in crate::parser) use lit::regex_lit;
 pub(in crate::parser) use scan::scan_to_delim;
 pub(crate) use subst::{subst_compound_rhs, subst_compound_thunk};
 pub(crate) use subst_source::{
-    SubstFlags, parse_adverb_argument, regex_execution_value, subst_pattern_source,
+    SubstFlags, parse_adverb_argument, regex_execution_value, rx_execution_value,
+    subst_pattern_source,
 };
 
 // Items used by primary/mod.rs (sibling module).

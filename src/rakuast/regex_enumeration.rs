@@ -147,7 +147,7 @@ fn predicate_text(value: &RakuAstNode) -> Option<String> {
                 .collect();
             Some(format!("\"{escaped}\""))
         }
-        RakuAstClass::QuotedRegex => {
+        RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
             if super::lower::bool_field(value, "match-immediately").ok()? {
                 return None;
             }

@@ -158,6 +158,10 @@ pub enum RakuAstClass {
     // `q:to/END/`: a `QuotedString` that also keeps its `stop` line (ADR-12199).
     Heredoc,
     QuotedRegex,
+    // Internal origin tag for a source `rx/.../` term. It is rendered and
+    // accessed as the same public RakuAST class; the tag only preserves the
+    // Regex value form across this boundary.
+    QuotedRegexRx,
     RegexSequence,
     RegexLiteral,
     RegexQuote,
@@ -533,6 +537,7 @@ impl RakuAstClass {
             QuotedString => "RakuAST::QuotedString",
             Heredoc => "RakuAST::Heredoc",
             QuotedRegex => "RakuAST::QuotedRegex",
+            QuotedRegexRx => "RakuAST::QuotedRegex",
             RegexSequence => "RakuAST::Regex::Sequence",
             RegexLiteral => "RakuAST::Regex::Literal",
             RegexQuote => "RakuAST::Regex::Quote",

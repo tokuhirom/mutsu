@@ -4941,6 +4941,7 @@ t/rakuast/rakuast-regex-qualified-subrules.t
 t/rakuast/rakuast-regex-quantifiers.t
 t/rakuast/rakuast-regex-quote-escapes.t
 t/rakuast/rakuast-regex-source-cohort.t
+t/rakuast/rakuast-regex-source-form.t
 t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-symbolic-subrule.t
@@ -5293,6 +5294,7 @@ t/regex/regex-grapheme-literal-atom.t
 t/regex/regex-group-escaped-bracket.t
 t/regex/regex-group-separator-strict.t
 t/regex/regex-horiz-space-and-spacing-mark.t
+t/regex/regex-ident-character-class.t
 t/regex/regex-ignorecase-adverb-attached-to-quote.t
 t/regex/regex-ignorecase-named-builtin-no-fold.t
 t/regex/regex-ignoremark-backref.t
