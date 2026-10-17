@@ -737,63 +737,6 @@ impl Interpreter {
             };
             return self.build_hash_from_items_warning(items);
         }
-        // A Backtrace is a List of Backtrace::Frame: list-iteration methods
-        // (grep/map/first/...) operate on its frames, not the Backtrace itself.
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name.resolve() == "Backtrace"
-            && matches!(
-                method,
-                "grep"
-                    | "map"
-                    | "first"
-                    | "join"
-                    | "sort"
-                    | "reverse"
-                    | "head"
-                    | "tail"
-                    | "kv"
-                    | "pairs"
-                    | "Array"
-                    | "cache"
-            )
-        {
-            let frames = attributes
-                .as_map()
-                .get("frames")
-                .cloned()
-                .unwrap_or_else(|| Value::array(vec![]));
-            return self.call_method_with_values(frames, method, args);
-        }
-        // An `IterationBuffer` is an `Any`: the list-shaped `Any` methods run on
-        // its elements as a List, not on the buffer as one opaque item
-        // (`$buf.head(2)`, `$buf.first(...)`), unless the class overrides them.
-        if matches!(
-            method,
-            "head" | "tail" | "first" | "skip" | "grep" | "map" | "sort" | "min" | "max"
-        ) && crate::runtime::nqp_ops_list::is_iteration_buffer(&target)
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
-            && !self.has_user_method(class_name.as_str(), method)
-        {
-            let items = match attributes
-                .as_map()
-                .get("__mutsu_iterationbuffer_items")
-                .map(Value::view)
-            {
-                Some(ValueView::Array(values, ..)) => values.to_vec(),
-                Some(ValueView::Seq(values)) => values.to_vec(),
-                Some(ValueView::Slip(values)) => values.to_vec(),
-                _ => Vec::new(),
-            };
-            return self.call_method_with_values(Value::array(items), method, args);
-        }
         // A `Channel` subclass's list coercions read its channel (#13634).
         if let Some(result) = Self::channel_subclass_coercion(&target, method) {
             return result;
@@ -807,64 +750,12 @@ impl Interpreter {
             }
             return self.call_method_with_values(list, method, args);
         }
-        // A buffer-backed positional (upstream NativeCall's `CArray[T]`, a
-        // mixin over `CArray`) is `Positional`: `Any`'s iteration methods read
-        // its elements through `.list`, not the CArray as one item.
-        if matches!(
-            method,
-            "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
-        ) && crate::value::value_buf::buf_target(&target).is_some()
-            && !self.mixin_composes_method(&target, method)
-        {
-            // Cost: O(n) to materialize the elements, n = elements.
-            let list = self.call_method_with_values(target.clone(), "list", vec![])?;
-            return self.call_method_with_values(list, method, args);
-        }
-        // A user class that `does Iterable` and defines its own `iterator`
-        // method is list-like for Any's ITERATION methods: `.first`/`.map`/...
-        // operate on the iterator's elements (as `for $obj` already does via
-        // `try_iterable_instance_items`), not on the instance as one opaque
-        // item. The method set is exactly what Rakudo routes through
-        // `self.iterator` — measured 2026-08-12 on such an instance:
-        // first/map/grep/sort/head/tail/flat iterate, while join/reverse/
-        // list/List/elems/kv/pairs/values/Array/cache/eager all treat the
-        // instance as a single item (even non-itemized), so those must NOT
-        // be routed. Only methods the class itself does not provide qualify.
-        if matches!(
-            method,
-            "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
-        ) && let ValueView::Instance { class_name, .. } = target.view()
-        {
-            let cn = class_name.as_str().to_string();
-            if !self.has_user_method(&cn, method) {
-                if let Some(items) = self.try_iterable_instance_items(&target)? {
-                    return self.call_method_with_values(Value::array(items), method, args);
-                }
-                // A PLAIN class (no `does Iterable`) with its own `iterator`
-                // still routes grep/map/first/sort/head/tail through it
-                // (#8547) — but NOT `flat`, which stays a single item unless
-                // the class also composes `Iterable` (measured against raku;
-                // see `try_user_iterator_items`'s doc comment).
-                if method != "flat"
-                    && let Some(items) = self.try_user_iterator_items(&target)?
-                {
-                    return self.call_method_with_values(Value::array(items), method, args);
-                }
-            }
-        }
-        // A role mixed into a native container (`my @a is R`, R `does
-        // Array::Agnostic`) keeps its elements behind the role's `iterator`.
-        // Any's iteration methods read that iterator, not the native storage
-        // the mixin wraps (which would answer `.head(3)` with the mixin as one
-        // item, or `.tail` with the whole inner array).
-        if matches!(method, "head" | "tail" | "first")
-            && matches!(target.view(), ValueView::Mixin(..))
-            && self.mixin_composes_method(&target, "iterator")
-            && !self.mixin_composes_method(&target, method)
-        {
-            // Cost: O(n) in the iterator's length, plus the method itself.
-            let items = self.drive_user_iterator_items(&target)?;
-            return self.call_method_with_values(Value::array(items), method, args);
+        // A receiver with its own `iterator` or `list` (a user class, a
+        // `Backtrace`, an `IterationBuffer`, a buffer-backed `CArray`, a role
+        // mixed into a native container) answers `Any`'s list methods from
+        // its elements (ADR-11276 §9.148).
+        if let Some(result) = self.own_iteration_view(&target, method, &args) {
+            return result;
         }
         // Scalar containers are transparent for method dispatch (except .item,
         // .VAR, and .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper

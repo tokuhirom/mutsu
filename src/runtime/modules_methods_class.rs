@@ -27,6 +27,7 @@ mod methods_any_list_by_mro;
 mod methods_hyper_seq_rows;
 mod methods_mu_late_rows;
 mod methods_late_walk_owners;
+mod methods_own_iteration;
 mod methods_match3_late_rows;
 mod methods_array_pos_rows;
 mod methods_dispatch_match;

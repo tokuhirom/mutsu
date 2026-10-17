@@ -3564,6 +3564,46 @@ MRO has them (`Int`/`Str`, then `Cool`). The `sign` arm of the pure cascade, whi
 from its integer, is deleted. `Cool.sign` numifies the value, so a `Str`-valued value that is not a
 number dies as it does in Rakudo; the arm answered 0 for it.
 
+### 9.148 `Any`'s list methods read the receiver's own `iterator` or `list` (2026-10-17)
+
+`refactor/11276-own-iteration-view`. Rakudo writes `Any`'s list methods on two primitives:
+
+- `self.iterator`: `head`, `tail`, `first`, `skip`, `grep`, `map`, `sort`, `min`, `max`, `minmax`, `sum`,
+  `unique`, `squish`, `rotor`, `batch`, `Seq`, `repeated`, `toggle`;
+- `self.list`: `join`, `elems`, `reverse`, `kv`, `pairs`, `keys`, `Array`, `List`, `list`, `cache`, `eager`,
+  `flat`, `Slip`, `classify`, `categorize`, `combinations`, `permutations`, `end`, `antipairs`,
+  `maxpairs`, `minpairs`.
+
+`Any.iterator` is `self.list.iterator`. So an object that declares `iterator` answers the first set from its
+elements, and one that declares `list` answers both sets. Neither has to compose `Iterable`. Both sets were
+measured on Rakudo 2026.09 with a plain class declaring only one of the two methods. A method counts as "through
+the primitive" when the object's answer equals the elements' answer and differs from the one-item list's.
+
+mutsu modelled this as four name lists at four places in `call_method_with_values`:
+
+- `Backtrace`'s frames (12 names);
+- an `IterationBuffer`'s items (9 names);
+- a buffer-backed `CArray`'s `.list` (7 names);
+- a user `iterator`, or a `does Iterable` class's `list` (6 names, plus a mixin's `iterator` for 3).
+
+The method table's shapeless walk (`shapeless_row`) also answered the instance as one item for the names in
+`ANY_LIST_FOR_CLOSED_SHAPES`. Measured on the two classes, mutsu agreed with Rakudo on 6 of 18 names for
+`iterator` and 12 of 39 for `list`.
+
+Decision. `runtime/methods_own_iteration.rs` holds the two sets and one step, `own_iteration_view`, which
+replaces the four places. The step decides where the receiver's elements come from:
+
+- a list: a user `list`, `Backtrace`'s frames, a buffer's `.list`;
+- an iterator: a user `iterator`, an `IterationBuffer`'s items, a mixin's `iterator`.
+
+It redispatches the method on those elements, unless the receiver declares the method itself. `shapeless_row`
+declines a user instance whose class declares `iterator` or `list`, so the step sees it. Now mutsu agrees with
+Rakudo on every name of both sets.
+
+Not changed: a `list`-only class also iterates its list for `values`, where Rakudo does not. `for` and list
+assignment keep their own rule (`try_iterable_instance_items`), which still requires `Iterable` for a `list`-only
+class, although Rakudo's `for` iterates it.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

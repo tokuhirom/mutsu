@@ -14,6 +14,7 @@ this report shows zero arms for their owners (ADR §10.3 rule 6).
 
     scripts/method-rows-report.py                 # arms + rows (runs the unit-test dump)
     scripts/method-rows-report.py --arms          # only the cascade arms (no build)
+    scripts/method-rows-report.py --arms --list   # ... and every arm that names a built-in method
     scripts/method-rows-report.py --rows-from F   # reuse a saved dump instead of running cargo
     scripts/method-rows-report.py --dump-rows     # print the raw `ROW` lines and exit
     scripts/method-rows-report.py --inventory collections,"quant hashes"   # a slice's inventory
@@ -63,15 +64,50 @@ LAYERS = [
 ]
 
 
-def arms_in(path):
-    """The `"name" | "other" => ...` arms of one file, each as its list of names."""
+def arms_in(path, with_lines=False):
+    """The `"name" | "other" => ...` arms of one file, each as its list of names
+    (with its line number when `with_lines`)."""
     arms = []
     with open(path, encoding="utf-8") as handle:
-        for line in handle:
+        for number, line in enumerate(handle, 1):
             match = ARM.match(line)
             if match and ("=>" in line or line.rstrip().endswith(("|", "=>"))):
-                arms.append(re.findall(r'"([^"\n]+)"', match.group(1)))
+                names = re.findall(r'"([^"\n]+)"', match.group(1))
+                arms.append((number, names) if with_lines else names)
     return arms
+
+
+def method_names():
+    """Every name a built-in method has: the recognition table's and the Rakudo snapshot's.
+
+    An arm none of whose names is one is not a method dispatch: a named-argument key
+    (`"i" | "ignorecase"`), an encoding or a type name, a message string."""
+    names = {name for _owner, name in recognition_rows()}
+    path = os.path.join(ROOT, "src/builtins/rakudo_method_tables.txt")
+    for line in open(path, encoding="utf-8"):
+        fields = line.rstrip("\n").split("\t")
+        if not line.startswith("#") and len(fields) > 2:
+            names.update(fields[2:])
+    return names
+
+
+def report_method_arms(list_them):
+    """The arms that name a built-in method: what the campaign still has to move."""
+    known = method_names()
+    print("\n== Arms naming a built-in method (the rest are argument keys, type and encoding names) ==")
+    total = 0
+    for layer, patterns in LAYERS:
+        files = sorted({f for p in patterns for f in glob.glob(os.path.join(ROOT, p), recursive=True)})
+        count = 0
+        for path in files:
+            for number, names in arms_in(path, with_lines=True):
+                if any(name in known for name in names):
+                    count += 1
+                    if list_them:
+                        print(f"  {os.path.relpath(path, ROOT)}:{number}: {' | '.join(names)}")
+        total += count
+        print(f"{layer}: {count}")
+    print(f"total: {total}")
 
 
 def report_arms():
@@ -238,6 +274,7 @@ def report_inventory(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--arms", action="store_true", help="only the cascade arms (no build)")
+    parser.add_argument("--list", action="store_true", help="with --arms: list the arms naming a built-in method")
     parser.add_argument("--rows-from", metavar="FILE", help="read the row dump from FILE instead of running cargo")
     parser.add_argument("--dump-rows", action="store_true", help="print the raw row dump and exit")
     parser.add_argument("--inventory", metavar="OWNERS", help="a slice's inventory: the unregistered rows of these owners or groups")
@@ -249,6 +286,7 @@ def main():
         report_rows(args)
         return
     report_arms()
+    report_method_arms(args.list)
     if not args.arms:
         report_rows(args)
 
