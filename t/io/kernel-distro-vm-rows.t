@@ -21,7 +21,7 @@ is $*KERNEL.Str, $*KERNEL.name, 'Kernel.Str is its name';
 isa-ok $*VM.name, Str, 'VM.name';
 like $*VM.raku, /^ 'VM.new(config => '/, 'VM.raku is Mu.raku of its attributes';
 like ~$*VM.platform-library-name('foo'.IO), /foo/, 'VM.platform-library-name';
-dies-ok { $*VM.properties }, 'VM declares no properties';
+ok $*VM.properties, 'VM.properties, which roast pins (S02-magicals/VM.t)';
 
 isa-ok $*RAKU.compiler, Compiler, 'Raku.compiler';
 is $*RAKU.Str, 'Raku', 'Raku.Str';

@@ -3020,6 +3020,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("VM", "signature", 1, 61),
     ("VM", "config", 1, 61),
     ("VM", "osname", 1, 29),
+    ("VM", "properties", 1, 0),
     ("VM", "request-garbage-collection", 1, 60),
     ("VM", "platform-library-name", 2, 60),
     ("VM", "gist", 1, 28),

@@ -3799,7 +3799,7 @@ behind `$*DISTRO`, `$*KERNEL`, `$*VM`, `$*RAKU` and `$*RAKU.compiler`. Their met
 `runtime/native_methods/system.rs` and `compiler_config.rs` (`native_distro`, `native_kernel`, `native_vm`,
 `native_perl`, `native_compiler`). Two other things went with them. `runtime_init` held a hand-written
 `native_methods` name list per class, which gates the native entry. The `Raku` handler's fallback answered any
-attribute by name (`$*VM.properties`).
+attribute by name.
 
 Decision.
 
@@ -3811,7 +3811,9 @@ Decision.
 - `runtime_init`'s `native_methods` list for these classes is derived from the rows (`systemic::names`), so it
   cannot drift from them.
 - A method the class does not declare is `Mu`'s. The custom `raku` arms of `Distro`, `VM`, `Raku` and `Compiler`
-  are gone, along with `VM.properties` and the any-attribute fallback. The classes now register their attributes in
+  are gone, along with the any-attribute fallback. `VM.properties` stays a row although Rakudo does not declare it
+  (RT #124624): roast pins it (`S02-magicals/VM.t`), and `rows_are_declared_by_rakudo` exempts it as it exempts
+  `NFC.chars`. The classes now register their attributes in
   Rakudo's order, as `Proc` does, so `Mu.raku` renders them as Rakudo does. `$*VM.raku` was `mutsu.new(...)` and
   `$*RAKU.compiler.raku` was `mutsu.new(...)`; they are now `VM.new(config => ..., ...)` and
   `Compiler.new(id => ..., ...)`. `Kernel` declares its own `raku`, which stays a row.

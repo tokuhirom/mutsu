@@ -116,6 +116,9 @@ pub(super) static ROWS: &[MethodRow] = &[
     attr!("VM", "signature"),
     attr!("VM", "config"),
     attr!("VM", "osname"),
+    // Rakudo has no `VM.properties` (RT #124624), but roast pins it
+    // (`S02-magicals/VM.t`), so it stays a row.
+    attr!("VM", "properties"),
     row!(
         "VM",
         "request-garbage-collection",

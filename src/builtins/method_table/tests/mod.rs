@@ -430,6 +430,9 @@ fn rows_are_declared_by_rakudo() {
         // Roast pins `NFC.chars`/`NFC.comb` (`S15-string-types/NF-types.t`),
         // which current Rakudo no longer declares (ADR-11276 §9.116).
         .filter(|row| !(row.owner == "Uni" && matches!(row.name, "chars" | "comb")))
+        // Roast pins `VM.properties` (`S02-magicals/VM.t`), which Rakudo does
+        // not declare (RT #124624, ADR-11276 §9.155).
+        .filter(|row| !(row.owner == "VM" && row.name == "properties"))
         // A method of language revision 6.e is checked against what 6.e adds
         // (`declared.e`), which the catalog need not record for a name 6.d
         // already recognizes on the owner (`Complex.sign`).
