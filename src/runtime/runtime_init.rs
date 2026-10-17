@@ -1115,22 +1115,9 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: [
-                    "close",
-                    "write",
-                    "print",
-                    "Supply",
-                    "socket-port",
-                    "peer-port",
-                    "socket-host",
-                    "peer-host",
-                    "print-to",
-                    "write-to",
-                    "native-descriptor",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+                native_methods: crate::builtins::method_table::handle_names("IO::Socket::Async")
+                    .map(str::to_string)
+                    .collect(),
                 mro: sym_mro(&["IO::Socket::Async"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),

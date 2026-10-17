@@ -26,7 +26,7 @@ mod lock_rows;
 pub(crate) mod proc_async;
 pub(crate) mod promise_channel;
 mod promise_class;
-mod socket_inet_rows;
+mod socket_rows;
 pub(crate) mod supplier_scheduler;
 pub(crate) mod systemic;
 mod tap_proc_rows;
@@ -47,7 +47,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     systemic::ROWS,
     lock_rows::ROWS,
     tap_proc_rows::ROWS,
-    socket_inet_rows::ROWS,
+    socket_rows::ROWS,
     concurrency_state::ROWS,
     promise_channel::ROWS,
     promise_class::ROWS,
@@ -64,7 +64,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
 pub(crate) fn handle_owners_of(class: &str) -> Option<&'static [&'static str]> {
     lock_rows::owners_of(class)
         .or_else(|| tap_proc_rows::owners_of(class))
-        .or_else(|| socket_inet_rows::owners_of(class))
+        .or_else(|| socket_rows::owners_of(class))
 }
 
 /// The methods the handle class `owner` declares: the native methods
@@ -74,7 +74,7 @@ pub(crate) fn handle_names(owner: &str) -> impl Iterator<Item = &'static str> + 
     lock_rows::ROWS
         .iter()
         .chain(tap_proc_rows::ROWS)
-        .chain(socket_inet_rows::ROWS)
+        .chain(socket_rows::ROWS)
         .filter(move |row| row.owner == owner)
         .map(|row| row.name)
 }
