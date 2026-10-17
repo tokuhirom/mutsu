@@ -472,7 +472,8 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 | crate::ast::SourceForm::IfPointy { .. }
                 | crate::ast::SourceForm::HyperAssign { .. }
                 | crate::ast::SourceForm::InlineSubsetTerm(_)
-                | crate::ast::SourceForm::RoutineTraits(_),
+                | crate::ast::SourceForm::RoutineTraits(_)
+                | crate::ast::SourceForm::StartBlock,
             )
             | None => Err(unsupported("source form")),
         },
@@ -3497,6 +3498,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
+                if let Some(Stmt::SourceForm(form)) = body.first()
+                    && let crate::ast::SourceForm::SupplyBlock(source_body) = form.as_ref()
+                {
+                    return super::react::convert_supply(source_body);
+                }
                 if let Some(node) = super::hyper_dotty_writeback::convert(body)? {
                     return Ok(node);
                 }
@@ -3782,7 +3788,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 | crate::ast::SourceForm::IfPointy { .. }
                 | crate::ast::SourceForm::HyperAssign { .. }
                 | crate::ast::SourceForm::InlineSubsetTerm(_)
-                | crate::ast::SourceForm::RoutineTraits(_),
+                | crate::ast::SourceForm::RoutineTraits(_)
+                | crate::ast::SourceForm::StartBlock,
             )
             | None => Err(unsupported("source form")),
         },

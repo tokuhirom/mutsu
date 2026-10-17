@@ -13,13 +13,22 @@ static SUPPLY_EMITTER_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic:
 pub(crate) fn supply_block(body: Vec<Stmt>) -> Expr {
     let record = body.clone();
     let mut expr = supply_method_call(body);
-    if let Expr::MethodCall { args, .. } = &mut expr
-        && let [Expr::Lambda { body, .. }] = args.as_mut_slice()
-    {
-        body.insert(
-            0,
-            Stmt::SourceForm(Box::new(crate::ast::SourceForm::SupplyBlock(record))),
-        );
+    match &mut expr {
+        Expr::MethodCall { args, .. } => {
+            if let [Expr::Lambda { body, .. }] = args.as_mut_slice() {
+                body.insert(
+                    0,
+                    Stmt::SourceForm(Box::new(crate::ast::SourceForm::SupplyBlock(record))),
+                );
+            }
+        }
+        Expr::DoBlock { body, .. } => {
+            body.insert(
+                0,
+                Stmt::SourceForm(Box::new(crate::ast::SourceForm::SupplyBlock(record))),
+            );
+        }
+        _ => {}
     }
     expr
 }

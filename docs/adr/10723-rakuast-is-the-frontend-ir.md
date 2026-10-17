@@ -1313,3 +1313,13 @@ ordinary assignments and declaration assignments. Lowering restores the
 existing element-wise assignment path, including the scopeless declaration
 expansion needed by `my int @native[2;3] Z= 0..5`. The focused regression pins
 tail preservation, fresh-array behavior, and row-major shaped native filling.
+
+### 6.71 S10: placeholder scope rejection in supply and start blocks (2026-10-17)
+
+Placeholder-bearing `supply` blocks can be desugared to a `DoBlock` before
+RakuAST conversion. Parsing now retains a source-form marker on that block, so
+conversion restores the measured `StatementPrefix::Supply` node and lowering
+returns to the existing placeholder-scope check. `start` blocks with the same
+scope error also retain their prefix through the desugared-block path. The
+focused regression checks valid supply execution and the normal
+`X::Placeholder::Block` diagnostic for both prefixes.

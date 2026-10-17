@@ -728,6 +728,7 @@ t/collections/subscript/shaped-array-exists-holes.t
 t/collections/subscript/shaped-array-gist-dimensions.t
 t/collections/subscript/shaped-array-list-coerce.t
 t/collections/subscript/shaped-array-map-mutation.t
+t/collections/subscript/shaped-array-pairs-zip-assign.t
 t/collections/subscript/shaped-array-raku-any.t
 t/collections/subscript/shaped-array-rat-shape.t
 t/collections/subscript/shaped-array-reassign-rows.t
@@ -922,6 +923,7 @@ t/collections/transform/zip-cross-range-metaop.t
 t/collections/transform/zip-fatarrow-list-key.t
 t/collections/transform/zip-finite-rows-and-say-cap.t
 t/collections/transform/zip-large-operands.t
+t/collections/transform/zip-metaassign.t
 t/collections/transform/zip-operator.t
 t/collections/transform/zip-roundrobin-listop-angle.t
 t/collections/transform/zip-shortcircuit-topic-writeback-coherence.t
@@ -5082,6 +5084,7 @@ t/rakuast/rakuast-words-processor-and-colonpair-words.t
 t/rakuast/rakuast-yada-stubs.t
 t/rakuast/rakuast-zen-slice-adverbs.t
 t/rakuast/rakuast-zen-slice-exists.t
+t/rakuast/rakuast-zip-metaassignment.t
 t/regex/anon-regex-declarator-signature.t
 t/regex/associative-at-key-regex-subscript.t
 t/regex/contains-regex.t
@@ -5840,6 +5843,7 @@ t/routines/closure/sequence-closure-endpoint-over-256.t
 t/routines/closure/sequence-closure-returns-seq.t
 t/routines/closure/shadow-slot-closure-capture.t
 t/routines/closure/state-closure-clone-lifetime.t
+t/routines/closure/subrule-argument-closure-shares-caller-cell.t
 t/routines/closure/typed-hash-assign-in-closure-keeps-type.t
 t/routines/closure/user-class-instance-element-write-through-closure.t
 t/routines/closure/user-infix-closure-arg-writeback.t
@@ -6872,6 +6876,7 @@ t/types/fatrat-add-overflow.t
 t/types/fatrat-log.t
 t/types/fatrat-num-subnormal-denominator.t
 t/types/fatrat-product-overflow.t
+t/types/fatrat-render-rows.t
 t/types/fatrat-round-abs-pow-keep-type.t
 t/types/gate-b-sigilless-typed-bind.t
 t/types/indent.t
@@ -6898,6 +6903,7 @@ t/types/mu-clone-new-rows.t
 t/types/mu-identity-rows.t
 t/types/mu-int-numeric-nomatch.t
 t/types/mu-late-rows.t
+t/types/mu-perl-calls-raku.t
 t/types/mu-say-put-with-args-use-own-print.t
 t/types/mu-set-why-on-instance.t
 t/types/mu-str-rows.t
@@ -7034,6 +7040,7 @@ t/types/string/flip-flop.t
 t/types/string/fmt-directive-count.t
 t/types/string/format-class.t
 t/types/string/format-directives.t
+t/types/string/format-str-subclass-rows.t
 t/types/string/formatter-new.t
 t/types/string/raku-string-escape.t
 t/types/string/samecase-samemark.t

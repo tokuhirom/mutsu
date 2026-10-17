@@ -1593,11 +1593,24 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
+                let arg = if crate::ast::collect_unattached_placeholders(&body)
+                    .into_iter()
+                    .any(|placeholder| placeholder != "%_")
+                {
+                    let mut body = body;
+                    body.insert(
+                        0,
+                        Stmt::SourceForm(Box::new(crate::ast::SourceForm::StartBlock)),
+                    );
+                    Expr::desugar_block(body)
+                } else {
+                    make_anon_sub(body)
+                };
                 return Ok((
                     r,
                     Expr::Call {
                         name: Symbol::intern("start"),
-                        args: vec![make_anon_sub(body)],
+                        args: vec![arg],
                         listop: true,
                     },
                 ));
