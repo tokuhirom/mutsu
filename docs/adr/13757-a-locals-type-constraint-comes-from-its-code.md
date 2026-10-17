@@ -122,9 +122,10 @@ HTTP::UserAgent files caught slice 45's regressions).
   - A closure's frame root has no static link, so its record lookup walked
     on into the frames that called it. A closure whose capture holds the
     variable now ends the record lookup at that capture.
-  - Nothing reads these slots yet: element stores on a local, the
-    push family and the compound stores keep the by-name record, and they
-    are correct as long as it resolves where the variable does.
+  - This slice changes where the record is looked up, not who reads it:
+    element stores, the push family and the compound stores still read the
+    by-name record, which is correct as long as it resolves where the
+    variable does. Moving them to the slot bake is still open.
 
 ## 4. Consequences
 
