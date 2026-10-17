@@ -405,6 +405,10 @@ pub(crate) struct Registry {
     /// run (so `@!aspects` populated by the trait is visible to `compose`), which
     /// wraps the class's methods (`advent2011-day14` AOP).
     pub(crate) pending_class_compose: Vec<String>,
+    /// Classes whose HOW `compose` hook already ran through an attribute
+    /// trait's deferred compose (`run_pending_attr_composes`); consumed by
+    /// `queue_trait_how_compose` so the hook is not queued a second time.
+    pub(crate) attr_trait_composed: std::collections::HashSet<String>,
     /// Roles whose body is being registered right now (group name -> `role_id`).
     /// The role is not in `roles` yet, but its method traits already see it as
     /// `$*PACKAGE` -- the individual parametric role (`ParametricRoleHOW`).
