@@ -188,8 +188,13 @@ impl Interpreter {
         if let Some(result) = self.dispatch_definitehow_method(method, &args) {
             return result;
         }
-        // `Metamodel::EnumHOW`'s own metamethods.
-        if let Some(result) = self.dispatch_enumhow_method(method, &args) {
+        // `Metamodel::EnumHOW`'s own metamethods, rows of their owner (§9.140).
+        if let Some(result) = crate::builtins::method_table::invoke_owner_raw(
+            self,
+            crate::builtins::method_table::ENUM_HOW_OWNERS,
+            method,
+            &args,
+        ) {
             return result;
         }
         // The metamethods are rows of the `Metamodel::*HOW` owners (ADR-11276

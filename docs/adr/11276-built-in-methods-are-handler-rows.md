@@ -3365,6 +3365,27 @@ Removed rather than moved: `Supply.signal`, which Rakudo does not have (`signal(
 empty supply that never fired. The regex `Str`/`Stringy` arm was already unreachable, since `Code`'s rows answer a
 regex first.
 
+### 9.140 `Metamodel::EnumHOW`'s metamethods and `WalkList`'s methods are rows (2026-10-17)
+
+`refactor/11276-enumhow-walk-rows`. Two by-name matches answered a metaobject's and an instance's own methods:
+
+- `dispatch_enumhow_method`, asked by `dispatch_classhow_method` ahead of the shared `Metamodel::*HOW` rows, covered
+  `enum_values`, `elems`, `enum_from_value`, `enum_value_list`, `add_enum_value`, `set_export_callback`,
+  `compose_values`, `is_composed` and `compose`.
+- `try_walk_list_method` covered the `WalkList` of `.WALK(...)`: `invoke`, `reverse` and `quiet`.
+
+Decision. Both become rows of their owners, following slice 3G and §9.137:
+
+- The EnumHOW rows (`ctors_mop/enum_how.rs`) are `Metamodel::EnumHOW`'s and are reached by `invoke_owner_raw` over
+  `ENUM_HOW_OWNERS`, in the same place and ahead of `MOP_OWNERS`. The type object is the first argument, so each row's
+  arity counts it.
+- mutsu's HOW is one dispatcher over every kind, so the rows still see a type that is no enum. The queries report the
+  EnumHOW-only error, `elems` answers `Any.elems`'s 1, and `is_composed`/`compose` decline to the ClassHOW rows, as
+  the arms did.
+- The `WalkList` rows (`instances/walk_list.rs`) are reached by `invoke_owner` for a `WalkList` instance.
+- Each routine is one `Interpreter` method. The recognition table gains the twelve names, `DECLARED` but not
+  `ONLY_METHOD`, since the Rakudo snapshot lists neither owner.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
