@@ -42,5 +42,5 @@ reason = "Failed to open file /proc/1/environ: Permission denied"
 [[failure]]
 file = "roast/S32-io/IO-Socket-Async.t"
 when = "sandboxed-network"
-shape = { exit = 124, planned = 40, ran = 17 }
-reason = "times out part-way behind the agent container's network sandbox; mechanism not pinned down"
+shape = { exit = 255, planned = 40, ran = 17 }
+reason = "the agent container has no IPv6: listening on ::1 fails to bind (os error 97), and awaiting the failed listener's socket-port throws"

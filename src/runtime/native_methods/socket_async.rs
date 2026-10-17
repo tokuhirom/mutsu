@@ -103,7 +103,7 @@ impl Interpreter {
                         let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
                         let _ = self.call_sub_value(q, vec![ex], true);
                     }
-                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                    return Ok(failed_listen_socket(format!("Failed to resolve '{}'", host)));
                 }
 
                 // Bind a real TCP listener (`runtime::tcp_core`, shared with
@@ -111,21 +111,21 @@ impl Interpreter {
                 let tcp_listener = match crate::runtime::tcp_core::bind_tcp_listener(&host, port) {
                     Ok(l) => l,
                     Err(err) => {
+                        let message = match err {
+                            crate::runtime::tcp_core::TcpBindError::Resolve => {
+                                format!("Failed to resolve '{}'", host)
+                            }
+                            crate::runtime::tcp_core::TcpBindError::Io(e) => {
+                                format!("Failed to bind: {}", e)
+                            }
+                        };
                         if let Some(q) = quit_cb {
-                            let message = match err {
-                                crate::runtime::tcp_core::TcpBindError::Resolve => {
-                                    format!("Failed to resolve '{}'", host)
-                                }
-                                crate::runtime::tcp_core::TcpBindError::Io(e) => {
-                                    format!("Failed to bind: {}", e)
-                                }
-                            };
                             let mut attrs = HashMap::new();
-                            attrs.insert("message".to_string(), Value::str(message));
+                            attrs.insert("message".to_string(), Value::str(message.clone()));
                             let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
                             let _ = self.call_sub_value(q, vec![ex], true);
                         }
-                        return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                        return Ok(failed_listen_socket(message));
                     }
                 };
                 // Get the actual bound port (in case port was 0)
@@ -215,7 +215,7 @@ impl Interpreter {
                     attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                     let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
                     let _ = self.call_sub_value(q, vec![ex], true);
-                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                    return Ok(failed_listen_socket(err.message.to_string()));
                 }
 
                 // Build a Supply instance that the react event loop can subscribe to
@@ -423,4 +423,24 @@ impl Interpreter {
         }
         Ok(())
     }
+}
+
+/// The `IO::Socket::Async::ListenSocket` a listen that could not start answers:
+/// its `socket-port` and `socket-host` are broken with why, so awaiting them
+/// throws instead of waiting forever.
+// Cost: O(m), m = chars of the message.
+fn failed_listen_socket(message: String) -> Value {
+    let mut attrs = HashMap::new();
+    for key in ["socket-port", "socket-host"] {
+        let promise = SharedPromise::new();
+        let mut ex = HashMap::new();
+        ex.insert("message".to_string(), Value::str(message.clone()));
+        promise.break_with(
+            Value::make_instance(Symbol::intern("X::AdHoc"), ex),
+            String::new(),
+            String::new(),
+        );
+        attrs.insert(key.to_string(), Value::promise(promise));
+    }
+    Value::make_instance(Symbol::intern("IO::Socket::Async::ListenSocket"), attrs)
 }
