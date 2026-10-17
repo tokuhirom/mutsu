@@ -33,6 +33,7 @@ mod descriptor;
 mod fmt;
 pub(crate) mod iteration_buffer;
 pub(crate) mod join;
+mod junction;
 pub(crate) mod lazy;
 pub(crate) mod list;
 pub(crate) mod list_aggregate;
@@ -75,6 +76,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     capture::ROWS,
     list_bounds::ROWS,
     join::ROWS,
+    junction::ROWS,
     clone::ROWS,
     descriptor::ROWS,
     any_interp::ROWS,

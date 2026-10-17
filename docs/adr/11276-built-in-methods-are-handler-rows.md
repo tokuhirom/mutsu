@@ -3650,6 +3650,39 @@ deleted. The answers now match Rakudo's for `gist` and `Str` of an instance (pin
 `t/types/coercion/qualified-mu-coercion-base-rows.t`). The qualified call also gains `so`, `not`, `WHERE`
 and the output methods.
 
+### 9.151 A junction's own methods are rows; one rule for what autothreads (2026-10-17)
+
+`refactor/11276-junction-rows`. A junction has no shape (§9.66). A method called on one either autothreads over
+its values or is answered by the junction itself. mutsu kept three lists of the names the junction answers
+itself, one per call path (`call_method_with_values`, the VM's `CallMethod`, the VM's `CallMethodMut`), and they
+disagreed: the `CallMethod` list lacked `Str`. The answers were a `match` in `call_method_with_values` that
+rendered `gist`/`raku`/`perl`/`Str` as a string. Rakudo is different in several places: `Junction.Str` is
+`self.THREAD(*.Str)` (a junction of `Str`s); `.isa`, `.does`, `.can` and `.not` are `Mu`'s and ask the junction
+itself; `.sink` is `Nil`.
+
+Decision.
+
+- `Junction`'s own methods are rows, in `collections/junction.rs`:
+  - `gist` and `raku`, rendering each value by its own `gist` (`Nil` for a `Nil`) or `raku`;
+  - `Str`, which threads;
+  - `sink`, which is `Nil`.
+  The catalog gains `Junction.raku`, `Str` and `sink`. One helper, `Interpreter::junction_own_method`, reaches
+  them by owner from all three call paths, ahead of autothreading; `perl` is `raku`.
+- `Interpreter::junction_invocant_autothreads` is the one list, measured against Rakudo 2026.09:
+  - the pseudo-methods;
+  - `Junction`'s non-threading methods: `Bool`, `defined`, `WHICH`, `gist`, `raku`, `perl`, `Str` (threads
+    in its row), `sink`, `THREAD`, `map`;
+  - `Mu`'s methods about the object: `so`, `not`, `isa`, `does`, `can`, `DEFINITE`, `WHERE`, `say`, `note`.
+
+  Every other method autothreads. That includes `put` and `print`, which write each value, and `Junction`'s
+  numeric coercions, whose Rakudo bodies thread.
+- `any_list_method_by_mro` lets a junction reach `Mu`'s late rows (`can`, `does`) for the names the junction
+  answers itself.
+- The argument-position rule (`should_autothread_method`, a junction passed as an argument) is not changed.
+
+`t/types/junction.t` asserted the old `$j.Str eq "any(1, 2, 3)"`, which fails under Rakudo too. It now checks the
+threaded `Str`'s gist.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
