@@ -213,7 +213,12 @@ impl Interpreter {
             "Stringy" => "Str",
             other => other,
         };
-        crate::builtins::method_table::invoke_base(self, "Mu", actual_method, &[target.clone()])
+        crate::builtins::method_table::invoke_base(
+            self,
+            "Mu",
+            actual_method,
+            std::slice::from_ref(target),
+        )
     }
 
     /// Whether `qualifier` is a role reachable by composition from any type in
