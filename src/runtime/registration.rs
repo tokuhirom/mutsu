@@ -649,6 +649,28 @@ impl Interpreter {
         if self.has_type_direct(short) {
             return short.to_string();
         }
+        // Last resort: a type alias (`constant CUS = Outer; ... $o!CUS::meth`)
+        // binds the written name to the aliased type object in the lexical
+        // env; follow it when it names a registered type.
+        // An `our constant` in a class body lives under the class-scoped key,
+        // so look under the calling package and under the lexical `self`'s
+        // class (the calling package can be an enclosing class).
+        let self_class = match self.env().get("self").map(Value::view) {
+            Some(ValueView::Instance { class_name, .. }) => Some(class_name.resolve()),
+            _ => None,
+        };
+        let scoped: Vec<_> = std::iter::once(context_class)
+            .chain(self_class.as_deref())
+            .map(|ctx| crate::qualified::qualified_text(ctx, short))
+            .collect();
+        for key in std::iter::once(short).chain(scoped.iter().map(|k| k.as_str())) {
+            if let Some(ValueView::Package(p)) = self.env().get(key).map(Value::view) {
+                let aliased = p.resolve();
+                if aliased != short && self.has_type_direct(&aliased) {
+                    return aliased;
+                }
+            }
+        }
         via_chain
     }
 

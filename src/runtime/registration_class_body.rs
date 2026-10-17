@@ -59,6 +59,11 @@ pub(super) struct ClassBodyCx<'a> {
     /// Deferred `compose` hooks queued by `apply_attribute_traits` (#8845) —
     /// see `Interpreter::run_pending_attr_composes`.
     pub(super) pending_attr_composes: Vec<PendingAttrCompose>,
+    /// Sigilless `constant NAME = TypeName` aliases declared in this body, as
+    /// `(NAME, TypeName)`. A method's qualified private call may name its
+    /// owner through one (`$o!NAME::meth`); the constant has not run yet when
+    /// the method is validated, so the alias is read off the body.
+    pub(super) type_aliases: Vec<(String, String)>,
 }
 
 impl ClassBodyCx<'_> {
@@ -69,6 +74,29 @@ impl ClassBodyCx<'_> {
             pkg_kind: "class",
         }
     }
+}
+
+/// The sigilless `constant NAME = TypeName` aliases a class body declares, as
+/// `(NAME, TypeName)` -- see [`ClassBodyCx::type_aliases`].
+// Cost: O(n), n = ops in the body plan.
+pub(super) fn body_type_aliases(body_plan: &[crate::opcode::ClassBodyOp]) -> Vec<(String, String)> {
+    body_plan
+        .iter()
+        .filter_map(|op| match op {
+            crate::opcode::ClassBodyOp::Other {
+                raw:
+                    Stmt::VarDecl {
+                        name,
+                        expr: Expr::BareWord(target),
+                        ..
+                    },
+                ..
+            } if !name.starts_with(['$', '@', '%', '&']) => {
+                Some((name.to_string(), target.to_string()))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Whether a body-walk arm falls through to the per-statement registry
@@ -166,6 +194,7 @@ impl Interpreter {
             compiled_fns,
             is_hoisted_shell,
             pending_attr_composes: Vec::new(),
+            type_aliases: body_type_aliases(body_plan),
         };
         // Snapshotted BEFORE the hoist pre-pass below, so the per-op
         // `class_subs` tail-probe (search "Check if any new functions were

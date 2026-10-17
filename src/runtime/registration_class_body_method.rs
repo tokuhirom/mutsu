@@ -29,7 +29,7 @@ impl Interpreter {
             .get(chunk_idx)
             .cloned()
             .expect("method_decls misaligned with class body walk");
-        self.validate_private_access_in_stmts(cx.name, &decl.body)?;
+        self.validate_private_access_in_stmts(cx.name, &decl.body, &cx.type_aliases)?;
         Self::validate_attr_declared_in_class(&cx.attr_ctx(), &decl.body)?;
         // In BUILD/TWEAK submethods, :$!attr parameters must refer
         // to declared attributes; reject undeclared ones with

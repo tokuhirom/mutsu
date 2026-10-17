@@ -393,9 +393,21 @@ impl Interpreter {
         if !deferred_custom_traits.is_empty() {
             self.types.deferred_trait_class_rollback = Some((name.to_string(), snapshot.clone()));
         }
+        // `trusts ALIAS` where `constant ALIAS = Type` names the trusted class
+        // through the body's own type alias: record the class it stands for.
+        let aliases = super::registration_class_body::body_type_aliases(body_plan);
+        let trusts: Vec<Symbol> = trusts
+            .iter()
+            .map(|t| {
+                aliases
+                    .iter()
+                    .find(|(alias, _)| alias == t.as_str())
+                    .map_or(*t, |(_, target)| Symbol::intern(target))
+            })
+            .collect();
         if self.publish_class_shell(
             name,
-            trusts,
+            &trusts,
             &class_def,
             hidden_parents,
             does_parents,
