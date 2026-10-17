@@ -1,0 +1,113 @@
+# ADR-13757: A local's type constraint comes from the code that declares it, not from a by-name record
+
+- **Status**: Proposed (2026-10-17)
+- **Date**: 2026-10-17
+- **Related**: [ADR-12529](12529-frames-resolve-names-through-the-static-link.md)
+  (frames resolve names through the static link; its §3 records slice 45, the
+  failed attempt that motivated this ADR),
+  [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md) (locals are
+  slot-addressed), [#13746](https://github.com/tokuhirom/mutsu/issues/13746)
+  (an EVAL'd store inside a sub misses the program variable's own type)
+
+## 1. Context
+
+A typed declaration (`my Int $x`, `my Str @a`, `my %h{Str}`) records its
+constraint at run time as an env entry keyed by name: `SetVarType`
+(and its scoped/hoisted forms) writes `__mutsu_type::x` (and, for a hash, a
+key-type record). Every store then asks for that record by name:
+`var_type_constraint` and its `_sym` / `_value_sym` / `_value_for` variants
+and `var_hash_key_constraint` have about 120 call sites, and all of them end in
+`declared_meta_lane` → `env().get_sym`.
+
+A by-name walk answers "some variable called `x` somewhere up the chain". It
+cannot say which variable that is:
+
+- When the running frame has no record, the walk continues into the frames that
+  **called** the routine, and a caller's unrelated same-named variable
+  constrains the store. ADR-12529's eighth census found this probe to be the
+  largest group of lookups that still resolve in an intermediate caller frame.
+  Wrong answer on main:
+
+  ```raku
+  my @a;
+  sub push-it() { EVAL q[@a.push('s')]; @a.elems }
+  sub typed-caller() { my Int @a; push-it() }
+  say typed-caller();   # raku: 1; mutsu: type check failure
+  ```
+
+- ADR-12529 slice 45 tried to make these records follow the static link like
+  the variable. Each narrowing broke another shape: a module routine's own
+  untyped `$desc` reached a mainline `my Array $desc`; a fresh `my $path` (not
+  yet bound when its declaration probes the type) reached a caller's
+  `my URI::Path $path`; a destructuring `my (..., $uri)` reached a `URI:D $uri`
+  record in a flattened tier the link reaches. A sigilless parameter installs
+  its alias source name in the callee frame, so "the frame binds the name" is
+  not decidable from the env either.
+
+The compiler, however, knows the answer for every local: it compiled the
+declaration, so it knows the slot and the constraint (`SetVarType`'s
+`tc_idx` is already a constant of the declaring code).
+
+## 2. Decision
+
+**A store to a local of the running code takes the local's constraint from the
+code. Only a store to a name the code does not declare looks a record up by
+name, and it looks where the variable resolved.**
+
+1. The compiler records, per local slot, the declared constraint: the type
+   constraint string and the hash key constraint, or none for an untyped
+   local (`CompiledCode::local_constraints: Vec<Option<LocalConstraint>>`,
+   indexed like `locals`). A `my` without a type gets `None`. That is the
+   positive fact which the by-name walk could never produce, so the record
+   probe stops falling through to someone else's variable.
+2. The readers take the slot when they have one. A store through `SetLocal` /
+   `SetLocalDecl`, the element and compound stores on a local, and the
+   push/append family on a named local all hold `code` and the slot. They read
+   `code.local_constraints[slot]` and never consult the env.
+3. The by-name record stays for names the running code does not declare:
+   a free variable of a closure or routine, an `EVAL`'d or symbolic store, a
+   `state`/`our` name resolved through a package. Its lookup goes through the
+   same resolution as the variable's value (the static link, ADR-12529),
+   not through the caller frames. The record is written next to the variable
+   (the declaring frame's tier, or the unit lane for a program-scope variable,
+   which also closes #13746).
+4. A runtime rebind that changes the constraint (`:=` binding a typed
+   container, `runtime_var_bind_meta`'s `Pair` override) keeps its by-name
+   override, consulted after the code's constraint only for that slot.
+
+## 3. Migration
+
+1. Add `local_constraints` to `CompiledCode` (and the precomp codec), filled
+   where the compiler emits `SetVarType*` for a slot-resolved local. No reader
+   changes; a debug assertion compares it against the by-name record at every
+   `SetLocal` to find the declarations the compiler does not see.
+2. Switch the local-store readers (`exec_set_local_op_inner` and the
+   `vm_var_assign_*` element/compound paths) to the code's constraint.
+3. Switch the push/append/unshift family and `vm_call_method_compiled_cache`.
+4. Restrict the by-name record lookup to non-locals, through the static link;
+   the caller-frame walk for `__mutsu_type::*` goes. Census: re-run the
+   ADR-12529 caller-frame census and check that `declared_meta_lane` no longer
+   appears.
+
+Each step runs the full gate and the battery suite (the URI and
+HTTP::UserAgent files caught slice 45's regressions).
+
+## 4. Consequences
+
+- Correctness: a routine's store is checked against its own variable's type,
+  never a caller's. The four shapes in §1 become pins.
+- Performance: a typed local store reads a slot-indexed vector instead of
+  hashing a metadata key and walking env tiers. An untyped local store reads
+  `None` and skips the probe, which today is skipped only through the
+  per-name `env_type_constraint_seen_for` latch.
+- Cost: every `SetVarType*` emission site must also fill the vector. A
+  declaration the compiler cannot see (a runtime-built routine, `EVAL`'d
+  declarations) keeps the by-name record, which step 1's assertion
+  inventories.
+
+## 5. Alternatives considered
+
+- **Records follow the static link** (ADR-12529 slice 45): rejected. The env
+  cannot tell which variable a record belongs to (§1).
+- **Stop the walk at the frame root**: rejected. It drops the record a
+  sigilless alias or a closure's free variable genuinely needs.
