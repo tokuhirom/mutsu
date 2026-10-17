@@ -954,6 +954,7 @@ t/concurrency/concurrent-param-container-mutation.t
 t/concurrency/concurrent-param-hash-reader-families.t
 t/concurrency/concurrent-role-mixin-visibility.t
 t/concurrency/concurrent-shared-cell.t
+t/concurrency/concurrent-start-then-dynamic-push.t
 t/concurrency/concurrent-state-var.t
 t/concurrency/cro-client-repeated-await-response-lexical.t
 t/concurrency/enum-declared-in-start-block.t
@@ -1879,6 +1880,7 @@ t/grammar/grammar-named-grammar.t
 t/grammar/grammar-nested-action-capture-rebuild.t
 t/grammar/grammar-nested-action-dispatch.t
 t/grammar/grammar-optional-ordered-alternative.t
+t/grammar/grammar-parse-calls-new-once.t
 t/grammar/grammar-parse-failure-probe.t
 t/grammar/grammar-parse-missing-rule-error.t
 t/grammar/grammar-parse-override-defer.t
@@ -2335,6 +2337,7 @@ t/lang/operators/operators-extra.t
 t/lang/operators/orwith-pointy-sigil.t
 t/lang/operators/overloading-operators.t
 t/lang/operators/postfix-amp-block.t
+t/lang/operators/postfix-bang-operator-name.t
 t/lang/operators/postfix-if-after-block-assignment.t
 t/lang/operators/postfix-index.t
 t/lang/operators/prefix-double-negation-bang-bang.t
@@ -3469,6 +3472,7 @@ t/oo/attribute/attribute-trait-any-order.t
 t/oo/attribute/attribute-trait-arg-declared-later-in-composing-class.t
 t/oo/attribute/attribute-trait-compose-sees-later-methods.t
 t/oo/attribute/attribute-trait-core-candidate-redispatch.t
+t/oo/attribute/attribute-trait-how-compose-runs-once.t
 t/oo/attribute/attribute-trait-mixin-visible-to-compose-hook.t
 t/oo/attribute/attribute-trait-mod-will-block.t
 t/oo/attribute/attribute-trait-mod.t
@@ -3873,6 +3877,7 @@ t/oo/method/dynamic-method.t
 t/oo/method/emit-method.t
 t/oo/method/empty-body-method-compiled.t
 t/oo/method/end-listop-and-method.t
+t/oo/method/enum-blob-method-late-rows.t
 t/oo/method/enum-enums-method.t
 t/oo/method/enum-value-type-only-method-param.t
 t/oo/method/enumeration-method-rows.t
@@ -4259,6 +4264,7 @@ t/oo/nested-instance-raku.t
 t/oo/nqp-create-mixin.t
 t/oo/orelse-andthen-mixin-defined.t
 t/oo/parameterized-mixin-lexical-state.t
+t/oo/private-call-owner-via-constant-alias.t
 t/oo/private-code-attr-call-ignores-caller-attr.t
 t/oo/private-owner-qualified-permission.t
 t/oo/private-trusts.t
@@ -5727,6 +5733,7 @@ t/routines/closure/closure-arg-shares-its-captured-container.t
 t/routines/closure/closure-attr-element-write.t
 t/routines/closure/closure-body-shared-per-pool-slot.t
 t/routines/closure/closure-bound-list-for-iteration.t
+t/routines/closure/closure-call-writes-through-cell.t
 t/routines/closure/closure-callarg-source-cell.t
 t/routines/closure/closure-calls-routine-nested-sub.t
 t/routines/closure/closure-capture-cell-dichotomy.t
@@ -6780,6 +6787,7 @@ t/types/defined-or-div-mod.t
 t/types/defined-or-user-defined-override.t
 t/types/dot-assign-numeric-chain.t
 t/types/ecosystem-rational-complex-numeric.t
+t/types/enum-subset/anonymous-subset-hash-key.t
 t/types/enum-subset/bool-enumeration-collection-methods.t
 t/types/enum-subset/builtin-enum-base-tier.t
 t/types/enum-subset/definite-return-core-term-not-imported-type.t
@@ -6820,10 +6828,12 @@ t/types/enum-subset/enum-value-shadows-same-named-sub.t
 t/types/enum-subset/enum-value-which.t
 t/types/enum-subset/eval-enum-bare-key-transitive.t
 t/types/enum-subset/eval-enum-bare-key.t
+t/types/enum-subset/inline-subset-object-hash-key.t
 t/types/enum-subset/inline-subset-term.t
 t/types/enum-subset/lowercase-subset-return-type.t
 t/types/enum-subset/my-subset-declaration-site-identity.t
 t/types/enum-subset/named-enum-value-map.t
+t/types/enum-subset/nominalize-archetypes.t
 t/types/enum-subset/omitted-optional-subset-implicit-default.t
 t/types/enum-subset/qualified-enum-coercion.t
 t/types/enum-subset/qualified-enum-short-name-import.t

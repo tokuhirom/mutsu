@@ -51,6 +51,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             is_readonly: _,
             type_constraint: _,
             hash_key_type: _,
+            hash_key_type_expr,
             type_smiley: _,
             is_required: _,
             sigil: _,
@@ -74,6 +75,9 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             }
             for h in handles {
                 walk_handle_spec_mut(v, h);
+            }
+            if let Some(e) = hash_key_type_expr {
+                v.visit_expr_mut(e);
             }
             if let Some(e) = where_constraint {
                 v.visit_expr_mut(e);
