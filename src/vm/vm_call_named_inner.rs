@@ -910,7 +910,8 @@ impl Interpreter {
                 // its binding, so there is nothing left to carry further up
                 // (ADR-12529 §3, slice 40).
                 if !self.pending_runtime_name_writes.is_empty() {
-                    self.pending_runtime_name_writes.retain(|n| !callee_private(n));
+                    self.pending_runtime_name_writes
+                        .retain(|n| !callee_private(n));
                 }
             }
             *self.env_mut() = restored_env;
