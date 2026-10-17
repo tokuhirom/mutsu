@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 7;
 
 # CompUnit::Repository::Installation.install must locate a distribution's sources
 # through the distribution's own `.content($name-path)` (the API every
@@ -50,10 +50,15 @@ ok $dist-json.defined, 'the dist metadata was written';
 
 # The point of the fix: the recorded source id must name a file that EXISTS.
 my %installed = Rakudo::Internals::JSON.from-json($dist-json.slurp);
-my $source-id = %installed<provides><Greet><file>;
+my $source-id = %installed<provides><Greet>{'lib/Greet.rakumod'}<file>;
 ok $source-id.defined, 'provides recorded a source id';
 ok $repo-dir.child('sources').child($source-id).e,
     'the source file the metadata points at was actually copied';
+
+my $installed = $cur.candidates('Greet').head;
+ok $installed.defined, 'installed distribution is a candidate';
+ok $installed.content('lib/Greet.rakumod').IO.e,
+    '.content resolves a provides path to the installed source';
 
 END { try $tmp.&rmdir-recursive if $tmp.e }
 sub rmdir-recursive($p) { for $p.dir { $_.d ?? rmdir-recursive($_) !! $_.unlink }; $p.rmdir }

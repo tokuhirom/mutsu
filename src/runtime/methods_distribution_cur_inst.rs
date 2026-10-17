@@ -135,9 +135,11 @@ impl Interpreter {
                 {
                     std::fs::copy(&source_full, &dest).ok();
                 }
-                let mut inner = ValueMap::default();
-                inner.insert("file".to_string(), Value::str(source_id));
-                installed_provides.insert(k, Value::hash_with_data(Value::hash_arc(inner)));
+                let mut file = ValueMap::default();
+                file.insert("file".to_string(), Value::str(source_id));
+                let mut path = ValueMap::default();
+                path.insert(source_path_str, Value::hash_with_data(Value::hash_arc(file)));
+                installed_provides.insert(k, Value::hash_with_data(Value::hash_arc(path)));
             }
         }
         let mut installed_resources = ValueMap::default();
@@ -320,12 +322,15 @@ impl Interpreter {
         let source_id = meta
             .hash_get_str("provides")
             .and_then(|p| p.hash_get_str(&short_name))
-            .map(|entry| match entry.view() {
+            .and_then(|entry| match entry.view() {
                 ValueView::Hash(map) => map
                     .get("file")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default(),
-                _ => entry.to_string_value(),
+                    .cloned()
+                    .or_else(|| {
+                        map.values().find_map(|path| path.hash_get_str("file"))
+                    })
+                    .map(|v| v.to_string_value()),
+                _ => Some(entry.to_string_value()),
             })
             .unwrap_or_default();
         let source_path = std::path::Path::new(prefix)

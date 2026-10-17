@@ -107,7 +107,7 @@ fn prefix(interp: &mut Interpreter, target: &Value, _: &[Value], _: Named<'_>) -
 /// `resources/libraries/foo` -> `$prefix/resources/libraries/libfoo.so`, and an
 /// installed distribution's hashed file names); any other address is a path
 /// under the prefix.
-// Cost: O(p), p = chars of the path.
+// Cost: O(p + m), p = chars of the path, m = provided modules.
 fn content(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_>) -> Answer {
     let address = args.first()?.to_string_value();
     let prefix = prefix_text(target)?;
@@ -118,7 +118,22 @@ fn content(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_
     let mapped = files
         .and_then(|files| files.hash_get_str(&address))
         .map(|v| v.to_string_value());
-    let full_path = match mapped {
+    let provided_source = attr(target, "meta")?
+        .and_then(|meta| meta.hash_get_str("provides"))
+        .and_then(|provides| match provides.view() {
+            ValueView::Hash(modules) => modules.values().find_map(|module| {
+                let ValueView::Hash(paths) = module.view() else {
+                    return None;
+                };
+                let entry = paths.get(&address)?;
+                // Current installs store { path => { file => id } }. Older
+                // metadata omitted this path and falls through to the legacy
+                // prefix/address lookup below.
+                entry.hash_get_str("file").map(|id| id.to_string_value())
+            }),
+            _ => None,
+        });
+    let full_path = match mapped.or_else(|| provided_source.map(|id| format!("sources/{id}"))) {
         Some(abs) if std::path::Path::new(&abs).is_absolute() => abs,
         Some(relative) => std::path::Path::new(&prefix)
             .join(relative)
