@@ -432,13 +432,6 @@ impl Env {
         with_static_links_suppressed(|| self.contains_key_sym(key))
     }
 
-    /// [`Self::get_sym`] through the whole chain; see
-    /// [`Self::get_through_callers`].
-    // Cost: O(d), d = chain tiers.
-    pub(crate) fn get_sym_through_callers(&self, key: Symbol) -> Option<&Value> {
-        with_static_links_suppressed(|| self.get_sym(key))
-    }
-
     /// Where a lookup of `key` that missed this env continues, when this env
     /// is a frame root whose static link skips the callers for it.
     // Cost: O(1) for a stored link; O(d) for a flagged frame

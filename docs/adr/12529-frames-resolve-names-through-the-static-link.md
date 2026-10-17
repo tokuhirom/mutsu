@@ -1640,6 +1640,21 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    up, where the variable resolved. That needs the code threaded to the
    record readers (#13757).
 
+   **Slice 46 done** (`refactor/12529-bind-args-frame-local`): no call's
+   return copies anything back any more. A ninth census switched off the
+   last two copy-backs, the named path's `free_var_writes` insert-if-missing
+   loop and the closure call's `free_var_writes` carry. The only
+   dependents were closures created while a grammar subrule's argument runs
+   (`<x({ $calls++ }())>`, `<e(-> { $called++ })>`), whose creating code is
+   compiled at match time. `eval_block_value_inner` now gives each variable
+   such a closure writes (the code's `needs_cell_free_vars`) a cell in the
+   env the expression runs over, and the argument evaluator binds the
+   caller's variable to that cell. The closure therefore writes the
+   caller's variable whether it runs inside the argument or later, as a
+   rule argument. Both loops and their bookkeeping (`caller_writeback`,
+   `unchanged_free`, `Env::get_sym_through_callers`) are deleted. Pinned by
+   `t/routines/closure/subrule-argument-closure-shares-caller-cell.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
