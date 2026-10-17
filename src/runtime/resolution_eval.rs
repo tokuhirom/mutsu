@@ -753,6 +753,26 @@ impl Interpreter {
         // set before it reaches the caller's slots.
         if let Some(out) = free_var_writes_out {
             out.extend(code.free_var_writes.iter().map(|sym| sym.resolve()));
+            // A closure this body creates and runs (`<x({ $calls++; 2 }())>`)
+            // writes a variable of the swapped-in env that no frame gave a
+            // cell: give it one here, so the closure's write reaches this env
+            // through it (ADR-12529 §3, slice 46), and report the name so the
+            // caller carries the value out like a direct write.
+            for sym in &code.needs_cell_free_vars {
+                if sym.with_str(|s| s.starts_with(['@', '%', '&'])) {
+                    continue;
+                }
+                if let Some(value) = self.env.get_sym(*sym).cloned()
+                    && !value.is_container_ref()
+                {
+                    self.env.insert_sym(*sym, Value::container_ref(crate::gc::Gc::new(
+                        crate::value::ContainerCell::new(value),
+                    )));
+                    if !code.free_var_writes.contains(sym) {
+                        out.push(sym.resolve());
+                    }
+                }
+            }
         }
         if record_free_var_writes {
             for sym in &code.free_var_writes {

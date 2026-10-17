@@ -952,6 +952,10 @@ impl Interpreter {
             if caps.regex_vars().contains_key(&name) {
                 continue;
             }
+            // A cell the evaluation gave a closure's captured variable
+            // (`eval_block_value_cached_reporting_writes`) becomes the caller
+            // variable's binding, so the closure, which may run later (passed
+            // on as a rule argument), keeps writing the caller's variable.
             self.env.insert(name.clone(), v);
             names.push(name);
         }
