@@ -1622,6 +1622,24 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    stands in for an `@*` name. Pinned by
    `t/concurrency/concurrent-start-then-dynamic-push-from-block.t`.
 
+   **Slice 45 attempted and reverted** (#13756, design in #13757): the
+   eighth census's largest group of caller-frame hits was the per-variable
+   record probe (`declared_meta_lane` asking for `__mutsu_type::x`), which
+   walks past the frame root to a caller's same-named variable. As a result
+   a caller's unrelated `my Int @a` fails a routine's EVAL'd push to the
+   program's `@a`. Making these records `lexically_scoped` fixed that and
+   broke a different shape each time it was narrowed: a module routine's
+   own untyped `$desc` reaching a mainline `my Array $desc` through the
+   link; a fresh `my $path` reaching a caller's `my URI::Path $path`; a
+   destructuring `my (..., $uri)` reaching a `URI:D $uri` record in a
+   flattened tier the link reaches. A sigilless parameter's alias mirror
+   needs the caller's record, so "the frame binds the name" cannot decide
+   either. The env cannot say which variable a record belongs to. A store
+   to a local of the running code should take its constraint from the
+   code, and only a name the code does not declare should look a record
+   up, where the variable resolved. That needs the code threaded to the
+   record readers (#13757).
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
