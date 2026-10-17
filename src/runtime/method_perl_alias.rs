@@ -44,18 +44,18 @@ impl Interpreter {
         }
         let target = target.descalarize();
         if target.is_mixin_value() {
-            if self.mixin_role_has_method(&target, perl.as_str()) {
+            if self.mixin_role_has_method(target, perl.as_str()) {
                 return true;
             }
             if let ValueView::Mixin(inner, _) = target.view() {
-                return self.user_perl_in_reach(&inner);
+                return self.user_perl_in_reach(inner);
             }
             return false;
         }
         let owner = match target.view() {
             ValueView::Instance { class_name, .. } => class_name,
             ValueView::Package(name) => name,
-            _ => Symbol::intern(crate::runtime::utils::value_type_name(&target)),
+            _ => Symbol::intern(crate::runtime::utils::value_type_name(target)),
         };
         let owner = owner.resolve();
         if self.has_user_method_sym(&owner, perl) {
@@ -65,19 +65,19 @@ impl Interpreter {
         // table does not list (`grammar_has_user_method_sym` reads it the same
         // way); a punned role's type object is the role itself.
         let registry = self.registry();
-        if !registry.roles.values().any(|role| declares_public_perl(role)) {
+        if !registry.roles.values().any(declares_public_perl) {
             return false;
         }
         self.mro_readonly(&owner).iter().any(|ancestor| {
             self.registry()
                 .roles
                 .get(ancestor.as_str())
-                .is_some_and(|role| declares_public_perl(role))
+                .is_some_and(declares_public_perl)
         }) || self
             .registry()
             .roles
             .get(owner.as_str())
-            .is_some_and(|role| declares_public_perl(role))
+            .is_some_and(declares_public_perl)
     }
 }
 

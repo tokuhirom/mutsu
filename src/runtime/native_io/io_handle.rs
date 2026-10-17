@@ -66,11 +66,10 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // `Mu.perl` is `self.raku`, and `slurp-rest` is the deprecated spelling
         // of `slurp`; the rows of `raku` and `slurp` answer them.
-        let row_method = method;
         if let Some(result) = crate::builtins::method_table::invoke_owner(
             self,
             &["IO::Handle", "Mu"],
-            row_method,
+            method,
             &args,
             || Value::make_instance_without_destroy(Symbol::intern("IO::Handle"), target.clone()),
         ) {

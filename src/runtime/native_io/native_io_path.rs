@@ -173,11 +173,10 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // `Mu.perl` is `self.raku`, so the row of `raku` answers it.
-        let row_method = method;
         if let Some(result) = crate::builtins::method_table::invoke_owner(
             self,
             &["IO::Path"],
-            row_method,
+            method,
             &args,
             || Value::make_instance_without_destroy(Symbol::intern(class_name), attributes.clone()),
         ) {

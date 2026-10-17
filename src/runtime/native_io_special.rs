@@ -21,14 +21,13 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // `Mu.perl` is `self.raku`.
-        let row_method = method;
         // `new` is the constructor below, not `Mu.new`'s late row, which
         // answers the receiver's MRO walk (§9.141).
         if method != "new"
             && let Some(result) = crate::builtins::method_table::invoke_owner(
             self,
             &["IO::Special", "Mu"],
-            row_method,
+            method,
             &args,
             || Value::make_instance(Symbol::intern("IO::Special"), attributes.clone()),
         ) {

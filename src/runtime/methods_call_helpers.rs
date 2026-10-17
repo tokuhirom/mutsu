@@ -117,8 +117,7 @@ impl Interpreter {
         if !matches!(target.view(), ValueView::Junction { .. }) {
             return None;
         }
-        let own = method;
-        crate::builtins::method_table::invoke_owner(self, &["Junction"], own, args, || {
+        crate::builtins::method_table::invoke_owner(self, &["Junction"], method, args, || {
             target.clone()
         })
     }

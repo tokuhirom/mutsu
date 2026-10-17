@@ -793,7 +793,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
         // `Mu.perl` is `.raku`.
-        let method = method;
         let id = crate::builtins::method_table::owner_row(
             Symbol::intern(owner),
             Symbol::intern(method),
