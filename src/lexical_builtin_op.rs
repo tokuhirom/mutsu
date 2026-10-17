@@ -16,11 +16,13 @@
 //!
 //! The string operators (`~`, `eq` ... `ge`, `leg`) are infixes of the first
 //! kind: `infix_concat`, `str_cmp_values` and `str_leg` ask `try_user_infix`
-//! before they stringify their operands.
+//! before they stringify their operands. So are the ASCII spellings of the
+//! set operators whose ops ask it (`(elem)`, `(cont)`, `(|)`, `(&)`, `(+)`,
+//! `(.)`, `(-)`, `(^)`).
 //!
 //! Every other built-in operator keeps its imported candidates in the
-//! registry: its uses reach them by name (the set operators, a postfix,
-//! `postcircumfix`).
+//! registry: its uses reach them by name (the Unicode set operators and the
+//! subset comparisons, a postfix, `postcircumfix`).
 
 use crate::opcode::{CompoundBaseOp, OpCode};
 
@@ -73,6 +75,14 @@ fn is_lexical_infix(op: &str) -> bool {
             | "le"
             | "ge"
             | "leg"
+            | "(elem)"
+            | "(cont)"
+            | "(|)"
+            | "(&)"
+            | "(+)"
+            | "(.)"
+            | "(-)"
+            | "(^)"
     )
 }
 
@@ -117,6 +127,14 @@ pub(crate) fn infix_of_opcode(op: &OpCode) -> Option<&'static str> {
         OpCode::StrLe => "infix:<le>",
         OpCode::StrGe => "infix:<ge>",
         OpCode::Leg => "infix:<leg>",
+        OpCode::SetElem => "infix:<(elem)>",
+        OpCode::SetCont => "infix:<(cont)>",
+        OpCode::SetUnion => "infix:<(|)>",
+        OpCode::SetIntersect => "infix:<(&)>",
+        OpCode::SetAddition => "infix:<(+)>",
+        OpCode::SetMultiply => "infix:<(.)>",
+        OpCode::SetDiff => "infix:<(-)>",
+        OpCode::SetSymDiff => "infix:<(^)>",
         _ => return None,
     })
 }

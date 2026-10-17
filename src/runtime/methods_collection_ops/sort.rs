@@ -660,9 +660,6 @@ impl Interpreter {
         let Some(c) = callable else { return Ok(0) };
         match c.view() {
             ValueView::Sub(data) => {
-                if let Some(arity) = Self::builtin_operator_dispatcher_arity(c) {
-                    return Ok(arity);
-                }
                 if data.empty_sig {
                     // Reject explicitly 0-arity named subs (e.g., `sub foo () { ... }`)
                     return Err(RuntimeError::new(

@@ -289,8 +289,15 @@ Consequences that pin the design:
 
   **Slice 6 done** (`fix/8751-string-ops-lexical`, 2026-10-18): the string
   operators join the list: `~`, `eq`, `ne`, `lt`, `gt`, `le`, `ge` and
-  `leg`. A callee written outside the block no longer sees their imported
-  candidates through a reduction, a hyper or `&infix:<leg>`.
+  `leg`, and so do the ASCII set operators whose ops ask `try_user_infix`:
+  `(elem)`, `(cont)`, `(|)`, `(&)`, `(+)`, `(.)`, `(-)` and `(^)`. A callee
+  written outside the block no longer sees their imported candidates
+  through a reduction, a hyper or `&infix:<leg>`.
+  - **`(elem)` and `(cont)` are built-ins.** `is_builtin_infix` does not
+    list them, so `lexically_bindable_operator` took them for user
+    operators and bound their imported family without the built-in
+    fallback: `{ use M; 1 (elem) (1, 2) }` died with "Cannot resolve
+    caller". The list in `crate::lexical_builtin_op` now overrides that.
   - **Their ops ask the user candidates.** `infix_concat` (the `Concat`
     op, `~=`, a reduction's fold), `str_cmp_values` and `str_leg` ask
     `try_user_infix` before they stringify the operands, as the arithmetic
@@ -302,20 +309,22 @@ Consequences that pin the design:
   - **The prefix covers the fused and meta forms.** `ConcatAssignLocal` and
     the `X`/`Z`/`R` meta-ops over a built-in operator of the list get the
     `LexImportBuiltinOp` prefix too (`emit_lex_import_builtin_meta`).
-  - **A dispatcher sorts as a comparator.** `.sort(&infix:<leg>)` in the
-    block passed the dispatcher value, whose capture signature has no
-    positional arity, so `sort` took it as a key mapper. A built-in
-    operator's dispatcher now reports the operator's arity to `sort`
-    (`builtin_operator_dispatcher_arity`); `.sort(&infix:<cmp>)` from
-    slice 5 had the same gap.
+  - **A dispatcher has the operator's signature.** `.sort(&infix:<leg>)`
+    in the block passed the dispatcher value, whose capture signature has
+    no positional arity, so `sort` took it as a key mapper; `.arity` and
+    `.count` answered `0`/`Inf`. `with_builtin_operator_fallback` now gives
+    the value the positional signature mutsu's own `&infix:<op>` routine
+    reports (`$arg0, $arg1`; one parameter for a prefix), and
+    `sub_dispatcher_signature` answers it (#13792). A call never binds it:
+    it goes to the captured candidates.
 
   Left for stage 2:
-  - The built-in operators outside that list (the set operators, `x`,
-    `postfix`, `postcircumfix`) keep their imported candidates in the
-    registry. A callee outside the block still sees those, and a closure
+  - The built-in operators outside that list (the Unicode set operators,
+    the subset comparisons, `x`, `postfix`, `postcircumfix`) keep their
+    imported candidates in the registry. A callee outside the block still sees those, and a closure
     taken out of the block loses them.
-  - A dispatcher value's `.arity`/`.count` is still the capture's (`0`/`Inf`);
-    rakudo reports the operator proto's (`2`/`2` for `&infix:<cmp>`).
+  - `[(elem)]` dies on `Unknown function` even without an import (#13794),
+    and a `(|)` candidate also answers `∪` (#13795).
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
   - Classes and variables keep the `ImportScope` rollback. A top-level

@@ -169,7 +169,9 @@ impl Interpreter {
             return false;
         };
         match category {
-            "infix" => !is_builtin_infix(op),
+            // `(elem)` / `(cont)` are built-ins the reduction tables do not
+            // list; `crate::lexical_builtin_op` names them.
+            "infix" => !is_builtin_infix(op) && !crate::lexical_builtin_op::binds_lexically(name),
             "prefix" => !is_builtin_prefix(op),
             "postfix" => !is_builtin_postfix(op),
             "circumfix" => !is_builtin_circumfix(op),
@@ -416,24 +418,6 @@ impl Interpreter {
     pub(crate) fn is_builtin_operator_dispatcher(value: &Value) -> bool {
         matches!(value.view(), ValueView::Sub(data)
             if data.env.get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback()).is_some())
-    }
-
-    /// The positional arity of the built-in operator the dispatcher `value`
-    /// falls back to ([`Self::is_builtin_operator_dispatcher`]): 2 for an
-    /// infix, 1 for a prefix. rakudo's core proto of the operator declares
-    /// it (`&infix:<leg>.arity` is 2), so `.sort(&infix:<leg>)` takes the
-    /// value as a comparator, not as a key mapper.
-    // Cost: O(1).
-    pub(crate) fn builtin_operator_dispatcher_arity(value: &Value) -> Option<usize> {
-        let ValueView::Sub(data) = value.view() else {
-            return None;
-        };
-        data.env
-            .get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback())?;
-        let ValueView::Str(name) = data.env.get("__mutsu_multi_dispatch_name")?.view() else {
-            return None;
-        };
-        Some(if name.starts_with("infix:<") { 2 } else { 1 })
     }
 
     /// The routine `name` is bound to in the first of the import sets
