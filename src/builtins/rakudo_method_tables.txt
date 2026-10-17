@@ -311,3 +311,12 @@ only	Raku	DISTROnames	KERNELnames	Str	VMnames	auth	compiler	desc	legacy	name	sig
 declared	VM	Str	auth	config	desc	gist	name	osname	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
 methods	VM	POPULATE	Str	TWEAK	auth	config	desc	gist	name	osname	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
 only	VM	Str	auth	config	desc	name	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
+declared	Encoding::Builtin	SET-SELF	alternative-names	decoder	encoder	name	new
+methods	Encoding::Builtin	POPULATE	SET-SELF	alternative-names	decoder	encoder	name	new
+only	Encoding::Builtin	SET-SELF	alternative-names	decoder	encoder	name	new
+declared	Encoding::Decoder::Builtin	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
+methods	Encoding::Decoder::Builtin	POPULATE	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
+only	Encoding::Decoder::Builtin	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
+declared	Encoding::Encoder::Builtin	encode-chars	new
+methods	Encoding::Encoder::Builtin	POPULATE	encode-chars	new
+only	Encoding::Encoder::Builtin	encode-chars	new
