@@ -181,13 +181,6 @@ pub(super) fn dispatch(
             ValueView::Hash(_) => crate::builtins::method_table::map::default(target, &[]),
             _ => None,
         }),
-        // `sign` of a number is a row; an enum value (no table shape) is the sign
-        // of its integer value.
-        // Cost: O(1).
-        "sign" => match target.view() {
-            ValueView::Enum { value, .. } => Some(Some(Ok(Value::int(value.as_i64().signum())))),
-            _ => Some(None),
-        },
         _ => None,
     }
 }

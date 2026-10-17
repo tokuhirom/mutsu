@@ -51,10 +51,7 @@ impl Interpreter {
                 kind,
             )));
         }
-        match method {
-            "pop" => Some(self.dispatch_pop_method(target, args)),
-            _ => None,
-        }
+        None
     }
 
     /// Dispatch the "iterator" method.
@@ -501,39 +498,6 @@ impl Interpreter {
         } else {
             self.builtin_min(&call_args)
         }
-    }
-
-    /// Dispatch the "pop" method.
-    fn dispatch_pop_method(
-        &mut self,
-        mut target: Value,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        if !args.is_empty() {
-            return Err(RuntimeError::new(format!(
-                "Too many positionals passed; expected 1 argument but got {}",
-                args.len() + 1
-            )));
-        }
-        if let ValueView::Array(_, kind) = target.view()
-            && kind.is_lazy()
-        {
-            return Err(RuntimeError::cannot_lazy("pop"));
-        }
-        if let Some(result) = target.with_array_mut(|items, _| {
-            // The mutated node may be shared with a live holder (this fallback
-            // takes `target` by value with no write-back), so write through
-            // the shared node — container identity (§3).
-            let items_mut = crate::value::gc_data_mut(items);
-            if items_mut.is_empty() {
-                make_empty_array_failure("pop")
-            } else {
-                items_mut.pop().unwrap_or(Value::NIL)
-            }
-        }) {
-            return Ok(result);
-        }
-        Ok(make_empty_array_failure("pop"))
     }
 
     /// Dispatch the "sort" method.
