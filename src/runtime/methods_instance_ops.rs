@@ -761,7 +761,9 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "$".to_string());
                 let base = match sigil.as_str() {
-                    "@" => Value::array(Vec::new()),
+                    // An `@` attribute's container is an `Array`, as in Rakudo,
+                    // not a `List` (`.container.shape` is `Array`'s).
+                    "@" => Value::real_array(Vec::new()),
                     "%" => Value::hash(ValueMap::default()),
                     _ => Value::NIL,
                 };
