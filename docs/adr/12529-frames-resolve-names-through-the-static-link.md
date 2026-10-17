@@ -1549,6 +1549,21 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    dynamic parameter is lost when the unit holds `EVAL` or an
    `nqp::bindlex*` anywhere (not caused by this slice).
 
+   **Slice 41 done** (`fix/12529-delete-return-merge-loops`): the return
+   merges are gone. The named path no longer walks the callee env, and
+   the two light-path merges (`merge_positional_light_env`,
+   `merge_light_env`) are replaced by one `finish_light_env` that
+   restores the caller env (or, for a reused frame, drops what the call
+   wrote) and re-inserts only the carried runtime-named writes. With them
+   went `CompiledFunction::is_own_enum_key_sym`, whose only use was to
+   keep a `my enum` out of the merge. What remains of the copy-back is the
+   named path's `free_var_writes` loop, which only inserts a free variable
+   the caller env does not have yet (a hoisted sub called before the
+   `my` it closes over has run); the censuses left it on. Pinned by
+   `t/routines/call/return-copies-no-callee-binding.t`. Found on the way
+   and filed as #13705: a routine's `my &*cb` still leaks to its caller,
+   through some store other than the merge.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

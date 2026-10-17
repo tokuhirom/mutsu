@@ -1092,7 +1092,7 @@ impl Interpreter {
                 self.lexicals
                     .block_declared_vars
                     .pop_frame(saved_block_declared_vars);
-                self.finish_positional_light_env(cf, caller_env);
+                self.finish_light_env(cf, caller_env);
                 self.leave_routine_package(saved_package);
                 self.current_unit = saved_unit;
                 std::panic::resume_unwind(panic_payload);
@@ -1154,19 +1154,12 @@ impl Interpreter {
             .pop_frame(saved_block_declared_vars);
         // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
 
-        // Restore the caller env and merge the overlay (the callee's own writes)
-        // back: a write to a captured outer variable (not a declared local of
-        // this function) persists in the caller; the function's params/locals are
-        // dropped with the overlay. This replaces the prior per-name save/restore.
-        // `$!` is scoped per routine: the caller's value must survive the call,
-        // so a callee routine's own `$!` (e.g. from an inner `try`) is never
-        // merged back. A block shares its enclosing routine's `$!` (a `CATCH`
-        // writes it there), so this applies to routine frames only. Shared
-        // with the panic-recovery arm above via `finish_positional_light_env`
-        // (see that method's doc comment) so a Rust panic mid-body cannot
-        // skip this merge and leave the caller's env permanently pointed at
-        // the callee's own overlay.
-        self.finish_positional_light_env(cf, caller_env);
+        // Restore the caller env, dropping the callee's own bindings (nothing
+        // is copied back, ADR-12529 §3 slice 41). Shared with the
+        // panic-recovery arm above via `finish_light_env` so a Rust panic
+        // mid-body cannot leave the caller's env pointed at the callee's own
+        // overlay.
+        self.finish_light_env(cf, caller_env);
         self.leave_routine_package(saved_package);
         // Leave the callee's compilation unit HERE, alongside every other
         // piece of per-call state, and not after the return-type check below:
@@ -1273,108 +1266,6 @@ impl Interpreter {
                 }
             }
             Err(e) => Err(e),
-        }
-    }
-
-    /// Merge the callee's env overlay back into the caller (or replay the
-    /// discard-only rollback for a reused frame), following the exact rules
-    /// `call_compiled_function_positional_light`'s normal completion path
-    /// used to apply inline. Factored out so the panic-unwind recovery arm
-    /// in that function can call the identical logic instead of duplicating
-    /// it a second time within the same function body -- see
-    /// `news/2026-08/light-call-state-leak-on-panic-unwind.md`.
-    pub(super) fn merge_positional_light_env(
-        &mut self,
-        cf: &CompiledFunction,
-        caller_env: Option<crate::env::Env>,
-    ) {
-        let bang_is_callee_private = cf.code.is_routine;
-        // The callee's private topic / arg array / routine id, and the per-frame
-        // contextual vars (`?LINE`/`?FILE`/...), must not propagate to the caller
-        // (which retains its own). Skipping the `?`-prefixed ones also avoids
-        // spurious `env_dirty` churn from the per-statement `?LINE` write on
-        // every recursive call. A `my enum` the callee declared is one of its own
-        // lexicals too, but it gets no local slot, so `is_callee_local_sym` does
-        // not see it and the binding leaked into the caller -- clobbering a
-        // same-named outer symbol for the rest of the program.
-        // A plain user lexical is never merged back either (ADR-12529 §3,
-        // slice 37; see `call_compiled_function_named_inner`).
-        let is_callee_private = |k: Symbol| {
-            k == "_"
-                || k == "@_"
-                || k == "%_"
-                || k.flags()
-                    & (crate::symbol::flags::PLAIN_USER_LEXICAL
-                        | crate::symbol::flags::UPPER_IDENT_KEY)
-                    != 0
-                || k.with_str(|s| s.starts_with('?'))
-                || (bang_is_callee_private
-                    && k.with_str(crate::symbol::is_routine_scoped_implicit_var))
-                || cf.is_callee_local_sym(k)
-                || cf.is_own_enum_key_sym(k)
-        };
-        match caller_env {
-            Some(caller_env) => {
-                // The callee-local test reads the compile-time `Symbol` set
-                // (`is_callee_local_sym`) instead of materializing a `HashSet<&str>`
-                // per call: the old set was built even when the overlay was empty
-                // (a body whose params/locals are all slot-resolved never writes
-                // env), and hashed every local name with SipHash to build it.
-                let scoped = std::mem::replace(self.env_mut(), caller_env);
-                // A full method dispatch in the body flattens the env
-                // (`flatten_scoped_env`), after which `scoped` is the whole
-                // visible scope rather than the callee's own writes -- so the
-                // `overlay_iter` loop below would walk every caller lexical, and
-                // re-insert most of them into the caller's own tier, for a callee
-                // that wrote two names. The flatten leaves the frame's writes
-                // behind as a log; drive the merge from that instead (#7630).
-                if let Some(writes) = scoped.frame_writes() {
-                    for k in writes {
-                        if is_callee_private(*k) {
-                            continue;
-                        }
-                        if let Some(v) = scoped.overlay_get_sym(*k) {
-                            self.env_mut().insert_sym(*k, v.clone());
-                        }
-                    }
-                    return;
-                }
-                for (k, v) in scoped.overlay_iter() {
-                    if is_callee_private(*k) {
-                        continue;
-                    }
-                    self.env_mut().insert_sym(*k, v.clone());
-                }
-            }
-            None => {
-                // Reused frame: the caller's overlay was the shared empty
-                // singleton at entry, so if the latch is still armed the body
-                // never wrote env -- nothing to merge or restore. Otherwise
-                // every overlay entry is a write made by this call; replay the
-                // swap path's return merge in place -- keep captured-outer
-                // writes (they are already sitting in the caller's env, which
-                // is where the merge would put them) and drop callee-locals
-                // and the per-frame private names.
-                //
-                // Once a full method dispatch has run `flatten_scoped_env` the
-                // overlay-identity latch is permanently disarmed (the env has no
-                // parent tier any more) and "the overlay" is the whole flattened
-                // scope, so the `retain_overlay` below scanned every visible name
-                // -- correct, since a caller lexical is not a callee-local, but
-                // O(scope) in `Symbol` resolves where O(callee writes) was
-                // intended. `retain_frame_writes` replays the same merge over the
-                // log the flatten left behind, and reports whether there was one
-                // (#7630).
-                if self
-                    .env_mut()
-                    .retain_frame_writes(|k| !is_callee_private(k))
-                {
-                    return;
-                }
-                if !self.env().overlay_is_shared_empty() {
-                    self.env_mut().retain_overlay(|k, _| !is_callee_private(*k));
-                }
-            }
         }
     }
 
