@@ -1285,3 +1285,12 @@ anonymous subs, and methods; lowering maps a type-valued trait back to the
 existing routine trait binder while the hidden marker remains internal. The
 regressions cover the measured fields, named and anonymous dispatch, method
 dispatch, and hidden backtrace frames.
+
+### 6.68 S4: native package declarations (2026-10-17)
+
+Rakudo models `native` declarations as `RakuAST::Native`, a `Package` node
+with a name, optional scope, representation, source-ordered traits, and body.
+Conversion now preserves that node and keeps mutsu's native-declaration marker
+internal. Lowering restores the marker and routes `ctype`, `unsigned`, and
+`nativesize` through the existing NativeHOW trait handling. The focused
+regression covers tree shape, construction, and native type semantics.
