@@ -2209,10 +2209,11 @@ impl Interpreter {
                 // If we have a pending Proxy subclass attribute reference and this
                 // is a mutating array method, delegate to the shared storage mutator
                 // so the mutation is visible through the Proxy subclass.
-                if matches!(
-                    method,
-                    "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
-                ) && matches!(target.view(), ValueView::Array(..))
+                if matches!(target.view(), ValueView::Array(..))
+                    && crate::builtins::method_table::names_a_mut_row(
+                        Symbol::intern(method),
+                        args.len(),
+                    )
                     && let Some((attrs_ref, attr_name)) =
                         self.types.pending_proxy_subclass_attr.take()
                 {

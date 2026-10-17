@@ -116,7 +116,6 @@ pub(crate) use place::ReceiverPlace;
 pub(crate) use row::{Handler, MethodRow, Named, NamedFn, NarrowFn, RowFlags};
 #[cfg(test)]
 use table::all_rows;
-#[cfg(test)]
 pub(crate) use table::names_a_mut_row;
 pub(crate) use table::{
     Receiver, RowId, base_row, max_row_arity, names_a_row, owner_declares, owner_row,

@@ -2299,10 +2299,11 @@ impl Interpreter {
 
                 // Before giving up, check if this is a mutating array method
                 // and we have a pending Proxy subclass attribute reference.
-                if matches!(
-                    method,
-                    "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
-                ) && matches!(target.view(), ValueView::Array(..))
+                if matches!(target.view(), ValueView::Array(..))
+                    && crate::builtins::method_table::names_a_mut_row(
+                        Symbol::intern(method),
+                        args.len(),
+                    )
                     && let Some((attrs_ref, attr_name)) =
                         self.types.pending_proxy_subclass_attr.take()
                 {

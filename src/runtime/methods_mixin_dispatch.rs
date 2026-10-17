@@ -916,24 +916,10 @@ impl Interpreter {
             return Some(Ok(Value::truth(result)));
         }
 
+        // A mutator of the native array the role is mixed into is the `Mut`
+        // row's, on that array (ADR-11276 §9.147).
         if matches!(inner.as_ref().view(), ValueView::Array(..))
-            && matches!(
-                method,
-                "push"
-                    | "append"
-                    | "prepend"
-                    | "unshift"
-                    | "pop"
-                    | "shift"
-                    | "splice"
-                    | "ASSIGN-POS"
-                    | "BIND-POS"
-                    | "DELETE-POS"
-                    | "ASSIGN-KEY"
-                    | "BIND-KEY"
-                    | "DELETE-KEY"
-                    | "STORE"
-            )
+            && crate::builtins::method_table::names_a_mut_row(Symbol::intern(method), args.len())
             && let Some(result) =
                 self.native_mixin_array_mutation(target, inner.as_ref(), method, &args)
         {
