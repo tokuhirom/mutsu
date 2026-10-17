@@ -1,6 +1,7 @@
 # ADR-13757: A local's type constraint comes from the code that declares it, not from a by-name record
 
-- **Status**: Proposed (2026-10-17)
+- **Status**: Accepted (2026-10-17, by tokuhirom; Proposed earlier the same
+  day). Implementation follows §3; record each step's progress in §3.
 - **Date**: 2026-10-17
 - **Related**: [ADR-12529](12529-frames-resolve-names-through-the-static-link.md)
   (frames resolve names through the static link; its §3 records slice 45, the
