@@ -1622,33 +1622,23 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    stands in for an `@*` name. Pinned by
    `t/concurrency/concurrent-start-then-dynamic-push-from-block.t`.
 
-   **Slice 45 done** (`refactor/12529-static-link-every-unit-routine`):
-   the eighth census's largest group of caller-frame hits was the
-   per-variable metadata probe (`declared_meta_lane` asking for
-   `__mutsu_type::x`), which walked past the frame root to a caller's
-   same-named variable. A plain lexical's own metadata keys (the ones
-   `Symbol::shadow_meta_subject` maps back to a plain lexical: the type,
-   source-name and hash-key records) are now lexically scoped like the
-   variable, so a static link skips the caller frames for them too. Before,
-   `push-it()` pushing to the program's `my @a` through EVAL failed the
-   type check of its caller's unrelated `my Int @a`. The record follows the
-   variable: the link applies to it only when the running frame does not
-   bind the variable and the program scope does. A record of a variable the
-   frame binds, or does not bind yet, keeps the walk it had. "Does not bind
-   yet" is a fresh `my $path` whose declaration probes the type; the bundled
-   URI battery caught that one picking up a caller's `my URI::Path $path`
-   once the link reached it. A module
-   routine linked to the program scope would otherwise pick up a mainline
-   `my Array $desc`'s type for its own untyped `$desc` (Test's `proclaim`,
-   `t/lang/adverbs/colon-args-list-infix-precedence.t`). A sigilless
-   parameter's alias mirror also needs the caller's record
-   (`t/types/nil-through-sigilless-alias-decays.t`). Both were caught by the
-   gate. The precise rule, "the running code declares the variable", needs
-   the code at the lookup, which the type-record readers do not carry yet.
-   Pinned by
-   `t/lang/eval-store-ignores-caller-type-of-same-name.t`. Found on the
-   way and filed as #13746: such an EVAL'd store also misses the program
-   variable's own type (`my Int $n`, before and after this slice).
+   **Slice 45 attempted and reverted** (#13756, design in #13757): the
+   eighth census's largest group of caller-frame hits was the per-variable
+   record probe (`declared_meta_lane` asking for `__mutsu_type::x`), which
+   walks past the frame root to a caller's same-named variable. As a result
+   a caller's unrelated `my Int @a` fails a routine's EVAL'd push to the
+   program's `@a`. Making these records `lexically_scoped` fixed that and
+   broke a different shape each time it was narrowed: a module routine's
+   own untyped `$desc` reaching a mainline `my Array $desc` through the
+   link; a fresh `my $path` reaching a caller's `my URI::Path $path`; a
+   destructuring `my (..., $uri)` reaching a `URI:D $uri` record in a
+   flattened tier the link reaches. A sigilless parameter's alias mirror
+   needs the caller's record, so "the frame binds the name" cannot decide
+   either. The env cannot say which variable a record belongs to. A store
+   to a local of the running code should take its constraint from the
+   code, and only a name the code does not declare should look a record
+   up, where the variable resolved. That needs the code threaded to the
+   record readers (#13757).
 
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,

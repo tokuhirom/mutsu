@@ -2543,17 +2543,7 @@ impl Env {
                     // the lookup ends with what a capture gave (#13604).
                     return found;
                 }
-                // A variable record (`__mutsu_type::x`) follows the variable: it
-                // takes the link only when the frame does not bind the variable
-                // and the program scope does. A record of a variable the frame
-                // binds (its own untyped `$desc`, the mirror a sigilless alias
-                // installs) or does not bind yet (a fresh `my $path` whose
-                // declaration probes the type) keeps the walk it always had.
-                if let Some(outer) = cur.static_skip(key)
-                    && key.shadow_meta_subject().is_none_or(|subject| {
-                        self.get_sym_in_frame(subject).is_none() && outer.get_sym(subject).is_some()
-                    })
-                {
+                if let Some(outer) = cur.static_skip(key) {
                     cur = outer;
                     continue;
                 }
