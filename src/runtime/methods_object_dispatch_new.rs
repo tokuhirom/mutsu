@@ -938,6 +938,43 @@ impl Interpreter {
             if is_cathandle_like && !self.has_user_method(class_key, "new") {
                 return Ok(self.build_io_cathandle(*class_name, &args));
             }
+            // A Proc::Async subclass inherits its slurpy command constructor.
+            // Carry the native state through the normal subclass constructor
+            // so its own attributes and BUILD methods are initialized too.
+            let is_proc_async_like = cn_resolved != "Proc::Async"
+                && self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "Proc::Async");
+            let has_proc_async_state = args.iter().any(|arg| {
+                matches!(arg.view(), ValueView::Pair(key, _) if key == "__mutsu_proc_async_state")
+            });
+            if is_proc_async_like
+                && !has_proc_async_state
+                && !self.has_user_method(class_key, "new")
+            {
+                let native = Self::build_native_proc_async_value(
+                    Symbol::intern("Proc::Async"),
+                    &args,
+                )?;
+                let ValueView::Instance {
+                    attributes: native_attributes,
+                    ..
+                } = native.view()
+                else {
+                    unreachable!("Proc::Async constructor returns an instance")
+                };
+                let marker = Value::pair("__mutsu_proc_async_state".to_string(), Value::TRUE);
+                let instance = self.dispatch_new(target.clone(), vec![marker])?;
+                let ValueView::Instance { attributes, .. } = instance.view() else {
+                    unreachable!("Proc::Async subclass construction returns an instance")
+                };
+                for (key, value) in native_attributes.as_map().iter() {
+                    attributes.insert(key.as_str(), value.clone());
+                }
+                attributes.insert("__mutsu_proc_async_state", Value::TRUE);
+                return Ok(instance);
+            }
             // A user subclass of Version (`class MyVer is Version {}`) inherits
             // the native positional-string constructor. `Version`'s own
             // `ValueView::Version` representation carries no class-name tag (#8070),

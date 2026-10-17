@@ -1,0 +1,1 @@
+User subclasses of `Proc::Async` now inherit the positional command constructor. Their declared attributes still initialize normally, and inherited process methods use the existing `Proc::Async` handler rows.
