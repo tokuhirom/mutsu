@@ -200,61 +200,20 @@ impl Interpreter {
         if qualifier == "Cool" && !self.class_mro(&cn).iter().any(|c| c.as_str() == "Cool") {
             return None;
         }
-        match target.view() {
-            // Type object (`C.Mu::Str`): the built-in coercion of an undefined value.
-            ValueView::Package(name) => {
-                let n = name.resolve();
-                let v = match actual_method {
-                    // A type object stringifies to the empty string (Rakudo also
-                    // emits an "uninitialized value in string context" warning; the
-                    // existing bare-class `.Str` fallback is silent, so match it).
-                    "Str" | "Stringy" => Value::str(String::new()),
-                    "gist" => {
-                        if crate::value::is_nameless_anon_type_name(&n) {
-                            Value::str_from("()")
-                        } else {
-                            let short =
-                                crate::qualified::last_segment(crate::qualified::known_symbol(&n))
-                                    .as_str();
-                            Value::str(format!("({})", short))
-                        }
-                    }
-                    "raku" | "perl" => Value::str(n),
-                    "Bool" | "defined" => Value::truth(false),
-                    _ => return None,
-                };
-                Some(Ok(v))
-            }
-            // Defined instance (`$o.Mu::gist`): the generic `Class.new(attrs)` repr,
-            // ignoring the receiver's own `gist`/`raku` override.
-            ValueView::Instance { attributes, .. } => match actual_method {
-                "gist" | "raku" | "perl" => {
-                    let display_name = crate::value::user_facing_type_name(&cn);
-                    self.seed_cstruct_fields_for_method(&cn, Some(target));
-                    let public_attrs = self.collect_public_raku_attrs(&cn, &attributes.as_map());
-                    let rendered = if public_attrs.is_empty() {
-                        format!("{}.new", display_name)
-                    } else {
-                        format!("{}.new({})", display_name, public_attrs.join(", "))
-                    };
-                    Some(Ok(Value::str(rendered)))
-                }
-                "Bool" | "defined" => Some(Ok(Value::truth(true))),
-                // `self.Mu::WHICH` is the object's own identity, bypassing a
-                // class's `WHICH` override (Rake's `$!WHICH := self.Mu::WHICH`
-                // for a non-value-type instance).
-                // `Mu`'s own row, which an instance with no shape reaches only
-                // through the interpreter's MRO walk.
-                "WHICH" => crate::builtins::method_table::owner_row(
-                    Symbol::intern("Mu"),
-                    Symbol::intern("WHICH"),
-                    0,
-                )
-                .and_then(|id| crate::builtins::method_table::invoke(id, target, &[])),
-                _ => None,
-            },
-            _ => None,
+        if !matches!(target.view(), ValueView::Package(_) | ValueView::Instance { .. }) {
+            return None;
         }
+        // `$o.Mu::gist` is `Mu`'s own method, whatever the receiver's class
+        // overrides: the base candidate a deferral chain ends at (ADR-11276
+        // §9.56, §9.150). `Any` and `Cool` declare none of these, so their
+        // qualified call reaches `Mu`'s. `perl` is `raku`, and `Stringy` of a
+        // `Mu` is its `Str`.
+        let actual_method = match actual_method {
+            "perl" => "raku",
+            "Stringy" => "Str",
+            other => other,
+        };
+        crate::builtins::method_table::invoke_base(self, "Mu", actual_method, &[target.clone()])
     }
 
     /// Whether `qualifier` is a role reachable by composition from any type in

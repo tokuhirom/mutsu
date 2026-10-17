@@ -3633,6 +3633,23 @@ mutsu's row reads a non-positive receiver as the empty range.
 Left on #13738: `Format`/`Formatter`/`Formatter::Syntax` (their owners need catalog rows and a representation
 decision), `Mu.Callable` and `Grammar`'s 6.e additions.
 
+### 9.150 A qualified `Mu::` call is `Mu`'s base row (2026-10-17)
+
+`refactor/11276-qualified-mu-base`. `$o.Mu::gist`, `.Any::Str` and the like were answered by two `match`es in
+`methods_qualified.rs`, one for a type object and one for an instance. Their answers disagreed with Rakudo:
+for an instance, `Mu::gist` printed the generic `C.new(...)` repr where Rakudo's `Mu.gist` is
+`self.raku` (the receiver's own `raku`), and `Mu::Str` answered `Mu<id>` where Rakudo's is `C<id>`.
+§9.56 had already made `Mu`'s base answers rows: `defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`,
+`gist`, `Str`, `raku` and the output methods. Those rows are the last candidate of a deferral chain, which is
+what a qualified call to `Mu` means: `Mu`'s own method, whatever the class overrides.
+
+Decision. After the existing checks (no arguments, a `Mu`/`Any`/`Cool` qualifier, `Cool` in the MRO), the
+qualified call is `invoke_base(Mu, method)` on the receiver. `Any` and `Cool` declare none of these names, so
+their qualified calls reach `Mu`'s too. `perl` maps to `raku`, and `Stringy` to `Str`. Both `match`es are
+deleted. The answers now match Rakudo's for `gist` and `Str` of an instance (pinned in
+`t/types/coercion/qualified-mu-coercion-base-rows.t`). The qualified call also gains `so`, `not`, `WHERE`
+and the output methods.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
