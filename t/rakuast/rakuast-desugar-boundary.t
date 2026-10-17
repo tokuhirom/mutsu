@@ -3,7 +3,7 @@ use experimental :rakuast;
 use Test;
 
 # mutsu desugars a few constructs in the parser into calls to internal routines
-# (`__mutsu_hyper_prefix`, `__mutsu_zip_assign`, …) or into temporaries with
+# (`__mutsu_hyper_prefix`, …) or into temporaries with
 # internal names (`__with_tmp_0`, `@__destructure_tmp__`). raku keeps every one
 # of them as a dedicated RakuAST node and has no such name anywhere, so
 # rendering one emitted a node that cannot exist in a real RakuAST tree — a
@@ -20,7 +20,7 @@ use Test;
 # does NOT assert what the right node would be — that needs measuring against
 # raku first.
 
-plan 10;
+plan 11;
 
 # --- a desugared construct throws rather than rendering a fake node ---------
 # The hyper prefix used to be on that list too; it now renders as raku's
@@ -28,8 +28,10 @@ plan 10;
 nok Q[my @a; -<<@a].AST.gist.contains('__mutsu_hyper_prefix'),
     'hyper prefix does not render an internal __mutsu_hyper_prefix call';
 
-throws-like { Q[my @a; @a Z= @a].AST }, Exception,
-    'zip assignment does not render an internal __mutsu_zip_assign call';
+ok Q[my @a; @a Z= @a].AST.gist.contains('RakuAST::MetaInfix::Zip.new('),
+    'zip assignment renders its measured metaoperator node';
+nok Q[my @a; @a Z= @a].AST.gist.contains('__mutsu_zip_assign'),
+    'zip assignment does not expose its internal expansion';
 
 # `with` used to be on that list: it threw rather than rendering its temp. It
 # now renders as raku's own `Statement::With`, and the point of the assertion

@@ -249,6 +249,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
     if let Some(form) = super::control_signature::source(stmt) {
         return super::control_signature::convert(form).map(Some);
     }
+    if let Some(zip) = super::zip_assign::convert_zip_assign(stmt) {
+        return zip.map(|node| Some(statement_expression(node)));
+    }
     match stmt {
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.

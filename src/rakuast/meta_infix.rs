@@ -245,6 +245,13 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
         _ => return None,
     }
     let infix = named_child(node, "infix").ok()?;
+    if node.class == RakuAstClass::ApplyListInfix
+        && infix.class == RakuAstClass::MetaInfixZip
+        && super::lower::named_child_or_positional(infix)
+            .is_ok_and(|child| child.class == RakuAstClass::Assignment)
+    {
+        return Some(super::zip_assign::lower(node));
+    }
     if infix.class == RakuAstClass::MetaInfixAssign && node.class == RakuAstClass::ApplyInfix {
         return lower_assign(node, infix);
     }
