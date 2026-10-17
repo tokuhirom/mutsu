@@ -7,7 +7,9 @@
 //! - `Cool.encode` for what the `Str` rows did not take (a type object, an
 //!   argument list they do not bind);
 //! - `Blob.unpack` (experimental, as the `unpack` routine);
-//! - `Enumeration.enums` of an enum's type object or value (§9.143).
+//! - `Enumeration.enums` of an enum's type object or value (§9.143);
+//! - `Mu.set_why` (§9.145), which documents the invocant's type; a
+//!   metaobject's own `set_why` is the meta-level route, so it declines one.
 //!
 //! Each is `OWNER_ONLY`, reached only by that cascade's walk of the
 //! receiver's MRO and the roles its classes compose
@@ -58,6 +60,13 @@ pub(super) static ROWS: &[MethodRow] = &[
         LATE.or(RowFlags::TYPE_OBJECT_OK),
         enums
     ),
+    late!(
+        "Mu",
+        "set_why",
+        1,
+        RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK),
+        set_why
+    ),
 ];
 
 /// The call's arguments, named ones after the positional ones.
@@ -102,4 +111,12 @@ fn unpack(_: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answe
 // Cost: O(n), n = values of the enum.
 fn enums(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
     i.dispatch_enums(t)
+}
+
+// Cost: O(1) amortized (one metadata map insert).
+fn set_why(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    if i.is_how_receiver(t) {
+        return None;
+    }
+    Some(i.dispatch_mu_set_why(t, args.first()?.clone()))
 }

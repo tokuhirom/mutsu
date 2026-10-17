@@ -79,11 +79,11 @@ impl Interpreter {
             return Some(result);
         }
         // `Mu.say`/`put` with arguments for a class acting as `$*OUT`,
-        // `Junction.THREAD`, `Cool.encode`, `Blob.unpack` and
-        // `Enumeration.enums` are late rows of the receiver's MRO and roles
-        // (§9.142, §9.143); `Mu`'s other late rows are the cascade's last
-        // resort.
-        if matches!(method, "THREAD" | "encode" | "unpack" | "enums")
+        // `Junction.THREAD`, `Cool.encode`, `Blob.unpack`,
+        // `Enumeration.enums` and `Mu.set_why` are late rows of the receiver's
+        // MRO and roles (§9.142, §9.143, §9.145); `Mu`'s other late rows are
+        // the cascade's last resort.
+        if matches!(method, "THREAD" | "encode" | "unpack" | "enums" | "set_why")
             || (matches!(method, "say" | "put") && !args.is_empty())
         {
             let owner_names = self.late_walk_owners(&target);
@@ -111,12 +111,7 @@ impl Interpreter {
             "HOW" if !quoted_pseudo => Some(self.dispatch_how(&target, &args)),
             "WHO" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_who(&target)),
             "WHY" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_why(&target)),
-            "set_why" if args.len() == 1 && !quoted_pseudo && !self.is_how_receiver(&target) => {
-                Some(self.dispatch_mu_set_why(&target, args[0].clone()))
-            }
             "^name" if args.is_empty() => Some(self.dispatch_caret_name(&target)),
-            "^enum_value_list" | "enum_value_list" => self.dispatch_enum_value_list(&target),
-            "invert" => self.dispatch_invert_enum(&target),
             // A grammar's `parse`/`subparse`/`parsefile` are `Grammar`'s rows
             // (ADR-11276 §9.46): a type object and an instance both reach
             // them, unless the grammar declares its own.

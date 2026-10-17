@@ -1,5 +1,6 @@
 //! Zero-argument `Any` collection methods shared by the row and cascade paths.
 
+use super::any_enum_views::View;
 use super::{Handler, MethodRow, RowFlags};
 use crate::value::{DispatchShape, RuntimeError, Value, ValueView};
 
@@ -55,6 +56,12 @@ pub(crate) fn scalar_like(target: &Value) -> bool {
                 | DispatchShape::Duration
         )
     )
+}
+
+/// The `Bool` enumeration's `view`.
+// Cost: O(1), two values.
+fn enum_view(view: View) -> Value {
+    super::any_enum_views::view(view, &super::any_enum_views::bool_variants())
 }
 
 // Cost: O(1), Any's scalar invocant is one element.
@@ -114,11 +121,9 @@ pub(crate) fn end(target: &Value, _args: &[Value]) -> Option<Result<Value, Runti
 
 // Cost: O(1), the single scalar index is produced eagerly.
 pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    // `Any(Bool)`: a `Bool` lists the `Bool` enumeration (ADR-11276 §9.145).
     if matches!(target.view(), ValueView::Bool(_)) {
-        return Ok(Value::seq(vec![
-            Value::str("True".to_string()),
-            Value::str("False".to_string()),
-        ]));
+        return Ok(enum_view(View::Keys));
     }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![Value::int(0)]))
@@ -126,8 +131,9 @@ pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
 
 // Cost: O(1), the single scalar value is copied into the result Seq.
 pub(crate) fn values(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    // `Any(Bool)`: a `Bool` lists the `Bool` enumeration (ADR-11276 §9.145).
     if matches!(target.view(), ValueView::Bool(_)) {
-        return Ok(Value::seq(vec![Value::int(1), Value::int(0)]));
+        return Ok(enum_view(View::Values));
     }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![target.clone()]))
@@ -135,13 +141,9 @@ pub(crate) fn values(target: &Value, _args: &[Value]) -> Result<Value, RuntimeEr
 
 // Cost: O(1), one index/value pair is produced.
 pub(crate) fn kv(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    // `Any(Bool)`: a `Bool` lists the `Bool` enumeration (ADR-11276 §9.145).
     if matches!(target.view(), ValueView::Bool(_)) {
-        return Ok(Value::seq(vec![
-            Value::str("True".to_string()),
-            Value::int(1),
-            Value::str("False".to_string()),
-            Value::int(0),
-        ]));
+        return Ok(enum_view(View::Kv));
     }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![Value::int(0), target.clone()]))
@@ -149,11 +151,9 @@ pub(crate) fn kv(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError>
 
 // Cost: O(1), one index/value Pair is produced.
 pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    // `Any(Bool)`: a `Bool` lists the `Bool` enumeration (ADR-11276 §9.145).
     if matches!(target.view(), ValueView::Bool(_)) {
-        return Ok(Value::seq(vec![
-            Value::pair("True".to_string(), Value::int(1)),
-            Value::pair("False".to_string(), Value::int(0)),
-        ]));
+        return Ok(enum_view(View::Pairs));
     }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![Value::value_pair(
@@ -164,11 +164,9 @@ pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErr
 
 // Cost: O(1), one value/index Pair is produced.
 pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    // `Any(Bool)`: a `Bool` lists the `Bool` enumeration (ADR-11276 §9.145).
     if matches!(target.view(), ValueView::Bool(_)) {
-        return Ok(Value::seq(vec![
-            Value::value_pair(Value::int(1), Value::str("True".to_string())),
-            Value::value_pair(Value::int(0), Value::str("False".to_string())),
-        ]));
+        return Ok(enum_view(View::Antipairs));
     }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![Value::value_pair(

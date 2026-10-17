@@ -65,9 +65,9 @@ mod unadmitted;
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::iteration_buffer::owners_of as iteration_buffer_owners_of;
 pub(crate) use collections::{
-    any_collection, clone as collection_clone, lazy, list, list_aggregate, map, positional,
-    quanthash, range, render as collection_render, render_names as collection_render_names,
-    rotate as collection_rotate, subscript, terminals,
+    any_collection, any_enum_views, clone as collection_clone, lazy, list, list_aggregate, map,
+    positional, quanthash, range, render as collection_render,
+    render_names as collection_render_names, rotate as collection_rotate, subscript, terminals,
 };
 pub(crate) use ctors_mop::attribute::owners_of as attribute_owners_of;
 pub(crate) use instances::collation::owners_of as collation_owners_of;

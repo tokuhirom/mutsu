@@ -2967,6 +2967,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mu", "can", 8, 60),
     ("Mu", "does", 8, 60),
     ("Mu", "return-rw", 8, 60),
+    ("Mu", "set_why", 8, 60),
     ("HyperSeq", "hyper", 8, 60),
     ("HyperSeq", "race", 8, 60),
     ("HyperSeq", "configuration", 8, 60),

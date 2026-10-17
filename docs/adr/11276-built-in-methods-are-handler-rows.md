@@ -3468,6 +3468,37 @@ Decision. `dispatch_instance_parse` is deleted, and `Grammar`'s rows call `dispa
 becomes one `invoke_owner_raw(&["Grammar"], ...)` for a type object or an instance whose grammar declares no method of
 that name. A package that is no grammar is the rows' to decline, as an instance that is no grammar was the arm's.
 
+### 9.145 An enumeration's key/value views and `Mu.set_why` are rows (2026-10-17)
+
+`refactor/11276-enum-format-late-rows`. Three arms named enum receivers by method name:
+
+- a block of `call_method_with_values` answered `pairs`/`keys`/`values`/`kv`/`antipairs`/`invert` of
+  any type object (an enum type's values, `()` for the rest);
+- the `enum_value_list` arm of `dispatch_method_by_name_1` answered a method Rakudo does not have
+  (only `.^enum_value_list`, the `Metamodel::EnumHOW` row of §9.140);
+- its `invert` arm inverted a `Str` that named an enum type, which in Rakudo is a `Str` and dies.
+
+An enum's *value* had no answer of its own: `red.pairs` was `(0 => red)` and `red.invert` died, where
+Rakudo lists the whole enumeration. Rakudo declares the views on `Any`, with an `Any(Enumeration)`
+candidate (`self.enums.METHOD`), an `Any(Bool)` one and an `Any:U` one (`()`); a defined value's `kv`
+is `Enumeration.kv`, its own key and value.
+
+Decision. The candidates are `Any`'s rows in `collections/any_enum_views.rs`: `Handler::Interp`
+(the enumeration comes from the registry), `OWNER_ONLY`, `TYPE_OBJECT_OK`. One routine, `view`, builds
+every answer from the enumeration's `(key, value)` list as a `Seq`; the pure `Any` rows' `Bool` cases
+call it with `Bool`'s list, so `True.invert` now answers and the order of the `Bool` views is the
+declaration order. The pure `Any` rows decline an enum value as they decline a type object, and the
+rows are reached from those two places: the type-object block becomes one call, and
+`dispatch_enum_method` asks them after the enumeration roles' and the base type's rows. An `Array`-
+valued value's `keys`/`values`/`pairs` no longer go to the base type (`small.keys` is the
+enumeration's keys, as in Rakudo); its `elems` still does. The two non-Rakudo arms are deleted.
+`Interpreter::enumeration_variants` is the one reader of an enumeration's values; `dispatch_enums`
+(`Enumeration.enums`) reads it too.
+
+`Mu.set_why($why)` is a late row of `Mu` in `match1_late.rs`, reached by the same MRO walk as
+`Enumeration.enums`; it declines a metaobject receiver, whose `set_why` is the meta-level route. The
+recognition table gains `Mu.set_why` (Rakudo declares it), so `Mu.^can('set_why')` is true.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

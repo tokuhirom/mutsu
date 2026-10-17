@@ -12,6 +12,7 @@ pub(crate) mod accepts_open;
 pub(crate) mod any_coerce;
 mod any_coerce_late;
 pub(crate) mod any_collection;
+pub(crate) mod any_enum_views;
 mod any_interp;
 mod any_interp_twins;
 mod any_list_late;
@@ -118,6 +119,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
 pub(super) static LATE_FAMILIES: &[&[MethodRow]] = &[
     any_interp_twins::ROWS,
     any_coerce_late::ROWS,
+    any_enum_views::ROWS,
     any_list_late::ROWS,
     mu_late::ROWS,
     mu_render_late::ROWS,
