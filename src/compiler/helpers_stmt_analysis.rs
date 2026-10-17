@@ -352,6 +352,21 @@ impl Compiler {
         }
     }
 
+    /// Emit an `OpCode::LexImportBuiltinOp` prefix for the `X`/`Z`/`R`
+    /// meta-op over the built-in `op` the caller emits next, when its user
+    /// candidates bind lexically (ADR-8751 stage 2). A meta-op over a user
+    /// operator does not parse yet (#13591).
+    // Cost: O(c + m), c = enclosing `use`-blocks, m = bytes of `op`; O(1)
+    // outside every `use`-block.
+    pub(super) fn emit_lex_import_builtin_meta(&mut self, op: &str) {
+        if self.lexical_import_chain.is_empty() || !crate::compiled_operator::is_builtin_infix(op) {
+            return;
+        }
+        if let Some(name) = crate::lexical_builtin_op::infix_of_meta(op) {
+            self.emit_lex_import_builtin_named(&name);
+        }
+    }
+
     pub(super) fn lexical_import_chain_idx(&mut self, name: Symbol) -> Option<u32> {
         if self.lexical_import_chain.is_empty()
             || crate::qualified::is_qualified(name)

@@ -50,6 +50,19 @@ impl StrCmp {
         })
     }
 
+    /// The `infix:<op>` routine this comparison is.
+    // Cost: O(1).
+    pub(crate) fn infix_name(self) -> &'static str {
+        match self {
+            StrCmp::Eq => "infix:<eq>",
+            StrCmp::Ne => "infix:<ne>",
+            StrCmp::Lt => "infix:<lt>",
+            StrCmp::Gt => "infix:<gt>",
+            StrCmp::Le => "infix:<le>",
+            StrCmp::Ge => "infix:<ge>",
+        }
+    }
+
     fn holds(self, ord: std::cmp::Ordering) -> bool {
         use std::cmp::Ordering::*;
         match self {
@@ -90,6 +103,45 @@ fn str_cmp_leaf<const K: usize>(
 }
 
 impl Interpreter {
+    /// The user `infix:<~>` candidate that takes two junction-free operands,
+    /// or `None` (also when no user `infix:<~>` is in scope).
+    // Cost: O(1) with no user `infix:<~>` in scope; otherwise the candidate
+    // ranking and the winner's call (`try_user_infix`).
+    #[inline]
+    pub(crate) fn try_user_concat(
+        &mut self,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !self.user_infix_override("infix:<~>") {
+            return Ok(None);
+        }
+        self.try_user_infix("infix:<~>", left, right)
+    }
+
+    /// The user candidate of the string operator `name` (`infix:<eq>`,
+    /// `infix:<leg>`) that takes `left` and `right`, asked before the
+    /// operands are stringified: one the unit declares or imports, or one a
+    /// block-scoped `use` bound for this op (ADR-8751 stage 2). A Junction
+    /// operand is left to the built-in, which threads it.
+    // Cost: O(1) with no user candidate of `name` in scope; otherwise the
+    // candidate ranking and the winner's call (`try_user_infix`).
+    #[inline]
+    pub(crate) fn try_user_str_infix(
+        &mut self,
+        name: &str,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !self.user_infix_override(name)
+            || matches!(left.view(), ValueView::Junction { .. })
+            || matches!(right.view(), ValueView::Junction { .. })
+        {
+            return Ok(None);
+        }
+        self.try_user_infix(name, left, right)
+    }
+
     /// `eq ne lt gt le ge`: both operands coerced as `.Stringy` (a user
     /// `Str`, a `utf8` decode, a `Proxy` FETCH), junctions autothreaded, and
     /// two Blobs compared bytewise. `ne` is `!eq`: it autothreads `eq` and
@@ -103,6 +155,9 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        if let Some(value) = self.try_user_str_infix(kind.infix_name(), &left, &right)? {
+            return Ok(value);
+        }
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         // `eval_binary_with_junctions` takes a plain `fn`, so the comparison is
         // picked here rather than captured.

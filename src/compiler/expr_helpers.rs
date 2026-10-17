@@ -172,6 +172,7 @@ impl Compiler {
         // The RHS compiles exactly as the unfused `Binary` path compiles it (a
         // call-arg compile would itemize / escape-box a scalar operand).
         self.compile_expr(right);
+        self.emit_lex_import_builtin_op(&OpCode::Concat);
         self.code.emit(OpCode::ConcatAssignLocal(slot, seed));
         true
     }

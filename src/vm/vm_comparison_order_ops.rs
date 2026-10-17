@@ -651,6 +651,9 @@ impl Interpreter {
     /// forms all come here (the latter two through
     /// [`Interpreter::comparison_family_values`]).
     pub(crate) fn str_leg(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        if let Some(value) = self.try_user_str_infix("infix:<leg>", &left, &right)? {
+            return Ok(value);
+        }
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         self.eval_binary_with_junctions(left, right, |_, l, r| {
             Ok(runtime::make_order(crate::builtins::str_prim::str_order(
