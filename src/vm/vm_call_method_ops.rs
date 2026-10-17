@@ -41,7 +41,6 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "gist"
             | "Str"
             | "raku"
-            | "perl"
             | "WHAT"
             | "WHICH"
             | "WHERE"
@@ -369,7 +368,6 @@ impl Interpreter {
                 | "Str"
                 | "gist"
                 | "raku"
-                | "perl"
                 | "ACCEPTS"
                 | "isa"
                 | "does"
@@ -619,6 +617,7 @@ impl Interpreter {
         modifier_idx: Option<u32>,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        let name = self.perl_as_raku_name(name, modifier_idx, arity);
         let quoted = name.quoted;
         // ADR-0067's subscript-receiver producer: when the receiver on the stack
         // is already a container (`IndexInvocantRef` put it there), arm slice
@@ -750,7 +749,7 @@ impl Interpreter {
     pub(crate) fn consumes_receiver_iterator(method: &str) -> bool {
         matches!(
             method,
-            "map" | "grep" | "list" | "Seq" | "eager" | "flat" | "raku" | "perl" | "gist"
+            "map" | "grep" | "list" | "Seq" | "eager" | "flat" | "raku" | "gist"
         )
     }
 
@@ -977,7 +976,7 @@ impl Interpreter {
                 // keep the Scalar wrapper intact (mirrors the `VAR`
                 // exception above).
                 ValueView::Scalar(inner)
-                    if inner.is_container_ref() && !matches!(method, "raku" | "gist" | "perl") =>
+                    if inner.is_container_ref() && !matches!(method, "raku" | "gist") =>
                 {
                     inner.deref_container()
                 }
@@ -1470,7 +1469,7 @@ impl Interpreter {
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
             _ => false,
         };
-        if matches!(method, "gist" | "raku" | "perl") && is_junction_target {
+        if matches!(method, "gist" | "raku") && is_junction_target {
             skip_native = true;
         }
         // Also skip native if the target has a user-defined method with this name,
@@ -1591,11 +1590,11 @@ impl Interpreter {
         // `...` for Str. An eager gather has neither `sequence_spec` nor
         // `lazy_pipe` and is forced & rendered normally below.
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "Stringy" | "raku" | "perl")
+            && matches!(method, "gist" | "Str" | "Stringy" | "raku")
             && ll.renders_lazy_placeholder()
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-placeholder");
-            if matches!(method, "raku" | "perl") && Interpreter::lazy_seq_raku_applies(&ll) {
+            if matches!(method, "raku") && Interpreter::lazy_seq_raku_applies(&ll) {
                 let text = self.lazy_seq_raku(&ll)?;
                 self.stack.push(Value::str(text));
                 return Ok(());
@@ -1881,7 +1880,6 @@ impl Interpreter {
                     | "gist"
                     | "Str"
                     | "raku"
-                    | "perl"
                     | "WHICH"
                     | "backtrace"
                     | "is-handling"
@@ -2097,10 +2095,10 @@ impl Interpreter {
                             self.stack.push(Value::real_array(arr));
                             return Ok(());
                         }
-                        "defined" | "Bool" | "so" | "not" | "gist" | "raku" | "perl" | "WHAT"
-                        | "WHICH" | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE" | "isa"
-                        | "does" | "can" | "^name" | "^mro" | "^pun" | "new" | "bless"
-                        | "clone" | "item" | "self" | "sink" | "pending" => {
+                        "defined" | "Bool" | "so" | "not" | "gist" | "raku" | "WHAT" | "WHICH"
+                        | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE" | "isa" | "does" | "can"
+                        | "^name" | "^mro" | "^pun" | "new" | "bless" | "clone" | "item"
+                        | "self" | "sink" | "pending" => {
                             // Fall through to normal dispatch
                         }
                         // List/iteration methods inherited from Any: Nil behaves
@@ -2407,6 +2405,34 @@ pub(super) struct MethodName<'a> {
     /// pseudo-method name (`WHAT`, `DEFINITE`, ...) is an ordinary method
     /// rather than a macro.
     pub(super) quoted: bool,
+}
+
+impl Interpreter {
+    /// `Mu.perl` is `self.raku` (ADR-11276 §9.152): the name a `CallMethod` or
+    /// `CallMethodMut` dispatches, read off the receiver below the `arity`
+    /// arguments on the stack. A modified call (`.^perl`, `.+perl`) keeps its
+    /// name.
+    // Cost: O(1) for every name but `perl`; see `Interpreter::perl_as_raku`.
+    pub(super) fn perl_as_raku_name<'a>(
+        &mut self,
+        name: MethodName<'a>,
+        modifier_idx: Option<u32>,
+        arity: u32,
+    ) -> MethodName<'a> {
+        if modifier_idx.is_some() || name.sym != crate::symbol::wk::perl() {
+            return name;
+        }
+        let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1) else {
+            return name;
+        };
+        let receiver = self.stack[receiver_idx].clone();
+        let sym = self.perl_as_raku(&receiver, name.sym);
+        MethodName {
+            raw: sym.as_str(),
+            sym,
+            quoted: name.quoted,
+        }
+    }
 }
 
 impl<'a> MethodName<'a> {

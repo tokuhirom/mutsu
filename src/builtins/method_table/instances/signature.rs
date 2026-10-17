@@ -41,7 +41,7 @@ pub(crate) fn answer(target: &Value, method: &str) -> Option<Result<Value, Runti
     }
     match method {
         "gist" => gist(target, &[]),
-        "raku" | "perl" => raku(target, &[]),
+        "raku" => raku(target, &[]),
         "arity" => arity(target, &[]),
         "count" => count(target, &[]),
         "params" => params(target, &[]),

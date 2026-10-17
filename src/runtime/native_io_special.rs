@@ -21,7 +21,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // `Mu.perl` is `self.raku`.
-        let row_method = if method == "perl" { "raku" } else { method };
+        let row_method = method;
         // `new` is the constructor below, not `Mu.new`'s late row, which
         // answers the receiver's MRO walk (§9.141).
         if method != "new"

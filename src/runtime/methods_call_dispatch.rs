@@ -108,6 +108,13 @@ impl Interpreter {
         let target = Self::routine_current_view(&target).unwrap_or(target);
         // A lazy-tail Slip answers as the lazy list it reifies from (#13117).
         let target = Self::lazy_slip_receiver(target, method);
+        // `Mu.perl` is `self.raku` (ADR-11276 §9.152).
+        let method = if method == "perl" {
+            self.perl_as_raku(&target, crate::symbol::wk::perl())
+                .as_str()
+        } else {
+            method
+        };
         self.call_method_with_values_unviewed(target, method, args)
     }
 
@@ -768,7 +775,7 @@ impl Interpreter {
                 // Return an opaque Scalar type object so .^name returns "Scalar"
                 return Ok(Value::package(Symbol::intern("Scalar")));
             }
-            if method == "raku" || method == "perl" {
+            if method == "raku" {
                 // An itemized aggregate can still hold a value whose repr needs
                 // method dispatch (`$[Foo.new].raku`).
                 if let Some(rendered) = self.raku_repr_with_dispatch(&target) {
@@ -812,7 +819,7 @@ impl Interpreter {
                 // the contextualized aggregate's inner type.
                 return Ok(Value::package(Symbol::intern("Scalar")));
             }
-            if matches!(method, "raku" | "perl" | "item" | "self") {
+            if matches!(method, "raku" | "item" | "self") {
                 // These methods observe the itemized container itself.
             } else {
                 let deconted = Value::array_with_kind(items.clone(), kind.decontainerize());
@@ -841,7 +848,7 @@ impl Interpreter {
             }
             // These observe the itemized container itself (the `$` sigil / the
             // itemization is the point), as in the Array arm above.
-            if !matches!(method, "raku" | "perl" | "item" | "self") {
+            if !matches!(method, "raku" | "item" | "self") {
                 return self.call_method_with_values(
                     target.clone().with_hash_itemized(false),
                     method,
@@ -1332,7 +1339,6 @@ impl Interpreter {
                     | "gist"
                     | "Str"
                     | "raku"
-                    | "perl"
                     | "WHICH"
                     | "backtrace"
                     | "is-handling"
@@ -2916,7 +2922,7 @@ impl Interpreter {
             return self.dispatch_head(target, &args[0]);
         }
         // .raku/.perl on constrained Hash
-        if matches!(method, "raku" | "perl")
+        if matches!(method, "raku")
             && args.is_empty()
             && matches!(target.view(), ValueView::Hash(_))
             && let Some(info) = self.container_type_metadata(&target)
@@ -2925,7 +2931,7 @@ impl Interpreter {
             return self.dispatch_constrained_hash_raku(&map, &info, target.hash_is_itemized());
         }
         // .raku/.perl on native typed shaped array (e.g. array[int])
-        if matches!(method, "raku" | "perl")
+        if matches!(method, "raku")
             && args.is_empty()
             && matches!(
                 target.view(),
@@ -2982,7 +2988,7 @@ impl Interpreter {
             )));
         }
         // .raku/.perl on constrained regular Array (e.g. Array[Int])
-        if matches!(method, "raku" | "perl")
+        if matches!(method, "raku")
             && args.is_empty()
             && matches!(target.view(), ValueView::Array(_, kind) if kind != crate::value::ArrayKind::Shaped)
             && let Some(info) = self.container_type_metadata(&target)
@@ -3006,7 +3012,7 @@ impl Interpreter {
         // .raku/.perl on a container holding a value whose repr is only
         // reachable through method dispatch (a user instance, a built-in object
         // type). See `methods_raku_dispatch`.
-        if matches!(method, "raku" | "perl")
+        if matches!(method, "raku")
             && args.is_empty()
             && let Some(rendered) = self.raku_repr_with_dispatch(&target)
         {
@@ -3251,10 +3257,10 @@ impl Interpreter {
         // `lazy_pipe` and falls through to the force-and-render path below,
         // which materializes its elements.)
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "raku" | "perl")
+            && matches!(method, "gist" | "Str" | "raku")
             && ll.renders_lazy_placeholder()
         {
-            if matches!(method, "raku" | "perl") && Self::lazy_seq_raku_applies(&ll) {
+            if matches!(method, "raku") && Self::lazy_seq_raku_applies(&ll) {
                 return Ok(Value::str(self.lazy_seq_raku(&ll)?));
             }
             return Ok(Value::str(crate::value::lazy_list_placeholder(
@@ -3497,7 +3503,6 @@ impl Interpreter {
                 | "Stringy"
                 | "gist"
                 | "raku"
-                | "perl"
                 | "say"
                 | "print"
                 | "put"
@@ -3869,7 +3874,7 @@ impl Interpreter {
             // start with the base type's own name (a class with a custom
             // `gist`/`raku`, or one gisting as its backing array/hash, is left
             // exactly as it rendered).
-            if matches!(method, "gist" | "raku" | "perl") && args.is_empty() {
+            if matches!(method, "gist" | "raku") && args.is_empty() {
                 let rendered =
                     self.call_method_with_values_unviewed(inner.as_ref().clone(), method, args)?;
                 let base = crate::value::types::what_type_name(inner.as_ref());

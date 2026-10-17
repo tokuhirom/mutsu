@@ -173,7 +173,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // `Mu.perl` is `self.raku`, so the row of `raku` answers it.
-        let row_method = if method == "perl" { "raku" } else { method };
+        let row_method = method;
         if let Some(result) = crate::builtins::method_table::invoke_owner(
             self,
             &["IO::Path"],

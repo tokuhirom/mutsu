@@ -156,7 +156,7 @@ impl Interpreter {
         if !self.has_user_method(&class_name, method) {
             return false;
         }
-        if matches!(method, "gist" | "raku" | "perl") && args.is_empty() {
+        if matches!(method, "gist" | "raku") && args.is_empty() {
             return self
                 .resolve_method_with_owner_invocant(&class_name, method, args, target)
                 .is_some();
@@ -206,7 +206,6 @@ impl Interpreter {
                 | "Stringy"
                 | "gist"
                 | "raku"
-                | "perl"
                 | "Seq"
                 | "item"
                 | "cache"
@@ -470,7 +469,7 @@ impl Interpreter {
                 let class_name = class_name.resolve();
                 !is_pseudo_method
                     && (self.grammar_has_user_method(&class_name, method)
-                        && (!matches!(method, "gist" | "raku" | "perl")
+                        && (!matches!(method, "gist" | "raku")
                             || !args.is_empty()
                             || self
                                 .resolve_method_with_owner_invocant(

@@ -19,7 +19,7 @@ pub(super) fn dispatch(
     target: &Value,
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
-    if !matches!(method, "gist" | "raku" | "perl") {
+    if !matches!(method, "gist" | "raku") {
         return None;
     }
     if method == "gist"
@@ -69,7 +69,7 @@ pub(super) fn dispatch(
             }
         }
         ValueView::Rat(n, 0) => {
-            if method == "raku" || method == "perl" {
+            if method == "raku" {
                 Some(Ok(Value::str(format!("<{}/0>", n))))
             } else {
                 Some(Err(RuntimeError::rational_to_str_divide_by_zero(
@@ -86,7 +86,7 @@ pub(super) fn dispatch(
             class_name,
             attributes,
             ..
-        } if class_name == "Parameter" && matches!(method, "raku" | "perl" | "gist") => {
+        } if class_name == "Parameter" && matches!(method, "raku" | "gist") => {
             Some(Ok(Value::str(crate::value::signature::parameter_to_raku(
                 &(attributes).as_map(),
             ))))
@@ -141,14 +141,6 @@ pub(super) fn dispatch(
                     file, line
                 ))))
             }
-        }
-        // `Mu.perl` is `.raku`, a buffer's the `Blob`/`Buf` rows'
-        // (`method_table::blob`), which answer `gist` and `raku` themselves.
-        ValueView::Instance { class_name, .. }
-            if method == "perl"
-                && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
-        {
-            crate::builtins::method_table::blob::render(target, true)
         }
         // The renderers the quant hashes' rows share. The rows decline an
         // element that may carry a user `gist`/`raku`; this arm renders it
@@ -219,7 +211,7 @@ pub(super) fn dispatch(
         }
         ValueView::Str(_) => render(target, method),
         // The `raku` rows' renderer (`method_table::collection_render_names`).
-        ValueView::Array(..) | ValueView::Seq(_) if method == "raku" || method == "perl" => {
+        ValueView::Array(..) | ValueView::Seq(_) if method == "raku" => {
             crate::builtins::method_table::collection_render_names::raku(target, &[])
         }
         // Delegate to the single Slip renderer in `raku_repr` rather than
@@ -227,18 +219,12 @@ pub(super) fn dispatch(
         // trailing-comma rules, so the `$`-itemization the nested renderer
         // learned (`my $x = slip(5, 6); $x.raku` is `$(slip(5, 6))`) never
         // reached a top-level `.raku` call.
-        ValueView::Slip(_) if method == "raku" || method == "perl" => {
-            Some(Ok(Value::str(raku_value(target))))
-        }
-        ValueView::Junction { .. } if method == "raku" || method == "perl" => None,
-        // `Uni.perl` is `Mu.perl`, `.raku`: the `Uni.raku` row's rendering.
-        ValueView::Uni(_) if method == "perl" => {
-            Some(crate::builtins::method_table::uni::raku(target, &[]))
-        }
+        ValueView::Slip(_) if method == "raku" => Some(Ok(Value::str(raku_value(target)))),
+        ValueView::Junction { .. } if method == "raku" => None,
         // A WhateverCode (`*+1`, `*.abs`) renders as `WhateverCode.new` for
         // `.gist`/`.raku`/`.perl`, not the generic closure form.
         ValueView::Sub(data)
-            if (method == "raku" || method == "perl" || method == "gist")
+            if (method == "raku" || method == "gist")
                 && matches!(
                     data.env.get("__mutsu_callable_type").map(Value::view),
                     Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
@@ -260,7 +246,7 @@ pub(super) fn dispatch(
         }
         ValueView::Int(i) => Some(Ok(Value::str(format!("{}", i)))),
         ValueView::Num(_f) => {
-            if method == "raku" || method == "perl" {
+            if method == "raku" {
                 Some(Ok(Value::str(raku_value(target))))
             } else {
                 // gist == Str for a Num: use the canonical Num→Str formatter,
@@ -273,7 +259,7 @@ pub(super) fn dispatch(
             }
         }
         ValueView::Complex(r, i) => {
-            if method == "raku" || method == "perl" {
+            if method == "raku" {
                 Some(Ok(Value::str(format!(
                     "<{}>",
                     crate::value::format_complex(r, i)
@@ -287,14 +273,14 @@ pub(super) fn dispatch(
         ValueView::Hash(..) => {
             crate::builtins::method_table::collection_render_names::raku(target, &[])
         }
-        _ if target.is_range() && (method == "gist" || method == "raku" || method == "perl") => {
+        _ if target.is_range() && (method == "gist" || method == "raku") => {
             crate::builtins::method_table::collection_render::range_render(target, &[])
         }
         // A genuinely-lazy (infinite) list renders a `(...)`/`[...]`/`...`
         // placeholder rather than materializing — e.g. `[2,3].roll(*).gist`
         // (raku: `(...)`). Finite/`cat_pull` lazy lists fall through to force.
         ValueView::LazyList(ll)
-            if (method == "gist" || method == "raku" || method == "perl")
+            if (method == "gist" || method == "raku")
                 && ll.renders_lazy_placeholder()
                 // A bare lazy Seq's `.raku` reifies a prefix, which needs the
                 // interpreter (`Interpreter::lazy_seq_raku`): decline.

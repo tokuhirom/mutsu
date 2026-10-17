@@ -188,7 +188,7 @@ fn native_method_1arg_cascade(
         && let Some(inner) = attributes.as_map().get("__baggy_data__")
         && !matches!(
             method,
-            "WHAT" | "WHICH" | "raku" | "gist" | "Str" | "perl" | "isa" | "^name"
+            "WHAT" | "WHICH" | "raku" | "gist" | "Str" | "isa" | "^name"
         )
     {
         return native_method_1arg(inner, method_sym, arg);

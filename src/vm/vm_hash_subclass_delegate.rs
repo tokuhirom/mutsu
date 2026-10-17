@@ -67,7 +67,6 @@ impl Interpreter {
                 | "Str"
                 | "gist"
                 | "raku"
-                | "perl"
                 | "Stringy"
                 | "STORE"
                 | "dynamic"
@@ -262,7 +261,7 @@ impl Interpreter {
         }
         // The renderings mutate nothing, and the read-only twin already names
         // an `is Map` subclass in them.
-        if matches!(method, "raku" | "perl" | "gist") && honor_user_override {
+        if matches!(method, "raku" | "gist") && honor_user_override {
             return self.try_hash_storage_delegate(
                 target,
                 crate::symbol::Symbol::intern(method),
@@ -271,7 +270,7 @@ impl Interpreter {
         }
         // A qualified rendering (`self.Map::raku`, the user-override-bypassing
         // twin of the branch above) still names the instance's own class.
-        if matches!(method, "raku" | "perl" | "gist") {
+        if matches!(method, "raku" | "gist") {
             return Some(
                 self.vm_call_method_with_values(storage.clone(), method, args.to_vec())
                     .map(|text| {
@@ -398,7 +397,7 @@ impl Interpreter {
             .unwrap_or_else(|| Value::hash(ValueMap::default()));
         let result = self.try_native_method(&storage, method_sym, args);
         // An `is Map` subclass names itself in its `.raku`/`.gist`.
-        if matches!(method, "raku" | "perl" | "gist")
+        if matches!(method, "raku" | "gist")
             && let Some(Ok(text)) = &result
         {
             return Some(Ok(Value::str(

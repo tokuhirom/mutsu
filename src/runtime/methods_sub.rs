@@ -328,7 +328,7 @@ impl Interpreter {
             return self.code_str(target);
         }
         // `gist` and `raku` (`methods_code_render.rs`).
-        if matches!(method, "raku" | "perl" | "gist")
+        if matches!(method, "raku" | "gist")
             && args.is_empty()
             && let Some(answer) = self.routine_handle_render(target, name, package, method)
         {
@@ -351,7 +351,6 @@ impl Interpreter {
                     | "of"
                     | "name"
                     | "raku"
-                    | "perl"
                     | "Str"
                     | "gist"
                     | "can"
@@ -1197,7 +1196,7 @@ impl Interpreter {
             return Some(Ok(Value::array(matches)));
         }
         // `gist` and `raku` (`methods_code_render.rs`).
-        if matches!(method, "raku" | "perl" | "gist")
+        if matches!(method, "raku" | "gist")
             && args.is_empty()
             && let Some(answer) = self.sub_render(target, data, method)
         {
@@ -1403,7 +1402,6 @@ impl Interpreter {
                     | "of"
                     | "name"
                     | "raku"
-                    | "perl"
                     | "Str"
                     | "gist"
                     | "can"

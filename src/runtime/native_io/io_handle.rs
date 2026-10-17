@@ -66,7 +66,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // `Mu.perl` is `self.raku`, and `slurp-rest` is the deprecated spelling
         // of `slurp`; the rows of `raku` and `slurp` answer them.
-        let row_method = if method == "perl" { "raku" } else { method };
+        let row_method = method;
         if let Some(result) = crate::builtins::method_table::invoke_owner(
             self,
             &["IO::Handle", "Mu"],

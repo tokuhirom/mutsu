@@ -313,7 +313,6 @@ impl Interpreter {
                 | "defined"
                 | "THREAD"
                 | "raku"
-                | "perl"
                 | "return"
                 // Methods that accept matchers/code blocks where junctions are used as values
                 | "grep"

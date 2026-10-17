@@ -43,7 +43,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let owners = crate::builtins::method_table::enumeration_owners_of(target)?;
         // `Mu.perl` is `self.raku`, so the row of `raku` answers it.
-        let method = if method == "perl" { "raku" } else { method };
+        let method = method;
         if let Some(base) = Self::enum_aggregate_base(target, method) {
             return Some(self.call_method_with_values(base, method, args.to_vec()));
         }

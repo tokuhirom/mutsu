@@ -1027,7 +1027,7 @@ impl Interpreter {
         if is_scalar_container && args.is_empty() {
             match method {
                 "gist" => return Some(self.call_method_with_values(value, "raku", vec![])),
-                "raku" | "perl" => {
+                "raku" => {
                     return Some(self.call_method_with_values(
                         value.deitemize_element(),
                         "raku",
