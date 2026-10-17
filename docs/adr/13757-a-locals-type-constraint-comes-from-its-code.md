@@ -134,6 +134,36 @@ HTTP::UserAgent files caught slice 45's regressions).
   type in the variable's own frame (an untyped slot answers from the code),
   and the `VarRef` carries it (`VarRefDeclared`). A `VarRef` built without a
   site resolution still asks by name.
+- **Step 4, third slice** (`fix/13757-element-stores-read-slot-bake`). The
+  record lookup is restricted to where the variable lives.
+  - `BindingDesc::declared_here` marks every slot the code declares: a
+    `my`/`state` of any sigil and every parameter that does not alias the
+    caller's container. Typed parameters and `@`/`%` slots are included; only
+    a plain scalar slot also takes the store fast path's `DeclaredConstraint`.
+  - A slot-holding reader (`slot_type_constraint*`, `wrap_var_ref_declared`)
+    reads a declared slot's record in the running frame only
+    (`Env::get_record_in_frame`). The record of a variable the code declares
+    was written in that frame, so a frame that called it never answers. A
+    `Mu` parameter, which the binder records nothing for, had taken a caller's
+    `Seq:D` record into the `VarRef` it passed on.
+  - Every by-name record read (`declared_meta_lane`) goes through
+    `Env::get_record_sym`. Its walk ends at a caller frame that binds the
+    variable without a record. A binding that is the same container as the
+    binding below it is an alias mirror (a sigilless parameter's), so the walk
+    goes on past it.
+  - #13746 was not a lookup problem. A named sub's capture boxes a
+    program-scope scalar into a cell (`adopt_hoist_pending_cell`), and a store
+    by a run-time name (`by_name_store_scalar_constraint`) trusts the cell's
+    constraint, which that cell did not carry. It now does.
+  - A census of the record hits found in a caller frame, run over the 154
+    t/ files that had any, went from 2823 to 2435 with the declared-slot
+    reads alone. Most of what is left is correct. A `my sub`'s lexical outer is also its caller (MIME::Base64's
+    `add-char` reading `encode`'s `$linelen`). The binder reads an argument's
+    source variable in the caller's frame (`is_run`'s `$input`). The census
+    cannot tell those from a wrong hit, so its count is not this step's exit
+    condition. The remaining readers that read by name with a slot in hand
+    (the element, compound and push-family stores) are correct as long as the
+    lookup resolves where the variable does, which it now does.
 
 ## 4. Consequences
 
