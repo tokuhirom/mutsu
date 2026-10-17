@@ -1595,15 +1595,20 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `t/concurrency/concurrent-start-then-dynamic-push.t`.
 
    **Slice 43 done** (`fix/12529-closure-copyback-free-var-writes`): the
-   closure call's copy-back no longer walks the closure's env. It carries
-   back only the names in the closure's own `free_var_writes`, under the
+   closure call's copy-back no longer walks the closure's plain bindings.
+   It carries back the names in the closure's own `free_var_writes`, under the
    same filters as before (unchanged frees, parameters, the closure's own
    declarations, captures the caller does not have). That narrow carry is
    what the grammar subrule-argument case needs: the closure's creating
    code is compiled at match time, so no frame can give the captured
    variable a cell, and the argument evaluator reads the write back from
-   the env the closure returns into. With slice 42 in place, a re-run of
-   every census dependent passes on this build. Pinned by
+   the env the closure returns into. The dynamics in the closure's env are
+   carried too: the bundled Cro::HTTP router lost its `@*BIND-FAILS`
+   (401 answered as 404) without them, because a push from inside an
+   EVAL'd regex assertion rebinds the dynamic to a new array in the
+   running frame instead of extending the declared one (#13732); phase 4
+   retires that carry with the dynamic chain. With slice 42 in place, a
+   re-run of every census dependent passes on this build. Pinned by
    `t/routines/closure/closure-return-carries-only-own-writes.t`.
 
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,

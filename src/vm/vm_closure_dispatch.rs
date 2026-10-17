@@ -1910,18 +1910,24 @@ impl Interpreter {
             // name was never really mutated.
             let inline_control_written =
                 &self.inline_control_env_writes[inline_control_writes_at_entry..];
-            // Only the names the closure itself writes are carried back: every
-            // other binding in its env is the closure's own or reached the
-            // caller through a shared cell (ADR-12529 §3, slice 43). What is
-            // left is a write to a captured variable that has no cell -- one
-            // whose creating code ran at match time (a grammar subrule's
-            // argument) or a by-name store the creator could not foresee.
+            // Only the names the closure itself writes, and the dynamics, are
+            // carried back: every other binding in its env is the closure's own
+            // or reached the caller through a shared cell (ADR-12529 §3, slice
+            // 43). A free write is left when the captured variable has no cell
+            // (its creating code ran at match time: a grammar subrule's
+            // argument). A dynamic is left because a by-name store can still
+            // rebind one in the running frame instead of the declaring one
+            // (#13732); phase 4's call-frame dynamics retire that.
             let env_now = self.env();
-            for (k, v) in cc
+            let mut carried: Vec<(&Symbol, &Value)> = cc
                 .free_var_writes
                 .iter()
                 .filter_map(|k| env_now.get_sym(*k).map(|v| (k, v)))
-            {
+                .collect();
+            carried.extend(env_now.iter().filter(|(k, _)| {
+                k.is_dynamic_var_env_key() && !cc.free_var_writes.contains(k)
+            }));
+            for (k, v) in carried {
                 if unchanged_free.contains(k) {
                     continue;
                 }
