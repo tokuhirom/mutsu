@@ -360,6 +360,7 @@ t/collections/lazy-seq/nested-deferred-map-seq-is-pulled.t
 t/collections/lazy-seq/nested-gather-seq-read.t
 t/collections/lazy-seq/nested-lazy-pipe-reify.t
 t/collections/lazy-seq/nqp-eqaddr-iteration-end.t
+t/collections/lazy-seq/own-iterator-list-any-methods.t
 t/collections/lazy-seq/predictive-seq-tail-scope.t
 t/collections/lazy-seq/seq-accepts-consumes-receiver.t
 t/collections/lazy-seq/seq-array-context-reiterate.t
@@ -1441,6 +1442,7 @@ t/control/for-kv-rw-immutable-source.t
 t/control/for-literal-list-view-readonly.t
 t/control/for-live-array-name-collision.t
 t/control/for-loop-instance-writeback.t
+t/control/for-loop-own-list-object.t
 t/control/for-loop-zero-arity-block.t
 t/control/for-modifier-trailing-comma.t
 t/control/for-pairs-value-quanthash-writeback.t
@@ -4140,7 +4142,9 @@ t/oo/method/relative-method-return-type.t
 t/oo/method/render-method-captured-writeback.t
 t/oo/method/return-method.t
 t/oo/method/revision-d-method-rows.t
+t/oo/method/revision-d-shape-method-rows.t
 t/oo/method/revision-e-method-rows.t
+t/oo/method/revision-e-shape-method-rows.t
 t/oo/method/rotate-splice-name-method-rows.t
 t/oo/method/routine-submethod-routine-name-wrong.t
 t/oo/method/rw-fallback-method-assignment.t
@@ -4854,6 +4858,7 @@ t/rakuast/rakuast-has-compound-assign.t
 t/rakuast/rakuast-has-embedded-attribute.t
 t/rakuast/rakuast-hash-literal.t
 t/rakuast/rakuast-heredoc-spelling.t
+t/rakuast/rakuast-hyper-dotty-assignment.t
 t/rakuast/rakuast-hyper-function-infix.t
 t/rakuast/rakuast-hyper-infix.t
 t/rakuast/rakuast-hyper-method.t
@@ -6722,6 +6727,7 @@ t/types/coercion/nqp-objprimspec-and-str-int-coerce-ops.t
 t/types/coercion/objat-gist-raku.t
 t/types/coercion/object-to-hash-coercion.t
 t/types/coercion/object-type-reprs.t
+t/types/coercion/qualified-mu-coercion-base-rows.t
 t/types/coercion/qualified-mu-coercion.t
 t/types/coercion/qualified-mu-new.t
 t/types/coercion/qualified-rat-new.t
@@ -7740,6 +7746,7 @@ t/vm/writeback/eval-carrier-scalar-writeback-coherence.t
 t/vm/writeback/hyper-autoincr-writeback.t
 t/vm/writeback/hyper-func-op-writeback.t
 t/vm/writeback/hyper-metaop-writeback.t
+t/vm/writeback/hyper-nested-writeback.t
 t/vm/writeback/immutable-lvalue-assignment-gaps.t
 t/vm/writeback/interp-block-outer-writeback.t
 t/vm/writeback/let-temp-restore-writeback-coherence.t

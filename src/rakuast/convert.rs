@@ -3494,6 +3494,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
+                if let Some(node) = super::hyper_dotty_writeback::convert(body)? {
+                    return Ok(node);
+                }
                 if let Some(declaration) =
                     crate::ast::inline_subset_term::inline_subset_declaration(body)
                 {
@@ -6402,7 +6405,7 @@ fn simple_parameter(
 /// The postfix `Call::Method` / `Call::QuotedMethod` node shared by plain and
 /// hyper method calls: a quoted name -> `Call::QuotedMethod` (no modifier), an
 /// unquoted name -> `Call::Method` (with an optional `.?`/`.+`/`.*` dispatch).
-fn method_call_postfix(
+pub(super) fn method_call_postfix(
     name: &str,
     args: &[Expr],
     modifier: Option<char>,
