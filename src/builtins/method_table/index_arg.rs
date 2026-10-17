@@ -58,14 +58,6 @@ pub(crate) fn invoke(
     if !flags.contains(RowFlags::INDEX_ARG) {
         return None;
     }
-    // `Any:U`'s `EXISTS-POS(|)` binds any index without coercing it: nothing
-    // exists in a type object or in `Nil` (§9.154).
-    if method == "EXISTS-POS"
-        && row(id).owner == "Any"
-        && (target.is_nil() || matches!(target.view(), ValueView::Package(_)))
-    {
-        return Some(Ok(Value::FALSE));
-    }
     if arg.dispatch_shape() == Some(DispatchShape::Int) {
         // An `Int` the row's handler declined: nothing else binds it.
         return None;
@@ -81,6 +73,14 @@ pub(crate) fn invoke(
         return Some(Err(RuntimeError::new(format!(
             "Cannot use '{name}' as an index"
         ))));
+    }
+    // `Any:U`'s `EXISTS-POS(|)` binds any defined index without coercing it: nothing
+    // exists in a type object or in `Nil` (§9.154).
+    if method == "EXISTS-POS"
+        && row(id).owner == "Any"
+        && (target.is_nil() || matches!(target.view(), ValueView::Package(_)))
+    {
+        return Some(Ok(Value::FALSE));
     }
     let index = match interp.call_method_with_values(arg.clone(), "Int", Vec::new()) {
         // An instance of a user subclass of `Int` is its own `.Int`; the
