@@ -3990,8 +3990,11 @@ Decision.
   (`abs`, `sign`, `floor`, `ceiling`, `truncate`, `narrow`, `lsb`, `msb`, `polymod`, `Rat`, `FatRat`
   `DEFINITE`; `sqrt`, `exp`, `log`, `log2`, `log10`, `round`, `chr`, `Complex.Rat` `DEFINITE_MULTI`),
   `IO::Path`'s (the `stat` rows and every name of the old list; `absolute`, `extension`, `parent`,
-  `slurp`, `dir` `DEFINITE_MULTI`) and `Supply`'s. A row whose type object Rakudo answers some other
-  way (`Rat.abs` numifies, `Cool.abs` warns) has neither flag.
+  `slurp`, `dir` `DEFINITE_MULTI`) and `Supply`'s; `Str.split`, `Int.base` and `FatRat.base` are
+  `DEFINITE_MULTI`, and `Int.is-prime`, `roots` and `Int.expmod` (which Rakudo refuses inside the method
+  body) `DEFINITE`. A row whose type object Rakudo answers some other way (`Rat.abs` numifies, `Cool.abs`
+  warns) has neither flag. Recognition (`native_method_arities`, what `.^can` and the catalog tests
+  read) counts a refusing row: Rakudo's `Int.^can('abs')` is true.
 - The three lists are deleted. What stays: `IO::Path.Int` is numeric context (`Mu.Int` is
   `self.Numeric.Int`) and keeps the VM's numeric-context refusal; the `Exception` type objects'
   `throw`/`fail`/`die`/`rethrow`/`resume` keep the VM gate, since only `throw` and `resume` are rows; the
