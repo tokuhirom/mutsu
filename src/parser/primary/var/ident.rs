@@ -56,6 +56,11 @@ pub(crate) fn parse_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, &'a st
     Ok((&input[end..], &input[..end]))
 }
 
+/// Whether `input` is exactly one Raku identifier, with no trailing source.
+pub(crate) fn is_identifier_spelling(input: &str) -> bool {
+    parse_ident_with_hyphens(input).is_ok_and(|(rest, parsed)| rest.is_empty() && parsed == input)
+}
+
 pub(crate) fn parse_qualified_ident_with_hyphens<'a>(input: &'a str) -> PResult<'a, String> {
     let (mut rest, first) = parse_ident_with_hyphens(input)?;
     let mut full = first.to_string();
