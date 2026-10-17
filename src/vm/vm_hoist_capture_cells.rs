@@ -179,6 +179,10 @@ impl Interpreter {
         }
         Value::store_through_cell(&pending.cell, &new);
         let boxed = Value::container_ref(pending.cell.clone());
+        // The cell is the variable from here on: a store that reaches it by
+        // name from another frame (an `EVAL` in the sub, #13746) checks the
+        // cell's constraint, not a record of the frame it runs in.
+        self.register_container_cell_constraint_for_name(&boxed, &pending.name);
         self.locals[slot] = boxed.clone();
         self.env_mut().insert(pending.name, boxed);
     }

@@ -800,6 +800,11 @@ pub(crate) mod wk {
         /// dispatch. A call through the dispatcher runs it, and its `{*}`
         /// redispatches to the captured candidates (ADR-8751 stage 2).
         multi_dispatch_proto => "__mutsu_multi_dispatch_proto";
+        /// On a captured-candidate dispatcher of a built-in operator's user
+        /// candidates (`multi infix:<+>` a block-scoped `use` imported): a
+        /// call no captured candidate accepts goes to the built-in operator
+        /// instead of failing (ADR-8751 stage 2).
+        multi_dispatch_builtin_fallback => "__mutsu_multi_dispatch_builtin_fallback";
         /// The `Method` object a `.assuming`-primed method callable invokes
         /// (`$type.^lookup('m').assuming($obj)`), so the call binds its
         /// invocant the way the object's own `CALL-ME` does.

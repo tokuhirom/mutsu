@@ -123,7 +123,6 @@ impl Interpreter {
     ) -> bool {
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
-            || extends_builtin_operator(name)
             || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
                 capture.block_multis.contains(&Symbol::intern(name))
             })
@@ -210,6 +209,14 @@ impl Interpreter {
                 // answer instead: a call through either re-dispatches by name.
                 let dispatcher =
                     self.sub_value_from_multi_candidates(&name.resolve(), candidates.clone());
+                // A built-in operator's user candidates add to the built-in:
+                // a call none of them accepts is the operator's own.
+                let dispatcher = if extends_builtin_operator(&name.resolve()) {
+                    self.note_lexical_operator_candidate_defs(&dispatcher, candidates);
+                    Self::with_builtin_operator_fallback(dispatcher)
+                } else {
+                    dispatcher
+                };
                 Some(LexicalImport::Code(match capture.protos.get(&name) {
                     Some(proto) => self.with_dispatch_proto(dispatcher, proto),
                     None => dispatcher,
@@ -232,6 +239,32 @@ impl Interpreter {
         self.module
             .lexical_import_sets
             .insert(id, std::sync::Arc::new(set));
+    }
+
+    /// Record the definition of each captured candidate of `dispatcher`,
+    /// built from `defs` in order (`lexical_operator_candidate_defs`).
+    // Cost: O(c), c = candidates.
+    fn note_lexical_operator_candidate_defs(
+        &mut self,
+        dispatcher: &Value,
+        defs: &[std::sync::Arc<crate::ast::FunctionDef>],
+    ) {
+        let ValueView::Sub(data) = dispatcher.view() else {
+            return;
+        };
+        let Some(candidates) = data
+            .env
+            .get_sym(crate::symbol::wk::multi_dispatch_candidates())
+            .and_then(|list| list.as_list_items().map(ToOwned::to_owned))
+        else {
+            return;
+        };
+        let table = crate::runtime::cow_table_mut(&mut self.module.lexical_operator_candidate_defs);
+        for (candidate, def) in candidates.iter().zip(defs) {
+            if let ValueView::Sub(cand) = candidate.view() {
+                table.insert(cand.id, std::sync::Arc::clone(def));
+            }
+        }
     }
 
     /// Note a routine alias the running import installed (see
@@ -259,7 +292,6 @@ impl Interpreter {
         if let Some(capture) = self.module.lexical_import_capture.as_mut()
             && capture.unit == importer
             && !capture.block_multis.contains(&Symbol::intern(name))
-            && !extends_builtin_operator(name)
         {
             capture
                 .multi_defs
@@ -324,6 +356,68 @@ impl Interpreter {
         })
     }
 
+    /// [`Self::lexical_import_binding`] for the user candidates of a built-in
+    /// operator: every import set of `chain` that binds `name` adds its
+    /// candidates, as two `use`s of modules that both extend `+` add both
+    /// modules' candidates to the block's `+` (roast `S11-modules/export.t`).
+    // Cost: O(c) probe, c = enclosing `use`-blocks; O(k) more to merge, k =
+    // candidates, when more than one set binds the operator.
+    pub(crate) fn lexical_import_operator_binding(
+        &self,
+        chain: &[Symbol],
+        name: Symbol,
+    ) -> Option<LexicalImport> {
+        let mut found = chain.iter().filter_map(|id| {
+            match self.module.lexical_import_sets.get(id)?.get(&name)? {
+                LexicalImport::Code(value) if Self::is_builtin_operator_dispatcher(value) => {
+                    Some(value.clone())
+                }
+                _ => None,
+            }
+        });
+        let Some(first) = found.next() else {
+            return self.lexical_import_binding(chain, name);
+        };
+        let rest: Vec<Value> = found.collect();
+        if rest.is_empty() {
+            return Some(LexicalImport::Code(first));
+        }
+        let candidates_of = |value: &Value| -> Vec<Value> {
+            match value.view() {
+                ValueView::Sub(data) => data
+                    .env
+                    .get_sym(crate::symbol::wk::multi_dispatch_candidates())
+                    .and_then(|list| list.as_list_items().map(ToOwned::to_owned))
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            }
+        };
+        let mut candidates = candidates_of(&first);
+        for value in &rest {
+            candidates.extend(candidates_of(value));
+        }
+        let ValueView::Sub(data) = first.view() else {
+            return Some(LexicalImport::Code(first));
+        };
+        let mut merged: crate::value::SubData = (**data).clone();
+        merged.env.insert_sym(
+            crate::symbol::wk::multi_dispatch_candidates(),
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(candidates)),
+                crate::value::ArrayKind::List,
+            ),
+        );
+        Some(LexicalImport::Code(Value::sub_value(crate::gc::Gc::new(merged))))
+    }
+
+    /// Whether `value` is a dispatcher over user candidates of a built-in
+    /// operator (`Interpreter::with_builtin_operator_fallback`).
+    // Cost: O(1).
+    pub(crate) fn is_builtin_operator_dispatcher(value: &Value) -> bool {
+        matches!(value.view(), ValueView::Sub(data)
+            if data.env.get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback()).is_some())
+    }
+
     /// The routine `name` is bound to in the first of the import sets
     /// `chain` (innermost first) that binds it.
     // Cost: O(c), c = enclosing `use`-blocks (usually 1).
@@ -339,10 +433,10 @@ impl Interpreter {
 }
 
 /// Whether `name` is a built-in operator (`prefix:<->`, `infix:<+>`) that a
-/// user `multi` adds candidates to. The import keeps such a family on the
-/// registry path: a dispatcher value over the imported candidates alone would
-/// not fall back to the built-in, so a candidate's own `-$a.v` on an Int found
-/// no match once the family was bound in the block's set (ADR-8751 stage 2).
+/// user `multi` adds candidates to. Its dispatcher value falls back to the
+/// built-in (`with_builtin_operator_fallback`): without that, a candidate's
+/// own `-$a.v` on an Int found no match once the family was bound in the
+/// block's set (ADR-8751 stage 2).
 // Cost: O(m), m = bytes of `name`.
 fn extends_builtin_operator(name: &str) -> bool {
     name.contains(":<") && !Interpreter::lexically_bindable_operator(name)

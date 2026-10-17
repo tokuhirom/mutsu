@@ -407,6 +407,12 @@ pub(crate) struct ModuleState {
     /// `OpCode::LexImportCall` sites lexically inside the block read it.
     pub(crate) lexical_import_sets:
         HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
+    /// The definition of each captured candidate (by its code object's `id`)
+    /// of a dispatcher over a built-in operator's imported user candidates
+    /// (ADR-8751 stage 2): the winner is ranked against the operator's core
+    /// candidates by its definition, as a registry candidate is (ADR-0071).
+    pub(crate) lexical_operator_candidate_defs:
+        std::sync::Arc<HashMap<u64, std::sync::Arc<crate::ast::FunctionDef>>>,
     /// What the `use` filling a lexical import set is importing, while it runs.
     pub(crate) lexical_import_capture: Option<super::lexical_imports::LexicalImportCapture>,
     pub(crate) strict_mode: bool,
@@ -596,6 +602,7 @@ impl ModuleState {
             imported_exported_proto_tags: Default::default(),
             imported_env_aliases: HashMap::new(),
             lexical_import_sets: HashMap::new(),
+            lexical_operator_candidate_defs: Default::default(),
             lexical_import_capture: None,
             strict_mode: false,
             fatal_mode: false,
@@ -678,6 +685,7 @@ impl ModuleState {
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             imported_env_aliases: self.imported_env_aliases.clone(),
             lexical_import_sets: self.lexical_import_sets.clone(),
+            lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),
             lexical_import_capture: None,
             strict_mode: self.strict_mode,
             fatal_mode: self.fatal_mode,
