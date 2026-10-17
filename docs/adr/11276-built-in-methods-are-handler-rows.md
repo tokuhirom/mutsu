@@ -3075,8 +3075,8 @@ methods' copies of `stdout`, `stderr` and `Supply` (unreachable: the lists sent 
 gone. The recognition table and the oracle snapshot gain `Proc::Async`.
 
 No behaviour change; pinned in `t/concurrency/proc-async-method-rows.t` (a start through an array element is seen
-through the variable). Found: #13665 (a user subclass of `Proc::Async` cannot be constructed with positional
-arguments, so `proc_async::owners_of` names the class itself only). `method-rows-report.py --arms` does not count the
+through the variable). Follow-up #13665 (a user subclass of `Proc::Async` could not be constructed with positional
+arguments, so `proc_async::owners_of` named only the class itself) is resolved by #13741. `method-rows-report.py --arms` does not count the
 removed lists (they are `matches!` lists and the implementation's file is not a cascade).
 
 ### 9.129 A declined call walks the receiver's MRO; `Str`'s and `Cool`'s text rows take every argument form (2026-10-16)
@@ -4659,4 +4659,3 @@ question that justified the decline ("does a bridge resolve this receiver furthe
   `Array` reaches `Any` and must be declined here), an `is Array` instance, a user `splice`, a `Mu`-rooted user class. A wrapper alone is never a reason to decline.
 - Behaviour change toward Rakudo: the mixin's type name in the message. The instance and cell cases already matched.
 - **Found, not fixed**: Rakudo answers `(my @a = 1,2,3; @a but Tag).splice(1,1)` with `[1, 3, Mu]` (a length quirk of its mixin copy); mutsu answers `[1, 3]`. Not pinned by a test.
-
