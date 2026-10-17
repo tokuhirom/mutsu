@@ -169,7 +169,9 @@ impl Interpreter {
             return false;
         };
         match category {
-            "infix" => !is_builtin_infix(op),
+            // `(elem)` / `(cont)` are built-ins the reduction tables do not
+            // list; `crate::lexical_builtin_op` names them.
+            "infix" => !is_builtin_infix(op) && !crate::lexical_builtin_op::binds_lexically(name),
             "prefix" => !is_builtin_prefix(op),
             "postfix" => !is_builtin_postfix(op),
             "circumfix" => !is_builtin_circumfix(op),
