@@ -1221,6 +1221,7 @@ t/concurrency/supply/whenever-object-supply-method.t
 t/concurrency/supply/whenever-out-of-scope.t
 t/concurrency/supply/whenever-pointy-outer-topic.t
 t/concurrency/supply/whenever-pointy-signature.t
+t/concurrency/supply/whenever-promise-sub-emits.t
 t/concurrency/supply/whenever-quit-phaser-rethrows-unmatched.t
 t/concurrency/supply/whenever-quit-phaser.t
 t/concurrency/supply/whenever-repeated-instantiation-semantics.t
@@ -3896,6 +3897,7 @@ t/oo/method/hyper-hash-method-scalar.t
 t/oo/method/hyper-method-call-subscript.t
 t/oo/method/hyper-method-on-nil.t
 t/oo/method/hyper-method-slip-result.t
+t/oo/method/hyper-seq-method-rows.t
 t/oo/method/hyper-user-method-on-objects.t
 t/oo/method/index-method-no-writeback.t
 t/oo/method/indirect-method-call-lvalue.t
@@ -3960,6 +3962,7 @@ t/oo/method/method-env-merge-unchanged-globals.t
 t/oo/method/method-explicit-invocant.t
 t/oo/method/method-in-nested-block-of-class-body.t
 t/oo/method/method-in-nested-block-of-unit-class.t
+t/oo/method/method-late-rows.t
 t/oo/method/method-leave-tail-if-value.t
 t/oo/method/method-literal-invocant-excluded-from-positionals.t
 t/oo/method/method-literal-is-a-routine.t
@@ -4227,6 +4230,7 @@ t/oo/mop/metamodel-classhow.t
 t/oo/mop/metamodel-compose-return.t
 t/oo/mop/metamodel-declares-method.t
 t/oo/mop/metamodel-enumhow-mop-api.t
+t/oo/mop/metamodel-enumhow-rows.t
 t/oo/mop/metamodel-how-callsame-under-outer-multi.t
 t/oo/mop/metamodel-how-identity.t
 t/oo/mop/metamodel-how-new-instance.t
@@ -4683,6 +4687,7 @@ t/rakuast/rakuast-anon-regex-declarator.t
 t/rakuast/rakuast-anon-sub-signature.t
 t/rakuast/rakuast-anon-sub.t
 t/rakuast/rakuast-anonymous-packages.t
+t/rakuast/rakuast-anonymous-subsig-modifiers.t
 t/rakuast/rakuast-anonymous-subsignature.t
 t/rakuast/rakuast-anonymous-variables.t
 t/rakuast/rakuast-any-definedness.t
@@ -5657,6 +5662,7 @@ t/routines/call/recursive-cycle-positional-light.t
 t/routines/call/return-coercion-lazy-gather.t
 t/routines/call/return-comma-recursion.t
 t/routines/call/return-constraint-malformed.t
+t/routines/call/return-copies-no-callee-binding.t
 t/routines/call/return-from-nested-block.t
 t/routines/call/return-merge-skips-plain-lexicals.t
 t/routines/call/return-merge-skips-uppercase-keys.t
@@ -6480,6 +6486,7 @@ t/routines/signature/sub-signature-decl-time-exprs-capture-outer-lexicals.t
 t/routines/signature/sub-signature-default-multi-dispatch.t
 t/routines/signature/sub-signature-named-callable-required.t
 t/routines/signature/sub-signature-where-clause.t
+t/routines/signature/sub-signature-with-where.t
 t/routines/signature/subsig-destructure-through-itemization.t
 t/routines/signature/subsig-destructure-varref.t
 t/routines/signature/subsig-named-arg-rejected.t
@@ -6837,6 +6844,7 @@ t/types/junction-bound-cell.t
 t/types/junction-eigenstates-decontainerized.t
 t/types/junction-gist-in-list.t
 t/types/junction-infix-slip-operand.t
+t/types/junction-map-empty-map.t
 t/types/junction-nested-raku-output.t
 t/types/junction-ops.t
 t/types/junction-regressions.t
@@ -6851,6 +6859,7 @@ t/types/mu-class-not-any.t
 t/types/mu-clone-new-rows.t
 t/types/mu-identity-rows.t
 t/types/mu-int-numeric-nomatch.t
+t/types/mu-late-rows.t
 t/types/mu-say-put-with-args-use-own-print.t
 t/types/mu-set-why-on-instance.t
 t/types/mu-str-rows.t
@@ -7482,6 +7491,7 @@ t/vm/scope/dynamic-var-not-found.t
 t/vm/scope/dynamic-var-postdeclaration-scope-boundary.t
 t/vm/scope/dynamic-var-postdeclaration-tail-sites.t
 t/vm/scope/dynamic-var-read-not-found.t
+t/vm/scope/dynamic-var-rebound-by-callee.t
 t/vm/scope/dynamic-var-sigil-alias-block-restore.t
 t/vm/scope/dynamic-var-start-leak.t
 t/vm/scope/dynamic-var-write-through-block-persists.t

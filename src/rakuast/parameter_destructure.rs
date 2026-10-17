@@ -33,8 +33,8 @@ fn anonymous_destructuring_form(name: &str) -> Option<bool> {
 /// `Parameter` with no target, holding the `sub-signature`; the bracket form
 /// marks it `is-array`, and the parenthesised one carries the implicit `Any`
 /// type where a sub signature does, and a written type (`Pair (…)`) is the
-/// parameter's (measured on rakudo 2026.09). `None` for any other parameter;
-/// one with a default, `where` or trait is refused.
+/// parameter's (measured on rakudo 2026.09). Defaults, where constraints and
+/// traits remain fields on the outer parameter.
 // Cost: O(s), s = size of the sub-signature.
 pub(super) fn anonymous_destructuring(
     pd: &ParamDef,
@@ -50,14 +50,9 @@ pub(super) fn anonymous_destructuring(
     if pd.named || pd.sigilless {
         return Ok(None);
     }
-    if pd.optional_marker
-        || pd.default.is_some()
-        || pd.type_capture.is_some()
-        || pd.where_constraint.is_some()
-        || !pd.traits.is_empty()
-    {
+    if pd.optional_marker || pd.type_capture.is_some() {
         return Err(unsupported(
-            "anonymous sub-signature with a default, `where` or trait",
+            "anonymous sub-signature with an optional marker or type capture",
         ));
     }
     let mut sub = signature(sub_params, type_setting, None)?;
@@ -65,7 +60,7 @@ pub(super) fn anonymous_destructuring(
         sub.fields
             .push(leaf_field(Some("is-array"), Value::truth(true)));
     }
-    let mut fields = Vec::with_capacity(3);
+    let mut fields = Vec::with_capacity(6);
     // `Pair (…)` / `Positional […]` carry the written type.
     match pd.type_constraint.as_deref() {
         Some(t) => fields.push(node_field(Some("type"), build_type_node(t)?)),
@@ -74,7 +69,12 @@ pub(super) fn anonymous_destructuring(
         }
         None => {}
     }
-    if pd.onearg || pd.slurpy {
+    if let Some(default) = &pd.default {
+        fields.push(node_field(
+            Some("default"),
+            super::convert::convert_expr(default)?,
+        ));
+    } else if pd.onearg || pd.slurpy {
         let marker = if pd.onearg {
             RakuAstClass::ParameterSlurpySingleArgument
         } else if pd.double_slurpy {
@@ -88,6 +88,15 @@ pub(super) fn anonymous_destructuring(
         ));
     } else {
         fields.push(leaf_field(Some("optional"), Value::truth(false)));
+    }
+    if let Some(where_constraint) = &pd.where_constraint {
+        fields.push(node_field(
+            Some("where"),
+            super::convert::convert_expr(where_constraint)?,
+        ));
+    }
+    if let Some(traits) = super::convert::parameter_traits(pd)? {
+        fields.push(traits);
     }
     fields.push(node_field(Some("sub-signature"), sub));
     Ok(Some(RakuAstNode {

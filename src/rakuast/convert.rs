@@ -6066,29 +6066,44 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     super::parameter_signature::attach_constraint(&mut node, pd, type_setting)?;
     // `$x is copy` -> `traits => (Trait::Is(name => Name.from-identifier("copy")),)`,
     // after every other field (measured on 2026.09).
-    if !user_traits.is_empty() {
-        let traits = user_traits
-            .iter()
-            .map(|t| {
-                let mut fields = vec![node_field(Some("name"), name_from_identifier(t))];
-                if let Some((_, argument)) = pd.trait_args.iter().find(|(name, _)| name == t) {
-                    fields.push(node_field(
-                        Some("argument"),
-                        parameter_trait_argument(argument)?,
-                    ));
-                }
-                Ok(Value::rakuast(Box::new(RakuAstNode {
-                    class: RakuAstClass::TraitIs,
-                    fields,
-                })))
-            })
-            .collect::<Result<Vec<_>, RuntimeError>>()?;
-        node.fields.push(RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(traits),
-        });
+    if let Some(traits) = parameter_traits(pd)? {
+        node.fields.push(traits);
     }
     Ok(node)
+}
+
+/// Render the `traits` field shared by ordinary and anonymous destructuring
+/// parameters.
+pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, RuntimeError> {
+    let traits: Vec<&str> = pd
+        .traits
+        .iter()
+        .map(String::as_str)
+        .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
+        .collect();
+    if traits.is_empty() {
+        return Ok(None);
+    }
+    let values = traits
+        .iter()
+        .map(|t| {
+            let mut fields = vec![node_field(Some("name"), name_from_identifier(t))];
+            if let Some((_, argument)) = pd.trait_args.iter().find(|(name, _)| name == t) {
+                fields.push(node_field(
+                    Some("argument"),
+                    parameter_trait_argument(argument)?,
+                ));
+            }
+            Ok(Value::rakuast(Box::new(RakuAstNode {
+                class: RakuAstClass::TraitIs,
+                fields,
+            })))
+        })
+        .collect::<Result<Vec<_>, RuntimeError>>()?;
+    Ok(Some(RakuAstField {
+        name: Some("traits"),
+        value: RakuAstFieldValue::List(values),
+    }))
 }
 
 /// The parser's name for a parameter written as a bare type (`sub f(Int)`).
