@@ -2543,7 +2543,17 @@ impl Env {
                     // the lookup ends with what a capture gave (#13604).
                     return found;
                 }
-                if let Some(outer) = cur.static_skip(key) {
+                // A variable's record follows the variable: it takes the link
+                // only when the frame does not bind the variable and the
+                // program scope does. A record of a variable the frame binds (a
+                // sigilless alias's mirror) or does not bind yet keeps the walk
+                // it had; the running code's own untyped locals no longer ask
+                // (`DeclaredConstraint::Untyped`, ADR-13757).
+                if let Some(outer) = cur.static_skip(key)
+                    && key.shadow_meta_subject().is_none_or(|subject| {
+                        self.get_sym_in_frame(subject).is_none() && outer.get_sym(subject).is_some()
+                    })
+                {
                     cur = outer;
                     continue;
                 }

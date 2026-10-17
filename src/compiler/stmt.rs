@@ -1538,6 +1538,12 @@ impl Compiler {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                 }
+                // A declaration without one says so: a store into this slot has
+                // no constraint, whatever a same-named variable elsewhere
+                // recorded (ADR-13757).
+                if type_constraint.is_none() && !*is_our {
+                    self.note_untyped_local_declaration(name);
+                }
                 // Record type constraint for compile-time literal type checks
                 if let Some(tc) = type_constraint {
                     self.local_types

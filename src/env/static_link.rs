@@ -93,12 +93,17 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
 /// type-shaped name (an unqualified identifier starting with an uppercase
 /// letter). A caller frame binds the latter only for a type it declared
 /// lexically (`my class`); a package-scoped type is found through the symbol
-/// table, not the frame.
-// Cost: O(1) for a plain user lexical or an attribute (memoized flags);
-// O(|key|) otherwise.
+/// table, not the frame. A plain lexical's own record (`__mutsu_type::x`,
+/// its source-name and hash-key records) follows the variable (ADR-13757
+/// step 4): a caller's `my Int $x` says nothing about the running code's `$x`.
+// Cost: O(1) for a plain user lexical, an attribute or a memoized record key
+// (memoized flags and subject); O(|key|) otherwise.
 pub(super) fn lexically_scoped(key: Symbol) -> bool {
     key.is_plain_user_lexical()
         || key.is_attr_twigil_env_key()
+        || key
+            .shadow_meta_subject()
+            .is_some_and(Symbol::is_plain_user_lexical)
         || key.with_str(|s| {
             s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
                 && s.bytes()

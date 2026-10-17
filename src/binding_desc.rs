@@ -93,6 +93,11 @@ pub(crate) enum DeclaredConstraint {
     /// constraint, if there is one, belongs to whatever declared it.
     #[default]
     Unrecorded,
+    /// This chunk declares the slot with **no** constraint (`my $x`,
+    /// `my @a`): a store has none to check, whatever a same-named variable
+    /// elsewhere (a caller's `my Int $x`) recorded under the name
+    /// (ADR-13757).
+    Untyped,
     /// `int` / `int64`.
     NativeInt,
     /// `str`.

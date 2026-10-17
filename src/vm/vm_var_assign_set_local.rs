@@ -670,6 +670,7 @@ impl Interpreter {
             // typed branch is never the identity — the same verdict the probe
             // reached, for one load instead of an env walk.
             DeclaredConstraint::NonNative => return false,
+            DeclaredConstraint::Untyped => return true,
             DeclaredConstraint::Unrecorded | DeclaredConstraint::Conflicting => {}
         }
         let name = &code.locals[idx];
@@ -1836,7 +1837,7 @@ impl Interpreter {
                 && !is_constant
                 && !is_bind
                 && raw_popped.is_nil()
-                && let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
+                && let Some(constraint) = self.slot_type_constraint(code, idx, name, name_sym)
             {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
@@ -1896,7 +1897,7 @@ impl Interpreter {
                 && !is_constant
                 && !is_bind
                 && raw_popped.is_nil()
-                && let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
+                && let Some(constraint) = self.slot_type_constraint(code, idx, name, name_sym)
             {
                 // A bare Nil assigned to a typed `@` array reverts to the element
                 // type's default. A definite (`:D`) element type has no default
@@ -1917,7 +1918,7 @@ impl Interpreter {
             // Native typed arrays cannot store lazy sequences — check before
             // eager evaluation so the error is raised even if the sequence is
             // infinite.
-            if let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
+            if let Some(constraint) = self.slot_type_constraint(code, idx, name, name_sym)
                 && crate::runtime::native_types::is_native_array_element_type(&constraint)
             {
                 let is_lazy_value = match raw_popped.view() {
@@ -2441,7 +2442,7 @@ impl Interpreter {
         // and one free on every typed store (`my int $i = nqp::add_i($i, 1)`
         // paid both per iteration). The attribute fallback still owns its
         // string — it is built, not stored.
-        let declared = loan_env!(self, var_type_constraint_value_for(name, name_sym));
+        let declared = self.slot_type_constraint_value(code, idx, name, name_sym);
         let declared_view = declared.as_ref().map(Value::view);
         let attr_constraint = match declared_view {
             Some(_) => None,
@@ -3447,7 +3448,7 @@ impl Interpreter {
         // updates the Arc-pointer side table. Done before the value is cloned
         // and propagated to env/aliases below, so every copy carries it.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = loan_env!(self, var_type_constraint_for(name, name_sym))
+            && let Some(value_type) = self.slot_type_constraint(code, idx, name, name_sym)
         {
             let info = crate::runtime::ContainerTypeInfo {
                 declared_type: if name.starts_with('@')
@@ -3551,7 +3552,7 @@ impl Interpreter {
                 Some(sym) => code.local_slots_of(sym).len(),
                 None => code.local_slots_named(name).len(),
             } > 1
-            && let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
+            && let Some(constraint) = self.slot_type_constraint(code, idx, name, name_sym)
             // Aggregate/native scalar values have specialized lvalue paths
             // which do not yet accept a scalar cell wrapper. Their own
             // container metadata already carries the relevant constraint.

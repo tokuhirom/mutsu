@@ -93,6 +93,26 @@ name, and it looks where the variable resolved.**
 Each step runs the full gate and the battery suite (the URI and
 HTTP::UserAgent files caught slice 45's regressions).
 
+### Implementation status
+
+- **Steps 1, 2 and 4, first slice** (`fix/13757-local-type-from-code`).
+  - The bake exists already: `binding_desc::DeclaredConstraint`, per scalar
+    slot (#8877). It gains `Untyped`, recorded for a scalar `my` without a
+    constraint and for an untyped parameter that does not alias the caller's
+    container (not sigilless, `is rw` or `is raw`).
+  - The type checks of `exec_set_local_op_inner` and the native store fast
+    paths read it (`vm_slot_type_constraint.rs`). A slot the code declares
+    untyped never probes the by-name record.
+  - With the running code's own untyped locals out of the probe, ADR-12529
+    slice 45's rule (a record follows the static link when the frame does
+    not bind the variable and the program scope does) no longer meets the
+    shapes that failed it: Test's `proclaim` `$desc`, URI's fresh
+    `my $path`, HTTP::UserAgent's destructured `$uri`. The rule lands here,
+    which fixes §1's example.
+  - Still on the by-name record, for later slices: the `@`/`%` slots (the
+    bake stays scalar-only), the element, compound and push-family readers,
+    and `vm_call_method_compiled_cache`.
+
 ## 4. Consequences
 
 - Correctness: a routine's store is checked against its own variable's type,

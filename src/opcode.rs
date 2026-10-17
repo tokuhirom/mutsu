@@ -8979,6 +8979,12 @@ impl CompiledCode {
         self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::classify(tc));
     }
 
+    /// Record that this chunk declares `name` with no type constraint — see
+    /// [`crate::binding_desc::DeclaredConstraint::Untyped`].
+    pub(crate) fn note_untyped_declaration(&mut self, name: &str) {
+        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Untyped);
+    }
+
     /// Record that `name` is out of the bake's reach — a trait was applied to
     /// it, and `ApplyVarTrait`'s container/class branches rewrite the
     /// constraint at run time (`vm_var_trait_ops`), which no compile-time
