@@ -39,9 +39,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("IO::Special", "accessed", instant_row),
     row!("IO::Special", "changed", instant_row),
     row!("IO::Special", "mode", nil_row),
-    // `Mu.gist` of an `IO::Special` is its `raku`; only an instance of the class
-    // reaches it (`invoke_owner` lists `Mu` after `IO::Special`).
-    row!("Mu", "gist", raku_row),
 ];
 
 /// The stream a receiver stands for: its `what` attribute, empty when it has none.
@@ -78,7 +75,7 @@ fn what_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
 
 /// `IO::Special.raku`: `IO::Special.new("<STDOUT>")`.
 // Cost: O(w), w = chars of the name.
-fn raku_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn raku_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let what = what_of(target)?;
     Some(Ok(Value::str(format!("IO::Special.new(\"{what}\")"))))
 }

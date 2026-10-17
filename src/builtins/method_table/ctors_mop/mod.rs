@@ -17,6 +17,7 @@ mod mu_base;
 mod mu_identity;
 mod mu_isa;
 mod mu_numeric;
+mod mu_render;
 mod mu_str;
 
 /// The HOW classes whose rows answer a metamethod call, in lookup order.
@@ -46,6 +47,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     mu_identity::ROWS,
     mu_isa::ROWS,
     mu_numeric::ROWS,
+    mu_render::ROWS,
     mu_str::ROWS,
 ];
 

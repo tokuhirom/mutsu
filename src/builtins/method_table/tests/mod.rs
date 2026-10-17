@@ -440,6 +440,10 @@ fn rows_are_declared_by_rakudo() {
         // Roast pins `IO::Socket::INET.getpeername` (`S16-unfiled/getpeername.t`),
         // which Rakudo does not declare (ADR-11276 §9.158).
         .filter(|row| !(row.owner == "IO::Socket::INET" && row.name == "getpeername"))
+        // Rakudo renders an `IO::Handle` through `Mu.raku`'s attribute dump;
+        // mutsu's handle keeps its state elsewhere, so the class renders itself
+        // (ADR-11276 §9.162).
+        .filter(|row| !(row.owner == "IO::Handle" && row.name == "raku"))
         // Roast pins `$!.pending` (`S04-exceptions/pending.t`), which Rakudo
         // does not declare (ADR-11276 §9.161).
         .filter(|row| !(row.owner == "Any" && row.name == "pending"))

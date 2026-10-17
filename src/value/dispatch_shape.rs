@@ -320,8 +320,6 @@ impl DispatchShape {
     pub(crate) const fn reaches_owner(self, owner: &str) -> bool {
         self.inherits()
             || const_str_eq(owner, self.type_name())
-            // `IO::Handle` renders itself (`Mu.raku`) through a `Mu` row of its own.
-            || (matches!(self, DispatchShape::IoHandle) && const_str_eq(owner, "Mu"))
             || (matches!(
                 self,
                 DispatchShape::IoSpecWin32 | DispatchShape::IoSpecCygwin | DispatchShape::IoSpecQnx
@@ -441,6 +439,19 @@ impl DispatchShape {
             // which only the interpreter's default representation answers.
             if matches!(self, DispatchShape::IoPathParts)
                 && (const_str_eq(method, "Str") || const_str_eq(method, "Stringy"))
+            {
+                return false;
+            }
+            // An instance of a built-in class with no rendering of its own
+            // (`Backtrace::Frame`) renders as its attribute dump, which only the
+            // interpreter's default representation answers (§9.162).
+            if matches!(
+                self,
+                DispatchShape::BacktraceFrame
+                    | DispatchShape::CompUnitDepSpec
+                    | DispatchShape::Backtrace
+                    | DispatchShape::IoPathParts
+            ) && (const_str_eq(method, "gist") || const_str_eq(method, "raku"))
             {
                 return false;
             }
@@ -722,9 +733,9 @@ pub(crate) const CAPTURE_FOR_MATCH: [&str; 11] = [
 /// container, sink it, or render it (`Str`, `Stringy`, which a shape with its own
 /// `Str` row answers first) or ask its type (`isa`), which every value supports. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
 /// answers its own row first.
-pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 16] = [
+pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 18] = [
     "so", "not", "is-lazy", "item", "sink", "self", "defined", "DEFINITE", "Bool", "WHICH",
-    "WHERE", "clone", "Str", "Stringy", "isa", "Capture",
+    "WHERE", "clone", "Str", "Stringy", "isa", "Capture", "gist", "raku",
 ];
 
 /// Whether `list` contains `name`, for a `const fn`.

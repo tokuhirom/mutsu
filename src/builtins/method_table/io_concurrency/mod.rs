@@ -21,7 +21,7 @@ mod io_path_misc;
 mod io_path_parts;
 mod io_path_stat;
 mod io_spec;
-mod io_special;
+pub(crate) mod io_special;
 mod lock_rows;
 pub(crate) mod proc_async;
 pub(crate) mod promise_channel;

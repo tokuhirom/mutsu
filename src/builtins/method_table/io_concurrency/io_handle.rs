@@ -52,11 +52,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("IO", 0, path_row, RowFlags::NONE, &[]),
     row!("Str", 0, str_row, RowFlags::NONE, &[]),
     row!("gist", 0, gist_row, RowFlags::NONE, &[]),
-    // `Mu.raku` as an `IO::Handle` renders it (`IO::Handle.new(path => ...)`, unopened):
-    // Rakudo declares no `raku` on `IO::Handle`, so the row's owner is `Mu`, which
-    // only the `IoHandle` shape reaches (`DispatchShape::reaches`).
+    // `Mu.raku` as an `IO::Handle` renders it (`IO::Handle.new(path => ...)`,
+    // unopened). Rakudo declares no `raku` on `IO::Handle`: its `Mu.raku` dumps
+    // the handle's attributes, which mutsu's handle keeps elsewhere, so the
+    // rendering is a row of the class, ahead of `Mu.raku` (§9.162).
     MethodRow {
-        owner: "Mu",
+        owner: "IO::Handle",
         name: "raku",
         arity: 0,
         handler: Handler::Interp(raku_row),

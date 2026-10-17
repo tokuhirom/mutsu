@@ -8,7 +8,6 @@ pub(crate) mod collection_gist;
 mod dispatch_core_coerce;
 pub(crate) mod dispatch_core_math;
 mod dispatch_core_numeric;
-mod dispatch_core_repr;
 pub(crate) mod which;
 pub(crate) use crate::value::match_helpers;
 pub(crate) use crate::value::raku_repr;
@@ -533,6 +532,21 @@ pub(crate) fn native_method_0arg_cascade(
             }
             return result;
         }
+        // A collection's `raku` row needs the interpreter (a typed container
+        // names its type); a mixed-in one renders its own source form, the
+        // `$` of an itemized inner included.
+        // Cost: O(n), n = chars of the rendering.
+        if method == "raku"
+            && matches!(
+                inner.as_ref().view(),
+                ValueView::Array(..)
+                    | ValueView::Seq(_)
+                    | ValueView::Hash(..)
+                    | ValueView::Pair(..)
+            )
+        {
+            return crate::builtins::method_table::collection_render_names::raku(inner, &[]);
+        }
         return native_method_0arg(inner, method_sym);
     }
     // A call the method table answers has no arm below this point: the row is
@@ -843,7 +857,6 @@ fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, 
     }
 
     try_dispatch!(dispatch_core_numeric);
-    try_dispatch!(dispatch_core_repr);
 
     None
 }
