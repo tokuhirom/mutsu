@@ -346,9 +346,10 @@ impl DispatchShape {
 
     /// Whether this shape's inherited methods are answered on the native
     /// payload its values carry (`Format`'s `Str`, `builtins::native_base`),
-    /// so no ancestor row reaches it (ADR-11276 §9.153).
+    /// so no ancestor row reaches it (ADR-11276 §9.153). Its type object has
+    /// no payload and so no shape (`NanBox::type_object_shape`).
     // Cost: O(1).
-    const fn answers_on_payload(self) -> bool {
+    pub(crate) const fn answers_on_payload(self) -> bool {
         matches!(self, DispatchShape::Format)
     }
 
