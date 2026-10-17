@@ -37,7 +37,7 @@ impl Interpreter {
         let dispatcher = code
             .lexical_import_chains
             .get(chain_idx as usize)
-            .and_then(|chain| self.lexical_import_binding(chain, name))
+            .and_then(|chain| self.lexical_import_operator_binding(chain, name))
             .and_then(|binding| match binding {
                 crate::runtime::lexical_imports::LexicalImport::Code(value)
                     if Self::is_builtin_operator_dispatcher(&value) =>
@@ -62,41 +62,50 @@ impl Interpreter {
         result.map(|()| next_ip)
     }
 
-    /// Whether `value` is a dispatcher over user candidates of a built-in
-    /// operator (`Interpreter::with_builtin_operator_fallback`).
-    // Cost: O(1).
-    fn is_builtin_operator_dispatcher(value: &Value) -> bool {
-        matches!(value.view(), ValueView::Sub(data)
-            if data.env.get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback()).is_some())
-    }
-
-    /// The user candidates of the built-in operator `name` in scope for the
-    /// op running in this routine frame ([`Self::exec_lex_import_builtin_op_site`]),
-    /// as the dispatcher's captured candidate list.
+    /// The dispatcher over the user candidates of the built-in operator
+    /// `name` in scope for the op running in this routine frame
+    /// ([`Self::exec_lex_import_builtin_op_site`]).
     // Cost: O(s), s = nested operator scopes (usually 0 or 1).
-    pub(crate) fn lexical_operator_candidates(&self, name: &str) -> Option<Vec<Value>> {
+    fn lexical_operator_dispatcher(&self, name: &str) -> Option<&Value> {
         let scopes = &self.dispatch.lexical_operator_scopes;
         if scopes.is_empty() {
             return None;
         }
         let depth = self.routine_stack().len();
-        let scope = scopes
+        scopes
             .iter()
             .rev()
-            .find(|scope| scope.depth == depth && scope.name.as_str() == name)?;
-        let ValueView::Sub(data) = scope.dispatcher.view() else {
-            return None;
-        };
-        data.env
-            .get_sym(crate::symbol::wk::multi_dispatch_candidates())
-            .and_then(|value| value.as_list_items().map(ToOwned::to_owned))
+            .find(|scope| scope.depth == depth && scope.name.as_str() == name)
+            .map(|scope| &scope.dispatcher)
     }
 
-    /// Whether [`Self::lexical_operator_candidates`] has an answer for `name`.
+    /// Whether [`Self::lexical_operator_dispatcher`] has an answer for `name`.
     // Cost: O(s), as there; O(1) with no operator scope open.
     #[inline]
     pub(crate) fn lexical_operator_in_scope(&self, name: &str) -> bool {
         !self.dispatch.lexical_operator_scopes.is_empty()
-            && self.lexical_operator_candidates(name).is_some()
+            && self.lexical_operator_dispatcher(name).is_some()
+    }
+
+    /// Call the user candidate of the built-in operator `name` in scope for
+    /// this op that accepts `args`. `None` when no operator scope binds
+    /// `name`; `Some(None)` when one does but no candidate accepts `args`, so
+    /// the operator's own body runs.
+    // Cost: O(s) probe; on a hit the ranking and the winner's call
+    // (`try_captured_candidates`).
+    pub(crate) fn try_lexical_operator_candidates(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Option<Result<Option<Value>, RuntimeError>> {
+        let dispatcher = self.lexical_operator_dispatcher(name)?.clone();
+        let ValueView::Sub(data) = dispatcher.view() else {
+            return None;
+        };
+        let candidates: Vec<Value> = data
+            .env
+            .get_sym(crate::symbol::wk::multi_dispatch_candidates())
+            .and_then(|value| value.as_list_items().map(ToOwned::to_owned))?;
+        Some(self.try_captured_candidates(&dispatcher, &candidates, name, args))
     }
 }

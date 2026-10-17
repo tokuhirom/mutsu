@@ -991,6 +991,7 @@ impl Compiler {
                     OpCode::BitShiftLeft => crate::opcode::CompoundBaseOp::BitShiftLeft,
                     _ => unreachable!("native integer mode only applies to +, -, *, and +<"),
                 };
+                self.emit_lex_import_builtin_compound(op);
                 self.code.emit(OpCode::NativeIntArithmetic { op, unsigned });
             } else {
                 self.note_numeric_operands(&opcode, Some(left), right);

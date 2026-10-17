@@ -454,20 +454,23 @@ impl Interpreter {
         // `&{op_name}` is looked up through the per-name memo of its interned
         // code-variable key, not built with a `format!` and interned again on
         // every operator call (#10111).
-        // The candidates a block-scoped `use` imported for this op come first
-        // and decline the same way (ADR-8751 stage 2).
-        let captured_candidates = self.lexical_operator_candidates(op_name).or_else(|| {
-            Symbol::lookup(op_name)
-                .map(crate::runtime::dispatch_key::amp_sym)
-                .and_then(|amp| self.env().get_sym(amp))
-                .and_then(|value| match value.view() {
-                    ValueView::Sub(data) => data
-                        .env
-                        .get("__mutsu_multi_dispatch_candidates")
-                        .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
-                    _ => None,
-                })
-        });
+        // The candidates a block-scoped `use` imported for this op come first:
+        // the winner is called as a multi candidate, whose `callsame` reaches
+        // this operator's own body, and no winner leaves the call to that
+        // body (ADR-8751 stage 2).
+        if let Some(result) = self.try_lexical_operator_candidates(op_name, args.clone()) {
+            return result;
+        }
+        let captured_candidates = Symbol::lookup(op_name)
+            .map(crate::runtime::dispatch_key::amp_sym)
+            .and_then(|amp| self.env().get_sym(amp))
+            .and_then(|value| match value.view() {
+                ValueView::Sub(data) => data
+                    .env
+                    .get("__mutsu_multi_dispatch_candidates")
+                    .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
+                _ => None,
+            });
         if let Some(candidates) = captured_candidates {
             for candidate in &candidates {
                 if let ValueView::Sub(candidate_data) = candidate.view() {

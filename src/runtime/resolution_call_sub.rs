@@ -356,6 +356,50 @@ impl Interpreter {
         Err(self.multi_no_match_error(family_name.unwrap_or(""), &call_args))
     }
 
+    /// The winner among the candidates `candidates` of the captured-candidate
+    /// dispatcher `func` (family `family`) for `args`, called as a multi
+    /// candidate (a `callsame` in it reaches the next one, and past the last
+    /// the built-in operator), or `None` when none accepts them: the user
+    /// candidates of a built-in operator a block-scoped `use` imported, which
+    /// decline to the operator's own body (ADR-8751 stage 2).
+    // Cost: O(c * p) to rank, c = candidates, p = parameters bound per
+    // candidate, plus the winner's call.
+    pub(crate) fn try_captured_candidates(
+        &mut self,
+        func: &Value,
+        candidates: &[Value],
+        family: &str,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some((candidate, remaining)) =
+            self.pick_captured_multi_candidate(family, candidates, &args)?
+        else {
+            return Ok(None);
+        };
+        // The winner joins the operator's core candidates and takes the call
+        // only when it out-narrows them, as a registry candidate does
+        // (ADR-0071).
+        if let [left, right] = args.as_slice()
+            && let ValueView::Sub(data) = candidate.view()
+            && let Some(def) = self
+                .module
+                .lexical_operator_candidate_defs
+                .get(&data.id)
+                .cloned()
+        {
+            match self.core_infix_verdict(family, &def, left, right) {
+                super::native_infix_dispatch::CoreInfixVerdict::Core => return Ok(None),
+                super::native_infix_dispatch::CoreInfixVerdict::Tie(core) => {
+                    return Err(self.core_infix_tie_error(family, &def, core, left, right));
+                }
+                super::native_infix_dispatch::CoreInfixVerdict::User => {}
+            }
+        }
+        let candidate = Self::bind_family_dispatcher(&candidate, Some(family), func);
+        self.call_captured_multi_winner(family, candidate, remaining, args, func.clone())
+            .map(Some)
+    }
+
     /// The built-in operator `name` (`infix:<+>`, `prefix:<->`) itself,
     /// without the user candidates a by-name call would also consider: the
     /// fallback of a dispatcher over imported candidates of the operator,
