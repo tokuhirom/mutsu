@@ -2543,17 +2543,15 @@ impl Env {
                     // the lookup ends with what a capture gave (#13604).
                     return found;
                 }
-                if let Some(outer) = cur.static_skip(key) {
-                    // The record of a variable the frame binds itself ends
-                    // here: the program scope's same-named variable is a
-                    // different one (a module routine's own `$desc` under a
-                    // mainline `my Array $desc`).
-                    if key
+                // A variable record (`__mutsu_type::x`) takes the link only
+                // when the frame does not bind the variable itself: a record of
+                // a variable the frame binds (its own untyped `$desc`, the
+                // mirror a sigilless alias installs) keeps the walk it always had.
+                if let Some(outer) = cur.static_skip(key)
+                    && !key
                         .shadow_meta_subject()
                         .is_some_and(|subject| self.get_sym_in_frame(subject).is_some())
-                    {
-                        return found;
-                    }
+                {
                     cur = outer;
                     continue;
                 }

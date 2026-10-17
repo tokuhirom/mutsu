@@ -1631,11 +1631,17 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    source-name and hash-key records) are now lexically scoped like the
    variable, so a static link skips the caller frames for them too. Before,
    `push-it()` pushing to the program's `my @a` through EVAL failed the
-   type check of its caller's unrelated `my Int @a`. A record whose
-   variable the frame binds itself ends at the frame root, so a module
-   routine's own `$desc` does not pick up a mainline `my Array $desc`'s type
-   through the link (`t/lang/adverbs/colon-args-list-infix-precedence.t`
-   caught that in Test's `proclaim`). Pinned by
+   type check of its caller's unrelated `my Int @a`. The link applies to a
+   record only when the running frame does not bind the variable at all; a
+   record of a variable the frame binds keeps the walk it had. A module
+   routine linked to the program scope would otherwise pick up a mainline
+   `my Array $desc`'s type for its own untyped `$desc` (Test's `proclaim`,
+   `t/lang/adverbs/colon-args-list-infix-precedence.t`). A sigilless
+   parameter's alias mirror also needs the caller's record
+   (`t/types/nil-through-sigilless-alias-decays.t`). Both were caught by the
+   gate. The precise rule, "the running code declares the variable", needs
+   the code at the lookup, which the type-record readers do not carry yet.
+   Pinned by
    `t/lang/eval-store-ignores-caller-type-of-same-name.t`. Found on the
    way and filed as #13746: such an EVAL'd store also misses the program
    variable's own type (`my Int $n`, before and after this slice).
