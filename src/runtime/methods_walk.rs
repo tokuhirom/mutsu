@@ -448,29 +448,10 @@ impl Interpreter {
         })
     }
 
-    /// Dispatch a method call on a `WalkList` instance. Returns `Ok(None)` for
-    /// methods this type does not handle (so normal dispatch can take over, e.g.
-    /// `gist`/`isa`). `invoke`/`()` batch-call the matched candidates;
-    /// `reverse`/`quiet` return a derived WalkList with the corresponding flag
-    /// changed.
-    pub(crate) fn try_walk_list_method(
-        &mut self,
-        walk_list: &Value,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Result<Option<Value>, RuntimeError> {
-        match method {
-            "invoke" => Ok(Some(self.walk_list_invoke_direct(walk_list, args)?)),
-            "reverse" => Ok(Some(Self::walk_list_with_flag(walk_list, "reversed", true))),
-            "quiet" => Ok(Some(Self::walk_list_with_flag(walk_list, "quiet", true))),
-            _ => Ok(None),
-        }
-    }
-
     /// Return a copy of a `WalkList` instance with one boolean flag set. For
     /// `reversed` the flag is toggled relative to the current value so chained
     /// `.reverse` calls compose correctly.
-    fn walk_list_with_flag(walk_list: &Value, flag: &str, value: bool) -> Value {
+    pub(crate) fn walk_list_with_flag(walk_list: &Value, flag: &str, value: bool) -> Value {
         let ValueView::Instance { attributes, .. } = walk_list.view() else {
             return walk_list.clone();
         };

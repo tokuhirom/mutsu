@@ -1402,14 +1402,20 @@ impl Interpreter {
                 return Err(err);
             }
         }
-        // Methods on the WalkList result of `.WALK(...)`: batch-invoke the
-        // matched candidates, reverse the order, switch on quiet mode, or
-        // flatten the results to a List.
+        // The methods of the WalkList result of `.WALK(...)` are its rows
+        // (§9.140): batch-invoke the matched candidates, reverse the order or
+        // switch on quiet mode.
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "WalkList"
-            && let Some(value) = self.try_walk_list_method(&target, method, args.clone())?
+            && class_name == "WalkList"
+            && let Some(answer) = crate::builtins::method_table::invoke_owner(
+                self,
+                &["WalkList"],
+                method,
+                &args,
+                || target.clone(),
+            )
         {
-            return Ok(value);
+            return answer;
         }
         // .WALK(name, :roles) — walk class+role chain calling the named
         // submethod once per "own" definition. Returns a no-arg Sub that,

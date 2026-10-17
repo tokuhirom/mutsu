@@ -49,11 +49,13 @@ pub(crate) mod temporal_class;
 pub(crate) mod temporal_edit;
 pub(crate) mod temporal_shift;
 pub(crate) mod unicode_data;
+mod walk_list;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     hyper_seq::HYPER_ROWS,
     hyper_seq::RACE_ROWS,
+    walk_list::ROWS,
     temporal::DATE_ROWS,
     temporal::DATETIME_ROWS,
     dateish::DATE_ROWS,

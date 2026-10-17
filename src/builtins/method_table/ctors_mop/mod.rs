@@ -9,6 +9,7 @@ use super::MethodRow;
 
 pub(crate) mod attribute;
 mod class_how;
+mod enum_how;
 mod grammar;
 mod mu_answers;
 mod mu_base;
@@ -28,10 +29,15 @@ pub(crate) static MOP_OWNERS: &[&str] = &[
     "Metamodel::NativeHOW",
 ];
 
+/// The owner of `Metamodel::EnumHOW`'s own metamethods, asked ahead of
+/// [`MOP_OWNERS`] (§9.140).
+pub(crate) static ENUM_HOW_OWNERS: &[&str] = &["Metamodel::EnumHOW"];
+
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     attribute::ROWS,
     class_how::ROWS,
+    enum_how::ROWS,
     grammar::ROWS,
     mu_base::ROWS,
     mu_answers::ROWS,

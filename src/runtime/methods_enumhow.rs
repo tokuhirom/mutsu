@@ -101,122 +101,127 @@ impl Interpreter {
         }
     }
 
-    /// Dispatch one of `Metamodel::EnumHOW`'s own metamethods. `None` when
-    /// `method` is not one of them (or `compose` on a non-MOP enum), so the
-    /// caller continues with the shared ClassHOW table.
-    pub(crate) fn dispatch_enumhow_method(
+    /// `EnumHOW.enum_values`: a Map from each value's *name* to its
+    /// underlying value (`Numbers.^enum_values` is `{10 => 0, 20 => 1}`).
+    // Cost: O(n), n = number of enum values.
+    pub(crate) fn enum_how_enum_values(&mut self, first: &Value) -> Result<Value, RuntimeError> {
+        let Some(members) = self.enum_how_value_list(first) else {
+            return Err(Self::enum_how_method_missing("enum_values", first));
+        };
+        let mut map = ValueMap::default();
+        for member in &members {
+            let (key, value) = self.enum_member_key_value(member)?;
+            map.insert(key, value);
+        }
+        Ok(Value::hash(map))
+    }
+
+    /// `EnumHOW.elems`: how many values the enum declares. On any other
+    /// metaobject `elems` is just the inherited `Any.elems`, which is 1
+    /// (`class C {}; C.HOW.elems` is 1 in raku). Answering it here is what
+    /// keeps a HOW invocant out of the generic `.elems` dispatch, which has no
+    /// implementation for a HOW instance and used to bounce between
+    /// `dispatch_elems_method` and `builtin_elems` until the stack overflowed.
+    // Cost: O(n), n = number of enum values (the list is cloned).
+    pub(crate) fn enum_how_elems(&mut self, first: &Value) -> Value {
+        Value::int(
+            self.enum_how_value_list(first)
+                .map_or(1, |members| members.len() as i64),
+        )
+    }
+
+    /// `EnumHOW.enum_from_value`: the value object whose `.value` equals
+    /// `value`, or `Mu` when none does.
+    // Cost: O(n), n = number of enum values.
+    pub(crate) fn enum_how_enum_from_value(
         &mut self,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        let first = args.first()?;
-        Some(match method {
-            // `EnumHOW.enum_values`: a Map from each value's *name* to its
-            // underlying value (`Numbers.^enum_values` is `{10 => 0, 20 => 1}`).
-            // Cost: O(n), n = number of enum values.
-            "enum_values" => (|| {
-                let Some(members) = self.enum_how_value_list(first) else {
-                    return Err(Self::enum_how_method_missing("enum_values", first));
-                };
-                let mut map = ValueMap::default();
-                for member in &members {
-                    let (key, value) = self.enum_member_key_value(member)?;
-                    map.insert(key, value);
-                }
-                Ok(Value::hash(map))
-            })(),
-            // `EnumHOW.elems`: how many values the enum declares. On any other
-            // metaobject `elems` is just the inherited `Any.elems`, which is 1
-            // (`class C {}; C.HOW.elems` is 1 in raku). Handling it here is what
-            // keeps a HOW invocant out of the generic `.elems` dispatch, which
-            // has no implementation for a HOW instance and used to bounce
-            // between `dispatch_elems_method` and `builtin_elems` until the
-            // stack overflowed.
-            // Cost: O(n), n = number of enum values (the list is cloned).
-            "elems" => Ok(Value::int(
-                self.enum_how_value_list(first)
-                    .map_or(1, |members| members.len() as i64),
-            )),
-            // `EnumHOW.enum_from_value`: the value object whose `.value`
-            // equals the argument, or `Mu` when none does.
-            // Cost: O(n), n = number of enum values.
-            "enum_from_value" if args.len() >= 2 => (|| {
-                let Some(members) = self.enum_how_value_list(first) else {
-                    return Err(Self::enum_how_method_missing("enum_from_value", first));
-                };
-                for member in members {
-                    let (_, value) = self.enum_member_key_value(&member)?;
-                    if value.eqv(&args[1]) {
-                        return Ok(member);
-                    }
-                }
-                Ok(Value::package(Symbol::intern("Mu")))
-            })(),
-            // `EnumHOW.enum_value_list`: the value objects, in order.
-            // Cost: O(n), n = number of enum values.
-            "enum_value_list" => Ok(Value::array(
-                self.enum_how_value_list(first).unwrap_or_default(),
-            )),
-            // `EnumHOW.add_enum_value`: append one value object. Rakudo
-            // documents that it "should be an instance of the enum itself"
-            // but takes any object with a `.key` and a `.value`.
-            // Cost: O(1) amortized.
-            "add_enum_value" if args.len() >= 2 => self.how_enum_target(method, args).map(|name| {
-                if let Some(state) = self.registry_mut().how_enums.get_mut(&name) {
-                    state.values.push(args[1].clone());
-                }
-                Value::NIL
-            }),
-            // `EnumHOW.set_export_callback`: the routine `compose_values`
-            // runs to export the values (what the `is export` trait installs).
-            // Cost: O(1).
-            "set_export_callback" if args.len() >= 2 => {
-                self.how_enum_target(method, args).map(|name| {
-                    if let Some(state) = self.registry_mut().how_enums.get_mut(&name) {
-                        state.export_callback = Some(args[1].clone());
-                    }
-                    Value::NIL
-                })
+        first: &Value,
+        value: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let Some(members) = self.enum_how_value_list(first) else {
+            return Err(Self::enum_how_method_missing("enum_from_value", first));
+        };
+        for member in members {
+            let (_, member_value) = self.enum_member_key_value(&member)?;
+            if member_value.eqv(value) {
+                return Ok(member);
             }
-            // `EnumHOW.compose_values`: run the export callback, once — it is
-            // removed from the state, so a second call does nothing.
-            // Cost: O(1) plus the callback.
-            "compose_values" => (|| {
-                let name = self.how_enum_target(method, args)?;
-                let callback = self
-                    .registry_mut()
-                    .how_enums
-                    .get_mut(&name)
-                    .and_then(|state| state.export_callback.take());
-                if let Some(callback) = callback {
-                    self.call_sub_value(callback, Vec::new(), false)?;
-                }
-                Ok(Value::NIL)
-            })(),
-            // `EnumHOW.is_composed`: 1 once `.^compose` ran, else 0. A
-            // declared enum is composed at its declaration.
-            // Cost: O(1).
-            "is_composed" => {
-                let name = self.enum_how_type_name(first);
-                let reg = self.registry();
-                match reg.how_enums.get(&name) {
-                    Some(state) => Ok(Value::int(i64::from(state.composed))),
-                    None if reg.enum_types.contains_key(&name) => Ok(Value::int(1)),
-                    None => return None,
-                }
+        }
+        Ok(Value::package(Symbol::intern("Mu")))
+    }
+
+    /// `EnumHOW.enum_value_list`: the value objects, in order.
+    // Cost: O(n), n = number of enum values.
+    pub(crate) fn enum_how_enum_value_list(&mut self, first: &Value) -> Value {
+        Value::array(self.enum_how_value_list(first).unwrap_or_default())
+    }
+
+    /// `EnumHOW.add_enum_value`: append one value object. Rakudo documents
+    /// that it "should be an instance of the enum itself" but takes any object
+    /// with a `.key` and a `.value`.
+    // Cost: O(1) amortized.
+    pub(crate) fn enum_how_add_enum_value(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.how_enum_target("add_enum_value", args).map(|name| {
+            if let Some(state) = self.registry_mut().how_enums.get_mut(&name) {
+                state.values.push(args[1].clone());
             }
-            // `EnumHOW.compose` on a MOP-built enum records the composition,
-            // then carries on into the shared ClassHOW `compose` (MRO rebuild).
-            // Cost: O(1) here.
-            "compose" => {
-                let name = self.enum_how_type_name(first);
-                if let Some(state) = self.registry_mut().how_enums.get_mut(&name) {
-                    state.composed = true;
-                }
-                return None;
-            }
-            _ => return None,
+            Value::NIL
         })
+    }
+
+    /// `EnumHOW.set_export_callback`: the routine `compose_values` runs to
+    /// export the values (what the `is export` trait installs).
+    // Cost: O(1).
+    pub(crate) fn enum_how_set_export_callback(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.how_enum_target("set_export_callback", args).map(|name| {
+            if let Some(state) = self.registry_mut().how_enums.get_mut(&name) {
+                state.export_callback = Some(args[1].clone());
+            }
+            Value::NIL
+        })
+    }
+
+    /// `EnumHOW.compose_values`: run the export callback, once — it is
+    /// removed from the state, so a second call does nothing.
+    // Cost: O(1) plus the callback.
+    pub(crate) fn enum_how_compose_values(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let name = self.how_enum_target("compose_values", args)?;
+        let callback = self
+            .registry_mut()
+            .how_enums
+            .get_mut(&name)
+            .and_then(|state| state.export_callback.take());
+        if let Some(callback) = callback {
+            self.call_sub_value(callback, Vec::new(), false)?;
+        }
+        Ok(Value::NIL)
+    }
+
+    /// `EnumHOW.is_composed`: 1 once `.^compose` ran, else 0. A declared enum
+    /// is composed at its declaration. `None` for a type that is no enum.
+    // Cost: O(1).
+    pub(crate) fn enum_how_is_composed(&mut self, first: &Value) -> Option<Value> {
+        let name = self.enum_how_type_name(first);
+        let reg = self.registry();
+        match reg.how_enums.get(&name) {
+            Some(state) => Some(Value::int(i64::from(state.composed))),
+            None if reg.enum_types.contains_key(&name) => Some(Value::int(1)),
+            None => None,
+        }
+    }
+
+    /// `EnumHOW.compose` on a MOP-built enum records the composition; the
+    /// shared ClassHOW `compose` (the MRO rebuild) still runs after it, so the
+    /// caller always carries on.
+    // Cost: O(1).
+    pub(crate) fn enum_how_mark_composed(&mut self, first: &Value) {
+        let name = self.enum_how_type_name(first);
+        if let Some(state) = self.registry_mut().how_enums.get_mut(&name) {
+            state.composed = true;
+        }
     }
 
     /// Whether the enum value or declared enum type object `value` does the
