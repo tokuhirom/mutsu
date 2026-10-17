@@ -323,8 +323,6 @@ Consequences that pin the design:
     the subset comparisons, `x`, `postfix`, `postcircumfix`) keep their
     imported candidates in the registry. A callee outside the block still sees those, and a closure
     taken out of the block loses them.
-  - A dispatcher value's `.arity`/`.count` is still the capture's (`0`/`Inf`);
-    rakudo reports the operator proto's (`2`/`2` for `&infix:<cmp>`), #13792.
   - `[(elem)]` dies on `Unknown function` even without an import (#13794),
     and a `(|)` candidate also answers `∪` (#13795).
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
