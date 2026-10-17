@@ -327,6 +327,7 @@ mod vm_pseudo_stash_ops;
 mod vm_quanthash_autoviv;
 mod vm_rebound_container_capture;
 mod vm_role_capture_propagate;
+mod vm_slot_type_constraint;
 mod vm_unit_hidden;
 pub(crate) mod vm_unit_lexical_meta_lanes;
 pub(crate) use vm_core_type_object_methods::SCHEDULER_USAGE_COLUMNS;

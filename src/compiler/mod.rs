@@ -3330,6 +3330,15 @@ impl Compiler {
         self.emit_set_var_type_op(name, name_idx, tc_idx, is_our, true);
     }
 
+    /// Record that this chunk declares `name` with no type constraint, for
+    /// the slot kinds `emit_set_var_type_op` would bake a constraint onto
+    /// (ADR-13757).
+    pub(super) fn note_untyped_local_declaration(&mut self, name: &str) {
+        if Self::is_simple_scalar_store_name(name) {
+            self.code.note_untyped_declaration(name);
+        }
+    }
+
     fn emit_set_var_type_op(
         &mut self,
         name: &str,

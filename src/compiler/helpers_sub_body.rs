@@ -346,6 +346,17 @@ impl Compiler {
             if !pd.name.is_empty() {
                 sub_compiler.declare_param(&pd.storage_name());
                 sub_compiler.note_readonly_code_param(pd);
+                // An untyped, non-aliasing parameter is this routine's own
+                // unconstrained variable (ADR-13757). A sigilless, `is rw` or
+                // `is raw` one is the caller's container, whose constraint
+                // applies.
+                if pd.type_constraint.is_none()
+                    && pd.type_capture.is_none()
+                    && !pd.sigilless
+                    && !pd.traits.iter().any(|t| t == "rw" || t == "raw")
+                {
+                    sub_compiler.note_untyped_local_declaration(&pd.storage_name());
+                }
                 // Track sigilless parameters so BareWord resolution uses
                 // GetLocal for them but not for `$`-sigiled params.
                 if pd.sigilless {
@@ -1415,6 +1426,17 @@ impl Compiler {
             if !pd.name.is_empty() {
                 sub_compiler.declare_param(&pd.storage_name());
                 sub_compiler.note_readonly_code_param(pd);
+                // An untyped, non-aliasing parameter is this routine's own
+                // unconstrained variable (ADR-13757). A sigilless, `is rw` or
+                // `is raw` one is the caller's container, whose constraint
+                // applies.
+                if pd.type_constraint.is_none()
+                    && pd.type_capture.is_none()
+                    && !pd.sigilless
+                    && !pd.traits.iter().any(|t| t == "rw" || t == "raw")
+                {
+                    sub_compiler.note_untyped_local_declaration(&pd.storage_name());
+                }
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
                 }
