@@ -1564,6 +1564,36 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    and filed as #13705: a routine's `my &*cb` still leaks to its caller,
    through some store other than the merge.
 
+   An eighth census logged every non-dynamic key a by-name lookup found
+   in an intermediate caller frame (below the running frame's root, above
+   the program scope, and not answered by the frame's own capture). Most
+   hits are runtime bookkeeping rather than user name resolution: the
+   speculative `__mutsu_type::*` probes (`declared_meta_lane`), `@_` and
+   `self` at argument binding, the map/grep inline plan's "caller
+   priority" probe, the CATCH handler's env reconcile, and the closure
+   call's own copy-back (`call_compiled_closure_in_unit`), which slices
+   37-41 had not touched: a third return merge.
+
+   **Slice 42 done** (`fix/12529-closure-writes-through-cells`): a census
+   with that closure copy-back switched off found fifteen dependents in
+   `t/`. Eleven were a non-escaping closure (a statement-modifier `for`'s
+   pointy block, a pointy `if`, a block passed to a routine, a CONTROL
+   handler's block) writing a captured local: the escape analysis gave a
+   cell only to a local an *escaping* closure writes, and left the rest
+   to the copy-back. Every closure that writes a capture now earns it the
+   cell (`needs_cell` no longer requires `escapes`, and a write to an
+   outer frame's variable bubbles up as `needs_cell_free_vars` either
+   way). One more was `push_to_shared_var`: once a thread had run, a push
+   to a twigil'd array (`@*LOG`) dropped the running frame's binding even
+   when no shared entry held the name, and pushed onto a detached copy
+   stored by name in the closure's frame; it now takes that branch only
+   for a name the shared store holds. Left for the next slice: a closure
+   created while a grammar subrule's argument runs (`<x({ $calls++ }())>`),
+   whose creating code is compiled at match time, so no frame knows to
+   give `$calls` a cell. Pinned by
+   `t/routines/closure/closure-call-writes-through-cell.t` and
+   `t/concurrency/concurrent-start-then-dynamic-push.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
