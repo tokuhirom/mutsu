@@ -396,7 +396,7 @@ impl Interpreter {
         // Cost: O(a), a = attribute count of the process instance.
         if let ValueView::Package(name) = target.view()
             && let Some(base) = match name.resolve().as_str() {
-                "Compiler" => Some(self.native_perl(&AttrMap::new(), "compiler")),
+                "Compiler" => Some(Self::compiler_instance()),
                 "VM" => Some(Self::cached_vm_instance()),
                 "Distro" => Some(Self::cached_distro_instance()),
                 "Kernel" => Some(Self::cached_kernel_instance()),

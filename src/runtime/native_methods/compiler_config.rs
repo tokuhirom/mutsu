@@ -1,8 +1,7 @@
-//! `Compiler` native methods that are not shared with the `Raku`/`Perl`
-//! compiler-identity object — chiefly `.verbose-config`.
+//! `Compiler.verbose-config` and `Perl6::SysConfig`: the build facts mutsu
+//! reports about itself.
 
 use crate::runtime::*;
-use crate::value::AttrMap;
 use crate::value::ValueMap;
 
 impl Interpreter {
@@ -35,20 +34,6 @@ impl Interpreter {
         }
     }
 
-    /// `$*RAKU.compiler` native methods. Everything the identity object
-    /// (`Raku`/`Perl`) also answers is delegated to `native_perl`; the extras
-    /// here are the ones only a `Compiler` has.
-    pub(in crate::runtime) fn native_compiler(
-        &self,
-        attributes: &AttrMap,
-        method: &str,
-    ) -> Result<Value, RuntimeError> {
-        match method {
-            "verbose-config" => Ok(Self::compiler_verbose_config()),
-            _ => Ok(self.native_perl(attributes, method)),
-        }
-    }
-
     /// `Compiler.verbose-config` — a map of section name to a map of
     /// configuration key/value pairs, the shape rakudo returns.
     ///
@@ -60,7 +45,7 @@ impl Interpreter {
     /// already backing `$*KERNEL` / `$*DISTRO`. The structure matches rakudo's
     /// so a consumer can walk it the same way; the key set legitimately differs
     /// because the underlying build systems differ.
-    fn compiler_verbose_config() -> Value {
+    pub(crate) fn compiler_verbose_config() -> Value {
         let mut sections: ValueMap = ValueMap::default();
 
         let mut raku_section: ValueMap = ValueMap::default();

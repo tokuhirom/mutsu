@@ -44,7 +44,9 @@ impl Interpreter {
         }
         match (class.as_str(), method) {
             ("Kernel", "cpu-cores" | "free-memory" | "total-memory") => {
-                Some(self.native_kernel(&crate::value::AttrMap::new(), method, Vec::new()))
+                crate::builtins::method_table::invoke_owner(self, &["Kernel"], method, &[], || {
+                    target.clone()
+                })
             }
             ("Thread", "usage") => Some(Ok(Self::native_int_row(
                 &crate::runtime::thread_usage::thread_usage(),

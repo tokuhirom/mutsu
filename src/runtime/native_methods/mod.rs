@@ -644,10 +644,22 @@ impl Interpreter {
             "Lock" | "Lock::Async" => self.native_lock(attributes, method, args),
             "Semaphore" => self.native_semaphore(attributes, method, args),
             "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
-            "Distro" => self.native_distro(attributes, method),
-            "Kernel" => self.native_kernel(attributes, method, args),
-            "Perl" | "Raku" => Ok(self.native_perl(attributes, method)),
-            "Compiler" => self.native_compiler(attributes, method),
+            // The `Systemic` classes' methods are rows (ADR-11276 §9.155).
+            class @ ("Distro" | "Kernel" | "Perl" | "Raku" | "Compiler" | "VM") => {
+                let owners = crate::builtins::method_table::systemic_owners_of(class)
+                    .unwrap_or(&[]);
+                crate::builtins::method_table::invoke_owner(self, owners, method, &args, || {
+                    Value::make_instance(Symbol::intern(class_name), attributes.clone())
+                })
+                .or_else(|| {
+                    // A method the class does not declare (`raku`) is `Mu`'s.
+                    let target = Value::make_instance(Symbol::intern(class_name), attributes.clone());
+                    self.default_instance_repr(&target, method, &args)
+                })
+                .unwrap_or_else(|| {
+                    Err(crate::runtime::did_you_mean::method_not_found(method, class_name))
+                })
+            }
             "Perl6::SysConfig" => Self::native_sys_config(method),
             class @ ("Promise" | "Channel") => {
                 self.native_promise_channel_payload(attributes, class, method, args)
@@ -678,7 +690,6 @@ impl Interpreter {
             "Encoding::Builtin" => Self::native_encoding_builtin(attributes, method, &args),
             "Encoding::Encoder::Builtin" => Self::native_encoding_encoder(attributes, method, &args),
             "Encoding::Decoder::Builtin" => self.native_stream_decoder(attributes, method, &args),
-            "VM" => self.native_vm(attributes, method, &args),
             "IO::Notification::Change" => self
                 .try_io_notification_change_method("IO::Notification::Change", attributes, method)
                 .unwrap_or_else(|| {

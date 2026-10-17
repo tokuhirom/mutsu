@@ -25,6 +25,7 @@ pub(crate) mod proc_async;
 pub(crate) mod promise_channel;
 mod promise_class;
 pub(crate) mod supplier_scheduler;
+pub(crate) mod systemic;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -38,6 +39,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     io_spec::ROWS,
     io_handle::ROWS,
     io_special::ROWS,
+    systemic::ROWS,
     concurrency_state::ROWS,
     promise_channel::ROWS,
     promise_class::ROWS,
