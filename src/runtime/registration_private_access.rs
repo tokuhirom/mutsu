@@ -21,10 +21,12 @@ impl Interpreter {
         &self,
         caller_class: &str,
         stmts: &[Stmt],
+        type_aliases: &[(String, String)],
     ) -> Result<(), RuntimeError> {
         let mut scan = PrivateAccess {
             interp: self,
             caller_class,
+            type_aliases,
             nested: Vec::new(),
             err: None,
         };
@@ -99,6 +101,8 @@ impl Interpreter {
 struct PrivateAccess<'a> {
     interp: &'a Interpreter,
     caller_class: &'a str,
+    /// `constant NAME = Type` aliases of the enclosing class body.
+    type_aliases: &'a [(String, String)],
     /// Classes declared inside the walked body, with the `trusts` list written
     /// in their own body. They are not registered yet while the enclosing
     /// class registers, so `class_trusts` cannot answer for them.
@@ -159,6 +163,11 @@ impl<'ast> Visit<'ast> for PrivateAccess<'_> {
                     crate::qualified::split_qualified(crate::qualified::known_symbol(&name))
                         .map(|(head, tail)| (head.as_str(), tail.as_str()))
                 {
+                    let owner_class = self
+                        .type_aliases
+                        .iter()
+                        .find(|(alias, _)| alias == owner_class)
+                        .map_or(owner_class, |(_, target)| target.as_str());
                     // `owner_class` is the short name as written in source
                     // (`Renderer`), while `caller_class` is always the fully
                     // qualified registered name (`Outer::Inner::Renderer`).
