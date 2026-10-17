@@ -1594,6 +1594,18 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `t/routines/closure/closure-call-writes-through-cell.t` and
    `t/concurrency/concurrent-start-then-dynamic-push.t`.
 
+   **Slice 43 done** (`fix/12529-closure-copyback-free-var-writes`): the
+   closure call's copy-back no longer walks the closure's env. It carries
+   back only the names in the closure's own `free_var_writes`, under the
+   same filters as before (unchanged frees, parameters, the closure's own
+   declarations, captures the caller does not have). That narrow carry is
+   what the grammar subrule-argument case needs: the closure's creating
+   code is compiled at match time, so no frame can give the captured
+   variable a cell, and the argument evaluator reads the write back from
+   the env the closure returns into. With slice 42 in place, a re-run of
+   every census dependent passes on this build. Pinned by
+   `t/routines/closure/closure-return-carries-only-own-writes.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
