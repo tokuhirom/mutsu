@@ -573,6 +573,20 @@ impl NanBox {
         unsafe { peek_arc::<VarRefBox>(bits) }.slot
     }
 
+    /// The `declared` type recorded on a `VarRef` word, `None` for a
+    /// non-VarRef. See `ValueRepr::VarRef::declared`.
+    // Cost: O(1) (a refcount bump for a resolved type).
+    #[inline]
+    pub(in crate::value) fn varref_declared(&self) -> Option<crate::value::VarRefDeclared> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::VarRef)) {
+            return None;
+        }
+        // SAFETY: the tag probe above guarantees the payload is a `VarRefBox`
+        // Arc this NanBox keeps alive for the duration of the borrow.
+        Some(unsafe { peek_arc::<VarRefBox>(bits) }.declared.clone())
+    }
+
     /// Whether this word is a `ContainerRef` — a pure tag probe (checked on
     /// every `GetLocal`; same motivation as [`Self::is_junction`]).
     #[inline]

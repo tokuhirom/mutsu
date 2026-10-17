@@ -704,10 +704,9 @@ impl Interpreter {
     pub(super) fn unwrap_varref_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
         match value.as_varref() {
             Some((name, inner, _)) => {
-                // Full (env-first) lookup: a typed routine lexical is env-scoped
-                // only (`SetVarTypeScoped`), invisible to the global-map-only
-                // fast probe.
-                let var_type = name.with_str(|n| self.var_type_constraint(n));
+                // What the `WrapVarRef` site resolved in the variable's own
+                // frame, or the env record for a `VarRef` built without it.
+                let var_type = self.varref_type_constraint(value, name);
                 (inner.clone(), var_type)
             }
             None => (value.clone(), None),

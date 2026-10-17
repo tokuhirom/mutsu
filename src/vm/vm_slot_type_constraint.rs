@@ -13,7 +13,7 @@ use crate::binding_desc::DeclaredConstraint;
 use crate::opcode::CompiledCode;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, VarRefDeclared};
 
 impl Interpreter {
     /// The constraint a store into `code`'s slot `idx` (named `name`)
@@ -47,5 +47,49 @@ impl Interpreter {
             return None;
         }
         loan_env!(self, var_type_constraint_value_for(name, name_sym))
+    }
+
+    /// The declared type of the variable a `WrapVarRef` in `code` tags, for
+    /// the `VarRef` to carry: resolved here, in the variable's own frame, so
+    /// the binder and the multi dispatcher never probe for it by name from
+    /// the callee's frame. `slot` is the site's local slot, `u32::MAX` for a
+    /// variable that is not a local of `code`.
+    // Cost: O(1) for a slot the code declares untyped or a name no typed
+    // declaration has used; else the record probe, O(d), d = env tiers walked.
+    pub(super) fn wrap_var_ref_declared(
+        &mut self,
+        code: &CompiledCode,
+        slot: u32,
+        name_sym: Symbol,
+    ) -> VarRefDeclared {
+        if slot != u32::MAX && code.declared_constraint(slot as usize) == DeclaredConstraint::Untyped
+        {
+            return VarRefDeclared::Resolved(None);
+        }
+        VarRefDeclared::Resolved(loan_env!(self, var_type_constraint_value_sym(name_sym)))
+    }
+
+    /// The declared type of the variable the `VarRef` argument `varref`
+    /// (named `name_sym`) names: what its `WrapVarRef` site resolved, or the
+    /// by-name record for a `VarRef` built without one.
+    // Cost: O(1) for a resolved `VarRef`; else the record probe, O(d).
+    pub(crate) fn varref_type_constraint_value(
+        &self,
+        varref: &Value,
+        name_sym: Symbol,
+    ) -> Option<Value> {
+        match varref.varref_declared() {
+            Some(VarRefDeclared::Resolved(declared)) => declared,
+            _ => self.var_type_constraint_value_sym(name_sym),
+        }
+    }
+
+    /// [`Self::varref_type_constraint_value`] as an owned `String`.
+    // Cost: as `varref_type_constraint_value`, plus a copy of the name.
+    pub(crate) fn varref_type_constraint(&self, varref: &Value, name_sym: Symbol) -> Option<String> {
+        match self.varref_type_constraint_value(varref, name_sym)?.view() {
+            crate::value::ValueView::Str(tc) => Some(tc.as_str().to_owned()),
+            _ => None,
+        }
     }
 }

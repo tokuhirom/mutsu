@@ -80,6 +80,8 @@ pub(in crate::value) struct VarRefBox {
     /// Local slot of the variable at the `WrapVarRef` site (shadow-slot-exact),
     /// when it was a local of the emitting frame. See `ValueRepr::VarRef::slot`.
     pub(in crate::value) slot: Option<u32>,
+    /// See `ValueRepr::VarRef::declared`.
+    pub(in crate::value) declared: crate::value::VarRefDeclared,
 }
 
 #[derive(Debug, Clone)]
