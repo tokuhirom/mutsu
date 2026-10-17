@@ -32,6 +32,7 @@ mod eval_routine_magicals;
 mod eval_type_scans;
 mod eval_var_scan;
 mod rakuast_attributes;
+mod exception_control;
 mod exception_message;
 pub(crate) mod family_gen_cache;
 pub(crate) mod fn_keys_index;

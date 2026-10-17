@@ -1088,56 +1088,12 @@ impl Interpreter {
             err.set_from_method_return();
             return Err(err);
         }
-        if let Some(failure) = self.exception_failure_method(&target, method, &args) {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "Failure");
-            self.stack.push(failure);
-            return Ok(());
-        }
-        // `.throw`/`.rethrow`/`.die` on an exception instance: attach a backtrace
-        // built from the current call stack. The `die`/`fail` opcodes do this, but
-        // an explicit `ExceptionObject.throw` (or `.die`) goes through method
-        // dispatch and would otherwise carry no frames (so `.backtrace().list`
-        // would be empty).
-        let target = if matches!(method, "throw" | "rethrow" | "die")
-            && args.is_empty()
-            && target.instance_is_exception_by_name()
-            && matches!(
-                target.view(),
-                ValueView::Instance { attributes, .. }
-                    if !attributes.as_map().contains_key("backtrace")
-            ) {
-            if let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
-            {
-                let backtrace_val = self.build_backtrace_value_with_leading(&[method]);
-                let mut new_attrs = attributes.as_map().clone();
-                new_attrs.insert("backtrace".to_string(), backtrace_val);
-                if let Some(line) = self.current_source_line() {
-                    new_attrs
-                        .entry("line".to_string())
-                        .or_insert_with(|| Value::int(line as i64));
-                }
-                if let Some(file) = self.current_source_file() {
-                    new_attrs
-                        .entry("file".to_string())
-                        .or_insert_with(|| Value::str_from(&file));
-                }
-                Value::make_instance(class_name, new_attrs)
-            } else {
-                target
-            }
-        } else {
-            target
-        };
         // A `:D:`-invocant built-in method on a type object (`X::NYI.throw`,
         // `IO::Path.e`) is X::Parameter::InvalidConcreteness, not "no such method".
         if let Some(err) = self.type_object_concreteness_error(method, &args, &target) {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
-                "exception-concreteness",
+                "io-path-concreteness",
             );
             return Err(err);
         }

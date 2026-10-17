@@ -36,6 +36,7 @@ pub(crate) mod depspec;
 pub(crate) mod distribution;
 pub(crate) mod enumeration;
 pub(crate) mod exception;
+mod exception_control;
 pub(crate) mod failure;
 mod format;
 pub(crate) mod hyper_seq;
@@ -74,6 +75,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     regex_match::ROWS,
     backtrace::ROWS,
     exception::ROWS,
+    exception_control::ROWS,
     enumeration::ROWS,
     iterator::ROWS,
     collation::ROWS,

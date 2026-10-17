@@ -800,9 +800,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         return Some(answer);
     }
 
-    // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace`, `resume`, `throw` and
+    // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace` and
     // `X::AdHoc.payload` are rows of the method table (`method_table::exception`,
     // ADR-11276 §9.39); `line`, `file` and `filename` are mutsu's own accessors.
+    // The control methods (`throw`, `resume`, ...) are interpreter rows (§9.163).
     if let Some(answer) = crate::builtins::method_table::exception::answer(target, method) {
         return Some(answer);
     }

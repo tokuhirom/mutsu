@@ -1158,102 +1158,11 @@ impl Interpreter {
             err.set_from_method_return();
             return Err(err);
         }
-        // .resume / .throw / .rethrow / .die on instances of user-defined
-        // Exception subclasses (the builtin fast path only handles
-        // Exception/X::*/CX::*/Failure by name).
-        if matches!(method, "resume" | "throw" | "rethrow" | "fail" | "die")
-            && args.is_empty()
-            && let ValueView::Instance { class_name, .. } = target.view()
-        {
-            let cn = class_name.resolve();
-            let mro = self.class_mro(&cn);
-            let does_x_control = cn == "X::Control" || mro.iter().any(|p| p == "X::Control");
-            let is_exception = !target.is_match_instance()
-                && (target.instance_is_exception_by_name()
-                    || cn == "Failure"
-                    || mro.iter().any(|p| p == "Exception" || p == "Failure"));
-            if is_exception || does_x_control {
-                if method == "resume" {
-                    return Err(crate::value::RuntimeError::resume_signal());
-                }
-                // `$exc.fail` is `fail $exc`: return a Failure carrying the
-                // exception (which throws only when sunk/used unhandled), not an
-                // immediate throw like `.throw`.
-                if method == "fail" {
-                    // EXCEPT on a HANDLED Failure, where the METHOD form
-                    // throws the wrapped exception outright (verified against
-                    // raku; the sub form `fail $f` re-arms instead — roast
-                    // S04-exceptions/fail.t). DBDish's execute error path is
-                    // `with self!handle-errors { ... } else { .fail }`: the
-                    // `with` marks the Failure handled via `.defined`, and
-                    // the `.fail` must surface the exception.
-                    if cn == "Failure"
-                        && target.is_failure_handled()
-                        && let ValueView::Instance { attributes, .. } = target.view()
-                        && let Some(exc) = attributes.as_map().get("exception").cloned()
-                    {
-                        let msg = self.exception_message_or_died_with(&exc);
-                        let mut err = crate::value::RuntimeError::new(msg);
-                        err.exception = Some(Box::new(exc));
-                        return Err(err);
-                    }
-                    return self.builtin_fail(std::slice::from_ref(&target));
-                }
-                // `$failure.die` (`open(...) orelse .die`) re-throws the
-                // exception the Failure already carries -- unconditionally,
-                // unlike `.fail` above, which only does this once the Failure
-                // is handled. Rendering the Failure itself as an exception
-                // would report its type repr `Failure()` instead of the
-                // wrapped exception's message (see `exception_message_text`,
-                // which has no attribute to read on a bare `Failure`).
-                if method == "die"
-                    && cn == "Failure"
-                    && let ValueView::Instance { attributes, .. } = target.view()
-                    && let Some(exc) = attributes.as_map().get("exception").cloned()
-                {
-                    let msg = self.exception_message_or_died_with(&exc);
-                    let mut err = crate::value::RuntimeError::new(msg);
-                    err.exception = Some(Box::new(exc));
-                    return Err(err);
-                }
-                // throw / rethrow / die: build a RuntimeError carrying this
-                // exception. The text is `$exc.message` (a user `method
-                // message` wins over the stored attribute), never the raw
-                // attribute — see `exception_message_text`.
-                let target = self.stamp_thrown_exception_dynamics(&target);
-                // A user `method message` is not run at the throw site: Rakudo
-                // evaluates it lazily, so `X.new.throw` under `dies-ok` never
-                // runs it (#12625). The dynamics stamped above let the later
-                // `.message` call see the throw-time dynamic variables.
-                let defer_message = self.has_user_method(&cn, "message");
-                let msg = if defer_message {
-                    format!("Died with {cn}")
-                } else {
-                    self.exception_message_or_died_with(&target)
-                };
-                let mut err = crate::value::RuntimeError::new(msg);
-                // Classes doing X::Control throw as control exceptions so
-                // CONTROL blocks catch them instead of CATCH.
-                if does_x_control {
-                    err.control = Some(crate::value::Control::Done);
-                }
-                // Throwing/rethrowing a CX::Warn re-raises it as a warn
-                // signal so the default handler writes to stderr and
-                // execution continues.
-                if cn == "CX::Warn" {
-                    err.control = Some(crate::value::Control::Warn);
-                }
-                if defer_message {
-                    err.exception = Some(Box::new(target.clone()));
-                    return Err(err);
-                }
-                let thrown_target = target.clone();
-                err.exception = Some(Box::new(Self::stamp_thrown_exception_message(
-                    &thrown_target,
-                    &err.message,
-                )));
-                return Err(err);
-            }
+        // `Exception`'s and `Failure`'s control methods (`throw`, `rethrow`,
+        // `die`, `fail`, `resume`, `Exception.Failure`) are rows, reached by the
+        // receiver's MRO (ADR-11276 §9.163).
+        if let Some(result) = self.exception_control_by_mro(&target, method, &args) {
+            return result;
         }
         // .WALK(name, :roles) — walk class+role chain calling the named
         // submethod once per "own" definition. Returns a no-arg Sub that,
@@ -1849,33 +1758,6 @@ impl Interpreter {
             } else {
                 Self::signature_count_value(&sig_info)
             });
-        }
-
-        // .throw on user-defined Exception subclasses
-        if method == "throw"
-            && args.is_empty()
-            && let ValueView::Instance { class_name, .. } = target.view()
-        {
-            let cn = class_name.resolve();
-            let is_exception = !target.is_match_instance()
-                && (target.instance_is_exception_by_name()
-                    || self.class_mro(&cn).iter().any(|p| {
-                        p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")
-                    }));
-            if is_exception {
-                // Derive the human message via `.message` (X::AdHoc → `payload`,
-                // a typed exception → its formatted message) rather than the
-                // type repr (`X::AdHoc()`), which `target.to_string_value()`
-                // would yield for an exception built without a `message` attr.
-                let target = self.stamp_thrown_exception_dynamics(&target);
-                let msg = self.exception_message_or_died_with(&target);
-                let mut err = RuntimeError::new(msg);
-                err.exception = Some(Box::new(Self::stamp_thrown_exception_message(
-                    &target,
-                    &err.message,
-                )));
-                return Err(err);
-            }
         }
 
         // .Str identity for Str-inheriting instances

@@ -157,9 +157,19 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
             crate::value::ValueView::RakuAst(node) => Symbol::intern(node.class.printed_name()),
             _ => Symbol::intern(&crate::value::what_type_name(value)),
         };
-        for arity in 0..=2u8 {
-            if crate::builtins::method_table::owner_row(own, sym, usize::from(arity)).is_some() {
-                arities |= 1 << arity;
+        // A built-in exception class (every `X::...` is one) also reaches the
+        // rows of `Exception`, which its MRO ends in (its control methods,
+        // ADR-11276 §9.163).
+        let exception = value
+            .instance_is_exception_by_name()
+            .then(|| Symbol::intern("Exception"));
+        for owner in std::iter::once(own).chain(exception) {
+            for arity in 0..=2u8 {
+                if crate::builtins::method_table::owner_row(owner, sym, usize::from(arity))
+                    .is_some()
+                {
+                    arities |= 1 << arity;
+                }
             }
         }
     }

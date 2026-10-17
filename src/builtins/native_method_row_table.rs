@@ -1519,6 +1519,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Exception", "die", 8, 60),
     ("Exception", "fail", 8, 60),
     ("Exception", "rethrow", 8, 60),
+    ("Exception", "Failure", 1, 56),
     ("IO::Path", "new", 8, 28),
     ("IO::Path", "path", 8, 60),
     ("Instant", "acos", 8, 60),

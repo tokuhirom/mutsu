@@ -272,12 +272,12 @@ impl Interpreter {
                     | "Seq"
             ) && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "elems" && matches!(target.view(), ValueView::Instance { .. }))
-            // `.throw`/`.gist`/`.Str`/`.Stringy`/`.rethrow` render
+            // `.gist`/`.Str`/`.Stringy` render
             // `$exc.message`; the native fast path can only read the stored
             // `message` attribute, which is still undefined when the class
             // computes its message lazily. See the twin gate in
             // `vm_native_dispatch::try_native_method`.
-            || (matches!(method, "throw" | "rethrow" | "gist" | "Str" | "Stringy")
+            || (matches!(method, "gist" | "Str" | "Stringy")
                 && matches!(target.view(), ValueView::Instance { class_name, .. }
                     if self.exception_render_needs_interpreter(target, &class_name.resolve())))
             || (matches!(target.view(), ValueView::Instance { .. })
@@ -388,7 +388,7 @@ impl Interpreter {
             return skip_pseudo
                 || method == "squish"
                 || method == "elems"
-                || (matches!(method, "throw" | "rethrow" | "gist" | "Str" | "Stringy")
+                || (matches!(method, "gist" | "Str" | "Stringy")
                     && self.exception_render_needs_interpreter(target, owner))
                 || self.is_native_method(owner, method)
                 || self.has_user_method(owner, "Bridge")

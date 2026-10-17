@@ -447,6 +447,9 @@ fn rows_are_declared_by_rakudo() {
         // Roast pins `$!.pending` (`S04-exceptions/pending.t`), which Rakudo
         // does not declare (ADR-11276 §9.161).
         .filter(|row| !(row.owner == "Any" && row.name == "pending"))
+        // Rakudo's `Failure` answers `rethrow`, `die` and `fail` through its
+        // `FALLBACK`, which throws the exception it carries (ADR-11276 §9.163).
+        .filter(|row| !(row.owner == "Failure" && matches!(row.name, "rethrow" | "die" | "fail")))
         // `is DEPRECATED` mixes a role declaring `DEPRECATED` into the
         // attribute; mutsu answers it on `Attribute` (ADR-11276 §9.161).
         .filter(|row| !(row.owner == "Attribute" && row.name == "DEPRECATED"))

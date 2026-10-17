@@ -456,10 +456,8 @@ impl Interpreter {
             if (!is_pure_render || render_overridden) && self.has_user_method(owner, "Bridge") {
                 return None;
             }
-            if matches!(
-                method_name,
-                "throw" | "rethrow" | "gist" | "Str" | "Stringy"
-            ) && self.exception_render_needs_interpreter(target, owner)
+            if matches!(method_name, "gist" | "Str" | "Stringy")
+                && self.exception_render_needs_interpreter(target, owner)
             {
                 return None;
             }
@@ -535,17 +533,15 @@ impl Interpreter {
                 {
                     return None;
                 }
-                // `.throw`/`.rethrow`/`.gist`/`.Str` render the exception's
+                // `.gist`/`.Str` render the exception's
                 // message, and the native fast path can only read the stored
                 // `message` ATTRIBUTE. A class that COMPUTES its message
                 // (`method message { $!message //= … }`) leaves that attribute
                 // undefined until the method runs, so the fast path would report
                 // the literal text `(Any)`. Only the interpreter can see the
                 // class registry, so defer the decision to it.
-                if matches!(
-                    method_name,
-                    "throw" | "rethrow" | "gist" | "Str" | "Stringy"
-                ) && self.exception_render_needs_interpreter(target, &cn)
+                if matches!(method_name, "gist" | "Str" | "Stringy")
+                    && self.exception_render_needs_interpreter(target, &cn)
                 {
                     return None;
                 }
