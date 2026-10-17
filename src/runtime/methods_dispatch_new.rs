@@ -4,99 +4,86 @@ use crate::symbol::Symbol;
 use crate::value::ValueMap;
 
 impl Interpreter {
-    /// Dispatch "new", "bless", and related constructor methods.
-    /// Returns Some(result) if the method was handled, None to fall through.
-    pub(super) fn dispatch_new_and_constructors(
-        &mut self,
-        target: &Value,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Option<Result<Value, RuntimeError>> {
-        match method {
-            // `Range.new($min, $max)`, with the `:excludes-min` / `:excludes-max` adverbs.
-            // The same range `$min..$max` builds, just spelled as a constructor.
-            "new" if matches!(target.view(), ValueView::Package(name) if name == "Range") => {
-                let adverb = |key: &str| {
-                    args.iter().any(|a| match a.view() {
-                        ValueView::Pair(k, v) => k == key && v.truthy(),
-                        ValueView::ValuePair(k, v) => k.to_string_value() == key && v.truthy(),
-                        _ => false,
-                    })
-                };
-                let positional: Vec<Value> = args
+    /// `Range.new($min, $max)`, with the `:excludes-min` / `:excludes-max`
+    /// adverbs: the same range `$min..$max` builds, spelled as a constructor.
+    // Cost: O(a), a = arguments of the call.
+    pub(crate) fn range_new_late(args: &[Value]) -> Result<Value, RuntimeError> {
+        let adverb = |key: &str| {
+            args.iter().any(|a| match a.view() {
+                ValueView::Pair(k, v) => k == key && v.truthy(),
+                ValueView::ValuePair(k, v) => k.to_string_value() == key && v.truthy(),
+                _ => false,
+            })
+        };
+        let positional: Vec<Value> = args
+            .iter()
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .cloned()
+            .collect();
+        if positional.len() != 2 {
+            return Err(RuntimeError::new(
+                "Range.new requires a minimum and a maximum".to_string(),
+            ));
+        }
+        let (excl_min, excl_max) = (adverb("excludes-min"), adverb("excludes-max"));
+        if !excl_min && !excl_max {
+            return Ok(Self::make_inclusive_range_value(
+                positional[0].clone(),
+                positional[1].clone(),
+            ));
+        }
+        Ok(Value::generic_range(
+            positional[0].clone(),
+            positional[1].clone(),
+            excl_min,
+            excl_max,
+        ))
+    }
+
+    /// `IO::ArgFiles.new(@files)`: an `$*ARGFILES`-like handle that reads from
+    /// an explicit file list rather than the global `@*ARGS`.
+    // Cost: O(f), f = files named.
+    pub(crate) fn argfiles_new_late(&mut self, args: &[Value]) -> Value {
+        let paths: Vec<String> = args
+            .iter()
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .flat_map(|a| match a.view() {
+                ValueView::Array(items, ..) => items
                     .iter()
-                    .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-                    .cloned()
-                    .collect();
-                if positional.len() != 2 {
-                    return Some(Err(RuntimeError::new(
-                        "Range.new requires a minimum and a maximum".to_string(),
-                    )));
-                }
-                let (excl_min, excl_max) = (adverb("excludes-min"), adverb("excludes-max"));
-                if !excl_min && !excl_max {
-                    return Some(Ok(Self::make_inclusive_range_value(
-                        positional[0].clone(),
-                        positional[1].clone(),
-                    )));
-                }
-                Some(Ok(Value::generic_range(
-                    positional[0].clone(),
-                    positional[1].clone(),
-                    excl_min,
-                    excl_max,
-                )))
-            }
-            "new" if matches!(target.view(), ValueView::Package(name) if name == "IO::ArgFiles") => {
-                // IO::ArgFiles.new(@files): an $*ARGFILES-like handle that reads
-                // from an explicit file list rather than the global @*ARGS.
-                let paths: Vec<String> = args
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>(),
+                ValueView::Seq(items) => items
                     .iter()
-                    .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-                    .flat_map(|a| match a.view() {
-                        ValueView::Array(items, ..) => items
-                            .iter()
-                            .map(|v| v.to_string_value())
-                            .collect::<Vec<_>>(),
-                        ValueView::Seq(items) => items
-                            .iter()
-                            .map(|v| v.to_string_value())
-                            .collect::<Vec<_>>(),
-                        _ => vec![a.to_string_value()],
-                    })
-                    .collect();
-                let handle = self.create_handle(
-                    crate::runtime::IoHandleTarget::ArgFiles,
-                    crate::runtime::IoHandleMode::Read,
-                    None,
-                );
-                let _ = self.with_handle_mut_opt(&handle, |state| {
-                    state.argfiles_paths = Some(paths);
-                    Ok(())
-                });
-                Some(Ok(handle))
-            }
-            "handled" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure") =>
-            {
-                if args.is_empty() {
-                    // Read the handled state
-                    Some(Ok(Value::truth(target.is_failure_handled())))
-                } else if args.len() == 1 {
-                    // Set the handled state: $failure.handled = value
-                    let val = args[0].truthy();
-                    if let ValueView::Instance { id, .. } = target.view() {
-                        crate::value::set_failure_handled(id, val);
-                    }
-                    Some(Ok(Value::truth(val)))
-                } else {
-                    None
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>(),
+                _ => vec![a.to_string_value()],
+            })
+            .collect();
+        let handle = self.create_handle(
+            crate::runtime::IoHandleTarget::ArgFiles,
+            crate::runtime::IoHandleMode::Read,
+            None,
+        );
+        let _ = self.with_handle_mut_opt(&handle, |state| {
+            state.argfiles_paths = Some(paths);
+            Ok(())
+        });
+        handle
+    }
+
+    /// `Failure.handled`: read the handled state, or set it
+    /// (`$failure.handled = value`). `None` for more arguments.
+    // Cost: O(1).
+    pub(crate) fn failure_handled_late(target: &Value, args: &[Value]) -> Option<Value> {
+        match args {
+            [] => Some(Value::truth(target.is_failure_handled())),
+            [value] => {
+                let val = value.truthy();
+                if let ValueView::Instance { id, .. } = target.view() {
+                    crate::value::set_failure_handled(id, val);
                 }
+                Some(Value::truth(val))
             }
-            "new-from-pairs" => Some(self.dispatch_new_from_pairs(target, args)),
-            "new" => Some(self.dispatch_new(target.clone(), args)),
-            // self.Mu::new(...)  –  qualified call to Mu's default constructor.
-            "Mu::new" => Some(self.call_method_with_values(target.clone(), "bless", args)),
-            "bless" => Some(self.dispatch_bless(target, args)),
             _ => None,
         }
     }
@@ -104,7 +91,7 @@ impl Interpreter {
     /// Handle new-from-pairs: creates a Set/Bag/Mix from Pair arguments.
     /// Pair keys become element keys, Pair values become weights/counts.
     /// Duplicate keys have weights summed. Zero-weight entries are removed.
-    fn dispatch_new_from_pairs(
+    pub(crate) fn dispatch_new_from_pairs(
         &mut self,
         target: &Value,
         args: Vec<Value>,
@@ -361,7 +348,7 @@ impl Interpreter {
     }
 
     /// Handle the "bless" method: creates a new instance with attributes from named args.
-    pub(super) fn dispatch_bless(
+    pub(crate) fn dispatch_bless(
         &mut self,
         target: &Value,
         args: Vec<Value>,

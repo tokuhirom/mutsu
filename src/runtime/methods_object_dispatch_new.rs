@@ -328,7 +328,7 @@ impl Interpreter {
         bindings
     }
 
-    pub(super) fn dispatch_new(
+    pub(crate) fn dispatch_new(
         &mut self,
         target: Value,
         args: Vec<Value>,

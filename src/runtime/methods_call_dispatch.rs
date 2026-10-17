@@ -3825,13 +3825,25 @@ impl Interpreter {
             return result;
         }
 
-        // Constructor dispatch (new, bless, Mu::new, new-from-pairs)
-        if matches!(
-            method,
-            "new" | "bless" | "Mu::new" | "handled" | "new-from-pairs"
-        ) && let Some(result) = self.dispatch_new_and_constructors(&target, method, args.clone())
-        {
+        // The constructors (`new`, `bless`, `new-from-pairs`) and
+        // `Failure.handled` are late rows of the receiver's MRO (§9.141).
+        // `self.Mu::new(...)` is the qualified call of Mu's constructor.
+        if method == "Mu::new" {
+            let result = self.call_method_with_values(target.clone(), "bless", args.clone());
             return self.materialize_exception_message_in_result(result);
+        }
+        if matches!(method, "new" | "bless" | "handled" | "new-from-pairs") {
+            let mut mro = self.classhow_mro_unhidden_names(&target);
+            // Every type is a `Mu`.
+            if mro.last().map(String::as_str) != Some("Mu") {
+                mro.push("Mu".to_string());
+            }
+            let owners: Vec<&str> = mro.iter().map(String::as_str).collect();
+            if let Some(result) = crate::builtins::method_table::invoke_mro_late(
+                self, &owners, method, &args, &target,
+            ) {
+                return self.materialize_exception_message_in_result(result);
+            }
         }
 
         // `enum X does Role`: a composed role's method wins over the built-in

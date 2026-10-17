@@ -9,6 +9,7 @@ use super::MethodRow;
 
 pub(crate) mod attribute;
 mod class_how;
+mod ctor_late;
 mod enum_how;
 mod grammar;
 mod mu_answers;
@@ -37,6 +38,7 @@ pub(crate) static ENUM_HOW_OWNERS: &[&str] = &["Metamodel::EnumHOW"];
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     attribute::ROWS,
     class_how::ROWS,
+    ctor_late::ROWS,
     enum_how::ROWS,
     grammar::ROWS,
     mu_base::ROWS,
