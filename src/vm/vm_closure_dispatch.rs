@@ -1924,9 +1924,11 @@ impl Interpreter {
                 .iter()
                 .filter_map(|k| env_now.get_sym(*k).map(|v| (k, v)))
                 .collect();
-            carried.extend(env_now.iter().filter(|(k, _)| {
-                k.is_dynamic_var_env_key() && !cc.free_var_writes.contains(k)
-            }));
+            carried.extend(
+                env_now
+                    .iter()
+                    .filter(|(k, _)| k.is_dynamic_var_env_key() && !cc.free_var_writes.contains(k)),
+            );
             for (k, v) in carried {
                 if unchanged_free.contains(k) {
                     continue;
