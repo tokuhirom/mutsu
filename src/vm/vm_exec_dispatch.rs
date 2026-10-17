@@ -1943,6 +1943,25 @@ impl Interpreter {
                     Some((source_name, inner, _)) => (inner.clone(), Some(source_name.resolve())),
                     None => (raw_val, None),
                 };
+                // A sigilless `\target` bound to a multi-dim slice lvalue
+                // distributes a statement assignment through its cells, as
+                // `SetLocal` does in the declaring frame: here a closure that
+                // captured `target` makes it (`{ target = values }()`, #13730).
+                if !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !was_scalar_bind
+                    && !self.vardecl_context().get()
+                    && name.starts_with('\\')
+                    && crate::env::bound_array_slice_possible()
+                    && let Some(holder) = self.env().get_sym(name_sym).map(Value::deref_container)
+                    && let Some(res) =
+                        self.distribute_bound_multidim_slice(&name, &holder, &raw_val)
+                {
+                    res?;
+                    *ip += 1;
+                    return Ok(());
+                }
                 // `bind_marks_no_container` of the SetLocal path: a slot-less
                 // `(my $l := EXPR)` declaration binds `$l` straight to the value,
                 // so `$l =:= IterationEnd` must hold.
@@ -2855,6 +2874,14 @@ impl Interpreter {
                     {
                         let val = self.coerce_container_cell_store(&arc, val)?;
                         Self::cell_store_preserving_container_identity(&name, &arc, &val);
+                        // A dynamic bound `is rw` to the target (`$*a is rw`)
+                        // is also a binding of its own, which the parameter's
+                        // writeback copies to the target when its routine
+                        // returns: it must hold the value too, or that copy
+                        // puts the old value back (#13701).
+                        if name.starts_with('*') || name.starts_with("$*") {
+                            self.set_env_with_main_alias(&name, val);
+                        }
                         *ip += 1;
                         return Ok(());
                     }
