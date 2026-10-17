@@ -27,8 +27,8 @@ mod outer_scope;
 mod rebind;
 mod routine_owned;
 pub(crate) mod static_link;
-pub(crate) use static_link::{OuterScope, with_static_links_suppressed};
 use static_link::same_variable;
+pub(crate) use static_link::{OuterScope, with_static_links_suppressed};
 pub(crate) mod stats;
 
 /// Process-wide immutable "base" tier of the environment.
@@ -2548,7 +2548,10 @@ impl Env {
                 // variable's record from that capture too, never from the
                 // frames that happen to call it (ADR-13757).
                 if let Some(subject) = key.shadow_meta_subject()
-                    && cur.fallback.as_deref().is_some_and(|fb| fb.get(&subject).is_some())
+                    && cur
+                        .fallback
+                        .as_deref()
+                        .is_some_and(|fb| fb.get(&subject).is_some())
                 {
                     return found;
                 }
