@@ -838,12 +838,18 @@ pub(crate) fn shapeless_row(
             class_name
         }
         ValueView::Instance { class_name, .. } if class_name != "Failure" => {
+            let interp = interp?;
+            // A class with its own `iterator` or `list` is listed through it,
+            // which the interpreter does (§9.148).
+            if list && interp.own_iteration_reads(class_name.as_str(), method.as_str()) {
+                return None;
+            }
             let mut owner = None;
             let subscript = matches!(
                 method.as_str(),
                 "AT-POS" | "EXISTS-POS" | "AT-KEY" | "EXISTS-KEY"
             );
-            let mro = interp?.class_mro(class_name.as_str());
+            let mro = interp.class_mro(class_name.as_str());
             let mut exhausted = true;
             for &class in mro.iter() {
                 if (class == cool && text) || (class == any && list) {
