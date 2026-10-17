@@ -3345,6 +3345,26 @@ recognition table gains `Mu.DUMP`, `Mu.perl`, `Mu.REPR`, `Cool.EVAL` and `Any.AS
 Left in place: the `name` arm, whose answers (`Nil` for an `Array` or `Hash`, an error for a `Code` type object) model
 container descriptors mutsu does not have yet.
 
+### 9.139 The tail of `dispatch_method_by_name_3` is late rows of the receiver's MRO (2026-10-17)
+
+`refactor/11276-match3-tail-rows`. The by-name match at the end of `dispatch_method_by_name_3` answered, per receiver:
+a `Seq`'s `Numeric`; the `Supply` type object's `signal` and `grab`; the temporal type objects' `Date`/`DateTime`;
+`Thread.run`; the `Str`/`Stringy` of a list whose elements need the interpreter, and of a regex; and the `keys`,
+`values`, `AT-KEY`, `EXISTS-KEY` and `EXISTS-POS` of a `Stash`, an object hash, a `Match`, a `Capture` and a `Pair`.
+
+Decision. The match becomes the §9.138 walk (`invoke_mro_late`) over the receiver's MRO, without `Mu`, for those names.
+`Mu`'s late rows are the cascade's last resort and must not answer ahead of the user methods this step precedes. The
+rows are in `collections/match3_late.rs`, with owners Rakudo declares: `Seq.Numeric`; `Date`'s and `DateTime`'s `Date`
+and `DateTime`; `Thread.run`; `List.Str`, `Seq.Str` and `Seq.Stringy`; and `Any`'s `keys`, `values`, `AT-KEY` and
+`EXISTS-KEY`. `Any.EXISTS-POS`'s late row (§9.138) also answers a `Match`'s positional capture. The type-object `grab`
+joins `Supply`'s existing `grab` row, which now admits the type object. `Thread.run` is no longer a native method of
+`Thread` (`hardcoded_native_method`), because the native path's receiver is a copy rebuilt from the attributes, and
+`run` answers the invocant itself.
+
+Removed rather than moved: `Supply.signal`, which Rakudo does not have (`signal(...)` is a routine). The arm built an
+empty supply that never fired. The regex `Str`/`Stringy` arm was already unreachable, since `Code`'s rows answer a
+regex first.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

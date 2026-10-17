@@ -6,7 +6,9 @@
 //! Each is `OWNER_ONLY`, reached only by `call_method_with_values`' walk of a
 //! list's or array's MRO for a late row, after the subscript rows declined.
 //! A named argument the method does not declare was stripped before; one that
-//! is left counts as an index, as it always did.
+//! is left counts as an index, as it always did. `EXISTS-POS` also answers a
+//! `Match`'s positional capture, from `dispatch_method_by_name_3`'s walk
+//! (§9.139).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -61,7 +63,15 @@ macro_rules! handler {
 }
 
 handler!(at_pos, "AT-POS");
-handler!(exists_pos, "EXISTS-POS");
+// Cost: O(d), d = indices of the call or dimensions of a shaped invocant.
+fn exists_pos(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    let all = indices(args, named);
+    Interpreter::array_pos_late(t, "EXISTS-POS", &all).or_else(|| match all.as_slice() {
+        // A `Match`'s positional capture (`dispatch_method_by_name_3`, §9.139).
+        [_] => i.dispatch_match_exists_pos(t, &all),
+        _ => None,
+    })
+}
 handler!(assign_pos, "ASSIGN-POS");
 handler!(bind_pos, "BIND-POS");
 handler!(delete_pos, "DELETE-POS");

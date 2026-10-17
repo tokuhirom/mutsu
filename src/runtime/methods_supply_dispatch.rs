@@ -428,16 +428,6 @@ impl Interpreter {
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
-    /// Handle Supply.signal class method
-    pub(super) fn dispatch_supply_signal(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let mut attrs = HashMap::new();
-        attrs.insert("values".to_string(), Value::array(Vec::new()));
-        attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("live".to_string(), Value::TRUE);
-        attrs.insert("signals".to_string(), Value::array(args.to_vec()));
-        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
-    }
-
     /// Handle Supply instance .grab method
     pub(super) fn dispatch_supply_grab(
         &mut self,

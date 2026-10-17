@@ -77,7 +77,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("min", Min),
     row!("max", Max),
     row!("minmax", Minmax),
-    row!("grab", Grab),
+    row!("grab", Grab, class),
     row!("skip", Skip),
     row!("live", Live),
     row!("collate", Collate),
