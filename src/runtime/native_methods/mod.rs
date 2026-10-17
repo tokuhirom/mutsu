@@ -43,6 +43,7 @@ pub(crate) use state::{
     split_supply_chunks_into_lines, take_supply_channel, whenever_closed_seq,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
+pub(crate) use proc::ProcStream;
 
 pub(in crate::runtime) use act_loop::ActLoop;
 pub(in crate::runtime) use attr_publish::AttrPublisher;
@@ -409,7 +410,6 @@ impl Interpreter {
                 | "Channel"
                 | "Supply"
                 | "Supplier"
-                | "Proc"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 // `IO::Socket::Async::Listener` has no native MUTABLE method (its
@@ -434,7 +434,6 @@ impl Interpreter {
                             | "Channel"
                             | "Supply"
                             | "Supplier"
-                            | "Proc"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                     )
@@ -449,7 +448,6 @@ impl Interpreter {
                 args,
                 publish,
             ),
-            "Proc" => self.native_proc_mut(attributes, method, args, publish),
             class @ ("Promise" | "Channel") => {
                 self.native_promise_channel_payload_mut(attributes, class, method, args)
             }
@@ -514,6 +512,8 @@ impl Interpreter {
                 | "Lock"
                 | "Lock::Async"
                 | "Lock::ConditionVariable"
+                | "Lock::Soft"
+                | "IO::Socket::Async::ListenSocket"
                 | "Semaphore"
                 | "Distro"
                 | "Kernel"
@@ -562,6 +562,8 @@ impl Interpreter {
                             | "Lock"
                             | "Lock::Async"
                             | "Lock::ConditionVariable"
+                            | "Lock::Soft"
+                            | "IO::Socket::Async::ListenSocket"
                             | "Distro"
                             | "Kernel"
                             | "Perl"
@@ -637,9 +639,24 @@ impl Interpreter {
                 self.native_socket_async_listener(attributes, method, args)
             }
             "IO::Pipe" => self.native_io_pipe(attributes, method, &args),
-            "Lock" | "Lock::Async" => self.native_lock(attributes, method, args),
             "Semaphore" => self.native_semaphore(attributes, method, args),
-            "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
+            // The handle classes' methods are rows (ADR-11276 §9.157).
+            class @ ("Lock"
+            | "Lock::Async"
+            | "Lock::Soft"
+            | "Lock::ConditionVariable"
+            | "Cancellation"
+            | "Tap"
+            | "IO::Socket::Async::ListenSocket"
+            | "Proc") => {
+                let owners = crate::builtins::method_table::handle_owners_of(class).unwrap_or(&[]);
+                crate::builtins::method_table::invoke_owner(self, owners, method, &args, || {
+                    Value::make_instance(Symbol::intern(class_name), attributes.clone())
+                })
+                .unwrap_or_else(|| {
+                    Err(crate::runtime::did_you_mean::method_not_found(method, class_name))
+                })
+            }
             // The `Systemic` classes' methods are rows (ADR-11276 §9.155).
             class @ ("Distro" | "Kernel" | "Perl" | "Raku" | "Compiler" | "VM") => {
                 let owners = crate::builtins::method_table::systemic_owners_of(class)
@@ -662,7 +679,6 @@ impl Interpreter {
             }
             "Promise::Vow" => self.native_promise_vow(attributes, method, args),
             "Thread" => self.native_thread(attributes, method),
-            "Proc" => Ok(self.native_proc(attributes, method)),
             "Supply" => {
                 let result = self.native_supply(attributes, method, args);
                 self.sync_after_synchronous_delivery();
@@ -673,7 +689,6 @@ impl Interpreter {
                 self.sync_after_synchronous_delivery();
                 result
             }
-            "Tap" => self.native_tap(attributes, method),
             "__ScheduledTapPump" => self.native_scheduled_tap_pump(attributes, method, args),
             "__SupplyCollector" => self.native_supply_collector(attributes, method, args),
             "__SupplyQuitForwarder" => self.native_supply_quit_forwarder(attributes, method, args),
@@ -682,7 +697,6 @@ impl Interpreter {
             "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
-            "Cancellation" => self.native_cancellation(attributes, method),
             // The encodings' methods are rows (ADR-11276 §9.156).
             class @ ("Encoding::Builtin"
             | "Encoding::Encoder::Builtin"

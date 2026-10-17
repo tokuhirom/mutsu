@@ -19,7 +19,7 @@ is Proc.new.gist, $full, 'fresh Proc gist matches raku';
 is Proc.new.signal, 0, 'signal getter reports 0 (not the Any default) for an un-run proc';
 is Proc.new.exitcode, Nil, 'exitcode getter is Nil for an un-run proc';
 is Proc.new.pid, Nil, 'pid getter is Nil for an un-run proc';
-is Proc.new.Int, -1, 'Int coercion is -1 for an un-run proc';
+dies-ok { Proc.new.Int }, 'Proc has no Int coercion, as in Rakudo';
 is Proc.new.in.^name, 'IO::Pipe', 'in default is the IO::Pipe type object';
 
 my $p = run $*EXECUTABLE, '-e', '', :out;

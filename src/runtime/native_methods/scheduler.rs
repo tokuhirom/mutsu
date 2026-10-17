@@ -153,9 +153,9 @@ impl Interpreter {
                         class_name,
                         attributes: inner,
                         ..
-                    } if class_name == "Tap" => {
+                    } if class_name == "Tap" || class_name == "IO::Socket::Async::ListenSocket" => {
                         let inner = inner.as_map().clone();
-                        self.native_tap(&inner, "close")?;
+                        self.tap_close(&inner)?;
                     }
                     _ => {}
                 }
@@ -164,158 +164,137 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(in crate::runtime) fn native_tap(
-        &mut self,
-        attributes: &AttrMap,
-        method: &str,
-    ) -> Result<Value, RuntimeError> {
-        match method {
-            "cancel" | "close" => {
-                if let Some(ValueView::Int(whenever_id)) =
-                    attributes.get("whenever_id").map(Value::view)
-                {
-                    close_whenever(whenever_id as u64);
-                }
-                if let Some(ValueView::Int(listener_id)) =
-                    attributes.get("listener-id").map(Value::view)
-                {
-                    let lid = listener_id as u64;
-                    close_async_listener(lid);
-                    set_listener_closed(lid);
-                }
-                if let (Some(ValueView::Int(supplier_id)), Some(ValueView::Int(tap_id))) = (
-                    attributes.get("supplier_id").map(Value::view),
-                    attributes.get("tap_id").map(Value::view),
-                ) {
-                    close_supplier_tap(supplier_id as u64, tap_id as u64);
-                }
-                // ADR-0028: reclaim a `.schedule-on(ThreadPoolScheduler)` tap's
-                // pump — dropping the sender disconnects the channel, so the
-                // drain worker's blocking `recv()` observes end-of-stream and
-                // exits instead of parking forever.
-                if let Some(ValueView::Int(pump_id)) = attributes.get("pump_id").map(Value::view) {
-                    super::state_scheduled_pump::drop_scheduled_pump(pump_id as u64);
-                }
-                // Stop every channel-backed act-loop worker this tap spawned:
-                // setting the shared close flag makes the worker's bounded
-                // wait exit and the flagged sender refuse further sends, so
-                // an interval-timer entry feeding the channel retires on its
-                // next tick. Without this the workers (and the timer) ran
-                // until process exit — 4000 closed taps in
-                // roast/S17-supply/syntax.t test 63 left ~4000 live threads
-                // burning ~10 cores for the rest of the file.
-                if let Some(ValueView::Array(ids, ..)) =
-                    attributes.get("act_loop_close_ids").map(Value::view)
-                {
-                    for id in ids.iter() {
-                        if let ValueView::Int(id) = id.view() {
-                            close_act_loop(id as u64);
-                        }
-                    }
-                }
-                // Nested `whenever` taps close first, so their CLOSE phasers
-                // run before the block's own (#12864).
-                if let Some(cid) = attributes.get("close_supplier_id").and_then(Value::as_int) {
-                    self.close_supply_child_taps(cid as u64)?;
-                }
-                // Cascade upstream. In raku, closing a tap closes the supply
-                // block that produced it, which closes the `whenever`
-                // subscriptions inside it, which closes *their* sources — all
-                // the way down to the original Supplier or listener. Without
-                // this the block kept running: its CLOSE phasers never fired and
-                // values still reached the (closed) tap callback, so
-                // `Cro::Service.stop` left the old listener serving and a second
-                // server on the same port never got a request.
-                if let Some(entries) = attributes.get("upstream_taps") {
-                    self.close_upstream_taps(entries)?;
-                }
-                // Fire any CLOSE-phaser callbacks registered on this tap's
-                // supply emitter (run once — taking empties the list, so a
-                // later normal termination won't run them again). After the
-                // cascade, so a chain's CLOSE phasers run source-first, as raku
-                // does.
-                if let Some(ValueView::Int(cid)) =
-                    attributes.get("close_supplier_id").map(Value::view)
-                {
-                    for cb in take_supplier_close_callbacks(cid as u64) {
-                        self.call_sub_value(cb, vec![], true)?;
-                    }
-                }
-                Ok(Value::TRUE)
-            }
-            "socket-port" => Ok(attributes
-                .get("socket-port")
-                .cloned()
-                .unwrap_or(Value::promise(SharedPromise::new()))),
-            "socket-host" => Ok(attributes
-                .get("socket-host")
-                .cloned()
-                .unwrap_or(Value::promise(SharedPromise::new()))),
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Tap",
-                method
-            ))),
+    /// `Tap.close`: stop the subscription, closing what it holds (a
+    /// `whenever`, a listener, a supplier tap, a scheduled pump, act-loop
+    /// workers) and cascading to the taps upstream of it, then run its CLOSE
+    /// phasers.
+    // Cost: O(u + c), u = upstream taps, c = CLOSE phasers.
+    pub(crate) fn tap_close(&mut self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
+        if let Some(ValueView::Int(whenever_id)) =
+            attributes.get("whenever_id").map(Value::view)
+        {
+            close_whenever(whenever_id as u64);
         }
+        if let Some(ValueView::Int(listener_id)) =
+            attributes.get("listener-id").map(Value::view)
+        {
+            let lid = listener_id as u64;
+            close_async_listener(lid);
+            set_listener_closed(lid);
+        }
+        if let (Some(ValueView::Int(supplier_id)), Some(ValueView::Int(tap_id))) = (
+            attributes.get("supplier_id").map(Value::view),
+            attributes.get("tap_id").map(Value::view),
+        ) {
+            close_supplier_tap(supplier_id as u64, tap_id as u64);
+        }
+        // ADR-0028: reclaim a `.schedule-on(ThreadPoolScheduler)` tap's
+        // pump — dropping the sender disconnects the channel, so the
+        // drain worker's blocking `recv()` observes end-of-stream and
+        // exits instead of parking forever.
+        if let Some(ValueView::Int(pump_id)) = attributes.get("pump_id").map(Value::view) {
+            super::state_scheduled_pump::drop_scheduled_pump(pump_id as u64);
+        }
+        // Stop every channel-backed act-loop worker this tap spawned:
+        // setting the shared close flag makes the worker's bounded
+        // wait exit and the flagged sender refuse further sends, so
+        // an interval-timer entry feeding the channel retires on its
+        // next tick. Without this the workers (and the timer) ran
+        // until process exit — 4000 closed taps in
+        // roast/S17-supply/syntax.t test 63 left ~4000 live threads
+        // burning ~10 cores for the rest of the file.
+        if let Some(ValueView::Array(ids, ..)) =
+            attributes.get("act_loop_close_ids").map(Value::view)
+        {
+            for id in ids.iter() {
+                if let ValueView::Int(id) = id.view() {
+                    close_act_loop(id as u64);
+                }
+            }
+        }
+        // Nested `whenever` taps close first, so their CLOSE phasers
+        // run before the block's own (#12864).
+        if let Some(cid) = attributes.get("close_supplier_id").and_then(Value::as_int) {
+            self.close_supply_child_taps(cid as u64)?;
+        }
+        // Cascade upstream. In raku, closing a tap closes the supply
+        // block that produced it, which closes the `whenever`
+        // subscriptions inside it, which closes *their* sources — all
+        // the way down to the original Supplier or listener. Without
+        // this the block kept running: its CLOSE phasers never fired and
+        // values still reached the (closed) tap callback, so
+        // `Cro::Service.stop` left the old listener serving and a second
+        // server on the same port never got a request.
+        if let Some(entries) = attributes.get("upstream_taps") {
+            self.close_upstream_taps(entries)?;
+        }
+        // Fire any CLOSE-phaser callbacks registered on this tap's
+        // supply emitter (run once — taking empties the list, so a
+        // later normal termination won't run them again). After the
+        // cascade, so a chain's CLOSE phasers run source-first, as raku
+        // does.
+        if let Some(ValueView::Int(cid)) =
+            attributes.get("close_supplier_id").map(Value::view)
+        {
+            for cb in take_supplier_close_callbacks(cid as u64) {
+                self.call_sub_value(cb, vec![], true)?;
+            }
+        }
+        Ok(Value::TRUE)
     }
 
-    pub(in crate::runtime) fn native_cancellation(
-        &self,
-        attributes: &AttrMap,
-        method: &str,
-    ) -> Result<Value, RuntimeError> {
-        match method {
-            "cancel" => {
-                if let Some(ValueView::Int(id)) = attributes.get("cancellation-id").map(Value::view)
-                    && id > 0
-                    && let Some(flag) = cancellation_state(id as u64)
-                {
-                    flag.store(true, Ordering::Relaxed);
-                    // A timer-driven `:every` cue may have an iteration in
-                    // flight (dispatched before the flag was set). Wait for it
-                    // (bounded) so no callback side effect lands after
-                    // `.cancel` returns: an in-flight `cas $a` completing
-                    // after the caller re-declares a same-named lexical
-                    // resurrects the dead cue's count through the bare-name
-                    // atomic lane (roast S17-scheduler/every.t). Skip the wait
-                    // when the callback itself called `.cancel` (same thread —
-                    // waiting would deadlock until the timeout).
-                    if let Some(busy_state) = cancellation_busy(id as u64) {
-                        let self_cancel = busy_state
-                            .running_thread
-                            .lock()
-                            .ok()
-                            .is_some_and(|g| *g == Some(std::thread::current().id()));
-                        if !self_cancel {
-                            crate::gc::block_quiescent(|| {
-                                let deadline = std::time::Instant::now()
-                                    + std::time::Duration::from_millis(100);
-                                while busy_state.busy.load(Ordering::Acquire)
-                                    && std::time::Instant::now() < deadline
-                                {
-                                    std::thread::yield_now();
-                                }
-                            });
+    /// `Cancellation.cancel`: stop the cued work, waiting (bounded) for an
+    /// iteration already in flight.
+    // Cost: O(1) plus a bounded wait of at most 100 ms.
+    pub(crate) fn cancellation_cancel(attributes: &AttrMap) -> Value {
+        if let Some(ValueView::Int(id)) = attributes.get("cancellation-id").map(Value::view)
+            && id > 0
+            && let Some(flag) = cancellation_state(id as u64)
+        {
+            flag.store(true, Ordering::Relaxed);
+            // A timer-driven `:every` cue may have an iteration in
+            // flight (dispatched before the flag was set). Wait for it
+            // (bounded) so no callback side effect lands after
+            // `.cancel` returns: an in-flight `cas $a` completing
+            // after the caller re-declares a same-named lexical
+            // resurrects the dead cue's count through the bare-name
+            // atomic lane (roast S17-scheduler/every.t). Skip the wait
+            // when the callback itself called `.cancel` (same thread —
+            // waiting would deadlock until the timeout).
+            if let Some(busy_state) = cancellation_busy(id as u64) {
+                let self_cancel = busy_state
+                    .running_thread
+                    .lock()
+                    .ok()
+                    .is_some_and(|g| *g == Some(std::thread::current().id()));
+                if !self_cancel {
+                    crate::gc::block_quiescent(|| {
+                        let deadline = std::time::Instant::now()
+                            + std::time::Duration::from_millis(100);
+                        while busy_state.busy.load(Ordering::Acquire)
+                            && std::time::Instant::now() < deadline
+                        {
+                            std::thread::yield_now();
                         }
-                        drop_cancellation_busy(id as u64);
-                    }
+                    });
                 }
-                Ok(Value::NIL)
+                drop_cancellation_busy(id as u64);
             }
-            "cancelled" => {
-                let cancelled = attributes
-                    .get("cancellation-id")
-                    .and_then(|value| match value.view() {
-                        ValueView::Int(id) if id > 0 => cancellation_state(id as u64),
-                        _ => None,
-                    })
-                    .is_some_and(|flag| flag.load(Ordering::Acquire));
-                Ok(Value::truth(cancelled))
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Cancellation",
-                method
-            ))),
         }
+        Value::NIL
+    }
+
+    /// `Cancellation.cancelled`.
+    // Cost: O(1).
+    pub(crate) fn cancellation_cancelled(attributes: &AttrMap) -> Value {
+        let cancelled = attributes
+            .get("cancellation-id")
+            .and_then(|value| match value.view() {
+                ValueView::Int(id) if id > 0 => cancellation_state(id as u64),
+                _ => None,
+            })
+            .is_some_and(|flag| flag.load(Ordering::Acquire));
+        Value::truth(cancelled)
     }
 
     pub(in crate::runtime) fn native_scheduler(

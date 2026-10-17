@@ -5,119 +5,104 @@ use crate::value::ValueView;
 use super::state_lock::*;
 use crate::value::AttrMap;
 
+/// The lock a `Lock` (or `Lock::Async`) receiver stands for, by its `lock-id`.
+// Cost: O(1), one hash lookup.
+fn lock_of(
+    attributes: &AttrMap,
+    method: &str,
+) -> Result<(u64, std::sync::Arc<LockRuntime>), RuntimeError> {
+    let lock_id = match attributes.get("lock-id").and_then(|v| v.as_int()) {
+        Some(id) if id > 0 => id as u64,
+        _ => {
+            return Err(RuntimeError::new(format!(
+                "Lock.{method} called on invalid Lock"
+            )));
+        }
+    };
+    lock_runtime_by_id(lock_id)
+        .map(|lock| (lock_id, lock))
+        .ok_or_else(|| RuntimeError::new(format!("Lock.{method} could not find lock state")))
+}
+
+/// Whether the receiver is a `Lock::Async`.
+// Cost: O(1).
+fn is_async(attributes: &AttrMap) -> bool {
+    attributes
+        .get("async")
+        .is_some_and(|v| matches!(v.view(), ValueView::Bool(true)))
+}
+
 impl Interpreter {
-    pub(in crate::runtime) fn native_lock(
+    /// `Lock.protect(&code)`: run `code` holding the lock.
+    // Cost: O(1) plus the wait for the lock and the block's own cost.
+    pub(crate) fn lock_protect(
         &mut self,
         attributes: &AttrMap,
-        method: &str,
-        args: Vec<Value>,
+        args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        match method {
-            "protect" => {
-                // `.protect` requires a single Callable block; a non-Callable
-                // (e.g. `.protect: %()`) matches no candidate and must throw
-                // X::Multi::NoMatch (roast .../multi-no-match.t).
-                if args.len() != 1
-                    || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..))
-                {
-                    return Err(
-                        crate::runtime::methods_signature_errors::make_multi_no_match_error(
-                            "protect",
-                        ),
-                    );
-                }
-                let lock_id = match attributes.get("lock-id").and_then(|v| v.as_int()) {
-                    Some(id) if id > 0 => id as u64,
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "Lock.protect called on Lock without lock-id",
-                        ));
-                    }
-                };
-                let lock = lock_runtime_by_id(lock_id)
-                    .ok_or_else(|| RuntimeError::new("Lock.protect could not find lock state"))?;
-                let me = current_thread_id();
-                acquire_lock(&lock, me)?;
-                // Entering the critical section: pull the latest value of any
-                // shared scalar a previous holder committed inside its own
-                // critical section (mirrors Semaphore.acquire).
-                self.enter_critical_section();
-                let code = args.first().cloned().unwrap_or(Value::NIL);
-                let result = self.call_protect_block(&code);
-                self.leave_critical_section();
-                let _ = release_lock(&lock, me);
-                result
-            }
-            "lock" => {
-                let lock_id = match attributes.get("lock-id").and_then(|v| v.as_int()) {
-                    Some(id) if id > 0 => id as u64,
-                    _ => {
-                        return Err(RuntimeError::new("Lock.lock called on invalid Lock"));
-                    }
-                };
-                let lock = lock_runtime_by_id(lock_id)
-                    .ok_or_else(|| RuntimeError::new("Lock.lock could not find lock state"))?;
-                let me = current_thread_id();
-                // Lock::Async.lock() returns a Promise; plain Lock.lock() returns Nil.
-                let is_async = attributes
-                    .get("async")
-                    .map(|v| matches!(v.view(), ValueView::Bool(true)))
-                    .unwrap_or(false);
-                if is_async {
-                    let promise = async_acquire_lock(&lock, me)?;
-                    Ok(Value::promise(promise))
-                } else {
-                    acquire_lock(&lock, me)?;
-                    self.enter_critical_section();
-                    Ok(Value::NIL)
-                }
-            }
-            "unlock" => {
-                let lock_id = match attributes.get("lock-id").and_then(|v| v.as_int()) {
-                    Some(id) if id > 0 => id as u64,
-                    _ => {
-                        return Err(RuntimeError::new("Lock.unlock called on invalid Lock"));
-                    }
-                };
-                let lock = lock_runtime_by_id(lock_id)
-                    .ok_or_else(|| RuntimeError::new("Lock.unlock could not find lock state"))?;
-                let is_async = attributes
-                    .get("async")
-                    .map(|v| matches!(v.view(), ValueView::Bool(true)))
-                    .unwrap_or(false);
-                if is_async {
-                    async_release_lock(&lock)?;
-                } else {
-                    self.leave_critical_section();
-                    let me = current_thread_id();
-                    release_lock(&lock, me)?;
-                }
-                Ok(Value::NIL)
-            }
-            "condition" => {
-                let lock_id = match attributes.get("lock-id").and_then(|v| v.as_int()) {
-                    Some(id) if id > 0 => id as u64,
-                    _ => return Err(RuntimeError::new("Lock.condition called on invalid Lock")),
-                };
-                let lock = lock_runtime_by_id(lock_id)
-                    .ok_or_else(|| RuntimeError::new("Lock.condition could not find lock state"))?;
-                let cond_id = next_condition_id();
-                let _ = ensure_condition(&lock, cond_id).ok_or_else(|| {
-                    RuntimeError::new("Lock.condition failed to create condition")
-                })?;
-                let mut attrs = HashMap::new();
-                attrs.insert("lock-id".to_string(), Value::int(lock_id as i64));
-                attrs.insert("cond-id".to_string(), Value::int(cond_id as i64));
-                Ok(Value::make_instance(
-                    Symbol::intern("Lock::ConditionVariable"),
-                    attrs,
-                ))
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Lock",
-                method
-            ))),
+        // `.protect` requires a single Callable block; a non-Callable
+        // (e.g. `.protect: %()`) matches no candidate and must throw
+        // X::Multi::NoMatch (roast .../multi-no-match.t).
+        if args.len() != 1 || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..))
+        {
+            return Err(crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                "protect",
+            ));
         }
+        let (_, lock) = lock_of(attributes, "protect")?;
+        let me = current_thread_id();
+        acquire_lock(&lock, me)?;
+        // Entering the critical section: pull the latest value of any
+        // shared scalar a previous holder committed inside its own
+        // critical section (mirrors Semaphore.acquire).
+        self.enter_critical_section();
+        let result = self.call_protect_block(&args[0]);
+        self.leave_critical_section();
+        let _ = release_lock(&lock, me);
+        result
+    }
+
+    /// `Lock.lock`: take the lock; `Lock::Async.lock` answers a `Promise`
+    /// kept once it is taken.
+    // Cost: O(1) plus the wait for the lock.
+    pub(crate) fn lock_lock(&mut self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
+        let (_, lock) = lock_of(attributes, "lock")?;
+        let me = current_thread_id();
+        if is_async(attributes) {
+            return Ok(Value::promise(async_acquire_lock(&lock, me)?));
+        }
+        acquire_lock(&lock, me)?;
+        self.enter_critical_section();
+        Ok(Value::NIL)
+    }
+
+    /// `Lock.unlock`.
+    // Cost: O(1).
+    pub(crate) fn lock_unlock(&mut self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
+        let (_, lock) = lock_of(attributes, "unlock")?;
+        if is_async(attributes) {
+            async_release_lock(&lock)?;
+        } else {
+            self.leave_critical_section();
+            release_lock(&lock, current_thread_id())?;
+        }
+        Ok(Value::NIL)
+    }
+
+    /// `Lock.condition`: a new condition variable of the lock.
+    // Cost: O(1).
+    pub(crate) fn lock_condition(attributes: &AttrMap) -> Result<Value, RuntimeError> {
+        let (lock_id, lock) = lock_of(attributes, "condition")?;
+        let cond_id = next_condition_id();
+        let _ = ensure_condition(&lock, cond_id)
+            .ok_or_else(|| RuntimeError::new("Lock.condition failed to create condition"))?;
+        let mut attrs = HashMap::new();
+        attrs.insert("lock-id".to_string(), Value::int(lock_id as i64));
+        attrs.insert("cond-id".to_string(), Value::int(cond_id as i64));
+        Ok(Value::make_instance(
+            Symbol::intern("Lock::ConditionVariable"),
+            attrs,
+        ))
     }
 
     /// The native methods of a `Semaphore`: every one `Semaphore` declares is a
@@ -208,12 +193,19 @@ impl Interpreter {
         Ok(Value::NIL)
     }
 
-    pub(in crate::runtime) fn native_condition_variable(
-        &mut self,
+    /// The lock and condition variable a `Lock::ConditionVariable` receiver
+    /// stands for, by its `lock-id` and `cond-id`.
+    // Cost: O(1), two hash lookups.
+    fn condition_of(
         attributes: &AttrMap,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
+    ) -> Result<
+        (
+            u64,
+            std::sync::Arc<LockRuntime>,
+            std::sync::Arc<std::sync::Condvar>,
+        ),
+        RuntimeError,
+    > {
         let lock_id = match attributes.get("lock-id").and_then(|v| v.as_int()) {
             Some(id) if id > 0 => id as u64,
             _ => return Err(RuntimeError::new("Condition variable has invalid lock-id")),
@@ -226,117 +218,122 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("Condition variable lock state not found"))?;
         let cond = ensure_condition(&lock, cond_id)
             .ok_or_else(|| RuntimeError::new("Condition variable state not found"))?;
-        match method {
-            // The count is bumped under the lock-state mutex, which a waiter
-            // holds from its last look at the count until it parks, so a
-            // signal is either counted before the waiter looks or notifies a
-            // parked waiter.
-            "signal" => {
-                lock.state
-                    .lock()
-                    .map_err(|_| RuntimeError::new("Lock state is poisoned"))?
-                    .note_signal(cond_id);
-                cond.notify_one();
-                Ok(Value::NIL)
+        Ok((cond_id, lock, cond))
+    }
+
+    /// `Lock::ConditionVariable.signal` / `.signal_all`: wake one waiter, or
+    /// every one.
+    // Cost: O(1).
+    pub(crate) fn condition_signal(attributes: &AttrMap, all: bool) -> Result<Value, RuntimeError> {
+        let (cond_id, lock, cond) = Self::condition_of(attributes)?;
+        // The count is bumped under the lock-state mutex, which a waiter
+        // holds from its last look at the count until it parks, so a
+        // signal is either counted before the waiter looks or notifies a
+        // parked waiter.
+        lock.state
+            .lock()
+            .map_err(|_| RuntimeError::new("Lock state is poisoned"))?
+            .note_signal(cond_id);
+        if all {
+            cond.notify_all();
+        } else {
+            cond.notify_one();
+        }
+        Ok(Value::NIL)
+    }
+
+    /// `Lock::ConditionVariable.wait(&test?)`: give the lock up until a
+    /// signal (and, with a test, until it holds), then take it again.
+    // Cost: O(1) per wake plus the test's cost.
+    pub(crate) fn condition_wait(
+        &mut self,
+        attributes: &AttrMap,
+        test: Option<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let (cond_id, lock, cond) = Self::condition_of(attributes)?;
+            let maybe_test = test;
+            let me = current_thread_id();
+            let mut state = lock
+                .state
+                .lock()
+                .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
+            match state.owner {
+                Some(owner) if owner == me => {}
+                _ => {
+                    return Err(RuntimeError::new(
+                        "Condition.wait requires the current thread to hold the lock",
+                    ));
+                }
             }
-            "signal_all" => {
-                lock.state
-                    .lock()
-                    .map_err(|_| RuntimeError::new("Lock state is poisoned"))?
-                    .note_signal(cond_id);
-                cond.notify_all();
-                Ok(Value::NIL)
+            if let Some(test) = maybe_test.clone()
+                && self.call_protect_block(&test)?.truthy()
+            {
+                return Ok(Value::NIL);
             }
-            "wait" => {
-                let maybe_test = args.first().cloned();
-                let me = current_thread_id();
-                let mut state = lock
+            let held_recursion = state.recursion;
+            state.owner = None;
+            state.recursion = 0;
+            super::thread_lock_count::note_lock_released();
+            lock.lock_cv.notify_one();
+            // The main program's thread re-checks for a worker's pending
+            // `exit` every `exit_handover::POLL` (ADR-11617, #13052): the
+            // signaller may be that very worker. It gives up without the
+            // lock, so the caller unwinds instead of running on.
+            let adopter = crate::exit_handover::is_adopter_thread();
+            // The signal count as of the last look under the state mutex.
+            let mut seen = state.signal_count(cond_id);
+            loop {
+                state = if adopter {
+                    // A timeout is not a signal: wait again until one
+                    // arrives or the handover does. A notification that
+                    // lands as the poll times out is reported as a
+                    // timeout, so the signal count decides (#13184).
+                    loop {
+                        let (s, timeout) = cond
+                            .wait_timeout(state, crate::exit_handover::POLL)
+                            .map_err(|_| RuntimeError::new("Condition wait failed"))?;
+                        if crate::exit_handover::requested() {
+                            return Err(RuntimeError::exit_handover_pending());
+                        }
+                        state = s;
+                        if !timeout.timed_out() || state.signal_count(cond_id) != seen {
+                            break state;
+                        }
+                    }
+                } else {
+                    cond.wait(state)
+                        .map_err(|_| RuntimeError::new("Condition wait failed"))?
+                };
+                while state.owner.is_some() && state.owner != Some(me) {
+                    state = lock
+                        .lock_cv
+                        .wait(state)
+                        .map_err(|_| RuntimeError::new("Lock reacquire wait failed"))?;
+                }
+                state.owner = Some(me);
+                state.recursion = held_recursion.max(1);
+                super::thread_lock_count::note_lock_taken();
+                drop(state);
+
+                let predicate_ok = if let Some(test) = maybe_test.clone() {
+                    let value = self.call_protect_block(&test)?;
+                    value.truthy()
+                } else {
+                    true
+                };
+                if predicate_ok {
+                    return Ok(Value::NIL);
+                }
+                state = lock
                     .state
                     .lock()
                     .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
-                match state.owner {
-                    Some(owner) if owner == me => {}
-                    _ => {
-                        return Err(RuntimeError::new(
-                            "Condition.wait requires the current thread to hold the lock",
-                        ));
-                    }
-                }
-                if let Some(test) = maybe_test.clone()
-                    && self.call_protect_block(&test)?.truthy()
-                {
-                    return Ok(Value::NIL);
-                }
-                let held_recursion = state.recursion;
                 state.owner = None;
                 state.recursion = 0;
+                seen = state.signal_count(cond_id);
                 super::thread_lock_count::note_lock_released();
                 lock.lock_cv.notify_one();
-                // The main program's thread re-checks for a worker's pending
-                // `exit` every `exit_handover::POLL` (ADR-11617, #13052): the
-                // signaller may be that very worker. It gives up without the
-                // lock, so the caller unwinds instead of running on.
-                let adopter = crate::exit_handover::is_adopter_thread();
-                // The signal count as of the last look under the state mutex.
-                let mut seen = state.signal_count(cond_id);
-                loop {
-                    state = if adopter {
-                        // A timeout is not a signal: wait again until one
-                        // arrives or the handover does. A notification that
-                        // lands as the poll times out is reported as a
-                        // timeout, so the signal count decides (#13184).
-                        loop {
-                            let (s, timeout) = cond
-                                .wait_timeout(state, crate::exit_handover::POLL)
-                                .map_err(|_| RuntimeError::new("Condition wait failed"))?;
-                            if crate::exit_handover::requested() {
-                                return Err(RuntimeError::exit_handover_pending());
-                            }
-                            state = s;
-                            if !timeout.timed_out() || state.signal_count(cond_id) != seen {
-                                break state;
-                            }
-                        }
-                    } else {
-                        cond.wait(state)
-                            .map_err(|_| RuntimeError::new("Condition wait failed"))?
-                    };
-                    while state.owner.is_some() && state.owner != Some(me) {
-                        state = lock
-                            .lock_cv
-                            .wait(state)
-                            .map_err(|_| RuntimeError::new("Lock reacquire wait failed"))?;
-                    }
-                    state.owner = Some(me);
-                    state.recursion = held_recursion.max(1);
-                    super::thread_lock_count::note_lock_taken();
-                    drop(state);
-
-                    let predicate_ok = if let Some(test) = maybe_test.clone() {
-                        let value = self.call_protect_block(&test)?;
-                        value.truthy()
-                    } else {
-                        true
-                    };
-                    if predicate_ok {
-                        return Ok(Value::NIL);
-                    }
-                    state = lock
-                        .state
-                        .lock()
-                        .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
-                    state.owner = None;
-                    state.recursion = 0;
-                    seen = state.signal_count(cond_id);
-                    super::thread_lock_count::note_lock_released();
-                    lock.lock_cv.notify_one();
-                }
             }
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Lock::ConditionVariable",
-                method
-            ))),
-        }
     }
 
     // --- Promise / Channel subclasses ---

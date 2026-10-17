@@ -140,10 +140,10 @@ impl Interpreter {
                 attributes,
                 ..
             } = tap.view()
-                && class_name == "Tap"
+                && (class_name == "Tap" || class_name == "IO::Socket::Async::ListenSocket")
             {
                 let attrs = attributes.as_map().clone();
-                self.native_tap(&attrs, "close")?;
+                self.tap_close(&attrs)?;
             }
         }
         Ok(())

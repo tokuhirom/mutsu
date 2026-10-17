@@ -101,6 +101,7 @@ pub(crate) use io_concurrency::supplier_scheduler::owners_of as supplier_schedul
 pub(crate) use io_concurrency::systemic::{
     names as systemic_names, owners_of as systemic_owners_of,
 };
+pub(crate) use io_concurrency::{handle_names, handle_owners_of, handle_owners_of_instance};
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
     str_args, str_numeric, str_search, truth,

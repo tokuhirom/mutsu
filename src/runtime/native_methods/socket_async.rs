@@ -274,7 +274,10 @@ impl Interpreter {
                 tap_attrs.insert("listener-id".to_string(), Value::int(listener_id as i64));
                 tap_attrs.insert("socket-port".to_string(), Value::promise(socket_port));
                 tap_attrs.insert("socket-host".to_string(), Value::promise(socket_host));
-                Ok(Value::make_instance(Symbol::intern("Tap"), tap_attrs))
+                Ok(Value::make_instance(
+                    Symbol::intern("IO::Socket::Async::ListenSocket"),
+                    tap_attrs,
+                ))
             }
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on IO::Socket::Async::Listener",

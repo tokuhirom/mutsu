@@ -320,3 +320,24 @@ only	Encoding::Decoder::Builtin	add-bytes	bytes-available	consume-all-chars	cons
 declared	Encoding::Encoder::Builtin	encode-chars	new
 methods	Encoding::Encoder::Builtin	POPULATE	encode-chars	new
 only	Encoding::Encoder::Builtin	encode-chars	new
+declared	Cancellation	cancel	cancelled
+methods	Cancellation	BUILD	POPULATE	cancel	cancelled
+only	Cancellation	cancel	cancelled
+declared	IO::Socket::Async::ListenSocket	native-descriptor	new	socket-host	socket-port
+methods	IO::Socket::Async::ListenSocket	BUILD	POPULATE	close	native-descriptor	new	socket-host	socket-port
+only	IO::Socket::Async::ListenSocket	native-descriptor	new	socket-host	socket-port
+declared	Lock	condition	lock	new	protect	unlock
+methods	Lock	POPULATE	condition	lock	new	protect	unlock
+only	Lock	condition	lock	new	unlock
+declared	Lock::Async	lock	protect	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
+methods	Lock::Async	POPULATE	lock	protect	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
+only	Lock::Async	lock	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
+declared	Lock::ConditionVariable	new	signal	signal_all	wait
+methods	Lock::ConditionVariable	POPULATE	new	signal	signal_all	wait
+only	Lock::ConditionVariable	new	signal	signal_all
+declared	Proc	Bool	Numeric	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
+methods	Proc	BUILD	Bool	Numeric	POPULATE	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
+only	Proc	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
+declared	Tap	close	new
+methods	Tap	BUILD	POPULATE	close	new
+only	Tap	close
