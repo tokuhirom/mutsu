@@ -27,6 +27,7 @@ mod outer_scope;
 mod rebind;
 mod routine_owned;
 pub(crate) mod static_link;
+use static_link::same_variable;
 pub(crate) use static_link::{OuterScope, with_static_links_suppressed};
 pub(crate) mod stats;
 
@@ -2543,15 +2544,31 @@ impl Env {
                     // the lookup ends with what a capture gave (#13604).
                     return found;
                 }
+                // A closure whose capture holds the variable takes the
+                // variable's record from that capture too, never from the
+                // frames that happen to call it (ADR-13757).
+                if let Some(subject) = key.shadow_meta_subject()
+                    && cur
+                        .fallback
+                        .as_deref()
+                        .is_some_and(|fb| fb.get(&subject).is_some())
+                {
+                    return found;
+                }
                 // A variable's record follows the variable: it takes the link
-                // only when the frame does not bind the variable and the
-                // program scope does. A record of a variable the frame binds (a
-                // sigilless alias's mirror) or does not bind yet keeps the walk
-                // it had; the running code's own untyped locals no longer ask
-                // (`DeclaredConstraint::Untyped`, ADR-13757).
+                // only when the program scope binds the variable and the frame
+                // either does not or holds that same container (an element
+                // store seeds a captured cell's container under its name). A
+                // record of a variable the frame binds to something else (a
+                // sigilless alias's mirror) or does not bind yet keeps the
+                // walk it had; the running code's own untyped locals no
+                // longer ask (`DeclaredConstraint::Untyped`, ADR-13757).
                 if let Some(outer) = cur.static_skip(key)
                     && key.shadow_meta_subject().is_none_or(|subject| {
-                        self.get_sym_in_frame(subject).is_none() && outer.get_sym(subject).is_some()
+                        outer.get_sym(subject).is_some_and(|theirs| {
+                            self.get_sym_in_frame(subject)
+                                .is_none_or(|mine| same_variable(mine, theirs))
+                        })
                     })
                 {
                     cur = outer;
