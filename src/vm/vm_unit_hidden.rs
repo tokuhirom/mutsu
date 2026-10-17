@@ -4,9 +4,10 @@
 //! A routine declared at a compunit's top level that names lexicals by string
 //! (`EVAL '$x'`, `::('$x')`) resolves them through its frame's static link to
 //! the program scope (`Env::mark_outer_is_unit`). While a mainline block calls
-//! it, the program scope also holds that block's own `my`s and the variables a
-//! block-scoped `use` imported. Neither is in the routine's lexical outer, so
-//! the frame hides them (`Env::set_unit_hidden`).
+//! it, the program scope also holds that block's own `my`s and the symbols a
+//! block-scoped `use` imported: variables, constants and type names. Neither
+//! is in the routine's lexical outer, so the frame hides them
+//! (`Env::set_unit_hidden`).
 
 use crate::opcode::CompiledCode;
 use crate::runtime::Interpreter;
@@ -29,6 +30,10 @@ impl Interpreter {
         // A block's import scope (`scope_classes`; a BEGIN preload is not
         // one). An import over a name an enclosing import already bound
         // shadows that binding, which the routine does see: kept visible.
+        // Any variable-shaped key counts, an uppercase one too: an imported
+        // `constant KONST` or `class Foo` is no more the routine's than a
+        // lowercase variable is (ADR-8751). A same-named symbol of the
+        // routine's own outer is a shadowed value, so it stays visible.
         let imported: Vec<Symbol> = self
             .module
             .import_scope_stack
@@ -39,7 +44,8 @@ impl Interpreter {
                     .imported_env_keys
                     .iter()
                     .filter(|key| {
-                        key.is_plain_user_lexical() && !scope.shadowed_env_values.contains_key(*key)
+                        key.with_str(crate::env::is_user_variable_key)
+                            && !scope.shadowed_env_values.contains_key(*key)
                     })
                     .copied()
             })

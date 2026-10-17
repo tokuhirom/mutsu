@@ -331,7 +331,10 @@ Consequences that pin the design:
     routine that names a variable by string (`EVAL '$v'`, `::('$v')`) no
     longer sees a block-scoped import of it when the block calls it
     (ADR-12529 phase 3 slice 20, #13604): its frame hides the open block
-    imports' variables from the program scope.
+    imports' variables from the program scope. Since 2026-10-18 that hidden
+    set also takes the imported constants and type names (an uppercase
+    `constant KONST`, a `class Foo`), so `::('Foo')` and `EVAL 'KONST'` in
+    such a routine no longer find them either.
 
 ## 5. Acceptance
 
