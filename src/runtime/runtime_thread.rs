@@ -733,7 +733,15 @@ impl Interpreter {
             if in_shared {
                 return self.shared_array_extend(key, values, false);
             }
-        } else if key.starts_with('@') && self.threads.shared_vars_active && !package_array {
+        } else if key.starts_with('@')
+            && self.threads.shared_vars_active
+            && !package_array
+            // Only a name the shared store holds: dropping the env binding of
+            // one it does not (a `my @*LOG` declared after a thread ran) left
+            // the push on a detached copy, written by name into whatever frame
+            // runs the push instead of the declaring frame's array.
+            && self.threads.shared_vars.contains_key(key)
+        {
             // Attribute / twigil'd arrays keep the base-key in-place path
             // (per-instance identity — see `push_to_existing_shared_array`).
             // Drop env's copy of the Arc first so that shared_vars holds
