@@ -2242,6 +2242,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mu", "REPR", 8, 60),
     ("Mu", "clone", 1, 24),
     ("Mu", "new", 8, 28),
+    ("Junction", "THREAD", 8, 60),
     ("Mu", "bless", 8, 60),
     ("Range", "new", 8, 28),
     ("IO::ArgFiles", "new", 8, 24),

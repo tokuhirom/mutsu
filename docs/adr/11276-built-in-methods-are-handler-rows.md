@@ -3409,6 +3409,27 @@ rebuilt from the attributes. Such a path must not take a `Mu` late row whose ans
 `native_io_special` keeps its own constructor (`IO::Special.new("<STDOUT>")`) out of that lookup, as `Thread.run` was
 kept out of `Thread`'s native methods (§9.139).
 
+### 9.142 `Mu.say`/`put` with arguments, `Junction.THREAD` and `Cool.encode` are late rows (2026-10-17)
+
+`refactor/11276-match1-late-rows`. Three arms of `dispatch_method_by_name_1` became late rows
+(`collections/match1_late.rs`), reached by the §9.138 walk right after the `Any` list walk (§9.134):
+
+- `say`/`put` with arguments, for a class that declares its own `print` and so acts as `$*OUT`;
+- `THREAD` on a `Junction`;
+- `encode` for every receiver the `Str` rows did not take.
+
+The owners are Rakudo's: `Mu`, `Junction` (an `only` method) and `Cool`. `Mu.say`'s and `Mu.put`'s one-argument late
+rows stand behind their deferral bases (`mu_base`'s `DEFERRAL_BASE` rows), which only `invoke_base` reaches. So
+`no_row_is_registered_twice` lets a late row follow a deferral base too.
+
+Not moved, because mutsu's MRO for them is not Rakudo's yet:
+
+- `Buf[uint8]`'s MRO lacks `Blob`, so `decode` and `unpack` would lose `Blob`'s owner;
+- a QuantHash's MRO lacks `Setty`/`Baggy`/`Mixy`, which `default` belongs to;
+- an enum type's MRO lacks `Enumeration`, which `enums` belongs to.
+
+Walking those MROs for the Rakudo owner would drop answers. Those arms wait for the MRO to carry the roles.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

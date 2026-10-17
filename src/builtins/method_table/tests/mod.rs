@@ -184,8 +184,11 @@ fn no_row_is_registered_twice() {
         let distinct_first = rows()
             .find(|first| (first.owner, first.name, first.arity) == key)
             .is_some_and(|first| {
-                !(matches!(first.handler, Handler::Interp(_))
-                    && first.flags.contains(RowFlags::OWNER_ONLY))
+                // A deferral base is reached by `invoke_base` only, never by a
+                // walk, so a late row may stand behind it too.
+                first.flags.contains(RowFlags::DEFERRAL_BASE)
+                    || !(matches!(first.handler, Handler::Interp(_))
+                        && first.flags.contains(RowFlags::OWNER_ONLY))
             });
         assert!(
             distinct_first
