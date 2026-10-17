@@ -135,6 +135,8 @@ fn sample(shape: DispatchShape) -> Value {
             Symbol::intern("Buf"),
             vec![Value::int(1), Value::int(2)],
         ),
+        DispatchShape::Format => crate::runtime::Interpreter::make_format("%d-%s".to_string()),
+        DispatchShape::Formatter => type_sample("Formatter"),
         DispatchShape::BacktraceFrame => backtrace_frame_sample(),
         DispatchShape::Backtrace => {
             let mut attributes = crate::value::AttrMap::new();
