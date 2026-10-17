@@ -511,7 +511,7 @@ impl Interpreter {
                 method_name,
                 std::slice::from_ref(&invocant),
             ),
-            "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "Str" | "raku" | "say"
+            "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "Str" | "raku" | "perl" | "say"
             | "print" | "put" | "note" | "Numeric" | "Int" => {
                 crate::builtins::method_table::invoke_base(
                     self,

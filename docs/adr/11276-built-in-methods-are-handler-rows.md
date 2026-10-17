@@ -3700,9 +3700,10 @@ from a role it composes or one mixed into it, an `augment` of a built-in type, a
 name, since a wrap chain can sit on `Mu.perl`). A modified call (`.^perl`, `.+perl`) keeps its name. Nothing below
 the entries sees `perl` otherwise, so every `"perl"` alias in the dispatch code is deleted. The lists that answer
 whether a method *exists* keep `perl`: `.^can`, role requirements, the native-method names of a built-in class,
-the EVAL name table and the recognition table. `Mu.perl`'s late row stays as `.^find_method('perl')`'s answer.
-`perl` still reaches `default_instance_repr` as the base candidate of a user `perl`'s `callsame`, and there it
-calls `self.raku` as Rakudo's does. Pinned in `t/types/mu-perl-calls-raku.t`.
+the EVAL name table and the recognition table. `Mu.perl` keeps two rows, both calling `self.raku` as Rakudo's
+does: the late row (`.^find_method('perl')`) and a new deferral-base row (§9.56), which is the last candidate of a
+user `perl`'s `callsame` (`method perl { "P:" ~ callsame }` was `P:` with a Nil warning). Pinned in
+`t/types/mu-perl-calls-raku.t`.
 
 **The scalar shapes' renderings.** `methods_0arg/dispatch_core_repr.rs` answered `gist`/`raku` for `Bool`, `Int`,
 `Num`, `Rat`, `FatRat`, `Complex`, `Str` and `Version`, every one a shape with rows. Its arms were reached only
