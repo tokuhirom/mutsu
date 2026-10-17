@@ -442,6 +442,19 @@ impl DispatchShape {
             {
                 return false;
             }
+            // An instance of a built-in class with no rendering of its own
+            // (`Backtrace::Frame`) renders as its attribute dump, which only the
+            // interpreter's default representation answers (§9.162).
+            if matches!(
+                self,
+                DispatchShape::BacktraceFrame
+                    | DispatchShape::CompUnitDepSpec
+                    | DispatchShape::Backtrace
+                    | DispatchShape::IoPathParts
+            ) && (const_str_eq(method, "gist") || const_str_eq(method, "raku"))
+            {
+                return false;
+            }
             return const_list_contains(&MU_FOR_CLOSED_SHAPES, method)
                 || self.reaches_mu_numeric(method);
         }

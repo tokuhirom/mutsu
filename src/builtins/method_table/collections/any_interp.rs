@@ -69,8 +69,15 @@ pub(super) static ROWS: &[MethodRow] = &[
     any_row!("Any", "produce", 1, ARGS_TYPE, produce),
     any_row!("Any", "iterator", 0, TYPE_OK, iterator),
     // `Mu` declares `iterator` too: `Mu.iterator` and `Mu.new.iterator`
-    // iterate the one value.
-    any_row!("Mu", "iterator", 0, TYPE_OK, iterator),
+    // iterate the one value. No shape stops at `Mu` before `Any`, so only the
+    // MRO walk of a receiver that is no `Any` reaches it.
+    any_row!(
+        "Mu",
+        "iterator",
+        0,
+        TYPE_OK.or(RowFlags::OWNER_ONLY),
+        iterator
+    ),
     any_row!("Any", "eager", 0, TYPE_OK, eager),
     any_row!("Any", "squish", 0, ARGS_TYPE, squish, &["as", "with"]),
     any_row!(

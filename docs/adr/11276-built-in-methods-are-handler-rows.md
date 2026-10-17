@@ -4064,6 +4064,11 @@ Decision.
   `container_needs_raku_dispatch` does. `Int.Bag.raku` is `(Int=>1).Bag`.
 - The cascade's mixin step renders a mixed-in collection's `raku` through the collections' renderer,
   since the collections' `raku` rows need the interpreter (a typed container names its type).
+- Four instance shapes with no rendering of their own do not reach these rows: `Backtrace`,
+  `Backtrace::Frame`, `CompUnit::DependencySpecification` and `IO::Path::Parts`
+  (`DispatchShape::reaches`, next to `IO::Path::Parts`'s `Str`). Their attribute dump is the
+  interpreter's default representation, which a pure row cannot give. `Mu.iterator`, which only
+  `IoHandle` reached through that blanket, becomes `OWNER_ONLY` (the MRO walk reaches it).
 - `dispatch_core_repr.rs` is deleted.
 
 Not done: `WhateverCode.gist` is still `WhateverCode.new`, where Rakudo prints the source (`* + 1`).
