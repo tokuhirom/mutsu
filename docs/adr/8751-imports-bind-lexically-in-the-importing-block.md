@@ -309,12 +309,14 @@ Consequences that pin the design:
   - **The prefix covers the fused and meta forms.** `ConcatAssignLocal` and
     the `X`/`Z`/`R` meta-ops over a built-in operator of the list get the
     `LexImportBuiltinOp` prefix too (`emit_lex_import_builtin_meta`).
-  - **A dispatcher sorts as a comparator.** `.sort(&infix:<leg>)` in the
-    block passed the dispatcher value, whose capture signature has no
-    positional arity, so `sort` took it as a key mapper. A built-in
-    operator's dispatcher now reports the operator's arity to `sort`
-    (`builtin_operator_dispatcher_arity`); `.sort(&infix:<cmp>)` from
-    slice 5 had the same gap.
+  - **A dispatcher has the operator's signature.** `.sort(&infix:<leg>)`
+    in the block passed the dispatcher value, whose capture signature has
+    no positional arity, so `sort` took it as a key mapper; `.arity` and
+    `.count` answered `0`/`Inf`. `with_builtin_operator_fallback` now gives
+    the value the positional signature mutsu's own `&infix:<op>` routine
+    reports (`$arg0, $arg1`; one parameter for a prefix), and
+    `sub_dispatcher_signature` answers it (#13792). A call never binds it:
+    it goes to the captured candidates.
 
   Left for stage 2:
   - The built-in operators outside that list (the Unicode set operators,

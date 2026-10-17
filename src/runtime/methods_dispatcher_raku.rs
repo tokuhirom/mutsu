@@ -72,6 +72,19 @@ impl Interpreter {
         data: &crate::value::SubData,
     ) -> Option<Value> {
         let disp_name = Self::multi_sub_dispatcher_name(data)?;
+        // A dispatcher over a built-in operator's user candidates stands for
+        // the operator: its signature is the operator's, which
+        // `with_builtin_operator_fallback` gave it (#13792).
+        if data
+            .env
+            .get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback())
+            .is_some()
+        {
+            return Some(make_signature_value(
+                param_defs_to_sig_info(&data.param_defs, None),
+                Some(self),
+            ));
+        }
         if let Some(sig) = self.dispatcher_signature(&data.package.resolve(), &disp_name) {
             return Some(sig);
         }

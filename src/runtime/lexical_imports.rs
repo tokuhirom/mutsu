@@ -420,24 +420,6 @@ impl Interpreter {
             if data.env.get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback()).is_some())
     }
 
-    /// The positional arity of the built-in operator the dispatcher `value`
-    /// falls back to ([`Self::is_builtin_operator_dispatcher`]): 2 for an
-    /// infix, 1 for a prefix. rakudo's core proto of the operator declares
-    /// it (`&infix:<leg>.arity` is 2), so `.sort(&infix:<leg>)` takes the
-    /// value as a comparator, not as a key mapper.
-    // Cost: O(1).
-    pub(crate) fn builtin_operator_dispatcher_arity(value: &Value) -> Option<usize> {
-        let ValueView::Sub(data) = value.view() else {
-            return None;
-        };
-        data.env
-            .get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback())?;
-        let ValueView::Str(name) = data.env.get("__mutsu_multi_dispatch_name")?.view() else {
-            return None;
-        };
-        Some(if name.starts_with("infix:<") { 2 } else { 1 })
-    }
-
     /// The routine `name` is bound to in the first of the import sets
     /// `chain` (innermost first) that binds it.
     // Cost: O(c), c = enclosing `use`-blocks (usually 1).

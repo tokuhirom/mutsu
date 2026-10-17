@@ -374,6 +374,19 @@ impl ParamDef {
         }
     }
 
+    /// The plain required positional parameter `$name`: untyped, no default,
+    /// no traits.
+    // Cost: O(|name|).
+    pub(crate) fn plain_positional(name: &str) -> Self {
+        ParamDef {
+            name: name.to_string(),
+            multi_invocant: true,
+            required: true,
+            sigilless: false,
+            ..Self::sigilless_term(name)
+        }
+    }
+
     /// The type constraint to register in the **assignment-time** lane when this
     /// parameter binds (`Interpreter::bind_param_type_constraint`).
     ///

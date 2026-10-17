@@ -385,6 +385,27 @@ impl Interpreter {
             crate::symbol::wk::multi_dispatch_builtin_fallback(),
             Value::TRUE,
         );
+        // The value stands for the operator, so it has the operator's
+        // positional signature, as mutsu's own `&infix:<op>` routine reports
+        // it (`$arg0, $arg1`): `.arity`, `.count`, `.signature` and a caller
+        // that picks a mode by arity (`.sort(&infix:<leg>)` compares, it does
+        // not map keys) read the operator, not the capture a family
+        // dispatcher declares (#13792). A call never binds these: it goes to
+        // the captured candidates (`call_captured_candidates`).
+        let arity = match next.env.get("__mutsu_multi_dispatch_name").map(Value::view) {
+            Some(ValueView::Str(name)) => Self::inferred_operator_arity(name.as_str()),
+            _ => None,
+        };
+        if let Some(arity) = arity {
+            let names: Vec<String> = (0..arity).map(|i| format!("arg{i}")).collect();
+            next.param_defs = std::sync::Arc::new(
+                names
+                    .iter()
+                    .map(|name| crate::ast::ParamDef::plain_positional(name))
+                    .collect(),
+            );
+            next.params = std::sync::Arc::new(names);
+        }
         Value::sub_value(crate::gc::Gc::new(next))
     }
 
