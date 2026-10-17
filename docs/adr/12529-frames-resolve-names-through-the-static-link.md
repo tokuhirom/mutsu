@@ -1622,6 +1622,20 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    stands in for an `@*` name. Pinned by
    `t/concurrency/concurrent-start-then-dynamic-push-from-block.t`.
 
+   **Slice 45 done** (`refactor/12529-static-link-every-unit-routine`):
+   the eighth census's largest group of caller-frame hits was the
+   per-variable metadata probe (`declared_meta_lane` asking for
+   `__mutsu_type::x`), which walked past the frame root to a caller's
+   same-named variable. A plain lexical's own metadata keys (the ones
+   `Symbol::shadow_meta_subject` maps back to a plain lexical: the type,
+   source-name and hash-key records) are now lexically scoped like the
+   variable, so a static link skips the caller frames for them too. Before,
+   `push-it()` pushing to the program's `my @a` through EVAL failed the
+   type check of its caller's unrelated `my Int @a`. Pinned by
+   `t/lang/eval-store-ignores-caller-type-of-same-name.t`. Found on the
+   way and filed as #13746: such an EVAL'd store also misses the program
+   variable's own type (`my Int $n`, before and after this slice).
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
