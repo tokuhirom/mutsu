@@ -1924,6 +1924,17 @@ impl Interpreter {
         {
             target = attr_val;
         }
+        // `&*name()` with no `&*name` in the dynamic scope (nor a
+        // `PROCESS::<&name>`) is X::Dynamic::NotFound, not a by-name routine
+        // call: no routine has a `*`-prefixed name (#13705).
+        if target.is_nil()
+            && name.starts_with('*')
+            && !crate::runtime::utils::is_builtin_dynamic_var(&name)
+        {
+            return Err(crate::runtime::utils::dynamic_not_found_error(&format!(
+                "&{name}"
+            )));
+        }
         let result = if !target.is_nil() {
             let sub_is_rw = if let ValueView::Sub(data) = target.view() {
                 !data.returns_container()

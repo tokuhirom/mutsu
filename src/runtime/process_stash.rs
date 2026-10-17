@@ -292,7 +292,10 @@ impl Interpreter {
     /// (or a fresh `PROCESS::` install) can reach.
     fn binding_is_process_level(&self, name: &str, key: &str) -> bool {
         let Some(found) = self.env_dynamic_binding(name) else {
-            return true;
+            // No env binding yet, but a `my &*X` in scope declared one: its
+            // first store lands in a frame slot the env does not mirror, and
+            // it is that frame's binding, not the process one (#13705).
+            return !self.dynamic_declared_lexically(key);
         };
         match self.process_value_for_binding(key, &found) {
             Some(current) => current.is_some(),
