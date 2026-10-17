@@ -2242,6 +2242,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mu", "REPR", 8, 60),
     ("Mu", "clone", 1, 24),
     ("Mu", "new", 8, 28),
+    ("Mu", "bless", 8, 60),
+    ("Range", "new", 8, 28),
+    ("IO::ArgFiles", "new", 8, 24),
     // These names are declared on Mu in Rakudo. Concrete owners may still
     // carry dispatch rows, but their inherited names come from Mu on :all.
     ("Mu", "Int", 8, 28),

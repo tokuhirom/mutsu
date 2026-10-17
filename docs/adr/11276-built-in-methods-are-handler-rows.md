@@ -3386,6 +3386,29 @@ Decision. Both become rows of their owners, following slice 3G and §9.137:
 - Each routine is one `Interpreter` method. The recognition table gains the twelve names, `DECLARED` but not
   `ONLY_METHOD`, since the Rakudo snapshot lists neither owner.
 
+### 9.141 The constructors and `Failure.handled` are late rows of the receiver's MRO (2026-10-17)
+
+`refactor/11276-dispatch-new-rows`. `dispatch_new_and_constructors` was a by-name match, reached after the by-name
+cascades. It covered:
+
+- `Range.new` and `IO::ArgFiles.new` on their own type objects;
+- `Failure.handled` (read and set);
+- `new-from-pairs`;
+- `new` and `bless` for every other receiver;
+- the qualified `Mu::new`.
+
+Decision. The match becomes the §9.138 walk over the receiver's MRO, with `Mu` appended when the MRO lacks it. The rows
+are in `ctors_mop/ctor_late.rs`: `Range.new`, `IO::ArgFiles.new`, `Failure.handled`, the `Set`/`SetHash`/`Mix`/`MixHash`
+`new-from-pairs` (`Bag`'s already were rows, §9.136), and `Mu`'s `new` and `bless`. `Range.new` and `IO::ArgFiles.new`
+answer their own type object only, so a subclass stays `Mu.new`'s, as the arms' exact-name guards had it. A call of no
+QuantHash's `new-from-pairs` (`Int.new-from-pairs`) is now `X::Method::NotFound`, as in Rakudo, where the match handed it
+to a routine that reported "not supported". `Mu::new` is a qualified call, not a method name, and stays one test.
+
+Follow-up. A native path that reaches its type's rows by `invoke_owner(&[T, "Mu"], ...)` answers on a receiver
+rebuilt from the attributes. Such a path must not take a `Mu` late row whose answer depends on the receiver itself.
+`native_io_special` keeps its own constructor (`IO::Special.new("<STDOUT>")`) out of that lookup, as `Thread.run` was
+kept out of `Thread`'s native methods (§9.139).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
