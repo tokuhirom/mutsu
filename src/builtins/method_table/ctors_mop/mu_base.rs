@@ -1,6 +1,6 @@
 //! `Mu.BUILDALL`, `Mu.POPULATE`, `Mu.clone` and `Mu.new` (ADR-11276 slice 4, §9.47, §9.48), and
-//! the base answers `Mu` gives `defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, `gist`, `Str` and
-//! `raku` (§9.56), and the output methods `say`, `print`, `put` and `note` (§9.57).
+//! the base answers `Mu` gives `defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, `gist`, `Str`,
+//! `raku` (§9.56) and `perl` (§9.152), and the output methods `say`, `print`, `put` and `note` (§9.57).
 //!
 //! Rakudo declares both on `Mu`, so a user `BUILDALL`/`POPULATE` (typically
 //! installed by a custom HOW's `add_method`, as OO::Monitors does) that defers
@@ -129,6 +129,13 @@ pub(super) static ROWS: &[MethodRow] = &[
             return Some(Ok(Value::str(type_object_name(target))));
         }
         interp.default_instance_repr(target, "raku", &args[1..])
+    }),
+    // `Mu.perl` is `self.raku` (§9.152): the receiver's own `raku`, a user one
+    // included. Reached only as the base of a user `perl`'s deferral: every other
+    // call to `perl` is resolved to `raku` at the call entries.
+    // Cost: one method call, the receiver's `raku`.
+    base_row!("perl", |interp, target, _args, _named| {
+        Some(interp.call_method_with_values(target.clone(), "raku", Vec::new()))
     }),
     // `Mu.say`, `Mu.print`, `Mu.put` and `Mu.note`: write the receiver's `gist` or
     // `Str` to `$*OUT` (`$*ERR` for `note`) -- what a user `method say { ...

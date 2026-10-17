@@ -714,6 +714,11 @@ pub(crate) mod wk {
         /// The method name `new`, which the constructor lane gates every
         /// `CallMethodMut` on (see `vm_ctor_lane`).
         new_method => "new";
+        /// The method names `perl` and `raku`: `Mu.perl` is `self.raku`, and
+        /// the call entries resolve the one to the other
+        /// (`Interpreter::perl_as_raku`).
+        perl => "perl";
+        raku => "raku";
         /// The match variable `$/`, stored sigil-less. Written by every
         /// successful `~~` and by every failed one (`clear_match_state`), so
         /// it is on the per-match path twice over (#8269).

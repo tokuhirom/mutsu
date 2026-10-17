@@ -38,7 +38,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 Ok(Value::str(n))
             }
-            "raku" | "perl" => {
+            "raku" => {
                 let release = attributes
                     .get("release")
                     .map(|v| v.to_string_value())
@@ -119,7 +119,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 Ok(Value::str(n))
             }
-            "raku" | "perl" => {
+            "raku" => {
                 let n = attributes
                     .get("name")
                     .map(|v| v.to_string_value())

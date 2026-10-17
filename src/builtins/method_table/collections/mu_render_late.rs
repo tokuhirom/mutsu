@@ -36,7 +36,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     late!("Mu", "DUMP", 0, LATE, dump),
     late!("Mu", "gist", 0, LATE, gist),
     late!("Mu", "raku", 0, LATE, raku),
-    late!("Mu", "perl", 0, LATE, raku),
+    late!("Mu", "perl", 0, LATE, perl),
     late!(
         "Mu",
         "isa",
@@ -67,6 +67,14 @@ fn gist(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
 // Cost: O(v) method calls for a junction, v = its values; O(n) otherwise.
 fn raku(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
     Some(Ok(i.mu_raku_late(t)))
+}
+
+/// `Mu.perl` is `self.raku` (ADR-11276 §9.152): reached as the base candidate
+/// of a user `perl`'s `callsame` and through `.^find_method('perl')`; every
+/// other call to `perl` is resolved to `raku` at the call entries.
+// Cost: one method call, `raku` on the receiver.
+fn perl(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    Some(i.call_method_with_values(t.clone(), "raku", Vec::new()))
 }
 
 // Cost: O(s + m), s = subset chain length, m = MRO length.

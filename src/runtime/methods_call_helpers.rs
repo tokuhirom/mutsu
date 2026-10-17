@@ -5,11 +5,11 @@ use crate::value::ValueView;
 
 /// The methods a junction answers itself rather than per value: see
 /// [`Interpreter::junction_invocant_autothreads`].
-const JUNCTION_ANSWERS_ITSELF: [&str; 24] = [
+const JUNCTION_ANSWERS_ITSELF: [&str; 23] = [
     // The compiler's pseudo-methods.
     "WHAT", "HOW", "WHO", "VAR", "^name",
     // `Junction`'s own methods that do not thread (`Str` threads in its row).
-    "Bool", "defined", "WHICH", "gist", "raku", "perl", "Str", "sink", "THREAD", "map",
+    "Bool", "defined", "WHICH", "gist", "raku", "Str", "sink", "THREAD", "map",
     // `Mu`'s methods about the object itself.
     // `put` and `print` thread: they write each value's `Str`.
     "so", "not", "isa", "does", "can", "DEFINITE", "WHERE", "say", "note",
@@ -117,8 +117,7 @@ impl Interpreter {
         if !matches!(target.view(), ValueView::Junction { .. }) {
             return None;
         }
-        let own = if method == "perl" { "raku" } else { method };
-        crate::builtins::method_table::invoke_owner(self, &["Junction"], own, args, || {
+        crate::builtins::method_table::invoke_owner(self, &["Junction"], method, args, || {
             target.clone()
         })
     }
@@ -136,7 +135,6 @@ impl Interpreter {
                 | "defined"
                 | "THREAD"
                 | "raku"
-                | "perl"
                 | "first"
                 | "grep"
                 | "say"

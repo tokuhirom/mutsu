@@ -11,8 +11,8 @@ use crate::value::types::is_stash_class_name;
 
 /// The methods whose last resort is a late row of the receiver's MRO
 /// (ADR-11276 §9.138).
-const MU_LATE_BY_MRO: [&str; 12] = [
-    "DUMP", "gist", "raku", "perl", "isa", "REPR", "Str", "Stringy", "Int", "Numeric", "Real",
+const MU_LATE_BY_MRO: [&str; 11] = [
+    "DUMP", "gist", "raku", "isa", "REPR", "Str", "Stringy", "Int", "Numeric", "Real",
     "EVAL",
 ];
 
@@ -171,7 +171,7 @@ impl Interpreter {
         // The `IterationEnd` sentinel renders as its name in every form, as
         // rakudo's `Mu.raku` / `Mu.gist` special-case it.
         if target_id == crate::value::ITERATION_END_ID
-            && matches!(method, "raku" | "perl" | "gist" | "Str")
+            && matches!(method, "raku" | "gist" | "Str")
             && args.is_empty()
         {
             return Some(Ok(Value::str_from("IterationEnd")));
@@ -192,26 +192,14 @@ impl Interpreter {
                 | "Callable"
         );
         let gist_default = method == "gist" && !has_coercion_gist && !is_callable_instance;
-        if !((method == "raku" || method == "perl" || gist_default) && args.is_empty()) {
-            return None;
-        }
-        // `.perl` is rakudo's deprecated spelling of `.raku` on `Mu`, and it is
-        // implemented by *calling* `self.raku` — so a class that overrides only
-        // `raku` still renders through that override under either name. mutsu
-        // resolves the two names independently, so reaching this default
-        // renderer under `perl` while the class has its own `raku` would render
-        // the attribute-dump form instead of the user's text (Math::Vector's
-        // `multi method raku()` renders nested vectors via `@.components.map({.perl})`,
-        // which round-trips through `EVAL` in rakudo and did not here).
-        // Gated on the class NOT declaring `perl` itself, because
-        // `native_any_base_next_candidate` reaches this default deliberately when
-        // a `callsame` inside a user override exhausts the MRO; an explicit
-        // `perl` override's `callsame` must still get the default rendering.
-        if method == "perl"
-            && self.has_user_method(&class_name.resolve(), "raku")
-            && !self.has_user_method(&class_name.resolve(), "perl")
-        {
+        // `Mu.perl` is `self.raku` (ADR-11276 §9.152). The call entries resolve
+        // `perl` to `raku` unless a user `perl` is in reach, so `perl` arrives
+        // here only as the base candidate of such an override's `callsame`.
+        if method == "perl" && args.is_empty() {
             return Some(self.call_method_with_values(target.clone(), "raku", vec![]));
+        }
+        if !((method == "raku" || gist_default) && args.is_empty()) {
+            return None;
         }
         // An `is Str` subclass delegates `.raku`/`.gist` to its string payload,
         // so `class Foo is Str {}; Foo.new(:value("hi")).raku` is `"hi"` —
@@ -244,7 +232,7 @@ impl Interpreter {
         if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned() {
             let rendered = self.call_method_with_values(storage.clone(), method, vec![]);
             // An `is Map` subclass names itself in its `.raku`/`.gist`.
-            if matches!(method, "raku" | "perl" | "gist")
+            if matches!(method, "raku" | "gist")
                 && let Ok(text) = &rendered
             {
                 return Some(Ok(Value::str(
@@ -307,7 +295,7 @@ impl Interpreter {
         }
         // A bootstrap attribute of a built-in class (`Int.^attributes`) is a
         // `BOOTSTRAPATTR` in Rakudo, which has no public attributes to render.
-        if matches!(method, "raku" | "perl")
+        if matches!(method, "raku")
             && crate::runtime::attribute_identity::is_bootstrapattr(target)
         {
             return Some(Ok(Value::str_from("BOOTSTRAPATTR.new")));
@@ -324,7 +312,7 @@ impl Interpreter {
             ))));
         }
         if class_name.resolve() == "X::AdHoc"
-            && (method == "raku" || method == "perl")
+            && (method == "raku")
             && let attr_map = attributes.as_map()
             && let Some(payload) = attr_map
                 .get("payload")
@@ -401,7 +389,7 @@ impl Interpreter {
                 ))));
             }
             _ if is_stash_class_name(class_name.as_str())
-                && (method == "raku" || method == "perl") =>
+                && (method == "raku") =>
             {
                 let symbols = attributes
                     .as_map()
@@ -980,7 +968,7 @@ impl Interpreter {
             // instance: `IO::Spec::Unix.new.gist` is `IO::Spec::Unix.new`
             // (the generic instance repr), not the type object's `(Unix)`.
             if (class_name == "IO::Spec" || class_name.as_str().starts_with("IO::Spec::"))
-                && !matches!(method, "gist" | "raku" | "perl" | "Str" | "Stringy")
+                && !matches!(method, "gist" | "raku" | "Str" | "Stringy")
             {
                 let pkg = Value::package(class_name);
                 return self.call_method_with_values(pkg, method, args);

@@ -482,10 +482,7 @@ impl Interpreter {
         method: &str,
     ) -> Result<Value, RuntimeError> {
         let target = self.reify_or_consume_seq_target_inner(target, method, false)?;
-        if matches!(
-            method,
-            "raku" | "perl" | "gist" | "Str" | "Stringy" | "flat"
-        ) {
+        if matches!(method, "raku" | "gist" | "Str" | "Stringy" | "flat") {
             self.reify_nested_map_grep_for_read(&target)?;
         }
         Ok(target)
@@ -701,7 +698,7 @@ impl Interpreter {
                 kv: true,
             }));
         }
-        if matches!(method, "raku" | "perl") {
+        if matches!(method, "raku") {
             // Pulls if the source is still available (needed to render real
             // elements); an already-`Taken` source must NOT throw here — the
             // renderer shows the `Seq.new()` placeholder instead (verified
@@ -1106,7 +1103,6 @@ impl Interpreter {
                 | "Stringy"
                 | "gist"
                 | "raku"
-                | "perl"
                 | "Seq"
                 | "item"
                 | "cache"

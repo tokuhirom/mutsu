@@ -223,7 +223,7 @@ impl Interpreter {
             "Str" | "gist" | "Stringy" => Some(Ok(Value::str(fmt))),
             "arity" | "count" => Some(Ok(Value::int(count as i64))),
             "Callable" => Some(Ok(self.format_callable(&fmt, count))),
-            "raku" | "perl" => Some(Ok(Value::str(format!("Format.new(\"{}\")", fmt)))),
+            "raku" => Some(Ok(Value::str(format!("Format.new(\"{}\")", fmt)))),
             "CALL-ME" => Some(self.format_render(&fmt, args)),
             _ => None,
         }

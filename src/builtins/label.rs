@@ -61,7 +61,7 @@ pub(crate) fn label_method_0arg(
         "line" => Some(Ok(attributes.get("line").cloned().unwrap_or(Value::int(0)))),
         "Str" => Some(Ok(Value::str(label_str(&attributes)))),
         "gist" => Some(Ok(Value::str(label_gist(&attributes)))),
-        "raku" | "perl" => Some(Ok(Value::str(label_raku(&attributes)))),
+        "raku" => Some(Ok(Value::str(label_raku(&attributes)))),
         "next" => control(Control::Next),
         "last" => control(Control::Last),
         "redo" => control(Control::Redo),

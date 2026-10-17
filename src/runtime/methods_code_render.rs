@@ -30,7 +30,7 @@ impl Interpreter {
             }
             return Some(Ok(Value::str(display)));
         }
-        if matches!(method, "raku" | "perl") {
+        if matches!(method, "raku") {
             // A routine with `multi` candidates is its dispatcher, which
             // Rakudo spells as its proto: `proto sub hs (|) {*}`.
             if let Some(raku) = self.dispatcher_raku(package, name) {
@@ -120,7 +120,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         // The dispatcher `&name` of a `multi sub` (a Sub carrying its captured
         // candidates) is spelled as its proto, like the by-name handle above.
-        if matches!(method, "raku" | "perl")
+        if matches!(method, "raku")
            
             && data.env.contains_key("__mutsu_multi_dispatch_candidates")
             && !matches!(
@@ -135,7 +135,7 @@ impl Interpreter {
         if method == "Str" {
             return self.code_str(target);
         }
-        if matches!(method, "raku" | "perl" | "gist") {
+        if matches!(method, "raku" | "gist") {
             let sig = self.sub_signature_value(data);
             let sig_gist = if let ValueView::Instance { attributes, .. } = sig.view() {
                 attributes

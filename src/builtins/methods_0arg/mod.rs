@@ -161,12 +161,6 @@ pub(crate) fn match_owner_row(
     method: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    // `Mu.perl` is `.raku`.
-    let method = if method == "perl" {
-        Symbol::intern("raku")
-    } else {
-        method
-    };
     crate::builtins::method_table::answer_as(
         crate::value::DispatchShape::Match,
         target,
@@ -196,7 +190,7 @@ pub(crate) fn native_method_0arg_cascade(
     // observe the container itself (as in the Array arm of
     // `Interpreter::call_method_with_values`) and `VAR` is never a native call.
     // Cost: O(1), a tag probe (`hash_is_itemized` is false for every non-Hash).
-    if target.hash_is_itemized() && !matches!(method, "raku" | "perl" | "item" | "self" | "VAR") {
+    if target.hash_is_itemized() && !matches!(method, "raku" | "item" | "self" | "VAR") {
         return native_method_0arg(&target.clone().with_hash_itemized(false), method_sym);
     }
 
@@ -294,7 +288,7 @@ pub(crate) fn native_method_0arg_cascade(
         if method == "VAR" {
             return Some(Ok(Value::package(crate::symbol::Symbol::intern("Scalar"))));
         }
-        if method == "raku" || method == "perl" {
+        if method == "raku" {
             return Some(Ok(Value::str(raku_repr::raku_value(target))));
         }
         let inner = if inner.is_container_ref() {
@@ -393,7 +387,7 @@ pub(crate) fn native_method_0arg_cascade(
         // allomorphs; a general `but`-mixin gists via its inner value (below).
         // A `Str` mixed into any value (`5 but "x"`) wins for the stringifying
         // methods too, as in Rakudo: `.gist` and `.raku`/`.perl` answer it.
-        if matches!(method, "gist" | "raku" | "perl")
+        if matches!(method, "gist" | "raku")
             && let Some(str_val) = mixins.get("Str")
             && matches!(str_val.view(), ValueView::Str(_))
             && (method == "gist"
@@ -448,7 +442,7 @@ pub(crate) fn native_method_0arg_cascade(
         // `.perl` as `TypeStr.new(<numeric>, "<string>")`, NOT the bare inner
         // value's `.raku`. (`.gist`/`.Str` keep the source-string form, handled
         // above; a general `but`-mixin falls through to the inner delegation.)
-        if matches!(method, "raku" | "perl")
+        if matches!(method, "raku")
             && crate::value::types::allomorph_type_name(inner, mixins).is_some()
         {
             return Some(Ok(Value::str(raku_repr::raku_value(target))));
@@ -458,9 +452,7 @@ pub(crate) fn native_method_0arg_cascade(
         // `Set+{R}(a)`). Delegating to the inner value below renders the bare
         // `Set`, dropping the role the way `^name` would without its own arm
         // just above. Only the wrapper knows the mixed name, so pass it down.
-        if matches!(method, "raku" | "perl" | "gist")
-            && crate::value::role_mixin_suffix(mixins).is_some()
-        {
+        if matches!(method, "raku" | "gist") && crate::value::role_mixin_suffix(mixins).is_some() {
             let type_name = crate::value::what_type_name(target);
             let rendered = if method == "gist" {
                 crate::runtime::utils::setbagmix_gist_named(inner, Some(&type_name))
@@ -483,7 +475,7 @@ pub(crate) fn native_method_0arg_cascade(
         // plain base type, silently dropping the mixin (`(Any but role
         // Meows{}).gist` was `(Any)`, losing the `+{Meows}` that `.^name`
         // already reports correctly via `what_type_name`).
-        if matches!(method, "raku" | "perl" | "gist")
+        if matches!(method, "raku" | "gist")
             && matches!(inner.view(), ValueView::Package(_))
             && crate::value::role_mixin_suffix(mixins).is_some()
         {
@@ -801,7 +793,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
         // `Mu.perl` is `.raku`.
-        let method = if method == "perl" { "raku" } else { method };
         let id = crate::builtins::method_table::owner_row(
             Symbol::intern(owner),
             Symbol::intern(method),

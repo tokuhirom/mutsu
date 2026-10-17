@@ -965,7 +965,7 @@ impl Interpreter {
                 supply_attrs.insert("values".to_string(), Value::array(values));
                 Value::make_instance(Symbol::intern("Supply"), supply_attrs)
             }
-            "raku" | "perl" => {
+            "raku" => {
                 // A fully reconstructable `IO::CatHandle.new(...)` call. Unlike
                 // rakudo, this does not need to match rakudo's exact rendering —
                 // roast only checks `is-deeply $cat.raku.EVAL, $cat` — so it is

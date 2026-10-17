@@ -23,7 +23,7 @@ impl Interpreter {
         payload: &Value,
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
-        let raku = matches!(method, "raku" | "perl");
+        let raku = matches!(method, "raku");
         if let ValueView::Rat(n, d) = payload.view()
             && raku
             && d != 1

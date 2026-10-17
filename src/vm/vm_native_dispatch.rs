@@ -287,7 +287,7 @@ impl Interpreter {
         if target.is_seq_value()
             && let ValueView::Seq(body) = target.view()
             && body.needs_touch()
-            && !matches!(method_name, "cache" | "raku" | "perl" | "sink")
+            && !matches!(method_name, "cache" | "raku" | "sink")
             && !crate::value::seq_method_never_touches(method_name)
         {
             return None;
@@ -467,8 +467,7 @@ impl Interpreter {
             // A grammar cursor's dispatch owner is the grammar's own class, not
             // `Match` — see `should_bypass_native_fastpath`'s twin of this gate.
             let owner = target.match_dispatch_class();
-            let is_pure_render =
-                matches!(method_name, "gist" | "Str" | "Stringy" | "raku" | "perl");
+            let is_pure_render = matches!(method_name, "gist" | "Str" | "Stringy" | "raku");
             let render_overridden = is_pure_render && self.has_user_method(owner, method_name);
             if (!is_pure_render || render_overridden) && self.has_user_method(owner, "Bridge") {
                 return None;
@@ -537,8 +536,7 @@ impl Interpreter {
                 // user numeric class that overrides one of these keeps the
                 // bypass so its method runs; unknown numeric instances return
                 // `None` from native and still fall through to the interpreter.
-                let is_pure_render =
-                    matches!(method_name, "gist" | "Str" | "Stringy" | "raku" | "perl");
+                let is_pure_render = matches!(method_name, "gist" | "Str" | "Stringy" | "raku");
                 let render_overridden = is_pure_render && self.has_user_method(&cn, method_name);
                 // The probe (`~~ Real`, `~~ Numeric`, own `Bridge` method)
                 // is a property of the receiver's CLASS, not of the call, so
@@ -640,7 +638,7 @@ impl Interpreter {
         // reachable through method dispatch (a user instance, a built-in object
         // type) must be rendered by the interpreter — the pure renderer would
         // fall back to `Foo()` (see `runtime::methods_raku_dispatch`).
-        if matches!(method_name, "raku" | "perl")
+        if matches!(method_name, "raku")
             && args.is_empty()
             && crate::runtime::container_needs_raku_dispatch(target)
         {
@@ -666,13 +664,13 @@ impl Interpreter {
             && args.is_empty()
         {
             let mn = method_name;
-            if (mn == "raku" || mn == "perl") && self.container_type_metadata(target).is_some() {
+            if (mn == "raku") && self.container_type_metadata(target).is_some() {
                 return None;
             }
         }
         // Typed array .raku/.perl bypass (method-name gate first: the `view()`
         // probe would materialize a lazy Match on every other method call)
-        if matches!(method_name, "raku" | "perl")
+        if matches!(method_name, "raku")
             && args.is_empty()
             && matches!(target.view(), ValueView::Array(..))
             && self
@@ -865,7 +863,7 @@ impl Interpreter {
         // to use Map.new((...)) format instead of {...} format. (Method-name
         // gate first: the Hash `view()` probe would materialize a lazy Match
         // on every other method call.)
-        if matches!(method_name, "gist" | "raku" | "perl")
+        if matches!(method_name, "gist" | "raku")
             && let ValueView::Hash(map) = target.view()
         {
             let is_map = self

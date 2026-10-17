@@ -281,15 +281,15 @@ impl Interpreter {
         let new_base_override =
             method_name == "new" && self.has_user_method_including_role(receiver_class, method_name);
         // `Mu`'s own answers (`defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, and `gist`
-        // everywhere, `Str`/`raku` of a type object) are the base candidate too.
+        // and `perl` everywhere, `Str`/`raku` of a type object) are the base candidate too.
         let mu_base_override = (matches!(method_name, "BUILDALL" | "POPULATE" | "clone")
             // A container subclass (`is Array`, `is Hash`) defers to its storage's
             // answer instead (`container_protocol_override`).
             || (!Self::invocant_carries_native_storage(&invocant)
                 && (matches!(
                     method_name,
-                    "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "say" | "print"
-                        | "put" | "note"
+                    "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "perl" | "say"
+                        | "print" | "put" | "note"
                 ) || (matches!(method_name, "Str" | "raku")
                     && matches!(invocant.view(), ValueView::Package(_)))
                     // `Mu.Numeric` / `Mu.Int`: the last candidate of a user

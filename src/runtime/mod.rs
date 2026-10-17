@@ -57,7 +57,7 @@ use std::sync::{Arc, Mutex, RwLock};
 /// (Map::Agnostic's `Map::Agnostic.gist`).
 // Cost: O(1), compares the method name against four constants.
 pub(crate) fn role_type_object_keeps_mu_method(method: &str) -> bool {
-    matches!(method, "Str" | "gist" | "raku" | "perl")
+    matches!(method, "Str" | "gist" | "raku")
 }
 
 /// Reading a role type object's identity (`R.WHAT`, `R.HOW`, `R.^name`, ...)

@@ -39,7 +39,6 @@ fn answered_by_the_instance(method: &str) -> bool {
             | "VAR"
             | "DEFINITE"
             | "raku"
-            | "perl"
             | "gist"
             | "Str"
             | "Stringy"

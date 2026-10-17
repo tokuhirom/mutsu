@@ -43,7 +43,6 @@ pub(crate) fn answer(target: &Value, method: &str) -> Option<Result<Value, Runti
     if class_name != "Failure" {
         return None;
     }
-    let method = if method == "perl" { "raku" } else { method };
     ROWS.iter()
         .find(|row| row.name == method)
         .and_then(|row| match row.handler {

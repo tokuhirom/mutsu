@@ -38,8 +38,8 @@ const ALLOMORPH_NUMERIC: [&str; 12] = [
 /// copy, `wordcase`, whose result Rakudo re-allomorphs, and `ACCEPTS`, which
 /// compares a `Str` argument with the string and anything else with the number
 /// (`methods_narg::allomorph`).
-const ALLOMORPH_OWN: [&str; 9] = [
-    "raku", "perl", "gist", "WHICH", "clone", "Capture", "wordcase", "VAR", "ACCEPTS",
+const ALLOMORPH_OWN: [&str; 8] = [
+    "raku", "gist", "WHICH", "clone", "Capture", "wordcase", "VAR", "ACCEPTS",
 ];
 
 /// The string and the number of a plain allomorph: an `IntStr`, `RatStr`,

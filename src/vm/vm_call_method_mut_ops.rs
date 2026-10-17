@@ -256,6 +256,7 @@ impl Interpreter {
         modifier_idx: Option<u32>,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        let name = self.perl_as_raku_name(name, modifier_idx, arity);
         let quoted = name.quoted;
         // A raw `VMArray`/`VMHash` receiver has no methods (ADR-12666).
         if let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1)
@@ -361,7 +362,6 @@ impl Interpreter {
         matches!(
             method,
             "raku"
-                | "perl"
                 | "gist"
                 | "say"
                 | "note"
@@ -853,7 +853,6 @@ impl Interpreter {
                     | "gist"
                     | "Str"
                     | "raku"
-                    | "perl"
                     | "WHICH"
                     | "WHERE"
                     | "HOW"
@@ -1026,14 +1025,14 @@ impl Interpreter {
         // rather than forcing the (possibly infinite) sequence. Must run before
         // the gather-coroutine force below, which would hang on an infinite list.
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "Stringy" | "raku" | "perl")
+            && matches!(method, "gist" | "Str" | "Stringy" | "raku")
             && ll.renders_lazy_placeholder()
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
                 "lazy-placeholder",
             );
-            if matches!(method, "raku" | "perl") && Interpreter::lazy_seq_raku_applies(&ll) {
+            if matches!(method, "raku") && Interpreter::lazy_seq_raku_applies(&ll) {
                 let text = self.lazy_seq_raku(&ll)?;
                 self.stack.push(Value::str(text));
                 return Ok(());
@@ -1727,7 +1726,7 @@ impl Interpreter {
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
             _ => false,
         };
-        if matches!(method, "gist" | "raku" | "perl") && is_junction_target {
+        if matches!(method, "gist" | "raku") && is_junction_target {
             skip_native = true;
         }
         // Also skip native if the target has a user-defined method with this name,

@@ -3683,6 +3683,38 @@ Decision.
 `t/types/junction.t` asserted the old `$j.Str eq "any(1, 2, 3)"`, which fails under Rakudo too. It now checks the
 threaded `Str`'s gist.
 
+### 9.152 `Mu.perl` is `self.raku`; the scalar shapes leave the rendering cascade (2026-10-17)
+
+`refactor/11276-render-cascade` (the rendering names, plan item 2.1).
+
+**`perl`.** Rakudo declares `perl` once, on `Mu`, as `method perl(|c) { self.raku(|c) }`. mutsu treated the two
+names as aliases wherever either was answered: about a hundred `"raku" | "perl"` tests across the cascades, the
+VM's call paths, the native bypass gate and the rows. The copies had drifted. `default_instance_repr` needed its
+own branch so that a class with only a user `raku` rendered through it under `.perl`, and two rows mapped `perl`
+to `raku` by hand.
+
+Decision. The call entries resolve the name once: `CallMethod`, `CallMethodMut` (and their dynamic forms, which
+delegate to the same bodies) and `call_method_with_values` call `Interpreter::perl_as_raku`. A call to `perl`
+dispatches as `raku` unless a user-declared `perl` is in reach of the receiver. That covers a class's own, one
+from a role it composes or one mixed into it, an `augment` of a built-in type, and a `.wrap` (any wrap keeps the
+name, since a wrap chain can sit on `Mu.perl`). A modified call (`.^perl`, `.+perl`) keeps its name. Nothing below
+the entries sees `perl` otherwise, so every `"perl"` alias in the dispatch code is deleted. The lists that answer
+whether a method *exists* keep `perl`: `.^can`, role requirements, the native-method names of a built-in class,
+the EVAL name table and the recognition table. `Mu.perl` keeps two rows, both calling `self.raku` as Rakudo's
+does: the late row (`.^find_method('perl')`) and a new deferral-base row (§9.56), which is the last candidate of a
+user `perl`'s `callsame` (`method perl { "P:" ~ callsame }` was `P:` with a Nil warning). Pinned in
+`t/types/mu-perl-calls-raku.t`.
+
+**The scalar shapes' renderings.** `methods_0arg/dispatch_core_repr.rs` answered `gist`/`raku` for `Bool`, `Int`,
+`Num`, `Rat`, `FatRat`, `Complex`, `Str` and `Version`, every one a shape with rows. Its arms were reached only
+when a row declined: a zero-denominator rational, which the rows declined, and `FatRat`, which had no rendering
+rows. They were also reached when a caller ran the cascade without the table (the lever-A refusal, the debug
+cross-check). The zero-denominator forms (`<1/0>`, `FatRat.new(1, 0)`, `X::Numeric::DivideByZero` for `gist`) move
+into `scalars::render`. `FatRat` gains `gist`/`raku` rows on the same handlers, since Rakudo composes them into
+`Rat` and `FatRat` from the one `Rational` role. The cascade's arms for these shapes are deleted, and its
+`to_string_value` catch-all now declines any receiver with a shape, so a shape without a rendering row is never
+answered by stringification (`Capture.raku` read as its `Str`). Pinned in `t/types/fatrat-render-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

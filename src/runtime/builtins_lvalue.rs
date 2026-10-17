@@ -179,7 +179,7 @@ impl Interpreter {
     pub(crate) fn renders_receiver_elements(method: &str) -> bool {
         matches!(
             method,
-            "gist" | "Str" | "Stringy" | "raku" | "perl" | "join" | "fmt" | "say" | "put" | "note"
+            "gist" | "Str" | "Stringy" | "raku" | "join" | "fmt" | "say" | "put" | "note"
         )
     }
 
