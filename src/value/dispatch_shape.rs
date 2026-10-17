@@ -341,7 +341,15 @@ impl DispatchShape {
         ) && const_str_eq(owner, "Cool"))
             || (matches!(self, DispatchShape::Match) && const_str_eq(owner, "Capture"))
             || (self.reaches_audited_any() && const_str_eq(owner, "Any"))
-            || (!self.inherits() && const_str_eq(owner, "Mu"))
+            || (!self.inherits() && !self.answers_on_payload() && const_str_eq(owner, "Mu"))
+    }
+
+    /// Whether this shape's inherited methods are answered on the native
+    /// payload its values carry (`Format`'s `Str`, `builtins::native_base`),
+    /// so no ancestor row reaches it (ADR-11276 §9.153).
+    // Cost: O(1).
+    const fn answers_on_payload(self) -> bool {
+        matches!(self, DispatchShape::Format)
     }
 
     /// Whether this closed shape reaches some of `Any`'s list rows
@@ -349,7 +357,7 @@ impl DispatchShape {
     /// says which).
     // Cost: O(1).
     const fn reaches_audited_any(self) -> bool {
-        !self.inherits() && self.has_instances()
+        !self.inherits() && self.has_instances() && !self.answers_on_payload()
     }
 
     /// Whether `Any`'s list row `method` reaches this closed shape. None
