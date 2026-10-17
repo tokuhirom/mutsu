@@ -561,7 +561,7 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
-    pub(super) fn dispatch_package_parse(
+    pub(crate) fn dispatch_package_parse(
         &mut self,
         package_name: &str,
         method: &str,
@@ -1200,34 +1200,6 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         result
-    }
-
-    /// Run a grammar parse through the instance constructor first. Rakudo's
-    /// native Grammar parse creates a fresh cursor from an existing grammar
-    /// instance; that constructor pass is observable when a grammar role uses
-    /// `new` to install per-grammar regex wrappers (as Grammar::PrettyErrors
-    /// does). The parser itself is package-based in mutsu, so preserve the
-    /// constructor side effect before entering that shared implementation.
-    pub(crate) fn dispatch_instance_parse(
-        &mut self,
-        invocant: Value,
-        package_name: &str,
-        method: &str,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        if self.grammar_has_user_method(package_name, "new") {
-            let constructor_target = match invocant.view() {
-                ValueView::Package(_) => self
-                    .env
-                    .get("self")
-                    .filter(|value| matches!(value.view(), ValueView::Instance { .. }))
-                    .cloned()
-                    .unwrap_or(invocant),
-                _ => invocant,
-            };
-            self.dispatch_instance_and_fallback(constructor_target, "new", Vec::new())?;
-        }
-        self.dispatch_package_parse(package_name, method, args)
     }
 
     /// Build the Match object a capture node describes, with `orig` set to the
