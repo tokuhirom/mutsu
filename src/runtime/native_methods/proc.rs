@@ -3,6 +3,9 @@ use crate::runtime::*;
 use super::state::proc_stdin_map;
 use crate::value::AttrMap;
 
+/// The attribute writes a re-run makes, for `InstanceAttrs::write_keys`.
+pub(crate) type AttrWrites = Vec<(Symbol, Option<Value>)>;
+
 impl Interpreter {
     /// `Proc.spawn` / `Proc.shell`: re-run a command and answer the
     /// attributes of the receiver it updates, with whether the child
@@ -16,7 +19,7 @@ impl Interpreter {
         &mut self,
         args: &[Value],
         shell: bool,
-    ) -> Result<(Value, Vec<(Symbol, Option<Value>)>), RuntimeError> {
+    ) -> Result<(Value, AttrWrites), RuntimeError> {
         let new_proc = if shell {
             self.builtin_shell(args)?
         } else {
