@@ -4462,6 +4462,15 @@ pub(crate) enum OpCode {
     /// the hyper applies, the bound routine instead of resolving the
     /// operator by name, and the op at `ip + 1` is skipped. Stack: as that op.
     LexImportMeta { chain_idx: u32, name_idx: u32 },
+    /// Prefix of an op at `ip + 1` that applies the built-in operator
+    /// `name_idx` (the constant `infix:<+>`): its own opcode (`Add`), a
+    /// compound assignment, a reduction or a hyper, inside a block that
+    /// `use`s a module (ADR-8751 stage 2). When one of the chain's import sets
+    /// binds the operator's user candidates, the op at `ip + 1` runs with them
+    /// in scope: a candidate that accepts the operands answers, and the
+    /// built-in answers the rest. Otherwise the op runs as it is. Stack: as
+    /// that op.
+    LexImportBuiltinOp { chain_idx: u32, name_idx: u32 },
     /// `import Module :TAGS`: import the exports of an already-loaded module.
     /// Stack: `[] → []`. Operands as [`Self::UseModule`]; runs the runtime
     /// `import_module`.

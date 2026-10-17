@@ -6,6 +6,17 @@
 
 use super::*;
 
+/// A built-in operator's user candidates in scope for one op
+/// (`DispatchState::lexical_operator_scopes`): the operator name, the
+/// dispatcher holding them, and the routine-stack depth the op runs at, so a
+/// routine the op calls does not see them.
+#[derive(Clone)]
+pub(crate) struct LexicalOperatorScope {
+    pub(crate) name: Symbol,
+    pub(crate) dispatcher: Value,
+    pub(crate) depth: usize,
+}
+
 #[derive(Default)]
 pub(crate) struct DispatchState {
     pub(crate) operator_assoc: std::sync::Arc<HashMap<String, String>>,
@@ -29,6 +40,10 @@ pub(crate) struct DispatchState {
     /// main-script block even when a module routine is what invokes that block.
     /// See `Interpreter::user_infix_override`.
     pub(crate) user_declared_infix_ops: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
+    /// The user candidates of built-in operators a block-scoped `use`
+    /// imported, in scope for the op `OpCode::LexImportBuiltinOp` is running
+    /// (ADR-8751 stage 2): `try_user_infix` answers from them first.
+    pub(crate) lexical_operator_scopes: Vec<LexicalOperatorScope>,
     /// Active proto bodies a `{*}` may dispatch from (#10746).
     pub(crate) proto_dispatch_stack: Vec<ProtoDispatchFrame>,
     /// How many method calls are in progress (the VM's method-call opcodes,

@@ -223,6 +223,7 @@ impl Interpreter {
             | OpCode::LexImportCall { .. }
             | OpCode::LexImportInfix { .. }
             | OpCode::LexImportMeta { .. }
+            | OpCode::LexImportBuiltinOp { .. }
             | OpCode::MakeArray(..)
             | OpCode::MakeCapture(..)
             | OpCode::MakeHash(..)

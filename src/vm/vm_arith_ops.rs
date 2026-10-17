@@ -161,6 +161,11 @@ impl Interpreter {
     /// own `sub infix:<+>` must still apply inside it.
     #[inline]
     pub(crate) fn user_infix_override(&self, canon: &str) -> bool {
+        // Candidates a block-scoped `use` imported, for the op running here
+        // (ADR-8751 stage 2).
+        if self.lexical_operator_in_scope(canon) {
+            return true;
+        }
         if self.dispatch.user_declared_infix_ops.is_empty() {
             return false;
         }
@@ -449,16 +454,20 @@ impl Interpreter {
         // `&{op_name}` is looked up through the per-name memo of its interned
         // code-variable key, not built with a `format!` and interned again on
         // every operator call (#10111).
-        let captured_candidates = Symbol::lookup(op_name)
-            .map(crate::runtime::dispatch_key::amp_sym)
-            .and_then(|amp| self.env().get_sym(amp))
-            .and_then(|value| match value.view() {
-                ValueView::Sub(data) => data
-                    .env
-                    .get("__mutsu_multi_dispatch_candidates")
-                    .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
-                _ => None,
-            });
+        // The candidates a block-scoped `use` imported for this op come first
+        // and decline the same way (ADR-8751 stage 2).
+        let captured_candidates = self.lexical_operator_candidates(op_name).or_else(|| {
+            Symbol::lookup(op_name)
+                .map(crate::runtime::dispatch_key::amp_sym)
+                .and_then(|amp| self.env().get_sym(amp))
+                .and_then(|value| match value.view() {
+                    ValueView::Sub(data) => data
+                        .env
+                        .get("__mutsu_multi_dispatch_candidates")
+                        .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
+                    _ => None,
+                })
+        });
         if let Some(candidates) = captured_candidates {
             for candidate in &candidates {
                 if let ValueView::Sub(candidate_data) = candidate.view() {

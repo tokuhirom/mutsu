@@ -116,6 +116,15 @@ fn detect_method_cmp_block(data: &crate::value::SubData) -> Option<(String, bool
     if data.params.len() < 2 {
         return None;
     }
+    // A block inside a `use`-block may see imported candidates of `cmp` or
+    // `<=>` (ADR-8751 stage 2): it runs as written.
+    if data
+        .compiled_code
+        .as_ref()
+        .is_some_and(|code| !code.lexical_import_chains.is_empty())
+    {
+        return None;
+    }
     let body = &data.body;
     let expr = body.iter().find_map(|s| match s {
         Stmt::Expr(e) => Some(e),
@@ -596,6 +605,15 @@ where
 
 pub(crate) fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(bool, bool)> {
     if data.params.len() < 2 {
+        return None;
+    }
+    // A block inside a `use`-block may see imported candidates of `cmp` or
+    // `<=>` (ADR-8751 stage 2): it runs as written.
+    if data
+        .compiled_code
+        .as_ref()
+        .is_some_and(|code| !code.lexical_import_chains.is_empty())
+    {
         return None;
     }
     let body = &data.body;

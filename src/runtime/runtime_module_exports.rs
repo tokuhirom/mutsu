@@ -1168,10 +1168,10 @@ impl Interpreter {
             }
             // A multi family likewise binds as its dispatcher value (stage 2),
             // when its proto only dispatches. An operator family keeps the
-            // alias: a built-in operator's opcode finds its user candidates
-            // in the registry.
-            let family_bound_lexically = !is_operator
-                && !name.contains(":<")
+            // alias, except user candidates of a built-in operator whose every
+            // use in the block reads the set (`crate::lexical_builtin_op`).
+            let family_bound_lexically = ((!is_operator && !name.contains(":<"))
+                || crate::lexical_builtin_op::binds_lexically(&name))
                 && !exported_method_candidates
                 && !bare_file_module
                 && {

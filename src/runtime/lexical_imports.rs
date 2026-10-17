@@ -123,7 +123,6 @@ impl Interpreter {
     ) -> bool {
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
-            || extends_builtin_operator(name)
             || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
                 capture.block_multis.contains(&Symbol::intern(name))
             })
@@ -210,6 +209,13 @@ impl Interpreter {
                 // answer instead: a call through either re-dispatches by name.
                 let dispatcher =
                     self.sub_value_from_multi_candidates(&name.resolve(), candidates.clone());
+                // A built-in operator's user candidates add to the built-in:
+                // a call none of them accepts is the operator's own.
+                let dispatcher = if extends_builtin_operator(&name.resolve()) {
+                    Self::with_builtin_operator_fallback(dispatcher)
+                } else {
+                    dispatcher
+                };
                 Some(LexicalImport::Code(match capture.protos.get(&name) {
                     Some(proto) => self.with_dispatch_proto(dispatcher, proto),
                     None => dispatcher,
@@ -259,7 +265,6 @@ impl Interpreter {
         if let Some(capture) = self.module.lexical_import_capture.as_mut()
             && capture.unit == importer
             && !capture.block_multis.contains(&Symbol::intern(name))
-            && !extends_builtin_operator(name)
         {
             capture
                 .multi_defs
@@ -339,10 +344,10 @@ impl Interpreter {
 }
 
 /// Whether `name` is a built-in operator (`prefix:<->`, `infix:<+>`) that a
-/// user `multi` adds candidates to. The import keeps such a family on the
-/// registry path: a dispatcher value over the imported candidates alone would
-/// not fall back to the built-in, so a candidate's own `-$a.v` on an Int found
-/// no match once the family was bound in the block's set (ADR-8751 stage 2).
+/// user `multi` adds candidates to. Its dispatcher value falls back to the
+/// built-in (`with_builtin_operator_fallback`): without that, a candidate's
+/// own `-$a.v` on an Int found no match once the family was bound in the
+/// block's set (ADR-8751 stage 2).
 // Cost: O(m), m = bytes of `name`.
 fn extends_builtin_operator(name: &str) -> bool {
     name.contains(":<") && !Interpreter::lexically_bindable_operator(name)
