@@ -1611,6 +1611,17 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    re-run of every census dependent passes on this build. Pinned by
    `t/routines/closure/closure-return-carries-only-own-writes.t`.
 
+   **Slice 44 done** (`fix/13732-dynamic-push-in-regex-assertion`): the
+   dynamic carry slice 43 kept is gone, so a closure's return carries back
+   only its own `free_var_writes`. What it covered was #13732: once a
+   thread had started while a frame's `my @*x` was visible, the name-keyed
+   shared store held a seed entry for `@*x`, and a later push to `@*x`
+   (`push_to_existing_shared_array`, `push_to_shared_var`) went into that
+   entry and rebound the running frame's name to it, never the array the
+   frame declared. A dynamic is per frame, so the shared store no longer
+   stands in for an `@*` name. Pinned by
+   `t/concurrency/concurrent-start-then-dynamic-push-from-block.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
