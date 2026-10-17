@@ -3604,6 +3604,34 @@ Not changed: a `list`-only class also iterates its list for `values`, where Raku
 assignment keep their own rule (`try_iterable_instance_items`), which still requires `Iterable` for a `list`-only
 class, although Rakudo's `for` iterates it.
 
+### 9.149 6.e methods over a shaped type's 6.d answer (2026-10-17)
+
+`refactor/13738-revision-e-shape-rows`, part 1 of #13738. §9.146's `REVISION_E` rows are `OWNER_ONLY`: an
+owner walk skips them under 6.d, but no shape lookup sees them. That covers a name 6.e adds. It does not
+cover a method 6.e adds to a type that has a shape, over a method the shape already answers from an
+ancestor under 6.d:
+
+- `Complex.sign`: under 6.e it is the unit complex number; under 6.d it is `Cool.sign`, which refuses a
+  non-real `Complex`.
+- `Int.pick` and `Int.roll`: under 6.e they sample `^self`; under 6.d they are `Any.pick`/`roll`, which sample
+  the one-item list `(self,)`.
+
+Decision. `resolve` (the guard step's lookup) asks one more thing before the shape's entry. If the program's
+revision is 6.e and the receiver is an instance, it looks for a `REVISION_E` row that the shape's own type
+declares for the name and arity, and that row answers instead of the entry. A memoized bit per row name says
+whether any `REVISION_E` row has the name, so every other lookup pays one bit test. The resolved row is cached
+per call site like any other: the revision is fixed for the program. The rows are `scalars/revision_e.rs`
+(`Handler::Narrow`; `Int.pick`/`roll` call the one `sampling::pick`/`roll` on `^self`). `REVISION_E` joins the
+flags the debug cross-check skips, because the cascades know no revision. The recognition catalog is unchanged:
+6.d already recognizes these names on these owners. So the declared-by-Rakudo test checks a `REVISION_E`
+method row against the snapshot's `declared.e` lines instead of the catalog.
+
+Rakudo 2026.09's own `Int.pick` crashes the process on `0.pick` and answers a garbage integer for `(-3).pick`.
+mutsu's row reads a non-positive receiver as the empty range.
+
+Left on #13738: `Format`/`Formatter`/`Formatter::Syntax` (their owners need catalog rows and a representation
+decision), `Mu.Callable` and `Grammar`'s 6.e additions.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
