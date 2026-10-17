@@ -2210,6 +2210,7 @@ impl Interpreter {
                 // is a mutating array method, delegate to the shared storage mutator
                 // so the mutation is visible through the Proxy subclass.
                 if matches!(target.view(), ValueView::Array(..))
+                    && self.types.pending_proxy_subclass_attr.is_some()
                     && crate::builtins::method_table::names_a_mut_row(
                         Symbol::intern(method),
                         args.len(),

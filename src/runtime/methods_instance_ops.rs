@@ -2300,6 +2300,7 @@ impl Interpreter {
                 // Before giving up, check if this is a mutating array method
                 // and we have a pending Proxy subclass attribute reference.
                 if matches!(target.view(), ValueView::Array(..))
+                    && self.types.pending_proxy_subclass_attr.is_some()
                     && crate::builtins::method_table::names_a_mut_row(
                         Symbol::intern(method),
                         args.len(),
