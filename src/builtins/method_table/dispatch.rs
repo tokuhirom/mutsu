@@ -419,6 +419,33 @@ pub(crate) fn invoke_mro(
     args: &[Value],
     target: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
+    walk_mro(interp, owners, method, args, target, false)
+}
+
+/// [`invoke_mro`] over the late rows only (ADR-11276 §9.138): the
+/// `OWNER_ONLY` interpreter rows a cascade's last resort reaches, after every
+/// other answer, including the owners' own pure rows, declined. A call no late
+/// row binds is `None`, never `X::Multi::NoMatch`: the cascade goes on.
+// Cost: as [`invoke_mro`].
+pub(crate) fn invoke_mro_late(
+    interp: &mut Interpreter,
+    owners: &[&str],
+    method: &str,
+    args: &[Value],
+    target: &Value,
+) -> Option<Result<Value, RuntimeError>> {
+    walk_mro(interp, owners, method, args, target, true)
+}
+
+// Cost: as [`invoke_mro`].
+fn walk_mro(
+    interp: &mut Interpreter,
+    owners: &[&str],
+    method: &str,
+    args: &[Value],
+    target: &Value,
+    late_only: bool,
+) -> Option<Result<Value, RuntimeError>> {
     let method = Symbol::intern(method);
     let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
     let arity = args.len() - named_count;
@@ -436,6 +463,12 @@ pub(crate) fn invoke_mro(
         declared |= super::owner_declares(owner, method);
         super::owner_rows_at(Symbol::intern(owner), method, arity).find_map(|id| {
             let row = row(id);
+            if late_only
+                && !(matches!(row.handler, Handler::Interp(_))
+                    && row.flags.contains(RowFlags::OWNER_ONLY))
+            {
+                return None;
+            }
             // An interpreter row reads any argument the way its routine does (a
             // `Seq` of pairs for `trans`, a list of needles for `index`); only a
             // `Junction`, which must autothread, is refused, unless the row's
@@ -471,6 +504,7 @@ pub(crate) fn invoke_mro(
     // Or every candidate that takes the arity is for a defined invocant only:
     // Rakudo's `Any:D` candidates do not bind a type object either.
     if answer.is_none()
+        && !late_only
         && declared
         && (!owners
             .iter()

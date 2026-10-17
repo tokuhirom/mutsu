@@ -170,9 +170,10 @@ fn samples_have_their_shape() {
 
 #[test]
 fn no_row_is_registered_twice() {
-    // The one exception is a pure row's interpreter twin (ADR-11276 §9.135):
-    // an `OWNER_ONLY` `Handler::Interp` row registered after the pure row of
-    // the same owner, name and arity, which only the MRO walk reaches.
+    // The one exception is a row's late twin (ADR-11276 §9.135, §9.138): an
+    // `OWNER_ONLY` `Handler::Interp` row registered after the first row of
+    // the same owner, name and arity, which only the MRO walks reach. The
+    // first row is not itself such a row.
     let mut seen = std::collections::HashSet::new();
     let mut twins = std::collections::HashSet::new();
     for row in rows() {
@@ -180,11 +181,14 @@ fn no_row_is_registered_twice() {
         if seen.insert(key) {
             continue;
         }
-        let pure_first = rows()
+        let distinct_first = rows()
             .find(|first| (first.owner, first.name, first.arity) == key)
-            .is_some_and(|first| !matches!(first.handler, Handler::Interp(_)));
+            .is_some_and(|first| {
+                !(matches!(first.handler, Handler::Interp(_))
+                    && first.flags.contains(RowFlags::OWNER_ONLY))
+            });
         assert!(
-            pure_first
+            distinct_first
                 && matches!(row.handler, Handler::Interp(_))
                 && row.flags.contains(RowFlags::OWNER_ONLY)
                 && twins.insert(key),

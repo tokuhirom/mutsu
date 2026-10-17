@@ -1,8 +1,4 @@
-use super::methods::{
-    allomorph_numeric_equal, check_shaped_bounds, make_not_enough_dimensions_error,
-    multidim_assign_pos, multidim_at_pos, multidim_bind_pos, multidim_delete_pos,
-    multidim_exists_pos, shaped_multidim_exists_pos,
-};
+use super::methods::allomorph_numeric_equal;
 use super::methods_signature_errors::{
     make_method_not_found_error, make_multi_no_match_error,
     make_x_immutable_error,
@@ -2648,12 +2644,15 @@ impl Interpreter {
                 method
             )));
         }
-        // Array-specific methods: EXISTS-POS, ASSIGN-POS, BIND-POS, DELETE-POS, clone
-        // Cost (preamble, paid by every method that reaches this block on an Array):
-        // O(d), d = dimensions of a shaped invocant (`shaped_array_shape`); O(1)
-        // otherwise. The element type is read off the container
-        // (`ArrayData::value_type`), not looked up through the env.
-        if let ValueView::Array(items, _) = target.view() {
+        // The positional protocol of a list or array: `Any`'s late rows for
+        // multi-dimensional indices, a shaped array's bounds and a native
+        // array's refusals (ADR-11276 §9.138).
+        if let ValueView::Array(..) = target.view()
+            && matches!(
+                method,
+                "AT-POS" | "EXISTS-POS" | "ASSIGN-POS" | "BIND-POS" | "DELETE-POS"
+            )
+        {
             // ADR-0070: an undeclared named argument is swallowed by the
             // method's implicit `*%_`; counted here it became one more
             // dimension (`(1,2,3).AT-POS("a", :zzz)` answered Nil where Rakudo
@@ -2663,139 +2662,12 @@ impl Interpreter {
             {
                 args = stripped;
             }
-            // Detect shaped array and native typed array properties
-            let shape = crate::runtime::utils::shaped_array_shape(&target);
-            let element_type = items.value_type.clone();
-            let is_native = element_type
-                .as_deref()
-                .is_some_and(crate::runtime::native_types::is_native_array_element_type);
-
-            // For shaped arrays, validate dimension counts for ASSIGN-POS and DELETE-POS
-            if let Some(ref shape) = shape {
-                let needed_dims = shape.len();
-                match method {
-                    "ASSIGN-POS" if args.len() >= 2 => {
-                        let got_dims = args.len() - 1;
-                        if got_dims < needed_dims {
-                            return Err(make_not_enough_dimensions_error(
-                                "assign to",
-                                got_dims,
-                                needed_dims,
-                            ));
-                        }
-                    }
-                    "DELETE-POS" => {
-                        let got_dims = args.len();
-                        if got_dims < needed_dims {
-                            return Err(make_not_enough_dimensions_error(
-                                "delete from",
-                                got_dims,
-                                needed_dims,
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            // Multi-arg *-POS methods on arrays: dig into nested arrays.
-            if args.len() >= 2
-                && matches!(
-                    method,
-                    "AT-POS" | "EXISTS-POS" | "ASSIGN-POS" | "BIND-POS" | "DELETE-POS"
-                )
-            {
-                match method {
-                    "AT-POS" => {
-                        if let Some(ref shape) = shape {
-                            check_shaped_bounds(shape, &args)?;
-                        }
-                        return Ok(multidim_at_pos(&target, &args));
-                    }
-                    "EXISTS-POS" => {
-                        if let Some(ref shape) = shape {
-                            if is_native {
-                                return Ok(Value::truth(multidim_exists_pos(&target, &args)));
-                            }
-                            return Ok(Value::truth(shaped_multidim_exists_pos(
-                                &target, &args, shape,
-                            )));
-                        }
-                        return Ok(Value::truth(multidim_exists_pos(&target, &args)));
-                    }
-                    // Cost: O(d), d = dimensions (in place through each level's node).
-                    "ASSIGN-POS" if args.len() >= 3 => {
-                        if let Some(ref shape) = shape {
-                            let (indices, _) = args.split_at(args.len() - 1);
-                            check_shaped_bounds(shape, indices)?;
-                        }
-                        let (indices, value) = args.split_at(args.len() - 1);
-                        let value = value[0].clone();
-                        multidim_assign_pos(&target, indices, value.clone())?;
-                        return Ok(value);
-                    }
-                    "BIND-POS" if args.len() >= 3 => {
-                        if is_native {
-                            return Err(RuntimeError::new("Cannot bind to a natively typed array"));
-                        }
-                        let (indices, value) = args.split_at(args.len() - 1);
-                        let value = value[0].clone();
-                        multidim_bind_pos(&target, indices, value.clone())?;
-                        return Ok(value);
-                    }
-                    "DELETE-POS" => {
-                        if is_native {
-                            return Err(RuntimeError::new(
-                                "Cannot delete from a natively typed array",
-                            ));
-                        }
-                        if let Some(ref shape) = shape {
-                            check_shaped_bounds(shape, &args)?;
-                        }
-                        return multidim_delete_pos(&target, &args);
-                    }
-                    _ => {}
-                }
-            }
-            match (method, args.as_slice()) {
-                // Cost: O(1) expected (bounds check plus an `initialized` HashSet
-                // probe; a sparse array is stored densely, as in Rakudo).
-                ("EXISTS-POS", [idx]) => {
-                    let index = match idx.view() {
-                        ValueView::Int(i) if i >= 0 => Some(i as usize),
-                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
-                        _ => None,
-                    };
-                    // An in-range slot may still be a hole — a deleted element
-                    // or an unassigned gap — and reporting those as existing
-                    // made `:exists` disagree with itself once it started
-                    // dispatching through EXISTS-POS (a mixin). A shaped array
-                    // is no exception: it is fixed-size, but `my @a[3]` starts
-                    // with every slot unassigned.
-                    return Ok(Value::truth(
-                        index.is_some_and(|i| i < items.len() && !items.hole_at(i)),
-                    ));
-                }
-                // Cost: O(1) amortized, in place through the shared node (as ASSIGN-POS).
-                ("BIND-POS", [idx, value]) => {
-                    if is_native {
-                        return Err(RuntimeError::new("Cannot bind to a natively typed array"));
-                    }
-                    let index = match idx.view() {
-                        ValueView::Int(i) if i >= 0 => Some(i as usize),
-                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
-                        _ => None,
-                    };
-                    let Some(index) = index else {
-                        return Err(RuntimeError::new("Cannot BIND-POS with a negative index"));
-                    };
-                    // SAFETY: audited aliased in-place container write (see
-                    // value::aliased_mut); no borrow into the node is live.
-                    let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.store_element(index, Value::bound_element(value.clone()));
-                    return Ok(value.clone());
-                }
-                _ => {}
+            let mro = self.classhow_mro_unhidden_names(&target);
+            let owners: Vec<&str> = mro.iter().map(String::as_str).collect();
+            if let Some(answer) = crate::builtins::method_table::invoke_mro_late(
+                self, &owners, method, &args, &target,
+            ) {
+                return answer;
             }
         }
 
