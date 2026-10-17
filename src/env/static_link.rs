@@ -87,6 +87,14 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
     f()
 }
 
+/// Whether two bindings of one name hold the same variable: the same value,
+/// or the same container seen through a shared cell (a store into a
+/// captured variable seeds the cell's container under the name).
+// Cost: O(1).
+pub(super) fn same_variable(a: &Value, b: &Value) -> bool {
+    a.same_binding(b) || a.with_deref(|a| b.with_deref(|b| a.same_binding(b)))
+}
+
 /// Whether a static link skips the caller frames for `key`: a plain user
 /// lexical, an attribute variable (`$!t` belongs to the `self` of the method
 /// that encloses the code, never to a caller's invocant, #12478), or a bare
