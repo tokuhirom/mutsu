@@ -1631,9 +1631,13 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    source-name and hash-key records) are now lexically scoped like the
    variable, so a static link skips the caller frames for them too. Before,
    `push-it()` pushing to the program's `my @a` through EVAL failed the
-   type check of its caller's unrelated `my Int @a`. The link applies to a
-   record only when the running frame does not bind the variable at all; a
-   record of a variable the frame binds keeps the walk it had. A module
+   type check of its caller's unrelated `my Int @a`. The record follows the
+   variable: the link applies to it only when the running frame does not
+   bind the variable and the program scope does. A record of a variable the
+   frame binds, or does not bind yet, keeps the walk it had. "Does not bind
+   yet" is a fresh `my $path` whose declaration probes the type; the bundled
+   URI battery caught that one picking up a caller's `my URI::Path $path`
+   once the link reached it. A module
    routine linked to the program scope would otherwise pick up a mainline
    `my Array $desc`'s type for its own untyped `$desc` (Test's `proclaim`,
    `t/lang/adverbs/colon-args-list-infix-precedence.t`). A sigilless
