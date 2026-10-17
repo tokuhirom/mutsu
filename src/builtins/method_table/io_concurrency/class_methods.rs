@@ -3,7 +3,8 @@
 //! `repository-for-name`, `repository-for-spec` and `run-script`,
 //! `Encoding::Registry`'s `find` and `register`, `IO::Socket::INET`'s `connect`
 //! and `listen`, and `IO::Socket::Async`'s `connect`, `listen`, `bind-udp` and
-//! `udp`.
+//! `udp`; `Rakudo::Internals.REGISTER-DYNAMIC`, `Deprecation.report` and
+//! `CompUnit::Loader`'s `load-source` and `load-source-file` (§9.159).
 //!
 //! The rows are reached through their owner (`RowFlags::OWNER_ONLY`,
 //! `invoke_owner`) from the by-name dispatch that answered them before
@@ -63,6 +64,10 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Seq", "from-loop", 0, seq_from_loop),
     row!("X::AdHoc", "from-slurpy", 0, adhoc_from_slurpy),
     row!("Thread", "start", 1, thread_start),
+    row!("Rakudo::Internals", "REGISTER-DYNAMIC", 0, register_dynamic),
+    row!("Deprecation", "report", 0, deprecation_report),
+    row!("CompUnit::Loader", "load-source", 0, load_source),
+    row!("CompUnit::Loader", "load-source-file", 0, load_source_file),
     // `Supply.start` is an instance method: a supply of the block's results.
     MethodRow {
         owner: "Supply",
@@ -92,6 +97,9 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
         "Encoding::Registry" => &["Encoding::Registry"],
         "IO::Socket::INET" => &["IO::Socket::INET"],
         "IO::Socket::Async" => &["IO::Socket::Async"],
+        "Rakudo::Internals" => &["Rakudo::Internals"],
+        "Deprecation" => &["Deprecation"],
+        "CompUnit::Loader" => &["CompUnit::Loader"],
         _ => return None,
     })
 }
@@ -247,4 +255,33 @@ fn thread_start(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<'_
 // Cost: O(1) to build the derived supply.
 fn supply_start(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
     Some(i.dispatch_supply_transform(t.clone(), "start", &all_args(args, named)))
+}
+
+/// `Rakudo::Internals.REGISTER-DYNAMIC` (ADR-11276 §9.159).
+// Cost: the block's own.
+fn register_dynamic(
+    interp: &mut Interpreter,
+    _: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Answer {
+    Some(interp.register_dynamic(&all_args(args, named)))
+}
+
+/// `Deprecation.report`.
+// Cost: O(r), r = chars of the report.
+fn deprecation_report(_: &mut Interpreter, _: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    Some(Ok(Interpreter::deprecation_report()))
+}
+
+/// `CompUnit::Loader.load-source($buf)`.
+// Cost: the source's compile and run.
+fn load_source(interp: &mut Interpreter, _: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    Some(interp.compunit_load_source(args))
+}
+
+/// `CompUnit::Loader.load-source-file($path)`.
+// Cost: the file's read, compile and run.
+fn load_source_file(interp: &mut Interpreter, _: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    Some(interp.compunit_load_source_file(args))
 }
