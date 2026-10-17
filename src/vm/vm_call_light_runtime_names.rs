@@ -4,16 +4,15 @@
 //! `CALLER::CALLER::.BIND-KEY($name, ...)`, an `EVAL`'d `$a = 32`) lands in
 //! the callee's env and is invisible to `free_var_writes`. The named path
 //! carries it into the caller env with `propagate_pending_caller_writes`; the
-//! light paths used to rely on their plain-lexical return merge to do it.
-//! These helpers carry it explicitly, so it does not depend on that merge
-//! (ADR-12529 §3, slice 36).
+//! light paths carry it here (ADR-12529 §3, slice 36). No return copies the
+//! callee's other bindings back (slice 41).
 
 use super::*;
 use crate::opcode::CompiledFunction;
 
 impl Interpreter {
     /// The pending runtime-named writes visible from the callee frame, read
-    /// before the light return merge drops the frame. A name the callee
+    /// before the light return drops the frame. A name the callee
     /// declares itself is its own: it is dropped from the pending list.
     // Cost: O(w * d), w = pending runtime-named writes (usually 0),
     // d = env tiers walked to find each.
@@ -41,7 +40,7 @@ impl Interpreter {
     }
 
     /// Store the writes [`Self::light_runtime_name_writes`] read into the
-    /// caller env the light return merge restored.
+    /// caller env the light return restored.
     // Cost: O(w), w = carried writes.
     pub(super) fn restore_light_runtime_name_writes(&mut self, carried: Vec<(Symbol, Value)>) {
         for (sym, value) in carried {
@@ -49,28 +48,37 @@ impl Interpreter {
         }
     }
 
-    /// Finish a positional light call's env: carry the runtime-named writes
-    /// across the return, around the merge in
-    /// [`Self::merge_positional_light_env`].
-    pub(super) fn finish_positional_light_env(
-        &mut self,
-        cf: &CompiledFunction,
-        caller_env: Option<crate::env::Env>,
-    ) {
-        let carried = self.light_runtime_name_writes(cf);
-        self.merge_positional_light_env(cf, caller_env);
-        self.restore_light_runtime_name_writes(carried);
-    }
-
-    /// [`Self::finish_positional_light_env`] for the typed light path, around
-    /// [`Self::merge_light_env`].
+    /// Finish a light call's env: drop the callee frame's bindings and carry
+    /// the runtime-named writes across the return.
+    ///
+    /// Nothing the callee bound is copied back (ADR-12529 §3, slice 41): an
+    /// outer lexical is reached through the static link and written through
+    /// its shared cell, and a write whose name exists only at run time (or a
+    /// rebind of a caller's dynamic) is carried by
+    /// [`Self::light_runtime_name_writes`]. The swap path restores the
+    /// caller's env; a reused frame (the caller's overlay was the shared
+    /// empty singleton at entry) drops what the call wrote in place, through
+    /// the flatten's write log when the body flattened the env (#7630).
+    /// Shared by the normal completion and the panic-unwind recovery arm of
+    /// both light paths (`news/2026-08/light-call-state-leak-on-panic-unwind.md`).
+    // Cost: O(w + c), w = pending runtime-named writes, c = names the call
+    // wrote into a reused frame's env.
     pub(super) fn finish_light_env(
         &mut self,
         cf: &CompiledFunction,
         caller_env: Option<crate::env::Env>,
     ) {
         let carried = self.light_runtime_name_writes(cf);
-        self.merge_light_env(cf, caller_env);
+        match caller_env {
+            Some(caller_env) => *self.env_mut() = caller_env,
+            None => {
+                if !self.env_mut().retain_frame_writes(|_| false)
+                    && !self.env().overlay_is_shared_empty()
+                {
+                    self.env_mut().retain_overlay(|_, _| false);
+                }
+            }
+        }
         self.restore_light_runtime_name_writes(carried);
     }
 

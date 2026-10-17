@@ -710,115 +710,17 @@ impl Interpreter {
                     }
                 }
             }
-            // Use declared_locals (vars declared via `my` or as params) instead
-            // of all locals. Captured outer variables should propagate their
-            // modifications back to the caller.
-            // `$!` is scoped per routine — this frame reset it to Nil on entry
-            // (above), so merging the callee's value back would wipe the
-            // caller's error variable. Blocks are excluded: a bare block shares
-            // its enclosing routine's `$!` and a `CATCH` writes it there.
+            // Nothing else the callee bound is copied back (ADR-12529 §3,
+            // slice 41): an outer lexical is reached through the static link
+            // and written through its shared cell, a write whose name exists
+            // only at run time (or a rebind of a caller's dynamic) is carried
+            // by `propagate_pending_caller_writes`, and the rest -- the
+            // callee's own lexicals, its `$!`, its compile-time contextuals,
+            // its sigilless aliases, a `my enum` -- are its own.
+            // `$!` is scoped per routine; see the free-var loop below.
             let bang_is_callee_private = cf.code.is_routine;
-            // Integer compares against the pre-interned keys: a `Symbol ==
-            // &str` compare resolves the symbol through the thread-local
-            // string cache first, and this loop asked that question four
-            // times per key of a (flattened, whole-scope) callee env.
-            let topic_sym = crate::symbol::wk::topic();
-            let positional_slurpy_sym = crate::symbol::wk::positional_slurpy();
-            let named_slurpy_sym = crate::symbol::wk::named_slurpy();
-            for (k, v) in self.env().iter() {
-                if *k == topic_sym || *k == positional_slurpy_sym || *k == named_slurpy_sym {
-                    continue;
-                }
-                // One memoized byte answers both string predicates this loop
-                // asks of every key. It used to resolve the symbol to a `&str`
-                // and re-scan it two or three times per key -- and a *flattened*
-                // callee env (any full method dispatch in the body collapses
-                // the overlay) makes "every key" the whole lexical scope, which
-                // is why this showed up as the single hottest thing in the
-                // vendored `Test`'s assertion loop. See `symbol::flags`.
-                let kflags = k.flags();
-                if bang_is_callee_private
-                    && kflags & crate::symbol::flags::ROUTINE_SCOPED_IMPLICIT != 0
-                {
-                    continue;
-                }
-                // A plain user lexical is never merged back (ADR-12529 §3,
-                // slice 37): a frame resolves an outer lexical through its
-                // static link, and every write a callee makes to one reaches
-                // the declaring frame through the variable's shared cell (or,
-                // for a name known only at run time, through
-                // `propagate_pending_caller_writes` below). Copying the
-                // callee's binding of the name back is how a callee's write
-                // used to reach a caller's same-named, unrelated lexical.
-                // Nor is a type name, a package-qualified variable or an
-                // uppercase-named scalar (slice 38): a type the callee declared
-                // lexically is its own, a package one lives in the symbol
-                // table, a package variable in `our_vars`, and a scalar in its
-                // cell, as for a lowercase one.
-                if kflags
-                    & (crate::symbol::flags::PLAIN_USER_LEXICAL
-                        | crate::symbol::flags::UPPER_IDENT_KEY)
-                    != 0
-                {
-                    continue;
-                }
-                // Only a key the caller already has can be merged back, and
-                // only if the callee actually REBOUND it: a key whose value is
-                // the same binding (same immediate, or the same heap
-                // allocation) is what the caller already holds, so re-inserting
-                // it is a hash write, a refcount bump and a drop for nothing.
-                // On a flattened callee env — which any full method dispatch in
-                // the body produces — that is the overwhelming majority of the
-                // keys walked here, because the flatten copied the caller's
-                // whole lexical scope in. An in-place container mutation leaves
-                // these bits unchanged too, and correctly so: the caller shares
-                // the allocation and already sees it.
-                let unchanged = restored_env
-                    .get_sym(*k)
-                    .is_some_and(|old| old.same_binding(v));
-                if unchanged {
-                    continue;
-                }
-                // A compile-time contextual (`$?CLASS`, `$?LINE`, ...) names
-                // the code it is written in; the callee's value is never the
-                // caller's, as on the light paths (`finish_positional_light_env`).
-                if k.with_str(|s| s.starts_with('?')) {
-                    continue;
-                }
-                // A callee sigilless parameter's alias entry describes the
-                // callee's own binding: when the caller has a same-named
-                // sigilless parameter, merging it back would retarget the
-                // caller's alias at the callee's argument variable, so the
-                // caller's return-side writeback then clobbers that variable.
-                if kflags & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0
-                    && k.with_str(|s| {
-                        s.strip_prefix(crate::symbol::SIGILLESS_ALIAS_KEY_PREFIX)
-                            .is_some_and(|base| {
-                                cf.param_defs.iter().any(|pd| pd.storage_name() == base)
-                            })
-                    })
-                {
-                    continue;
-                }
-                if restored_env.contains_key_sym(*k)
-                    && !cf.is_callee_local_sym(*k)
-                    // A `my enum` this body declared is its own lexical, but it
-                    // gets no local slot, so `is_callee_local_sym` misses it and
-                    // the binding overwrote a same-named caller symbol for the
-                    // rest of the program.
-                    && !cf.is_own_enum_key_sym(*k)
-                    // The rw-source names are a per-call `HashSet<String>`, so
-                    // only resolve the key to a `&str` when there is one to
-                    // compare against -- the overwhelmingly common case is a
-                    // call with no `is rw` parameter at all.
-                    && (rw_sources.is_empty() || !k.with_str(|s| rw_sources.contains(s)))
-                {
-                    restored_env.insert_sym(*k, v.clone());
-                }
-            }
             // A captured-outer write to an enclosing lexical that is not yet
-            // present in the caller env is dropped by the `contains_key`-gated
-            // merge above. This happens when a hoisted sub is *called before* the
+            // present in the caller env would otherwise be lost. This happens when a hoisted sub is *called before* the
             // `my $x` declaration it closes over has run (the declaration is
             // compile-time, so the lexical genuinely exists, but the runtime env
             // entry is created only when the `my` statement executes). Such a name
@@ -835,7 +737,7 @@ impl Interpreter {
                         s == "_"
                         || s == "@_"
                         || s == "%_"
-                        // `$!` is per-routine; see the merge loop above.
+                        // `$!` is per-routine: this frame reset it on entry.
                         || (bang_is_callee_private
                             && crate::symbol::is_routine_scoped_implicit_var(s))
                         || rw_sources.contains(s)

@@ -837,17 +837,11 @@ impl Interpreter {
 
         // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
 
-        // Restore the caller env, merging the overlay (the callee's own writes)
-        // back: a write to a captured outer variable (not a declared local /
-        // param of this function) persists in the caller; the function's
-        // params/locals/aliases are dropped with the overlay. This replaces the
-        // per-key `modified_env_keys` save/restore.
-        // `$!` is scoped per routine: the caller's value must survive the call
-        // (a block, which shares its enclosing routine's `$!`, is excluded).
-        // Shared with the panic-recovery arm above via `finish_light_env` (see
-        // that method's doc comment) so a Rust panic mid-body cannot skip this
-        // merge and leave the caller's env permanently pointed at the callee's
-        // own overlay.
+        // Restore the caller env, dropping the callee's own bindings (nothing
+        // is copied back, ADR-12529 §3 slice 41). Shared with the
+        // panic-recovery arm above via `finish_light_env` so a Rust panic
+        // mid-body cannot leave the caller's env pointed at the callee's own
+        // overlay.
         self.finish_light_env(cf, caller_env);
         self.leave_routine_package(saved_package);
 
@@ -882,91 +876,6 @@ impl Interpreter {
                 }
             }
             Err(e) => Err(e),
-        }
-    }
-
-    /// Merge the callee's env overlay back into the caller (or replay the
-    /// discard-only rollback for a reused frame), following the exact rules
-    /// `call_compiled_function_light_spec`'s normal completion path used to
-    /// apply inline. Factored out so the panic-unwind recovery arm in that
-    /// function can call the identical logic instead of duplicating it a
-    /// second time within the same function body -- see
-    /// `news/2026-08/light-call-state-leak-on-panic-unwind.md`. (Mirrors
-    /// `call_compiled_function_positional_light`'s
-    /// `finish_positional_light_env` in `vm_call_light.rs`; this cousin has
-    /// no `my_declared_enum_sym` check, matching that difference in the
-    /// original inline code.)
-    pub(super) fn merge_light_env(
-        &mut self,
-        cf: &CompiledFunction,
-        caller_env: Option<crate::env::Env>,
-    ) {
-        let bang_is_callee_private = cf.code.is_routine;
-        // A plain user lexical is never merged back either (ADR-12529 §3,
-        // slice 37; see `call_compiled_function_named_inner`).
-        let is_callee_private = |k: Symbol| {
-            k == "_"
-                || k == "@_"
-                || k == "%_"
-                || k.flags()
-                    & (crate::symbol::flags::PLAIN_USER_LEXICAL
-                        | crate::symbol::flags::UPPER_IDENT_KEY)
-                    != 0
-                || k.with_str(|s| s.starts_with('?'))
-                || (bang_is_callee_private
-                    && k.with_str(crate::symbol::is_routine_scoped_implicit_var))
-                || cf.is_callee_local_sym(k)
-        };
-        match caller_env {
-            Some(caller_env) => {
-                let scoped = std::mem::replace(self.env_mut(), caller_env);
-                // After a `flatten_scoped_env` in the body, `scoped` is the whole
-                // visible scope rather than the callee's own writes; drive the
-                // merge from the log the flatten left behind instead of walking
-                // every caller lexical (#7630; mirrors
-                // `finish_positional_light_env`).
-                if let Some(writes) = scoped.frame_writes() {
-                    for k in writes {
-                        if is_callee_private(*k) {
-                            continue;
-                        }
-                        if let Some(v) = scoped.overlay_get_sym(*k) {
-                            self.env_mut().insert_sym(*k, v.clone());
-                        }
-                    }
-                    return;
-                }
-                for (k, v) in scoped.overlay_iter() {
-                    if is_callee_private(*k) {
-                        continue;
-                    }
-                    self.env_mut().insert_sym(*k, v.clone());
-                }
-            }
-            None => {
-                // Reused frame: the caller's overlay was the shared empty
-                // singleton at entry. If the latch is still armed the body
-                // never wrote env -- nothing to merge or restore. Otherwise
-                // every overlay entry is a write made by this call; replay the
-                // swap path's return merge in place -- keep captured-outer
-                // writes (already sitting in the caller's env) and drop
-                // callee-locals and the per-frame private names.
-                //
-                // A full method dispatch in the body disarms the
-                // overlay-identity latch for good (`flatten_scoped_env` leaves no
-                // parent tier), which turned this into a `retain_overlay` over
-                // the whole flattened scope. `retain_frame_writes` replays the
-                // same merge over the flatten's own log (#7630).
-                if self
-                    .env_mut()
-                    .retain_frame_writes(|k| !is_callee_private(k))
-                {
-                    return;
-                }
-                if !self.env().overlay_is_shared_empty() {
-                    self.env_mut().retain_overlay(|k, _| !is_callee_private(*k));
-                }
-            }
         }
     }
 }
