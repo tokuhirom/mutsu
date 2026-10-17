@@ -29,7 +29,10 @@ impl Interpreter {
         name: &str,
         name_sym: Option<Symbol>,
     ) -> Option<String> {
-        match self.slot_type_constraint_value(code, idx, name, name_sym)?.view() {
+        match self
+            .slot_type_constraint_value(code, idx, name, name_sym)?
+            .view()
+        {
             crate::value::ValueView::Str(tc) => Some(tc.as_str().to_owned()),
             _ => None,
         }

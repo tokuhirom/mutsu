@@ -100,12 +100,12 @@ impl Interpreter {
     pub(crate) fn declared_meta_lane(&self, lane: Symbol) -> Option<&Value> {
         let table = &self.lexicals.unit_lexical_meta_lanes;
         if table.is_empty() || !table.contains_name(lane.as_str()) {
-            return self.env().get_sym(lane);
+            return self.env().get_record_sym(lane);
         }
         self.env()
             .get_sym_in_frame(lane)
             .or_else(|| self.unit_lexical_meta_lane(lane))
-            .or_else(|| self.env().get_sym(lane))
+            .or_else(|| self.env().get_record_sym(lane))
     }
 
     /// The running unit's recorded lane `lane` (a `Str` type name).
