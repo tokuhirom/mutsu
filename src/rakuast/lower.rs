@@ -485,6 +485,9 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if super::decl_compound_assign::is_declaration_compound_assign(node) {
         return super::decl_compound_assign::lower(node);
     }
+    if let Some(zip_declaration) = super::zip_assign::lower_declaration(node) {
+        return zip_declaration;
+    }
     // `my $x = 1 and 2`: a declaration is the leftmost operand of the statement.
     if let Some(stmt) = super::decl_tail::lower(node) {
         return stmt;

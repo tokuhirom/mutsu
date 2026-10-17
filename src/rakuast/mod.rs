@@ -101,6 +101,7 @@ mod var_decl_constructor;
 mod var_does;
 mod var_will;
 mod word_quote;
+mod zip_assign;
 
 pub use formatter::formatter_ast;
 pub use lower::lower;

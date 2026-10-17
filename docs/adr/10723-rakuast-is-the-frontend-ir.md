@@ -1303,3 +1303,13 @@ right. The parser expands this into a temporary-index writeback block. The
 converter now recognizes that expansion structurally and restores the measured
 tree; lowering routes it through the existing `.=` expansion with a hyper
 method call. The regression checks the node shape and mutation after EVAL.
+
+### 6.70 S10: zip metaassignment (2026-10-17)
+
+Rakudo models `@a Z= rhs` as `ApplyListInfix` with
+`MetaInfix::Zip(Assignment(:item))`. The parser's internal
+`__mutsu_zip_assign` marker now converts back to that source-level node for
+ordinary assignments and declaration assignments. Lowering restores the
+existing element-wise assignment path, including the scopeless declaration
+expansion needed by `my int @native[2;3] Z= 0..5`. The focused regression pins
+tail preservation, fresh-array behavior, and row-major shaped native filling.

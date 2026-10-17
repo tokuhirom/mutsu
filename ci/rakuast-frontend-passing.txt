@@ -3929,6 +3929,7 @@ t/oo/method/interp-hash-method-and-typeobject-str.t
 t/oo/method/interp-method-arg-quotes.t
 t/oo/method/invalid-qualifier-method-name.t
 t/oo/method/invert-method-rows.t
+t/oo/method/junction-own-method-rows.t
 t/oo/method/lazy-method-deferral-frame.t
 t/oo/method/lazy-method-map-grep.t
 t/oo/method/lazylist-sink-method-forces-gather.t
