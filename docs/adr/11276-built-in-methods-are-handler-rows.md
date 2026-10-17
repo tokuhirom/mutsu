@@ -3751,6 +3751,47 @@ the class's own name against the built-in's static rules (`Instant.new ~~ Cool`)
 such a class `Any` as its parent, and `type_matches_value` matches its own name only against itself. Pinned in
 `t/types/string/format-str-subclass-rows.t`.
 
+### 9.154 The shapeless subscript protocol is rows (2026-10-17)
+
+`refactor/11276-shapeless-subscript`. The last quoted-name arms of the pure one-argument cascade
+(`methods_narg/dispatch_1arg.rs`) were the subscript protocol of receivers with no shape:
+
+- `Nil.AT-POS`/`AT-KEY` were `Nil`, and its `EXISTS-POS`/`EXISTS-KEY` were `False`.
+- The `Any` and `Mu` type objects' `AT-KEY` autovivified to `Any`, and their `EXISTS-KEY` was `False`.
+- A hash or quant hash with no settled shape (a `Map` subclass's raw storage) read its keys through the
+  associative rows' implementation.
+- An instance with no positional protocol answered `AT-POS` as the one-element list holding itself, through `Any`'s
+  row called by name.
+- A native-backed `CArray` answered `AT-POS` from its buffer elements.
+
+§9.66 kept `Nil` without a shape, so these could not be shape rows.
+
+Decision. `answer_shapeless` reaches them as rows; it is the step every call site with an interpreter takes after
+the cascades.
+
+- **`Nil`** declares `AT-POS` and `AT-KEY` in Rakudo (`only` methods answering `Nil`), so they are rows of `Nil`
+  (`any_subscript::NIL_ROWS`), and the recognition table gains them. `shapeless_row` admits a `Nil` receiver and
+  picks its own rows first. Its `EXISTS-POS`/`EXISTS-KEY` are `Any`'s rows, whose `EXISTS-POS` now counts `Nil` as
+  undefined.
+- **A built-in type object** (one the catalog lists, and `Any`) is admitted for `AT-KEY`/`EXISTS-KEY`. `Any`'s rows
+  already take type objects. A package stash stays the interpreter's (`CORE::<&say>`). `Mu` is not an `Any`:
+  `Mu.AT-KEY` is now `X::Method::NotFound`, as in Rakudo.
+- **A hash or quant hash with no settled shape** answers `AT-KEY`/`EXISTS-KEY` from its type's rows (`Hash`, `Set`,
+  `Bag`, `Mix` and the mutable forms).
+- **An instance** with no subscript protocol of its own reaches `Any`'s row through `shapeless_row`'s MRO walk.
+  It takes `Any`'s row wherever the walk finds it, and falls back to it when nothing in the MRO declares the method.
+  The fallback is needed because the registered MRO of `class P does Positional` is `P, Positional`, without `Any`
+  (#13769). A class declared `is Mu` has none.
+- **A `CArray`** over a buffer is a `Blob` shape receiver (§9.107).
+- **`Any:U.EXISTS-POS(|)`** binds any index without coercing it. `index_arg` answers `False` for a type object or
+  `Nil` before it calls the index's `.Int`, so `Nil.EXISTS-POS("x")` is `False`.
+
+`dispatch_1arg`'s `Nil`, type object, unshaped-hash, instance and `CArray` arms are deleted. Its `AT-POS` and
+`EXISTS-POS` arms keep only the list with no settled shape: a lazy or unreified `Seq` and a `LazyList`, read
+through `method_table::positional`. `shapeless_row` leaves those receivers to the interpreter (§9.106), so this
+arm stays until a `Seq` with consumption state is a receiver the rows can take. Pinned in
+`t/collections/subscript/shapeless-subscript-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -711,19 +711,18 @@ pub(crate) fn shapeless_row(
             | ValueView::Slip(..)
             | ValueView::LazyList(..) => positional,
             // A mixin delegates to the value it wraps (`%h but R`).
-            ValueView::Junction { .. }
-            | ValueView::Proxy { .. }
-            | ValueView::Nil
-            | ValueView::Mixin(..) => true,
-            // A package's stash is `Associative` (`CORE::<&say>`), and an
-            // instance's `{ }` subscript may be a user `postcircumfix:<{ }>`
-            // or a tied store, which the interpreter resolves first.
-            ValueView::Package(_) | ValueView::Instance { .. } => !positional,
-            // A hash with no settled shape (a `Map` subclass's raw storage)
-            // is `Associative`: the interpreter reads its keys.
-            ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+            ValueView::Junction { .. } | ValueView::Proxy { .. } | ValueView::Mixin(..) => true,
+            // A built-in type object has no keys (`Int.AT-KEY` autovivifies to
+            // `Any`, §9.154); another package's stash is `Associative`
+            // (`CORE::<&say>`), and an instance's `{ }` subscript may be a user
+            // `postcircumfix:<{ }>` or a tied store, which the interpreter
+            // resolves first.
+            ValueView::Package(name) => {
                 !positional
+                    && name != "Any"
+                    && crate::builtin_types::catalog::builtin_type_mro_strs(name.as_str()).is_none()
             }
+            ValueView::Instance { .. } => !positional,
             _ => false,
         }
     {
@@ -861,6 +860,7 @@ pub(crate) fn shapeless_row(
                 // answers (§9.106).
                 if subscript
                     && class != cool
+                    && class != any
                     && crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
                         .is_some()
                 {
@@ -873,7 +873,9 @@ pub(crate) fn shapeless_row(
                     // `ACCEPTS` (`class DD is Date`) answers from that row,
                     // and so does an instance of the built-in class itself
                     // that has no shape (`Supply.list`, §9.110).
-                    if method == "ACCEPTS" || class == class_name {
+                    // An instance with no subscript protocol of its own is
+                    // the one-element list holding itself (`Any`'s, §9.154).
+                    if method == "ACCEPTS" || class == class_name || (subscript && class == any) {
                         owner = Some(class);
                     }
                     break;
@@ -882,6 +884,20 @@ pub(crate) fn shapeless_row(
             // An `Exception` subclass's MRO ends at `Exception`, whose
             // catalog chain (`Any`, `Mu`) is not spelled out in it: `Any`
             // answers what no closer class declared.
+            // An instance with no subscript protocol in its MRO is the
+            // one-element list holding itself (`Any`'s, §9.154), unless its
+            // class is declared `is Mu`.
+            if owner.is_none()
+                && exhausted
+                && subscript
+                && !interp
+                    .registry()
+                    .classes
+                    .get(class_name.as_str())
+                    .is_some_and(|def| def.parents.iter().any(|parent| parent == "Mu"))
+            {
+                owner = Some(any);
+            }
             if owner.is_none() && exhausted && list && !coerce {
                 let is_any = |class: &Symbol| {
                     crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
@@ -916,6 +932,21 @@ pub(crate) fn shapeless_row(
         }
         // `Mu` is no `Any`: `Mu.flat` and `Mu.pick` have no candidate.
         ValueView::Package(name) if name == "Mu" => return None,
+        // `Nil` declares its own `AT-POS` and `AT-KEY` (§9.154); its other
+        // subscript methods are `Any`'s.
+        ValueView::Nil if super::owner_row(Symbol::intern("Nil"), method, arity).is_some() => {
+            Symbol::intern("Nil")
+        }
+        // A hash or a quant hash with no settled shape (a `Map` subclass's raw
+        // storage) answers its type's associative rows (§9.154).
+        ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            if matches!(method.as_str(), "AT-KEY" | "EXISTS-KEY") =>
+        {
+            match target.view() {
+                ValueView::Hash(_) => Symbol::intern("Hash"),
+                _ => Symbol::intern(crate::runtime::utils::value_type_name(target)),
+            }
+        }
         // Every other receiver the cascades declined (a code object, a regex,
         // a promise, a RakuAST node, a type object with no shape, a shaped or
         // lazy array) lists as itself or its elements.

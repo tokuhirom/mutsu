@@ -265,11 +265,10 @@ fn native_method_1arg_cascade(
         return None;
     }
     match method {
-        // ACCEPTS for allomorphic types (IntStr, RatStr, NumStr, ComplexStr)
-        "ACCEPTS" if matches!(target.view(), ValueView::Mixin(_, m) if m.contains_key("Str")) => {
-            // Instance args need the interpreter to call .Numeric, so return None
-            allomorph_accepts(target, arg).map(|result| Ok(Value::truth(result)))
-        }
+        // A list with no settled shape (a lazy or unreified `Seq`, a
+        // `LazyList`) reads its element through the `AT-POS`/`EXISTS-POS`
+        // rows' implementation (`method_table::positional`); any other
+        // receiver with no shape is `answer_shapeless`'s (§9.154).
         "AT-POS" => {
             // Any other index is bound through its `.Int` (`index_arg`).
             if !matches!(
@@ -278,108 +277,20 @@ fn native_method_1arg_cascade(
             ) {
                 return None;
             }
-            // The index a Str, Rat or Num stands for (the `AT-POS` rows'
-            // implementation, `method_table::positional`).
             let idx = match crate::builtins::method_table::positional::at_pos_index(arg) {
                 Ok(idx) => idx,
                 Err(answer) => return answer,
             };
-            // A Range or a list's element: the `AT-POS` rows' implementation.
-            if let Some(answer) = crate::builtins::method_table::positional::at_pos_of(target, idx)
-            {
-                return Some(answer);
-            }
-            {
-                match target.view() {
-                    // `Nil` answers every method with itself.
-                    ValueView::Nil => Some(Ok(Value::NIL)),
-                    // A native-backed `CArray` (a buffer's elements are the
-                    // `Blob`/`Buf` rows', `method_table::blob_pos`).
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if crate::value::value_carray::is_native_carray_class(
-                        &class_name.resolve(),
-                    ) && crate::value::value_buf::has_buf_elems(&attributes) =>
-                    {
-                        if let Some(b) =
-                            crate::value::value_buf::with_buf_elems(&attributes, |items| {
-                                items.get(idx).cloned().unwrap_or(Value::int(0))
-                            })
-                        {
-                            return Some(Ok(b));
-                        }
-                        Some(Ok(Value::int(0)))
-                    }
-                    // `Any.AT-POS` for an instance read by the subscript
-                    // opcode, which has no interpreter for `Any`'s row: an
-                    // instance without a positional protocol is the
-                    // one-element list holding itself.
-                    // TODO: the subscript opcode should
-                    // reach `Any`'s row (`any_subscript::at_pos`) through
-                    // `answer_shapeless` with its interpreter, as a method
-                    // call does, and this branch go.
-                    ValueView::Instance { attributes, .. }
-                        if !attributes.contains_key("__mutsu_array_storage") =>
-                    {
-                        crate::builtins::method_table::any_subscript_at_pos(
-                            target,
-                            &[Value::int(idx as i64)],
-                        )
-                    }
-                    _ => None,
-                }
-            }
+            crate::builtins::method_table::positional::at_pos_of(target, idx)
         }
         "EXISTS-POS" => {
-            // A Range's or list's slot: the `EXISTS-POS` rows' implementation
-            // (`method_table::positional`).
-            if let Some(answer) = crate::builtins::method_table::positional::exists_pos(
-                target,
-                std::slice::from_ref(arg),
-            ) {
-                return Some(answer);
-            }
-            // `Nil.EXISTS-POS` is `False`; a value that is not `Positional`
-            // is `Any`'s row (`method_table::collections::any_subscript`).
-            if matches!(target.view(), ValueView::Nil) {
-                return Some(Ok(Value::FALSE));
-            }
-            None
+            crate::builtins::method_table::positional::exists_pos(target, std::slice::from_ref(arg))
         }
-        // A value that is not `Associative` answers `Any`'s rows
-        // (`method_table::collections::any_subscript`), a key of a hash or a
-        // quant hash its own (`method_table::subscript`, which also take a
-        // user-object key through `invoke_unadmitted`).
-        "AT-KEY" => match target.view() {
-            // A hash or a quant hash with no settled shape (a `Map`
-            // subclass's raw storage): the associative rows' implementation.
-            ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
-                crate::builtins::method_table::subscript::at_key(target, std::slice::from_ref(arg))
-            }
-            // `Nil` answers every method with itself.
-            ValueView::Nil => Some(Ok(Value::NIL)),
-            // A type object autovivifies; another package is a stash, which
-            // the interpreter looks up.
-            ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
-                Some(Ok(Value::package(crate::symbol::wk::any())))
-            }
-            _ => None,
-        },
-        "EXISTS-KEY" => match target.view() {
-            ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
-                crate::builtins::method_table::subscript::exists_key(
-                    target,
-                    std::slice::from_ref(arg),
-                )
-            }
-            ValueView::Nil => Some(Ok(Value::FALSE)),
-            ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
-                Some(Ok(Value::FALSE))
-            }
-            _ => None,
-        },
+        // ACCEPTS for allomorphic types (IntStr, RatStr, NumStr, ComplexStr)
+        "ACCEPTS" if matches!(target.view(), ValueView::Mixin(_, m) if m.contains_key("Str")) => {
+            // Instance args need the interpreter to call .Numeric, so return None
+            allomorph_accepts(target, arg).map(|result| Ok(Value::truth(result)))
+        }
         _ => None,
     }
 }

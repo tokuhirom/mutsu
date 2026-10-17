@@ -102,6 +102,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     accepts::ROWS,
     accepts_open::ROWS,
     any_subscript::ROWS,
+    any_subscript::NIL_ROWS,
     range::ROWS,
     sampling::BOOL_ROWS,
     sampling::PICK_ROWS,
