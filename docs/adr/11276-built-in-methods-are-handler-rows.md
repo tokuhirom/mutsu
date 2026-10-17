@@ -3824,6 +3824,46 @@ Not done: the names Rakudo declares that mutsu does not implement (`Distro.cur-s
 `cpu-cores-but-one`, `cpu-usage`, `VM.own-up`, `remote-debugging`, `Compiler.flavor`, `supports-op`). They were
 never answered and are not answered now. Pinned in `t/io/kernel-distro-vm-rows.t`.
 
+### 9.156 The built-in encodings' methods are rows (2026-10-17)
+
+`refactor/11276-encoding-rows` (3E remainder). Three classes answered their methods through by-name `match`es and a
+by-name gate:
+
+- `Encoding::Builtin`, what `Encoding::Registry.find` answers, used `native_encoding_builtin`.
+- `Encoding::Encoder::Builtin` used `native_encoding_encoder`.
+- `Encoding::Decoder::Builtin` used `try_stream_decoder_method`, `native_stream_decoder` and `is_decoder_method`,
+  gated in two dispatch entries.
+
+`runtime_init` also held a name list per class.
+
+Decision.
+
+- Every method is an `OWNER_ONLY` row of its class (`io_concurrency/encoding.rs`):
+  - `Encoding::Builtin`: `name`, `alternative-names`, `encoder(:replacement)` and `decoder(:translate-nl)`.
+  - `Encoding::Encoder::Builtin`: `encode-chars`.
+  - `Encoding::Decoder::Builtin`: `add-bytes`, the `consume-*` methods, `set-line-separators`, `bytes-available` and
+    `is-empty`.
+
+  A decoder row edits the decoder's state in its own attribute cell (`InstanceSlots`), through the routines the
+  `nqp::decoder*` ops run.
+- `Interpreter::encoding_owners_of` gives the owners: the receiver's class, or the decoder for a user subclass of it.
+  It joins the owner lookup that the interpreter's and the mutating entries already do for `Proc::Async`, `Supply`
+  and the rest. The native-instance entry reaches the same rows.
+- `runtime_init`'s name lists for the three classes are derived from the rows. The by-name dispatch and its gate are
+  deleted.
+- `Encoding::Builtin` registers its `name` attribute, so `Mu.raku` renders `Encoding::Builtin.new(name => ...)` as
+  Rakudo does. It used to render `Encoding::Builtin.new`.
+- A UTF-8 encoder's `encode-chars` answers a `utf8` buffer, as Rakudo's does. It used to answer `Blob[uint8]`.
+- The recognition table gains the 14 rows and the oracle snapshot the three owners.
+
+Not done:
+
+- The registry names `utf8` and the UTF-16 forms with a dash (`name` is `utf-8` where Rakudo's is `utf8`), and the
+  encoders and decoders key on that spelling. Swapping it would change every consumer.
+- A UTF-16 encoder still encodes UTF-8.
+
+Pinned in `t/types/string/encoding-decoder-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -366,10 +366,6 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // The decoder keeps its queues in its own cell and edits them there.
-        if let Some(result) = self.try_stream_decoder_method(attributes, class_name, method, &args)
-        {
-            return result;
-        }
         let working = attributes.to_map();
         let mut publisher = AttrPublisher::new(Some(attributes), working.bits_image());
         let (result, updated) = self.dispatch_native_instance_method_mut(
@@ -687,9 +683,19 @@ impl Interpreter {
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
             "Cancellation" => self.native_cancellation(attributes, method),
-            "Encoding::Builtin" => Self::native_encoding_builtin(attributes, method, &args),
-            "Encoding::Encoder::Builtin" => Self::native_encoding_encoder(attributes, method, &args),
-            "Encoding::Decoder::Builtin" => self.native_stream_decoder(attributes, method, &args),
+            // The encodings' methods are rows (ADR-11276 §9.156).
+            class @ ("Encoding::Builtin"
+            | "Encoding::Encoder::Builtin"
+            | "Encoding::Decoder::Builtin") => {
+                let owners = crate::builtins::method_table::encoding_owners_of(class)
+                    .unwrap_or(&[]);
+                crate::builtins::method_table::invoke_owner(self, owners, method, &args, || {
+                    Value::make_instance(Symbol::intern(class_name), attributes.clone())
+                })
+                .unwrap_or_else(|| {
+                    Err(crate::runtime::did_you_mean::method_not_found(method, class_name))
+                })
+            }
             "IO::Notification::Change" => self
                 .try_io_notification_change_method("IO::Notification::Change", attributes, method)
                 .unwrap_or_else(|| {

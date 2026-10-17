@@ -1277,10 +1277,9 @@ impl Interpreter {
             "Encoding::Builtin".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
-                native_methods: ["name", "alternative-names", "encoder", "decoder"]
-                    .iter()
-                    .map(|s| s.to_string())
+                attributes: systemic_attributes(&["name"]),
+                native_methods: crate::builtins::method_table::encoding_names("Encoding::Builtin")
+                    .map(str::to_string)
                     .collect(),
                 mro: sym_mro(&["Encoding::Builtin"]),
                 attribute_types: HashMap::new(),
@@ -1297,7 +1296,9 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: ["encode-chars"].iter().map(|s| s.to_string()).collect(),
+                native_methods: crate::builtins::method_table::encoding_names("Encoding::Encoder::Builtin")
+                    .map(str::to_string)
+                    .collect(),
                 mro: sym_mro(&["Encoding::Encoder::Builtin"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -1313,19 +1314,10 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: [
-                    "add-bytes",
-                    "consume-all-chars",
-                    "consume-available-chars",
-                    "consume-exactly-chars",
-                    "consume-line-chars",
-                    "consume-exactly-bytes",
-                    "bytes-available",
-                    "is-empty",
-                    "set-line-separators",
-                ]
-                .iter()
-                .map(|s| s.to_string())
+                native_methods: crate::builtins::method_table::encoding_names(
+                    "Encoding::Decoder::Builtin",
+                )
+                .map(str::to_string)
                 .collect(),
                 mro: sym_mro(&["Encoding::Decoder::Builtin"]),
                 attribute_types: HashMap::new(),

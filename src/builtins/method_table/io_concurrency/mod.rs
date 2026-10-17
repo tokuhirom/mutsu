@@ -10,6 +10,7 @@ use super::MethodRow;
 pub(crate) mod cathandle;
 pub(crate) mod class_methods;
 mod concurrency_state;
+pub(crate) mod encoding;
 mod io_handle;
 mod io_path_content;
 mod io_path_ctx;
@@ -39,6 +40,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     io_spec::ROWS,
     io_handle::ROWS,
     io_special::ROWS,
+    encoding::ROWS,
     systemic::ROWS,
     concurrency_state::ROWS,
     promise_channel::ROWS,

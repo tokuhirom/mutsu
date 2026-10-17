@@ -1021,6 +1021,7 @@ impl Interpreter {
                 .or_else(|| crate::builtins::method_table::supply_owners_of(&target))
                 .or_else(|| crate::builtins::method_table::cathandle_owners_of(&target))
                 .or_else(|| crate::builtins::method_table::supplier_scheduler_owners_of(&target))
+                .or_else(|| self.encoding_owners_of(&target))
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,
@@ -1043,11 +1044,6 @@ impl Interpreter {
                 && !self.grammar_has_user_method(&class_name.resolve(), method)
             {
                 let cls = class_name.resolve();
-                if let Some(result) =
-                    self.try_stream_decoder_method(&attributes, &cls, method, &args)
-                {
-                    return result;
-                }
                 if Self::native_method_blocks_on_other_thread(&cls, method) {
                     let snapshot = attributes.to_map();
                     return self.call_native_instance_method(&cls, &snapshot, method, args);

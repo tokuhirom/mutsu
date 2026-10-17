@@ -1109,6 +1109,7 @@ impl Interpreter {
                 .or_else(|| crate::builtins::method_table::supply_owners_of(&target))
                 .or_else(|| crate::builtins::method_table::cathandle_owners_of(&target))
                 .or_else(|| crate::builtins::method_table::supplier_scheduler_owners_of(&target))
+                .or_else(|| self.encoding_owners_of(&target))
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,
