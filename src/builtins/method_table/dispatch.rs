@@ -719,6 +719,7 @@ pub(crate) fn shapeless_row(
             // resolves first.
             ValueView::Package(name) => {
                 !positional
+                    && name != "Any"
                     && crate::builtin_types::catalog::builtin_type_mro_strs(name.as_str()).is_none()
             }
             ValueView::Instance { .. } => !positional,

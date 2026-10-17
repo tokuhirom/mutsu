@@ -18,16 +18,6 @@ use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value, ValueView};
 
-/// Whether `target`'s shape resolves `method` with one argument to a row that
-/// binds its index here: the cascades decline such a call, so its only
-/// answer is the row's.
-// Cost: O(1), a bit test, a tag probe and one hash lookup.
-pub(crate) fn binds(target: &Value, method: Symbol) -> bool {
-    Receiver::of_settled(target.descalarize())
-        .and_then(|receiver| resolve(receiver, method, 1))
-        .is_some_and(|id| row(id).flags.contains(RowFlags::INDEX_ARG))
-}
-
 /// Answer a one-argument call of an [`RowFlags::INDEX_ARG`] row whose
 /// argument is not an `Int`. `None` when the receiver resolves no such row,
 /// or the argument is one the call must not bind here: a `Junction` (which
