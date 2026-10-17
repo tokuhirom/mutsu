@@ -26,7 +26,12 @@ impl IsTraits {
     /// not model.
     // Cost: O(a), a = size of the trait's argument.
     pub(super) fn read(&mut self, t: &RakuAstNode) -> Result<bool, RuntimeError> {
-        let name = positional_leaf(named_child(t, "name")?)?;
+        let Ok(name_node) = named_child(t, "name") else {
+            // `Trait::Is(type => TYPE)` is a user type trait, lowered through
+            // the routine's custom-trait path.
+            return Ok(false);
+        };
+        let name = positional_leaf(name_node)?;
         let ValueView::Str(name) = name.view() else {
             return Ok(false);
         };
