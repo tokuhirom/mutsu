@@ -2426,6 +2426,21 @@ impl Interpreter {
             self.bind_light_aggregate_constraint(name, sym, &val);
             self.bind_light_aggregate_source(sym, source.as_deref());
         }
+        // A typed scalar `is copy` parameter is the method's own writable
+        // variable: a store into it checks its declared type, which the
+        // general binder records in the callee frame and this one did not
+        // (#13783). Every other scalar parameter is read-only or aliases the
+        // caller's container.
+        for (idx, pd) in method_def.param_defs.iter().enumerate() {
+            if pd.type_constraint.is_some()
+                && !pd.sigilless
+                && !pd.name.starts_with(['@', '%', '&', '!', '.'])
+                && pd.traits.iter().any(|t| t == "copy")
+                && let (Some(name), Some(&sym)) = (param_storage.get(idx), param_syms.get(idx))
+            {
+                self.bind_param_type_constraint_sym(name, sym, pd.assignment_type_constraint());
+            }
+        }
         self.request_call_capture(cc.uses_capture, Some(&base));
         self.finish_call_capture(&args);
 
