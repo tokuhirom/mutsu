@@ -1255,3 +1255,14 @@ converter now preserves those fields in Rakudo's measured order, and lowering
 reuses the existing parameter binder for where constraints and traits. The
 focused regression checks the field presence, default omission of `optional`,
 constraint enforcement, and EVAL of the constraint and trait forms.
+
+### 6.65 S4: shaped array parameters (2026-10-17)
+
+Rakudo stores the generated shape predicate block in `Parameter.array-shape`,
+but omits that implementation detail from the constructor-form gist. The
+converter now builds the measured `.list.ACCEPTS($_.shape).Bool` block for each
+dimension expression, and the renderer keeps it out of `gist` while accessors
+retain it. Lowering recognizes that predicate shape and restores the existing
+`ParamDef.shape_constraints`, so the VM binder continues to enforce dimensions.
+The regression covers one and multiple dimensions, lexical dimensions, and
+mismatched shapes.

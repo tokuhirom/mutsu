@@ -60,6 +60,7 @@ mod named_param;
 mod origin;
 mod package_header;
 mod parameter_destructure;
+mod parameter_shape;
 mod parameter_signature;
 mod phaser_condition;
 mod placeholder;
@@ -2273,6 +2274,13 @@ pub fn construct(
             fields.push(RakuAstField {
                 name: Some("where"),
                 value: RakuAstFieldValue::Node(where_constraint),
+            });
+        }
+        if let Some(array_shape) = named_arg(args, "array-shape") {
+            require_any_rakuast(&array_shape, "RakuAST::Parameter.new", "array-shape")?;
+            fields.push(RakuAstField {
+                name: Some("array-shape"),
+                value: RakuAstFieldValue::Node(array_shape),
             });
         }
         if let Some(slurpy) = named_arg(args, "slurpy") {
