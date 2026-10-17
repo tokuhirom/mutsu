@@ -289,8 +289,15 @@ Consequences that pin the design:
 
   **Slice 6 done** (`fix/8751-string-ops-lexical`, 2026-10-18): the string
   operators join the list: `~`, `eq`, `ne`, `lt`, `gt`, `le`, `ge` and
-  `leg`. A callee written outside the block no longer sees their imported
-  candidates through a reduction, a hyper or `&infix:<leg>`.
+  `leg`, and so do the ASCII set operators whose ops ask `try_user_infix`:
+  `(elem)`, `(cont)`, `(|)`, `(&)`, `(+)`, `(.)`, `(-)` and `(^)`. A callee
+  written outside the block no longer sees their imported candidates
+  through a reduction, a hyper or `&infix:<leg>`.
+  - **`(elem)` and `(cont)` are built-ins.** `is_builtin_infix` does not
+    list them, so `lexically_bindable_operator` took them for user
+    operators and bound their imported family without the built-in
+    fallback: `{ use M; 1 (elem) (1, 2) }` died with "Cannot resolve
+    caller". The list in `crate::lexical_builtin_op` now overrides that.
   - **Their ops ask the user candidates.** `infix_concat` (the `Concat`
     op, `~=`, a reduction's fold), `str_cmp_values` and `str_leg` ask
     `try_user_infix` before they stringify the operands, as the arithmetic
@@ -310,12 +317,14 @@ Consequences that pin the design:
     slice 5 had the same gap.
 
   Left for stage 2:
-  - The built-in operators outside that list (the set operators, `x`,
-    `postfix`, `postcircumfix`) keep their imported candidates in the
-    registry. A callee outside the block still sees those, and a closure
+  - The built-in operators outside that list (the Unicode set operators,
+    the subset comparisons, `x`, `postfix`, `postcircumfix`) keep their
+    imported candidates in the registry. A callee outside the block still sees those, and a closure
     taken out of the block loses them.
   - A dispatcher value's `.arity`/`.count` is still the capture's (`0`/`Inf`);
-    rakudo reports the operator proto's (`2`/`2` for `&infix:<cmp>`).
+    rakudo reports the operator proto's (`2`/`2` for `&infix:<cmp>`), #13792.
+  - `[(elem)]` dies on `Unknown function` even without an import (#13794),
+    and a `(|)` candidate also answers `∪` (#13795).
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
   - Classes and variables keep the `ImportScope` rollback. A top-level
