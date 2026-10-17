@@ -2645,6 +2645,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Supply", "Channel", 8, 60),
     ("Supply", "Supply", 8, 28),
     ("Enumeration", "ACCEPTS", 8, 20),
+    ("Blob", "unpack", 8, 24),
     ("Enumeration", "Int", 8, 20),
     ("Enumeration", "Numeric", 8, 20),
     ("Enumeration", "Real", 8, 20),

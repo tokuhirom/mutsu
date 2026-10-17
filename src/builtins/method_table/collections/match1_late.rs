@@ -5,10 +5,13 @@
 //!   declaring its own `print`;
 //! - `Junction.THREAD`;
 //! - `Cool.encode` for what the `Str` rows did not take (a type object, an
-//!   argument list they do not bind).
+//!   argument list they do not bind);
+//! - `Blob.unpack` (experimental, as the `unpack` routine);
+//! - `Enumeration.enums` of an enum's type object or value (§9.143).
 //!
 //! Each is `OWNER_ONLY`, reached only by that cascade's walk of the
-//! receiver's MRO for a late row.
+//! receiver's MRO and the roles its classes compose
+//! (`Interpreter::late_walk_owners`).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -47,6 +50,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         LATE.or(RowFlags::TYPE_OBJECT_OK),
         encode
     ),
+    late!("Blob", "unpack", 0, LATE, unpack),
+    late!(
+        "Enumeration",
+        "enums",
+        0,
+        LATE.or(RowFlags::TYPE_OBJECT_OK),
+        enums
+    ),
 ];
 
 /// The call's arguments, named ones after the positional ones.
@@ -76,4 +87,19 @@ fn thread(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answe
 // Cost: O(n), n = chars of the receiver's string.
 fn encode(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
     Some(i.dispatch_encode(t, &joined(args, named)))
+}
+
+// Cost: O(b + t), b = bytes of the buffer, t = chars of the template.
+fn unpack(_: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    if !matches!(t.view(), crate::value::ValueView::Instance { .. }) {
+        return None;
+    }
+    let bytes = Interpreter::extract_buf_bytes(t);
+    let template = args.first().map(Value::to_string_value).unwrap_or_default();
+    Some(crate::builtins::pack::unpack(&bytes, &template))
+}
+
+// Cost: O(n), n = values of the enum.
+fn enums(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    i.dispatch_enums(t)
 }

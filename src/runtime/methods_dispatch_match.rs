@@ -79,13 +79,15 @@ impl Interpreter {
             return Some(result);
         }
         // `Mu.say`/`put` with arguments for a class acting as `$*OUT`,
-        // `Junction.THREAD` and `Cool.encode` are late rows of the receiver's
-        // MRO (§9.142); `Mu`'s other late rows are the cascade's last resort.
-        if matches!(method, "THREAD" | "encode")
+        // `Junction.THREAD`, `Cool.encode`, `Blob.unpack` and
+        // `Enumeration.enums` are late rows of the receiver's MRO and roles
+        // (§9.142, §9.143); `Mu`'s other late rows are the cascade's last
+        // resort.
+        if matches!(method, "THREAD" | "encode" | "unpack" | "enums")
             || (matches!(method, "say" | "put") && !args.is_empty())
         {
-            let mro = self.classhow_mro_unhidden_names(&target);
-            let owners: Vec<&str> = mro.iter().map(String::as_str).collect();
+            let owner_names = self.late_walk_owners(&target);
+            let owners: Vec<&str> = owner_names.iter().map(String::as_str).collect();
             if let Some(result) = crate::builtins::method_table::invoke_mro_late(
                 self, &owners, method, &args, &target,
             ) {
@@ -93,15 +95,7 @@ impl Interpreter {
             }
         }
         match method {
-            "default" if args.is_empty() => Self::dispatch_default(&target),
             "snitch" if args.len() <= 1 => self.dispatch_snitch(&target, &args),
-            "decode" => self.dispatch_decode(&target, &args),
-            "unpack" if matches!(target.view(), ValueView::Instance { .. }) => {
-                // $blob.unpack($template) — experimental, mirrors the sub form.
-                let bytes = Self::extract_buf_bytes(&target);
-                let template = args.first().map(Value::to_string_value).unwrap_or_default();
-                Some(crate::builtins::pack::unpack(&bytes, &template))
-            }
             // ADR-0051 §3 (#9948): this interceptor is receiver-blind (it
             // reads any value as a number), so a receiver whose ancestry
             // declares no `polymod` (`Str`, `Complex`, ...) falls through to
@@ -122,7 +116,6 @@ impl Interpreter {
             }
             "^name" if args.is_empty() => Some(self.dispatch_caret_name(&target)),
             "^enum_value_list" | "enum_value_list" => self.dispatch_enum_value_list(&target),
-            "enums" => self.dispatch_enums(&target),
             "invert" => self.dispatch_invert_enum(&target),
             "subparse" | "parse" | "parsefile" => {
                 match target.view() {

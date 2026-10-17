@@ -3430,6 +3430,27 @@ Not moved, because mutsu's MRO for them is not Rakudo's yet:
 
 Walking those MROs for the Rakudo owner would drop answers. Those arms wait for the MRO to carry the roles.
 
+### 9.143 A late walk reads the roles a built-in class composes (2026-10-17)
+
+`refactor/11276-role-owner-walk`. §9.142 left `decode`, `unpack`, `default` and `enums` as arms, because mutsu's MRO for
+their receivers is the class chain only. Rakudo answers each from a role: `Buf[uint8]`'s `unpack` from `Blob[uint8]`, a
+`Set`'s `default` from `Setty`, an enum's `enums` from `Enumeration`. The catalog already records the roles each
+built-in class composes (`builtin_type_info(..).roles`, `composes_role_at`). The method table's compile-time index
+flattens them in the same way.
+
+Decision.
+
+- `Interpreter::late_walk_owners` (`runtime/methods_late_walk_owners.rs`) is the owner list for a late walk. It holds
+  the receiver's MRO, with each class followed by the built-in roles it composes (their parameters stripped, `Blob[uint8]`
+  → `Blob`) and ahead of its parent, as Rakudo's resolution flattens a role's methods.
+- An enum (a declared enum's type object or value, and `Bool`, the core's own) has `Enumeration` right after its type.
+- `dispatch_method_by_name_1`'s late walk reads it. `Blob.unpack` and `Enumeration.enums` become late rows there
+  (`collections/match1_late.rs`).
+- The `decode` and `default` arms are deleted rather than moved. Their receivers are already answered by `Blob`'s and
+  `Buf`'s `decode` rows and by the `Array`/`Hash`/QuantHash `default` rows, which the shape lookup reaches, so the arms
+  were unreachable.
+- The other late walks keep the class MRO. None of their rows is a role's.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
