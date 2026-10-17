@@ -2239,7 +2239,8 @@ impl Interpreter {
             // mints the same type its type object does.
             "new_type"
                 if matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if Self::is_metamodel_class_name(&class_name.resolve())) =>
+                    if Self::is_metamodel_class_name(&class_name.resolve())
+                        || self.is_metamodel_how_class(&class_name.resolve())) =>
             {
                 let how_class = match target.view() {
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
