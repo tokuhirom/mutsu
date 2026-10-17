@@ -1201,6 +1201,12 @@ impl Interpreter {
         // through to the caller frame's slot (mirrors the SetGlobal path).
         if name.starts_with('*') {
             self.pending_rw_writeback_sources.push(name.to_string());
+            // ...and carry it back to the frame that binds the dynamic across
+            // every return, as `SetGlobal` does: a caller's `$*b is rw`
+            // parameter, whose writeback otherwise copies its old value over
+            // the bound variable when its routine returns (#13701).
+            let sym = name_sym.unwrap_or_else(|| Symbol::intern(name));
+            self.record_foreign_dynamic_write(code, sym);
         }
         // Propagate via local_bind_pairs (for `:=` bindings within this scope
         // or cross-scope bindings resolved by resolve_pending_alias_binds).
