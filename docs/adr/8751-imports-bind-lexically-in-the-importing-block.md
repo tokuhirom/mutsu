@@ -247,18 +247,52 @@ Consequences that pin the design:
     proto f(|) { 'P:' ~ {*} }; multi f(Int) {...}; &f }` ran the candidate
     alone before).
 
+  **Slice 5 done** (`fix/8751-builtin-op-candidates-lexical`, 2026-10-17):
+  the user candidates of a built-in operator bind in the set, for the
+  operators whose every use in a block can read it
+  (`crate::lexical_builtin_op`). These are the infixes whose ops consult
+  user candidates through `try_user_infix`: the arithmetic ones, the numeric
+  comparisons, `cmp`, `eqv`, `min`/`max`, `div`/`mod` and `gcd`/`lcm`. They
+  are also the prefixes `core_prefix_op` implements (`-`, `+`, `~`, `!`,
+  `?`, `so`, `not`). The import stops aliasing them into the registry, so a
+  callee outside the block no longer sees them, and a closure taken out of
+  the block keeps them.
+  - **The dispatcher falls back to the built-in.** The family binds as its
+    captured-candidate dispatcher (`with_builtin_operator_fallback`,
+    `wk::multi_dispatch_builtin_fallback`). A call none of the captured
+    candidates accepts runs the built-in operator itself
+    (`call_builtin_operator`), never a by-name call, which finds the
+    dispatcher again. `&infix:<+>(1, 2)` in the block is `3`.
+  - **The operator's ops read the set.** The compiler prefixes the
+    operator's opcode (`Add`, `NumEq`, the literal-typed
+    `NativeIntArithmetic`), its compound assignment (`AtomicCompoundVar`) and
+    a reduction or hyper over it with `OpCode::LexImportBuiltinOp`. On a hit
+    the following op runs with the bound candidates in scope for the routine
+    frame it runs in (`DispatchState::lexical_operator_scopes`), and
+    `try_user_infix` asks them first. The winner is ranked against the core
+    candidates as a registry candidate is (ADR-0071,
+    `core_infix_verdict`): narrower than the core, it takes the call; as
+    narrow, the call is ambiguous; otherwise, or when no candidate accepts
+    the operands, the op's own body runs. The winner is called as a multi
+    candidate, so a `callsame` in it reaches the built-in. A Junction operand
+    threads through the op as before, so each eigenstate asks again. A
+    prefix needs no new op: the parser turns its uses into calls of its full
+    name, which `LexImportCall` reads.
+  - **Several imports merge.** Two `use`s in one block of modules that both
+    extend `+` add both modules' candidates
+    (`lexical_import_operator_binding`, roast `S11-modules/export.t`).
+  - **Callbacks keep the chain.** A body a built-in calls back through its
+    AST (`sort`'s comparator, via `eval_block_value_cached_for_site`) is
+    compiled with the import chain of the code it came from
+    (`compile_block_value_opts_under`). The inline sort comparator
+    (`detect_simple_cmp_block`) declines in a `use`-block.
+
   Left for stage 2:
-  - A user candidate of a built-in operator (`multi infix:<+>`,
-    `multi prefix:<->`) and `postcircumfix` keep the registry alias: their
-    opcodes find user candidates there. So a callee outside the block still
-    sees them, and a closure taken out of the block loses them. Such a
-    family was nevertheless bound in the set as a dispatcher over the
-    imported candidates alone, which does not fall back to the built-in: a
-    candidate's own `-$i` on an Int found no match inside the block. Now
-    neither `bind_family_lexically` nor the candidate capture takes one
-    (`extends_builtin_operator`, `fix/8751-import-builtin-op-candidates`).
-    The lexical form needs the operator's opcode to consult the set with
-    the built-in as the fallback.
+  - The built-in operators outside that list (`~` is reached through
+    `infix_concat`; the string comparisons, the set operators, `postfix`,
+    `postcircumfix`) keep their imported candidates in the registry. A
+    callee outside the block still sees those, and a closure taken out of the
+    block loses them.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
   - Classes and variables keep the `ImportScope` rollback. A top-level

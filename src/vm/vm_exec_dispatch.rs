@@ -5489,6 +5489,20 @@ impl Interpreter {
                     *ip += 1;
                 }
             }
+            // Cost: O(c) probe, c = enclosing `use`-blocks; then the op at
+            // ip + 1, run here with the bound candidates in scope on a hit.
+            OpCode::LexImportBuiltinOp {
+                chain_idx,
+                name_idx,
+            } => {
+                *ip = self.exec_lex_import_builtin_op_site(
+                    code,
+                    *ip,
+                    *chain_idx,
+                    *name_idx,
+                    compiled_fns,
+                )?;
+            }
             OpCode::LexImportInfix {
                 chain_idx,
                 name_idx,

@@ -328,6 +328,23 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> CoreInfixVerdict {
+        if !self.has_multi_function_cached(name) {
+            return CoreInfixVerdict::User;
+        }
+        self.core_infix_verdict(name, def, left, right)
+    }
+
+    /// [`Self::core_infix_candidate_wins`] for a user candidate the registry
+    /// does not hold: one of the candidates of a built-in operator that a
+    /// block-scoped `use` imported (ADR-8751 stage 2).
+    // Cost: as `core_infix_candidate_wins` uncached.
+    pub(crate) fn core_infix_verdict(
+        &mut self,
+        name: &str,
+        def: &FunctionDef,
+        left: &Value,
+        right: &Value,
+    ) -> CoreInfixVerdict {
         let CoreInfixCandidates::Modelled(shape) = core_infix_candidates(name) else {
             // Neither an unmodelled core operator nor a shadowing declaration
             // has a core candidate to rank against, so the user's takes the
@@ -335,9 +352,6 @@ impl Interpreter {
             // candidate matches, and that is `call_infix_fallback`'s question.
             return CoreInfixVerdict::User;
         };
-        if !self.has_multi_function_cached(name) {
-            return CoreInfixVerdict::User;
-        }
         let Some(core) = self.narrowest_core_infix_candidate(&shape, left, right) else {
             return CoreInfixVerdict::User;
         };

@@ -161,6 +161,11 @@ impl Interpreter {
     /// own `sub infix:<+>` must still apply inside it.
     #[inline]
     pub(crate) fn user_infix_override(&self, canon: &str) -> bool {
+        // Candidates a block-scoped `use` imported, for the op running here
+        // (ADR-8751 stage 2).
+        if self.lexical_operator_in_scope(canon) {
+            return true;
+        }
         if self.dispatch.user_declared_infix_ops.is_empty() {
             return false;
         }
@@ -449,6 +454,13 @@ impl Interpreter {
         // `&{op_name}` is looked up through the per-name memo of its interned
         // code-variable key, not built with a `format!` and interned again on
         // every operator call (#10111).
+        // The candidates a block-scoped `use` imported for this op come first:
+        // the winner is called as a multi candidate, whose `callsame` reaches
+        // this operator's own body, and no winner leaves the call to that
+        // body (ADR-8751 stage 2).
+        if let Some(result) = self.try_lexical_operator_candidates(op_name, args.clone()) {
+            return result;
+        }
         let captured_candidates = Symbol::lookup(op_name)
             .map(crate::runtime::dispatch_key::amp_sym)
             .and_then(|amp| self.env().get_sym(amp))

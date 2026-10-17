@@ -276,6 +276,7 @@ impl Compiler {
                 for operand in operands.into_iter().rev() {
                     self.compile_expr(operand);
                     self.note_numeric_operands(&opcode, left_operand.take(), operand);
+                    self.emit_lex_import_builtin_op(&opcode);
                     self.code.emit(opcode.clone());
                 }
                 return;
@@ -974,6 +975,7 @@ impl Compiler {
                 if let Some(native_flags) = self.native_ne_flags(left, right) {
                     self.code.emit(OpCode::NumNeNative(native_flags));
                 } else {
+                    self.emit_lex_import_builtin_op(&opcode);
                     self.code.emit(opcode);
                 }
             } else if matches!(opcode, OpCode::MakePair) && mint_named_pair {
@@ -989,9 +991,11 @@ impl Compiler {
                     OpCode::BitShiftLeft => crate::opcode::CompoundBaseOp::BitShiftLeft,
                     _ => unreachable!("native integer mode only applies to +, -, *, and +<"),
                 };
+                self.emit_lex_import_builtin_compound(op);
                 self.code.emit(OpCode::NativeIntArithmetic { op, unsigned });
             } else {
                 self.note_numeric_operands(&opcode, Some(left), right);
+                self.emit_lex_import_builtin_op(&opcode);
                 self.code.emit(opcode);
             }
         } else if let TokenKind::Ident(name) = op

@@ -1,10 +1,9 @@
 use Test;
 
 # ADR-8751 stage 2: a block-scoped `use` of a module that adds `multi`
-# candidates to a built-in operator (`multi prefix:<->(Pt)`) keeps them on the
-# registry path, where the operator finds them alongside the built-in. Bound
-# in the block's lexical import set, the family's dispatcher held the imported
-# candidates alone, so a candidate's own `-$i` on an Int found no match.
+# candidates to a built-in operator (`multi prefix:<->(Pt)`) adds them to the
+# built-in inside the block: the family's dispatcher falls back to the
+# built-in, so a candidate's own `-$i` on an Int still negates it.
 plan 6;
 
 use lib 't/lib';

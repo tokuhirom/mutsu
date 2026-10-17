@@ -286,14 +286,60 @@ impl Compiler {
         }
     }
 
+    /// Emit an `OpCode::LexImportBuiltinOp` prefix for the binary `opcode`
+    /// the caller emits next, when an enclosing block's `use` may have
+    /// imported user candidates of the built-in operator it applies
+    /// (ADR-8751 stage 2, `crate::lexical_builtin_op`).
+    // Cost: O(c), c = enclosing `use`-blocks; O(1) outside every `use`-block.
+    pub(super) fn emit_lex_import_builtin_op(&mut self, opcode: &OpCode) {
+        if self.lexical_import_chain.is_empty() {
+            return;
+        }
+        if let Some(name) = crate::lexical_builtin_op::infix_of_opcode(opcode) {
+            self.emit_lex_import_builtin_named(name);
+        }
+    }
+
+    /// [`Self::emit_lex_import_builtin_op`] for the compound assignment over
+    /// `op` the caller emits next.
+    // Cost: as `emit_lex_import_builtin_op`.
+    pub(super) fn emit_lex_import_builtin_compound(&mut self, op: crate::opcode::CompoundBaseOp) {
+        if self.lexical_import_chain.is_empty() {
+            return;
+        }
+        if let Some(name) = crate::lexical_builtin_op::infix_of_compound(op) {
+            self.emit_lex_import_builtin_named(name);
+        }
+    }
+
+    // Cost: O(c + m), c = enclosing `use`-blocks, m = bytes of `name`.
+    fn emit_lex_import_builtin_named(&mut self, name: &str) {
+        let sym = Symbol::intern(name);
+        if let Some(chain_idx) = self.lexical_import_chain_idx(sym) {
+            let name_idx = self.code.add_constant(Value::str(name.to_string()));
+            self.code.emit(OpCode::LexImportBuiltinOp {
+                chain_idx,
+                name_idx,
+            });
+        }
+    }
+
     /// Emit an `OpCode::LexImportMeta` prefix for the reduction or hyper over
     /// user operator `op` the caller emits next, when an enclosing block's
     /// `use` may have imported it (ADR-8751 stage 2). A built-in operator
-    /// gets none: its opcode finds user candidates in the registry.
+    /// whose user candidates bind lexically gets `LexImportBuiltinOp`
+    /// instead; any other built-in operator gets none: its opcode finds user
+    /// candidates in the registry.
     // Cost: O(c + m), c = enclosing `use`-blocks, m = bytes of `op`.
     pub(super) fn emit_lex_import_meta(&mut self, op: Symbol) {
         let op = op.as_str();
-        if op.is_empty() || crate::compiled_operator::is_builtin_infix(op) {
+        if op.is_empty() || self.lexical_import_chain.is_empty() {
+            return;
+        }
+        if crate::compiled_operator::is_builtin_infix(op) {
+            if let Some(name) = crate::lexical_builtin_op::infix_of_meta(op) {
+                self.emit_lex_import_builtin_named(&name);
+            }
             return;
         }
         let name = Symbol::intern(&format!("infix:<{op}>"));

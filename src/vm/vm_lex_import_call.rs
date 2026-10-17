@@ -41,7 +41,8 @@ impl Interpreter {
         let Some(chain) = code.lexical_import_chains.get(chain_idx as usize) else {
             return Ok(false);
         };
-        let Some(target) = self.lexical_import_binding(chain, code.const_sym(name_idx)) else {
+        let Some(target) = self.lexical_import_operator_binding(chain, code.const_sym(name_idx))
+        else {
             return Ok(false);
         };
         let Some((arity, arg_sources_idx, bare_args)) = call else {

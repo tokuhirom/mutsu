@@ -328,6 +328,17 @@ impl Interpreter {
                     return self.call_sub_value(candidate, call_args, false);
             }
         }
+        // User candidates of a built-in operator add to it: a call none of
+        // them accepts is the operator's own (ADR-8751 stage 2).
+        if let Some(family) = family_name
+            && let ValueView::Sub(data) = func.view()
+            && data
+                .env
+                .get_sym(crate::symbol::wk::multi_dispatch_builtin_fallback())
+                .is_some()
+        {
+            return self.call_builtin_operator(family, &call_args);
+        }
         // None of the captured candidates accepts the call. For a family
         // that is X::Multi::NoMatch, not the first candidate's own
         // binding error: a caller that treats "no candidate" as "try
@@ -343,6 +354,72 @@ impl Interpreter {
                     return self.call_sub_value(candidate, call_args, false);
         }
         Err(self.multi_no_match_error(family_name.unwrap_or(""), &call_args))
+    }
+
+    /// The winner among the candidates `candidates` of the captured-candidate
+    /// dispatcher `func` (family `family`) for `args`, called as a multi
+    /// candidate (a `callsame` in it reaches the next one, and past the last
+    /// the built-in operator), or `None` when none accepts them: the user
+    /// candidates of a built-in operator a block-scoped `use` imported, which
+    /// decline to the operator's own body (ADR-8751 stage 2).
+    // Cost: O(c * p) to rank, c = candidates, p = parameters bound per
+    // candidate, plus the winner's call.
+    pub(crate) fn try_captured_candidates(
+        &mut self,
+        func: &Value,
+        candidates: &[Value],
+        family: &str,
+        args: Vec<Value>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some((candidate, remaining)) =
+            self.pick_captured_multi_candidate(family, candidates, &args)?
+        else {
+            return Ok(None);
+        };
+        // The winner joins the operator's core candidates and takes the call
+        // only when it out-narrows them, as a registry candidate does
+        // (ADR-0071).
+        if let [left, right] = args.as_slice()
+            && let ValueView::Sub(data) = candidate.view()
+            && let Some(def) = self
+                .module
+                .lexical_operator_candidate_defs
+                .get(&data.id)
+                .cloned()
+        {
+            match self.core_infix_verdict(family, &def, left, right) {
+                super::native_infix_dispatch::CoreInfixVerdict::Core => return Ok(None),
+                super::native_infix_dispatch::CoreInfixVerdict::Tie(core) => {
+                    return Err(self.core_infix_tie_error(family, &def, core, left, right));
+                }
+                super::native_infix_dispatch::CoreInfixVerdict::User => {}
+            }
+        }
+        let candidate = Self::bind_family_dispatcher(&candidate, Some(family), func);
+        self.call_captured_multi_winner(family, candidate, remaining, args, func.clone())
+            .map(Some)
+    }
+
+    /// The built-in operator `name` (`infix:<+>`, `prefix:<->`) itself,
+    /// without the user candidates a by-name call would also consider: the
+    /// fallback of a dispatcher over imported candidates of the operator,
+    /// whose own `&name` binding a by-name call would find again.
+    // Cost: the operator's own cost.
+    fn call_builtin_operator(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if let Some(op) = name.strip_prefix("infix:<").and_then(|s| s.strip_suffix('>')) {
+            return self.call_infix_routine(Self::normalize_unicode_infix(op), args);
+        }
+        if let Some(op) = name.strip_prefix("prefix:<").and_then(|s| s.strip_suffix('>'))
+            && let [arg] = args
+            && let Some(result) = self.core_prefix_op(op, arg)
+        {
+            return result;
+        }
+        Err(self.multi_no_match_error(name, args))
     }
 
     /// The `{*}` of a proto a captured-candidate dispatcher ran
@@ -1323,7 +1400,11 @@ impl Interpreter {
                 .compiled_code
                 .as_deref()
                 .map(super::resolution_eval::BlockRoutineness::of_code);
-            let body_result = self.eval_block_value_cached_for_site(&data.body, routineness);
+            let body_result = self.eval_block_value_cached_for_site(
+                &data.body,
+                routineness,
+                data.compiled_code.as_deref(),
+            );
             self.lexicals.pending_nested_state_scope = None;
             self.pending_supply_block_body = false;
             self.pending_supply_emitter_sym = None;
