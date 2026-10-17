@@ -1,7 +1,8 @@
 //! The built-in instance classes' rows (ADR-11276 §10, slice 3D).
 //!
 //! Owners: `Date`, `DateTime`, `Instant`, `Duration`, `Match`, `Mu`, `Code`,
-//! `Backtrace`, `Exception`, `Failure`, `Signature`, `RakuAST::*`, `Unicode`. A slice adds
+//! `Backtrace`, `Exception`, `Failure`, `Signature`, `RakuAST::*`, `Unicode`, `Format`,
+//! `Formatter`. A slice adds
 //! a family module here and lists it in [`FAMILIES`]; no other file names it.
 
 use super::{Handler, MethodRow, RowFlags};
@@ -36,6 +37,7 @@ pub(crate) mod distribution;
 pub(crate) mod enumeration;
 pub(crate) mod exception;
 pub(crate) mod failure;
+mod format;
 pub(crate) mod hyper_seq;
 pub(crate) mod instant;
 pub(crate) mod iterator;
@@ -87,4 +89,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     depspec::ROWS,
     compunit_repo::ROWS,
     distribution::ROWS,
+    format::FORMAT_ROWS,
+    format::FORMATTER_ROWS,
 ];

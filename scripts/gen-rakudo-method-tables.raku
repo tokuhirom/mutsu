@@ -13,7 +13,9 @@
 #                                             dispatcher (what an `augment`
 #                                             may not redeclare, #10234)
 #   declared.e / methods.e / only.e           the names each list gains under
-#                                             language revision 6.e (Rakudo's
+#                                             language revision 6.e, or all of
+#                                             them for an owner only 6.e has
+#                                             (`Format`) (Rakudo's
 #                                             `core.e` setting: `Any.snip`,
 #                                             `Str.nomark`), for the owners
 #                                             whose 6.e lists only add names
@@ -79,4 +81,11 @@ for %d.keys.sort -> $owner {
     my %added = <declared methods only>.map({ $_ => (%lists{$_} (-) %d{$owner}{$_}).keys.sort });
     next unless %added.values.map(*.elems).sum;
     say join "\t", "$_.e", $owner, |%added{$_} for <declared methods only>;
+}
+# An owner only 6.e declares (`Format`, `Formatter`): every name is a 6.e one.
+for %e.keys.sort -> $owner {
+    next if %d{$owner}:exists;
+    my %lists = %e{$owner};
+    next unless all(<declared methods only>.map({ %lists{$_}.defined }));
+    say join "\t", "$_.e", $owner, |%lists{$_} for <declared methods only>;
 }

@@ -49,27 +49,63 @@ impl Interpreter {
         matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Format")
     }
 
-    /// Read the format string out of a `Format` instance.
-    fn format_string_of(value: &Value) -> Option<String> {
+    /// The format string of a `Format`: the `Str` payload it carries as the
+    /// `Str` subclass it is (ADR-11276 §9.153). `None` for anything else,
+    /// including an instance of a user class that shadows the name.
+    pub(crate) fn format_string_of(value: &Value) -> Option<String> {
         match value.view() {
             ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name.resolve() == "Format" => Some(
-                attributes
-                    .as_map()
-                    .get("format")
-                    .map(Value::to_string_value)
-                    .unwrap_or_default(),
-            ),
+            } if class_name == "Format" => attributes
+                .as_map()
+                .get(crate::value::numeric_payload::STR_PAYLOAD)
+                .filter(|payload| matches!(payload.view(), ValueView::Str(_)))
+                .map(Value::to_string_value),
             _ => None,
         }
     }
 
+    /// A `Format` of `fmt`: an instance whose string is its `Str` payload.
+    pub(crate) fn make_format(fmt: String) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            crate::value::numeric_payload::STR_PAYLOAD.to_string(),
+            Value::str(fmt),
+        );
+        Value::make_instance(Symbol::intern("Format"), attrs)
+    }
+
+    /// `Format.new($format)`: the first positional argument's string.
+    pub(super) fn ctor_format(
+        &mut self,
+        _call: &super::native_ctor::CtorCall<'_>,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let fmt = args
+            .iter()
+            .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .map(Value::to_string_value)
+            .unwrap_or_default();
+        Ok(Self::make_format(fmt))
+    }
+
+    /// `Formatter.new($format)`: the block that renders `$format`, as
+    /// `Formatter.CODE` builds it.
+    pub(super) fn ctor_formatter(
+        &mut self,
+        _call: &super::native_ctor::CtorCall<'_>,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
+        let count = super::sprintf::sprintf_directive_count(&fmt);
+        Ok(self.format_callable(&fmt, count))
+    }
+
     /// Build the underlying `Callable` (a `Sub`) for a format string. The sub has
     /// `count` required positional parameters and a body of `sprintf($fmt, ...)`.
-    pub(super) fn format_callable(&self, fmt: &str, count: usize) -> Value {
+    pub(crate) fn format_callable(&self, fmt: &str, count: usize) -> Value {
         let mut params = Vec::with_capacity(count);
         let mut param_defs = Vec::with_capacity(count);
         let mut call_args: Vec<Expr> = Vec::with_capacity(count + 1);
@@ -97,7 +133,7 @@ impl Interpreter {
 
     /// Apply a format to a list of arguments, validating arity and types.
     /// This is the `CALL-ME` behaviour and the per-batch renderer used by `.fmt`.
-    fn format_render(&self, fmt: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(crate) fn format_render(fmt: &str, args: &[Value]) -> Result<Value, RuntimeError> {
         super::sprintf::validate_sprintf_directives(fmt, args.len())?;
         super::sprintf::validate_sprintf_arg_types(fmt, args)?;
         Ok(Value::str(super::sprintf::format_sprintf_args(fmt, args)))
@@ -145,88 +181,42 @@ impl Interpreter {
                 // A non-empty short batch is an arity error.
                 return Err(Self::format_throw_arity(fmt, batch.len(), count));
             }
-            parts.push(self.format_render(fmt, batch)?.to_string_value());
+            parts.push(Self::format_render(fmt, batch)?.to_string_value());
             idx = end;
         }
         Ok(Value::str(parts.join(separator)))
     }
 
-    /// Dispatch methods on a `Format` type object (`Format.new`) or instance
-    /// (`.arity`, `.count`, `.Callable`, `.Str`, `CALL-ME`, ...). Returns `None`
-    /// when the target/method is not a `Format` concern.
-    pub(super) fn dispatch_format_method(
+    /// `Formatter::Syntax.parse($format)` and `.subparse`: a `Match` of the
+    /// whole format string. `Formatter::Syntax` is a `Grammar` in Rakudo, whose
+    /// `parse` is `Grammar.parse` running its rules (`TOP`, `directive`, ...).
+    // TODO: bundle `Formatter::Syntax` as a real grammar so `Grammar.parse`
+    // answers it with its captures; this answers the call by name for a type
+    // object, which is all `Formatter::Syntax` users read today (#13738).
+    pub(super) fn formatter_syntax_parse(
         &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // Formatter / Formatter::Syntax package-level entry points (6.e). These
-        // mirror `Formatter` in Rakudo's `src/core.e/Formatter.rakumod`, which
-        // exposes the sprintf-format compiler:
-        //   * `Formatter::Syntax.parse($fmt)` -> a Match of the format grammar.
-        //   * `Formatter.CODE($fmt)`          -> a Callable rendering the format.
-        //   * `Formatter.AST($fmt)`           -> a RakuAST::Node (see below).
-        //
-        // A user-declared class that shadows one of these names (Template::HAML
-        // declares its own `class Formatter`) owns its methods: `Formatter.new`
-        // must build an instance of it, not compile a sprintf format (#10638).
-        if let ValueView::Package(name) = target.view()
-            && !self.has_class(&name.resolve())
+        let ValueView::Package(name) = target.view() else {
+            return None;
+        };
+        if name != "Formatter::Syntax"
+            || !matches!(method, "parse" | "subparse")
+            || self.has_class("Formatter::Syntax")
         {
-            match (name.resolve().as_str(), method) {
-                ("Formatter::Syntax", "parse" | "subparse") => {
-                    let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
-                    let len = fmt.chars().count() as i64;
-                    return Some(Ok(Value::make_match_object_full(
-                        0,
-                        len,
-                        &[],
-                        &Default::default(),
-                        crate::runtime::MatchTarget::new(&fmt),
-                    )));
-                }
-                ("Formatter", "new" | "CODE") => {
-                    let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
-                    let count = super::sprintf::sprintf_directive_count(&fmt);
-                    return Some(Ok(self.format_callable(&fmt, count)));
-                }
-                ("Formatter", "AST") => {
-                    let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
-                    return Some(Ok(crate::rakuast::formatter_ast(&fmt)));
-                }
-                _ => {}
-            }
-        }
-
-        // Format.new("...")
-        if method == "new"
-            && matches!(target.view(), ValueView::Package(name)
-                if name.resolve() == "Format" && !self.has_class("Format"))
-        {
-            let fmt = args
-                .iter()
-                .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-                .map(Value::to_string_value)
-                .unwrap_or_default();
-            let mut attrs = HashMap::new();
-            attrs.insert("format".to_string(), Value::str(fmt));
-            return Some(Ok(Value::make_instance(Symbol::intern("Format"), attrs)));
-        }
-
-        let fmt = Self::format_string_of(target)?;
-        // A user class named `Format` is not the 6.e builtin (#10638).
-        if self.has_class("Format") {
             return None;
         }
-        let count = super::sprintf::sprintf_directive_count(&fmt);
-        match method {
-            "Str" | "gist" | "Stringy" => Some(Ok(Value::str(fmt))),
-            "arity" | "count" => Some(Ok(Value::int(count as i64))),
-            "Callable" => Some(Ok(self.format_callable(&fmt, count))),
-            "raku" => Some(Ok(Value::str(format!("Format.new(\"{}\")", fmt)))),
-            "CALL-ME" => Some(self.format_render(&fmt, args)),
-            _ => None,
-        }
+        let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
+        let len = fmt.chars().count() as i64;
+        Some(Ok(Value::make_match_object_full(
+            0,
+            len,
+            &[],
+            &Default::default(),
+            crate::runtime::MatchTarget::new(&fmt),
+        )))
     }
 
     /// Handle `<collection>.fmt($format, $separator)` where `$format` is a `Format`.
@@ -349,10 +339,10 @@ impl Interpreter {
         // Pair.fmt($format) -> $format($key, $value); no separator.
         match target.view() {
             ValueView::Pair(k, v) => {
-                return self.format_render(fmt, &[Value::str(k.clone()), v.clone()]);
+                return Self::format_render(fmt, &[Value::str(k.clone()), v.clone()]);
             }
             ValueView::ValuePair(k, v) => {
-                return self.format_render(fmt, &[k.clone(), v.clone()]);
+                return Self::format_render(fmt, &[k.clone(), v.clone()]);
             }
             _ => {}
         }

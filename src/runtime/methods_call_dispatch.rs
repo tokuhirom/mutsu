@@ -2133,9 +2133,24 @@ impl Interpreter {
             return result;
         }
 
-        // Format type-object / instance dispatch (new, arity, count, Callable,
-        // Str, gist, CALL-ME, ...).
-        if let Some(result) = self.dispatch_format_method(&target, method, &args) {
+        // `Format`'s and `Formatter`'s own methods are rows (ADR-11276 §9.153),
+        // found by owner from this entry as well as by their shapes.
+        if let Some(owner) = match target.view() {
+            ValueView::Instance { .. } if Self::format_string_of(&target).is_some() => Some("Format"),
+            ValueView::Package(name) if name == "Formatter" && !self.has_class("Formatter") => {
+                Some("Formatter")
+            }
+            _ => None,
+        } && let Some(result) = crate::builtins::method_table::invoke_owner(
+            self,
+            &[owner],
+            method,
+            &args,
+            || target.clone(),
+        ) {
+            return result;
+        }
+        if let Some(result) = self.formatter_syntax_parse(&target, method, &args) {
             return result;
         }
         // <collection>.fmt($format) where $format is a Format object.

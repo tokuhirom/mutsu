@@ -290,3 +290,9 @@ only.e	Str
 declared.e	Supply	snip
 methods.e	Supply	snip
 only.e	Supply
+declared.e	Format	AST	CALL-ME	Callable	arity	count	directives	handle-iterator	new	raku	render
+methods.e	Format	ACCEPTS	AST	BUILD	Bool	CALL-ME	COERCE	Callable	Capture	DUMP	Date	DateTime	IO	Int	NFC	NFD	NFKC	NFKD	Num	Numeric	POPULATE	Str	Stringy	Version	WHICH	WHY	WORDS_AUTODEREF	arity	chars	chomp	chop	codes	comb	contains	count	directives	encode	ends-with	fc	flip	gist	handle-iterator	indent	index	indices	is-whitespace	lc	leading-whitespace	lines	match	naive-word-wrapper	new	no-zero-arg	nomark	of	ord	ords	parse-base	pred	raku	render	returns	rindex	samecase	samemark	samespace	split	starts-with	subst	subst-mutate	substr	substr-eq	substr-rw	succ	tc	tclc	trailing-whitespace	trans	trim	trim-leading	trim-trailing	uc	unimatch	uniname	uninames	uniparse	uniprop	uniprops	unival	univals	wordcase	words
+only.e	Format	AST	CALL-ME	Callable	arity	count	directives	handle-iterator	new	render
+declared.e	Formatter	AST	CODE	fetch	new
+methods.e	Formatter	AST	CODE	POPULATE	fetch	new
+only.e	Formatter	AST	CODE	fetch	new

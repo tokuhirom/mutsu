@@ -1,5 +1,4 @@
 use super::*;
-use crate::symbol::Symbol;
 
 impl Interpreter {
     // chr / ord / chrs / ords / unival / univals removed (Slice 6.3 / Category A
@@ -175,9 +174,7 @@ impl Interpreter {
 
     pub(super) fn builtin_make_format(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
-        let mut attrs = HashMap::new();
-        attrs.insert("format".to_string(), Value::str(fmt));
-        Ok(Value::make_instance(Symbol::intern("Format"), attrs))
+        Ok(Self::make_format(fmt))
     }
 
     pub(super) fn builtin_quotewords_atom(&self, args: &[Value]) -> Result<Value, RuntimeError> {
