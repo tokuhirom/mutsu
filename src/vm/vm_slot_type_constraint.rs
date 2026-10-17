@@ -6,8 +6,10 @@
 //! on into the frames that called it and found a caller's unrelated
 //! same-named variable. A slot this code declares without a constraint
 //! (`DeclaredConstraint::Untyped`) has no record to find: the store skips the
-//! probe. Every other slot keeps the by-name record, which a typed
-//! declaration of this code wrote into its own frame.
+//! probe. A slot this code declares otherwise (`BindingDesc::declared_here`)
+//! reads its record in the running frame only: a typed declaration of this
+//! code wrote it there. Only a slot the code does not declare (a free
+//! variable, an aliasing parameter) asks by name through the whole lookup.
 
 use crate::binding_desc::DeclaredConstraint;
 use crate::opcode::CompiledCode;
@@ -19,7 +21,7 @@ impl Interpreter {
     /// The constraint a store into `code`'s slot `idx` (named `name`)
     /// checks against.
     // Cost: O(1) for a slot the code declares untyped; else
-    // `var_type_constraint_for`'s env probe, O(d), d = env tiers walked.
+    // `slot_type_constraint_value`'s probe.
     pub(super) fn slot_type_constraint(
         &mut self,
         code: &CompiledCode,
@@ -27,15 +29,17 @@ impl Interpreter {
         name: &str,
         name_sym: Option<Symbol>,
     ) -> Option<String> {
-        if code.declared_constraint(idx) == DeclaredConstraint::Untyped {
-            return None;
+        match self.slot_type_constraint_value(code, idx, name, name_sym)?.view() {
+            crate::value::ValueView::Str(tc) => Some(tc.as_str().to_owned()),
+            _ => None,
         }
-        loan_env!(self, var_type_constraint_for(name, name_sym))
     }
 
     /// [`Self::slot_type_constraint`] as the env's own `Str` value
     /// (`var_type_constraint_value_for`).
-    // Cost: as `slot_type_constraint`.
+    // Cost: O(1) for a slot the code declares untyped; else the record
+    // probe, O(d), d = the running frame's tiers for a slot the code declares
+    // and the env tiers walked for any other.
     pub(super) fn slot_type_constraint_value(
         &mut self,
         code: &CompiledCode,
@@ -46,6 +50,10 @@ impl Interpreter {
         if code.declared_constraint(idx) == DeclaredConstraint::Untyped {
             return None;
         }
+        if code.declares_slot(idx) {
+            let sym = name_sym.unwrap_or_else(|| Symbol::intern(name));
+            return loan_env!(self, own_var_type_constraint_value_sym(sym));
+        }
         loan_env!(self, var_type_constraint_value_for(name, name_sym))
     }
 
@@ -55,7 +63,8 @@ impl Interpreter {
     /// the callee's frame. `slot` is the site's local slot, `u32::MAX` for a
     /// variable that is not a local of `code`.
     // Cost: O(1) for a slot the code declares untyped or a name no typed
-    // declaration has used; else the record probe, O(d), d = env tiers walked.
+    // declaration has used; else the record probe, O(d), d = the running
+    // frame's tiers for a slot the code declares, the env tiers walked else.
     pub(super) fn wrap_var_ref_declared(
         &mut self,
         code: &CompiledCode,
@@ -66,6 +75,12 @@ impl Interpreter {
             && code.declared_constraint(slot as usize) == DeclaredConstraint::Untyped
         {
             return VarRefDeclared::Resolved(None);
+        }
+        if slot != u32::MAX && code.declares_slot(slot as usize) {
+            return VarRefDeclared::Resolved(loan_env!(
+                self,
+                own_var_type_constraint_value_sym(name_sym)
+            ));
         }
         VarRefDeclared::Resolved(loan_env!(self, var_type_constraint_value_sym(name_sym)))
     }

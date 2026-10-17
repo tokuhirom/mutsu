@@ -3336,6 +3336,39 @@ impl Compiler {
     pub(super) fn note_untyped_local_declaration(&mut self, name: &str) {
         if Self::is_simple_scalar_store_name(name) {
             self.code.note_untyped_declaration(name);
+        } else {
+            self.note_declared_local(name);
+        }
+    }
+
+    /// Record that this chunk declares `name`'s variable itself, so its type
+    /// record is looked up in the running frame only
+    /// (`BindingDesc::declared_here`, ADR-13757 step 4). For the `@`/`%`
+    /// names; a plain scalar's declaration is recorded with its constraint.
+    pub(super) fn note_declared_local(&mut self, name: &str) {
+        if let Some(bare) = name.strip_prefix(['@', '%'])
+            && Self::is_plain_lexical_name(bare)
+        {
+            self.code.note_declared_local(name);
+        }
+    }
+
+    /// Record a parameter's declaration (ADR-13757). An untyped, non-aliasing
+    /// parameter is this routine's own unconstrained variable; a typed one is
+    /// its own variable too, whose record the binder writes into the callee
+    /// frame. A sigilless, `is rw` or `is raw` one is the caller's container,
+    /// whose constraint applies: it is not declared here.
+    pub(super) fn note_param_declaration(&mut self, pd: &crate::ast::ParamDef) {
+        if pd.sigilless || pd.traits.iter().any(|t| t == "rw" || t == "raw") {
+            return;
+        }
+        let name = pd.storage_name();
+        if pd.type_constraint.is_none() && pd.type_capture.is_none() {
+            self.note_untyped_local_declaration(&name);
+        } else if Self::is_simple_scalar_store_name(&name) {
+            self.code.note_declared_local(&name);
+        } else {
+            self.note_declared_local(&name);
         }
     }
 
@@ -3359,6 +3392,9 @@ impl Compiler {
         // env holds `parse_container_constraint`'s *value* type, which for
         // `my Int %h{Str}` is not the declaration text, and `&f`/`$*x`/`our`
         // are not slot-addressed stores at all.
+        if !is_our {
+            self.note_declared_local(name);
+        }
         if !is_our && Self::is_simple_scalar_store_name(name) {
             let tc = self
                 .code

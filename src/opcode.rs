@@ -8972,6 +8972,14 @@ impl CompiledCode {
             })
     }
 
+    /// Whether this chunk declares slot `idx`'s variable itself — see
+    /// [`crate::binding_desc::BindingDesc::declared_here`]. `false` for a slot
+    /// with no descriptor (a hand-built chunk).
+    #[inline]
+    pub(crate) fn declares_slot(&self, idx: usize) -> bool {
+        self.binding_descs.get(idx).is_some_and(|d| d.declared_here)
+    }
+
     /// Record that `name`'s declaration constrains it to `tc` — see
     /// [`Self::pending_declared_constraints`]. Called once per `SetVarType*`
     /// the compiler emits.
@@ -8983,6 +8991,14 @@ impl CompiledCode {
     /// [`crate::binding_desc::DeclaredConstraint::Untyped`].
     pub(crate) fn note_untyped_declaration(&mut self, name: &str) {
         self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Untyped);
+    }
+
+    /// Record that this chunk declares `name` without settling its
+    /// constraint for the store fast path (a typed parameter, an `@`/`%`
+    /// variable): only [`crate::binding_desc::BindingDesc::declared_here`]
+    /// follows from it.
+    pub(crate) fn note_declared_local(&mut self, name: &str) {
+        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Unrecorded);
     }
 
     /// Record that `name` is out of the bake's reach — a trait was applied to
@@ -9044,11 +9060,17 @@ impl CompiledCode {
         }
         // Fold the name-keyed declaration records onto their slots and drop
         // them: compile-time scaffolding, like `const_index` below.
+        // Every name in the map is declared by this chunk; only a plain-scalar
+        // slot takes the constraint (the store fast path's bake, see
+        // `Compiler::emit_set_var_type_op`).
         let pending = std::mem::take(&mut self.pending_declared_constraints);
         if !pending.is_empty() {
             for (desc, name) in self.binding_descs.iter_mut().zip(self.locals.iter()) {
                 if let Some(&c) = pending.get(name.as_str()) {
-                    desc.declared_constraint = c;
+                    desc.declared_here = true;
+                    if desc.flags.simple_scalar_local() {
+                        desc.declared_constraint = c;
+                    }
                 }
             }
         }
