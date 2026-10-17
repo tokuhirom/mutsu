@@ -8,6 +8,14 @@ const CONSTRUCTOR: &str = "RakuAST::Class.new";
 
 // Cost: O(a + t + s), a = arguments, t = traits, s = stringified scope length.
 pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
+    construct_as(args, RakuAstClass::Class)
+}
+
+pub(super) fn construct_native(args: &[Value]) -> Result<Value, RuntimeError> {
+    construct_as(args, RakuAstClass::Native)
+}
+
+fn construct_as(args: &[Value], class: RakuAstClass) -> Result<Value, RuntimeError> {
     let mut fields = Vec::new();
     if let Some(scope) = named_arg(args, "scope")
         && scope.truthy()
@@ -19,6 +27,12 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
     {
         require_rakuast_class(&name, RakuAstClass::Name, CONSTRUCTOR)?;
         fields.push(field("name", name));
+    }
+    if class == RakuAstClass::Native
+        && let Some(repr) = named_arg(args, "repr")
+        && !repr.is_nil()
+    {
+        fields.push(field("repr", Value::str(repr.to_string_value())));
     }
     if let Some(traits) = named_arg(args, "traits")
         && !traits.is_nil()
@@ -51,10 +65,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
         })),
     };
     fields.push(field("body", body));
-    Ok(Value::rakuast(Box::new(RakuAstNode {
-        class: RakuAstClass::Class,
-        fields,
-    })))
+    Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
 }
 
 fn field(name: &'static str, value: Value) -> RakuAstField {

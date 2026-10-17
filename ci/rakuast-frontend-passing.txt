@@ -37,6 +37,7 @@ t/collections/array/array-literal-type-not-reduction.t
 t/collections/array/array-map-seq.t
 t/collections/array/array-methods.t
 t/collections/array/array-mutate.t
+t/collections/array/array-mutator-detached-place-rows.t
 t/collections/array/array-mutator-rows.t
 t/collections/array/array-oob-any.t
 t/collections/array/array-pos-methods-store-in-place.t
@@ -954,6 +955,7 @@ t/concurrency/concurrent-param-container-mutation.t
 t/concurrency/concurrent-param-hash-reader-families.t
 t/concurrency/concurrent-role-mixin-visibility.t
 t/concurrency/concurrent-shared-cell.t
+t/concurrency/concurrent-start-then-dynamic-push-from-block.t
 t/concurrency/concurrent-start-then-dynamic-push.t
 t/concurrency/concurrent-state-var.t
 t/concurrency/cro-client-repeated-await-response-lexical.t
@@ -3218,6 +3220,7 @@ t/nativecall/native-ctor-typed-container-attrs.t
 t/nativecall/native-cunion-construct.t
 t/nativecall/native-date-construct.t
 t/nativecall/native-datetime-construct.t
+t/nativecall/native-decl-type-binds-int.t
 t/nativecall/native-default-new.t
 t/nativecall/native-doesrole-construct.t
 t/nativecall/native-encode-decode.t
@@ -3265,6 +3268,7 @@ t/nativecall/native-multi-candidates.t
 t/nativecall/native-namespaced-and-exception-ctor.t
 t/nativecall/native-num32-truncation.t
 t/nativecall/native-override-cache-invalidation.t
+t/nativecall/native-package-declarator.t
 t/nativecall/native-pointer-typed-rw-out-param.t
 t/nativecall/native-proc-async-ctor.t
 t/nativecall/native-quanthash-coerce-mut-path.t
@@ -3283,6 +3287,7 @@ t/nativecall/native-str-array-attr-bind.t
 t/nativecall/native-str-decl-to-int.t
 t/nativecall/native-tweak-construct.t
 t/nativecall/native-type-class-perf.t
+t/nativecall/native-type-repr-and-traits.t
 t/nativecall/native-type-smiley-and-element-checks.t
 t/nativecall/native-type-smiley.t
 t/nativecall/native-typed-arrays.t
@@ -3354,6 +3359,7 @@ t/nativecall/nested-module-native-prelude-not-visible-to-user.t
 t/nativecall/new-callsame-native-mu-fallback.t
 t/nativecall/nqp-native-num-arith.t
 t/nativecall/nqp-nativecall-boxes-return-type.t
+t/nativecall/nqp-nativecall-ops.t
 t/nativecall/nqp-ordat-and-native-int-coerce.t
 t/nativecall/qualified-native-ancestor-method.t
 t/nativecall/quoted-dynamic-user-native-method.t
@@ -3882,6 +3888,7 @@ t/oo/method/end-listop-and-method.t
 t/oo/method/enum-blob-method-late-rows.t
 t/oo/method/enum-enums-method.t
 t/oo/method/enum-value-type-only-method-param.t
+t/oo/method/enum-view-method-rows.t
 t/oo/method/enumeration-method-rows.t
 t/oo/method/explicit-at-underscore-param-method-call.t
 t/oo/method/fast-method-cache-attributive-param-writeback.t
@@ -4032,6 +4039,7 @@ t/oo/method/mixin-method-compiled.t
 t/oo/method/mixin-private-method-self-dispatch.t
 t/oo/method/monitor-method-does-not-leak-topic-or-self.t
 t/oo/method/mu-isa-method-rows.t
+t/oo/method/mu-set-why-method-row.t
 t/oo/method/multi-method-any-class-specificity.t
 t/oo/method/multi-method-capture-vs-core-candidates.t
 t/oo/method/multi-method-captured-arg-cache.t
@@ -4131,6 +4139,8 @@ t/oo/method/reduction-zero-arg-method-call.t
 t/oo/method/relative-method-return-type.t
 t/oo/method/render-method-captured-writeback.t
 t/oo/method/return-method.t
+t/oo/method/revision-d-method-rows.t
+t/oo/method/revision-e-method-rows.t
 t/oo/method/rotate-splice-name-method-rows.t
 t/oo/method/routine-submethod-routine-name-wrong.t
 t/oo/method/rw-fallback-method-assignment.t
@@ -4900,6 +4910,7 @@ t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-named-subscript-adverbs.t
 t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-names-and-literals.t
+t/rakuast/rakuast-native-declarations.t
 t/rakuast/rakuast-nonlvalue-assignment.t
 t/rakuast/rakuast-nqp-terms.t
 t/rakuast/rakuast-object-hash.t
@@ -5784,6 +5795,7 @@ t/routines/closure/closure-rebind-reaches-declaring-frame-through-linked-callee.
 t/routines/closure/closure-rebind-seen-by-siblings.t
 t/routines/closure/closure-rebinds-captured-container-through-cell.t
 t/routines/closure/closure-rebinds-captured-immutable-container.t
+t/routines/closure/closure-return-carries-only-own-writes.t
 t/routines/closure/closure-sees-by-name-write.t
 t/routines/closure/closure-sees-later-rebind.t
 t/routines/closure/closure-selective-env-sync.t
@@ -6824,6 +6836,7 @@ t/types/enum-subset/enum-value-as-positional-index.t
 t/types/enum-subset/enum-value-call-coercion.t
 t/types/enum-subset/enum-value-caret-name.t
 t/types/enum-subset/enum-value-class-redeclaration.t
+t/types/enum-subset/enum-value-cool-rows.t
 t/types/enum-subset/enum-value-how-metaclass.t
 t/types/enum-subset/enum-value-kebab-no-block-gobble.t
 t/types/enum-subset/enum-value-numeric-compare.t

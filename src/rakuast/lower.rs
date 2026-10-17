@@ -600,6 +600,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             })
         }
         RakuAstClass::Class => super::package_header::lower_with_header(node, lower_class),
+        RakuAstClass::Native => super::package_header::lower_with_header(node, lower_native),
         RakuAstClass::Grammar => super::package_header::lower_with_header(node, lower_grammar),
         RakuAstClass::RegexDeclaration
         | RakuAstClass::TokenDeclaration
@@ -821,6 +822,15 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
 }
 
+// Cost: O(n + t), n = Native node fields, t = its traits.
+fn lower_native(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let mut stmt = lower_class(node)?;
+    if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
+        custom_traits.push(("__mutsu_native_decl".to_string(), None));
+    }
+    Ok(stmt)
+}
+
 /// The label of a loop node: the name in its `labels => (Label("…"),)` field,
 /// which the converter writes first. An unlabelled loop has none.
 // Cost: O(l), l = labels of the node (one in practice).
@@ -1034,6 +1044,18 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
                     match positional_leaf(name_node)?.view() {
                         ValueView::Str(s) if s.as_str() == "rw" => is_rw = true,
                         ValueView::Str(s) if s.as_str() == "hidden" => is_hidden = true,
+                        ValueView::Str(s)
+                            if matches!(node.class, RakuAstClass::Native | RakuAstClass::Class)
+                                && matches!(s.as_str(), "ctype" | "unsigned" | "nativesize") =>
+                        {
+                            let argument = match named_child(t, "argument") {
+                                Ok(argument) => {
+                                    Some(super::attribute::lower_paren_argument(t, argument)?)
+                                }
+                                Err(_) => None,
+                            };
+                            custom_traits.push((s.to_string(), argument));
+                        }
                         // `is NAME` with no argument: the parser lists it with
                         // the parents, whatever NAME is.
                         ValueView::Str(s)

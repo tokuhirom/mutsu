@@ -1323,6 +1323,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             body_parents,
             ..
         } => {
+            let is_native = custom_traits
+                .iter()
+                .any(|(trait_name, _)| trait_name == "__mutsu_native_decl");
             if *is_grammar {
                 if name_expr.is_some()
                     || *class_is_rw
@@ -1387,7 +1390,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // A `my` class leads with `scope => "my"` (`our` is the default
             // and renders none). Unit scope, `hides`, computed names and user
             // traits carry extra RakuAST shape, deferred.
-            if has_package_traits(custom_traits) {
+            let visible_custom_traits: Vec<_> = custom_traits
+                .iter()
+                .filter(|(trait_name, _)| trait_name != "__mutsu_native_decl")
+                .cloned()
+                .collect();
+            if has_package_traits(&visible_custom_traits) && !is_native {
                 return Err(unsupported(&format!(
                     "class with inheritance / scope / repr / traits ({})",
                     custom_traits
@@ -1447,7 +1455,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 *is_hidden,
                 hidden_parents,
             )?;
-            traits.extend(decl_traits::class_custom_traits(custom_traits)?);
+            traits.extend(decl_traits::class_custom_traits(&visible_custom_traits)?);
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -1462,7 +1470,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 super::role::with_leading_statements(class_body, also_statements),
             ));
             let class = RakuAstNode {
-                class: RakuAstClass::Class,
+                class: if is_native {
+                    RakuAstClass::Native
+                } else {
+                    RakuAstClass::Class
+                },
                 fields,
             };
             // A lexical `my class ... is export` keeps its tags in a marker.

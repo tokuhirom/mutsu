@@ -345,6 +345,8 @@ pub enum RakuAstClass {
     TypeCapture,
     // Phase 2 slice 13: class and method declarations.
     Class,
+    /// NativeCall type declaration (`native N is Int ... { }`).
+    Native,
     Method,
     // Phase 2 slice 16: role declarations.
     Role,
@@ -698,6 +700,7 @@ impl RakuAstClass {
             TypeCoercion => "RakuAST::Type::Coercion",
             TypeCapture => "RakuAST::Type::Capture",
             Class => "RakuAST::Class",
+            Native => "RakuAST::Native",
             Method => "RakuAST::Method",
             Role => "RakuAST::Role",
             RoleBody => "RakuAST::RoleBody",
@@ -917,6 +920,7 @@ impl RakuAstClass {
         const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
         const EXPR: &[&str] = &["RakuAST::Expression"];
         match self {
+            Native => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
             CallBlockMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
             StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],
             IntLiteral
@@ -1264,6 +1268,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
             "RakuAST::Term",
             "RakuAST::Expression",
         ],
+        "RakuAST::Native" => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
         "RakuAST::Regex::Literal"
         | "RakuAST::Regex::Quote"
         | "RakuAST::Regex::Group"
@@ -1577,6 +1582,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TypeCoercion,
     RakuAstClass::TypeCapture,
     RakuAstClass::Class,
+    RakuAstClass::Native,
     RakuAstClass::Method,
     RakuAstClass::Role,
     RakuAstClass::RoleBody,
@@ -2317,6 +2323,9 @@ pub fn construct(
     }
     if class_name == "RakuAST::Class" && method == "new" {
         return class_constructor::construct(args).map(Some);
+    }
+    if class_name == "RakuAST::Native" && method == "new" {
+        return class_constructor::construct_native(args).map(Some);
     }
     if class_name == "RakuAST::Trait::Is" && method == "new" {
         return trait_is_constructor::construct(args).map(Some);
