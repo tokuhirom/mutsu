@@ -3496,7 +3496,7 @@ pub(super) fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String
         return Ok(format!(
             "{}<{}>",
             crate::regex_tree::expression_source(&operand).ok_or_else(|| unsupported(node))?,
-            crate::regex_tree::expression_source(&index).ok_or_else(|| unsupported(node))?,
+            regex_literal_hash_index_source(&index).ok_or_else(|| unsupported(node))?,
         ));
     }
     if is_colonpair_value(node) {
@@ -3583,6 +3583,16 @@ pub(super) fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String
         return hash_composer_source(pairs).ok_or_else(|| unsupported(node));
     }
     crate::regex_tree::expression_source(&expr).ok_or_else(|| unsupported(node))
+}
+
+fn regex_literal_hash_index_source(index: &Expr) -> Option<String> {
+    if let Expr::Literal(value) = index
+        && let ValueView::Str(key) = value.view()
+        && crate::parser::is_identifier_spelling(&key)
+    {
+        return Some(key.to_string());
+    }
+    crate::regex_tree::expression_source(index)
 }
 
 fn colonpair_value_source(expr: &Expr) -> Option<String> {

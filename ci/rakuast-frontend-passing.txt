@@ -4928,7 +4928,9 @@ t/rakuast/rakuast-regex-conjunction-interpolation.t
 t/rakuast/rakuast-regex-decl-scope-params.t
 t/rakuast/rakuast-regex-decl-trivia-and-modifiers.t
 t/rakuast/rakuast-regex-declaration-code-blocks.t
+t/rakuast/rakuast-regex-dynamic-arguments.t
 t/rakuast/rakuast-regex-internal-modifier.t
+t/rakuast/rakuast-regex-literal-hash-index.t
 t/rakuast/rakuast-regex-match-markers.t
 t/rakuast/rakuast-regex-mid-pattern-anchor.t
 t/rakuast/rakuast-regex-modifiers-anchors.t

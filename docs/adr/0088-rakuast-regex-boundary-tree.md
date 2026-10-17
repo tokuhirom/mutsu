@@ -1668,3 +1668,15 @@ does not change the public class or constructor shape. Lowering reconstructs
 the corresponding runtime regex value on the existing compiler path.
 `t/rakuast/rakuast-regex-source-form.t` pins the shared measured shape and the
 two distinct execution results.
+
+## 71. Literal hash-index subrule arguments (2026-10-17)
+
+When lowering a `Postcircumfix::LiteralHashIndex` in a regex subrule argument,
+an identifier-valued key is rendered as the source spelling `<identifier>`.
+Rendering it as a quoted string (`<'identifier'>`) is not accepted by the
+regex subrule argument parser and prevents the argument expression from being
+evaluated at match time. The renderer uses the parser's identifier grammar to
+choose the unquoted form; other expressions keep their ordinary source form.
+The focused test checks the source node, successful matching, and lexical
+reassignment, and the existing 178-assertion dynamic-arguments test now passes
+through the RakuAST frontend.
