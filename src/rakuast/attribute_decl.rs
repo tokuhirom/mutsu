@@ -22,6 +22,7 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
         is_readonly,
         type_constraint,
         hash_key_type,
+        hash_key_type_expr,
         type_smiley,
         is_required,
         sigil,
@@ -105,7 +106,11 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
         },
     )?;
     if let Some(key) = hash_key_type {
-        super::keyed_hash::insert_shape(&mut decl, key)?;
+        if let Some(expression) = hash_key_type_expr {
+            super::keyed_hash::insert_subset_shape(&mut decl, expression, key)?;
+        } else {
+            super::keyed_hash::insert_shape(&mut decl, key)?;
+        }
     }
     attribute::add_traits(
         &mut decl,
@@ -249,6 +254,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_readonly: traits.is_readonly,
         type_constraint,
         hash_key_type: super::keyed_hash::lower_key_type(node, &sigil)?,
+        hash_key_type_expr: None,
         type_smiley,
         is_required: traits.is_required,
         sigil: sigil_char,

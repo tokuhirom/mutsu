@@ -14,12 +14,33 @@
 //! records `crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE` when it supplied the
 //! `Any` value type itself, so `my %h{Str}` and `my Any %h{Str}` stay apart.
 
-use super::convert::{build_type_node, node_field, statement_expression};
+use super::convert::{
+    build_type_node, convert_expr, node_field, statement_expression,
+    unsupported as unsupported_source,
+};
 use super::lower::unsupported;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::keyed_hash::{IMPLICIT_VALUE_TYPE, join};
-use crate::value::RuntimeError;
+use crate::value::{RuntimeError, Value, ValueView};
+
+/// The hidden source spelling retained on an inline anonymous subset key.
+const INLINE_SUBSET_SOURCE: &str = "__mutsu_hash_subset_source";
+
+pub(super) fn is_source_marker(field: &super::RakuAstField) -> bool {
+    field.name == Some(INLINE_SUBSET_SOURCE)
+}
+
+fn subset_source(node: &RakuAstNode) -> Option<String> {
+    let field = node.fields.iter().find(|field| is_source_marker(field))?;
+    let super::RakuAstFieldValue::Node(value) = &field.value else {
+        return None;
+    };
+    let ValueView::Str(source) = value.view() else {
+        return None;
+    };
+    Some(source.to_string())
+}
 
 /// The `(value type, key type)` a `%` declaration renders: `None` for a
 /// declaration that is not a keyed hash, and a `None` value type when the
@@ -57,6 +78,66 @@ pub(super) fn insert_shape(decl: &mut RakuAstNode, key: &str) -> Result<(), Runt
         .fields
         .iter()
         .position(|f| f.name == Some("sigil"))
+        .unwrap_or(decl.fields.len());
+    decl.fields.insert(at, node_field(Some("shape"), shape));
+    Ok(())
+}
+
+/// Preserve an anonymous subset's structured `Type::Subset` tree in a hash
+/// key shape, retaining the parser spelling for the existing key-type binder.
+// Cost: O(n), n = size of the subset expression and source spelling.
+pub(super) fn insert_subset_shape(
+    decl: &mut RakuAstNode,
+    expression: &Expr,
+    source: &str,
+) -> Result<(), RuntimeError> {
+    let mut subset = convert_expr(expression)?;
+    if subset.class != RakuAstClass::TypeSubset {
+        return Err(unsupported_source("inline subset hash key type"));
+    }
+    let declaration = match expression {
+        Expr::DoBlock { body, .. } => {
+            crate::ast::inline_subset_term::inline_subset_declaration(body)
+        }
+        _ => None,
+    }
+    .ok_or_else(|| unsupported_source("inline subset hash key type"))?;
+    let crate::ast::Stmt::SubsetDecl {
+        base,
+        base_is_explicit,
+        ..
+    } = declaration
+    else {
+        return Err(unsupported_source("inline subset hash key type"));
+    };
+    if !*base_is_explicit || !super::type_build::is_simple_type(base) {
+        return Err(unsupported_source(
+            "anonymous subset with a non-simple base type",
+        ));
+    }
+    let name = super::name_parts::name_from_parts(vec![
+        super::name_parts::leading_empty(),
+        super::name_parts::leading_empty(),
+    ]);
+    let name = Value::rakuast(Box::new(name));
+    let name_field = subset
+        .fields
+        .iter_mut()
+        .find(|field| field.name == Some("name"))
+        .ok_or_else(|| unsupported_source("inline subset without a name field"))?;
+    name_field.value = super::RakuAstFieldValue::Node(name);
+    subset.fields.push(super::RakuAstField {
+        name: Some(INLINE_SUBSET_SOURCE),
+        value: super::RakuAstFieldValue::Node(Value::str(source.to_string())),
+    });
+    let shape = RakuAstNode {
+        class: RakuAstClass::SemiList,
+        fields: vec![node_field(None, statement_expression(subset))],
+    };
+    let at = decl
+        .fields
+        .iter()
+        .position(|field| field.name == Some("sigil"))
         .unwrap_or(decl.fields.len());
     decl.fields.insert(at, node_field(Some("shape"), shape));
     Ok(())
@@ -142,7 +223,13 @@ pub(super) fn lower_key_type(
             return Err(unsupported(node));
         }
         let key_node = super::lower::named_child(statement, "expression")?;
-        keys.push(super::type_lower::type_constraint(node, key_node)?);
+        if key_node.class == RakuAstClass::TypeSubset
+            && let Some(source) = subset_source(key_node)
+        {
+            keys.push(source);
+        } else {
+            keys.push(super::type_lower::type_constraint(node, key_node)?);
+        }
     }
     Ok(Some(keys.join("; ")))
 }

@@ -2536,6 +2536,12 @@ pub(crate) enum Stmt {
         /// its optional value type until the compiled attribute descriptor.
         #[serde(default)]
         hash_key_type: Option<String>,
+        /// The parsed inline subset term of a hash key type, when its source
+        /// spelling is an anonymous subset such as `subset :: of Str where …`.
+        /// `hash_key_type` remains the runtime source form; this tree lets
+        /// RakuAST preserve the actual predicate and `Type::Subset` node.
+        #[serde(default)]
+        hash_key_type_expr: Option<Box<Expr>>,
         /// Type smiley: "D", "U", or "_" (from `Int:D`, `Int:U`, `Int:_`)
         type_smiley: Option<String>,
         /// `is required` trait: None = not required, Some(None) = required,

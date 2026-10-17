@@ -115,6 +115,7 @@ impl CompiledAttrDecl {
             is_readonly,
             type_constraint,
             hash_key_type,
+            hash_key_type_expr: _,
             type_smiley,
             is_required,
             sigil,

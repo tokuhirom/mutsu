@@ -1266,3 +1266,12 @@ retain it. Lowering recognizes that predicate shape and restores the existing
 `ParamDef.shape_constraints`, so the VM binder continues to enforce dimensions.
 The regression covers one and multiple dimensions, lexical dimensions, and
 mismatched shapes.
+
+### 6.66 S4: anonymous subset types as keyed-hash keys (2026-10-17)
+
+Rakudo represents `subset :: of Base where P` in a keyed-hash `shape` as a
+structured `Type::Subset`, while the parser's keyed-hash binder consumes the
+original type spelling. Parsing now retains both forms: conversion preserves
+the measured subset node and its predicate, and lowering uses the retained
+source to rebuild the keyed-hash constraint. The focused regression checks
+the RakuAST tree, accepted and rejected keys, and the value-type archetypes.

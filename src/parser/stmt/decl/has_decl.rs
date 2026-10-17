@@ -86,6 +86,7 @@ fn has_decl_list(
             is_readonly: false,
             type_constraint: type_constraint.clone(),
             hash_key_type: None,
+            hash_key_type_expr: None,
             type_smiley: type_smiley.clone(),
             is_required: None,
             sigil: sigil as char,
@@ -482,6 +483,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         }
     };
     let mut hash_key_type: Option<String> = None;
+    let mut hash_key_type_expr = None;
 
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
     let (rest, _) = if sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&' {
@@ -547,6 +549,12 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         && let Some(end) = rest.find('}')
     {
         let key_type = rest[1..end].trim().to_string();
+        if let Some(subset_source) = key_type.strip_prefix("subset")
+            && let Ok((remaining, subset_expr)) = super::inline_subset_term(subset_source)
+            && remaining.trim().is_empty()
+        {
+            hash_key_type_expr = Some(Box::new(subset_expr));
+        }
         hash_key_type = Some(key_type);
         &rest[end + 1..]
     } else {
@@ -1374,6 +1382,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         is_readonly,
         type_constraint,
         hash_key_type,
+        hash_key_type_expr,
         type_smiley,
         is_required,
         sigil: sigil as char,
