@@ -1264,24 +1264,15 @@ impl Interpreter {
         // a closure built from it captures up to its frame root
         // (`layered_capture`), and the callee chains its own frame over it
         // (#12882).
+        // A junction's own methods are `Junction`'s rows (ADR-11276 §9.151).
+        if let Some(result) = self.junction_own_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "junction-row");
+            self.stack.push(result?);
+            return Ok(());
+        }
         // Junction auto-threading: thread method calls over junction values
         if let ValueView::Junction { kind, values } = target.view()
-            && method != "map"
-            && !matches!(
-                method,
-                "Bool"
-                    | "so"
-                    | "WHAT"
-                    | "WHICH"
-                    | "^name"
-                    | "gist"
-                    | "defined"
-                    | "THREAD"
-                    | "raku"
-                    | "perl"
-                    | "say"
-                    | "note"
-            )
+            && Interpreter::junction_invocant_autothreads(method)
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "junction-invocant");
             let mut results = Vec::new();

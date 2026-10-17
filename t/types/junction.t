@@ -17,7 +17,8 @@ is $d.WHAT.gist, "(Junction)", "none() returns a Junction";
 
 # --- .gist / .Str ---
 is $a.gist, "any(1, 2, 3)", ".gist shows junction contents";
-is $a.Str, "any(1, 2, 3)", ".Str shows junction contents";
+# `Junction.Str` threads (Rakudo's `self.THREAD(*.Str)`): a junction of Strs.
+is $a.Str.gist, "any(1, 2, 3)", ".Str threads over the junction's values";
 
 # --- .Bool ---
 ok any(0, 1, 2).Bool, "any(0,1,2).Bool is True (at least one truthy)";

@@ -1309,25 +1309,15 @@ impl Interpreter {
                 suggestions,
             ));
         }
+        // A junction's own methods are `Junction`'s rows (ADR-11276 §9.151).
+        if let Some(result) = self.junction_own_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "junction-row");
+            self.stack.push(result?);
+            return Ok(());
+        }
         // Junction auto-threading: thread method calls over junction values
         if let ValueView::Junction { kind, values } = target.view()
-            && method != "map"
-            && !matches!(
-                method,
-                "Bool"
-                    | "so"
-                    | "WHAT"
-                    | "WHICH"
-                    | "^name"
-                    | "gist"
-                    | "Str"
-                    | "defined"
-                    | "THREAD"
-                    | "raku"
-                    | "perl"
-                    | "say"
-                    | "note"
-            )
+            && Interpreter::junction_invocant_autothreads(method)
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",

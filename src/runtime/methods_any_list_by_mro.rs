@@ -95,12 +95,13 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // A junction's methods autothread elsewhere, except `Mu`'s printing
-        // routines, which write the junction's own gist or `Str` (Rakudo's
-        // "gist-using routines do not thread Junctions").
+        // A junction's methods autothread elsewhere, except the ones the
+        // junction answers itself: `Mu`'s (`does`, `can`, the printing
+        // routines, which write the junction's own gist or `Str`) and `map`
+        // (ADR-11276 §9.151).
         if !ANY_LIST_BY_MRO.contains(&method)
             || (matches!(target.view(), ValueView::Junction { .. })
-                && !matches!(method, "map" | "say" | "print" | "put" | "note"))
+                && Self::junction_invocant_autothreads(method))
         {
             return None;
         }

@@ -3,6 +3,18 @@ use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use crate::value::ValueView;
 
+/// The methods a junction answers itself rather than per value: see
+/// [`Interpreter::junction_invocant_autothreads`].
+const JUNCTION_ANSWERS_ITSELF: [&str; 24] = [
+    // The compiler's pseudo-methods.
+    "WHAT", "HOW", "WHO", "VAR", "^name",
+    // `Junction`'s own methods that do not thread (`Str` threads in its row).
+    "Bool", "defined", "WHICH", "gist", "raku", "perl", "Str", "sink", "THREAD", "map",
+    // `Mu`'s methods about the object itself.
+    // `put` and `print` thread: they write each value's `Str`.
+    "so", "not", "isa", "does", "can", "DEFINITE", "WHERE", "say", "note",
+];
+
 impl Interpreter {
     pub(super) fn promise_combinator_error(combinator: &str) -> RuntimeError {
         let message = format!(
@@ -79,6 +91,38 @@ impl Interpreter {
         Ok(items)
     }
 
+    /// Whether a method called on a junction runs once per value
+    /// (ADR-11276 §9.151). Rakudo's `Junction` is a `Mu`: the methods below,
+    /// which `Junction` or `Mu` declares about the object itself, are called
+    /// on the junction (`any(1, 2).isa(Int)` is `False`, `.so` and `.not`
+    /// collapse, `.gist` renders it); every other method autothreads, as do
+    /// `Junction`'s coercions (`Int`, `Numeric`, `Real`, `Str`), whose bodies
+    /// are `self.THREAD`. Measured against Rakudo 2026.09. One list for the
+    /// interpreter's and the VM's two call paths, which each kept their own.
+    // Cost: O(n), n = 26 names.
+    pub(crate) fn junction_invocant_autothreads(method: &str) -> bool {
+        !JUNCTION_ANSWERS_ITSELF.contains(&method)
+    }
+
+    /// A junction receiver's own method: `Junction`'s row for it (`gist`,
+    /// `raku`, `Str`, `sink`, `THREAD`; ADR-11276 §9.151), `perl` being
+    /// `raku`. `None` for any other receiver or method.
+    // Cost: O(k) to find the row, k = rows named `method`, plus the row's own.
+    pub(crate) fn junction_own_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(target.view(), ValueView::Junction { .. }) {
+            return None;
+        }
+        let own = if method == "perl" { "raku" } else { method };
+        crate::builtins::method_table::invoke_owner(self, &["Junction"], own, args, || {
+            target.clone()
+        })
+    }
+
     pub(super) fn should_autothread_method(method: &str) -> bool {
         !matches!(
             method,
@@ -97,6 +141,8 @@ impl Interpreter {
                 | "grep"
                 | "say"
                 | "note"
+                | "sink"
+                | "not"
         )
     }
 

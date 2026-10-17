@@ -1475,9 +1475,12 @@ impl Interpreter {
             ));
         }
 
+        // A junction's own methods are `Junction`'s rows (ADR-11276 §9.151).
+        if let Some(result) = self.junction_own_method(&target, method, &args) {
+            return result;
+        }
         // Junction auto-threading
-        if Self::should_autothread_method(method)
-            && method != "map"
+        if Self::junction_invocant_autothreads(method)
             && let ValueView::Junction { kind, values } = target.view()
         {
             let mut results = Vec::with_capacity(values.len());
@@ -1510,34 +1513,6 @@ impl Interpreter {
                 )?);
             }
             return Ok(Value::junction(kind, results));
-        }
-        // Junction .raku/.perl/.gist/.Str rendering
-        if args.is_empty()
-            && matches!(method, "raku" | "perl" | "gist" | "Str")
-            && let ValueView::Junction { kind, values } = target.view()
-        {
-            let kind_name = match kind {
-                JunctionKind::Any => "any",
-                JunctionKind::All => "all",
-                JunctionKind::One => "one",
-                JunctionKind::None => "none",
-            };
-            let render_method = match method {
-                "gist" => "gist",
-                "Str" => "Str",
-                _ => "raku",
-            };
-            let mut parts = Vec::with_capacity(values.len());
-            for value in values.iter() {
-                if method == "gist" && value.is_nil() {
-                    parts.push("Nil".to_string());
-                    continue;
-                }
-                let rendered =
-                    self.call_method_with_values(value.clone(), render_method, vec![])?;
-                parts.push(rendered.to_string_value());
-            }
-            return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
         // A type object's key/value views are `Any`'s `Any(Enumeration)` and
         // `Any:U` rows (ADR-11276 §9.145).
