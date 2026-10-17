@@ -7,8 +7,8 @@
 //! and arity, and reached only by that cascade's own last step, which walks
 //! the receiver's MRO for a late row (`invoke_mro_late`), after a user method,
 //! a delegate, a `FALLBACK`, a class-level attribute and every other row
-//! declined. `EVAL` is `Cool`'s, so a receiver that is not `Cool` (a `Blob`)
-//! has none, as in Rakudo.
+//! declined. `EVAL` is `Cool`'s and `RakuAST::Node`'s, so a receiver that is
+//! neither (a `Blob`) has none, as in Rakudo.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -51,6 +51,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     late!("Mu", "Numeric", 0, LATE, numeric),
     late!("Mu", "Real", 0, LATE, real),
     late!("Cool", "EVAL", 0, LATE, eval),
+    late!("RakuAST::Node", "EVAL", 0, LATE, eval),
 ];
 
 // Cost: O(n), n = chars of the rendered string.
