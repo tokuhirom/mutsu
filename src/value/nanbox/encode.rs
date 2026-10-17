@@ -186,6 +186,7 @@ impl NanBox {
                 value,
                 index,
                 slot,
+                declared,
             } => pack_arc(
                 Kind::VarRef,
                 Arc::new(VarRefBox {
@@ -193,6 +194,7 @@ impl NanBox {
                     value: *value,
                     index,
                     slot,
+                    declared,
                 }),
             ),
             ValueRepr::Uni(u) => pack_arc(Kind::Uni, Arc::new(*u)),

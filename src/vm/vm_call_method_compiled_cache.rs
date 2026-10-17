@@ -154,7 +154,7 @@ impl Interpreter {
                     // The symbol is at hand and the env's own `Str` is borrowed,
                     // so a typed variable argument costs no re-intern of its
                     // name and no copy of its constraint per call.
-                    if let Some(tc) = self.var_type_constraint_value_sym(name)
+                    if let Some(tc) = self.varref_type_constraint_value(raw, name)
                         && let ValueView::Str(tc) = tc.view()
                     {
                         keys.push(key_syms::declared_type());

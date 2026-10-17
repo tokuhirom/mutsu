@@ -615,13 +615,21 @@ impl Interpreter {
                                     .cloned()
                             })
                         });
-                    let source_constraint = source_name.as_deref().and_then(|source_name| {
-                        self.var_type_constraint(source_name).or_else(|| {
-                            self.var_type_constraint(
-                                source_name.trim_start_matches(['$', '@', '%', '&']),
-                            )
-                        })
-                    });
+                    let source_varref = arg_idx
+                        .and_then(|idx| args.get(idx))
+                        .filter(|arg| arg.is_varref());
+                    let source_constraint = match source_varref {
+                        Some(varref) => varref
+                            .as_varref()
+                            .and_then(|(name, _, _)| self.varref_type_constraint(varref, name)),
+                        None => source_name.as_deref().and_then(|source_name| {
+                            self.var_type_constraint(source_name).or_else(|| {
+                                self.var_type_constraint(
+                                    source_name.trim_start_matches(['$', '@', '%', '&']),
+                                )
+                            })
+                        }),
+                    };
                     if crate::qualified::is_type_capture(&resolved_constraint) {
                         // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, and
                         // never a nominal check.
@@ -1187,10 +1195,18 @@ impl Interpreter {
                         .cloned()
                 })
             });
+        let source_varref = arg_idx
+            .and_then(|idx| args.get(idx))
+            .filter(|arg| arg.is_varref());
         if let Some(source_name) = source_name {
-            let source_constraint = self.var_type_constraint(&source_name).or_else(|| {
-                self.var_type_constraint(source_name.trim_start_matches(['$', '@', '%', '&']))
-            });
+            let source_constraint = match source_varref {
+                Some(varref) => varref
+                    .as_varref()
+                    .and_then(|(name, _, _)| self.varref_type_constraint(varref, name)),
+                None => self.var_type_constraint(&source_name).or_else(|| {
+                    self.var_type_constraint(source_name.trim_start_matches(['$', '@', '%', '&']))
+                }),
+            };
             if source_constraint.is_some_and(|source| {
                 crate::runtime::native_types::native_family(Self::constraint_base_name(&source))
                     .is_some()

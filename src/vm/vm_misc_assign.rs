@@ -930,8 +930,9 @@ impl Interpreter {
         // CSV::Table loop-param case, t/list-alias-shadowed-name.t). Only a
         // VarRef built without compiler slot info (`slot: None`, the legacy
         // constructors) keeps the by-name fallback.
+        let declared = self.wrap_var_ref_declared(code, slot, sym);
         self.stack
-            .push(Value::varref_slotted(sym, value, None, Some(slot)));
+            .push(Value::varref_resolved(sym, value, Some(slot), declared));
     }
 
     /// Resolve a `WrapVarRef` tag to the named variable's shared `ContainerRef`

@@ -3317,6 +3317,17 @@ impl Interpreter {
                                         None => info.value_type,
                                     });
                             }
+                            // A `VarRef` carries what its `WrapVarRef` site
+                            // resolved in the source variable's own frame; this
+                            // runs in the callee's (ADR-13757).
+                            if let Some(crate::value::VarRefDeclared::Resolved(declared)) =
+                                raw_arg.varref_declared()
+                            {
+                                return declared.and_then(|tc| match tc.view() {
+                                    ValueView::Str(tc) => Some(tc.as_str().to_owned()),
+                                    _ => None,
+                                });
+                            }
                             // No typed lexical has ever been declared: neither
                             // spelling can have an entry, so skip the interning
                             // entirely (the same gate `var_type_constraint` applies).

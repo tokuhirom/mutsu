@@ -126,6 +126,14 @@ HTTP::UserAgent files caught slice 45's regressions).
     element stores, the push family and the compound stores still read the
     by-name record, which is correct as long as it resolves where the
     variable does. Moving them to the slot bake is still open.
+- **Step 3, argument sources** (`fix/13757-varref-carries-declared-type`).
+  A `VarRef` argument was typed by a by-name probe that the binder and the
+  multi dispatcher (`multi_arg_type_keys_into`, `unwrap_varref_for_dispatch`,
+  `args_matching`) ran from the callee's frame. The caller-frame census put
+  most of its `declared_meta_lane` hits there. `WrapVarRef` now resolves the
+  type in the variable's own frame (an untyped slot answers from the code),
+  and the `VarRef` carries it (`VarRefDeclared`). A `VarRef` built without a
+  site resolution still asks by name.
 
 ## 4. Consequences
 

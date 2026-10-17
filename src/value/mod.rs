@@ -554,10 +554,12 @@ pub(crate) mod container_lock;
 pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) mod render_guard;
+mod varref_declared;
 pub(crate) use dispatch_shape::{
     ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
     ROLES_WITH_ROWS, const_str_eq, cool_numeric_method,
 };
+pub(crate) use varref_declared::VarRefDeclared;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
 mod entry_path;
@@ -2682,6 +2684,9 @@ pub(in crate::value) enum ValueRepr {
         /// a dead shadow's slot; this records the binding that was actually in
         /// scope (see `capture_var_cell_inner`).
         slot: Option<u32>,
+        /// The variable's declared type as the `WrapVarRef` site resolved it
+        /// (ADR-13757).
+        declared: VarRefDeclared,
     },
     /// Unicode normalization form types (NFC, NFD, NFKC, NFKD).
     /// `form` is one of "NFC", "NFD", "NFKC", "NFKD".

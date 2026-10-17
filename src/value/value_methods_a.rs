@@ -497,6 +497,7 @@ impl Value {
             value: Box::new(value),
             index,
             slot,
+            declared: super::VarRefDeclared::Unresolved,
         })
     }
     /// The `slot` recorded on a `ValueRepr::VarRef`, or `None`.
