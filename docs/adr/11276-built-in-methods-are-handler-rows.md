@@ -3539,6 +3539,31 @@ Not done: 6.e methods that change a method 6.d already has on a type with a shap
 `Grammar`'s 6.e additions; `Format` and `Formatter`, whose owners the catalog does not list. They are
 filed as #13738.
 
+### 9.147 The last by-value copies of the array mutators (2026-10-17)
+
+`refactor/11276-pure-cascade-residuals`. §9.23 left the `Array` mutators with copies outside their `Mut`
+rows. Two of them needed no new mechanism, only the detached place §9.23 already built:
+
+- **The `pop` arm of `dispatch_method_by_name_2`** (`dispatch_pop_method`) popped any receiver
+  that reached it. For an array it repeated the row's rules: the arity error, the lazy refusal and
+  the empty-array `Failure`. For anything else it answered the empty-array `Failure` too, so
+  `Foo.new.pop` "popped" an object that has no `pop`. The arm is deleted. An array held by value
+  (`f().pop`, `$x.pop`, `%h<a>.pop`) already reaches the row through `invoke_mut`. Any other receiver
+  is `X::Method::NotFound`, as in Rakudo.
+- **`proxy_subclass_array_mutate`** (an array attribute of a `Proxy` subclass, `$p.VAR.log.push`) had a
+  `match` over the six mutator names with its own `append`/`prepend` flattening. It now runs
+  `invoke_mut` on the stored array as a `Detached` place and writes the array back. The storage lock is
+  not held across the row, which may run user code.
+
+Three call sites each listed the mutator names they forward to `invoke_mut`: the Proxy-subclass
+interception in the interpreter and in the VM, and the mixin over a native array. They now ask the
+table (`names_a_mut_row`, no longer test-only), so `splice` and `grab` are forwarded there too.
+
+An enum value's base-type rows (`dispatch_enum_method`) are its base type's and `Cool`'s, as Rakudo's
+MRO has them (`Int`/`Str`, then `Cool`). The `sign` arm of the pure cascade, which answered an enum value
+from its integer, is deleted. `Cool.sign` numifies the value, so a `Str`-valued value that is not a
+number dies as it does in Rakudo; the arm answered 0 for it.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
