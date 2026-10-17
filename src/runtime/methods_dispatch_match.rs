@@ -78,42 +78,23 @@ impl Interpreter {
         if let Some(result) = self.any_list_method_by_mro(&target, method, &args) {
             return Some(result);
         }
-        match method {
-            // `Mu.say(\x)` / `Mu.say(|)` (and `put`): the fallback for a class that acts as
-            // `$*OUT`/`$*ERR` by declaring its own `print` but no `say`/`put` -- the
-            // arguments are gisted (`say`) or stringified (`put`), joined, followed by
-            // `nl-out`, and handed to that `print`.
-            // TODO: compile to bytecode -- this re-enters user code through the generic
-            // method-call path like the other `Mu` fallbacks in this match.
-            // Cost: O(n), n = total chars of the rendered arguments.
-            "say" | "put"
-                if !args.is_empty()
-                    && matches!(target.view(), ValueView::Instance { .. })
-                    && self.instance_has_own_print(&target) =>
-            {
-                Some((|| {
-                    let mut text = String::new();
-                    for a in args {
-                        if method == "say" {
-                            text.push_str(&self.render_gist_value(&a)?);
-                        } else {
-                            text.push_str(
-                                &self
-                                    .call_method_with_values(a.clone(), "Str", vec![])?
-                                    .to_string_value(),
-                            );
-                        }
-                    }
-                    let nl = self.call_method_with_values(target.clone(), "nl-out", vec![])?;
-                    text.push_str(&nl.to_string_value());
-                    self.call_method_with_values(target.clone(), "print", vec![Value::str(text)])
-                })())
+        // `Mu.say`/`put` with arguments for a class acting as `$*OUT`,
+        // `Junction.THREAD` and `Cool.encode` are late rows of the receiver's
+        // MRO (§9.142); `Mu`'s other late rows are the cascade's last resort.
+        if matches!(method, "THREAD" | "encode")
+            || (matches!(method, "say" | "put") && !args.is_empty())
+        {
+            let mro = self.classhow_mro_unhidden_names(&target);
+            let owners: Vec<&str> = mro.iter().map(String::as_str).collect();
+            if let Some(result) = crate::builtins::method_table::invoke_mro_late(
+                self, &owners, method, &args, &target,
+            ) {
+                return Some(result);
             }
+        }
+        match method {
             "default" if args.is_empty() => Self::dispatch_default(&target),
             "snitch" if args.len() <= 1 => self.dispatch_snitch(&target, &args),
-            "encode" => {
-                Some(self.dispatch_encode(&target, &args))
-            }
             "decode" => self.dispatch_decode(&target, &args),
             "unpack" if matches!(target.view(), ValueView::Instance { .. }) => {
                 // $blob.unpack($template) — experimental, mirrors the sub form.
@@ -131,29 +112,6 @@ impl Interpreter {
                     return Some(Ok(Value::proxy_var_object(target, String::new())));
                 }
                 Some(Ok(target))
-            }
-            "THREAD" => {
-                if let ValueView::Junction { values, .. } = target.view() {
-                    let code = args.first().cloned().unwrap_or(Value::NIL);
-                    for value in values.iter() {
-                        match self.call_sub_value(code.clone(), vec![value.clone()], false) {
-                            Ok(_) => {}
-                            // A matching `when` inside the block leaves that
-                            // block with `succeed`. That ends the *eigenstate's*
-                            // iteration, not the THREAD loop — every loop
-                            // construct absorbs it the same way (see the `for`
-                            // body in vm_for_loop_body.rs). Propagating it
-                            // aborted the remaining eigenstates and unwound the
-                            // enclosing routine: Test::Util's
-                            // `is-deeply-junction` guts only the first
-                            // eigenstate of `any(all(1,2), 3)` without this.
-                            Err(e) if e.is_succeed() => {}
-                            Err(e) => return Some(Err(e)),
-                        }
-                    }
-                    return Some(Ok(Value::NIL));
-                }
-                None
             }
             "WHAT" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_what(&target, args)),
             "HOW" if !quoted_pseudo => Some(self.dispatch_how(&target, &args)),
@@ -584,5 +542,73 @@ impl Interpreter {
         };
         let cls = class_name.resolve();
         self.class_has_user_method(&cls, "print")
+    }
+
+    /// `Mu.say(\x)` / `Mu.say(|)` (and `put`): the fallback for a class that
+    /// acts as `$*OUT`/`$*ERR` by declaring its own `print` but no `say`/`put`
+    /// -- the arguments are gisted (`say`) or stringified (`put`), joined,
+    /// followed by `nl-out`, and handed to that `print`. `None` for a
+    /// receiver with no `print` of its own.
+    // TODO: compile to bytecode -- this re-enters user code through the generic
+    // method-call path like the other `Mu` fallbacks.
+    // Cost: O(n), n = total chars of the rendered arguments.
+    pub(crate) fn mu_say_put_via_print(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if args.is_empty()
+            || !matches!(target.view(), ValueView::Instance { .. })
+            || !self.instance_has_own_print(target)
+        {
+            return None;
+        }
+        Some((|| {
+            let mut text = String::new();
+            for a in args {
+                if method == "say" {
+                    text.push_str(&self.render_gist_value(a)?);
+                } else {
+                    text.push_str(
+                        &self
+                            .call_method_with_values(a.clone(), "Str", vec![])?
+                            .to_string_value(),
+                    );
+                }
+            }
+            let nl = self.call_method_with_values(target.clone(), "nl-out", vec![])?;
+            text.push_str(&nl.to_string_value());
+            self.call_method_with_values(target.clone(), "print", vec![Value::str(text)])
+        })())
+    }
+
+    /// `Junction.THREAD(&code)`: call the code once per eigenstate. `None` for
+    /// a receiver that is no junction.
+    // Cost: O(v) calls, v = the junction's values.
+    pub(crate) fn junction_thread(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Junction { values, .. } = target.view() else {
+            return None;
+        };
+        let code = args.first().cloned().unwrap_or(Value::NIL);
+        for value in values.iter() {
+            match self.call_sub_value(code.clone(), vec![value.clone()], false) {
+                Ok(_) => {}
+                // A matching `when` inside the block leaves that block with
+                // `succeed`. That ends the *eigenstate's* iteration, not the
+                // THREAD loop -- every loop construct absorbs it the same way
+                // (see the `for` body in vm_for_loop_body.rs). Propagating it
+                // aborted the remaining eigenstates and unwound the enclosing
+                // routine: Test::Util's `is-deeply-junction` guts only the first
+                // eigenstate of `any(all(1,2), 3)` without this.
+                Err(e) if e.is_succeed() => {}
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        Some(Ok(Value::NIL))
     }
 }

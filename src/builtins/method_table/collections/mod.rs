@@ -16,6 +16,7 @@ mod any_interp;
 mod any_interp_twins;
 mod any_list_late;
 mod any_pos_late;
+mod match1_late;
 mod match3_late;
 mod mu_late;
 mod mu_render_late;
@@ -122,4 +123,5 @@ pub(super) static LATE_FAMILIES: &[&[MethodRow]] = &[
     mu_render_late::ROWS,
     any_pos_late::ROWS,
     match3_late::ROWS,
+    match1_late::ROWS,
 ];
