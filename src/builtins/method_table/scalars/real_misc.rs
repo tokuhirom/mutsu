@@ -6,7 +6,9 @@
 //! native coercions, `rand`), where the body is `self.Numeric.METHOD`: those
 //! rows read their receiver through [`numify`], the way the math rows do. The
 //! rest belong to the numeric owners alone (`narrow`, `Bridge`, `lsb`,
-//! `msb`), so a `Str` has no such method, as in Rakudo.
+//! `msb`), so a `Str` has no such method, as in Rakudo. `narrow`, `lsb` and
+//! `msb` take a defined invocant, and every `chr` candidate does: a type
+//! object is refused (`RowFlags::DEFINITE`, `RowFlags::DEFINITE_MULTI`).
 
 use super::numify::numify;
 use super::{Handler, MethodRow, RowFlags};
@@ -56,38 +58,39 @@ macro_rules! native_int_rows {
 }
 
 pub(super) static INT_ROWS: &[MethodRow] = &[
-    row!("Int", "is-prime", is_prime),
-    row!("Int", "narrow", narrow),
+    row!("Int", "is-prime", is_prime, RowFlags::DEFINITE),
+    row!("Int", "narrow", narrow, RowFlags::DEFINITE),
     row!("Int", "conj", conj_real),
     row!("Int", "Bridge", bridge),
-    row!("Int", "lsb", lsb),
-    row!("Int", "msb", msb),
-    row!("Int", "chr", chr),
+    row!("Int", "lsb", lsb, RowFlags::DEFINITE),
+    row!("Int", "msb", msb, RowFlags::DEFINITE),
+    row!("Int", "chr", chr, RowFlags::DEFINITE_MULTI),
     row!("Int", "rand", rand, RowFlags::RANDOM),
 ];
 pub(super) static NUM_ROWS: &[MethodRow] = &[
     row!("Num", "is-prime", is_prime),
-    row!("Num", "narrow", narrow),
+    row!("Num", "narrow", narrow, RowFlags::DEFINITE),
     row!("Num", "conj", conj_real),
     row!("Num", "Bridge", bridge),
     row!("Num", "rand", rand, RowFlags::RANDOM),
 ];
 pub(super) static RAT_ROWS: &[MethodRow] = &[
     row!("Rat", "is-prime", is_prime),
-    row!("Rat", "narrow", narrow),
+    row!("Rat", "narrow", narrow, RowFlags::DEFINITE),
     row!("Rat", "conj", conj_real),
     row!("Rat", "Bridge", bridge),
     row!("Rat", "rand", rand, RowFlags::RANDOM),
 ];
 pub(super) static FAT_RAT_ROWS: &[MethodRow] = &[
-    row!("FatRat", "narrow", narrow),
+    row!("FatRat", "narrow", narrow, RowFlags::DEFINITE),
     row!("FatRat", "Bridge", bridge),
 ];
-pub(super) static COMPLEX_ROWS: &[MethodRow] = &[row!("Complex", "narrow", narrow)];
+pub(super) static COMPLEX_ROWS: &[MethodRow] =
+    &[row!("Complex", "narrow", narrow, RowFlags::DEFINITE)];
 pub(super) static COOL_ROWS: &[MethodRow] = &[
     row!("Cool", "is-prime", is_prime),
     row!("Cool", "conj", conj),
-    row!("Cool", "chr", chr),
+    row!("Cool", "chr", chr, RowFlags::DEFINITE_MULTI),
     row!("Cool", "rand", rand, RowFlags::RANDOM),
 ];
 pub(super) static COOL_NATIVE_INT_ROWS: &[MethodRow] = native_int_rows!("Cool");

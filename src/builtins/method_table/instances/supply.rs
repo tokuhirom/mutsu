@@ -26,6 +26,26 @@ macro_rules! row {
     ($name:literal, $op:ident) => {
         row!($name, $op, RowFlags::OWNER_ONLY.or(RowFlags::SLURPY))
     };
+    // `Supply:D:` (`Supply.tap` is `X::Parameter::InvalidConcreteness`).
+    ($name:literal, $op:ident, definite) => {
+        row!(
+            $name,
+            $op,
+            RowFlags::OWNER_ONLY
+                .or(RowFlags::SLURPY)
+                .or(RowFlags::DEFINITE)
+        )
+    };
+    // A `multi` whose every candidate is `Supply:D:` (`X::Multi::NoMatch`).
+    ($name:literal, $op:ident, definite_multi) => {
+        row!(
+            $name,
+            $op,
+            RowFlags::OWNER_ONLY
+                .or(RowFlags::SLURPY)
+                .or(RowFlags::DEFINITE_MULTI)
+        )
+    };
     ($name:literal, $op:ident, class) => {
         row!(
             $name,
@@ -68,21 +88,21 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    row!("map", Map),
-    row!("grep", Grep),
+    row!("map", Map, definite),
+    row!("grep", Grep, definite),
     row!("first", First),
-    row!("reduce", Reduce),
-    row!("produce", Produce),
+    row!("reduce", Reduce, definite),
+    row!("produce", Produce, definite),
     row!("elems", Elems),
-    row!("min", Min),
-    row!("max", Max),
-    row!("minmax", Minmax),
+    row!("min", Min, definite),
+    row!("max", Max, definite),
+    row!("minmax", Minmax, definite),
     row!("grab", Grab, class),
-    row!("skip", Skip),
+    row!("skip", Skip, definite),
     row!("live", Live),
     row!("collate", Collate),
-    row!("delayed", Delayed),
-    row!("tap", Tap),
+    row!("delayed", Delayed, definite),
+    row!("tap", Tap, definite),
     row!("act", Act),
     row!("on-close", OnClose),
     row!("serialize", Serialize),
@@ -90,18 +110,18 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("merge", Merge, class),
     row!("zip", Zip, class),
     row!("zip-latest", ZipLatest, class),
-    row!("rotor", Rotor),
+    row!("rotor", Rotor, definite_multi),
     row!("squish", Squish),
     row!("sort", Sort),
     row!("head", Head),
     row!("flat", Flat),
-    row!("batch", Batch),
-    row!("throttle", Throttle),
-    row!("comb", Comb),
-    row!("words", Words),
-    row!("wait", Wait),
+    row!("batch", Batch, definite),
+    row!("throttle", Throttle, definite_multi),
+    row!("comb", Comb, definite_multi),
+    row!("words", Words, definite),
+    row!("wait", Wait, definite),
     row!("stable", Stable),
-    row!("rotate", Rotate),
+    row!("rotate", Rotate, definite),
     row!("share", Share),
     row!("migrate", Migrate),
     row!("encode", Encode),
@@ -114,8 +134,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("do", Do),
     row!("Promise", Promise),
     row!("schedule-on", ScheduleOn),
-    row!("lines", Lines),
-    row!("classify", Classify),
+    row!("lines", Lines, definite_multi),
+    row!("classify", Classify, definite_multi),
     row!("categorize", Categorize),
     row!("Channel", Channel),
     row!("Supply", Supply),

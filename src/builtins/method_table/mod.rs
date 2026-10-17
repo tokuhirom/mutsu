@@ -105,7 +105,7 @@ pub(crate) use io_concurrency::systemic::{
 pub(crate) use io_concurrency::{handle_names, handle_owners_of, handle_owners_of_instance};
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
-    str_args, str_numeric, str_search, truth,
+    str_numeric, str_search, truth,
 };
 
 pub(crate) use collections::accepts_open::accepts_by_smartmatch;

@@ -38,18 +38,54 @@ pub(super) static ROWS: &[MethodRow] = &[
         RowFlags::ANY_ARGS,
         &["append", "createonly", "enc"]
     ),
-    row!("mkdir", 0, mkdir_row, RowFlags::NONE, &[]),
-    row!("mkdir", 1, mkdir_row, RowFlags::ANY_ARGS, &[]),
-    row!("rmdir", 0, rmdir_row, RowFlags::NONE, &[]),
-    row!("unlink", 0, unlink_row, RowFlags::NONE, &[]),
+    row!(
+        "mkdir",
+        0,
+        mkdir_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &[]
+    ),
+    row!(
+        "mkdir",
+        1,
+        mkdir_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+        &[]
+    ),
+    row!(
+        "rmdir",
+        0,
+        rmdir_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &[]
+    ),
+    row!(
+        "unlink",
+        0,
+        unlink_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &[]
+    ),
     row!("chmod", 1, chmod_row, RowFlags::ANY_ARGS, &[]),
     row!("chown", 0, chown_row, RowFlags::NONE, &["uid", "gid"]),
     row!("copy", 0, copy_row, RowFlags::NONE, &["createonly"]),
     row!("copy", 1, copy_row, RowFlags::ANY_ARGS, &["createonly"]),
     row!("rename", 0, rename_row, RowFlags::NONE, &["createonly"]),
     row!("rename", 1, rename_row, RowFlags::ANY_ARGS, &["createonly"]),
-    row!("move", 0, move_row, RowFlags::NONE, &["createonly"]),
-    row!("move", 1, move_row, RowFlags::ANY_ARGS, &["createonly"]),
+    row!(
+        "move",
+        0,
+        move_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &["createonly"]
+    ),
+    row!(
+        "move",
+        1,
+        move_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+        &["createonly"]
+    ),
     row!("symlink", 0, symlink_row, RowFlags::NONE, &["absolute"]),
     row!("symlink", 1, symlink_row, RowFlags::ANY_ARGS, &["absolute"]),
     row!("link", 0, link_row, RowFlags::NONE, &[]),

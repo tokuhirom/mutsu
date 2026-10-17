@@ -3965,6 +3965,72 @@ Decision.
 
 Pinned in `t/routines/closure/wrap-restore-rows.t`.
 
+### 9.161 A row states a `:D` invocant; the pure cascades lose their named stragglers (2026-10-17)
+
+`refactor/11276-pure-cascade-names`.
+
+**`RowFlags::DEFINITE` and `RowFlags::DEFINITE_MULTI`.** A type object calling a method whose invocant
+Rakudo declares `:D` was refused by four by-name lists: the numeric methods in the zero-argument cascade
+(`check_numeric_type_object_method`, every name refused alike with `X::Parameter::InvalidConcreteness`),
+`IO::Path`'s `IO_PATH_CONCRETE_METHODS` in the VM's entry gate, and two `Supply` lists in
+`call_method_with_values_inner` (one of them answering an `X::AdHoc` of mutsu's own wording). A row
+without `TYPE_OBJECT_OK` simply skipped a type object, so the call went on to whichever later path
+happened to answer it.
+
+Decision.
+
+- `DEFINITE` says the method's invocant is `:D`: a type object that reaches the row is refused with
+  `X::Parameter::InvalidConcreteness` naming the row's owner. `DEFINITE_MULTI` says every candidate of a
+  `multi` is `:D`: the refusal is `X::Multi::NoMatch` (`Int.sqrt`, `Int.round`, `Supply.lines`).
+- The refusal is asked where a type object misses: the guard step (the row an instance of the type
+  object's shape reaches; a type object with no shape of its own whose instances have one, `UInt` and
+  `IO::Path::Unix`, uses theirs), `invoke_owner` and the MRO walk. The invocant binds before the
+  arguments, so a row of any arity refuses (`IO::Path.split`, `Supply.start`).
+- The flags are set from Rakudo's answers (probed per type object and method): the numeric rows
+  (`abs`, `sign`, `floor`, `ceiling`, `truncate`, `narrow`, `lsb`, `msb`, `polymod`, `Rat`, `FatRat`
+  `DEFINITE`; `sqrt`, `exp`, `log`, `log2`, `log10`, `round`, `chr`, `Complex.Rat` `DEFINITE_MULTI`),
+  `IO::Path`'s (the `stat` rows and every name of the old list; `absolute`, `extension`, `parent`,
+  `slurp`, `dir` `DEFINITE_MULTI`) and `Supply`'s; `Str.split`, `Int.base` and `FatRat.base` are
+  `DEFINITE_MULTI`, and `Int.is-prime`, `roots` and `Int.expmod` (which Rakudo refuses inside the method
+  body) `DEFINITE`. A row whose type object Rakudo answers some other way (`Rat.abs` numifies, `Cool.abs`
+  warns) has neither flag. Recognition (`native_method_arities`, what `.^can` and the catalog tests
+  read) counts a refusing row: Rakudo's `Int.^can('abs')` is true.
+- The three lists are deleted. What stays: `IO::Path.Int` is numeric context (`Mu.Int` is
+  `self.Numeric.Int`) and keeps the VM's numeric-context refusal; the `Exception` type objects'
+  `throw`/`fail`/`die`/`rethrow`/`resume` keep the VM gate, since only `throw` and `resume` are rows; the
+  `Dateish` `.IO` refusal stays in the two `.IO` fast paths.
+
+Behaviour changes toward Rakudo: `Int.sqrt`, `Int.exp`, `Int.log`, `Int.round`, `Int.chr` (and the other
+numeric type objects') are `X::Multi::NoMatch`, not `X::Parameter::InvalidConcreteness`; `IO::Path::Unix.e`
+refuses; `IO::Path.extension` and its kin are `X::Multi::NoMatch`; `Supply.map({...})` and the other
+`Supply:D:` methods with arguments are `X::Parameter::InvalidConcreteness`, not mutsu's
+"Cannot call .map on a Supply type object". Pinned in
+`t/types/numeric/numeric-type-object-definite-rows.t`, `t/io/io-path-type-object-definite-rows.t` and
+`t/concurrency/supply/supply-type-object-definite-rows.t`.
+
+**The cascades' named stragglers.** The pure arity cascades still answered methods by name in front of,
+or instead of, their rows:
+
+- `Attribute.DEPRECATED` (the trait's message) and `Thread.yield` are rows of their owners
+  (`ctors_mop/attribute.rs`, `io_concurrency/class_methods.rs`; `Thread:U:` refuses an instance).
+- `Kernel.hostname` and `Kernel.endian` on the type object are `Kernel`'s rows, which now answer the type
+  object (`TYPE_OBJECT_OK`) from the running process; the class-method owner lookup reaches `Kernel`.
+- `Any.nl-out` is a row of `Any`, and so is S04's `pending` (Rakudo has none; mutsu answers it on any
+  receiver, `roast/S04-exceptions/pending.t`).
+- `Cool.AST` takes `:compunit` and a `$slang` argument. Its four copies (two cascade arms, the VM's
+  native entry and two blocks of `call_method_with_values`) are gone.
+- `Exception.resume` signals the handler for every exception, which decides whether it resumes; the
+  cascade's twin is gone.
+- The `RakuAST` builders `add-statement`, `unshift-statement`, `push`, `replace-statement-list` and
+  `set-expression` are rows of `RakuAST::Node`, and `Pod::Block::Declarator`'s `_add_leading` and
+  `_add_trailing` are rows found by `runtime_object_owners_of`.
+- The two-argument cascade's `naive-word-wrapper`, `in-range`, `substr-eq`, `split` and `comb` arms
+  duplicated rows that already existed; they are deleted, with `native_split_method`, which only they
+  called. The one-argument cascade's `__baggy_data__` delegation duplicated the native-base redirect.
+- `Backtrace::Frame.name`, a mutsu alias of `subname` that Rakudo does not have, is gone.
+
+Pinned in `t/oo/method/builtin-method-name-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

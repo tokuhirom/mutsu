@@ -16,42 +16,45 @@ use num_traits::{FromPrimitive, Signed, Zero};
 
 /// Zero-argument rows owned by `$owner`.
 macro_rules! rows {
-    ($owner:literal: $($name:literal => $handler:ident),* $(,)?) => {
+    ($owner:literal: $($name:literal => $handler:ident [$flags:expr]),* $(,)?) => {
         &[$(MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Pure($handler),
-            flags: RowFlags::NONE,
+            flags: $flags,
             named: &[],
         }),*]
     };
 }
 
-/// The rows every real type declares.
+/// The rows every real type declares. Each invocant is `:D`, so a type
+/// object is refused (`Int.floor`); `round` is a `multi` whose candidates
+/// all are (`X::Multi::NoMatch`). `abs` of a `Rat` or `FatRat` type object is
+/// Rakudo's `Rational` numification (`$abs` names the flag of the owner's).
 macro_rules! real_rows {
-    ($owner:literal) => {
+    ($owner:literal, $abs:expr) => {
         rows![$owner:
-            "abs" => abs,
-            "sign" => sign,
-            "floor" => floor,
-            "ceiling" => ceiling,
-            "round" => round,
-            "truncate" => truncate,
+            "abs" => abs [$abs],
+            "sign" => sign [RowFlags::DEFINITE],
+            "floor" => floor [RowFlags::DEFINITE],
+            "ceiling" => ceiling [RowFlags::DEFINITE],
+            "round" => round [RowFlags::DEFINITE_MULTI],
+            "truncate" => truncate [RowFlags::DEFINITE],
         ]
     };
 }
 
-pub(super) static INT_ROWS: &[MethodRow] = real_rows!("Int");
-pub(super) static NUM_ROWS: &[MethodRow] = real_rows!("Num");
-pub(super) static RAT_ROWS: &[MethodRow] = real_rows!("Rat");
-pub(super) static FAT_RAT_ROWS: &[MethodRow] = real_rows!("FatRat");
+pub(super) static INT_ROWS: &[MethodRow] = real_rows!("Int", RowFlags::DEFINITE);
+pub(super) static NUM_ROWS: &[MethodRow] = real_rows!("Num", RowFlags::DEFINITE);
+pub(super) static RAT_ROWS: &[MethodRow] = real_rows!("Rat", RowFlags::NONE);
+pub(super) static FAT_RAT_ROWS: &[MethodRow] = real_rows!("FatRat", RowFlags::NONE);
 pub(super) static COMPLEX_ROWS: &[MethodRow] = rows!["Complex":
-    "abs" => abs,
-    "floor" => floor,
-    "ceiling" => ceiling,
-    "round" => round,
-    "truncate" => truncate,
+    "abs" => abs [RowFlags::NONE],
+    "floor" => floor [RowFlags::DEFINITE],
+    "ceiling" => ceiling [RowFlags::DEFINITE],
+    "round" => round [RowFlags::DEFINITE_MULTI],
+    "truncate" => truncate [RowFlags::DEFINITE],
 ];
 
 /// The error a row's handler raises for a receiver that is not a number. A

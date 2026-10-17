@@ -21,11 +21,29 @@ macro_rules! row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row!("Numeric", 0, numeric_row, RowFlags::NONE, &[]),
+    row!(
+        "Numeric",
+        0,
+        numeric_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &[]
+    ),
     row!("child", 1, child_row, RowFlags::ANY_ARGS, &["secure"]),
-    row!("resolve", 0, resolve_row, RowFlags::NONE, &["completely"]),
-    row!("dir", 0, dir_row, RowFlags::NONE, &["test"]),
-    row!("watch", 0, watch_row, RowFlags::NONE, &[]),
+    row!(
+        "resolve",
+        0,
+        resolve_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &["completely"]
+    ),
+    row!("dir", 0, dir_row, RowFlags::DEFINITE_MULTI, &["test"]),
+    row!(
+        "watch",
+        0,
+        watch_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &[]
+    ),
 ];
 
 /// `IO::Path.Numeric`: the basename as a number, or a `Failure`.

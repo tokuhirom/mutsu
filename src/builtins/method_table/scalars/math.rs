@@ -22,12 +22,15 @@ type ComplexFn = fn(f64, f64) -> (f64, f64);
 /// A zero-argument row.
 macro_rules! pure {
     ($owner:literal, $name:literal, $handler:ident) => {
+        pure!($owner, $name, $handler, RowFlags::NONE)
+    };
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Pure($handler),
-            flags: RowFlags::NONE,
+            flags: $flags,
             named: &[],
         }
     };
@@ -49,9 +52,11 @@ macro_rules! narrow {
 }
 
 /// The rows every owner of the family has: the 29 unary methods, then the
-/// owner's `$extra` rows.
+/// owner's `$extra` rows. `exp`, `log` and `sqrt` are `multi`s whose every
+/// candidate takes a defined invocant (`Int.sqrt` is `X::Multi::NoMatch`), and
+/// so are `log2` and `log10` except on `Cool` (`$log2` is their flag).
 macro_rules! math_rows {
-    ($owner:literal; $($extra:expr),* $(,)?) => {
+    ($owner:literal, $log2:expr; $($extra:expr),* $(,)?) => {
         &[
             pure!($owner, "sin", sin),
             pure!($owner, "cos", cos),
@@ -77,11 +82,11 @@ macro_rules! math_rows {
             pure!($owner, "asech", asech),
             pure!($owner, "acosech", acosech),
             pure!($owner, "acotanh", acotanh),
-            pure!($owner, "exp", exp),
-            pure!($owner, "log", log),
-            pure!($owner, "log2", log2),
-            pure!($owner, "log10", log10),
-            pure!($owner, "sqrt", sqrt),
+            pure!($owner, "exp", exp, RowFlags::DEFINITE_MULTI),
+            pure!($owner, "log", log, RowFlags::DEFINITE_MULTI),
+            pure!($owner, "log2", log2, $log2),
+            pure!($owner, "log10", log10, $log2),
+            pure!($owner, "sqrt", sqrt, RowFlags::DEFINITE_MULTI),
             $($extra),*
         ]
     };
@@ -90,26 +95,32 @@ macro_rules! math_rows {
 /// The rows of a real owner (`Int`, `Num`, `Rat`): the family plus `cis`,
 /// `atan2` and `unpolar`, which a `Complex` has no `Real`-style form of.
 macro_rules! real_math_rows {
-    ($owner:literal; $($extra:expr),* $(,)?) => {
-        math_rows!($owner;
+    ($owner:literal, $log2:expr; $($extra:expr),* $(,)?) => {
+        math_rows!($owner, $log2;
             pure!($owner, "cis", cis),
             pure!($owner, "atan2", atan2),
             narrow!($owner, "atan2", 1, atan2_1),
             narrow!($owner, "exp", 1, exp_1),
             narrow!($owner, "log", 1, log_1),
-            narrow!($owner, "roots", 1, roots),
+            // Rakudo refuses a type object inside the method (`Int.roots(2)`).
+            MethodRow {
+                flags: RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+                ..narrow!($owner, "roots", 1, roots)
+            },
             narrow!($owner, "unpolar", 1, unpolar),
             $($extra),*
         )
     };
 }
 
-pub(super) static INT_ROWS: &[MethodRow] =
-    real_math_rows!("Int"; narrow!("Int", "expmod", 2, expmod));
-pub(super) static NUM_ROWS: &[MethodRow] = real_math_rows!("Num";);
-pub(super) static RAT_ROWS: &[MethodRow] = real_math_rows!("Rat";);
-pub(super) static COOL_ROWS: &[MethodRow] = real_math_rows!("Cool";);
-pub(super) static COMPLEX_ROWS: &[MethodRow] = math_rows!("Complex";
+pub(super) static INT_ROWS: &[MethodRow] = real_math_rows!("Int", RowFlags::DEFINITE_MULTI; MethodRow {
+    flags: RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+    ..narrow!("Int", "expmod", 2, expmod)
+});
+pub(super) static NUM_ROWS: &[MethodRow] = real_math_rows!("Num", RowFlags::DEFINITE_MULTI;);
+pub(super) static RAT_ROWS: &[MethodRow] = real_math_rows!("Rat", RowFlags::DEFINITE_MULTI;);
+pub(super) static COOL_ROWS: &[MethodRow] = real_math_rows!("Cool", RowFlags::NONE;);
+pub(super) static COMPLEX_ROWS: &[MethodRow] = math_rows!("Complex", RowFlags::DEFINITE_MULTI;
     pure!("Complex", "cis", cis),
     pure!("Complex", "polar", polar),
     narrow!("Complex", "exp", 1, exp_1),

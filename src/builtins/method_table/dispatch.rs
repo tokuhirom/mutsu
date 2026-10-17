@@ -126,17 +126,35 @@ pub(crate) fn invoke_owner(
     let method = Symbol::intern(method);
     let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
     let arity = args.len() - named_count;
-    let id = owners
+    let Some(id) = owners
         .iter()
-        .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))?;
+        .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))
+    else {
+        // The invocant binds before the arguments do: a `:D` row of another
+        // arity still refuses a type object (`Supply.start`).
+        let target = target();
+        let crate::value::ValueView::Package(name) = target.view() else {
+            return None;
+        };
+        let refusal = owners.iter().find_map(|owner| {
+            (0..=7).find_map(|arity| {
+                let row = row(super::owner_row(Symbol::intern(owner), method, arity)?);
+                (!row.flags.contains(RowFlags::TYPE_OBJECT_OK))
+                    .then(|| row.type_object_refusal(name.as_str()))
+                    .flatten()
+            })
+        })?;
+        return Some(Err(refusal));
+    };
     let row = row(id);
     let target = target();
     // A type object reaches only a row that admits one, as through the guard
     // step: an instance row's handler never sees one (ADR-11276 §9.123).
     if !row.flags.contains(RowFlags::TYPE_OBJECT_OK)
-        && matches!(target.view(), crate::value::ValueView::Package(_))
+        && let crate::value::ValueView::Package(name) = target.view()
     {
-        return None;
+        // A `:D` invocant refuses it (`X::NYI.throw`).
+        return row.type_object_refusal(name.as_str()).map(Err);
     }
     if named_count == 0 {
         return call(row, Some(interp), &target, args, Named::NONE).map(|(result, _)| result);
@@ -343,7 +361,30 @@ fn dispatch(
     let payload;
     let allomorph = target;
     let (target, id) = match Receiver::of_settled(target) {
-        Some(receiver) => (target, super::resolve(receiver, method, arity)?),
+        Some(receiver) => match super::resolve(receiver, method, arity) {
+            Some(id) => (target, id),
+            None => {
+                let refusal = type_object_refusal(receiver, target, method, arity)?;
+                if let Some(interp) = interp.as_deref_mut()
+                    && !allow(interp)
+                {
+                    return None;
+                }
+                return Some((Err(refusal), false));
+            }
+        },
+        // A type object with no shape of its own whose instances have one
+        // (`UInt`, the one built-in subset, is an `Int`; `IO::Path::Unix` is an
+        // `IO::Path`) is refused by the rows its instances reach.
+        None if let Some(shape) = instance_shape_of_type_object(target) => {
+            let refusal = type_object_refusal(Receiver::type_object(shape), target, method, arity)?;
+            if let Some(interp) = interp.as_deref_mut()
+                && !allow(interp)
+            {
+                return None;
+            }
+            return Some((Err(refusal), false));
+        }
         // The native-base resolution (§9.79): an instance of a user class
         // deriving from a built-in scalar type has no shape of its own, and is
         // answered by the rows of its payload's shape, the payload as invocant.
@@ -386,6 +427,47 @@ fn dispatch(
         return None;
     }
     call(row, interp, target, &positional, Named::new(&named))
+}
+
+/// The refusal a type object `receiver` gets for a call no row admitting a
+/// type object answers: the one of the row an instance of its shape reaches,
+/// when that row's invocant is `:D` (`RowFlags::DEFINITE`,
+/// `RowFlags::DEFINITE_MULTI`). `None` for an instance receiver or a row that
+/// says nothing about a type object.
+// Cost: O(1) to find the row (one hash lookup), plus the message's.
+fn type_object_refusal(
+    receiver: Receiver,
+    target: &Value,
+    method: Symbol,
+    arity: usize,
+) -> Option<RuntimeError> {
+    if !receiver.type_object {
+        return None;
+    }
+    let crate::value::ValueView::Package(name) = target.view() else {
+        return None;
+    };
+    // The invocant binds before the arguments do, so a row of any arity
+    // refuses the type object (`IO::Path.split` with no argument).
+    let instance = Receiver::instance(receiver.shape);
+    let id = std::iter::once(arity)
+        .chain(0..=7)
+        .find_map(|arity| super::resolve(instance, method, arity))?;
+    row(id).type_object_refusal(name.as_str())
+}
+
+/// The shape of the instances of the type object `target` when it has none
+/// of its own: `UInt` (a subset of `Int`) and the classes whose instances
+/// share a shape (`IO::Path::Unix`).
+// Cost: O(s), s = classes with an instance shape.
+fn instance_shape_of_type_object(target: &Value) -> Option<DispatchShape> {
+    let crate::value::ValueView::Package(name) = target.view() else {
+        return None;
+    };
+    if name == "UInt" {
+        return Some(DispatchShape::Int);
+    }
+    DispatchShape::from_instance_class(name)
 }
 
 /// `Iterable`'s methods a receiver with no shape reaches through the row of
@@ -483,6 +565,15 @@ fn walk_mro(
             };
             arity_rows = true;
             let type_refused = type_object && !row.flags.contains(RowFlags::TYPE_OBJECT_OK);
+            // The nearest candidate with a `:D` invocant refuses the type
+            // object outright (`IO::Path.e`).
+            if type_refused
+                && admitted
+                && let crate::value::ValueView::Package(name) = target.view()
+                && let Some(refusal) = row.type_object_refusal(name.as_str())
+            {
+                return Some(Err(refusal));
+            }
             if type_refused || !named.iter().all(|pair| names_declared(row, pair)) || !admitted {
                 only_type_refused &=
                     type_refused && named.iter().all(|pair| names_declared(row, pair)) && admitted;

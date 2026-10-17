@@ -83,7 +83,16 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
         arity: 0,
         handler: Handler::Interp(cool_ast),
         flags: RowFlags::NONE,
-        named: &[],
+        named: &["compunit"],
+    },
+    // `.AST($slang)`: the localized surface syntax of `L10N::<$slang>`.
+    MethodRow {
+        owner: "Cool",
+        name: "AST",
+        arity: 1,
+        handler: Handler::Interp(cool_ast),
+        flags: RowFlags::ANY_ARGS,
+        named: &["compunit"],
     },
     MethodRow {
         owner: "Cool",
@@ -275,17 +284,25 @@ fn cool_fat_rat(target: &Value, _args: &[Value]) -> Option<Result<Value, Runtime
 /// tree (ADR-0010; ADR-11276 §9.96). A `Match` parses its matched text. An
 /// interpreter row: the parse scans the modules the source `use`s with this
 /// interpreter's module search paths (`Interpreter::str_ast_with_paths`).
+/// `:compunit` wraps the tree in a `RakuAST::CompUnit`; a `$slang` argument
+/// parses the localized syntax of `L10N::<$slang>`
+/// (`Interpreter::str_ast_with_slang`).
 // Cost: O(n), n = chars of the source (one parse), plus the `use`d modules' scan.
 fn cool_ast(
     interp: &mut Interpreter,
     target: &Value,
-    _args: &[Value],
-    _named: Named<'_>,
+    args: &[Value],
+    named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     if matches!(target.view(), ValueView::Package(_)) {
         return None;
     }
-    Some(interp.str_ast_with_paths(&target.to_string_value(), false))
+    let source = target.to_string_value();
+    if let [slang] = args {
+        return Some(interp.str_ast_with_slang(&source, slang));
+    }
+    let compunit = named.get("compunit").is_some_and(Value::truthy);
+    Some(interp.str_ast_with_paths(&source, compunit))
 }
 
 /// `Cool.UInt`: `.Int`, then the range check. An interpreter row: a `Complex`

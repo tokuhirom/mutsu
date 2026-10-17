@@ -203,11 +203,11 @@ fn backtrace(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErr
     Some(Ok(attr(target, "backtrace").unwrap_or(Value::NIL)))
 }
 
-/// `Exception.resume`: a warning's `CX::Warn` is resumable; the signal unwinds to
-/// the handler that resumes it. Any other exception declines.
+/// `Exception.resume`: the signal unwinds to the handler, which resumes a
+/// resumable exception (a warning's `CX::Warn`) and refuses any other.
 // Cost: O(1).
-fn resume(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    (class_of(target) == "CX::Warn").then(|| Err(RuntimeError::resume_signal()))
+fn resume(_target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    Some(Err(RuntimeError::resume_signal()))
 }
 
 /// `Exception.throw`: raise the exception itself. Only the core `Exception` and

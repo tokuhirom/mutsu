@@ -32,7 +32,8 @@ macro_rules! stat_rows {
                     name: $name,
                     arity: 0,
                     handler: Handler::Interp($handler),
-                    flags: RowFlags::NONE,
+                    // `IO::Path:D:`: a type object is refused (`IO::Path.e`).
+                    flags: RowFlags::DEFINITE,
                     named: &[],
                 },
             )*

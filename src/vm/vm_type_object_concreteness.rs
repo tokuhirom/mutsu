@@ -8,19 +8,6 @@
 
 use super::*;
 
-/// `IO::Path` methods declared `IO::Path:D:` in Rakudo — the ones for which
-/// `raku -e 'IO::Path.<name>'` raises `X::Parameter::InvalidConcreteness`.
-/// Deliberately excluded: the `multi` ones (`absolute`, `extension`, `parent`,
-/// `slurp`, `spurt`, `chdir`, `dir`: `X::Multi::NoMatch`), the ones that die
-/// on an attribute lookup (`X::AdHoc`), and the ones that answer on the type
-/// object (`IO`, `Bool`, `Str`, `gist`, `raku`).
-const IO_PATH_CONCRETE_METHODS: &[&str] = &[
-    "accessed", "add", "basename", "changed", "cleanup", "comb", "d", "dirname", "e", "f", "Int",
-    "l", "lines", "mkdir", "mode", "modified", "move", "Numeric", "open", "pred", "r", "relative",
-    "resolve", "rmdir", "rw", "rwx", "s", "split", "succ", "unlink", "volume", "w", "watch",
-    "words", "x", "z",
-];
-
 /// The built-in `IO::Path` type objects: `IO::Path` and its per-OS subclasses.
 /// (`IO::Path::Parts` is a separate class, not a subclass.)
 fn is_builtin_io_path_type(name: &str) -> bool {
@@ -32,12 +19,11 @@ fn is_builtin_io_path_type(name: &str) -> bool {
 
 /// `X::Parameter::InvalidConcreteness` for numeric *context* (not an explicit
 /// method call) on a built-in `IO::Path` type object: `IO::Path + 1`,
-/// `+IO::Path`, `IO::Path * 2`. Shares `IO_PATH_CONCRETE_METHODS` with
-/// [`Interpreter::type_object_concreteness_error`] (the explicit-method-call
-/// check) rather than hardcoding "Numeric" again, so the two stay in sync —
-/// see #9629.
+/// `+IO::Path`, `IO::Path * 2`: `IO::Path.Numeric`'s invocant is `:D` (its row
+/// is `RowFlags::DEFINITE`, which refuses the explicit method call), see #9629.
+// Cost: O(1).
 pub(super) fn io_path_numeric_concreteness_error(type_name: &str) -> Option<RuntimeError> {
-    if is_builtin_io_path_type(type_name) && IO_PATH_CONCRETE_METHODS.contains(&"Numeric") {
+    if is_builtin_io_path_type(type_name) {
         Some(RuntimeError::parameter_invalid_concreteness(
             "IO::Path", type_name, "Numeric", "", true, true,
         ))
@@ -52,10 +38,12 @@ impl Interpreter {
     ///
     /// - `fail`/`die`/`throw`/`rethrow`/`resume` (no args) on an Exception
     ///   type object (`X::NYI.throw`).
-    /// - An `IO::Path:D:` method on a built-in `IO::Path` type object
-    ///   (`IO::Path.e`; `Nil.IO` / `Str.IO` return that type object).
-    // Cost: O(1) for IO::Path (a fixed ~36-name table); O(d) for the
-    // Exception case, d = the class's parent-chain depth.
+    ///
+    /// - `Int` on a built-in `IO::Path` type object, which is numeric context.
+    ///
+    /// `IO::Path`'s own `:D` methods (`IO::Path.e`) are refused by their rows
+    /// (`RowFlags::DEFINITE`).
+    // Cost: O(d), d = the class's parent-chain depth.
     pub(super) fn type_object_concreteness_error(
         &self,
         method: &str,
@@ -66,10 +54,10 @@ impl Interpreter {
             return None;
         };
         let name = type_name.resolve();
-        if is_builtin_io_path_type(&name) && IO_PATH_CONCRETE_METHODS.contains(&method) {
-            return Some(RuntimeError::parameter_invalid_concreteness(
-                "IO::Path", &name, method, "", true, true,
-            ));
+        // `Mu.Int` is `self.Numeric.Int`: numeric context, which a built-in
+        // `IO::Path` type object refuses.
+        if method == "Int" && args.is_empty() {
+            return io_path_numeric_concreteness_error(&name);
         }
         if !matches!(method, "fail" | "die" | "throw" | "rethrow" | "resume") || !args.is_empty() {
             return None;
