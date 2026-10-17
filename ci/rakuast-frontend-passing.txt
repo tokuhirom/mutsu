@@ -3708,6 +3708,7 @@ t/oo/construct/clone-preserves-deleted-slot.t
 t/oo/construct/construction-captured-outer-coherence.t
 t/oo/construct/construction-probe-memos.t
 t/oo/construct/construction-submethod-compiled.t
+t/oo/construct/constructor-late-rows.t
 t/oo/construct/constructor-positional.t
 t/oo/construct/control-construct-value-position.t
 t/oo/construct/control-constructs-in-expression-position.t
@@ -3962,6 +3963,7 @@ t/oo/method/method-env-merge-unchanged-globals.t
 t/oo/method/method-explicit-invocant.t
 t/oo/method/method-in-nested-block-of-class-body.t
 t/oo/method/method-in-nested-block-of-unit-class.t
+t/oo/method/method-late-rows-cascade-one.t
 t/oo/method/method-late-rows.t
 t/oo/method/method-leave-tail-if-value.t
 t/oo/method/method-literal-invocant-excluded-from-positionals.t
@@ -4963,6 +4965,7 @@ t/rakuast/rakuast-role.t
 t/rakuast/rakuast-routine-trait-order.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sequential-interpolation.t
+t/rakuast/rakuast-shaped-array-parameter.t
 t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-sigilless-declarator-init.t
 t/rakuast/rakuast-signature-decl.t
@@ -6353,6 +6356,7 @@ t/routines/signature/param-default-before-return-arrow.t
 t/routines/signature/param-default-bool-conforms-int.t
 t/routines/signature/param-default-keeps-code-lexicals.t
 t/routines/signature/param-default-self-scoping.t
+t/routines/signature/param-exprs-compile-once.t
 t/routines/signature/param-invalid-type-suggestions.t
 t/routines/signature/param-is-required.t
 t/routines/signature/param-itemize-on-bind.t
@@ -7697,6 +7701,7 @@ t/vm/writeback/container-identity-whole-assign.t
 t/vm/writeback/container-lexical-declarator-matrix.t
 t/vm/writeback/container-rebuild-preserves-identity.t
 t/vm/writeback/container-ref-tag-frame-leak.t
+t/vm/writeback/container-slot-read-repairs.t
 t/vm/writeback/custom-how-type-check-writeback-coherence.t
 t/vm/writeback/delete-slot-writeback.t
 t/vm/writeback/dualstore-slot-local-gate.t

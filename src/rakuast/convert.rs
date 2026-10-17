@@ -5836,8 +5836,6 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         Some("invocant marker without an invocant")
     } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy) {
         Some("non-scalar invocant parameter")
-    } else if pd.shape_constraints.is_some() {
-        Some("shaped array parameter")
     } else if pd.outer_sub_signature.is_some() && !(pd.named && pd.named_alias) {
         Some("parameter with an outer sub-signature")
     } else {
@@ -6064,6 +6062,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         ));
     }
     super::parameter_signature::attach_constraint(&mut node, pd, type_setting)?;
+    if let Some(shape) = super::parameter_shape::convert(pd)? {
+        node.fields.push(node_field(Some("array-shape"), shape));
+    }
     // `$x is copy` -> `traits => (Trait::Is(name => Name.from-identifier("copy")),)`,
     // after every other field (measured on 2026.09).
     if let Some(traits) = parameter_traits(pd)? {

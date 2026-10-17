@@ -257,6 +257,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("optional", Absent::TypeObject("Bool")),
             ("default", EXPRESSION),
             ("where", EXPRESSION),
+            ("array-shape", Absent::TypeObject("RakuAST::Statement")),
             ("slurpy", Absent::TypeObject("RakuAST::Parameter::Slurpy")),
             ("sub-signature", Absent::TypeObject("RakuAST::Signature")),
             ("traits", Absent::EmptyList),

@@ -2344,6 +2344,13 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         };
         def.where_constraint = Some(Box::new(lower_expr(where_node)?));
     }
+    if let Some(shape) = parameter
+        .fields
+        .iter()
+        .find(|f| f.name == Some("array-shape"))
+    {
+        def.shape_constraints = Some(super::parameter_shape::lower(child_node(&shape.value)?)?);
+    }
     if let Some(sub_signature) = parameter
         .fields
         .iter()
