@@ -164,6 +164,16 @@ impl RowFlags {
     /// the row, so the call finds no method, as in Rakudo. The shape tables
     /// are static, so such a row is [`Self::OWNER_ONLY`].
     pub(crate) const REVISION_E: RowFlags = RowFlags(1 << 12);
+    /// The invocant is `:D` (Rakudo's `method abs(Int:D:)`): a type object
+    /// that reaches the row is refused with `X::Parameter::InvalidConcreteness`
+    /// naming the row's owner, instead of the call going on to another
+    /// candidate (`Int.abs`, `IO::Path.e`). Without the flag a type object
+    /// skips the row. Implies nothing for an instance.
+    pub(crate) const DEFINITE: RowFlags = RowFlags(1 << 13);
+    /// Every candidate of the method is `:D` (`multi method sqrt(Int:D:)`): a
+    /// type object that reaches the row is refused with `X::Multi::NoMatch`,
+    /// as Rakudo's multi dispatch finds no candidate (`Int.sqrt`).
+    pub(crate) const DEFINITE_MULTI: RowFlags = RowFlags(1 << 14);
 
     /// The flags of both.
     // Cost: O(1).
@@ -223,6 +233,27 @@ impl MethodRow {
             self.arity..=7
         } else {
             self.arity..=self.arity
+        }
+    }
+
+    /// The error the type object `type_name` gets from this row, when its
+    /// invocant is `:D` ([`RowFlags::DEFINITE`], [`RowFlags::DEFINITE_MULTI`]);
+    /// `None` when the row says nothing about a type object, so the call goes
+    /// on to the next candidate.
+    // Cost: O(n), n = chars of the message.
+    pub(crate) fn type_object_refusal(&self, type_name: &str) -> Option<RuntimeError> {
+        if self.flags.contains(RowFlags::DEFINITE) {
+            Some(RuntimeError::parameter_invalid_concreteness(
+                self.owner, type_name, self.name, "self", true, true,
+            ))
+        } else if self.flags.contains(RowFlags::DEFINITE_MULTI) {
+            Some(
+                crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+                    self.name, type_name, false, "", &[],
+                ),
+            )
+        } else {
+            None
         }
     }
 }

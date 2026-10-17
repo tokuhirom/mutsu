@@ -19,7 +19,10 @@ const fn row(owner: &'static str) -> MethodRow {
         arity: 0,
         handler: Handler::Interp(polymod),
         // `*@mods`: any number of divisors, each a number or a list of them.
-        flags: RowFlags::SLURPY.or(RowFlags::ANY_ARGS),
+        // `Real:D:` refuses a type object (`Int.polymod(10)`).
+        flags: RowFlags::SLURPY
+            .or(RowFlags::ANY_ARGS)
+            .or(RowFlags::DEFINITE),
         named: &[],
     }
 }

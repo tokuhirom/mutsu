@@ -10,7 +10,8 @@
 //! for a number, and the cascade arms (which still answer `Str`, the
 //! aggregates, `Bool`-like enums and the type objects) call it for the numeric
 //! views before they look at anything else. `Rat` and `FatRat` also take an
-//! `epsilon` (`Real $epsilon = 1e-6`) that matters only to a `Num`.
+//! `epsilon` (`Real $epsilon = 1e-6`) that matters only to a `Num`. Their
+//! invocant is `:D`, so a type object is refused (`Int.Rat`).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView, make_rat};
@@ -22,12 +23,15 @@ const DEFAULT_EPSILON: f64 = 1e-6;
 /// Zero-argument rows with a handler that answers every shape of its owner.
 macro_rules! pure {
     ($owner:literal, $name:literal, $handler:ident) => {
+        pure!($owner, $name, $handler, RowFlags::NONE)
+    };
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Pure($handler),
-            flags: RowFlags::NONE,
+            flags: $flags,
             named: &[],
         }
     };
@@ -66,8 +70,8 @@ macro_rules! with_epsilon {
 pub(super) static INT_ROWS: &[MethodRow] = &[
     pure!("Int", "Numeric", numeric),
     pure!("Int", "Real", real),
-    pure!("Int", "Rat", rat),
-    pure!("Int", "FatRat", fat_rat),
+    pure!("Int", "Rat", rat, RowFlags::DEFINITE),
+    pure!("Int", "FatRat", fat_rat, RowFlags::DEFINITE),
     complex_row!("Int"),
     with_epsilon!("Int", "Rat", rat_with),
     with_epsilon!("Int", "FatRat", fat_rat_with),
@@ -75,8 +79,8 @@ pub(super) static INT_ROWS: &[MethodRow] = &[
 pub(super) static NUM_ROWS: &[MethodRow] = &[
     pure!("Num", "Numeric", numeric),
     pure!("Num", "Real", real),
-    pure!("Num", "Rat", rat),
-    pure!("Num", "FatRat", fat_rat),
+    pure!("Num", "Rat", rat, RowFlags::DEFINITE),
+    pure!("Num", "FatRat", fat_rat, RowFlags::DEFINITE),
     complex_row!("Num"),
     with_epsilon!("Num", "Rat", rat_with),
     with_epsilon!("Num", "FatRat", fat_rat_with),
@@ -84,8 +88,8 @@ pub(super) static NUM_ROWS: &[MethodRow] = &[
 pub(super) static RAT_ROWS: &[MethodRow] = &[
     pure!("Rat", "Numeric", numeric),
     pure!("Rat", "Real", real),
-    pure!("Rat", "Rat", rat),
-    pure!("Rat", "FatRat", fat_rat),
+    pure!("Rat", "Rat", rat, RowFlags::DEFINITE),
+    pure!("Rat", "FatRat", fat_rat, RowFlags::DEFINITE),
     complex_row!("Rat"),
     with_epsilon!("Rat", "Rat", rat_with),
     with_epsilon!("Rat", "FatRat", fat_rat_with),
