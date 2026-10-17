@@ -296,3 +296,18 @@ only.e	Format	AST	CALL-ME	Callable	arity	count	directives	handle-iterator	new	re
 declared.e	Formatter	AST	CODE	fetch	new
 methods.e	Formatter	AST	CODE	POPULATE	fetch	new
 only.e	Formatter	AST	CODE	fetch	new
+declared	Compiler	Str	auth	backend	codename	desc	flavor	gist	id	name	release	signature	supports-op	verbose-config	version
+methods	Compiler	POPULATE	Str	TWEAK	auth	backend	codename	desc	flavor	gist	id	name	release	signature	supports-op	verbose-config	version
+only	Compiler	Str	auth	backend	codename	desc	flavor	name	release	signature	supports-op	verbose-config	version
+declared	Distro	Str	auth	cur-sep	desc	gist	is-win	name	path-sep	release	signature	version
+methods	Distro	POPULATE	Str	TWEAK	auth	cur-sep	desc	gist	is-win	name	path-sep	release	signature	version
+only	Distro	Str	auth	cur-sep	desc	is-win	name	path-sep	release	signature	version
+declared	Kernel	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	gist	hardware	hostname	name	raku	release	signal	signals	signature	total-memory	version
+methods	Kernel	POPULATE	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	gist	hardware	hostname	name	raku	release	signal	signals	signature	total-memory	version
+only	Kernel	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	hardware	hostname	name	release	signals	signature	total-memory	version
+declared	Raku	DISTROnames	KERNELnames	Str	VMnames	auth	compiler	desc	gist	legacy	name	signature	version
+methods	Raku	DISTROnames	KERNELnames	POPULATE	Str	TWEAK	VMnames	auth	compiler	desc	gist	legacy	name	signature	version
+only	Raku	DISTROnames	KERNELnames	Str	VMnames	auth	compiler	desc	legacy	name	signature	version
+declared	VM	Str	auth	config	desc	gist	name	osname	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
+methods	VM	POPULATE	Str	TWEAK	auth	config	desc	gist	name	osname	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
+only	VM	Str	auth	config	desc	name	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version

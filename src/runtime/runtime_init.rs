@@ -1180,24 +1180,10 @@ impl Interpreter {
             "Distro".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
-                native_methods: [
-                    "name",
-                    "auth",
-                    "desc",
-                    "release",
-                    "path-sep",
-                    "is-win",
-                    "version",
-                    "signature",
-                    "gist",
-                    "Str",
-                    "raku",
-                    "perl",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+                attributes: systemic_attributes(&["release", "path-sep", "name", "auth", "version", "signature", "desc"]),
+                native_methods: crate::builtins::method_table::systemic_names("Distro")
+                    .map(str::to_string)
+                    .collect(),
                 mro: sym_mro(&["Distro"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -1218,27 +1204,10 @@ impl Interpreter {
                 identity_name.to_string(),
                 ClassDef {
                     parents: Vec::new(),
-                    attributes: Vec::new(),
-                    native_methods: [
-                        "DISTROnames",
-                        "KERNELnames",
-                        "compiler",
-                        "backend",
-                        "name",
-                        "auth",
-                        "version",
-                        "signature",
-                        "desc",
-                        "gist",
-                        "raku",
-                        "Str",
-                        "release",
-                        "codename",
-                        "id",
-                    ]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
+                    attributes: systemic_attributes(&["compiler", "name", "auth", "version", "signature", "desc"]),
+                    native_methods: crate::builtins::method_table::systemic_names(identity_name)
+                        .map(str::to_string)
+                        .collect(),
                     mro: sym_mro(&[identity_name]),
                     attribute_types: HashMap::new(),
                     attribute_smileys: HashMap::new(),
@@ -1255,30 +1224,9 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: [
-                    "name",
-                    "auth",
-                    "version",
-                    "signature",
-                    "desc",
-                    "release",
-                    "hardware",
-                    "arch",
-                    "bits",
-                    "hostname",
-                    "signals",
-                    "signal",
-                    "cpu-cores",
-                    "free-memory",
-                    "total-memory",
-                    "endian",
-                    "gist",
-                    "raku",
-                    "Str",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+                native_methods: crate::builtins::method_table::systemic_names("Kernel")
+                    .map(str::to_string)
+                    .collect(),
                 mro: sym_mro(&["Kernel"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -1293,21 +1241,10 @@ impl Interpreter {
             "VM".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
-                native_methods: [
-                    "name",
-                    "auth",
-                    "version",
-                    "osname",
-                    "precomp-ext",
-                    "precomp-target",
-                    "request-garbage-collection",
-                    "gist",
-                    "Str",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+                attributes: systemic_attributes(&["config", "prefix", "precomp-ext", "precomp-target", "name", "auth", "version", "signature", "desc"]),
+                native_methods: crate::builtins::method_table::systemic_names("VM")
+                    .map(str::to_string)
+                    .collect(),
                 mro: sym_mro(&["VM"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -1322,25 +1259,10 @@ impl Interpreter {
             "Compiler".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
-                native_methods: [
-                    "name",
-                    "auth",
-                    "version",
-                    "signature",
-                    "desc",
-                    "gist",
-                    "raku",
-                    "Str",
-                    "release",
-                    "codename",
-                    "id",
-                    "backend",
-                    "verbose-config",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+                attributes: systemic_attributes(&["id", "release", "codename", "name", "auth", "version", "signature", "desc"]),
+                native_methods: crate::builtins::method_table::systemic_names("Compiler")
+                    .map(str::to_string)
+                    .collect(),
                 mro: sym_mro(&["Compiler"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -3327,4 +3249,31 @@ impl Interpreter {
         }
         interpreter
     }
+}
+
+/// The attributes of a `Systemic` class (`Distro`, `VM`, `Raku`, `Compiler`),
+/// in Rakudo's order, so `Mu.raku` renders them as Rakudo does
+/// (`Distro.new(release => "24.04", ...)`); the methods that read them are
+/// rows (ADR-11276 §9.155).
+fn systemic_attributes(names: &[&str]) -> Vec<ClassAttributeDef> {
+    names
+        .iter()
+        .map(|name| ClassAttributeDef {
+            name: (*name).to_string(),
+            is_public: true,
+            default: None,
+            captured_env: None,
+            captured_unit: None,
+            declaring_package: None,
+            is_rw: false,
+            is_required: None,
+            sigil: '$',
+            type_constraint: None,
+            where_constraint: None,
+            declared_shape: None,
+            source_line: None,
+            source_file: None,
+            default_is_seed: false,
+        })
+        .collect()
 }

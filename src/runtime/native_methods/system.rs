@@ -1,145 +1,8 @@
 use crate::runtime::*;
 use crate::symbol::Symbol;
-use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
-    // --- Distro ---
-
-    pub(in crate::runtime) fn native_distro(
-        &self,
-        attributes: &AttrMap,
-        method: &str,
-    ) -> Result<Value, RuntimeError> {
-        match method {
-            "name" | "auth" | "desc" | "release" | "path-sep" | "is-win" | "version"
-            | "signature" => Ok(attributes.get(method).cloned().unwrap_or(Value::NIL)),
-            "gist" => {
-                let n = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let v = attributes
-                    .get("version")
-                    .map(|v| {
-                        if let ValueView::Version { parts, .. } = v.view() {
-                            Value::version_parts_to_string(parts)
-                        } else {
-                            v.to_string_value()
-                        }
-                    })
-                    .unwrap_or_default();
-                Ok(Value::str(format!("{} ({})", n, v)))
-            }
-            "Str" => {
-                let n = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Ok(Value::str(n))
-            }
-            "raku" => {
-                let release = attributes
-                    .get("release")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let path_sep = attributes
-                    .get("path-sep")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let n = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let auth = attributes
-                    .get("auth")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let ver = attributes
-                    .get("version")
-                    .map(|v| {
-                        if let ValueView::Version { parts, .. } = v.view() {
-                            format!("v{}", Value::version_parts_to_string(parts))
-                        } else {
-                            v.to_string_value()
-                        }
-                    })
-                    .unwrap_or_default();
-                let desc = attributes
-                    .get("desc")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Ok(Value::str(format!(
-                    "Distro.new(release => \"{}\", path-sep => \"{}\", name => \"{}\", auth => \"{}\", version => {}, signature => Blob, desc => \"{}\")",
-                    release, path_sep, n, auth, ver, desc
-                )))
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Distro",
-                method
-            ))),
-        }
-    }
-
-    // --- Kernel ---
-
-    pub(crate) fn native_kernel(
-        &self,
-        attributes: &AttrMap,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        match method {
-            "name" | "auth" | "desc" | "release" | "hardware" | "arch" | "bits" | "hostname"
-            | "version" | "signature" | "signals" | "endian" => {
-                Ok(attributes.get(method).cloned().unwrap_or(Value::NIL))
-            }
-            // Cost: O(1) plus one syscall.
-            "cpu-cores" => Ok(Value::int(crate::runtime::sys_resources::cpu_core_count())),
-            // Cost: O(f), f = size of /proc/meminfo.
-            "free-memory" => Ok(Value::int(crate::runtime::sys_resources::free_memory())),
-            // Cost: O(f), f = size of /proc/meminfo.
-            "total-memory" => Ok(Value::int(crate::runtime::sys_resources::total_memory())),
-            "signal" => {
-                // .signal(SIGHUP), .signal("SIGHUP"), .signal("HUP"), .signal(Int)
-                let arg = args.first().cloned().unwrap_or(Value::NIL);
-                Ok(Value::int(match arg.view() {
-                    ValueView::Int(n) => n,
-                    ValueView::Str(s) => crate::runtime::signal_table::signal_number(&s),
-                    ValueView::Enum { key, .. } => {
-                        crate::runtime::signal_table::signal_number(&key.resolve())
-                    }
-                    _ => 0,
-                }))
-            }
-            "gist" | "Str" => {
-                let n = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Ok(Value::str(n))
-            }
-            "raku" => {
-                let n = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let auth = attributes
-                    .get("auth")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Ok(Value::str(format!(
-                    "Kernel.new(release => Str, hardware => Str, arch => Str, bits => Int, name => \"{}\", auth => \"{}\", version => Version, signature => Blob, desc => Str)",
-                    n, auth
-                )))
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Kernel",
-                method
-            ))),
-        }
-    }
-
     // --- VM ---
 
     /// `$path.absolute` for a path that need not exist: prepend `$*CWD` when it
@@ -168,92 +31,55 @@ impl Interpreter {
         out.to_string_lossy().to_string()
     }
 
-    pub(in crate::runtime) fn native_vm(
-        &mut self,
-        attributes: &AttrMap,
-        method: &str,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        match method {
-            "name" | "auth" | "version" | "precomp-ext" | "precomp-target" | "prefix" | "desc"
-            | "signature" | "config" | "properties" | "osname" => {
-                Ok(attributes.get(method).cloned().unwrap_or(Value::NIL))
-            }
-            "raku" => {
-                let name = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Ok(Value::str(format!("{}.new(...)", name)))
-            }
-            "request-garbage-collection" => {
-                self.request_garbage_collection()?;
-                Ok(Value::NIL)
-            }
-            "platform-library-name" => {
-                // Convert a library short-name to the OS-specific shared library filename.
-                // e.g. "foo" -> "libfoo.so" on Linux, "libfoo.dylib" on macOS, "foo.dll" on Windows.
-                let name = args
-                    .iter()
-                    .find(|v| !v.is_string_pair_value())
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                // `:version` names an ABI-versioned library. A distribution ships
-                // the versioned file (`libpq.so.5`) and only the `-dev` package
-                // installs the bare `libpq.so` symlink, so a binding that probes
-                // versions — `NativeLibs::Searcher.at-runtime('pq', 'PQstatus', 5)`,
-                // which DBIish's Pg driver uses — finds nothing at all when the
-                // version is dropped. Rakudo appends it after the extension on
-                // Linux and before it on macOS; Windows has no ABI suffix.
-                let version = args
-                    .iter()
-                    .find_map(|v| match v.view() {
-                        ValueView::Pair(key, value) if key.as_str() == "version" => Some(value),
-                        _ => None,
-                    })
-                    .filter(|v| crate::runtime::types::value_is_defined(v))
-                    .map(|v| v.to_string_value())
-                    // `Version.new(5).Str` is `5`, but a `Version` gists as `v5`.
-                    .map(|s| s.strip_prefix('v').unwrap_or(&s).to_string());
-                // Rakudo decorates only the BASENAME and puts the directory back
-                // afterwards: `'/bar/foo'.IO` becomes `/bar/libfoo.so`, not
-                // `lib/bar/foo.so`. A name that carries any directory at all is
-                // additionally made absolute (`'./foo'` -> `$*CWD/libfoo.so`),
-                // which is what makes `NativeLibs`' "load the .so I just built
-                // next to me" idiom work.
-                let path = std::path::Path::new(&name);
-                let basename = path
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| name.clone());
-                let has_dir = basename != name;
-                let platform_name = match (cfg!(target_os = "macos"), cfg!(windows), version) {
-                    (true, _, Some(v)) => format!("lib{basename}.{v}.dylib"),
-                    (true, _, None) => format!("lib{basename}.dylib"),
-                    (_, true, _) => format!("{basename}.dll"),
-                    (_, _, Some(v)) => format!("lib{basename}.so.{v}"),
-                    (_, _, None) => format!("lib{basename}.so"),
-                };
-                let full = if has_dir {
-                    let dir = path.parent().unwrap_or(std::path::Path::new("."));
-                    Self::absolute_lexical_path(&dir.join(&platform_name))
-                } else {
-                    platform_name
-                };
-                Ok(self.make_io_path_instance(&full))
-            }
-            "gist" | "Str" => {
-                let name = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Ok(Value::str(name))
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on VM",
-                method
-            ))),
-        }
+    /// `VM.platform-library-name($name, :$version)`: the OS-specific file name
+    /// of the shared library `$name` (`libfoo.so`, `libfoo.dylib`, `foo.dll`),
+    /// as an `IO::Path`.
+    // Cost: O(n), n = chars of the name.
+    pub(crate) fn platform_library_name(&self, name: &Value, named: &[Value]) -> Value {
+        let name = name.to_string_value();
+        // `:version` names an ABI-versioned library. A distribution ships
+        // the versioned file (`libpq.so.5`) and only the `-dev` package
+        // installs the bare `libpq.so` symlink, so a binding that probes
+        // versions — `NativeLibs::Searcher.at-runtime('pq', 'PQstatus', 5)`,
+        // which DBIish's Pg driver uses — finds nothing at all when the
+        // version is dropped. Rakudo appends it after the extension on
+        // Linux and before it on macOS; Windows has no ABI suffix.
+        let version = named
+            .iter()
+            .find_map(|v| match v.view() {
+                ValueView::Pair(key, value) if key.as_str() == "version" => Some(value),
+                _ => None,
+            })
+            .filter(|v| crate::runtime::types::value_is_defined(v))
+            .map(|v| v.to_string_value())
+            // `Version.new(5).Str` is `5`, but a `Version` gists as `v5`.
+            .map(|s| s.strip_prefix('v').unwrap_or(&s).to_string());
+        // Rakudo decorates only the BASENAME and puts the directory back
+        // afterwards: `'/bar/foo'.IO` becomes `/bar/libfoo.so`, not
+        // `lib/bar/foo.so`. A name that carries any directory at all is
+        // additionally made absolute (`'./foo'` -> `$*CWD/libfoo.so`),
+        // which is what makes `NativeLibs`' "load the .so I just built
+        // next to me" idiom work.
+        let path = std::path::Path::new(&name);
+        let basename = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| name.clone());
+        let has_dir = basename != name;
+        let platform_name = match (cfg!(target_os = "macos"), cfg!(windows), version) {
+            (true, _, Some(v)) => format!("lib{basename}.{v}.dylib"),
+            (true, _, None) => format!("lib{basename}.dylib"),
+            (_, true, _) => format!("{basename}.dll"),
+            (_, _, Some(v)) => format!("lib{basename}.so.{v}"),
+            (_, _, None) => format!("lib{basename}.so"),
+        };
+        let full = if has_dir {
+            let dir = path.parent().unwrap_or(std::path::Path::new("."));
+            Self::absolute_lexical_path(&dir.join(&platform_name))
+        } else {
+            platform_name
+        };
+        self.make_io_path_instance(&full)
     }
 
     // --- Perl ---
@@ -267,7 +93,7 @@ impl Interpreter {
     /// now, then the DESTROY submethods it made due.
     // Cost: one cycle collect (see `gc::collect_on_request`) plus the pending
     // DESTROYs.
-    pub(in crate::runtime) fn request_garbage_collection(&mut self) -> Result<(), RuntimeError> {
+    pub(crate) fn request_garbage_collection(&mut self) -> Result<(), RuntimeError> {
         // Clear persisted closure environments to release stale Instance
         // references that would otherwise prevent DESTROY from firing.
         // This mimics a real GC that would trace live references and
@@ -279,7 +105,7 @@ impl Interpreter {
         self.run_pending_instance_destroys()
     }
 
-    pub(in crate::runtime) fn compiler_id() -> String {
+    pub(crate) fn compiler_id() -> String {
         format!("{}-{}", Self::COMPILER_NAME, env!("CARGO_PKG_VERSION"))
     }
 
@@ -324,69 +150,36 @@ impl Interpreter {
     /// must be backed by a measurement, not raised speculatively.
     pub(in crate::runtime) const RAKUDO_COMPAT_VERSION: &'static str = "2026.07";
 
-    pub(in crate::runtime) fn native_perl(&self, attributes: &AttrMap, method: &str) -> Value {
-        match method {
-            // `Compiler.id` works on the type object (empty attributes) as well as
-            // on an instance, so answer it directly rather than reading the `id`
-            // attribute (which is absent on the bare type object).
-            "id" => Value::str(Self::compiler_id()),
-            "compiler" => {
-                let mut compiler_attrs = HashMap::new();
-                compiler_attrs.insert("name".to_string(), Value::str_from(Self::COMPILER_NAME));
-                compiler_attrs.insert("auth".to_string(), Value::str_from(Self::COMPILER_AUTH));
-                // A Rakudo release date, not the crate version: see
-                // [`Interpreter::RAKUDO_COMPAT_VERSION`]. The build's own
-                // identity lives in `.release` / `.id` just below.
-                compiler_attrs.insert(
-                    "version".to_string(),
-                    Value::version_from_str(Self::RAKUDO_COMPAT_VERSION),
-                );
-                compiler_attrs.insert(
-                    "signature".to_string(),
-                    // The `Blob` type object, as in Rakudo.
-                    Value::package(Symbol::intern("Blob")),
-                );
-                compiler_attrs.insert(
-                    "desc".to_string(),
-                    Value::str_from("mutsu Raku interpreter"),
-                );
-                // mutsu's own release. This is where `.version` used to answer
-                // "which build is this", and it still does.
-                compiler_attrs.insert(
-                    "release".to_string(),
-                    Value::str_from(env!("CARGO_PKG_VERSION")),
-                );
-                compiler_attrs.insert("codename".to_string(), Value::str_from("mutsu"));
-                compiler_attrs.insert("id".to_string(), Value::str(Self::compiler_id()));
-                Value::make_instance(Symbol::intern("Compiler"), compiler_attrs)
-            }
-            "backend" => Value::str_from("mutsu"),
-            "gist" => {
-                let name = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let version = attributes
-                    .get("version")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Value::str(format!("{} ({})", name, version))
-            }
-            "Str" => {
-                let name = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Value::str(name)
-            }
-            "raku" => {
-                let name = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                Value::str(format!("{}.new(...)", name))
-            }
-            _ => attributes.get(method).cloned().unwrap_or(Value::NIL),
-        }
+    /// The `Compiler` object `$*RAKU.compiler` is, and `Compiler.new` copies.
+    // Cost: O(1).
+    pub(crate) fn compiler_instance() -> Value {
+    let mut compiler_attrs = HashMap::new();
+    compiler_attrs.insert("name".to_string(), Value::str_from(Self::COMPILER_NAME));
+    compiler_attrs.insert("auth".to_string(), Value::str_from(Self::COMPILER_AUTH));
+    // A Rakudo release date, not the crate version: see
+    // [`Interpreter::RAKUDO_COMPAT_VERSION`]. The build's own
+    // identity lives in `.release` / `.id` just below.
+    compiler_attrs.insert(
+        "version".to_string(),
+        Value::version_from_str(Self::RAKUDO_COMPAT_VERSION),
+    );
+    compiler_attrs.insert(
+        "signature".to_string(),
+        // The `Blob` type object, as in Rakudo.
+        Value::package(Symbol::intern("Blob")),
+    );
+    compiler_attrs.insert(
+        "desc".to_string(),
+        Value::str_from("mutsu Raku interpreter"),
+    );
+    // mutsu's own release. This is where `.version` used to answer
+    // "which build is this", and it still does.
+    compiler_attrs.insert(
+        "release".to_string(),
+        Value::str_from(env!("CARGO_PKG_VERSION")),
+    );
+    compiler_attrs.insert("codename".to_string(), Value::str_from("mutsu"));
+    compiler_attrs.insert("id".to_string(), Value::str(Self::compiler_id()));
+    Value::make_instance(Symbol::intern("Compiler"), compiler_attrs)
     }
 }
