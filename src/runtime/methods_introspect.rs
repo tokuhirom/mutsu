@@ -1259,7 +1259,7 @@ impl Interpreter {
 
     /// Dispatch .enums method.
     /// Returns a Map (immutable Hash) of variant-name => value pairs.
-    pub(super) fn dispatch_enums(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+    pub(crate) fn dispatch_enums(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
         let type_name_owned = match target.view() {
             ValueView::Package(name) => Some(name.resolve()),
             ValueView::Str(name) => Some(name.to_string()),

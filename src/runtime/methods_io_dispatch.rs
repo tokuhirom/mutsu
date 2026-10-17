@@ -383,23 +383,4 @@ impl Interpreter {
             _ => None,
         }
     }
-
-    pub(super) fn dispatch_default(target: &Value) -> Option<Result<Value, RuntimeError>> {
-        if let Some(def) = Self::value_carried_default(target) {
-            return Some(Ok(def));
-        }
-        if matches!(target.view(), ValueView::Array(..)) {
-            return Some(Ok(Value::package(crate::symbol::wk::any())));
-        }
-        if matches!(target.view(), ValueView::Set(_, _)) {
-            return Some(Ok(Value::FALSE));
-        }
-        if matches!(target.view(), ValueView::Bag(_, _)) {
-            return Some(Ok(Value::int(0)));
-        }
-        if matches!(target.view(), ValueView::Mix(_, _)) {
-            return Some(Ok(Value::num(0.0)));
-        }
-        None
-    }
 }
