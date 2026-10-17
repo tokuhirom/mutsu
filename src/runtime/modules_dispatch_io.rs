@@ -1,6 +1,7 @@
 mod attribute_core_traits;
 mod attribute_identity;
 mod builtin_method_wrap;
+mod class_methods_loader;
 mod container_store;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;

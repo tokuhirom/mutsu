@@ -3925,6 +3925,25 @@ Not done:
 
 Pinned in `t/io/socket-inet-rows.t` and `t/concurrency/socket-async-rows.t`.
 
+### 9.159 Three runtime classes' class methods are rows (2026-10-17)
+
+`refactor/11276-loader-class-rows` (3G remainder). `call_method_with_values_inner` matched four class methods by
+name and type-object name before any other dispatch: `Rakudo::Internals.REGISTER-DYNAMIC`, `Deprecation.report`,
+and `CompUnit::Loader`'s `load-source` and `load-source-file`.
+
+Decision.
+
+- Each method is a class-method row of its owner (`io_concurrency/class_methods.rs`), reached through
+  `class_method_owners_of` from the by-name dispatch as the other class methods are (§9.122). The bodies moved
+  unchanged into `Interpreter` methods in `runtime/class_methods_loader.rs`: `register_dynamic`,
+  `deprecation_report`, `compunit_load_source` and `compunit_load_source_file`.
+- The four `if method == ...` checks are deleted from the method-call entry.
+- The recognition table gains the four rows, and the oracle snapshot gains the three owners. Every name is one
+  Rakudo declares.
+
+Not done: `load-source` still runs through the interpreter's EVAL (its `TODO: compile to bytecode` stays), and
+`CompUnit::Loader.load-precompilation` is not answered. Pinned in `t/modules/compunit/compunit-loader-class-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

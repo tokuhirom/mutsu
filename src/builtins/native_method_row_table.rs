@@ -3133,4 +3133,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("IO::Socket::Async", "write", 8, 60),
     ("IO::Socket::Async", "print-to", 8, 60),
     ("IO::Socket::Async", "write-to", 8, 60),
+    ("Rakudo::Internals", "REGISTER-DYNAMIC", 8, 57),
+    ("Deprecation", "report", 8, 25),
+    ("CompUnit::Loader", "load-source", 8, 57),
+    ("CompUnit::Loader", "load-source-file", 8, 57),
 ];
