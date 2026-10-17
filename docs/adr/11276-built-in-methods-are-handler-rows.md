@@ -3468,6 +3468,77 @@ Decision. `dispatch_instance_parse` is deleted, and `Grammar`'s rows call `dispa
 becomes one `invoke_owner_raw(&["Grammar"], ...)` for a type object or an instance whose grammar declares no method of
 that name. A package that is no grammar is the rows' to decline, as an instance that is no grammar was the arm's.
 
+### 9.145 An enumeration's key/value views and `Mu.set_why` are rows (2026-10-17)
+
+`refactor/11276-enum-format-late-rows`. Three arms named enum receivers by method name:
+
+- a block of `call_method_with_values` answered `pairs`/`keys`/`values`/`kv`/`antipairs`/`invert` of
+  any type object (an enum type's values, `()` for the rest);
+- the `enum_value_list` arm of `dispatch_method_by_name_1` answered a method Rakudo does not have
+  (only `.^enum_value_list`, the `Metamodel::EnumHOW` row of §9.140);
+- its `invert` arm inverted a `Str` that named an enum type, which in Rakudo is a `Str` and dies.
+
+An enum's *value* had no answer of its own: `red.pairs` was `(0 => red)` and `red.invert` died, where
+Rakudo lists the whole enumeration. Rakudo declares the views on `Any`, with an `Any(Enumeration)`
+candidate (`self.enums.METHOD`), an `Any(Bool)` one and an `Any:U` one (`()`); a defined value's `kv`
+is `Enumeration.kv`, its own key and value.
+
+Decision. The candidates are `Any`'s rows in `collections/any_enum_views.rs`: `Handler::Interp`
+(the enumeration comes from the registry), `OWNER_ONLY`, `TYPE_OBJECT_OK`. One routine, `view`, builds
+every answer from the enumeration's `(key, value)` list as a `Seq`; the pure `Any` rows' `Bool` cases
+call it with `Bool`'s list, so `True.invert` now answers and the order of the `Bool` views is the
+declaration order. The pure `Any` rows decline an enum value as they decline a type object, and the
+rows are reached from those two places: the type-object block becomes one call, and
+`dispatch_enum_method` asks them after the enumeration roles' and the base type's rows. An `Array`-
+valued value's `keys`/`values`/`pairs` no longer go to the base type (`small.keys` is the
+enumeration's keys, as in Rakudo); its `elems` still does. The two non-Rakudo arms are deleted.
+`Interpreter::enumeration_variants` is the one reader of an enumeration's values; `dispatch_enums`
+(`Enumeration.enums`) reads it too.
+
+`Mu.set_why($why)` is a late row of `Mu` in `match1_late.rs`, reached by the same MRO walk as
+`Enumeration.enums`; it declines a metaobject receiver, whose `set_why` is the meta-level route. The
+recognition table gains `Mu.set_why` (Rakudo declares it), so `Mu.^can('set_why')` is true.
+
+### 9.146 Rows of language revision 6.e (2026-10-17)
+
+`refactor/11276-enum-format-late-rows`. Rakudo declares some methods only in its `core.e` setting:
+`Any.snip`/`snitch`, `Supply.snip`, `Cool.nomark`/`Str.nomark`, `IO::Path.stem`, and others. mutsu
+had no notion of a revision in the method table. `snip` was a cascade arm that answered under 6.d
+too, `snitch` was an arm that checked the revision itself, `nomark` and `stem` were missing, and
+`.^can` denied all of them under 6.e because the recognition catalog, generated under 6.d, had no row
+for them.
+
+Decision.
+
+- **A row flag, `RowFlags::REVISION_E`.** The method exists only when the program's language revision
+  is 6.e. `RowFlags::in_force` reads the revision (the thread-local the parser sets, which
+  `raw_invocant` and `snitch` already read at run time). Every owner lookup (`owner_row`,
+  `owner_rows_at`, `owner_declares`) skips a row that is not in force, so under 6.d the call finds no
+  method (`X::Method::NotFound`, as in Rakudo) and no "declared but no candidate" error. The shape
+  tables are built at compile time and cannot be skipped per revision, so a `REVISION_E` row is
+  `OWNER_ONLY`; the test `revision_e_rows_are_owner_only` enforces it.
+- **A catalog flag, `NativeRowFlags::REVISION_E` (bit 6).** Every reader of the recognition catalog
+  goes through one `entry` lookup (or filters on `in_force`), so `.^can`, `.^methods`, `.^lookup` and
+  the `augment` conflict check see the name only under 6.e.
+- **An oracle for the 6.e additions.** `scripts/gen-rakudo-method-tables.raku` runs
+  `scripts/rakudo-method-tables-e.raku` as a child process (a compilation unit raises its revision with
+  its first statement, and an `EVAL` cannot) and appends `declared.e`/`methods.e`/`only.e` lines:
+  the names 6.e adds, for the owners whose 6.e lists only add names (under 6.e `::('Exception')`
+  does not resolve to the class, so such owners are left out). A `REVISION_E` catalog row is checked
+  against those lines, and `revision_e_rows_are_6e_additions` (always run) requires it to be one.
+  The committed 6.d lines are unchanged; only the `.e` lines were appended.
+- **The rows** are late rows in `collections/revision_e_late.rs`, reached by the MRO walk of
+  `dispatch_method_by_name_1`: `Any.snip` (slurpy, the routine `eval_snip`), `Any.snitch`
+  (`dispatch_snitch`), `Supply.snip`, `Cool.nomark`/`Str.nomark` (the new `str_prim::nomark`, the
+  `:m` fold of `str_prim::Fold`, so the adverb and the method share one implementation) and
+  `IO::Path.stem` (the basename minus its last `$parts` extensions, `$parts` taken as a number: a
+  `Range` counts its elements, as Rakudo's does). The `snip` and `snitch` arms are deleted.
+
+Not done: 6.e methods that change a method 6.d already has on a type with a shape (`Int.pick`,
+`Int.roll`, `Complex.sign`) would have to shadow a shape-table row per revision; `Mu.Callable` and
+`Grammar`'s 6.e additions; `Format` and `Formatter`, whose owners the catalog does not list. They are
+filed as #13738.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -10,6 +10,25 @@ mod io_concurrency;
 mod mutating;
 mod scalars;
 
+/// Language revision 6.e for the test thread while it lives, so a
+/// `REVISION_E` row is in force (ADR-11276 §9.146). The revision is
+/// thread-local; the previous one comes back on drop.
+pub(super) struct RevisionE(String);
+
+impl RevisionE {
+    pub(super) fn enter() -> RevisionE {
+        let previous = crate::parser::current_language_version();
+        crate::parser::set_current_language_version("6.e");
+        RevisionE(previous)
+    }
+}
+
+impl Drop for RevisionE {
+    fn drop(&mut self) {
+        crate::parser::set_current_language_version(&self.0);
+    }
+}
+
 /// The type object of a shape that has no instances.
 fn type_sample(class: &str) -> Value {
     Value::package(Symbol::intern(class))
@@ -165,6 +184,21 @@ fn samples_have_their_shape() {
         } else {
             assert_eq!(sample(shape).type_object_shape(), Some(shape));
         }
+    }
+}
+
+/// A `REVISION_E` row is found by its owner only: the shape tables are static,
+/// so a row in them could not be skipped under an older language revision
+/// (ADR-11276 §9.146).
+#[test]
+fn revision_e_rows_are_owner_only() {
+    for row in rows() {
+        assert!(
+            !row.flags.contains(RowFlags::REVISION_E) || row.flags.contains(RowFlags::OWNER_ONLY),
+            "{}.{} is REVISION_E but not OWNER_ONLY",
+            row.owner,
+            row.name
+        );
     }
 }
 
@@ -386,6 +420,8 @@ fn receivers_pack_into_distinct_bytes() {
 /// recorded under `Routine`, ADR-11276 §9.121).
 #[test]
 fn rows_are_declared_by_rakudo() {
+    // A `REVISION_E` row is checked against what Rakudo declares under 6.e.
+    let _revision = RevisionE::enter();
     let undeclared: Vec<String> = rows()
         // `DESTROY` is a submethod: Rakudo's `.^method_table` does not list it.
         .filter(|row| row.name != "DESTROY")

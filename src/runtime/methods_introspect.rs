@@ -662,7 +662,7 @@ impl Interpreter {
     /// (or the type object) reads it back. Rakudo forwards `Mu.set_why` to
     /// the metaclass, so an instance call is type-wide, not per-object.
     // Cost: O(1) amortized -- one metadata map insert.
-    pub(super) fn dispatch_mu_set_why(
+    pub(crate) fn dispatch_mu_set_why(
         &mut self,
         target: &Value,
         why: Value,
@@ -676,7 +676,7 @@ impl Interpreter {
     /// True when `target` is a Metamodel HOW object, whose own `set_why`
     /// takes the meta-level route (`Documenting.set_why`).
     // Cost: O(1) -- one class-name check.
-    pub(super) fn is_how_receiver(&self, target: &Value) -> bool {
+    pub(crate) fn is_how_receiver(&self, target: &Value) -> bool {
         matches!(target.view(), ValueView::Instance { class_name, .. }
             if Self::is_metamodel_how(&class_name)
                 || self.is_metamodel_how_class(&class_name.resolve()))
@@ -1224,104 +1224,5 @@ impl Interpreter {
             .and_then(|m| m.get("__set_name__"))
             .map(Value::to_string_value)
             .unwrap_or_else(|| base.to_string())
-    }
-
-    /// Dispatch .^enum_value_list / .enum_value_list method
-    pub(super) fn dispatch_enum_value_list(
-        &self,
-        target: &Value,
-    ) -> Option<Result<Value, RuntimeError>> {
-        let type_name_owned = match target.view() {
-            ValueView::Package(name) => Some(name.resolve()),
-            ValueView::Str(name) => Some(name.to_string()),
-            _ => None,
-        };
-        let type_name = type_name_owned.as_deref();
-        if let Some(type_name) = type_name
-            && let Some(variants) = self.registry().enum_types.get(type_name)
-        {
-            let values: Vec<Value> = variants
-                .iter()
-                .enumerate()
-                .map(|(index, (key, val))| {
-                    Value::enum_parts(
-                        Symbol::intern(type_name),
-                        Symbol::intern(key),
-                        val.clone(),
-                        index,
-                    )
-                })
-                .collect();
-            return Some(Ok(Value::array(values)));
-        }
-        None
-    }
-
-    /// Dispatch .enums method.
-    /// Returns a Map (immutable Hash) of variant-name => value pairs.
-    pub(crate) fn dispatch_enums(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
-        let type_name_owned = match target.view() {
-            ValueView::Package(name) => Some(name.resolve()),
-            ValueView::Str(name) => Some(name.to_string()),
-            // An enum value (e.g. `red` of `enum Color`) carries its enum type.
-            ValueView::Enum { enum_type, .. } => Some(enum_type.resolve()),
-            // A Bool value (True/False) is a member of the built-in Bool enum.
-            ValueView::Bool(_) => Some("Bool".to_string()),
-            _ => None,
-        };
-        let type_name = type_name_owned.as_deref();
-        // Built-in Bool enum
-        let variants_owned;
-        let variants_ref = if type_name == Some("Bool") {
-            variants_owned = vec![
-                ("False".to_string(), EnumValue::Int(0)),
-                ("True".to_string(), EnumValue::Int(1)),
-            ];
-            Some(variants_owned.as_slice())
-        } else if let Some(type_name) = type_name {
-            if let Some(v) = self.registry().enum_types.get(type_name) {
-                variants_owned = v.clone();
-                Some(variants_owned.as_slice())
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        if let Some(variants) = variants_ref {
-            let mut map = ValueMap::default();
-            for (k, v) in variants {
-                map.insert(k.clone(), v.to_value());
-            }
-            let result = Value::hash(map);
-            // Mark as Map (immutable hash)
-            let result = self.tag_container_metadata(
-                result,
-                ContainerTypeInfo {
-                    value_type: String::new(),
-                    key_type: None,
-                    declared_type: Some("Map".to_string()),
-                },
-            );
-            return Some(Ok(result));
-        }
-        None
-    }
-
-    /// Dispatch .invert on enum type string
-    pub(super) fn dispatch_invert_enum(
-        &self,
-        target: &Value,
-    ) -> Option<Result<Value, RuntimeError>> {
-        if let ValueView::Str(type_name) = target.view()
-            && let Some(variants) = self.registry().enum_types.get(type_name.as_str())
-        {
-            let mut result = Vec::new();
-            for (k, v) in variants {
-                result.push(Value::pair(v.to_str_value(), Value::str(k.clone())));
-            }
-            return Some(Ok(Value::array(result)));
-        }
-        None
     }
 }

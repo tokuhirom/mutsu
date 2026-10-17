@@ -1648,19 +1648,13 @@ impl Interpreter {
             }
             return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
-        // Enum type collection methods
-        if let ValueView::Package(pkg_name) = target.view()
-            && args.is_empty()
-            && matches!(
-                method,
-                "pairs" | "keys" | "values" | "kv" | "antipairs" | "invert"
-            )
+        // A type object's key/value views are `Any`'s `Any(Enumeration)` and
+        // `Any:U` rows (ADR-11276 §9.145).
+        if matches!(target.view(), ValueView::Package(_))
+            && let Some(result) =
+                crate::builtins::method_table::any_enum_views::invoke(self, &target, method, &args)
         {
-            if let Some(variants) = self.registry().enum_types.get(&pkg_name.resolve()) {
-                let variants = variants.clone();
-                return self.dispatch_enum_type_collection(method, &variants);
-            }
-            return Ok(Value::array(Vec::new()));
+            return result;
         }
 
         // Buf/Blob write-num32 / write-num64 — non-mut entry point.

@@ -1,8 +1,9 @@
 //! Late rows that `dispatch_method_by_name_3` answered with arms (ADR-11276
 //! §9.139): `Seq.Numeric`, the temporal type objects' `Date`/`DateTime`,
 //! `Thread.run`, the `Str`/`Stringy` of a list whose elements need the
-//! interpreter, and the hash-likes' `keys`/`values`/`AT-KEY`/`EXISTS-KEY` (a
-//! `Stash`, an object hash, a `Match`, a `Capture`, a `Pair`).
+//! interpreter, and the hash-likes' `AT-KEY`/`EXISTS-KEY` (a `Stash`, an
+//! object hash, a `Match`, a `Capture`, a `Pair`). Their `keys`/`values` are
+//! `any_enum_views`' rows (§9.145).
 //!
 //! Each is `OWNER_ONLY`, reached only by that cascade's walk of the
 //! receiver's MRO for a late row, after every earlier answer declined. A
@@ -41,8 +42,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     late!("List", "Str", 0, LATE, list_str),
     late!("Seq", "Str", 0, LATE, list_str),
     late!("Seq", "Stringy", 0, LATE, list_str),
-    late!("Any", "keys", 0, LATE, keys),
-    late!("Any", "values", 0, LATE, values),
     late!("Any", "AT-KEY", 1, LATE, at_key),
     late!("Any", "EXISTS-KEY", 1, LATE, exists_key),
 ];
@@ -70,16 +69,6 @@ fn thread_run(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answ
 // Cost: O(e) element renders, e = elements of a list.
 fn list_str(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
     i.dispatch_list_str_method(t.clone())
-}
-
-// Cost: O(k), k = keys of the receiver.
-fn keys(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    i.dispatch_keys_method(t.clone())
-}
-
-// Cost: O(e), e = values of the receiver.
-fn values(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    Some(i.dispatch_values_method(t.clone()))
 }
 
 // Cost: O(k * b), k = indexed keys, b = bytes per key.

@@ -120,7 +120,7 @@ impl Interpreter {
     /// rakudo reports `No such method 'snitch'` without the pragma, exactly as
     /// falling through to ordinary dispatch does here.
     // Cost: O(n + r + c), n = Seq items, r = rendered output and c = logger cost.
-    pub(super) fn dispatch_snitch(
+    pub(crate) fn dispatch_snitch(
         &mut self,
         target: &Value,
         args: &[Value],

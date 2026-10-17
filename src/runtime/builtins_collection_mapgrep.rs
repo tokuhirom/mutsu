@@ -336,7 +336,7 @@ impl Interpreter {
     }
 
     /// Core snip implementation shared by both sub and method forms.
-    pub(super) fn eval_snip(
+    pub(crate) fn eval_snip(
         &mut self,
         matcher: Value,
         items: Vec<Value>,

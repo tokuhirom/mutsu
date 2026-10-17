@@ -106,6 +106,8 @@ fn legacy() -> Legacy {
 
 #[test]
 fn const_index_matches_the_runtime_builder() {
+    // The legacy builder knows no revision: compare with every row in force.
+    let _revision = super::RevisionE::enter();
     let old = legacy();
     let mut names: Vec<&str> = all_rows().map(|row| row.name).collect();
     names.sort_unstable();

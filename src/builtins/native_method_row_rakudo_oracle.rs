@@ -11,7 +11,9 @@
 //! The oracle is `rakudo_method_tables.txt`, the committed output of
 //! `scripts/gen-rakudo-method-tables.raku`: per owner, the keys of
 //! `::(Owner).^method_table` (`declared`) and the names of
-//! `::(Owner).^methods` (`methods`). Two directions are checked:
+//! `::(Owner).^methods` (`methods`), and the names language revision 6.e
+//! adds to them (`declared.e`, `methods.e`), which a `REVISION_E` row is
+//! checked against. Two directions are checked:
 //!
 //! - **no false claim**: a `DECLARED` / `INTROSPECTABLE` bit on a name Rakudo
 //!   does not declare / list for that owner;
@@ -58,6 +60,20 @@ fn row_flags(owner: &str, name: &str) -> Option<(u8, NativeRowFlags)> {
         .iter()
         .find(|&&(o, n, _, _)| o == owner && n == name)
         .map(|&(_, _, arity, flags)| (arity, NativeRowFlags(flags)))
+}
+
+/// The snapshot list a row is checked against: `kind`, or for a
+/// [`NativeRowFlags::REVISION_E`] row the names language revision 6.e adds
+/// (`declared.e`, `methods.e`, `only.e`; ADR-11276 §9.146).
+fn list_kind(kind: &'static str, flags: NativeRowFlags) -> &'static str {
+    if !flags.contains(NativeRowFlags::REVISION_E) {
+        return kind;
+    }
+    match kind {
+        "declared" => "declared.e",
+        "methods" => "methods.e",
+        _ => "only.e",
+    }
 }
 
 /// `.^methods` is served from the row catalog only for an owner that is its
@@ -140,7 +156,7 @@ fn only_method_bits_are_never_false_claims() {
         let flags = NativeRowFlags(flags);
         if flags.contains(NativeRowFlags::ONLY_METHOD)
             && (!flags.contains(NativeRowFlags::DECLARED)
-                || !tables["only"]
+                || !tables[list_kind("only", flags)]
                     .get(owner)
                     .is_some_and(|only| only.contains(name)))
         {
@@ -192,7 +208,7 @@ fn declared_bits_are_never_false_claims() {
     let mut wrong = Vec::new();
     for &(owner, name, _, flags) in RAW_ROWS {
         if NativeRowFlags(flags).contains(NativeRowFlags::DECLARED)
-            && let Some(names) = tables["declared"].get(owner)
+            && let Some(names) = tables[list_kind("declared", NativeRowFlags(flags))].get(owner)
             && !names.contains(name)
         {
             wrong.push(format!("{owner}.{name}"));
@@ -212,7 +228,7 @@ fn introspectable_bits_are_never_false_claims() {
     for &(owner, name, _, flags) in RAW_ROWS {
         if introspection_reads_rows(owner)
             && NativeRowFlags(flags).contains(NativeRowFlags::INTROSPECTABLE)
-            && let Some(names) = tables["methods"].get(owner)
+            && let Some(names) = tables[list_kind("methods", NativeRowFlags(flags))].get(owner)
             && !names.contains(name)
         {
             wrong.push(format!("{owner}.{name}"));
@@ -221,6 +237,31 @@ fn introspectable_bits_are_never_false_claims() {
     assert!(
         wrong.is_empty(),
         "INTROSPECTABLE set on a name Rakudo's .^methods omits:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// A `REVISION_E` row is a name language revision 6.e adds to its owner:
+/// Rakudo declares it under 6.e and not under 6.d. Always run: only a row that
+/// sets the bit can fail it.
+#[test]
+fn revision_e_rows_are_6e_additions() {
+    let tables = rakudo_tables();
+    let mut wrong = Vec::new();
+    for &(owner, name, _, flags) in RAW_ROWS {
+        let flags = NativeRowFlags(flags);
+        if flags.contains(NativeRowFlags::REVISION_E)
+            && (!flags.contains(NativeRowFlags::DECLARED)
+                || !tables["declared.e"]
+                    .get(owner)
+                    .is_some_and(|names| names.contains(name)))
+        {
+            wrong.push(format!("{owner}.{name}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "REVISION_E set on a name 6.e does not add to its owner:\n{}",
         wrong.join("\n")
     );
 }

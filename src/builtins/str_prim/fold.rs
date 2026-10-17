@@ -26,6 +26,14 @@ pub(crate) enum Fold {
     CaseMark,
 }
 
+/// `Str.nomark` (6.e): every grapheme with its combining marks dropped, the
+/// fold of the `:m` adverb.
+// Cost: O(n), n = bytes of `s`.
+pub(crate) fn nomark(s: &str) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    s.graphemes(true).map(|g| Fold::Mark.unit(g)).collect()
+}
+
 impl Fold {
     pub(crate) fn new(ignore_case: bool, ignore_mark: bool) -> Fold {
         match (ignore_case, ignore_mark) {

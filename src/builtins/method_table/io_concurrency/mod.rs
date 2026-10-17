@@ -15,7 +15,7 @@ mod io_path_content;
 mod io_path_ctx;
 mod io_path_cwd;
 mod io_path_fs;
-mod io_path_lexical;
+pub(crate) mod io_path_lexical;
 mod io_path_misc;
 mod io_path_parts;
 mod io_path_stat;

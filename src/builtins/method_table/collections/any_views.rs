@@ -8,8 +8,8 @@
 //! row (`List`, `Map`, `Pair`, `Capture`, the quant hashes, `Seq.cache`) answer
 //! their shapes first, and these answer what is left: a scalar as its
 //! one-element list, a shaped array by its leaves, a `Range`, a `Seq` or a
-//! `Slip` as its elements, an enum value, a stash and `Nil`. A type object
-//! declines, so the interpreter answers it (an enum type lists its values).
+//! `Slip` as its elements, a stash and `Nil`. A type object and an enum value
+//! decline: `any_enum_views` answers them (an enum lists its enumeration).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::symbol::Symbol;
@@ -112,8 +112,9 @@ fn shared_prefix(
         ValueView::Pair(..) | ValueView::ValuePair(..) => pair(target, &[]),
         ValueView::Array(..) => list(target, &[]),
         ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => quant(target, &[]),
-        // A type object (an enum type lists its values) is the interpreter's.
-        ValueView::Package(_) => None,
+        // A type object and an enum value are the interpreter's: an enum lists
+        // its enumeration (`Any(Enumeration)`, ADR-11276 §9.145).
+        ValueView::Package(_) | ValueView::Enum { .. } => None,
         _ => return None,
     })
 }
@@ -333,9 +334,20 @@ pub(crate) fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, Run
     if target.is_nil() {
         return Some(Ok(Value::array(Vec::new())));
     }
-    // A type object is the interpreter's: an enum type inverts its values.
-    if matches!(target.view(), ValueView::Package(_)) {
+    // A type object and an enum value are the interpreter's: an enum inverts
+    // its enumeration (ADR-11276 §9.145).
+    if matches!(
+        target.view(),
+        ValueView::Package(_) | ValueView::Enum { .. }
+    ) {
         return None;
+    }
+    // `Any(Bool)`: a `Bool` inverts the `Bool` enumeration.
+    if matches!(target.view(), ValueView::Bool(_)) {
+        return Some(Ok(super::any_enum_views::view(
+            super::any_enum_views::View::Invert,
+            &super::any_enum_views::bool_variants(),
+        )));
     }
     // A `Capture` is `self.list`: its positionals.
     if let ValueView::Capture { positional, .. } = target.view() {

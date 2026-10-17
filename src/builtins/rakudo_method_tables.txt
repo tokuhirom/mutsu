@@ -263,3 +263,30 @@ only	X::AdHoc	Numeric	from-slurpy	message	payload
 declared	X::TypeCheck::Assignment	desc	message	operation	symbol
 methods	X::TypeCheck::Assignment	Failure	POPULATE	Str	UPGRADE-RAT	backtrace	complainee-message	desc	die	expected	expectedn	explain	fail	gist	got	gotn	is-compile-time	message	operation	priors	reset-backtrace	resume	rethrow	symbol	throw	vault-backtrace
 only	X::TypeCheck::Assignment	desc	message	operation	symbol
+declared.e	Any	snip	snitch
+methods.e	Any	snip	snitch
+only.e	Any
+declared.e	Complex	sign
+methods.e	Complex	sign
+only.e	Complex	sign
+declared.e	Cool	nomark
+methods.e	Cool	nomark
+only.e	Cool
+declared.e	Grammar	SETFAIL	locprepost	typed_exception
+methods.e	Grammar	SETFAIL	locprepost	typed_exception
+only.e	Grammar	SETFAIL	locprepost	typed_exception
+declared.e	IO::Path	stem
+methods.e	IO::Path	stem
+only.e	IO::Path	stem
+declared.e	Int	pick	roll
+methods.e	Int	pick	roll
+only.e	Int
+declared.e	Mu	Callable
+methods.e	Mu	Callable
+only.e	Mu	Callable
+declared.e	Str	nomark
+methods.e	Str	nomark
+only.e	Str
+declared.e	Supply	snip
+methods.e	Supply	snip
+only.e	Supply

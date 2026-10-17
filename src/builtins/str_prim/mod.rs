@@ -26,7 +26,7 @@ mod fold;
 mod strands;
 
 pub(crate) use build::{Normal, concat, flip, normalize, repeat, titlecase_each};
-pub(crate) use fold::{Fold, eq_at, find};
+pub(crate) use fold::{Fold, eq_at, find, nomark};
 pub(crate) use strands::Joiner;
 
 use crate::builtins::grapheme_index::{GraphemeIndex, Units, with_str_index};
