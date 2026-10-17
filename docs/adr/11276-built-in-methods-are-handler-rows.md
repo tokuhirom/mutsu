@@ -3944,6 +3944,27 @@ Decision.
 Not done: `load-source` still runs through the interpreter's EVAL (its `TODO: compile to bytecode` stays), and
 `CompUnit::Loader.load-precompilation` is not answered. Pinned in `t/modules/compunit/compunit-loader-class-rows.t`.
 
+### 9.160 The runtime's result objects answer through one owner lookup (2026-10-17)
+
+`refactor/11276-internal-instance-rows` (3G remainder). `call_method_with_values_inner` handled three result
+objects the runtime mints, each with its own check:
+
+- `HyperConfiguration`'s `batch` and `degree` were a by-name attribute read.
+- `Routine::WrapHandle.restore` was a by-name arm.
+- `WalkList` was an owner block of its own (§9.140).
+
+Decision.
+
+- `Routine::WrapHandle.restore`, `HyperConfiguration.batch` and `HyperConfiguration.degree` are `OWNER_ONLY` rows
+  (`instances/runtime_objects.rs`).
+- One lookup, `runtime_object_owners_of`, finds the owner of all three classes, `WalkList` included. It sits where
+  the earliest of the old checks was.
+- The `restore` body moved unchanged into `Interpreter::wrap_handle_restore` (`runtime/wrap_handle_restore.rs`).
+- The recognition table gains the three rows. `Routine::WrapHandle` is lexical to `Routine` in Rakudo, so, like
+  `WalkList`, it has no oracle line; `HyperConfiguration` gains one.
+
+Pinned in `t/routines/closure/wrap-restore-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

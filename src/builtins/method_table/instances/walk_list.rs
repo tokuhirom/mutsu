@@ -3,7 +3,7 @@
 //! a derived `WalkList` with that flag changed.
 //!
 //! The rows are `OWNER_ONLY`, found by their owner for a `WalkList` instance
-//! from `call_method_with_values`; every other method of a `WalkList` (`gist`,
+//! from `call_method_with_values` (`runtime_object_owners_of`); every other method of a `WalkList` (`gist`,
 //! `isa`, ...) is the ordinary dispatch's.
 
 use super::{Handler, MethodRow, RowFlags};

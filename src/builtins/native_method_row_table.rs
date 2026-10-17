@@ -3137,4 +3137,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Deprecation", "report", 8, 25),
     ("CompUnit::Loader", "load-source", 8, 57),
     ("CompUnit::Loader", "load-source-file", 8, 57),
+    ("Routine::WrapHandle", "restore", 8, 24),
+    ("HyperConfiguration", "batch", 8, 60),
+    ("HyperConfiguration", "degree", 8, 60),
 ];

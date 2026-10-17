@@ -9,6 +9,7 @@ pub(crate) mod did_you_mean;
 mod dispatch;
 pub(crate) use dispatch::Resolved;
 mod class_scoped_accessor;
+mod wrap_handle_restore;
 mod dispatch_candidates;
 mod role_type_distance;
 mod multi_rank;

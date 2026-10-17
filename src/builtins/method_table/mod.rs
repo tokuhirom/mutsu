@@ -79,6 +79,7 @@ pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::iterator::owners_of as iterator_owners_of;
 pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
 pub(crate) use instances::routine::owners_of as routine_owners_of;
+pub(crate) use instances::runtime_objects::runtime_object_owners_of;
 pub(crate) use instances::supply::owners_of as supply_owners_of;
 pub(crate) use instances::{backtrace, code, exception, failure, regex_match, signature, supply};
 pub(crate) use io_concurrency::cathandle::owners_of as cathandle_owners_of;
