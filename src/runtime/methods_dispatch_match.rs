@@ -80,10 +80,14 @@ impl Interpreter {
         }
         // `Mu.say`/`put` with arguments for a class acting as `$*OUT`,
         // `Junction.THREAD`, `Cool.encode`, `Blob.unpack`,
-        // `Enumeration.enums` and `Mu.set_why` are late rows of the receiver's
-        // MRO and roles (§9.142, §9.143, §9.145); `Mu`'s other late rows are
-        // the cascade's last resort.
-        if matches!(method, "THREAD" | "encode" | "unpack" | "enums" | "set_why")
+        // `Enumeration.enums`, `Mu.set_why` and the methods revision 6.e adds
+        // (`snip`, `snitch`, `nomark`, `stem`) are late rows of the receiver's
+        // MRO and roles (§9.142, §9.143, §9.145, §9.146); `Mu`'s other late
+        // rows are the cascade's last resort.
+        if matches!(
+            method,
+            "THREAD" | "encode" | "unpack" | "enums" | "set_why" | "snip" | "snitch" | "nomark" | "stem"
+        )
             || (matches!(method, "say" | "put") && !args.is_empty())
         {
             let owner_names = self.late_walk_owners(&target);
@@ -95,7 +99,6 @@ impl Interpreter {
             }
         }
         match method {
-            "snitch" if args.len() <= 1 => self.dispatch_snitch(&target, &args),
             // ADR-0051 §3 (#9948): this interceptor is receiver-blind (it
             // reads any value as a number), so a receiver whose ancestry
             // declares no `polymod` (`Str`, `Complex`, ...) falls through to

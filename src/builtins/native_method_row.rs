@@ -125,9 +125,22 @@ impl NativeRowFlags {
     /// `only` lines of `rakudo_method_tables.txt`. Read by
     /// [`native_method_declared_only`].
     pub(crate) const ONLY_METHOD: NativeRowFlags = NativeRowFlags(1 << 5);
+    /// Rakudo declares the method only in language revision 6.e (its
+    /// `core.e` setting; ADR-11276 §9.146), so under an older revision every
+    /// reader of the catalog treats the row as absent: `Any.^can('snip')` is
+    /// false under 6.d. Checked against the `declared.e` / `methods.e` lines
+    /// of `rakudo_method_tables.txt`.
+    pub(crate) const REVISION_E: NativeRowFlags = NativeRowFlags(1 << 6);
 
     pub(crate) const fn contains(self, bit: NativeRowFlags) -> bool {
         self.0 & bit.0 != 0
+    }
+
+    /// Whether the row exists in the program's language revision.
+    // Cost: O(1) (a thread-local read for a `REVISION_E` row).
+    pub(crate) fn in_force(self) -> bool {
+        !self.contains(Self::REVISION_E)
+            || crate::parser::current_language_version_starts_with("6.e")
     }
 }
 
@@ -208,6 +221,16 @@ fn classification_table() -> &'static FxHashMap<RowKey, RowValue> {
     })
 }
 
+/// The catalog entry of `(owner, name)`, unless its method does not exist in
+/// the program's language revision ([`NativeRowFlags::in_force`]).
+// Cost: O(1), one hash probe.
+fn entry(owner: &str, name: &str) -> Option<RowValue> {
+    classification_table()
+        .get(&(owner, name))
+        .copied()
+        .filter(|&(_, flags)| NativeRowFlags(flags).in_force())
+}
+
 /// The recognition row for one `(owner, name)` pair. A pair with no entry in
 /// [`RAW_ROWS`](super::native_method_row_table::RAW_ROWS) -- an owner E2a's probe did not cover (`Sub`/`Signature`/
 /// `IO::Path`/`IO::Handle`/`Cool`), the untouched majority of `Any`/`Mu`'s own
@@ -219,9 +242,8 @@ pub(crate) fn native_method_row(
     owner: &'static str,
     name: &'static str,
 ) -> (NativeArityMask, NativeRowFlags) {
-    classification_table()
-        .get(&(owner, name))
-        .map(|&(arity, flags)| (NativeArityMask(arity), NativeRowFlags(flags)))
+    entry(owner, name)
+        .map(|(arity, flags)| (NativeArityMask(arity), NativeRowFlags(flags)))
         .unwrap_or((NativeArityMask::N, NativeRowFlags::SPECIAL))
 }
 
@@ -239,7 +261,7 @@ pub(crate) fn native_method_row(
 /// just not reachable by `native_method_{0,1,2}arg`". Presence in the table
 /// is the only signal E2's data actually carries for that question.
 pub(crate) fn native_method_row_exists(owner: &'static str, name: &'static str) -> bool {
-    classification_table().contains_key(&(owner, name))
+    entry(owner, name).is_some()
 }
 
 /// #9869: whether Rakudo declares `name` directly on the built-in `owner`
@@ -249,9 +271,8 @@ pub(crate) fn native_method_row_exists(owner: &'static str, name: &'static str) 
 /// `Block` and `Code` all claim `Code`'s declarations.
 // Cost: O(1), a hash lookup keyed by `(owner, name)`.
 pub(crate) fn native_method_declared(owner: &str, name: &str) -> bool {
-    classification_table()
-        .get(&(owner, name))
-        .is_some_and(|&(_, flags)| NativeRowFlags(flags).contains(NativeRowFlags::DECLARED))
+    entry(owner, name)
+        .is_some_and(|(_, flags)| NativeRowFlags(flags).contains(NativeRowFlags::DECLARED))
 }
 
 /// #10234: Rakudo declares `name` directly on `owner` as an `only` method
@@ -260,12 +281,10 @@ pub(crate) fn native_method_declared(owner: &str, name: &str) -> bool {
 /// is free to augment.
 // Cost: O(1) expected (one hash probe).
 pub(crate) fn native_method_declared_only(owner: &str, name: &str) -> bool {
-    classification_table()
-        .get(&(owner, name))
-        .is_some_and(|&(_, flags)| {
-            let flags = NativeRowFlags(flags);
-            flags.contains(NativeRowFlags::DECLARED) && flags.contains(NativeRowFlags::ONLY_METHOD)
-        })
+    entry(owner, name).is_some_and(|(_, flags)| {
+        let flags = NativeRowFlags(flags);
+        flags.contains(NativeRowFlags::DECLARED) && flags.contains(NativeRowFlags::ONLY_METHOD)
+    })
 }
 
 /// #10234: the compile-time error Rakudo raises when `augment class owner`
@@ -307,7 +326,8 @@ pub(crate) fn declared_names_for_owner(owner: &str) -> Vec<&'static str> {
     rows()
         .iter()
         .filter(|&&(o, _, _, flags)| {
-            o == owner && NativeRowFlags(flags).contains(NativeRowFlags::DECLARED)
+            let flags = NativeRowFlags(flags);
+            o == owner && flags.contains(NativeRowFlags::DECLARED) && flags.in_force()
         })
         .map(|&(_, name, _, _)| name)
         .collect()
@@ -324,7 +344,8 @@ pub(crate) fn introspectable_names_for_owner(owner: &str) -> Vec<&'static str> {
     rows()
         .iter()
         .filter(|&&(o, _, _, flags)| {
-            o == owner && NativeRowFlags(flags).contains(NativeRowFlags::INTROSPECTABLE)
+            let flags = NativeRowFlags(flags);
+            o == owner && flags.contains(NativeRowFlags::INTROSPECTABLE) && flags.in_force()
         })
         .map(|&(_, name, _, _)| name)
         .collect()

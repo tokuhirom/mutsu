@@ -3499,6 +3499,46 @@ enumeration's keys, as in Rakudo); its `elems` still does. The two non-Rakudo ar
 `Enumeration.enums`; it declines a metaobject receiver, whose `set_why` is the meta-level route. The
 recognition table gains `Mu.set_why` (Rakudo declares it), so `Mu.^can('set_why')` is true.
 
+### 9.146 Rows of language revision 6.e (2026-10-17)
+
+`refactor/11276-enum-format-late-rows`. Rakudo declares some methods only in its `core.e` setting:
+`Any.snip`/`snitch`, `Supply.snip`, `Cool.nomark`/`Str.nomark`, `IO::Path.stem`, and others. mutsu
+had no notion of a revision in the method table. `snip` was a cascade arm that answered under 6.d
+too, `snitch` was an arm that checked the revision itself, `nomark` and `stem` were missing, and
+`.^can` denied all of them under 6.e because the recognition catalog, generated under 6.d, had no row
+for them.
+
+Decision.
+
+- **A row flag, `RowFlags::REVISION_E`.** The method exists only when the program's language revision
+  is 6.e. `RowFlags::in_force` reads the revision (the thread-local the parser sets, which
+  `raw_invocant` and `snitch` already read at run time). Every owner lookup (`owner_row`,
+  `owner_rows_at`, `owner_declares`) skips a row that is not in force, so under 6.d the call finds no
+  method (`X::Method::NotFound`, as in Rakudo) and no "declared but no candidate" error. The shape
+  tables are built at compile time and cannot be skipped per revision, so a `REVISION_E` row is
+  `OWNER_ONLY`; the test `revision_e_rows_are_owner_only` enforces it.
+- **A catalog flag, `NativeRowFlags::REVISION_E` (bit 6).** Every reader of the recognition catalog
+  goes through one `entry` lookup (or filters on `in_force`), so `.^can`, `.^methods`, `.^lookup` and
+  the `augment` conflict check see the name only under 6.e.
+- **An oracle for the 6.e additions.** `scripts/gen-rakudo-method-tables.raku` runs
+  `scripts/rakudo-method-tables-e.raku` as a child process (a compilation unit raises its revision with
+  its first statement, and an `EVAL` cannot) and appends `declared.e`/`methods.e`/`only.e` lines:
+  the names 6.e adds, for the owners whose 6.e lists only add names (under 6.e `::('Exception')`
+  does not resolve to the class, so such owners are left out). A `REVISION_E` catalog row is checked
+  against those lines, and `revision_e_rows_are_6e_additions` (always run) requires it to be one.
+  The committed 6.d lines are unchanged; only the `.e` lines were appended.
+- **The rows** are late rows in `collections/revision_e_late.rs`, reached by the MRO walk of
+  `dispatch_method_by_name_1`: `Any.snip` (slurpy, the routine `eval_snip`), `Any.snitch`
+  (`dispatch_snitch`), `Supply.snip`, `Cool.nomark`/`Str.nomark` (the new `str_prim::nomark`, the
+  `:m` fold of `str_prim::Fold`, so the adverb and the method share one implementation) and
+  `IO::Path.stem` (the basename minus its last `$parts` extensions, `$parts` taken as a number: a
+  `Range` counts its elements, as Rakudo's does). The `snip` and `snitch` arms are deleted.
+
+Not done: 6.e methods that change a method 6.d already has on a type with a shape (`Int.pick`,
+`Int.roll`, `Complex.sign`) would have to shadow a shape-table row per revision; `Mu.Callable` and
+`Grammar`'s 6.e additions; `Format` and `Formatter`, whose owners the catalog does not list. They are
+filed as #13738.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

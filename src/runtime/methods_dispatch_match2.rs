@@ -53,7 +53,6 @@ impl Interpreter {
         }
         match method {
             "pop" => Some(self.dispatch_pop_method(target, args)),
-            "snip" => self.dispatch_snip_method(target, method, args),
             _ => None,
         }
     }
@@ -586,34 +585,5 @@ impl Interpreter {
             }
         }
         Some(self.builtin_minmax(&call_args))
-    }
-
-    /// Dispatch the "snip" method.
-    fn dispatch_snip_method(
-        &mut self,
-        target: Value,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Option<Result<Value, RuntimeError>> {
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Supply"
-        {
-            return Some(self.dispatch_supply_transform(target, method, &args));
-        }
-        if !args.is_empty() {
-            // `Any.snip`'s signature is a bare capture (`($:: |)`), so every
-            // positional is a matcher: `.snip(* < 10, * < 20)` means the same
-            // as `.snip((* < 10, * < 20))`. Passing only `args[0]` silently
-            // dropped every matcher after the first, collapsing the round-robin
-            // advance `eval_snip` already implements down to a single snip.
-            let matcher = if args.len() == 1 {
-                args[0].clone()
-            } else {
-                Value::array(args.clone())
-            };
-            let items = crate::runtime::utils::value_to_list(&target);
-            return Some(self.eval_snip(matcher, items));
-        }
-        None
     }
 }

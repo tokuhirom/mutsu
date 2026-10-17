@@ -241,7 +241,9 @@ pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<R
     let declared = || {
         rows.iter().copied().filter(|&id| {
             let row = ALL[usize::from(id)];
-            row.owner == owner && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+            row.owner == owner
+                && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+                && row.flags.in_force()
         })
     };
     if let Some(arity) = u8::try_from(arity).ok()
@@ -270,12 +272,14 @@ pub(crate) fn owner_rows_at(
         let row = ALL[usize::from(id)];
         row.owner == owner
             && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+            && row.flags.in_force()
             && u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
     });
     let slurpy = rows.iter().copied().filter(move |&id| {
         let row = ALL[usize::from(id)];
         row.owner == owner
             && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+            && row.flags.in_force()
             && row.flags.contains(RowFlags::SLURPY)
             && !u8::try_from(arity).is_ok_and(|a| row.arities().contains(&a))
             && arity >= usize::from(row.arity)
@@ -290,7 +294,9 @@ pub(crate) fn owner_declares(owner: &str, method: Symbol) -> bool {
     name_index(method).is_some_and(|name| {
         rows_named(name).iter().any(|&id| {
             let row = ALL[usize::from(id)];
-            row.owner == owner && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+            row.owner == owner
+                && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+                && row.flags.in_force()
         })
     })
 }

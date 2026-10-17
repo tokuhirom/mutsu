@@ -2968,6 +2968,13 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mu", "does", 8, 60),
     ("Mu", "return-rw", 8, 60),
     ("Mu", "set_why", 8, 60),
+    // Language revision 6.e only (`REVISION_E`, 64; ADR-11276 §9.146).
+    ("Any", "snip", 8, 92),
+    ("Any", "snitch", 8, 92),
+    ("Supply", "snip", 8, 92),
+    ("Cool", "nomark", 8, 92),
+    ("Str", "nomark", 8, 92),
+    ("IO::Path", "stem", 8, 124),
     ("HyperSeq", "hyper", 8, 60),
     ("HyperSeq", "race", 8, 60),
     ("HyperSeq", "configuration", 8, 60),

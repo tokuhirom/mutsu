@@ -158,6 +158,12 @@ impl RowFlags {
     /// autothreading the call. Only the MRO walk (`invoke_mro`) reads it; the
     /// guard step still leaves a `Junction` to the cascades.
     pub(crate) const JUNCTION_ARGS: RowFlags = RowFlags(1 << 11);
+    /// The method exists only in language revision 6.e (Rakudo declares it
+    /// in its `core.e` setting: `Any.snip`, `Str.nomark`, `IO::Path.stem`,
+    /// ADR-11276 §9.146). Under an older revision every owner lookup skips
+    /// the row, so the call finds no method, as in Rakudo. The shape tables
+    /// are static, so such a row is [`Self::OWNER_ONLY`].
+    pub(crate) const REVISION_E: RowFlags = RowFlags(1 << 12);
 
     /// The flags of both.
     // Cost: O(1).
@@ -171,6 +177,15 @@ impl RowFlags {
     // Cost: O(1).
     pub(crate) const fn skips_cross_check(self) -> bool {
         self.0 & (Self::RANDOM.0 | Self::LIVE_VIEW.0) != 0
+    }
+
+    /// Whether the row exists in the program's language revision: always,
+    /// unless it is a [`Self::REVISION_E`] row and the revision is older.
+    // Cost: O(1) (a thread-local read for a `REVISION_E` row).
+    #[inline]
+    pub(crate) fn in_force(self) -> bool {
+        !self.contains(Self::REVISION_E)
+            || crate::parser::current_language_version_starts_with("6.e")
     }
 
     /// Whether every bit of `flag` is set.

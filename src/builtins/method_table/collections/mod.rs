@@ -21,6 +21,7 @@ mod match1_late;
 mod match3_late;
 mod mu_late;
 mod mu_render_late;
+mod revision_e_late;
 pub(crate) use any_interp::early_entry_defers;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
@@ -126,4 +127,5 @@ pub(super) static LATE_FAMILIES: &[&[MethodRow]] = &[
     any_pos_late::ROWS,
     match3_late::ROWS,
     match1_late::ROWS,
+    revision_e_late::ROWS,
 ];

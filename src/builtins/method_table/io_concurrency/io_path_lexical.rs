@@ -148,9 +148,15 @@ fn spec_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
 /// `IO::Path.basename`.
 // Cost: O(p), p = chars of the path.
 fn basename_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    Some(Ok(Value::str(basename(target)?)))
+}
+
+/// The basename of an `IO::Path`, `None` for any other receiver.
+// Cost: O(p), p = chars of the path.
+pub(crate) fn basename(target: &Value) -> Option<String> {
     let ctx = PathCtx::of(target)?;
     let (_, _, basename) = Interpreter::io_path_parts_spec(&ctx.path, &ctx.attributes);
-    Some(Ok(Value::str(basename)))
+    Some(basename)
 }
 
 /// `IO::Path.dirname`.
