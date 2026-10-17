@@ -104,7 +104,8 @@ pub(crate) use collections::early_entry_defers;
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 pub(crate) use dispatch::{
     admits, answer, answer_as, answer_shapeless, cool_text_for_shapeless, invoke, invoke_base,
-    invoke_in, invoke_mro, invoke_mut, invoke_owner, invoke_owner_raw, try_dispatch_in,
+    invoke_in, invoke_mro, invoke_mro_late, invoke_mut, invoke_owner, invoke_owner_raw,
+    try_dispatch_in,
 };
 #[cfg(test)]
 pub(crate) use dispatch::{shapeless_row, try_dispatch};

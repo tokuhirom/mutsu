@@ -15,7 +15,9 @@ pub(crate) mod any_collection;
 mod any_interp;
 mod any_interp_twins;
 mod any_list_late;
+mod any_pos_late;
 mod mu_late;
+mod mu_render_late;
 pub(crate) use any_interp::early_entry_defers;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
@@ -116,4 +118,6 @@ pub(super) static LATE_FAMILIES: &[&[MethodRow]] = &[
     any_coerce_late::ROWS,
     any_list_late::ROWS,
     mu_late::ROWS,
+    mu_render_late::ROWS,
+    any_pos_late::ROWS,
 ];
