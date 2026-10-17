@@ -14,16 +14,18 @@ use crate::builtins::methods_narg::base::{
 };
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 
-/// The two arities of `base`, owned by `$owner`.
+/// The two arities of `base`, owned by `$owner`. `$flags` is
+/// `RowFlags::DEFINITE_MULTI` where every candidate is `:D` (`Int.base(2)`
+/// finds none).
 macro_rules! base_rows {
-    ($owner:literal) => {
+    ($owner:literal, $flags:expr) => {
         &[
             MethodRow {
                 owner: $owner,
                 name: "base",
                 arity: 1,
                 handler: Handler::Narrow(base_1),
-                flags: RowFlags::ANY_ARGS,
+                flags: RowFlags::ANY_ARGS.or($flags),
                 named: &[],
             },
             MethodRow {
@@ -31,17 +33,17 @@ macro_rules! base_rows {
                 name: "base",
                 arity: 2,
                 handler: Handler::Narrow(base_2),
-                flags: RowFlags::ANY_ARGS,
+                flags: RowFlags::ANY_ARGS.or($flags),
                 named: &[],
             },
         ]
     };
 }
 
-pub(super) static INT_ROWS: &[MethodRow] = base_rows!("Int");
-pub(super) static NUM_ROWS: &[MethodRow] = base_rows!("Num");
+pub(super) static INT_ROWS: &[MethodRow] = base_rows!("Int", RowFlags::DEFINITE_MULTI);
+pub(super) static NUM_ROWS: &[MethodRow] = base_rows!("Num", RowFlags::NONE);
 /// Rakudo declares `base` on `Rational`, which `FatRat` composes too.
-pub(super) static FAT_RAT_ROWS: &[MethodRow] = base_rows!("FatRat");
+pub(super) static FAT_RAT_ROWS: &[MethodRow] = base_rows!("FatRat", RowFlags::DEFINITE_MULTI);
 pub(super) static RAT_ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "Rat",

@@ -29,11 +29,12 @@ macro_rules! origin_row {
     };
 }
 
-/// A one-argument row of `RakuAST::Node` that takes any argument (a node).
+/// A one-argument row of the node class `$owner` that takes any argument (a
+/// node).
 macro_rules! node_row {
-    ($name:literal, $handler:expr) => {
+    ($owner:literal, $name:literal, $handler:expr) => {
         MethodRow {
-            owner: "RakuAST::Node",
+            owner: $owner,
             name: $name,
             arity: 1,
             handler: Handler::Narrow($handler),
@@ -55,15 +56,19 @@ pub(super) static ROWS: &[MethodRow] = &[
     // The builders that change a node in place (`$list.add-statement($s)`):
     // each answers only the node class Rakudo declares it on
     // (`Value::rakuast_add_child`, `Value::rakuast_set_field`).
-    node_row!("add-statement", |t, a| t
+    node_row!("RakuAST::StatementList", "add-statement", |t, a| t
         .rakuast_add_child("add-statement", a[0].clone())),
-    node_row!("unshift-statement", |t, a| t
+    node_row!("RakuAST::StatementList", "unshift-statement", |t, a| t
         .rakuast_add_child("unshift-statement", a[0].clone())),
-    node_row!("push", |t, a| t.rakuast_add_child("push", a[0].clone())),
-    node_row!("replace-statement-list", |t, a| t
+    node_row!("RakuAST::ArgList", "push", |t, a| t
+        .rakuast_add_child("push", a[0].clone())),
+    node_row!("RakuAST::CompUnit", "replace-statement-list", |t, a| t
         .rakuast_set_field("replace-statement-list", a[0].clone())),
-    node_row!("set-expression", |t, a| t
-        .rakuast_set_field("set-expression", a[0].clone())),
+    node_row!(
+        "RakuAST::Statement::Expression",
+        "set-expression",
+        |t, a| t.rakuast_set_field("set-expression", a[0].clone())
+    ),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
     origin_row!("RakuAST::Origin", "to", 0, origin_position),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
@@ -75,7 +80,15 @@ pub(super) static ROWS: &[MethodRow] = &[
 // Cost: O(1).
 pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
     match target.view() {
-        ValueView::RakuAst(_) => Some(&["RakuAST::Node"]),
+        // The node classes whose builders are rows: each builder's handler
+        // declines a node of another class, and no name is declared twice.
+        ValueView::RakuAst(_) => Some(&[
+            "RakuAST::Node",
+            "RakuAST::StatementList",
+            "RakuAST::CompUnit",
+            "RakuAST::Statement::Expression",
+            "RakuAST::ArgList",
+        ]),
         ValueView::Instance { class_name, .. } => match class_name.resolve().as_str() {
             "RakuAST::Origin" => Some(&["RakuAST::Origin"]),
             "RakuAST::Origin::Source" => Some(&["RakuAST::Origin::Source"]),

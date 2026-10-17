@@ -54,7 +54,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "rindex", 2, 25),
     ("Str", "samecase", 2, 24),
     ("Str", "samemark", 2, 24),
-    ("Str", "split", 6, 25),
+    ("Str", "split", 6, 24),
     ("Str", "starts-with", 2, 24),
     ("Str", "substr", 6, 25),
     ("Str", "succ", 1, 56),
@@ -1132,11 +1132,11 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `native_method_row.rs`.
     ("RakuAST::StatementList", "gist", 1, 0),
     ("RakuAST::StatementList", "statements", 1, 0),
-    ("RakuAST::StatementList", "add-statement", 2, 0),
-    ("RakuAST::StatementList", "unshift-statement", 2, 0),
-    ("RakuAST::CompUnit", "replace-statement-list", 2, 0),
-    ("RakuAST::Statement::Expression", "set-expression", 2, 0),
-    ("RakuAST::ArgList", "push", 2, 0),
+    ("RakuAST::StatementList", "add-statement", 2, 16),
+    ("RakuAST::StatementList", "unshift-statement", 2, 16),
+    ("RakuAST::CompUnit", "replace-statement-list", 2, 16),
+    ("RakuAST::Statement::Expression", "set-expression", 2, 16),
+    ("RakuAST::ArgList", "push", 2, 16),
     ("RakuAST::StatementList", "raku", 1, 16),
     ("RakuAST::StatementList", "Str", 1, 16),
     ("RakuAST::StatementList", "WHICH", 1, 0),
@@ -1158,7 +1158,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `message`/`backtrace`). Verified by
     // `exception_family_rows_are_backed_by_the_cascade` in
     // `native_method_row.rs`.
-    ("Failure", "resume", 1, 0),
     ("Failure", "exception", 1, 16),
     ("Failure", "handled", 1, 16),
     ("Failure", "gist", 1, 16),
@@ -3140,4 +3139,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Routine::WrapHandle", "restore", 8, 24),
     ("HyperConfiguration", "batch", 8, 60),
     ("HyperConfiguration", "degree", 8, 60),
+    ("Pod::Block::Declarator", "_add_leading", 2, 16),
+    ("Pod::Block::Declarator", "_add_trailing", 2, 16),
 ];

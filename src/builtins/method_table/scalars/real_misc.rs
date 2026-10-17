@@ -58,7 +58,7 @@ macro_rules! native_int_rows {
 }
 
 pub(super) static INT_ROWS: &[MethodRow] = &[
-    row!("Int", "is-prime", is_prime),
+    row!("Int", "is-prime", is_prime, RowFlags::DEFINITE),
     row!("Int", "narrow", narrow, RowFlags::DEFINITE),
     row!("Int", "conj", conj_real),
     row!("Int", "Bridge", bridge),

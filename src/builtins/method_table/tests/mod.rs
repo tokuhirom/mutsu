@@ -390,8 +390,12 @@ fn a_type_object_answers_only_flagged_rows() {
         try_dispatch(&int, Symbol::intern("Bool"), &[]),
         Some(Ok(v)) if v == Value::FALSE
     ));
-    // `Int.abs` has a row, but not for a type object.
-    assert!(try_dispatch(&int, Symbol::intern("abs"), &[]).is_none());
+    // `Int.abs` has a row, but not for a type object: its invocant is `:D`,
+    // so the row refuses one (`RowFlags::DEFINITE`).
+    assert!(matches!(
+        try_dispatch(&int, Symbol::intern("abs"), &[]),
+        Some(Err(e)) if e.message.contains("must be an object instance")
+    ));
     // A user class's type object has no shape.
     let user = Value::package(Symbol::intern("MyClass"));
     assert_eq!(user.type_object_shape(), None);
@@ -436,6 +440,12 @@ fn rows_are_declared_by_rakudo() {
         // Roast pins `IO::Socket::INET.getpeername` (`S16-unfiled/getpeername.t`),
         // which Rakudo does not declare (ADR-11276 §9.158).
         .filter(|row| !(row.owner == "IO::Socket::INET" && row.name == "getpeername"))
+        // Roast pins `$!.pending` (`S04-exceptions/pending.t`), which Rakudo
+        // does not declare (ADR-11276 §9.161).
+        .filter(|row| !(row.owner == "Any" && row.name == "pending"))
+        // `is DEPRECATED` mixes a role declaring `DEPRECATED` into the
+        // attribute; mutsu answers it on `Attribute` (ADR-11276 §9.161).
+        .filter(|row| !(row.owner == "Attribute" && row.name == "DEPRECATED"))
         // A method of language revision 6.e is checked against what 6.e adds
         // (`declared.e`), which the catalog need not record for a name 6.d
         // already recognizes on the owner (`Complex.sign`).

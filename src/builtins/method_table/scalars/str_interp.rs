@@ -34,9 +34,11 @@ macro_rules! row {
     };
 }
 
-/// The rows `Str` and `Cool` both declare.
+/// The rows `Str` and `Cool` both declare. `$split` flags the `split` rows:
+/// every candidate of `Str.split` is `Str:D` (`Str.split(",")` finds none),
+/// while `Cool.split` stringifies a type object.
 macro_rules! shared_rows {
-    ($owner:literal) => {
+    ($owner:literal, $split:expr) => {
         &[
             row!($owner, "subst", 1, ARGS_NAMED, subst),
             row!($owner, "subst", 2, ARGS_NAMED, subst),
@@ -51,15 +53,15 @@ macro_rules! shared_rows {
                 io,
                 &["CWD", "SPEC"]
             ),
-            row!($owner, "split", 1, ARGS_NAMED, split),
-            row!($owner, "split", 2, ARGS_NAMED, split),
+            row!($owner, "split", 1, ARGS_NAMED.or($split), split),
+            row!($owner, "split", 2, ARGS_NAMED.or($split), split),
         ]
     };
 }
 
-pub(super) static STR_ROWS: &[MethodRow] = shared_rows!("Str");
+pub(super) static STR_ROWS: &[MethodRow] = shared_rows!("Str", RowFlags::DEFINITE_MULTI);
 pub(super) static STR_MATCH_ROWS: &[MethodRow] = &[row!("Str", "match", 1, ARGS_NAMED, match_)];
-pub(super) static COOL_ROWS: &[MethodRow] = shared_rows!("Cool");
+pub(super) static COOL_ROWS: &[MethodRow] = shared_rows!("Cool", RowFlags::NONE);
 /// A `Cool` type object formats as its (empty, warning) string, as Rakudo's
 /// `Cool.sprintf` does (`Int.sprintf("%s")` is a directive-count error, not a
 /// missing method).

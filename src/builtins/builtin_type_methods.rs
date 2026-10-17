@@ -134,6 +134,35 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
             }
         }
     }
+    // A type object a `:D` row refuses has the method, as Rakudo's `.^can`
+    // says (`Int.^can('abs')`); the call fails binding the invocant.
+    if let Some(shape) = value.type_object_shape() {
+        let instance = crate::builtins::method_table::Receiver::instance(shape);
+        for arity in 0..=2u8 {
+            if let Some(id) =
+                crate::builtins::method_table::resolve(instance, sym, usize::from(arity))
+                && crate::builtins::method_table::row(id)
+                    .type_object_refusal("")
+                    .is_some()
+            {
+                arities |= 1 << arity;
+            }
+        }
+    }
+    // A value of a built-in class with no shape reaches the rows its own class
+    // declares (`invoke_owner` from the instance dispatch): a RakuAST node's
+    // builders, an `Attribute`'s accessors.
+    if crate::builtins::method_table::Receiver::of(value).is_none() {
+        let own = match value.view() {
+            crate::value::ValueView::RakuAst(node) => Symbol::intern(node.class.printed_name()),
+            _ => Symbol::intern(&crate::value::what_type_name(value)),
+        };
+        for arity in 0..=2u8 {
+            if crate::builtins::method_table::owner_row(own, sym, usize::from(arity)).is_some() {
+                arities |= 1 << arity;
+            }
+        }
+    }
     // Every receiver reaches `Mu`'s audited rows (ADR-11276 §9.81, §9.91); an
     // instance through its MRO, which `shapeless_row` reads only from the
     // interpreter it is not given here.

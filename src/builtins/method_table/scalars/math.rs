@@ -102,15 +102,21 @@ macro_rules! real_math_rows {
             narrow!($owner, "atan2", 1, atan2_1),
             narrow!($owner, "exp", 1, exp_1),
             narrow!($owner, "log", 1, log_1),
-            narrow!($owner, "roots", 1, roots),
+            // Rakudo refuses a type object inside the method (`Int.roots(2)`).
+            MethodRow {
+                flags: RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+                ..narrow!($owner, "roots", 1, roots)
+            },
             narrow!($owner, "unpolar", 1, unpolar),
             $($extra),*
         )
     };
 }
 
-pub(super) static INT_ROWS: &[MethodRow] =
-    real_math_rows!("Int", RowFlags::DEFINITE_MULTI; narrow!("Int", "expmod", 2, expmod));
+pub(super) static INT_ROWS: &[MethodRow] = real_math_rows!("Int", RowFlags::DEFINITE_MULTI; MethodRow {
+    flags: RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+    ..narrow!("Int", "expmod", 2, expmod)
+});
 pub(super) static NUM_ROWS: &[MethodRow] = real_math_rows!("Num", RowFlags::DEFINITE_MULTI;);
 pub(super) static RAT_ROWS: &[MethodRow] = real_math_rows!("Rat", RowFlags::DEFINITE_MULTI;);
 pub(super) static COOL_ROWS: &[MethodRow] = real_math_rows!("Cool", RowFlags::NONE;);
