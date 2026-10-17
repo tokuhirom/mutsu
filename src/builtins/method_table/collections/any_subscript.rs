@@ -10,6 +10,10 @@
 //! The index is an `Int` ([`RowFlags::INDEX_ARG`]; `index_arg` binds the
 //! others), a key any object. A type whose own row comes first in its MRO
 //! (`List`, `Hash`, `Range`, ...) never reaches these.
+//!
+//! `Nil` declares its own `AT-POS` and `AT-KEY`, which answer `Nil` for any
+//! index or key; its `EXISTS-POS` and `EXISTS-KEY` are these, and `Nil` is
+//! undefined, so nothing exists in it (ADR-11276 §9.154).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -42,6 +46,31 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
 ];
 
+/// `Nil.AT-POS` and `Nil.AT-KEY`: `Nil`, whatever the index or key.
+pub(super) static NIL_ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "Nil",
+        name: "AT-POS",
+        arity: 1,
+        handler: Handler::Narrow(nil_at),
+        flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "Nil",
+        name: "AT-KEY",
+        arity: 1,
+        handler: Handler::Narrow(nil_at),
+        flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
+        named: &[],
+    },
+];
+
+// Cost: O(1).
+fn nil_at(_target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    Some(Ok(Value::NIL))
+}
+
 /// The index an `INDEX_ARG` row was handed, or `None` for anything else.
 // Cost: O(1).
 fn index(arg: &Value) -> Option<i64> {
@@ -63,11 +92,13 @@ pub(crate) fn at_pos(target: &Value, args: &[Value]) -> Option<Result<Value, Run
     }))
 }
 
-/// `Any.EXISTS-POS(Int:D $pos)`: only index 0 of a defined value exists.
+/// `Any.EXISTS-POS(Int:D $pos)`: only index 0 of a defined value exists
+/// (a type object and `Nil` hold nothing).
 // Cost: O(1).
 pub(crate) fn exists_pos(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let pos = index(&args[0])?;
-    Some(Ok(Value::truth(pos == 0 && !is_type_object(target))))
+    let undefined = is_type_object(target) || target.descalarize().is_nil();
+    Some(Ok(Value::truth(pos == 0 && !undefined)))
 }
 
 /// `Any.AT-KEY($key)`: a type object autovivifies to `Any`; a defined value

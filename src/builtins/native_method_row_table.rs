@@ -1219,6 +1219,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mu", "Capture", 1, 24),
     ("Mu", "defined", 1, 24),
     ("Nil", "gist", 1, 0),
+    ("Nil", "AT-POS", 2, 60),
+    ("Nil", "AT-KEY", 2, 60),
     ("Nil", "raku", 1, 0),
     ("Exception", "message", 1, 48),
     ("Exception", "gist", 1, 16),
