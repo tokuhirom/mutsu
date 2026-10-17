@@ -44,6 +44,7 @@ pub(crate) mod iterator;
 pub(crate) mod rakuast_node;
 pub(crate) mod regex_match;
 pub(crate) mod routine;
+pub(crate) mod runtime_objects;
 pub(crate) mod signature;
 pub(crate) mod supply;
 pub(crate) mod temporal;
@@ -58,6 +59,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     hyper_seq::HYPER_ROWS,
     hyper_seq::RACE_ROWS,
     walk_list::ROWS,
+    runtime_objects::ROWS,
     temporal::DATE_ROWS,
     temporal::DATETIME_ROWS,
     dateish::DATE_ROWS,
