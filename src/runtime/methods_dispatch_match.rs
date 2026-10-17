@@ -117,29 +117,22 @@ impl Interpreter {
             "^name" if args.is_empty() => Some(self.dispatch_caret_name(&target)),
             "^enum_value_list" | "enum_value_list" => self.dispatch_enum_value_list(&target),
             "invert" => self.dispatch_invert_enum(&target),
+            // A grammar's `parse`/`subparse`/`parsefile` are `Grammar`'s rows
+            // (ADR-11276 §9.46): a type object and an instance both reach
+            // them, unless the grammar declares its own.
             "subparse" | "parse" | "parsefile" => {
-                match target.view() {
-                    ValueView::Package(package_name)
-                        if !self.grammar_has_user_method(&package_name.resolve(), method) =>
-                    {
-                        Some(self.dispatch_package_parse(&package_name.resolve(), method, &args))
-                    }
-                    // A grammar *instance* (`G.new`) dispatches `.parse` just like
-                    // the type object; grammars are stateless so the instance name
-                    // is its grammar package name.
-                    ValueView::Instance { class_name, .. }
-                        if self.class_is_grammar(&class_name.resolve())
-                            && !self.grammar_has_user_method(&class_name.resolve(), method) =>
-                    {
-                        Some(self.dispatch_instance_parse(
-                            target.clone(),
-                            &class_name.resolve(),
-                            method,
-                            &args,
-                        ))
-                    }
-                    _ => None,
+                let grammar = match target.view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => return None,
+                };
+                if self.grammar_has_user_method(&grammar, method) {
+                    return None;
                 }
+                let mut full = Vec::with_capacity(args.len() + 1);
+                full.push(target);
+                full.extend(args);
+                crate::builtins::method_table::invoke_owner_raw(self, &["Grammar"], method, &full)
             }
             _ => self.text_method_by_mro(target, method, &args),
         }

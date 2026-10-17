@@ -3451,6 +3451,23 @@ Decision.
   were unreachable.
 - The other late walks keep the class MRO. None of their rows is a role's.
 
+### 9.144 A grammar's `parse` family is `Grammar`'s rows from every call site (2026-10-17)
+
+`fix/13731-grammar-parse-single-new`. Two routines sat behind `dispatch_method_by_name_1`'s by-name
+`parse`/`subparse`/`parsefile` arm and `Grammar`'s rows (§9.46):
+
+- `dispatch_package_parse` answered a type object;
+- `dispatch_instance_parse` answered an instance and the rows. It called a grammar's own `new` and then
+  `dispatch_package_parse`.
+
+The start rule already runs on `self.new` (the `grammar-start-rule-built-invocant` test pins it), so the explicit call
+was a second `new`. An instance parse and a `nextsame` from a user `parse` ran the user `new` twice where Rakudo runs it
+once (#13731).
+
+Decision. `dispatch_instance_parse` is deleted, and `Grammar`'s rows call `dispatch_package_parse`. The by-name arm
+becomes one `invoke_owner_raw(&["Grammar"], ...)` for a type object or an instance whose grammar declares no method of
+that name. A package that is no grammar is the rows' to decline, as an instance that is no grammar was the arm's.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -6,7 +6,8 @@
 //! reached through its owner by [`crate::builtins::method_table::invoke_owner_raw`],
 //! the receiver first among the arguments, and answers with the one
 //! implementation the direct `G.parse(...)` call uses
-//! ([`Interpreter::dispatch_instance_parse`]).
+//! (`Interpreter::dispatch_package_parse`). The start rule runs on `self.new`,
+//! so a grammar's own `new` runs once per parse (#13731).
 
 use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
 use crate::runtime::Interpreter;
@@ -47,5 +48,5 @@ fn grammar_parse(
     if !interp.class_is_grammar(&class_name) {
         return None;
     }
-    Some(interp.dispatch_instance_parse(target.clone(), &class_name, method, &args[1..]))
+    Some(interp.dispatch_package_parse(&class_name, method, &args[1..]))
 }
