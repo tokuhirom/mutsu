@@ -3895,6 +3895,26 @@ declares that mutsu does not implement (`Lock::Async.protect-or-queue-on-recursi
 `Proc.new.exitcode` is `Nil` here and 1 in Rakudo, and `Proc.command` keeps `IO::Path` words unstringified. Both
 are pre-existing. Pinned in `t/concurrency/thread-lock/lock-tap-proc-rows.t`.
 
+### 9.158 `IO::Socket::INET`'s methods are rows (2026-10-17)
+
+`refactor/11276-socket-inet-rows` (3E remainder). A blocking TCP socket's instance methods were one by-name
+`match` (`native_socket_inet`), gated by a hand-written `native_methods` list.
+
+Decision.
+
+- Every method is an `OWNER_ONLY` row of `IO::Socket::INET` (`io_concurrency/socket_inet_rows.rs`). The rows are
+  reached like the handle classes' (§9.157): `handle_owners_of` covers the class. Each arm became one `Interpreter`
+  method (`inet_getpeername`, `inet_close`, `inet_accept`, `inet_print`, `inet_write`, `inet_recv`, `inet_read`,
+  `inet_get`, `inet_lines`, `inet_nl_in`). `localport` reads its attribute.
+- `runtime_init`'s name list is derived from the rows.
+- The names follow Rakudo's declarations. `IO::Socket::INET` has no `say` of its own, so the native `say` alias is
+  gone. `getpeername` stays a row although Rakudo does not declare it: roast pins it (`S16-unfiled/getpeername.t`),
+  and `rows_are_declared_by_rakudo` exempts it as it exempts `VM.properties`.
+
+Not done: `nl-in` answers a `List` in mutsu's separator order where Rakudo answers an `Array` in its own, and the
+names Rakudo declares that mutsu answers only as attributes or not at all (`backlog`, `encoding`, `family`, `host`,
+`nl-out`, `port`, `proto`, `type`, `native-descriptor`, `listening`). Pinned in `t/io/socket-inet-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

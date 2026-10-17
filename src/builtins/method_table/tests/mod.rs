@@ -433,6 +433,9 @@ fn rows_are_declared_by_rakudo() {
         // Roast pins `VM.properties` (`S02-magicals/VM.t`), which Rakudo does
         // not declare (RT #124624, ADR-11276 §9.155).
         .filter(|row| !(row.owner == "VM" && row.name == "properties"))
+        // Roast pins `IO::Socket::INET.getpeername` (`S16-unfiled/getpeername.t`),
+        // which Rakudo does not declare (ADR-11276 §9.158).
+        .filter(|row| !(row.owner == "IO::Socket::INET" && row.name == "getpeername"))
         // A method of language revision 6.e is checked against what 6.e adds
         // (`declared.e`), which the catalog need not record for a name 6.d
         // already recognizes on the owner (`Complex.sign`).

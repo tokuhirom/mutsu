@@ -633,7 +633,6 @@ impl Interpreter {
                 Ok(result)
             }
             "IO::Special" => self.native_io_special(attributes, method, args),
-            "IO::Socket::INET" => self.native_socket_inet(attributes, method, args),
             "IO::Socket::Async" => self.native_socket_async(attributes, method, args),
             "IO::Socket::Async::Listener" => {
                 self.native_socket_async_listener(attributes, method, args)
@@ -648,6 +647,7 @@ impl Interpreter {
             | "Cancellation"
             | "Tap"
             | "IO::Socket::Async::ListenSocket"
+            | "IO::Socket::INET"
             | "Proc") => {
                 let owners = crate::builtins::method_table::handle_owners_of(class).unwrap_or(&[]);
                 crate::builtins::method_table::invoke_owner(self, owners, method, &args, || {
