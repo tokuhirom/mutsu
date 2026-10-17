@@ -41,21 +41,30 @@ impl BlockRoutineness {
 /// routine classification goes: an EVAL'd unit's mainline (ADR-0037), a body a
 /// code object owns (its recorded classification, ADR-0050), or a body nothing
 /// owns (the ambient fallback).
+/// An owned body also carries the code its owner was compiled to, when it
+/// has one: the recompile sees that code's lexical import chain (ADR-8751).
 #[derive(Clone, Copy)]
-enum CarrierBody {
+enum CarrierBody<'a> {
     EvalUnit,
-    Owned(BlockRoutineness),
+    Owned(BlockRoutineness, Option<&'a crate::opcode::CompiledCode>),
     Unowned,
 }
 
-impl CarrierBody {
+impl<'a> CarrierBody<'a> {
     fn is_eval_unit(self) -> bool {
         matches!(self, CarrierBody::EvalUnit)
     }
 
     fn routineness(self) -> Option<BlockRoutineness> {
         match self {
-            CarrierBody::Owned(routineness) => Some(routineness),
+            CarrierBody::Owned(routineness, _) => Some(routineness),
+            CarrierBody::EvalUnit | CarrierBody::Unowned => None,
+        }
+    }
+
+    fn origin(self) -> Option<&'a crate::opcode::CompiledCode> {
+        match self {
+            CarrierBody::Owned(_, origin) => origin,
             CarrierBody::EvalUnit | CarrierBody::Unowned => None,
         }
     }
@@ -368,7 +377,7 @@ impl Interpreter {
     }
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, CarrierBody::Unowned, false, None, None, None, None)
+        self.eval_block_value_inner(body, CarrierBody::Unowned, false, None, None, None)
     }
 
     /// `eval_block_value`, but for a body that belongs to a specific,
@@ -389,7 +398,6 @@ impl Interpreter {
             CarrierBody::Unowned,
             false,
             Some(CarrierCacheKey::Id(cache_id)),
-            None,
             None,
             None,
         )
@@ -414,12 +422,13 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             body,
-            routineness.map_or(CarrierBody::Unowned, CarrierBody::Owned),
+            routineness.map_or(CarrierBody::Unowned, |routineness| {
+                CarrierBody::Owned(routineness, origin)
+            }),
             false,
             Some(CarrierCacheKey::Site(std::sync::Arc::clone(body))),
             None,
             None,
-            origin,
         )
     }
 
@@ -441,7 +450,6 @@ impl Interpreter {
             CarrierBody::Unowned,
             false,
             Some(CarrierCacheKey::Decl(def.decl_order)),
-            None,
             None,
             None,
         )
@@ -471,7 +479,6 @@ impl Interpreter {
             Some(CarrierCacheKey::Id(cache_id)),
             Some(free_var_writes_out),
             None,
-            None,
         )
     }
 
@@ -490,7 +497,7 @@ impl Interpreter {
         &mut self,
         body: &[Stmt],
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, CarrierBody::Unowned, true, None, None, None, None)
+        self.eval_block_value_inner(body, CarrierBody::Unowned, true, None, None, None)
     }
 
     /// Run a chunk the compiler built from a signature expression (ADR-0133)
@@ -510,7 +517,6 @@ impl Interpreter {
             None,
             None,
             Some(chunk),
-            None,
         )
     }
 
@@ -541,7 +547,6 @@ impl Interpreter {
             true,
             None,
             Some(free_var_writes_out),
-            None,
             None,
         )
     }
@@ -669,14 +674,14 @@ impl Interpreter {
     fn eval_block_value_inner(
         &mut self,
         body: &[Stmt],
-        kind: CarrierBody,
+        kind: CarrierBody<'_>,
         record_free_var_writes: bool,
         cache_id: Option<CarrierCacheKey>,
         free_var_writes_out: Option<&mut Vec<String>>,
         precompiled: Option<&crate::opcode::CompiledDeclExpr>,
-        origin: Option<&crate::opcode::CompiledCode>,
     ) -> Result<Value, RuntimeError> {
         let is_eval_unit = kind.is_eval_unit();
+        let origin = kind.origin();
         let routineness = kind.routineness();
         // Taken first, unconditionally: it belongs to THIS body's compile only
         // (see the field doc), and an empty body must not leave it armed.
