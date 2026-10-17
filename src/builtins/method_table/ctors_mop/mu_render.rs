@@ -1,22 +1,74 @@
-/// Representation methods: `gist` and `raku` of the receivers no row answers.
+//! `Mu.gist` and `Mu.raku` (ADR-11276 §9.162): the renderings a receiver
+//! reaches when its own type declares none.
+//!
+//! The closed and open shapes answer their own `gist`/`raku` rows first;
+//! these rows answer what is left, as the zero-argument rendering cascade
+//! (`methods_0arg/dispatch_core_repr.rs`) did: a type object (`(Int)`, `Int`),
+//! `Nil`, a parametric role, a `Signature`, a `Parameter`, a `Failure` (its
+//! rows, or it throws), a `CallFrame`, a quant hash, a package stash, a
+//! `Slip`, a `WhateverCode`, a `Range`, a lazy list's placeholder, a
+//! `Promise`, a `Channel`, an `IO::Special` (whose `gist` is its `raku`) and
+//! the other receivers with no shape, by their string form. They decline what
+//! needs the interpreter: an instance (its class may declare `gist` or `raku`),
+//! an enum, a code object, a `Junction`'s `raku` and a lazy list that must be
+//! forced.
+
+use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
+use crate::value::raku_repr::{promise_raku_repr, raku_value};
+use crate::value::types::is_stash_class_name;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::raku_repr::{promise_raku_repr, raku_value};
-use crate::value::types::is_stash_class_name;
+pub(super) static ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "Mu",
+        name: "gist",
+        arity: 0,
+        handler: Handler::Narrow(gist),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Mu",
+        name: "raku",
+        arity: 0,
+        handler: Handler::Narrow(raku),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+];
 
-pub(super) fn dispatch(
-    target: &Value,
-    method: &str,
-) -> Option<Option<Result<Value, RuntimeError>>> {
-    if !matches!(method, "gist" | "raku") {
-        return None;
-    }
-    if method == "gist"
-        && let Some(answer) = super::collection_gist::collection_gist(target)
+/// `Mu.gist`.
+// Cost: O(n), n = chars of the rendering.
+fn gist(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    // An `IO::Special`'s `gist` is its `raku` (`IO::Special.new("<STDOUT>")`).
+    if let ValueView::Instance { class_name, .. } = target.view()
+        && class_name == "IO::Special"
     {
-        return Some(answer);
+        return crate::builtins::method_table::io_special_raku(target, &[]);
     }
-    Some(match target.view() {
+    render(target, "gist")
+}
+
+/// `Mu.raku`.
+// Cost: O(n), n = chars of the rendering.
+fn raku(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    render(target, "raku")
+}
+
+/// The rendering `method` (`gist` or `raku`) of a receiver no closer row
+/// answers.
+// Cost: O(n), n = chars of the rendering.
+fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+    if method == "gist"
+        && let Some(answer) =
+            crate::builtins::methods_0arg::collection_gist::collection_gist(target)
+    {
+        return answer;
+    }
+    match target.view() {
+        // A mixin renders through the value it wraps or the roles mixed into
+        // it, which the cascade's mixin step and the interpreter resolve.
+        ValueView::Mixin(..) => None,
         // A parameterized role type object: raku is the bare name
         // (`Cup[EggNog]`), gist wraps it in type-object parens.
         ValueView::ParametricRole { .. } => {
@@ -93,23 +145,6 @@ pub(super) fn dispatch(
                     "CallFrame.new(annotations => {{:file(\"{}\"), :line(\"{}\")}}, my => {{}})",
                     file, line
                 ))))
-            }
-        }
-        // The renderers the quant hashes' rows share. The rows decline an
-        // element that may carry a user `gist`/`raku`; this arm renders it
-        // with the default form, as it always did.
-        ValueView::Bag(..) | ValueView::Set(..) | ValueView::Mix(..) => {
-            if method == "gist" && crate::Interpreter::quanthash_needs_element_dispatch(target) {
-                // The interpreter resolves each element's own `gist` first.
-                None
-            } else if method == "gist" {
-                Some(Ok(Value::str(
-                    crate::value::gist::setbagmix_gist(target).unwrap(),
-                )))
-            } else {
-                Some(Ok(Value::str(
-                    super::raku_repr::setbagmix_raku(target).unwrap(),
-                )))
             }
         }
         ValueView::Package(name) => {
@@ -197,5 +232,5 @@ pub(super) fn dispatch(
         // and the other rendering rows): nothing here answers it.
         _ if target.dispatch_shape().is_some() => None,
         _ => Some(Ok(Value::str(target.to_string_value()))),
-    })
+    }
 }

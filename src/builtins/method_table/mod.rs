@@ -91,6 +91,7 @@ pub(crate) use io_concurrency::encoding::{
     owners_of as encoding_owners_of,
 };
 pub(crate) use io_concurrency::io_path_lexical::basename as io_path_basename;
+pub(crate) use io_concurrency::io_special::raku_row as io_special_raku;
 pub(crate) use io_concurrency::proc_async::owners_of as proc_async_owners_of;
 pub(crate) use io_concurrency::promise_channel;
 pub(crate) use io_concurrency::promise_channel::{

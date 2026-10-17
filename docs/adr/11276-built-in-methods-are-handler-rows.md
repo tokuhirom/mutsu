@@ -4031,6 +4031,44 @@ or instead of, their rows:
 
 Pinned in `t/oo/method/builtin-method-name-rows.t`.
 
+### 9.162 `Mu.gist` and `Mu.raku` are rows; the rendering cascade goes (2026-10-17)
+
+`refactor/11276-mu-render-rows` (plan item 2.1, the rendering names). After §9.152 moved the scalar shapes
+off it, `methods_0arg/dispatch_core_repr.rs` still answered `gist`/`raku` by name for every receiver the
+rows left. Those were type objects, `Nil`, a parametric role, `Signature`, `Parameter`, `Failure`,
+`CallFrame`, the quant hashes, a package stash, an Array/Seq/Slip/Pair/Hash `raku`, a `WhateverCode`, a
+`Range`, a lazy list's placeholder, `Promise`, `Channel`, and the string form of the rest. Disabling the
+cascade broke 223 `t/` files, so it carried real answers that no row gave.
+
+Decision.
+
+- `Mu.gist` and `Mu.raku` are pure `TYPE_OBJECT_OK` rows (`ctors_mop/mu_render.rs`) whose handlers are the
+  cascade's receiver arms. They are reached the way `Mu.Str` is (§9.93): `gist` and `raku` join
+  `MU_FOR_CLOSED_SHAPES`, so a closed shape whose own row declines reaches them, and a receiver with no
+  shape reaches them through `answer_shapeless`.
+- Two kinds of receiver are declined. A mixin renders through what it wraps, which the cascade's mixin
+  step and the interpreter resolve. An instance is declined unless its class is a built-in one the
+  handler knows.
+- Without an interpreter, an instance's renderings go to `Mu`'s rows directly. A subclass of a built-in
+  class whose nearest owner is not `Mu` (an `Exception` subclass with its own `message`) is the
+  interpreter's, as `Str` already was.
+- Two rows that were registered under owner `Mu` but meant for one class move to that class.
+  `IO::Handle.raku` becomes a row of `IO::Handle`: Rakudo has none, and its `Mu.raku` dumps attributes
+  mutsu keeps elsewhere, so `rows_are_declared_by_rakudo` names it as an exception. With that,
+  `DispatchShape::IoHandle` no longer reaches every `Mu` row. `IO::Special`'s `gist` folds into
+  `Mu.gist`.
+  Left under `Mu`, `IO::Handle`'s interpreter row would be the first `Mu.raku` `owner_row` finds, and
+  every shapeless receiver would render through it (`Nil.WHAT.raku` was `""` in a first draft).
+- The quant hashes' `gist`/`raku` rows keep the cascade's answer for an element that needs no dispatch:
+  `gist` declines only when `quanthash_needs_element_dispatch` says so, and `raku` declines only when
+  `container_needs_raku_dispatch` does. `Int.Bag.raku` is `(Int=>1).Bag`.
+- The cascade's mixin step renders a mixed-in collection's `raku` through the collections' renderer,
+  since the collections' `raku` rows need the interpreter (a typed container names its type).
+- `dispatch_core_repr.rs` is deleted.
+
+Not done: `WhateverCode.gist` is still `WhateverCode.new`, where Rakudo prints the source (`* + 1`).
+Pinned in `t/types/mu-render-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

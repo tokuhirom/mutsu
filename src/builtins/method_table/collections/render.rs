@@ -105,19 +105,26 @@ fn has_object_element(target: &Value) -> bool {
     }
 }
 
-/// A quant hash's `.gist`: `Set(a b)`, `Bag(a(2))`, `Mix(a(0.5))`.
+/// A quant hash's `.gist`: `Set(a b)`, `Bag(a(2))`, `Mix(a(0.5))`. An element
+/// whose class may declare its own `gist` is rendered by the interpreter, which
+/// dispatches it (`Interpreter::quanthash_needs_element_dispatch`); a type
+/// object element renders as its default form.
 // Cost: O(n log n), n = elements (the keys are sorted).
 pub(crate) fn quant_gist(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if has_object_element(target) {
+    if crate::runtime::Interpreter::quanthash_needs_element_dispatch(target) {
         return None;
     }
     setbagmix_gist(target).map(|s| Ok(Value::str(s)))
 }
 
-/// A quant hash's `.raku`: `Set.new("a","b")`, `("a"=>2).Bag`.
+/// A quant hash's `.raku`: `Set.new("a","b")`, `("a"=>2).Bag`. An element
+/// whose own `raku` is reachable only through method dispatch (a user
+/// instance) is rendered by the interpreter
+/// (`runtime::container_needs_raku_dispatch`); a type object element renders
+/// as its default form (`(Int=>1).Bag`).
 // Cost: O(n log n), n = elements (the keys are sorted).
 pub(crate) fn quant_raku(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if has_object_element(target) {
+    if crate::runtime::container_needs_raku_dispatch(target) {
         return None;
     }
     setbagmix_raku(target).map(|s| Ok(Value::str(s)))

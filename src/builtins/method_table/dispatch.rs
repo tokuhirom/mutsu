@@ -878,6 +878,14 @@ pub(crate) fn shapeless_row(
         _ if iterable => return None,
         // `Mu`'s answers reach a `Failure` too: asking its truth handles it.
         ValueView::Instance { class_name, .. } if mu && class_name == "Failure" => mu_owner,
+        // Without an interpreter no MRO can be read: `Mu`'s renderings answer
+        // the built-in classes' instances they know (a `Signature`, a `Stash`)
+        // and decline every other instance, whose class may declare its own.
+        ValueView::Instance { .. }
+            if mu && interp.is_none() && matches!(method.as_str(), "gist" | "raku") =>
+        {
+            mu_owner
+        }
         ValueView::Instance { class_name, .. } if mu => {
             // The first class in the MRO that declares the method answers it
             // (`class M is Match` keeps `Match.not`); `Mu` ends every MRO.
@@ -891,7 +899,7 @@ pub(crate) fn shapeless_row(
             // subclass's: an `Exception` subclass renders its own `message`,
             // a `Str` subclass keeps its type. The interpreter answers those
             // (§9.93).
-            if matches!(method.as_str(), "Str" | "Stringy") && owner != mu_owner {
+            if matches!(method.as_str(), "Str" | "Stringy" | "gist" | "raku") && owner != mu_owner {
                 return None;
             }
             owner
