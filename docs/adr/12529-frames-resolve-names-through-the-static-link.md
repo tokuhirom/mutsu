@@ -1530,6 +1530,25 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    was left out. Pinned by
    `t/vm/scope/dynamic-var-written-by-callee-through-cell.t`.
 
+   **Slice 40 done** (`fix/12529-dynamic-rebind-binding-cell`): a
+   callee's rebind of a caller-declared dynamic (`$*t := $*root`, or
+   `nqp::bindlexdyn('$*q', 8)`) is now a runtime-name write, carried
+   across each frame exit to the frame that declares it, as a symbolic
+   store to a plain lexical already was (`record_runtime_name_write`,
+   `propagate_pending_caller_writes`). The record is made at the op sites
+   (`SetGlobal`, the assign-expression op, `bindlexdyn`) and only for a
+   dynamic the running code does not declare itself; the declaring frame
+   drops the carried name on its own return. Recording it at the env
+   store chokepoint instead caught the declaring frame's own `my @*x`
+   store, so a later call's fresh `@*x` started with the earlier call's
+   contents. A seventh census, on this slice with the merges off, found no
+   `t/` or roast file depending on them beyond the slice 29 false
+   positive and the container's environment-only failures, so the merge
+   loops can go. Pinned by `t/vm/scope/dynamic-var-rebound-by-callee.t`.
+   Found on the way and filed as #13701: a callee's write to an `is rw`
+   dynamic parameter is lost when the unit holds `EVAL` or an
+   `nqp::bindlex*` anywhere (not caused by this slice).
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

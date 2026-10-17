@@ -341,9 +341,13 @@ impl Interpreter {
     /// between the writer and the frame that declares the lexical — see
     /// [`Self::pending_runtime_name_writes`] and `propagate_pending_caller_writes`.
     ///
-    /// Only plain user lexicals qualify: a system name (`&?BLOCK`, the topic,
-    /// `$/`, a dynamic, `__mutsu_*`) is per-frame by construction and replaying it
-    /// into a caller corrupts that caller's own binding.
+    /// Plain user lexicals qualify, and so do dynamics (`$*x`): a callee's
+    /// rebind (`$*x := ...`) or by-name bind (`nqp::bindlexdyn`) of a dynamic
+    /// its caller declared is carried the same way to the declaring frame
+    /// (ADR-12529 §3, slice 40); the op sites record only a dynamic the running
+    /// code does not declare itself. A system name (`&?BLOCK`, the topic, `$/`,
+    /// `__mutsu_*`) is per-frame by construction and replaying it into a caller
+    /// corrupts that caller's own binding.
     pub(crate) fn record_runtime_name_write(&mut self, name: &str) {
         if !crate::env::is_plain_user_lexical(name) && !crate::env::is_dynamic_var_env_key(name) {
             return;
