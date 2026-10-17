@@ -78,6 +78,9 @@ pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
 
 #[cfg(test)]
 pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
+    // `Mu.perl` is `self.raku` (ADR-11276 §9.152): the call entries resolve
+    // the one name to the other, so a receiver takes `perl` where it takes `raku`.
+    let method_name = if method_name == "perl" { "raku" } else { method_name };
     let sym = Symbol::intern(method_name);
     let mut arities = u8::from(crate::builtins::native_method_0arg(value, sym).is_some());
     // A registered row recognizes its arity for a receiver of its shape
