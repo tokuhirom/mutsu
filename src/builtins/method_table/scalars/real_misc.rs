@@ -85,7 +85,8 @@ pub(super) static FAT_RAT_ROWS: &[MethodRow] = &[
     row!("FatRat", "narrow", narrow, RowFlags::DEFINITE),
     row!("FatRat", "Bridge", bridge),
 ];
-pub(super) static COMPLEX_ROWS: &[MethodRow] = &[row!("Complex", "narrow", narrow, RowFlags::DEFINITE)];
+pub(super) static COMPLEX_ROWS: &[MethodRow] =
+    &[row!("Complex", "narrow", narrow, RowFlags::DEFINITE)];
 pub(super) static COOL_ROWS: &[MethodRow] = &[
     row!("Cool", "is-prime", is_prime),
     row!("Cool", "conj", conj),

@@ -2223,7 +2223,8 @@ impl Interpreter {
             }
         }
         // `Supply`'s and `Collation`'s methods are rows, found by their owner
-        // (ADR-11276 §9.130, §9.131).
+        // (ADR-11276 §9.130, §9.131). A `Supply:D:` row refuses the type object
+        // (`RowFlags::DEFINITE`, `Supply.tap`).
         if let Some(owners) = crate::builtins::method_table::supply_owners_of(&target)
             .or_else(|| crate::builtins::method_table::collation_owners_of(&target))
             && let Some(result) = crate::builtins::method_table::invoke_owner(
@@ -2235,46 +2236,6 @@ impl Interpreter {
             )
         {
             return result;
-        }
-        // An instance-only Supply method invoked on the `Supply` TYPE OBJECT is
-        // an X::Parameter::InvalidConcreteness (the invocant is `Supply:D`). These
-        // ones otherwise fall through to the generic `Any` list methods (e.g.
-        // `Supply.skip` would wrongly return a Seq).
-        if matches!(method, "skip")
-            && matches!(target.view(), ValueView::Package(name) if name == "Supply")
-        {
-            return Err(RuntimeError::parameter_invalid_concreteness(
-                "Supply", "Supply", method, "self", true, true,
-            ));
-        }
-        // Supply type-object method error
-        if matches!(
-            method,
-            "max"
-                | "min"
-                | "lines"
-                | "delayed"
-                | "reduce"
-                | "classify"
-                | "start"
-                | "squish"
-                | "produce"
-                | "map"
-                | "batch"
-                | "throttle"
-                | "rotor"
-                | "rotate"
-                | "comb"
-                | "words"
-                | "snip"
-                | "minmax"
-                | "wait"
-        ) && matches!(target.view(), ValueView::Package(name) if name == "Supply")
-        {
-            return Err(RuntimeError::new(format!(
-                "Cannot call .{} on a Supply type object",
-                method
-            )));
         }
         // The positional protocol of a list or array: `Any`'s late rows for
         // multi-dimensional indices, a shaped array's bounds and a native
@@ -2521,37 +2482,6 @@ impl Interpreter {
             && let Some(result) = crate::builtins::native_base_with_options(&target, &args)
         {
             return result;
-        }
-        // `Str.AST($slang)` — parse the string under the localized surface
-        // syntax of the `L10N::<$slang>` distribution. An interpreter *carrier*
-        // in the `EVAL` sense rather than a tree-walk fallback: resolving
-        // `L10N::<$slang>` needs this interpreter's module search path, which
-        // the pure arity cascade serving the plain no-argument `.AST` has no way
-        // to reach. A named argument (`.AST(:compunit)`) is not a slang.
-        if method == "AST"
-            && !bypass_native_fastpath
-            && let ValueView::Str(source) = target.view()
-            && let [slang] = args.as_slice()
-            && !matches!(slang.view(), ValueView::Pair(..))
-        {
-            return self.str_ast_with_slang(&source, slang);
-        }
-        // Plain `Str.AST` must scan `use`d modules with this interpreter's
-        // module paths before converting exported names.
-        if method == "AST"
-            && !bypass_native_fastpath
-            && let ValueView::Str(source) = target.view()
-            && (args.is_empty()
-                || (args.len() == 1
-                    && matches!(args[0].view(), ValueView::Pair(key, _)
-                        if key.as_str() == "compunit")))
-        {
-            let compunit = matches!(
-                args.first().map(Value::view),
-                Some(ValueView::Pair(key, value))
-                    if key.as_str() == "compunit" && value.truthy()
-            );
-            return self.str_ast_with_paths(&source, compunit);
         }
         if method == "AT-POS"
             && !bypass_native_fastpath

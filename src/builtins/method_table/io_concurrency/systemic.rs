@@ -70,11 +70,23 @@ pub(super) static ROWS: &[MethodRow] = &[
     attr!("Kernel", "hardware"),
     attr!("Kernel", "arch"),
     attr!("Kernel", "bits"),
-    attr!("Kernel", "hostname"),
+    row!(
+        "Kernel",
+        "hostname",
+        0,
+        Handler::Narrow(kernel_hostname),
+        RowFlags::TYPE_OBJECT_OK
+    ),
     attr!("Kernel", "version"),
     attr!("Kernel", "signature"),
     attr!("Kernel", "signals"),
-    attr!("Kernel", "endian"),
+    row!(
+        "Kernel",
+        "endian",
+        0,
+        Handler::Narrow(kernel_endian),
+        RowFlags::TYPE_OBJECT_OK
+    ),
     row!(
         "Kernel",
         "cpu-cores",
@@ -240,6 +252,37 @@ fn name_and_version(target: &Value, _: &[Value]) -> Answer {
         "{} ({version})",
         text(target, "name")
     ))))
+}
+
+/// `Kernel.hostname`: the instance's attribute, or for the type object the
+/// running host's name (`Kernel.hostname` is what `Sys::Hostname` calls).
+// Cost: O(1), reads the process-cached uname(2) result.
+fn kernel_hostname(target: &Value, _: &[Value]) -> Answer {
+    if let ValueView::Instance { .. } = target.view() {
+        return attribute(target, "hostname");
+    }
+    Some(Ok(Value::str(
+        crate::runtime::io_sysinfo_host::host_info()
+            .hostname
+            .clone(),
+    )))
+}
+
+/// `Kernel.endian`: the instance's attribute, or for the type object the
+/// byte order mutsu was built for.
+// Cost: O(1).
+fn kernel_endian(target: &Value, _: &[Value]) -> Answer {
+    if let ValueView::Instance { .. } = target.view() {
+        return attribute(target, "endian");
+    }
+    let little = cfg!(target_endian = "little");
+    let index = if little { 1 } else { 2 };
+    Some(Ok(Value::enum_parts(
+        crate::symbol::Symbol::intern("Endian"),
+        crate::symbol::Symbol::intern(if little { "LittleEndian" } else { "BigEndian" }),
+        crate::value::EnumValue::Int(index),
+        index as usize,
+    )))
 }
 
 /// `Kernel.raku`.

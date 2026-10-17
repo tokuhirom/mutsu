@@ -407,43 +407,6 @@ fn get_string_splitters(splitter: &Value) -> Option<Vec<String>> {
     }
 }
 
-/// Perform string split (no regex). Returns None if splitter contains regex.
-// Cost: O(n) to copy the invocant, plus the chosen splitter's cost
-// (`split_by_string` / `split_by_strings`).
-pub(crate) fn native_split_method(
-    target: &Value,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    let (positional, mut opts) = SplitOpts::from_args(args);
-    if positional.is_empty() {
-        return Some(Err(RuntimeError::new("Must specify a pattern for split")));
-    }
-
-    if let Err(e) = opts.check_conflicts("Str") {
-        return Some(Err(e));
-    }
-
-    let splitter = positional[0];
-    if positional.len() > 1 {
-        opts.limit = match parse_split_limit(positional[1]) {
-            Ok(limit) => limit,
-            Err(err) => return Some(Err(err)),
-        };
-    }
-
-    let splitters = get_string_splitters(splitter)?;
-    let text = target.to_string_value();
-
-    let parts = if splitters.len() == 1 {
-        split_by_string(&text, &splitters[0], opts.limit)
-    } else {
-        split_by_strings(&text, &splitters, opts.limit)
-    };
-
-    let result = apply_split_opts(parts, &opts);
-    Some(Ok(Value::seq(result)))
-}
-
 /// Perform string split as function: split($splitter, $string, ...).
 /// Returns None if splitter contains regex.
 pub(crate) fn native_split_function(args: &[Value]) -> Option<Result<Value, RuntimeError>> {

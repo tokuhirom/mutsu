@@ -249,7 +249,11 @@ impl MethodRow {
         } else if self.flags.contains(RowFlags::DEFINITE_MULTI) {
             Some(
                 crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
-                    self.name, type_name, false, "", &[],
+                    self.name,
+                    type_name,
+                    false,
+                    "",
+                    &[],
                 ),
             )
         } else {

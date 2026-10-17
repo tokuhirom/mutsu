@@ -37,6 +37,27 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
+    // `Any.nl-out`: the default newline separator, which `IO::Handle`
+    // overrides with its own.
+    MethodRow {
+        owner: "Any",
+        name: "nl-out",
+        arity: 0,
+        handler: Handler::Pure(nl_out),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+    // `$!.pending` (S04): the unhandled `Failure`s of the program. Rakudo has
+    // no such method; mutsu answers it on any receiver, as `$!` may hold an
+    // exception or nothing (`roast/S04-exceptions/pending.t`).
+    MethodRow {
+        owner: "Any",
+        name: "pending",
+        arity: 0,
+        handler: Handler::Pure(pending),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
     MethodRow {
         owner: "Any",
         name: "serial",
@@ -294,4 +315,21 @@ fn one(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 // Cost: O(n), n = elements of the receiver's list.
 fn none(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     junction_of(JunctionKind::None, target)
+}
+
+/// `Any.nl-out`.
+// Cost: O(1).
+pub(super) fn nl_out(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::str_from("\n"))
+}
+
+/// `pending`: a list of the `Failure`s not yet handled.
+// Cost: O(f), f = pending failures.
+pub(super) fn pending(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::array_with_kind(
+        crate::gc::Gc::new(crate::value::ArrayData::new(
+            crate::value::get_pending_failures(),
+        )),
+        crate::value::ArrayKind::List,
+    ))
 }

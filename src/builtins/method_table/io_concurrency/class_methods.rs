@@ -4,7 +4,8 @@
 //! `Encoding::Registry`'s `find` and `register`, `IO::Socket::INET`'s `connect`
 //! and `listen`, and `IO::Socket::Async`'s `connect`, `listen`, `bind-udp` and
 //! `udp`; `Rakudo::Internals.REGISTER-DYNAMIC`, `Deprecation.report` and
-//! `CompUnit::Loader`'s `load-source` and `load-source-file` (§9.159).
+//! `CompUnit::Loader`'s `load-source` and `load-source-file` (§9.159);
+//! `Thread.yield`.
 //!
 //! The rows are reached through their owner (`RowFlags::OWNER_ONLY`,
 //! `invoke_owner`) from the by-name dispatch that answered them before
@@ -64,6 +65,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Seq", "from-loop", 0, seq_from_loop),
     row!("X::AdHoc", "from-slurpy", 0, adhoc_from_slurpy),
     row!("Thread", "start", 1, thread_start),
+    row!("Thread", "yield", 0, thread_yield),
     row!("Rakudo::Internals", "REGISTER-DYNAMIC", 0, register_dynamic),
     row!("Deprecation", "report", 0, deprecation_report),
     row!("CompUnit::Loader", "load-source", 0, load_source),
@@ -74,7 +76,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "start",
         arity: 1,
         handler: Handler::Interp(supply_start),
-        flags: RowFlags::OWNER_ONLY,
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::DEFINITE),
         named: &[],
     },
 ];
@@ -100,6 +102,9 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
         "Rakudo::Internals" => &["Rakudo::Internals"],
         "Deprecation" => &["Deprecation"],
         "CompUnit::Loader" => &["CompUnit::Loader"],
+        // `Kernel.hostname` and the other `Systemic` rows that answer the type
+        // object (`systemic.rs`).
+        "Kernel" => &["Kernel"],
         _ => return None,
     })
 }
@@ -248,6 +253,18 @@ fn adhoc_from_slurpy(i: &mut Interpreter, _t: &Value, args: &[Value], named: Nam
 // Cost: one OS thread spawn.
 fn thread_start(i: &mut Interpreter, _t: &Value, args: &[Value], named: Named<'_>) -> Answer {
     Some(i.dispatch_thread_start(&all_args(args, named)))
+}
+
+/// `Thread.yield`: lets the scheduler run another OS thread.
+// Cost: O(1), one scheduler yield for the calling OS thread.
+fn thread_yield(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    // `method yield(Thread:U:)`.
+    if let Some(e) = type_object_only(t, "yield") {
+        return Some(Err(e));
+    }
+    crate::runtime::thread_usage::note_thread_yield();
+    std::thread::yield_now();
+    Some(Ok(Value::NIL))
 }
 
 /// `Supply.start(&code)`: a supply of supplies, each running the block on one

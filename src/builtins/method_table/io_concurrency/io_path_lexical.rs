@@ -21,12 +21,15 @@ use std::path::Path;
 /// A zero-argument row.
 macro_rules! row0 {
     ($name:literal, $handler:ident) => {
+        row0!($name, $handler, RowFlags::NONE)
+    };
+    ($name:literal, $handler:ident, $flags:expr) => {
         MethodRow {
             owner: "IO::Path",
             name: $name,
             arity: 0,
             handler: Handler::Narrow($handler),
-            flags: RowFlags::NONE,
+            flags: $flags,
             named: &[],
         }
     };
@@ -51,12 +54,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     row0!("gist", gist_row),
     row0!("IO", io_row),
     row0!("SPEC", spec_row),
-    row0!("basename", basename_row),
-    row0!("dirname", dirname_row),
-    row0!("volume", volume_row),
-    row0!("cleanup", cleanup_row),
+    row0!("basename", basename_row, RowFlags::DEFINITE),
+    row0!("dirname", dirname_row, RowFlags::DEFINITE),
+    row0!("volume", volume_row, RowFlags::DEFINITE),
+    row0!("cleanup", cleanup_row, RowFlags::DEFINITE),
     row0!("parts", parts_row),
-    row0!("parent", parent_row),
+    row0!("parent", parent_row, RowFlags::DEFINITE_MULTI),
     rown!("parent", 1, parent_row),
     rown!("sibling", 1, sibling_row),
     MethodRow {
@@ -64,19 +67,22 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "add",
         arity: 0,
         handler: Handler::Narrow(add_row),
-        flags: RowFlags::ANY_ARGS.or(RowFlags::SLURPY),
+        flags: RowFlags::ANY_ARGS
+            .or(RowFlags::SLURPY)
+            .or(RowFlags::DEFINITE),
         named: &[],
     },
     row0!("is-absolute", is_absolute_row),
     row0!("is-relative", is_relative_row),
-    row0!("succ", succ_row),
-    row0!("pred", pred_row),
+    row0!("succ", succ_row, RowFlags::DEFINITE),
+    row0!("pred", pred_row, RowFlags::DEFINITE),
     MethodRow {
         owner: "IO::Path",
         name: "extension",
         arity: 0,
         handler: Handler::Named(extension_row),
-        flags: RowFlags::NONE,
+        // Every candidate is `IO::Path:D:` (`IO::Path.extension` finds none).
+        flags: RowFlags::DEFINITE_MULTI,
         named: &["parts"],
     },
     MethodRow {

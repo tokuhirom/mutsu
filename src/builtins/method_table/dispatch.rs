@@ -126,9 +126,26 @@ pub(crate) fn invoke_owner(
     let method = Symbol::intern(method);
     let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
     let arity = args.len() - named_count;
-    let id = owners
+    let Some(id) = owners
         .iter()
-        .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))?;
+        .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))
+    else {
+        // The invocant binds before the arguments do: a `:D` row of another
+        // arity still refuses a type object (`Supply.start`).
+        let target = target();
+        let crate::value::ValueView::Package(name) = target.view() else {
+            return None;
+        };
+        let refusal = owners.iter().find_map(|owner| {
+            (0..=7).find_map(|arity| {
+                let row = row(super::owner_row(Symbol::intern(owner), method, arity)?);
+                (!row.flags.contains(RowFlags::TYPE_OBJECT_OK))
+                    .then(|| row.type_object_refusal(name.as_str()))
+                    .flatten()
+            })
+        })?;
+        return Some(Err(refusal));
+    };
     let row = row(id);
     let target = target();
     // A type object reaches only a row that admits one, as through the guard
@@ -356,11 +373,11 @@ fn dispatch(
                 return Some((Err(refusal), false));
             }
         },
-        // `UInt`, the one built-in subset, has no shape: its type object is
-        // refused by the `Int` rows its instances reach.
-        None if matches!(target.view(), crate::value::ValueView::Package(name) if name == "UInt") => {
-            let receiver = Receiver::type_object(DispatchShape::Int);
-            let refusal = type_object_refusal(receiver, target, method, arity)?;
+        // A type object with no shape of its own whose instances have one
+        // (`UInt`, the one built-in subset, is an `Int`; `IO::Path::Unix` is an
+        // `IO::Path`) is refused by the rows its instances reach.
+        None if let Some(shape) = instance_shape_of_type_object(target) => {
+            let refusal = type_object_refusal(Receiver::type_object(shape), target, method, arity)?;
             if let Some(interp) = interp.as_deref_mut()
                 && !allow(interp)
             {
@@ -427,11 +444,30 @@ fn type_object_refusal(
     if !receiver.type_object {
         return None;
     }
-    let id = super::resolve(Receiver::instance(receiver.shape), method, arity)?;
     let crate::value::ValueView::Package(name) = target.view() else {
         return None;
     };
+    // The invocant binds before the arguments do, so a row of any arity
+    // refuses the type object (`IO::Path.split` with no argument).
+    let instance = Receiver::instance(receiver.shape);
+    let id = std::iter::once(arity)
+        .chain(0..=7)
+        .find_map(|arity| super::resolve(instance, method, arity))?;
     row(id).type_object_refusal(name.as_str())
+}
+
+/// The shape of the instances of the type object `target` when it has none
+/// of its own: `UInt` (a subset of `Int`) and the classes whose instances
+/// share a shape (`IO::Path::Unix`).
+// Cost: O(s), s = classes with an instance shape.
+fn instance_shape_of_type_object(target: &Value) -> Option<DispatchShape> {
+    let crate::value::ValueView::Package(name) = target.view() else {
+        return None;
+    };
+    if name == "UInt" {
+        return Some(DispatchShape::Int);
+    }
+    DispatchShape::from_instance_class(name)
 }
 
 /// `Iterable`'s methods a receiver with no shape reaches through the row of

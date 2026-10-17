@@ -29,6 +29,20 @@ macro_rules! origin_row {
     };
 }
 
+/// A one-argument row of `RakuAST::Node` that takes any argument (a node).
+macro_rules! node_row {
+    ($name:literal, $handler:expr) => {
+        MethodRow {
+            owner: "RakuAST::Node",
+            name: $name,
+            arity: 1,
+            handler: Handler::Narrow($handler),
+            flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+            named: &[],
+        }
+    };
+}
+
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "RakuAST::Node",
@@ -38,6 +52,18 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
+    // The builders that change a node in place (`$list.add-statement($s)`):
+    // each answers only the node class Rakudo declares it on
+    // (`Value::rakuast_add_child`, `Value::rakuast_set_field`).
+    node_row!("add-statement", |t, a| t
+        .rakuast_add_child("add-statement", a[0].clone())),
+    node_row!("unshift-statement", |t, a| t
+        .rakuast_add_child("unshift-statement", a[0].clone())),
+    node_row!("push", |t, a| t.rakuast_add_child("push", a[0].clone())),
+    node_row!("replace-statement-list", |t, a| t
+        .rakuast_set_field("replace-statement-list", a[0].clone())),
+    node_row!("set-expression", |t, a| t
+        .rakuast_set_field("set-expression", a[0].clone())),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
     origin_row!("RakuAST::Origin", "to", 0, origin_position),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),

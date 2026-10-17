@@ -1,6 +1,6 @@
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
+use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
@@ -213,19 +213,6 @@ pub(crate) fn native_method_0arg_cascade(
         return Some(result);
     }
 
-    // Cost: O(1), one lookup in the Attribute metadata map.
-    if method == "DEPRECATED"
-        && let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-        && class_name == "Attribute"
-        && let Some(message) = attributes.as_map().get("DEPRECATED")
-    {
-        return Some(Ok(message.clone()));
-    }
-
     // A lazy Match the table has no shape for (a grammar cursor) answers
     // `Match`'s rows here, straight from the capture node, so the probe
     // gauntlet in between (each a `view()`, which would materialize the Match)
@@ -249,13 +236,6 @@ pub(crate) fn native_method_0arg_cascade(
     // than answering out of the descriptor's attribute map.
     if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method) {
         return None;
-    }
-
-    // Cost: O(1), one scheduler yield for the calling OS thread.
-    if method == "yield" && matches!(target.view(), ValueView::Package(name) if name == "Thread") {
-        crate::runtime::thread_usage::note_thread_yield();
-        std::thread::yield_now();
-        return Some(Ok(Value::NIL));
     }
 
     // Scalar containers are transparent for method dispatch (except .VAR and
@@ -308,15 +288,6 @@ pub(crate) fn native_method_0arg_cascade(
             // short-circuit (`roast/S16-filehandles/io_in_for_loops.t`).
             return Some(Ok(target.clone()));
         }
-    }
-
-    // $!.pending returns a list of all tracked Failure values (S04 spec).
-    if method == "pending" {
-        let failures = crate::value::get_pending_failures();
-        return Some(Ok(Value::array_with_kind(
-            crate::gc::Gc::new(crate::value::ArrayData::new(failures)),
-            crate::value::ArrayKind::List,
-        )));
     }
 
     // `Failure`'s `exception`, `handled`, `gist`, `raku`, `Str` and `Bool` are rows of
@@ -576,10 +547,6 @@ pub(crate) fn native_method_0arg_cascade(
     if crate::builtins::method_table::answer(target, method_sym, &[]).is_some() {
         return None;
     }
-    // Any.nl-out returns the default newline separator "\n"
-    if method == "nl-out" {
-        return Some(Ok(Value::str_from("\n")));
-    }
     // Native int coercer methods (.byte(), .int8(), .uint16(), etc.). Rakudo
     // declares these on `Cool`, so a `Pair` — which is not Cool — has no such
     // method; answering one here made `.^can('bool')` true for every value and
@@ -793,16 +760,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         _ => {}
     }
 
-    // `Str.AST` — parse the string as Raku source and return its RakuAST tree
-    // (ADR-0010). Applies to string values only.
-    // `Str.AST` — parse the string as Raku source and return its RakuAST tree.
-    // Non-string invocants fall through to normal dispatch.
-    if let ValueView::Str(s) = target.view()
-        && method == "AST"
-    {
-        return Some(crate::rakuast::str_dot_ast(&s));
-    };
-
     // RakuAST node accessors (Phase 3): `.condition`, `.expression`, `.args`,
     // `.statements`, etc. return the node's field values. `.gist`/`.raku`/`.^name`
     // are handled elsewhere, so a non-accessor method name falls through.
@@ -843,31 +800,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     if let Some(answer) = crate::builtins::method_table::backtrace::answer(target, method, &[]) {
         return Some(answer);
     }
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Backtrace::Frame"
-        && method == "name"
-    {
-        // A mutsu alias of `subname`; Rakudo's frame has no `name`.
-        return Some(Ok(attributes
-            .as_map()
-            .get("subname")
-            .cloned()
-            .unwrap_or(Value::str(String::new()))));
-    }
-
-    // .resume on exception objects
-    if method == "resume"
-        && let ValueView::Instance { class_name, .. } = target.view()
-    {
-        let cn = class_name.resolve();
-        if cn == "Exception" || cn.starts_with("X::") || cn == "Failure" || cn == "CX::Warn" {
-            return Some(Err(RuntimeError::resume_signal()));
-        }
-    }
 
     // Match object methods
     if let ValueView::Instance { .. } = target.view()
@@ -885,35 +817,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         // a row of `Mu`, `Any`, `Capture` or `Cool` it reaches, or the generic
         // arms below. `.so` of a zero-width match is True (#9180), and a name
         // Rakudo's `Match` lacks is `X::Method::NotFound`.
-    }
-
-    // Kernel type object methods
-    // `Kernel.hostname` works on the type object (Sys::Hostname does exactly this).
-    // Cost: O(1), reads the process-cached uname(2) result.
-    if let ValueView::Package(name) = target.view()
-        && name == "Kernel"
-        && method == "hostname"
-    {
-        return Some(Ok(Value::str(
-            crate::runtime::io_sysinfo_host::host_info()
-                .hostname
-                .clone(),
-        )));
-    }
-    if let ValueView::Package(name) = target.view()
-        && name == "Kernel"
-        && method == "endian"
-    {
-        return Some(Ok(Value::enum_parts(
-            Symbol::intern("Endian"),
-            Symbol::intern(if cfg!(target_endian = "little") {
-                "LittleEndian"
-            } else {
-                "BigEndian"
-            }),
-            EnumValue::Int(if cfg!(target_endian = "little") { 1 } else { 2 }),
-            if cfg!(target_endian = "little") { 1 } else { 2 },
-        )));
     }
 
     // A receiver with no shape that is a `Cool` reaches `Cool`'s text rows

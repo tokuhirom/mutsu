@@ -1,7 +1,8 @@
 //! Late rows of `Mu`, `Any` and `Array` that the by-name cascade
 //! `dispatch_method_by_name_1` answered with arms (ADR-11276 §9.136): the
 //! zero-argument `say`/`print`/`put`/`note` that print the invocant,
-//! `return-rw`, `can`, `does`, `are` and `Array.shape`.
+//! `return-rw`, `can`, `does`, `are` and `Array.shape`; and the twins of
+//! `Any.nl-out` and `pending` (ADR-11276 §9.161).
 //!
 //! Each is `OWNER_ONLY`: only the MRO walk (`any_list_method_by_mro`) reaches
 //! it, after every receiver-specific answer (an `IO::Handle`'s or an
@@ -48,7 +49,21 @@ pub(super) static ROWS: &[MethodRow] = &[
         are
     ),
     late!("Array", "shape", 0, LATE, shape),
+    // The twins of `Any`'s pure `nl-out` and `pending` rows (`any_misc.rs`)
+    // for a receiver with no shape (a user class's instance).
+    late!("Any", "nl-out", 0, LATE, nl_out),
+    late!("Any", "pending", 0, LATE, pending),
 ];
+
+// Cost: O(1).
+fn nl_out(_: &mut Interpreter, t: &Value, a: &[Value], _: Named<'_>) -> Answer {
+    Some(super::any_misc::nl_out(t, a))
+}
+
+// Cost: O(f), f = pending failures.
+fn pending(_: &mut Interpreter, t: &Value, a: &[Value], _: Named<'_>) -> Answer {
+    Some(super::any_misc::pending(t, a))
+}
 
 // Cost: O(n), n = characters of the invocant's gist.
 fn say(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {

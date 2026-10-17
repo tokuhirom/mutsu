@@ -12,8 +12,10 @@
 use super::*;
 
 /// The methods whose `Any` rows answer by the receiver's MRO.
-const ANY_LIST_BY_MRO: [&str; 68] = [
+const ANY_LIST_BY_MRO: [&str; 70] = [
     "are",
+    "nl-out",
+    "pending",
     "say",
     "print",
     "put",

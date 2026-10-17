@@ -43,6 +43,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("gist", 0, Handler::Narrow(gist)),
     row!("Str", 0, Handler::Narrow(str_row)),
     row!("container", 0, Handler::Narrow(container)),
+    row!("DEPRECATED", 0, Handler::Narrow(deprecated)),
     row!("set_rw", 0, Handler::Interp(set_rw)),
     row!("build", 0, Handler::Interp(build)),
     row!("set_build", 1, Handler::Interp(set_build)),
@@ -92,6 +93,15 @@ fn mu() -> Value {
 // Cost: O(1).
 fn name(target: &Value, _args: &[Value]) -> Answer {
     fact(target, "name", Value::NIL)
+}
+
+/// `DEPRECATED` of an attribute declared `is DEPRECATED`: the message the
+/// trait was given (empty for a bare trait). Rakudo mixes a role with this
+/// method into the attribute; an attribute without the trait declines, so the
+/// call finds no method.
+// Cost: O(1).
+fn deprecated(target: &Value, _args: &[Value]) -> Answer {
+    with_meta(target, |meta| meta.as_map().get("DEPRECATED").cloned())?.map(Ok)
 }
 
 /// `Attribute.type`: the declared type constraint, `Mu` when there is none.

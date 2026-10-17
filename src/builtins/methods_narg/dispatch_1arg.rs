@@ -84,34 +84,6 @@ fn native_method_1arg_cascade(
     ) {
         return None;
     }
-    // Cost: O(n), n = bytes of the invocant.
-    if method == "naive-word-wrapper" {
-        return crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[arg]);
-    }
-    // `Str.AST(:compunit)`: the parse wrapped in a `RakuAST::CompUnit`.
-    // Cost: O(n), n = source length.
-    if method == "AST"
-        && let ValueView::Str(source) = target.view()
-        && let ValueView::Pair(key, flag) = arg.view()
-        && key.as_str() == "compunit"
-    {
-        return Some(if flag.truthy() {
-            crate::rakuast::str_dot_ast_compunit(&source)
-        } else {
-            crate::rakuast::str_dot_ast(&source)
-        });
-    }
-    // Cost: O(1).
-    if matches!(method, "replace-statement-list" | "set-expression")
-        && let Some(result) = target.rakuast_set_field(method, arg.clone())
-    {
-        return Some(result);
-    }
-    if matches!(method, "add-statement" | "unshift-statement" | "push")
-        && let Some(result) = target.rakuast_add_child(method, arg.clone())
-    {
-        return Some(result);
-    }
     // The `Match.replace-with` row's implementation (`method_table::regex_match`).
     if method == "replace-with" && target.is_match_instance() {
         return crate::builtins::method_table::regex_match::replace_with(target, arg).map(Ok);
@@ -121,77 +93,6 @@ fn native_method_1arg_cascade(
         crate::builtins::method_table::backtrace::answer(target, method, std::slice::from_ref(arg))
     {
         return Some(answer);
-    }
-    // `Pod::Block::Declarator`'s accumulators. Rakudo builds a declarator pod
-    // block by appending each `#|` / `#=` comment through `._add_leading` /
-    // `._add_trailing`, space-joining the pieces; the same two methods are the
-    // public way to build one by hand for `.^set_why`
-    // (`Type/Metamodel/Documenting.rakudoc`). The attribute cell is
-    // interior-mutable, so the append is visible through every alias of the
-    // block -- which is what lets the documented
-    // `my Pod::Block::Declarator $pod .= new; $pod._add_leading(...); $pod`
-    // idiom work.
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Pod::Block::Declarator"
-        && let Some(key) = match method {
-            "_add_leading" => Some("leading"),
-            "_add_trailing" => Some("trailing"),
-            _ => None,
-        }
-    {
-        let appended = {
-            let map = attributes.as_map();
-            // Only a non-empty Str counts as accumulated text: a fresh
-            // `Pod::Block::Declarator.new` leaves the slot holding the `Any`
-            // type object, which would otherwise stringify into the result.
-            let prev = match map.get(key).map(Value::view) {
-                Some(ValueView::Str(s)) => s.to_string(),
-                _ => String::new(),
-            };
-            let added = arg.to_string_value();
-            if prev.is_empty() {
-                added
-            } else {
-                format!("{prev} {added}")
-            }
-        };
-        attributes.insert(key, Value::str(appended.clone()));
-        // `contents` is the rendered text `.Str`/`.gist` read
-        // (`value/display.rs`): leading and trailing joined by a newline,
-        // with an absent half contributing nothing.
-        let contents = {
-            let map = attributes.as_map();
-            let part = |k: &str| match map.get(k).map(Value::view) {
-                Some(ValueView::Str(s)) if !s.is_empty() => Some(s.to_string()),
-                _ => None,
-            };
-            match (part("leading"), part("trailing")) {
-                (Some(l), Some(t)) => format!("{l}\n{t}"),
-                (Some(l), None) => l,
-                (None, Some(t)) => t,
-                (None, None) => String::new(),
-            }
-        };
-        attributes.insert("contents", Value::str(contents));
-        // Rakudo hands back the raw `@!leading` / `@!trailing` array. mutsu
-        // stores the joined text (the shape `.leading` itself reports), so the
-        // accumulated string is returned; every documented idiom uses the call
-        // in sink context.
-        return Some(Ok(Value::str(appended)));
-    }
-    // Instance with __baggy_data__: delegate to the inner Bag/Set for collection methods
-    if let ValueView::Instance { attributes, .. } = target.view()
-        && let Some(inner) = attributes.as_map().get("__baggy_data__")
-        && !matches!(
-            method,
-            "WHAT" | "WHICH" | "raku" | "gist" | "Str" | "isa" | "^name"
-        )
-    {
-        return native_method_1arg(inner, method_sym, arg);
     }
     // Cost: O(p), p = number of parts in the Version matcher.
     // Version subclasses carry the native matcher in an instance payload, so

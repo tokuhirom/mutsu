@@ -46,17 +46,77 @@ macro_rules! row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row!("slurp", 0, slurp_row, RowFlags::NONE, OPEN_NAMED),
-    row!("lines", 0, lines_row, RowFlags::NONE, OPEN_NAMED),
-    row!("lines", 1, lines_row, RowFlags::ANY_ARGS, OPEN_NAMED),
-    row!("words", 0, words_row, RowFlags::NONE, OPEN_NAMED),
-    row!("words", 1, words_row, RowFlags::ANY_ARGS, OPEN_NAMED),
-    row!("open", 0, open_row, RowFlags::NONE, OPEN_NAMED),
-    row!("comb", 0, comb_row, RowFlags::NONE, &["match", "close"]),
-    row!("comb", 1, comb_row, RowFlags::ANY_ARGS, &["match", "close"]),
-    row!("comb", 2, comb_row, RowFlags::ANY_ARGS, &["match", "close"]),
-    row!("split", 1, split_row, SPLIT_FLAGS, &[]),
-    row!("split", 2, split_row, SPLIT_FLAGS, &[]),
+    row!("slurp", 0, slurp_row, RowFlags::DEFINITE_MULTI, OPEN_NAMED),
+    row!(
+        "lines",
+        0,
+        lines_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        OPEN_NAMED
+    ),
+    row!(
+        "lines",
+        1,
+        lines_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+        OPEN_NAMED
+    ),
+    row!(
+        "words",
+        0,
+        words_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        OPEN_NAMED
+    ),
+    row!(
+        "words",
+        1,
+        words_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+        OPEN_NAMED
+    ),
+    row!(
+        "open",
+        0,
+        open_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        OPEN_NAMED
+    ),
+    row!(
+        "comb",
+        0,
+        comb_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &["match", "close"]
+    ),
+    row!(
+        "comb",
+        1,
+        comb_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+        &["match", "close"]
+    ),
+    row!(
+        "comb",
+        2,
+        comb_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+        &["match", "close"]
+    ),
+    row!(
+        "split",
+        1,
+        split_row,
+        SPLIT_FLAGS.or(RowFlags::DEFINITE),
+        &[]
+    ),
+    row!(
+        "split",
+        2,
+        split_row,
+        SPLIT_FLAGS.or(RowFlags::DEFINITE),
+        &[]
+    ),
 ];
 
 /// `split` binds any splitter (a string, a list, a `Regex`) and every named

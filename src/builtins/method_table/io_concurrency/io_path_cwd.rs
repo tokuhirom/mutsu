@@ -22,10 +22,25 @@ macro_rules! row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row!("absolute", 0, absolute_row, RowFlags::NONE),
-    row!("absolute", 1, absolute_row, RowFlags::ANY_ARGS),
-    row!("relative", 0, relative_row, RowFlags::NONE),
-    row!("relative", 1, relative_row, RowFlags::ANY_ARGS),
+    row!("absolute", 0, absolute_row, RowFlags::DEFINITE_MULTI),
+    row!(
+        "absolute",
+        1,
+        absolute_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE_MULTI)
+    ),
+    row!(
+        "relative",
+        0,
+        relative_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE)
+    ),
+    row!(
+        "relative",
+        1,
+        relative_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE)
+    ),
     row!("CWD", 0, cwd_row, RowFlags::NONE),
     row!("raku", 0, raku_row, RowFlags::NONE),
 ];

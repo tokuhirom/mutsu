@@ -25,7 +25,10 @@ macro_rules! complex_row {
             // The epsilon of `.Rat($epsilon)` is checked by the real part's own method.
             // Every candidate of `Complex.Rat`/`.FatRat` is `:D`: a type object
             // finds none (`Complex.Rat` is `X::Multi::NoMatch`).
-            flags: if $arity == 0 && (crate::value::const_str_eq($name, "Rat") || crate::value::const_str_eq($name, "FatRat")) {
+            flags: if $arity == 0
+                && (crate::value::const_str_eq($name, "Rat")
+                    || crate::value::const_str_eq($name, "FatRat"))
+            {
                 RowFlags::DEFINITE_MULTI
             } else if $arity == 0 {
                 RowFlags::NONE
