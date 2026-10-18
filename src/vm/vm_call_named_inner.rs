@@ -326,6 +326,9 @@ impl Interpreter {
         // seed values through it saves one string intern per local per call.
         if cf.code.locals_sym.len() == cf.code.locals.len() {
             for (i, local_sym) in cf.code.locals_sym.iter().enumerate() {
+                if cf.code.is_fresh_local(i) {
+                    continue;
+                }
                 if let Some(val) = self.env().get_sym(*local_sym) {
                     self.locals[i] = val.clone();
                 }

@@ -870,11 +870,35 @@ impl Interpreter {
                     captured_any = true;
                 }
                 if captured_any {
-                    // Re-registering the same sub in the same bucket (every
-                    // iteration of the block that declares it) changes nothing.
-                    if self.lexicals.mainline_lexical_subs.get(&resolved_name) != Some(&unit_key) {
-                        crate::runtime::cow_table_mut(&mut self.lexicals.mainline_lexical_subs)
-                            .insert(resolved_name.clone(), unit_key);
+                    // The bucket belongs to this declaration's bodies, not to
+                    // every routine of the name: a routine-nested `sub acc`
+                    // elsewhere must not read this one's cells. Re-registering
+                    // the same body (every iteration of the block that
+                    // declares it) changes nothing; a body registered again
+                    // with another bucket takes it.
+                    let bodies = (0..=signature_alternates.len())
+                        .filter_map(plan_compiled)
+                        .map(|c| c.get());
+                    for cf in bodies {
+                        let addr = std::sync::Arc::as_ptr(&cf.code) as usize;
+                        let known = self
+                            .lexicals
+                            .mainline_lexical_subs
+                            .get(&resolved_name)
+                            .and_then(|owners| owners.iter().find(|o| o.runs_code(addr)))
+                            .is_some_and(|o| o.bucket == unit_key);
+                        if known {
+                            continue;
+                        }
+                        let owners =
+                            crate::runtime::cow_table_mut(&mut self.lexicals.mainline_lexical_subs)
+                                .entry(resolved_name.clone())
+                                .or_default();
+                        owners.retain(|o| !o.runs_code(addr));
+                        owners.push(crate::runtime::lexical_state::MainlineLexicalOwner::new(
+                            unit_key.clone(),
+                            cf,
+                        ));
                     }
                 }
             }

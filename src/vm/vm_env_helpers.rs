@@ -709,10 +709,15 @@ impl Interpreter {
         if frame.is_block || frame.package != crate::symbol::wk::global_package() {
             return None;
         }
-        let key = self
+        // The running body's bucket: a same-named routine that captured
+        // nothing (a routine-nested `sub acc`) has none (#13613).
+        let key = &self
             .lexicals
             .mainline_lexical_subs
-            .get(frame.name.as_str())?;
+            .get(frame.name.as_str())?
+            .iter()
+            .find(|owner| owner.runs_code(self.current_code))?
+            .bucket;
         if self
             .lexicals
             .unit_lexicals
@@ -1113,7 +1118,14 @@ impl Interpreter {
         if self.is_lexsub_alias_write(callee_name, owner, name) {
             return true;
         }
-        let Some(bucket) = self.lexicals.mainline_lexical_subs.get(callee_name) else {
+        let addr = std::sync::Arc::as_ptr(&callee.code) as usize;
+        let Some(bucket) = self
+            .lexicals
+            .mainline_lexical_subs
+            .get(callee_name)
+            .and_then(|owners| owners.iter().find(|o| o.runs_code(addr)))
+            .map(|o| &o.bucket)
+        else {
             return false;
         };
         self.lexicals

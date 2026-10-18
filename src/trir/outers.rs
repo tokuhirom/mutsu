@@ -171,11 +171,15 @@ impl Interpreter {
         if let Some(v) = self.lexsub_alias_binding_for(callee, owner, name) {
             return Some(celled(v));
         }
-        if let Some(bucket) = self.lexicals.mainline_lexical_subs.get(callee.as_str())
+        if let Some(owner) = self
+            .lexicals
+            .mainline_lexical_subs
+            .get(callee.as_str())
+            .and_then(|owners| owners.iter().find(|o| o.runs_trir_chunk(chunk.id)))
             && let Some(v) = self
                 .lexicals
                 .unit_lexicals
-                .get(bucket)
+                .get(&owner.bucket)
                 .and_then(|m| m.get(name))
         {
             return Some(celled(v.clone()));

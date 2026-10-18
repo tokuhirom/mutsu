@@ -177,6 +177,9 @@ impl Interpreter {
         }
         if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
+                if cf.code.is_fresh_local(i) {
+                    continue;
+                }
                 if let Some(val) = self.env().get_sym(*sym) {
                     self.locals[i] = val.clone();
                 }

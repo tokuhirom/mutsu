@@ -437,7 +437,7 @@ impl Interpreter {
             // slot. Not entering them also means the frame may still be empty.
         } else if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
-                if param_slots.contains(&i) {
+                if param_slots.contains(&i) || cf.code.is_fresh_local(i) {
                     continue;
                 }
                 if let Some(val) = self.env().get_sym(*sym) {

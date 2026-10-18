@@ -182,6 +182,14 @@ pub(crate) struct BindingDesc {
     /// (ADR-13757 step 4). `false` for a slot the chunk only uses (a free
     /// variable, an aliasing parameter, a compiler temporary).
     pub(crate) declared_here: bool,
+    /// The slot holds a plain `my` variable this chunk declares, under a name
+    /// no parameter or free variable of the chunk shares: a frame entry does
+    /// not seed it from the env by name (ADR-12529 §2.3). A name lookup there
+    /// finds a caller's same-named variable, or the outer one the declaration
+    /// shadows, never this one, which its own declaration initializes
+    /// (#13613: a hoisted nested sub's alias boxed the program's `@u` through
+    /// the routine's own `my @u` slot).
+    pub(crate) fresh_local: bool,
     pub(crate) flags: BindingFlags,
 }
 

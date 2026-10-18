@@ -329,6 +329,14 @@ impl Interpreter {
         if !is_eval_unit && let Some(routineness) = routineness {
             compiler.return_routineness =
                 Some((routineness.is_routine, routineness.lexically_in_routine));
+            // A closure body recompiled here (a `supply { ... }` body) declares
+            // its routines as bindings for the closures nested in it, as its
+            // definition-site compile did (`block_lexsubs.rs`): a `whenever`
+            // body calling `acc()` declared after it must reach this
+            // activation's `acc`, not the registry's latest (#13613).
+            if !routineness.is_routine {
+                compiler.compile_as_block_body();
+            }
         }
         // ADR-0037 §2.3: only meaningful together with `is_routine == false`
         // — see the field's doc comment on `Compiler`.
