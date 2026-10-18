@@ -1705,31 +1705,16 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
-        if matches!(
-            target.view(),
-            ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
-        ) && matches!(method, "^name" | "WHAT" | "defined")
-        {
-            let name = if matches!(target.view(), ValueView::HyperSeq(_)) {
-                "HyperSeq"
-            } else {
-                "RaceSeq"
-            };
-            let (result, arm) = match method {
-                "defined" => (Value::TRUE, "hyperseq-defined"),
-                "^name" => (Value::str(name.to_string()), "hyperseq-name"),
-                _ => (Value::package(Symbol::intern(name)), "hyperseq-what"),
-            };
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", arm);
-            self.stack.push(result);
-            return Ok(());
-        }
         // Convert HyperSeq/RaceSeq to List for remaining method dispatch
         let target = match target.view() {
-            ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => Value::array_with_kind(
-                crate::value::Value::array_arc(items.to_vec()),
-                crate::value::ArrayKind::List,
-            ),
+            ValueView::HyperSeq(items) | ValueView::RaceSeq(items)
+                if !crate::builtins::method_table::hyper_seq_answers_as_itself(method) =>
+            {
+                Value::array_with_kind(
+                    crate::value::Value::array_arc(items.to_vec()),
+                    crate::value::ArrayKind::List,
+                )
+            }
             _ => target,
         };
 

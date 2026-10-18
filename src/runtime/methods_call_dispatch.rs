@@ -2052,9 +2052,12 @@ impl Interpreter {
             }
         }
 
-        // HyperSeq/RaceSeq: the methods they declare are their rows; every
-        // other method reads the sequence as its `List` (§9.137).
-        if let Some(owners) = crate::builtins::method_table::hyper_seq_owners_of(&target) {
+        // HyperSeq/RaceSeq: the methods they declare are their rows; `Mu`'s
+        // introspection reads the sequence itself; every other method reads it
+        // as its `List` (§9.137, §9.173).
+        if let Some(owners) = crate::builtins::method_table::hyper_seq_owners_of(&target)
+            && !crate::builtins::method_table::hyper_seq_answers_as_itself(method)
+        {
             if let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
                 owners,

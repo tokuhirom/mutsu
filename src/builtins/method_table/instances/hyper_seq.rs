@@ -94,6 +94,22 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
     }
 }
 
+/// The methods a hyper or race sequence answers as itself rather than as its
+/// `List`: `Mu`'s type and identity introspection. Rakudo's `HyperSeq` and
+/// `RaceSeq` reach every other method through `self.List`, but these are
+/// `Mu`'s and see the sequence (`(1..3).hyper.isa(HyperSeq)` is `True`,
+/// `.isa(List)` is `False`).
+const ANSWERS_AS_ITSELF: [&str; 8] = [
+    "WHAT", "^name", "isa", "does", "defined", "DEFINITE", "WHICH", "WHERE",
+];
+
+/// Whether a call of `method` on a hyper or race sequence reads the sequence
+/// itself (see [`ANSWERS_AS_ITSELF`]) rather than its `List`.
+// Cost: O(n), n = 8 names.
+pub(crate) fn answers_as_itself(method: &str) -> bool {
+    ANSWERS_AS_ITSELF.contains(&method)
+}
+
 /// The call's arguments as the routines take them.
 // Cost: O(a), a = arguments of the call.
 fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {

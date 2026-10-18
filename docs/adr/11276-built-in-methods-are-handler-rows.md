@@ -4372,6 +4372,24 @@ caller's variable. Pinned in `t/types/any-key-autoviv-rows.t`.
   is the debt. An element receiver (`@a[1].ASSIGN-KEY('e', 9)`) still raises `X::Method::NotFound`
   where Rakudo vivifies the element (#13823).
 
+### 9.173 A hyper or race sequence answers `Mu`'s introspection as itself (2026-10-18)
+
+`refactor/11276-hyperseq-mut-receiver`. Three entries read a `HyperSeq`/`RaceSeq` as its `List` for
+every method its own rows do not answer: the VM's `CallMethod`, its `CallMethodMut` and the
+interpreter's `call_method_with_values`. The two VM entries kept arms ahead of the conversion so that
+`WHAT`, `^name` and `defined` (plus `isa`/`does` in `CallMethod` only) still saw the sequence. The
+mutating entry's arms lacked `isa`, so `my $h = (1..3).hyper; $h.isa(List)` was `True`.
+
+- One list, `hyper_seq::answers_as_itself` (`WHAT`, `^name`, `isa`, `does`, `defined`, `DEFINITE`,
+  `WHICH`, `WHERE`: `Mu`'s type and identity introspection), declares which methods see the sequence.
+  All three conversions skip those names, and the ordinary dispatch answers them on the sequence. The
+  two VM arm blocks go.
+- Rakudo's `HyperSeq`/`RaceSeq` reach every other method through `self.List`, which the conversion
+  still models.
+
+Behaviour change toward Rakudo: `$h.isa(HyperSeq)` is `True` and `$h.isa(List)` is `False` through a
+variable, as they already were on a temporary. Pinned in `t/oo/mop/hyper-seq-mu-introspection.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
