@@ -56,9 +56,10 @@ pub(super) static STRINGY_ROWS: &[MethodRow] = rows!("Stringy" => str_row: "Seq"
 /// The `raku` rows' handler: [`raku`] unless the collection needs the
 /// interpreter to render. An element whose own `raku` is reachable only through
 /// method dispatch (a user instance, a built-in object type) would print its
-/// default form, and a container with a declared element or key type renders as
-/// `Array[Int].new(...)` / `Hash[Int,Str].new(...)` from the interpreter's
-/// registry; both decline to the interpreter's own rendering.
+/// default form and declines to the interpreter's own rendering; a container
+/// with a declared element or key type renders as `Array[Int].new(...)` /
+/// `Hash[Int,Str].new(...)` from the interpreter's registry
+/// (`Interpreter::typed_container_raku`).
 // Cost: O(t) to probe the elements for a dispatch leaf, t = nodes reachable;
 // then [`raku`]'s own.
 fn raku_row(
@@ -67,19 +68,11 @@ fn raku_row(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
+    if let Some(typed) = interp.typed_container_raku(target) {
+        return Some(typed);
+    }
     if crate::runtime::container_needs_raku_dispatch(target) {
         return None;
-    }
-    match target.view() {
-        ValueView::Hash(_) if interp.container_type_metadata(target).is_some() => return None,
-        ValueView::Array(..)
-            if interp
-                .container_type_metadata(target)
-                .is_some_and(|info| info.value_type != "Any" && info.value_type != "Mu") =>
-        {
-            return None;
-        }
-        _ => {}
     }
     raku(target, args)
 }
