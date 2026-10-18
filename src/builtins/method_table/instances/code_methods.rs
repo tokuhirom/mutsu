@@ -1,5 +1,5 @@
 //! `Routine`'s `wrap`, `unwrap`, `add_dispatchee`, `candidates`,
-//! `dispatchees` and `rw`, and `Code`'s `assuming`, `cando`, `prec`,
+//! `dispatchees`, `rw` and `yada`, and `Code`'s `assuming`, `cando`, `prec`,
 //! `precedence`, `associative` and `is-implementation-detail` (ADR-11276
 //! §9.166).
 //!
@@ -9,8 +9,9 @@
 //! (`Interpreter::routine_handle_*` and `sub_*`, `runtime/methods_code_*rows.rs`)
 //! and its handler picks by kind ([`by_kind`]). The rows are reached through
 //! the owners of `routine::owners_of` from the callable dispatch, ahead of the
-//! kind's own dispatcher; an instance of a code class (a `Method` object)
-//! declines here and answers in the method-call fallback.
+//! kind's own dispatcher. A method object (an instance of a code class) is the
+//! third kind (`Interpreter::method_object_code_row`, §9.167), reached through
+//! [`method_object_answer`].
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -135,7 +136,21 @@ pub(super) static ROWS: &[MethodRow] = &[
         routine_handle_prec,
         sub_prec
     ),
+    MethodRow {
+        owner: "Routine",
+        name: "yada",
+        arity: 0,
+        handler: Handler::Interp(yada),
+        flags: NULLARY,
+        named: &[],
+    },
 ];
+
+/// `Routine.yada`.
+// Cost: as `Interpreter::code_yada`.
+fn yada(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    interp.code_yada(target).map(Ok)
+}
 
 /// The body for `target`'s kind: `handle` for a `&name` handle, `sub` for a
 /// `Sub`; `None` for any other receiver.
@@ -162,6 +177,32 @@ fn by_kind(
             let data = data.clone();
             sub(interp, target, &data, method, args)
         }
+        ValueView::Instance { .. } => interp.method_object_code_row(target, method, args),
         _ => None,
     }
+}
+
+/// The rows a method object (`.^lookup`, `.^find_method`, `.^methods`)
+/// answers: these and `Code.set_name`.
+const METHOD_OBJECT_ROWS: [&str; 5] = ["wrap", "unwrap", "assuming", "cando", "set_name"];
+
+/// The answer of a `Routine`/`Code` row for a method object, or `None` for a
+/// method no such row answers. An instance of a code class is not a `Code`
+/// value: its other `Code` methods (`of`, `name`, `signature`) read the
+/// object's own attributes in the method-call fallback, so only these rows are
+/// tried.
+// Cost: O(n), n = 5 names, plus the row's own cost.
+pub(crate) fn method_object_answer(
+    interp: &mut Interpreter,
+    target: &Value,
+    method: &str,
+    args: &[Value],
+) -> Answer {
+    if !METHOD_OBJECT_ROWS.contains(&method) || !matches!(target.view(), ValueView::Instance { .. })
+    {
+        return None;
+    }
+    crate::builtins::method_table::invoke_owner(interp, &["Routine", "Code"], method, args, || {
+        target.clone()
+    })
 }

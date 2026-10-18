@@ -4235,6 +4235,25 @@ name, or the `SubData`).
 `methods_sub.rs` shrinks from 1,475 to about 750 lines. No behaviour change; pinned in
 `t/oo/method/routine-code-method-rows.t`.
 
+### 9.167 A method object is the third kind of the code rows; `Routine.yada` (2026-10-18)
+
+`refactor/11276-instance-ops-gates`, after §9.166. A method object (an instance of `Method`, `Submethod`,
+`Regex` or a subclass, from `.^lookup`, `.^find_method` or `.^methods`) answered `wrap`, `unwrap`,
+`assuming`, `cando` and `set_name` from by-name gates in the method-call fallback
+(`methods_instance_ops.rs`).
+
+- `by_kind` (§9.166) gains the third kind: an instance answers through
+  `Interpreter::method_object_code_row` (`runtime/methods_method_object_rows.rs`, the gates' bodies
+  moved), and `Code.set_name`'s handler does the same for an instance.
+- The fallback reaches them through `method_table::method_object_answer`, which tries only the rows a
+  method object answers (`wrap`, `unwrap`, `assuming`, `cando`, `set_name`): its other `Code` methods
+  (`of`, `name`, `signature`, `clone`) read the object's own attributes, which the `Code` rows of a code
+  value would misanswer, so `routine::owners_of` keeps `["Routine"]` for an instance.
+- `Routine.yada` is a row (`Interpreter::code_yada`). A `&name` handle answers from the registered def's
+  `is_stub` (`&say.yada` was no method; Rakudo answers `False`).
+
+Pinned in `t/oo/method/routine-code-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

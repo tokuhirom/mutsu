@@ -1,9 +1,9 @@
 use Test;
 
-# `Routine`'s and `Code`'s own methods as rows (ADR-11276 §9.166), on a `Sub`
-# value and on a `&name` handle of a multi. Expected values are Rakudo's.
+# `Routine`'s and `Code`'s own methods as rows (ADR-11276 §9.166, §9.167), on a
+# `Sub` value, on a `&name` handle of a multi and on a method object. Expected values are Rakudo's.
 
-plan 22;
+plan 31;
 
 sub double($x) { $x * 2 }
 multi m(Int $x) { "int" }
@@ -56,4 +56,33 @@ multi m(Str $x) { "str" }
     sub hidden is implementation-detail { }
     ok &hidden.is-implementation-detail, 'Code.is-implementation-detail';
     nok &plain.is-implementation-detail, '... False by default';
+}
+
+# A method object (`.^lookup`, `.^find_method`) answers the same rows.
+{
+    class C {
+        method hi($x) { "hi $x" }
+        multi method mm(Int $x) { "int" }
+        multi method mm(Str $x) { "str" }
+    }
+    my $m = C.^lookup('hi');
+    my $h = $m.wrap(method ($x) { "w:" ~ callsame });
+    is C.new.hi(1), "w:hi 1", 'Method.wrap';
+    $m.unwrap($h);
+    is C.new.hi(1), "hi 1", 'Method.unwrap';
+    my &p = $m.assuming(C.new);
+    is p(2), "hi 2", 'Method.assuming binds the invocant';
+    is C.^lookup('mm').cando(\(C.new, 1)).elems, 1, 'Method.cando';
+    is C.^lookup('mm').assuming(C.new)("x"), "str", 'a multi Method.assuming';
+    C.^find_method('hi').set_name('greet');
+    is C.^find_method('hi').name, 'greet', 'Method.set_name renames the entry';
+}
+
+# Routine.yada
+{
+    sub stub { ... }
+    sub real { 1 }
+    ok &stub.yada, 'Routine.yada of a stub';
+    nok &real.yada, '... of a routine with a body';
+    nok &say.yada, '... of a built-in routine handle';
 }

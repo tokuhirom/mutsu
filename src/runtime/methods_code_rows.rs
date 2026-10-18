@@ -402,4 +402,32 @@ impl Interpreter {
         None
     }
 
+
+    /// `Routine.yada`: whether the routine's body is nothing but a yada stub
+    /// (`...`/`!!!`/`???`, a lone `__mutsu_stub_die`/`__mutsu_stub_warn` call).
+    /// A body-less routine `Sub` (plan-derived, ADR-0019 C6e-3) and a `&name`
+    /// handle answer from the registered def's `is_stub` fact; anything still
+    /// carrying a body keeps the exact AST judgment. `None` for another value.
+    // Cost: O(1), one registry lookup or a look at the body's one statement.
+    pub(crate) fn code_yada(&mut self, target: &Value) -> Option<Value> {
+        let data = match target.view() {
+            ValueView::Sub(data) => data.clone(),
+            ValueView::WeakSub(weak) => weak.upgrade()?,
+            ValueView::Routine { package, name, .. } => {
+                let key = crate::qualified::qualified(package, name);
+                let is_stub = self.registry().functions.get(&key).is_some_and(|def| def.is_stub);
+                return Some(Value::truth(is_stub));
+            }
+            _ => return None,
+        };
+        if data.body.is_empty() && !data.name.is_empty() {
+            let key = crate::qualified::qualified_text(&data.package, &data.name)
+                .as_str()
+                .to_string();
+            if let Some(def) = self.registry().functions.get(&Symbol::intern(&key)) {
+                return Some(Value::truth(def.is_stub));
+            }
+        }
+        Some(Value::truth(Self::sub_body_is_yada_stub(&data.body)))
+    }
 }

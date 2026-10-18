@@ -32,6 +32,7 @@ mod methods_match_make;
 mod methods_code_rows;
 mod methods_code_candidate_rows;
 mod methods_code_wrap_rows;
+mod methods_method_object_rows;
 mod methods_late_walk_owners;
 mod methods_own_iteration;
 mod methods_match3_late_rows;
