@@ -2214,6 +2214,7 @@ t/lang/digit-var-from-bound-slash.t
 t/lang/double-array-sigil-context.t
 t/lang/double-sigil-hash-term.t
 t/lang/eval-angle-list-whitespace.t
+t/lang/eval-assigns-caller-code-variable.t
 t/lang/eval-caller-frames.t
 t/lang/eval-check-imports.t
 t/lang/eval-class-redeclaration-cross-boundary.t
@@ -2806,6 +2807,7 @@ t/modules/import-export/imported-type-alias-return-spec.t
 t/modules/import-export/imported-type-and-term-in-my-stash.t
 t/modules/import-export/imported-type-name-in-coercion.t
 t/modules/import-export/imported-type-smiley-grouped.t
+t/modules/import-export/indirect-lookup-unit-own-export-package.t
 t/modules/import-export/inline-module-is-export.t
 t/modules/import-export/inline-module-lexical-class-export.t
 t/modules/import-export/is-export.t
@@ -3489,6 +3491,7 @@ t/oo/attribute/attribute-decl-statement-modifier.t
 t/oo/attribute/attribute-default-array-nil-reset.t
 t/oo/attribute/attribute-default-typecheck.t
 t/oo/attribute/attribute-defaults-and-set-build.t
+t/oo/attribute/attribute-deprecated-introspection.t
 t/oo/attribute/attribute-get-value-on-type-object.t
 t/oo/attribute/attribute-holding-proxy-accessor-store.t
 t/oo/attribute/attribute-in-list-literal-nested-call.t
@@ -4836,6 +4839,7 @@ t/rakuast/rakuast-do-whenever.t
 t/rakuast/rakuast-dotty-term-method.t
 t/rakuast/rakuast-dynamic-match-adverbs.t
 t/rakuast/rakuast-elsif.t
+t/rakuast/rakuast-empty-deprecated-message.t
 t/rakuast/rakuast-enum-term.t
 t/rakuast/rakuast-enum.t
 t/rakuast/rakuast-eval-andthen.t
@@ -6697,6 +6701,7 @@ t/tooling/testing-is-approx.t
 t/tooling/vendored-real-test-module.t
 t/types/angle-list-numeric-words.t
 t/types/any-are.t
+t/types/any-autoviv-binding-rows.t
 t/types/any-combinations-batch-rows.t
 t/types/any-first-min-max-rows.t
 t/types/any-head-tail-rows.t
