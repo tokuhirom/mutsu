@@ -729,6 +729,7 @@ impl Compiler {
                     if use_autovivify {
                         self.code.emit(lazy_op);
                     } else {
+                        self.emit_lex_import_subscript(is_positional);
                         self.code.emit(OpCode::Index { is_positional });
                     }
                 }
@@ -738,6 +739,7 @@ impl Compiler {
                 if use_autovivify {
                     self.code.emit(lazy_op);
                 } else {
+                    self.emit_lex_import_subscript(is_positional);
                     self.code.emit(OpCode::Index { is_positional });
                 }
             }
@@ -760,6 +762,7 @@ impl Compiler {
             if use_autovivify {
                 self.code.emit(lazy_op);
             } else {
+                self.emit_lex_import_subscript(is_positional);
                 self.code.emit(OpCode::Index { is_positional });
             }
         }

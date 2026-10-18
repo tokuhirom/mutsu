@@ -1113,13 +1113,17 @@ impl Interpreter {
             && (!matches!(index.view(), ValueView::Whatever)
                 || matches!(target.view(), ValueView::Array(..)))
         {
-            let op_name = if is_positional {
-                "postcircumfix:<[ ]>"
-            } else {
-                "postcircumfix:<{ }>"
-            };
+            let op_name = crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional);
             let args = vec![target.clone(), index.clone()];
-            if let Some(def) = self
+            // The candidates a block-scoped `use` imported come first; none
+            // accepting the operands leaves the subscript to the built-in
+            // (ADR-8751 stage 2).
+            if let Some(result) = self.try_lexical_operator_candidates(op_name, args.clone()) {
+                if let Some(value) = result? {
+                    self.stack.push(value);
+                    return Ok(());
+                }
+            } else if let Some(def) = self
                 .resolve_function_with_types(op_name, &args)
                 .ok()
                 .flatten()

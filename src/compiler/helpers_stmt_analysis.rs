@@ -323,6 +323,19 @@ impl Compiler {
         }
     }
 
+    /// [`Self::emit_lex_import_builtin_op`] for the subscript op
+    /// (`OpCode::Index`) the caller emits next: its user candidates are
+    /// `postcircumfix:<[ ]>`'s or `postcircumfix:<{ }>`'s.
+    // Cost: as `emit_lex_import_builtin_op`.
+    pub(super) fn emit_lex_import_subscript(&mut self, is_positional: bool) {
+        if self.lexical_import_chain.is_empty() {
+            return;
+        }
+        self.emit_lex_import_builtin_named(crate::lexical_builtin_op::postcircumfix_of_subscript(
+            is_positional,
+        ));
+    }
+
     // Cost: O(c + m), c = enclosing `use`-blocks, m = bytes of `name`.
     fn emit_lex_import_builtin_named(&mut self, name: &str) {
         let sym = Symbol::intern(name);

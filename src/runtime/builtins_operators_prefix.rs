@@ -37,4 +37,53 @@ impl Interpreter {
             _ => return None,
         })
     }
+
+    /// The core implementation of a non-mutating postfix operator, bypassing
+    /// user `multi postfix:<op>` candidates: the call fallback, and a
+    /// captured-candidate dispatcher none of whose candidates took the
+    /// argument (ADR-8751 stage 2). Returns `None` for an operator this table
+    /// does not cover.
+    // Cost: O(1), plus a `.Numeric` call for an instance or type object.
+    pub(crate) fn core_postfix_op(
+        &mut self,
+        op: &str,
+        arg: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        match op {
+            "i" => Some(self.core_postfix_i(arg.unwrap_varref())),
+            _ => None,
+        }
+    }
+
+    // Cost: O(1), plus a `.Numeric` call for an instance or type object.
+    fn core_postfix_i(&mut self, arg: &Value) -> Result<Value, RuntimeError> {
+        // An instance or type object coerces through its `.Numeric` first.
+        let coerced = if matches!(
+            arg.view(),
+            ValueView::Instance { .. } | ValueView::Package(..)
+        ) {
+            self.call_method_with_values(arg.clone(), "Numeric", vec![])
+                .unwrap_or_else(|_| arg.clone())
+        } else {
+            arg.clone()
+        };
+        // Applying `i` to an existing Complex (directly, or via a `.Numeric`
+        // coercion that returns one) rotates it 90° (multiplies by i):
+        // `(r+ei)\i == -e+ri`.
+        if let ValueView::Complex(r, i) = coerced.view() {
+            return Ok(Value::complex(-i, r));
+        }
+        let n = crate::runtime::coerce_to_numeric(coerced);
+        let num_val = match n.view() {
+            ValueView::Int(i) => i as f64,
+            ValueView::Num(f) => f,
+            ValueView::Rat(n, d) => crate::value::rat_to_f64(n, d),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Cannot coerce to Numeric for postfix:<i>".to_string(),
+                ));
+            }
+        };
+        Ok(Value::complex(0.0, num_val))
+    }
 }

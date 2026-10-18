@@ -173,10 +173,12 @@ impl Interpreter {
             // list; `crate::lexical_builtin_op` names them.
             "infix" => {
                 (!is_builtin_infix(op) && !crate::lexical_builtin_op::binds_lexically(name))
-                    || crate::lexical_builtin_op::is_lexical_set_infix(op)
+                    || crate::lexical_builtin_op::is_call_spelled_infix(op)
             }
             "prefix" => !is_builtin_prefix(op),
-            "postfix" => !is_builtin_postfix(op),
+            "postfix" => {
+                !is_builtin_postfix(op) || crate::lexical_builtin_op::is_lexical_postfix(op)
+            }
             "circumfix" => !is_builtin_circumfix(op),
             _ => false,
         }
