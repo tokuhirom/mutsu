@@ -836,6 +836,7 @@ impl Interpreter {
         let saved_suppress = std::mem::replace(&mut self.module.suppress_exports, false);
         let saved_no_import = std::mem::replace(&mut self.module.loading_without_import, true);
         let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
+        let proto_keys_before = std::sync::Arc::clone(&self.registry().proto_functions);
         let result = self.load_module_inner(module, Some((source_path, None)));
         self.module.suppress_exports = saved_suppress;
         self.module.loading_without_import = saved_no_import;
@@ -857,6 +858,7 @@ impl Interpreter {
                 .collect();
             crate::runtime::cow_table_mut(&mut self.module.module_registered_functions)
                 .extend(module_funcs);
+            self.record_module_registered_protos(&proto_keys_before);
         }
         self.control.module_load_order.pop();
         result

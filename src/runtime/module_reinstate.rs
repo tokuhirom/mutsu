@@ -110,4 +110,56 @@ impl Interpreter {
             self.env.insert_sym(key, value);
         }
     }
+
+    /// Record the package-qualified `proto sub`s a module load registered,
+    /// the ones `before` (the proto table as the load began) lacks, in
+    /// `module_registered_protos`. A `GLOBAL::` key is left out for the
+    /// reason `module_registered_functions` leaves it out: it may be an alias
+    /// installed for the importing scope.
+    // Cost: O(p), p = registered protos.
+    pub(crate) fn record_module_registered_protos(
+        &mut self,
+        before: &rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
+    ) {
+        let new_keys: Vec<Symbol> = self
+            .registry()
+            .proto_functions
+            .keys()
+            .filter(|key| !before.contains_key(*key))
+            .filter(|key| {
+                key.with_str(|s| {
+                    crate::qualified::is_qualified_str(s) && !s.starts_with("GLOBAL::")
+                })
+            })
+            .copied()
+            .collect();
+        if !new_keys.is_empty() {
+            crate::runtime::cow_table_mut(&mut self.module.module_registered_protos)
+                .extend(new_keys);
+        }
+    }
+
+    /// The protos of a loaded module (`module_registered_protos`) that the
+    /// proto table `snapshot` predates, as they are registered now: a scope
+    /// restore that puts `snapshot` back puts these back after it, as
+    /// [`Self::reinstate_module_functions`] does for the module's routines.
+    /// Without them a module first loaded inside a bare block lost its
+    /// `our proto sub`s when the block exited, while its candidates and
+    /// `loaded_modules` entry stayed (#13877).
+    // Cost: O(m), m = protos module loads registered.
+    pub(crate) fn module_protos_missing_from(
+        &self,
+        snapshot: &rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
+    ) -> Vec<(Symbol, std::sync::Arc<FunctionDef>)> {
+        if self.module.module_registered_protos.is_empty() {
+            return Vec::new();
+        }
+        let registry = self.registry();
+        self.module
+            .module_registered_protos
+            .iter()
+            .filter(|key| !snapshot.contains_key(*key))
+            .filter_map(|key| registry.proto_functions.get(key).map(|def| (*key, def.clone())))
+            .collect()
+    }
 }

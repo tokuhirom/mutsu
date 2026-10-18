@@ -859,6 +859,7 @@ impl Interpreter {
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
         let package_symbols_before = self.module.module_toplevel.package_symbols.clone();
         let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
+        let proto_keys_before = std::sync::Arc::clone(&self.registry().proto_functions);
 
         // `Test` and `NativeCall` load rakudo's own `.rakumod` (#7566, #11203),
         // which run their own `is export` declarations.
@@ -1303,6 +1304,7 @@ impl Interpreter {
                 .collect();
             crate::runtime::cow_table_mut(&mut self.module.module_registered_functions)
                 .extend(module_funcs);
+            self.record_module_registered_protos(&proto_keys_before);
             // Same for the module's `our` package variables, which live in `env`
             // rather than the routine registry. Collected BEFORE `import_module`
             // so the bare aliases it installs — lexical to the importing scope —
