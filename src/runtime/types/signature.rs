@@ -830,6 +830,17 @@ pub(in crate::runtime) fn named_param_parens_accept(
         return true;
     }
     if pd.named_alias && sub_params.len() == 1 && !sub_params[0].named {
+        // `:value((:key($k), :value($v)))`: the single positional is itself an
+        // anonymous destructure of the value. Matching it through a one-element
+        // Array would drop a Pair value (a Pair in a list is a named part of the
+        // list's Capture), so match the inner signature against the value itself.
+        let only = &sub_params[0];
+        if only.name == "__subsig__"
+            && only.type_constraint.is_none()
+            && let Some(inner) = &only.sub_signature
+        {
+            return sub_signature_matches_value(interpreter, inner, candidate);
+        }
         return sub_signature_matches_value(
             interpreter,
             sub_params,
