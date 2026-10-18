@@ -832,6 +832,16 @@ pub(crate) fn shapeless_row(
     if method == "ACCEPTS" && !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
+    // A class composing `Real` has `Numeric.ACCEPTS` (`a == self`) ahead of
+    // `Any`'s identity (#13894).
+    let mut interp = interp;
+    if method == "ACCEPTS"
+        && arity == 1
+        && let Some(interp) = interp.as_deref_mut()
+        && super::is_user_real_instance(interp, target)
+    {
+        return super::owner_row(Symbol::intern("Numeric"), method, arity);
+    }
     // `Any`'s subscript protocol answers a value that is not `Positional`; a
     // list with no settled shape (lazy, shaped, a `Seq`, a `Slip`, a buffer)
     // indexes its elements through the interpreter, though it has no keys

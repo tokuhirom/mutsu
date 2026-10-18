@@ -206,6 +206,14 @@ fn class_composes(interp: &mut Interpreter, class: &str, role: &str) -> bool {
         })
 }
 
+/// Whether `value` is an instance of a user class composing `Real` (not a
+/// subclass of a built-in number): the smartmatch compares one numerically
+/// through the operators (`Numeric.ACCEPTS`, #13894).
+// Cost: as [`composes`].
+pub(crate) fn is_user_real_instance(interp: &mut Interpreter, value: &Value) -> bool {
+    composes_real(interp, value)
+}
+
 /// Whether `target` is an instance of a user class that composes `Real`.
 // Cost: one memoized role lookup.
 fn composes_real(interp: &mut Interpreter, target: &Value) -> bool {
