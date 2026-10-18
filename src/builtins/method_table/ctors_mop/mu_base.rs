@@ -112,7 +112,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     // Cost: O(1) plus the receiver's `raku`.
     base_row!("gist", |interp, target, _args, _named| {
         if is_type_object(target) {
-            return Some(Ok(Value::str(format!("({})", type_object_name(target)))));
+            return Some(Ok(crate::runtime::Interpreter::mu_gist_late(target)));
         }
         Some(interp.call_method_with_values(target.clone(), "raku", Vec::new()))
     }),
