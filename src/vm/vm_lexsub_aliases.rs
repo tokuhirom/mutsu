@@ -47,20 +47,7 @@ pub(crate) type LexSubLatestCells = rustc_hash::FxHashMap<(Symbol, Symbol), LexS
 /// holds a same-named variable — the sub's free variable is never the
 /// caller's (mutsu#10114). One whose owner does not match (an unrelated
 /// routine of the same name) answers only where the env has no binding at all.
-///
-/// The third component is the address of the sub's compiled body
-/// (`CompiledFunction::code`, what a `RoutineFrame` records as `code`), so a
-/// same-named sub of the same package and file -- a program-scope `sub acc`
-/// and a routine's nested `sub acc` -- is not taken for the nested one after
-/// the declaring routine ran (#13900). 0 when the side that asks does not
-/// know it (a TRIR chunk), which then compares the first two only.
-pub(crate) type LexSubOwner = (Symbol, Option<Symbol>, usize);
-
-/// Whether `a` and `b` name the same routine (see [`LexSubOwner`]).
-// Cost: O(1).
-pub(crate) fn same_lexsub_owner(a: LexSubOwner, b: LexSubOwner) -> bool {
-    a.0 == b.0 && a.1 == b.1 && (a.2 == 0 || b.2 == 0 || a.2 == b.2)
-}
+pub(crate) type LexSubOwner = (Symbol, Option<Symbol>);
 
 /// One [`LexSubLatestCells`] entry.
 #[derive(Clone)]
@@ -76,11 +63,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Option<LexSubOwner> {
         let cf = compiled_fns.get(plan.compiled_routine_keys.first()?)?;
-        Some((
-            cf.package_sym(),
-            cf.source_file_sym(),
-            std::sync::Arc::as_ptr(&cf.code) as usize,
-        ))
+        Some((cf.package_sym(), cf.source_file_sym()))
     }
 
     /// `RegisterDecl` of a sub plan: bind this activation's aliases.
@@ -325,9 +308,15 @@ impl Interpreter {
             .lexicals
             .lexsub_latest_cells
             .get(&(frame.name, Symbol::intern(name)))?;
-        (same_lexsub_owner(entry.owner, (frame.package, frame.def_file, frame.code))
-            || self.env().get(name).is_none())
-        .then_some(&entry.cell)
+        // A program-scope routine of the same name, package and file (a
+        // `sub sv { $s }` beside a routine's nested `sub sv { $s }`) runs a
+        // body of its own with its own captured cells: the nested sub's
+        // latest activation is not its outer (#13900).
+        if self.active_unit_lexical_bucket().is_some() {
+            return None;
+        }
+        (entry.owner == (frame.package, frame.def_file) || self.env().get(name).is_none())
+            .then_some(&entry.cell)
     }
 
     /// Mutable counterpart of [`Self::lexsub_alias_slot`].
@@ -373,8 +362,7 @@ impl Interpreter {
                         .lexsub_latest_cells
                         .get(&(callee, *var))
                         .is_some_and(|entry| {
-                            same_lexsub_owner(entry.owner, owner)
-                                || self.env().get_sym(*var).is_none()
+                            entry.owner == owner || self.env().get_sym(*var).is_none()
                         }))
         })
     }
@@ -400,8 +388,7 @@ impl Interpreter {
                     .lexicals
                     .lexsub_latest_cells
                     .get(&(callee, Symbol::intern(name)))?;
-                (same_lexsub_owner(entry.owner, owner) || self.env().get(name).is_none())
-                    .then(|| entry.cell.clone())
+                (entry.owner == owner || self.env().get(name).is_none()).then(|| entry.cell.clone())
             })
     }
 

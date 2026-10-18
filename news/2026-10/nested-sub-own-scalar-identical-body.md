@@ -24,7 +24,8 @@ There are two fixes:
   atomic reaching it through an `is rw` parameter still refuses it
   (`t/nativecall/atomic-int-native-target.t`). Before, the adopted cell
   carried no such mark, so `⚛++` ran on a plain `my $x`.
-- **The routine-nested sub's latest-activation cells (mutsu#9111) also record
-  which compiled body they belong to.** Previously they knew only the sub's
-  package and file, so the program-scope `sv` — same name, same package,
-  same file — answered from them too.
+- **A program-scope routine no longer reads the nested sub's latest-activation
+  cells (mutsu#9111).** Those cells are keyed by the sub's name, package and
+  file, all of which the program-scope `sv` shares with the nested one. A
+  routine that runs as a program-scope sub with captured cells of its own now
+  reads only those.

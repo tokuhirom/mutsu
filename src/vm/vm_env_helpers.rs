@@ -1118,11 +1118,7 @@ impl Interpreter {
         name: &str,
     ) -> bool {
         // mutsu#9111: a routine-nested sub's write through its alias cell.
-        let owner = (
-            callee.package_sym(),
-            callee.source_file_sym(),
-            std::sync::Arc::as_ptr(&callee.code) as usize,
-        );
+        let owner = (callee.package_sym(), callee.source_file_sym());
         if self.is_lexsub_alias_write(callee_name, owner, name) {
             return true;
         }
