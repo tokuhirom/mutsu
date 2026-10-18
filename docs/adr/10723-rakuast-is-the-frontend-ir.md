@@ -1339,7 +1339,8 @@ tree shapes, EVAL, and the resulting unhidden MRO.
 Rakudo renders adjacent inline variable declarations as separate operands of a
 comma `ApplyListInfix`. The parser groups adjacent declarations in one
 synthetic block, so conversion now emits one `VarDeclaration::Simple` per
-operand and lowering regroups adjacent declaration operands into that block.
-This preserves the declaration scope needed by subscript assignment. The
-focused regression checks the measured tree and the value of a sibling
-declaration after a store.
+operand. Lowering restores the synthetic block when the list is the target of a
+subscript store, where Rakudo's postfix node omits the source parentheses, and
+keeps individual declaration terms for metaassignment targets. The focused
+regression checks the measured tree, the subscript store, and hyperassignment
+to the declaration list.

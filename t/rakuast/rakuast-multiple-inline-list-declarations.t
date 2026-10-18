@@ -3,7 +3,7 @@ use experimental :rakuast;
 use MONKEY-SEE-NO-EVAL;
 use Test;
 
-plan 6;
+plan 7;
 
 my $root = Q[(my $y = 2, my $z = 3)[1] = 99].AST.statements[0].expression;
 is $root.^name, 'RakuAST::ApplyPostfix', 'the subscript store applies to the list';
@@ -14,3 +14,5 @@ isa-ok $list.operands[0], RakuAST::VarDeclaration::Simple, 'the first operand is
 isa-ok $list.operands[1], RakuAST::VarDeclaration::Simple, 'the second operand is a declaration';
 is EVAL(Q[my $b = 2; my $c = 3; (my $y = $b, my $z = $c)[1] = 99; "$y $z"].AST),
     '2 99', 'lowering keeps adjacent declarations in one scope';
+is EVAL(Q[my $r = ((my $a, my $b) »=» (1, 2)); "$a $b"].AST), '1 2',
+    'declarations remain lvalues in a hyperassignment target';
