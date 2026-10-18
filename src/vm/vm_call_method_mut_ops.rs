@@ -734,9 +734,9 @@ impl Interpreter {
         } else {
             args
         };
-        // `X::Foo.throw`/`.fail`/..., `IO::Path.e`/... on a type object (compiled
-        // here because the bareword target routes through CallMethodMut) require
-        // a concrete invocant: X::Parameter::InvalidConcreteness.
+        // Numeric context on a built-in `IO::Path` type object (`IO::Path.Int`,
+        // compiled here because the bareword target routes through
+        // CallMethodMut) requires a concrete invocant.
         if let Some(err) = self.type_object_concreteness_error(method, &args, &target) {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",

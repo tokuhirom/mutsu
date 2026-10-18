@@ -7,7 +7,6 @@ pub(crate) mod collection;
 pub(crate) mod collection_gist;
 mod dispatch_core_coerce;
 pub(crate) mod dispatch_core_math;
-mod dispatch_core_numeric;
 pub(crate) mod which;
 pub(crate) use crate::value::match_helpers;
 pub(crate) use crate::value::raku_repr;
@@ -583,11 +582,6 @@ pub(crate) fn native_method_0arg_cascade(
     coercion::dispatch(target, method)
 }
 
-/// Create a X::Cannot::Lazy Failure for .elems on an infinite range.
-fn range_elems_lazy_failure(action: &str) -> Option<Result<Value, RuntimeError>> {
-    Some(Ok(crate::runtime::utils::cannot_lazy_failure(action)))
-}
-
 /// True for a value whose element count cannot be reported, so numeric/count
 /// coercions (`.elems`/`.Int`/`.Numeric`/`.end`/prefix `+`) throw
 /// `X::Cannot::Lazy`: a lazy-backed Array or a genuinely-lazy `LazyList`
@@ -837,27 +831,5 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // A receiver with no shape that is a `Cool` reaches `Cool`'s text rows
     // once the cascade declined it (ADR-11276 §9.79); an instance needs the
     // interpreter's MRO and is answered by the entries that have one.
-    dispatch_core_families(target, method).or_else(|| {
-        crate::builtins::method_table::answer_shapeless(None, target, Symbol::intern(method), &[])
-    })
-}
-
-/// The eight method families [`dispatch_core`] ends in, without the
-/// receiver-shaped prologue in front of them.
-///
-/// Each family returns `Option<Option<Result<..>>>`:
-///   `None` = method not handled, try the next family;
-///   `Some(inner)` = method matched, `inner` is the answer.
-fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    macro_rules! try_dispatch {
-        ($module:ident) => {
-            if let Some(result) = $module::dispatch(target, method) {
-                return result;
-            }
-        };
-    }
-
-    try_dispatch!(dispatch_core_numeric);
-
-    None
+    crate::builtins::method_table::answer_shapeless(None, target, Symbol::intern(method), &[])
 }

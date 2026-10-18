@@ -347,22 +347,22 @@ fn an_instance_has_a_shape_only_for_the_built_in_class() {
 }
 
 /// A shape added after the first nine is closed: only rows its own type owns
-/// reach it, because an ancestor's row (`Any.elems`) was written for the
-/// shapes that existed.
+/// reach it, because an ancestor's row (`Any.nl-out`) was written for the
+/// shapes that existed. (`Any.elems` reads any receiver as its list, so it is
+/// audited for every shape, §9.163.)
 #[test]
 fn a_new_shape_reaches_only_its_own_rows() {
-    let elems = Symbol::intern("elems");
-    assert!(lookup(DispatchShape::Str, elems, 0).is_some());
+    let nl_out = Symbol::intern("nl-out");
+    assert!(lookup(DispatchShape::Str, nl_out, 0).is_some());
     for shape in DispatchShape::ALL {
         if shape.inherits() {
             continue;
         }
-        // A closed shape may have an `elems` row of its own (`Set.elems`)
-        // or of an audited ancestor (`Match` reaches `Capture.elems`, §9.95),
-        // never `Any`'s.
+        // A closed shape may have an `nl-out` row of its own
+        // (`IO::Handle.nl-out`), never `Any`'s.
         assert!(
-            lookup(shape, elems, 0).is_none_or(|row| row.owner != "Any"),
-            "{shape:?} is closed but reached Any.elems"
+            lookup(shape, nl_out, 0).is_none_or(|row| row.owner != "Any"),
+            "{shape:?} is closed but reached Any.nl-out"
         );
     }
     for row in rows() {
