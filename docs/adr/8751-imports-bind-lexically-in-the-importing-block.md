@@ -361,7 +361,7 @@ Consequences that pin the design:
     bare `Foo` the run-time resolution reached, still found the type. The
     import scope snapshots the importer package's entry
     (`ImportScopeSnapshot::importer_type_aliases`) and its pop puts it
-    back. While the block is open, a top-level routine it calls does not
+    back, and so does an `EVAL`'s import scope. While the block is open, a top-level routine it calls does not
     take the alias either (`Env::frame_hides_unit_name`, the frame's
     unit-hidden set). A top-level
     routine that names a variable by string (`EVAL '$v'`, `::('$v')`) no
