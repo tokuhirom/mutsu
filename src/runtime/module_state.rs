@@ -415,6 +415,11 @@ pub(crate) struct ModuleState {
     /// dispatcher (ADR-8751 stage 2). A built-in op compiled under an import
     /// chain asks the chain only while one exists (#13906).
     pub(crate) lexical_operator_import_sets: HashSet<Symbol>,
+    /// The replayable effects of the `use` that filled each lexical import
+    /// set, for a later run of it (`lexical_import_replay`, #13906).
+    pub(crate) lexical_import_replays: std::sync::Arc<
+        HashMap<Symbol, super::lexical_import_replay::LexicalImportReplay>,
+    >,
     /// The definition of each captured candidate (by its code object's `id`)
     /// of a dispatcher over a built-in operator's imported user candidates
     /// (ADR-8751 stage 2): the winner is ranked against the operator's core
@@ -612,6 +617,7 @@ impl ModuleState {
             imported_env_aliases: HashMap::new(),
             lexical_import_sets: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
+            lexical_import_replays: Default::default(),
             lexical_operator_candidate_defs: Default::default(),
             lexical_import_capture: None,
             strict_mode: false,
@@ -697,6 +703,7 @@ impl ModuleState {
             imported_env_aliases: self.imported_env_aliases.clone(),
             lexical_import_sets: self.lexical_import_sets.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
+            lexical_import_replays: self.lexical_import_replays.clone(),
             lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),
             lexical_import_capture: None,
             strict_mode: self.strict_mode,

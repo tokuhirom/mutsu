@@ -55,12 +55,25 @@ impl Interpreter {
         // ADR-8751 stage 1: a block-scoped `use` also binds what it imports
         // into its lexical import set, for the call sites the block encloses.
         let lexical_set = lexical_set_idx.map(|idx| code.const_sym(idx));
+        // A run after the first of a `use` whose import only filled its set:
+        // replay what it wrote instead of importing again (#13906).
+        if let Some(id) = lexical_set
+            && self.module.pending_use_export_args.is_none()
+            && self.replay_lexical_import(id)
+        {
+            self.note_active_lexical_import_set(id);
+            return Ok(());
+        }
+        let probe = lexical_set.map(|_| self.import_effect_probe());
         let outer = lexical_set.map(|id| self.begin_lexical_import_capture(id));
         let loaded = self.with_use_attach_depth(|vm| vm.vm_use_module_with_tags(module, &tags));
         if let (Some(id), Some(outer)) = (lexical_set, outer) {
             if loaded.is_ok() {
                 self.finish_lexical_import_capture(id, outer);
                 self.note_active_lexical_import_set(id);
+                if let Some(probe) = probe {
+                    self.record_lexical_import_replay(id, probe);
+                }
             } else {
                 self.module.lexical_import_capture = outer;
             }

@@ -460,6 +460,16 @@ impl Interpreter {
                 importer_type_aliases,
             } = snapshot;
             self.restore_importer_type_aliases(importer_type_aliases);
+            // Whether the scope left every routine table as it found it (a
+            // `use` that bound only lexical routines, or a replayed one,
+            // #13906): then no name-keyed resolution cache can hold a routine
+            // this pop removes, and none needs invalidating.
+            let tables_untouched = std::sync::Arc::ptr_eq(&func_snapshot, &self.registry().functions)
+                && std::sync::Arc::ptr_eq(&proto_sub_snapshot, &self.registry().proto_subs_snapshot())
+                && std::sync::Arc::ptr_eq(&proto_fn_snapshot, &self.registry().proto_functions)
+                && class_snapshot.shares_with(&self.registry().classes)
+                && shadowed_functions.is_empty()
+                && shadowed_proto_functions.is_empty();
             // Remove functions added since the push, EXCEPT a module's own
             // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,
             // `Fancy::Utilities::EXPORT::ALL::lolgreet`). Those persist as long
@@ -625,7 +635,9 @@ impl Interpreter {
             // scope exits — e.g. `{ use Foo } EVAL('foo()')` must die, not hit
             // the stale cache (roast/S11-modules/lexical.t). Registration bumps
             // fn_resolve_gen; the matching un-registration here must too.
-            self.invalidate_fn_resolution();
+            if !tables_untouched {
+                self.invalidate_fn_resolution();
+            }
         }
     }
 
