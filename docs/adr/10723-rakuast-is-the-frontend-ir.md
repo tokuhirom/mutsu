@@ -1344,3 +1344,14 @@ subscript store, where Rakudo's postfix node omits the source parentheses, and
 keeps individual declaration terms for metaassignment targets. The focused
 regression checks the measured tree, the subscript store, and hyperassignment
 to the declaration list.
+
+### 6.74 S10: computed package name adverbs (2026-10-18)
+
+Package declarator adverbs now convert their retained `Expr` values as the
+`ColonPair::Value` value and lower those values back through the normal
+expression converter. The parser also keeps a source-form marker for
+parenthesized adverbs, since a literal expression there otherwise normalizes
+to the same `Expr` as an angle adverb. Angle forms remain words quotes, while
+parenthesized forms retain a `Circumfix::Parentheses` around their expression.
+The regression checks class and role declarations, angle and computed forms,
+source order, and evaluated metadata.

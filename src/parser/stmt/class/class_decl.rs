@@ -44,10 +44,13 @@ pub(crate) fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, E
             // An empty `()` and anything the expression parser cannot consume
             // whole keep the old literal-text behaviour rather than failing the
             // whole declaration.
-            value = match expression(body) {
+            let parsed = match expression(body) {
                 Ok((tail, expr)) if tail.trim().is_empty() => expr,
                 _ => Expr::Literal(Value::str(body.to_string())),
             };
+            value = Expr::spelled(parsed, || {
+                crate::ast::spelled::Spelling::ParenthesizedDeclaratorAdverb
+            });
             rest = after;
         }
         traits.push((name.to_string(), value));

@@ -30,6 +30,9 @@ pub(crate) enum Spelling {
     ArraySections(Vec<Vec<Expr>>),
     /// `<a b  c>`: the raw text between the brackets, whitespace included.
     Words(Box<str>),
+    /// A parenthesized package declarator adverb, including when its expression
+    /// normalizes to the same value as an angle adverb.
+    ParenthesizedDeclaratorAdverb,
     /// `q:to/END/`: the terminator line as written, indentation and newline
     /// included (`    END\n`).
     Heredoc { stop: Box<str> },

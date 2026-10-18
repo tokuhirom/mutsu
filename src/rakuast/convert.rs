@@ -2786,6 +2786,17 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
     }
 }
 
+fn parenthesized_expression(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let semilist = RakuAstNode {
+        class: RakuAstClass::SemiList,
+        fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::CircumfixParentheses,
+        fields: vec![node_field(None, semilist)],
+    })
+}
+
 /// The leading fields of a package declaration node (`class`, `grammar`,
 /// `role`): its `scope`, then its `name`.
 ///
@@ -3195,6 +3206,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 })
             }
             Spelling::Words(text) => Ok(word_quote(text)),
+            Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),
             Spelling::Heredoc { stop } => heredoc_node(&spelled.expr, stop),
             Spelling::WordQuote {
                 quotewords,

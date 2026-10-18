@@ -10,7 +10,7 @@
 //! into those fields, [`strip`] takes them off a node again for the lowering.
 
 use super::convert::{leaf_field, node_field, unsupported};
-use super::lower::{list_field, named_child, positional_leaf};
+use super::lower::{list_field, named_child};
 use super::routine_traits::{IsTraits, export_argument, trait_is};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
@@ -61,18 +61,17 @@ pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, 
         let mut name = name.clone();
         let mut pairs = Vec::new();
         for (key, value) in &header.adverbs {
-            let Expr::Literal(value) = value else {
-                return Err(unsupported("a name adverb with a computed value"));
-            };
-            let ValueView::Str(text) = value.view() else {
-                return Err(unsupported("a name adverb that is not a string"));
+            let value = match value {
+                // Keep the parser's compact representation for angle words:
+                // `:ver<1.2>` is a words quote in Rakudo's RakuAST.
+                Expr::Literal(value) if let ValueView::Str(text) = value.view() => {
+                    node_field(Some("value"), words_value(&text))
+                }
+                value => node_field(Some("value"), super::convert::convert_expr(value)?),
             };
             pairs.push(Value::rakuast(Box::new(RakuAstNode {
                 class: RakuAstClass::ColonPairValue,
-                fields: vec![
-                    leaf_field(Some("key"), Value::str(key.clone())),
-                    node_field(Some("value"), words_value(&text)),
-                ],
+                fields: vec![leaf_field(Some("key"), Value::str(key.clone())), value],
             })));
         }
         name.fields.push(RakuAstField {
@@ -134,22 +133,7 @@ pub(super) fn strip(
             }
             let key = super::lower::leaf_str(pair, "key")?;
             let value = named_child(pair, "value")?;
-            if value.class != RakuAstClass::QuotedString {
-                return Err(super::lower::unsupported(node));
-            }
-            let [segment] = list_field(value, "segments")? else {
-                return Err(super::lower::unsupported(node));
-            };
-            let ValueView::RakuAst(segment) = segment.view() else {
-                return Err(super::lower::unsupported(node));
-            };
-            let text = positional_leaf(segment)?;
-            let ValueView::Str(text) = text.view() else {
-                return Err(super::lower::unsupported(node));
-            };
-            header
-                .adverbs
-                .push((key, Expr::Literal(Value::str(text.to_string()))));
+            header.adverbs.push((key, super::lower::lower_expr(value)?));
         }
         let mut bare = name.clone();
         bare.fields.retain(|f| f.name != Some("colonpairs"));
