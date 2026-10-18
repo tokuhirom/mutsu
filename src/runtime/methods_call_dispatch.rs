@@ -1942,12 +1942,6 @@ impl Interpreter {
         // for this cascade: if it declines, the original `args` (nameds intact)
         // go on to the by-name dispatchers, the constructors and the user
         // method, none of which may lose a named.
-        if method == "AT-POS"
-            && !bypass_native_fastpath
-            && let Some(result) = self.builtin_at_pos(&target, &args)
-        {
-            return result;
-        }
         let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
         let inherited_adhoc = (!bypass_native_fastpath)

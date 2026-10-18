@@ -604,11 +604,6 @@ impl Interpreter {
         {
             return None;
         }
-        if method_name == "AT-POS"
-            && let Some(result) = self.builtin_at_pos(target, args)
-        {
-            return Some(result);
-        }
         // `Range.int-bounds($from is rw, $to is rw --> Bool)`: writes the bounds
         // into the caller's containers, so it needs `&mut self` and the call
         // site's arg-source names (see `vm/vm_range_int_bounds.rs`). The
