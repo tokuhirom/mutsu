@@ -884,26 +884,11 @@ impl Interpreter {
             }
         }
 
-        // .return method: triggers a return from the enclosing sub with the invocant
-        if method == "return" && args.is_empty() {
-            let mut err = RuntimeError::new("return");
-            err.return_value = Some(target);
-            err.set_from_method_return();
-            return Err(err);
-        }
         // `Exception`'s and `Failure`'s control methods (`throw`, `rethrow`,
         // `die`, `fail`, `resume`, `Exception.Failure`) are rows, reached by the
         // receiver's MRO (ADR-11276 §9.163).
         if let Some(result) = self.exception_control_by_mro(&target, method, &args) {
             return result;
-        }
-        // .WALK(name, :roles) — walk class+role chain calling the named
-        // submethod once per "own" definition. Returns a no-arg Sub that,
-        // when invoked, yields the list of results.
-        if method == "WALK"
-            && let Some(value) = self.try_walk_method(&target, &args)?
-        {
-            return Ok(value);
         }
         // Unhandled Failure explosion
         if let ValueView::Instance { class_name, .. } = target.view()

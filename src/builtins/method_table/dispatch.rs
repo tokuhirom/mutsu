@@ -781,12 +781,14 @@ pub(crate) fn shapeless_row(
                     | "AT-KEY"
                     | "EXISTS-KEY"
                     | "ACCEPTS"
+                    | "WALK"
             ))
         // `comb($pattern, $limit)` has no row of its own: only an instance
         // with a user `Str` takes it (`answer_shapeless`).
         && !(arity == 2 && method == "comb")
-        // `Mu.rakuseen($id, &code)` takes two.
+        // `Mu.rakuseen($id, &code)` takes two, `Mu.WALK` any number.
         && !(arity == 2 && method == "rakuseen")
+        && method != "WALK"
     {
         return None;
     }

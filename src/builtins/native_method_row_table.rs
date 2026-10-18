@@ -2300,6 +2300,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Signature", "ACCEPTS", 8, 28),
     ("Mu", "ACCEPTS", 8, 28),
     ("Mu", "rakuseen", 8, 57),
+    ("Mu", "WALK", 8, 57),
+    ("Mu", "return", 8, 57),
     ("List", "from-iterator", 8, 57),
     ("Array", "from-iterator", 8, 57),
     ("CompUnit::Handle", "export-package", 1, 56),
