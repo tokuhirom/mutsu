@@ -1721,10 +1721,13 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // `also does R;` in a package body.
         Stmt::DoesDecl {
             name,
+            args,
             also: true,
             from_is: false,
-            ..
-        } => Ok(Some(super::role::also_statement(name.resolve().as_str())?)),
+        } => Ok(Some(super::role::also_statement(
+            name.resolve().as_str(),
+            args.as_deref(),
+        )?)),
         Stmt::RoleDecl {
             name,
             type_params,
