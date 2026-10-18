@@ -1079,23 +1079,6 @@ impl Interpreter {
                 }
             }
         }
-        // .Str identity for Str-inheriting instances
-        if method == "Str"
-            && args.is_empty()
-            && let ValueView::Instance { class_name, .. } = target.view()
-        {
-            let receiver = class_name.resolve();
-            if !self.class_mro(&receiver).iter().any(|cn| cn == "Str") {
-                // Non-Str classes keep normal method lookup
-            } else if let Some((owner, _)) = self.resolve_method_with_owner(&receiver, "Str", &[]) {
-                if owner == "Str" {
-                    return Ok(target.clone());
-                }
-            } else {
-                return Ok(target.clone());
-            }
-        }
-
         // Private method call on non-Instance
         if let Some(result) = self.dispatch_private_method_on_non_instance(&target, method) {
             return result;

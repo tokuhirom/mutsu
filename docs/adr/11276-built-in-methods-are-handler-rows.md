@@ -4575,6 +4575,17 @@ receiver's MRO to the first owner declaring the row (a cursor reaches `Cool`'s, 
 its own) and reads a `Cool` instance with its own `Str` through it. The arm is gone. No behaviour
 change. Pinned in `t/oo/class/split-receivers-by-mro.t`.
 
+### 9.183 A `Str` subclass's `.Str` is the instance, through the native base (2026-10-19)
+
+`refactor/11276-str-subclass-identity`. A by-name gate of `call_method_with_values_inner` answered
+`.Str` of an instance whose MRO reaches `Str` with the instance itself, unless a class below `Str`
+declares its own `Str`. That is the native-base resolution's "coercer that answers the instance"
+(§9.79: `MyInt.new(5).Int` is the `MyInt`): `native_base::returns_the_instance` now lists `Str`
+and `Stringy` for a `Str` payload, and `native_base::dispatch` asks it before the
+"answered by the instance" names, which include the renderings. The gate is gone; `.Stringy`,
+which no gate covered, gives the instance too, as Rakudo's `Str.Stringy` does. A class's own `Str`
+is still found first. Pinned in `t/types/string/str-subclass-str-identity.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
