@@ -60,6 +60,13 @@ fn blorst(arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
             origin: crate::ast::DoBlockOrigin::SourceBlock,
             ..
         } => block_node(body),
+        Expr::DoBlock {
+            body,
+            origin: crate::ast::DoBlockOrigin::Desugar,
+            ..
+        } if matches!(body.first(), Some(crate::ast::Stmt::SourceForm(form)) if matches!(form.as_ref(), crate::ast::SourceForm::StartBlock)) => {
+            block_node(&body[1..])
+        }
         other => Ok(statement_expression(convert_expr(other)?)),
     }
 }
@@ -76,7 +83,18 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     };
     let blorst = named_child_or_positional(node)?;
     let arg = match blorst.class {
-        RakuAstClass::Block => make_anon_sub(lower_block(blorst)?),
+        RakuAstClass::Block => {
+            let body = lower_block(blorst)?;
+            if node.class == RakuAstClass::StatementPrefixStart
+                && crate::ast::collect_unattached_placeholders(&body)
+                    .into_iter()
+                    .any(|placeholder| placeholder != "%_")
+            {
+                Expr::desugar_block(body)
+            } else {
+                make_anon_sub(body)
+            }
+        }
         // `start STATEMENT` (`start react { ... }`, a loop): the statement is the body.
         _ if node.class == RakuAstClass::StatementPrefixStart => {
             make_anon_sub(vec![super::lower::lower_stmt(blorst)?])
