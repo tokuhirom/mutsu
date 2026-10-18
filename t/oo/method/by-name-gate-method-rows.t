@@ -3,7 +3,7 @@ use Test;
 # The by-name gates of `call_method_with_values` that became rows
 # (ADR-11276 §9.164). Expected values are Rakudo's.
 
-plan 44;
+plan 53;
 
 # Regex.ACCEPTS answers the Match, not a Bool.
 {
@@ -93,4 +93,26 @@ plan 44;
     my %h;
     %h<a>.append(1, 2);
     is-deeply %h<a>, [1, 2], 'a hash entry too';
+}
+
+# `Mu.WALK`, `Mu.return`, `Mu.rakuseen`, `Match.make`, `Seq.Int` and
+# `List.from-iterator`.
+{
+    class W1 { method hi { "w1" } }
+    class W2 is W1 { method hi { "w2" } }
+    is W2.new.WALK(:name<hi>)().join(","), "w2,w1", 'Mu.WALK';
+    sub r { 7.return; 8 }
+    is r(), 7, 'Mu.return';
+    is 5.rakuseen("x", { "five" }), "five", 'Mu.rakuseen runs the code';
+    grammar G { token TOP { \d+ } }
+    class A { method TOP($/) { $/.make(+$/ * 2) } }
+    is G.parse("21", actions => A).made, 42, 'Match.make in an action';
+    "abc" ~~ /b/;
+    $/.make(42);
+    is $/.made, 42, 'Match.make on a plain match';
+    is (1, 2, 3).map(* + 1).Int, 3, 'Seq.Int is the element count';
+    is (1, 2, 3).map(* + 1).sum, 9, 'Seq.sum';
+    is Slip.from-iterator((1, 2).iterator).raku, "slip(1, 2)", 'Slip.from-iterator';
+    throws-like { Seq.from-iterator((1, 2).iterator) }, X::Method::NotFound,
+        'Seq declares no from-iterator';
 }

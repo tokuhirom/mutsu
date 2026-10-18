@@ -746,21 +746,6 @@ impl Interpreter {
         if is_seq_sink {
             return Ok(Value::NIL);
         }
-        // A non-lazy Seq is a materialized list; numeric aggregation/coercion
-        // methods (`.sum`/`.min`/`.max`/`.Int`) are only wired up for `Array`
-        // (and `.min`/`.max` route through `builtin_min`/`builtin_max`, which
-        // treat a bare Seq as a single element), so a `.map(...).sum` chain
-        // either threw "No such method" or returned the Seq itself. Re-dispatch
-        // these on the Seq's elements as a List so they behave like an Array.
-        if let ValueView::Seq(items) = target.view()
-            && matches!(method, "sum" | "min" | "max" | "Int")
-        {
-            let arr = Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
-                crate::value::ArrayKind::List,
-            );
-            return self.call_method_with_values(arr, method, args);
-        }
         // User-defined ^method (metamethod) dispatch.
         // `method ^foo(Mu) { ... }` in a class body defines a metamethod.
         // The caller (VM) already prepends the type object to args.
@@ -1468,14 +1453,11 @@ impl Interpreter {
         {
             return result;
         }
-        // Match.make writes the Match's `.made` in place (#12954).
-        if method == "make"
-            && target.set_match_ast_in_place(args.first().cloned().unwrap_or(Value::NIL))
+        // `Match.make` is a row (ADR-11276 §9.164).
+        if let Some(result) =
+            crate::builtins::method_table::regex_match::make_answer(self, &target, method, &args)
         {
-            let value = args.first().cloned().unwrap_or(Value::NIL);
-            self.env.insert("made".to_string(), value.clone());
-            self.regex_state.action_made = Some(value.clone());
-            return Ok(value);
+            return result;
         }
 
         // .gist with Instance-containing collections

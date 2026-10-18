@@ -66,7 +66,47 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::ANY_ARGS,
         named: &[],
     },
+    // `make` writes the match's `.made` and the interpreter's `$/.made`
+    // (§9.164). A grammar cursor and a `Match` subclass instance reach it
+    // through [`make_answer`].
+    MethodRow {
+        owner: "Match",
+        name: "make",
+        arity: 1,
+        handler: Handler::Interp(make_row),
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::ANY_ARGS)
+            .or(RowFlags::OBJECT_ARGS),
+        named: &[],
+    },
 ];
+
+/// The answer of `Match.make` for a match of any kind (a plain match, a
+/// grammar cursor, an instance of a `Match` subclass), or `None` for any
+/// other call.
+// Cost: O(1) to find the row, plus the handler's own cost.
+pub(crate) fn make_answer(
+    interp: &mut crate::runtime::Interpreter,
+    target: &Value,
+    method: &str,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    if method != "make" || !target.is_match_instance() {
+        return None;
+    }
+    crate::builtins::method_table::invoke_owner(interp, &["Match"], method, args, || target.clone())
+}
+
+/// `Match.make($value)`: the value, now the match's `.made`.
+// Cost: O(1).
+fn make_row(
+    interp: &mut crate::runtime::Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: crate::builtins::method_table::Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    interp.match_make(target, &args[0]).map(Ok)
+}
 
 /// `Match.from`: the offset the match starts at, in graphemes.
 // Cost: O(1) for an ASCII subject; O(p) otherwise, p = chars before the match.

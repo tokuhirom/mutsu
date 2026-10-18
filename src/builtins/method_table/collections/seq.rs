@@ -55,6 +55,8 @@ macro_rules! narrow_at {
 
 pub(super) static ROWS: &[MethodRow] = &[
     pure!("elems", list::elems),
+    // `Seq.Int` is `self.cache.Int`, the element count (§9.164).
+    pure!("Int", list::elems),
     pure!("end", list::end),
     pure!("Bool", list::bool),
     narrow!("item", lazy::item),

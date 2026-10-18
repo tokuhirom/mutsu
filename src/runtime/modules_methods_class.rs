@@ -28,6 +28,7 @@ mod methods_hyper_seq_rows;
 mod methods_mu_late_rows;
 mod methods_mu_rakuseen;
 mod methods_list_from_iterator;
+mod methods_match_make;
 mod methods_late_walk_owners;
 mod methods_own_iteration;
 mod methods_match3_late_rows;
