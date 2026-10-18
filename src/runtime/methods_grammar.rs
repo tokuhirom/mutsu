@@ -784,12 +784,16 @@ impl Interpreter {
         // before the parse returns to the caller.
         let mut active_start_dynvars = None;
         if !is_method_start_rule {
+            let def_file = self.rule_def_file_cached(
+                Symbol::intern(package_name),
+                Symbol::intern(&start_rule),
+            );
             self.push_routine_with_location(
                 Symbol::intern(package_name),
                 Symbol::intern(&start_rule),
                 self.current_source_line(),
                 self.executing_source_file_sym(),
-                None,
+                def_file,
             );
         }
         // The start rule runs on `self.new` (#10848): a built instance, so a

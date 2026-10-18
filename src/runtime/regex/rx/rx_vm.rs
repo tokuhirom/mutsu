@@ -966,7 +966,23 @@ impl Interpreter {
                         pc += 1;
                         if let RxOp::Code(_) = op {
                             match if FRAMES { frame } else { None } {
-                                Some(_) => self.publish_rx_code_invocant(None),
+                                Some(fi) => {
+                                    // The rule this frame runs, for the
+                                    // scope its code closes over (#13915).
+                                    let f = &frames[fi as usize];
+                                    let caller: &RxProgram = match f.parent {
+                                        Some(p) => &frames[p as usize].program,
+                                        None => root,
+                                    };
+                                    if let RegexAtom::Named(site_name) =
+                                        &caller.atoms[f.site as usize]
+                                    {
+                                        let name = f.called.as_deref().unwrap_or(site_name);
+                                        self.regex_state.code_atom_rule =
+                                            Some(name.spec().lookup_sym);
+                                    }
+                                    self.publish_rx_code_invocant(None)
+                                }
                                 None if root_invocant.is_some() => {
                                     self.publish_rx_code_invocant(root_invocant.clone())
                                 }

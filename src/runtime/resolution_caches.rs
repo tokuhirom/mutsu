@@ -103,6 +103,10 @@ pub(crate) struct ResolutionCaches {
     /// (by generation mismatch) rather than per-package, since a new token
     /// registration is rare and global.
     pub(super) grammar_dynvar_decls_cache: HashMap<String, (u64, HashMap<String, Vec<String>>)>,
+    /// `(grammar, rule) -> the file the rule was declared in`
+    /// (`Interpreter::rule_def_file_cached`), keyed by the `TOKEN_DEFS_GEN`
+    /// generation it was computed under, like the table above.
+    pub(crate) rule_def_file_cache: HashMap<(Symbol, Symbol), (u64, Option<Symbol>)>,
     pub(crate) otf_compile_cache: HashMap<u64, Arc<CompiledFunction>>,
     #[allow(clippy::type_complexity)]
     /// Keyed by `(callee name, callsite package, arity, argument type names)`.

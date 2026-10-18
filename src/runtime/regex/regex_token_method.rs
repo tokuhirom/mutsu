@@ -378,12 +378,13 @@ impl Interpreter {
         // ordinary method dispatch. Keep that frame live while matching so a
         // hidden wrapper can identify the rule that called it (`TOP`, in
         // Grammar::PrettyErrors).
+        let def_file = self.rule_def_file_cached(pkg, Symbol::intern(name));
         self.push_routine_with_location(
             pkg,
             Symbol::intern(name),
             self.current_source_line(),
             self.executing_source_file_sym(),
-            None,
+            def_file,
         );
         let matches = self.regex_match_ends_from_caps_in_pkg(&parsed, target.chars(), pos, pkg);
         // Matches come HIGHEST FIRST: the first entry is the token's best
