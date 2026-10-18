@@ -14,6 +14,7 @@ mod methods_temporal_class;
 mod methods_promise_scheduler;
 mod methods_qualified;
 mod methods_quanthash_ctor;
+mod methods_gist_dispatch;
 mod methods_raku_dispatch;
 mod methods_raku_typed;
 mod methods_regex_routine;

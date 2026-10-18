@@ -127,4 +127,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     twin!("Mu", "Capture", TWIN_NULLARY, |interp, target, _args| {
         interp.try_interpreter_capture(&target)
     }),
+    // `gist` of a collection holding a value whose rendering is user code,
+    // which the pure rows decline (§9.188).
+    twin!("List", "gist", TWIN_NULLARY, |interp, target, _args| interp
+        .collection_gist_with_dispatch(&target)),
+    twin!("Map", "gist", TWIN_NULLARY, |interp, target, _args| interp
+        .collection_gist_with_dispatch(&target)),
+    twin!("Seq", "gist", TWIN_NULLARY, |interp, target, _args| interp
+        .collection_gist_with_dispatch(&target)),
+    twin!("Pair", "gist", TWIN_NULLARY, |interp, target, _args| interp
+        .collection_gist_with_dispatch(&target)),
 ];

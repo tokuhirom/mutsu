@@ -130,6 +130,9 @@ fn gist_route(v: &Value) -> GistRoute {
                 | ValueView::CustomType(..)
                 | ValueView::CustomTypeInstance(_)
                 | ValueView::Package(..)
+                // A role mixed into an element may carry its own `gist`/`Str`
+                // (`[5 but R]`), which only method dispatch reaches.
+                | ValueView::Mixin(..)
                 // A `Code` element renders through the Sub method handler
                 // (`&name`, `-> $a  #`(Block|N)`), which this pure walk lacks.
                 | ValueView::Sub(..)

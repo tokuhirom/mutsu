@@ -101,6 +101,20 @@ impl Interpreter {
                 | "fmt"
                 | "Capture"
         )
+            // A collection's `gist` twin (§9.188); every other receiver's
+            // `gist` is `Mu`'s, answered by the cascades.
+            || (method == "gist"
+                && matches!(
+                    target.view(),
+                    ValueView::Array(..)
+                        | ValueView::Seq(..)
+                        | ValueView::HyperSeq(..)
+                        | ValueView::RaceSeq(..)
+                        | ValueView::Slip(..)
+                        | ValueView::Hash(..)
+                        | ValueView::Pair(..)
+                        | ValueView::ValuePair(..)
+                ))
             || (matches!(method, "say" | "put") && !args.is_empty())
         {
             let owner_names = self.late_walk_owners(&target);

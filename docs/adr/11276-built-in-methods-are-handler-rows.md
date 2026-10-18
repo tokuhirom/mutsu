@@ -4664,6 +4664,22 @@ receivers, so the routines are now the late interpreter twins `Mu.Capture` and `
 `dispatch_method_by_name_1` like `tail` (§9.186). The gates are gone. No behaviour change. Pinned
 in `t/routines/call/capture-fmt-interpreter-twins.t`.
 
+### 9.188 `gist` of a collection with user-rendered elements is the collections' twin (2026-10-19)
+
+`refactor/11276-collection-gist-twins`. A by-name `gist` gate of `call_method_with_values_inner`
+rendered an `Array`, `Seq`, `Slip`, `Hash` or `Pair` holding a value whose rendering is user code
+(an instance, a type object, a code object, a mixin) element by element through method dispatch,
+over the answer the pure prologue had computed. That renderer is now
+`Interpreter::collection_gist_with_dispatch` (`runtime/methods_gist_dispatch.rs`), the late
+interpreter twin of `List.gist`, `Map.gist`, `Seq.gist` and `Pair.gist`, reached through the late
+MRO walk for a collection receiver only (every other receiver's `gist` stays `Mu`'s). The pure
+`gist` rows already declined such a collection, except for a mixin element (`[5 but R]`), which the
+pure probe (`collection_gist::gist_route`) now routes to dispatch too. The gate is gone. No
+behaviour change; the 1,029 `t/` files that call `.gist` or `say` pass. Removing the gate exposed a
+wrong element count it had hidden: `my @b = (1, 2, 3) but R` held one element, rendered without
+its parentheses by the gate (`roast/S02-types/list.t`); `coerce_to_array` now flattens a mixin over
+a list as Rakudo does, pinned in `t/oo/mixin-list-array-assign.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
