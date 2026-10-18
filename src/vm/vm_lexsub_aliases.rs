@@ -327,7 +327,7 @@ impl Interpreter {
             .get(&(frame.name, Symbol::intern(name)))?;
         (same_lexsub_owner(entry.owner, (frame.package, frame.def_file, frame.code))
             || self.env().get(name).is_none())
-            .then_some(&entry.cell)
+        .then_some(&entry.cell)
     }
 
     /// Mutable counterpart of [`Self::lexsub_alias_slot`].
@@ -484,7 +484,6 @@ impl Interpreter {
     /// container would carry (`adopt_hoist_pending_cell`).
     // Cost: O(1).
     fn hoist_seeds_own_slot(&self, code: &CompiledCode, slot: usize) -> bool {
-        code.is_fresh_local(slot)
-            && self.locals.get(slot).is_some_and(Value::is_nil)
+        code.is_fresh_local(slot) && self.locals.get(slot).is_some_and(Value::is_nil)
     }
 }
