@@ -148,16 +148,22 @@ fn trans(
     // any other named argument (`:g`) is ignored rather than read as a
     // mapping pair.
     let mut all = args.to_vec();
-    all.extend(named.pairs().iter().filter(|arg| {
-        matches!(
-            arg.view(),
-            ValueView::Pair(key, _)
-                if matches!(
-                    key.as_str(),
-                    "s" | "squash" | "d" | "delete" | "c" | "complement"
+    all.extend(
+        named
+            .pairs()
+            .iter()
+            .filter(|arg| {
+                matches!(
+                    arg.view(),
+                    ValueView::Pair(key, _)
+                        if matches!(
+                            key.as_str(),
+                            "s" | "squash" | "d" | "delete" | "c" | "complement"
+                        )
                 )
-        )
-    }).cloned());
+            })
+            .cloned(),
+    );
     Some(interp.dispatch_trans(target.clone(), &all))
 }
 
