@@ -111,9 +111,49 @@ impl Interpreter {
                 leave_phasers: Vec::new(),
                 lexical_sets: Vec::new(),
                 unit: self.executing_unit_sym_for_module_load(),
+                importer_type_aliases: {
+                    let importer = self.import_target_package_for_load();
+                    let aliases = self.types.package_type_aliases.get(&importer).cloned();
+                    (importer, aliases)
+                },
             }
         };
         self.module.import_scope_stack.push(snapshot);
+    }
+
+    /// The package a module load or import running now imports into: the
+    /// explicit import target, else the module whose body is loading, else
+    /// the current package. Its `package_type_aliases` entry is where an
+    /// import records the exported types' short names.
+    // Cost: O(|package|), one clone.
+    pub(crate) fn import_target_package_for_load(&self) -> String {
+        self.module
+            .import_target_package
+            .clone()
+            .or_else(|| self.module.unit_module_loading_stack.last().cloned())
+            .unwrap_or_else(|| self.current_package())
+    }
+
+    /// Put back the short type-name aliases an import scope's importer package
+    /// held when the scope opened ([`ImportScopeSnapshot::importer_type_aliases`]).
+    // Cost: O(1) when the scope gave the package no alias; otherwise one table
+    // write (a copy-on-write clone of the table while a thread shares it).
+    fn restore_importer_type_aliases(
+        &mut self,
+        (importer, aliases): (String, Option<rustc_hash::FxHashMap<String, String>>),
+    ) {
+        if self.types.package_type_aliases.get(&importer) == aliases.as_ref() {
+            return;
+        }
+        let table = crate::runtime::cow_table_mut(&mut self.types.package_type_aliases);
+        match aliases {
+            Some(aliases) => {
+                table.insert(importer, aliases);
+            }
+            None => {
+                table.remove(&importer);
+            }
+        }
     }
 
     /// Record that `import_module` just wrote `key` into `env` as an
@@ -417,7 +457,9 @@ impl Interpreter {
                 leave_phasers: _,
                 lexical_sets: _,
                 unit: _,
+                importer_type_aliases,
             } = snapshot;
+            self.restore_importer_type_aliases(importer_type_aliases);
             // Remove functions added since the push, EXCEPT a module's own
             // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,
             // `Fancy::Utilities::EXPORT::ALL::lolgreet`). Those persist as long
@@ -752,12 +794,7 @@ impl Interpreter {
             // DBDish::Pg::Native;` later must independently see `PGconn`
             // bare too, even though the module itself is already loaded.
             if let Some(module_aliases) = self.types.package_type_aliases.get(module).cloned() {
-                let importer_package = self
-                    .module
-                    .import_target_package
-                    .clone()
-                    .or_else(|| self.module.unit_module_loading_stack.last().cloned())
-                    .unwrap_or_else(|| self.current_package());
+                let importer_package = self.import_target_package_for_load();
                 let entry = crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                     .entry(importer_package)
                     .or_default();

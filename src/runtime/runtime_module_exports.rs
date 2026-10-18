@@ -1392,12 +1392,7 @@ impl Interpreter {
                 if let Some(short) = short_pkg.as_ref()
                     && !self.module.module_load_stack.is_empty()
                 {
-                    let importer_package = self
-                        .module
-                        .import_target_package
-                        .clone()
-                        .or_else(|| self.module.unit_module_loading_stack.last().cloned())
-                        .unwrap_or_else(|| self.current_package());
+                    let importer_package = self.import_target_package_for_load();
                     crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(importer_package)
                         .or_default()

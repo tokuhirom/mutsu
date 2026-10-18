@@ -585,6 +585,11 @@ impl Interpreter {
         // constraint checked on every typed binding) even though the lookup
         // below was going to answer `None` anyway (#8899).
         let target = self.lookup_in_running_package(&self.types.package_type_aliases, name)?;
+        // A block-scoped `use` gave the importer package this alias; a
+        // top-level routine the block calls does not see it (ADR-8751).
+        if Symbol::lookup(name).is_some_and(|key| self.env.frame_hides_unit_name(key)) {
+            return None;
+        }
         // A directly registered name is its own resolution; the module alias is
         // only ever the fallback for a short name nothing else accounts for.
         if self.has_type_direct(name) {
