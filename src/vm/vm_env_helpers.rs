@@ -62,6 +62,7 @@ impl Interpreter {
         // phasers, threads) still flatten via `clone_env` at the capture site.
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
+            caller_code: self.current_code,
             call_capture: None,
             saved_cur_line: self.cur_source_line,
             readonly_mark: self.enter_readonly_frame(),
@@ -98,6 +99,7 @@ impl Interpreter {
         crate::vm::vm_stats::record_clone_env();
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
+            caller_code: self.current_code,
             call_capture: None,
             saved_cur_line: self.cur_source_line,
             readonly_mark: self.enter_readonly_frame(),
