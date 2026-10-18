@@ -366,6 +366,18 @@ impl Compiler {
                 .filter(|name| !body_our_names.contains(name.as_str()))
                 .cloned(),
         );
+        // So does a lexical of an enclosing compilation (the program's `my
+        // $read` for a class declared in a routine): qualified (`$C::read`),
+        // it became no free variable of the declaring routine, which then
+        // captured nothing for it, and the statement read whatever the env
+        // held under the bare name (#13675).
+        body_lexicals.extend(
+            self.enclosing_scopes
+                .iter()
+                .flat_map(|frame| frame.keys())
+                .filter(|name| !name.contains("::") && !body_our_names.contains(name.as_str()))
+                .cloned(),
+        );
         let class_body_type_aliases = body
             .iter()
             .filter_map(|stmt| match stmt {
