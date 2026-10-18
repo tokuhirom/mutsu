@@ -15,7 +15,7 @@
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Found by owner only, every argument and adverb handed to the routine,
 /// which validates them; a type object reads as a one-item list.
@@ -80,4 +80,34 @@ pub(super) static ROWS: &[MethodRow] = &[
     twin!("repeated", TWIN, |interp, target, args| Some(
         interp.dispatch_repeated(target, &args)
     )),
+    // `tail` of a receiver the pure row declines: a lazy list (which refuses
+    // with `X::Cannot::Lazy`), a `Seq.new($iterator)` body, an instance, a
+    // count that is a `Callable` or a `Whatever` (§9.186).
+    // `tail` declares no adverb, so a named argument is ignored
+    // (`(1, 2, 3).tail(:zzz)` is 3).
+    twin!("tail", TWIN, |interp, target, args| {
+        let counts: Vec<Value> = args
+            .into_iter()
+            .filter(|arg| !arg.is_string_pair_value())
+            .collect();
+        Some(interp.dispatch_tail(target, &counts))
+    }),
+    // `head(&callable)` / `head(*)` of a finite list (§9.186).
+    twin!("head", TWIN, |interp, target, args| {
+        match args.as_slice() {
+            [count]
+                if matches!(
+                    count.view(),
+                    ValueView::Whatever
+                        | ValueView::Sub(_)
+                        | ValueView::WeakSub(_)
+                        | ValueView::Routine { .. }
+                ) && !matches!(target.view(), ValueView::Instance { .. })
+                    && !super::terminals::is_lazy_tail_target(&target) =>
+            {
+                Some(interp.dispatch_head(target, count))
+            }
+            _ => None,
+        }
+    }),
 ];
