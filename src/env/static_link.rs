@@ -104,6 +104,9 @@ pub(super) fn same_variable(a: &Value, b: &Value) -> bool {
 /// table, not the frame. A plain lexical's own record (`__mutsu_type::x`,
 /// its source-name and hash-key records) follows the variable (ADR-13757
 /// step 4): a caller's `my Int $x` says nothing about the running code's `$x`.
+/// A block-level module merge (`MetaNs::ModuleMerge`) is the block's lexical
+/// import of the module's packages: a caller's `{ use M; ... }` does not
+/// grant `M::Foo` to the code it calls (#13801).
 // Cost: O(1) for a plain user lexical, an attribute or a memoized record key
 // (memoized flags and subject); O(|key|) otherwise.
 pub(super) fn lexically_scoped(key: Symbol) -> bool {
@@ -117,6 +120,7 @@ pub(super) fn lexically_scoped(key: Symbol) -> bool {
                 && s.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         })
+        || key.with_str(|s| s.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix()))
 }
 
 impl Env {
