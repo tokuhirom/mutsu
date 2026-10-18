@@ -1043,42 +1043,6 @@ impl Interpreter {
                 return Ok(Value::real_array(items));
             }
         }
-        // Coerce Instance args for log/exp/atan2
-        let mut args = args;
-        // A user-defined method with one of these names must receive its
-        // arguments unchanged. In particular, grammar action classes commonly
-        // define `method exp($/)`; coercing its Match argument through Numeric
-        // here turns a failed coercion into a Failure before ordinary method
-        // dispatch gets a chance to see the override.
-        let receiver_has_user_math_method = match target.view() {
-            ValueView::Instance { class_name, .. } => {
-                self.class_has_user_method(&class_name.resolve(), method)
-            }
-            ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
-            _ => false,
-        };
-        if matches!(method, "log" | "exp" | "atan2") && !receiver_has_user_math_method {
-            for arg in &mut args {
-                if !matches!(arg.view(), ValueView::Instance { .. }) {
-                    continue;
-                }
-                let original = arg.clone();
-                // A `Real` instance's `Numeric` is itself (the role's), so it
-                // computes through its `Bridge`, as the infix operators do
-                // (`coerce_infix_operand_numeric`).
-                let coerced = if self.type_matches_value("Real", &original) {
-                    self.call_method_with_values(original.clone(), "Bridge", vec![])
-                } else {
-                    self.call_method_with_values(original.clone(), "Numeric", vec![])
-                        .or_else(|_| {
-                            self.call_method_with_values(original.clone(), "Bridge", vec![])
-                        })
-                };
-                if let Ok(coerced) = coerced {
-                    *arg = coerced;
-                }
-            }
-        }
         // Private method call on non-Instance
         if let Some(result) = self.dispatch_private_method_on_non_instance(&target, method) {
             return result;

@@ -4586,6 +4586,21 @@ and `Stringy` for a `Str` payload, and `native_base::dispatch` asks it before th
 which no gate covered, gives the instance too, as Rakudo's `Str.Stringy` does. A class's own `Str`
 is still found first. Pinned in `t/types/string/str-subclass-str-identity.t`.
 
+### 9.184 A numeric parameter coerces a user object: `RowFlags::NUMERIC_ARGS` (2026-10-19)
+
+`refactor/11276-numeric-arg-coercion`. Before any dispatch, `call_method_with_values_inner`
+rewrote the arguments of every `log`, `exp` and `atan2` call: an instance argument was replaced by
+its `Bridge` (a `Real` class) or its `Numeric`, unless the receiver's class declared the method
+itself. That is a parameter coercion of the built-in rows (Rakudo's `Num(Real) $base`,
+`Numeric $base`), so it moved to them: `RowFlags::NUMERIC_ARGS` (`RowFlags` widens to `u32`; the
+sixteen bits were spent) marks the arity-1 `log`/`exp`/`atan2` rows of `Int`, `Num`, `Rat`,
+`Cool` and `Complex`, and `invoke_unadmitted`, which already takes the calls whose arguments the
+guard step declines, coerces each user-object argument (the operators' rule: `Bridge` for a
+`Real` class, `Numeric` otherwise) and hands the row the number. The gate is gone; a user method
+of the name never reaches the rows, so it still sees its argument unchanged. The rows stay pure:
+the coercion runs in the interpreter's entry, not in the handler, so constant folding and the JIT
+see the same rows. No behaviour change. Pinned in `t/types/numeric/numeric-math-object-args.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
