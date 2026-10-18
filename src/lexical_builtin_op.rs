@@ -190,6 +190,22 @@ pub(crate) fn infix_of_opcode(op: &OpCode) -> Option<&'static str> {
     })
 }
 
+/// The `infix:<op>` routine of the ASCII set relation the opcode `op` applies.
+/// The parser turns a use of an imported relation into a call of the user
+/// operator, but the RakuAST frontend lowers `(<=)` back to its opcode, which
+/// asks no user candidate; `OpCode::LexImportInfix` in front of it reads the
+/// block's import set instead.
+// Cost: O(1).
+pub(crate) fn relation_of_opcode(op: &OpCode) -> Option<&'static str> {
+    Some(match op {
+        OpCode::SetSubset => "infix:<(<=)>",
+        OpCode::SetSuperset => "infix:<(>=)>",
+        OpCode::SetStrictSubset => "infix:<(<)>",
+        OpCode::SetStrictSuperset => "infix:<(>)>",
+        _ => return None,
+    })
+}
+
 /// The `infix:<op>` routine the compound assignment over `op` applies, when
 /// its user candidates bind lexically.
 // Cost: O(1).
