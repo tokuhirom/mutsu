@@ -2198,6 +2198,7 @@ t/lang/adverbs/colonpair-bracket-trailing-comma-composer.t
 t/lang/adverbs/colonpair-bracket-trailing-comma.t
 t/lang/adverbs/colonpair-keyword-key-hash-composer.t
 t/lang/adverbs/colonpair-twigil-autopair-hash-composer.t
+t/lang/adverbs/computed-declarator-adverb.t
 t/lang/adverbs/value-dynamic-adverb.t
 t/lang/and-not-loose-precedence.t
 t/lang/angle-bracket-hyphen.t
@@ -2924,6 +2925,7 @@ t/modules/import-export/use-if-false-undeclared-routine.t
 t/modules/import-export/use-if-pragma.t
 t/modules/import-export/use-in-block-binds-affix-operators-lexically.t
 t/modules/import-export/use-in-block-binds-builtin-operator-candidates-lexically.t
+t/modules/import-export/use-in-block-binds-increments-lexically.t
 t/modules/import-export/use-in-block-binds-lexically.t
 t/modules/import-export/use-in-block-binds-multis-lexically.t
 t/modules/import-export/use-in-block-binds-nontrivial-proto-lexically.t
@@ -4340,6 +4342,7 @@ t/oo/role/augment-does-role.t
 t/oo/role/bless-defaulted-parametric-role.t
 t/oo/role/blob-role-vmarray-user-class.t
 t/oo/role/builtin-role-composes-its-own-roles.t
+t/oo/role/builtin-role-mro-includes-any.t
 t/oo/role/but-on-role-type.t
 t/oo/role/but-role-list.t
 t/oo/role/but-role-on-list-array-name-and-join-flatten.t
@@ -6143,6 +6146,7 @@ t/routines/dispatch/str-coercion-and-dispatch.t
 t/routines/dispatch/take-multi-args.t
 t/routines/dispatch/topic-multidimensional-index.t
 t/routines/dispatch/transitive-multi-override.t
+t/routines/dispatch/user-increment-candidate-element-operand.t
 t/routines/dispatch/user-increment-op-candidate-ranking.t
 t/routines/dispatch/user-infix-op-candidate-ranking.t
 t/routines/dispatch/user-infix-op-core-candidate-set.t
