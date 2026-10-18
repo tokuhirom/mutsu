@@ -283,6 +283,7 @@ impl Interpreter {
                     .collect()
             }
         };
+        let module_protos = self.module_protos_missing_from(&proto_functions);
         let mut guard = self.registry_mut();
         // Every write below is to the routine/token tables, never to the four
         // type maps, so the lexical type-name index survives the restore.
@@ -291,6 +292,10 @@ impl Interpreter {
         registry.proto_functions = proto_functions;
         registry.token_defs = token_defs;
         registry.proto_subs_restore(proto_subs);
+        for (key, def) in module_protos {
+            registry.proto_subs_insert(key.resolve());
+            std::sync::Arc::make_mut(&mut registry.proto_functions).insert(key, def);
+        }
         registry.proto_tokens = proto_tokens;
         for (key, defs) in new_tokens {
             std::sync::Arc::make_mut(&mut registry.token_defs).insert(key, defs);
