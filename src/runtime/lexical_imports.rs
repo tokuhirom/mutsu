@@ -382,6 +382,10 @@ impl Interpreter {
         chain: &[Symbol],
         name: Symbol,
     ) -> Option<LexicalImport> {
+        // No set binds a built-in operator's dispatcher: nothing to merge.
+        if self.module.lexical_operator_import_sets.is_empty() {
+            return self.lexical_import_binding(chain, name);
+        }
         let mut found = chain.iter().filter_map(|id| {
             match self.module.lexical_import_sets.get(id)?.get(&name)? {
                 LexicalImport::Code(value) if Self::is_builtin_operator_dispatcher(value) => {

@@ -353,7 +353,7 @@ impl Interpreter {
         // imports are read from the package's import aliases instead.
         let package_block_imports = matches!(routines, LexicalStashRoutines::OwnImports { .. })
             && own_imports == Some(None);
-        for (key, display) in &self.module.imported_env_aliases {
+        for (key, display) in self.module.imported_env_aliases.iter() {
             if let Some(scope) = own_imports
                 && !scope.is_some_and(|i| self.import_scopes()[i].imported_env_keys.contains(key))
             {

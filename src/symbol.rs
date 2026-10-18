@@ -733,6 +733,9 @@ pub(crate) mod wk {
         made => "made";
         /// The `Any` type object, the value a routine's fresh topic is seeded with.
         any => "Any";
+        /// The program's `MAIN` registry key, checked on every import scope's
+        /// exit (`drop_foreign_global_main_candidates`).
+        global_main => "GLOBAL::MAIN";
         /// The dynamic `$?FILE`, stored sigil-less with its twigil.
         file => "?FILE";
         /// A lexically rebound `&return`. Probed on EVERY routine return (both

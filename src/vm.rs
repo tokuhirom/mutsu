@@ -143,6 +143,7 @@ mod vm_call_site_ops;
 mod vm_frame_lexical;
 mod vm_lex_import_builtin_op;
 mod vm_lex_import_call;
+mod vm_lex_import_light_call;
 mod vm_lexical_role;
 mod vm_lexsub_aliases;
 mod vm_lexsub_capture;

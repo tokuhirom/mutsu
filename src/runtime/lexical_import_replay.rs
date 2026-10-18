@@ -20,9 +20,12 @@
 
 use super::*;
 use crate::runtime::lexical_imports::LexicalImport;
+use std::sync::Arc;
+
+/// `ModuleState::imported_env_aliases`.
+type EnvAliases = Arc<HashMap<Symbol, Symbol>>;
 
 /// What a block-scoped `use` wrote that its scope's exit removes again.
-#[derive(Clone)]
 pub(crate) struct LexicalImportReplay {
     /// The module-merge env keys, the values the import bound them to and
     /// the display names `record_import_env_key` gave them, if it did.
@@ -31,6 +34,12 @@ pub(crate) struct LexicalImportReplay {
     routine_aliases: Vec<Symbol>,
     /// Those of them the scope lists as its own imports (`MY::`).
     own_routine_imports: Vec<Symbol>,
+    /// The routine-alias set before and after the first run. The scope's
+    /// exit puts the very `before` table back, so a later run that finds it
+    /// installs `after` instead of copying the set to extend it.
+    aliases_memo: (Arc<HashSet<Symbol>>, Arc<HashSet<Symbol>>),
+    /// The same for the env-alias display names.
+    env_aliases_memo: (EnvAliases, EnvAliases),
 }
 
 /// The state a block-scoped `use` must leave unchanged to be replayable.
@@ -39,12 +48,12 @@ pub(crate) struct ImportEffectProbe {
     proto_functions: usize,
     proto_subs: usize,
     classes_shared: crate::runtime::registry::ClassTable,
-    env_aliases: usize,
+    env_aliases: EnvAliases,
     type_aliases: usize,
     pragmas: (bool, bool, bool, bool),
-    aliases_before: std::sync::Arc<HashSet<Symbol>>,
-    env_keys_before: HashSet<Symbol>,
-    own_imports_before: HashSet<Symbol>,
+    aliases_before: Arc<HashSet<Symbol>>,
+    env_keys_before: rustc_hash::FxHashSet<Symbol>,
+    own_imports_before: rustc_hash::FxHashSet<Symbol>,
     had_export_args: bool,
 }
 
@@ -59,7 +68,7 @@ impl Interpreter {
             proto_functions: std::sync::Arc::as_ptr(&reg.proto_functions) as usize,
             proto_subs: std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize,
             classes_shared: reg.classes.clone(),
-            env_aliases: self.module.imported_env_aliases.len(),
+            env_aliases: Arc::clone(&self.module.imported_env_aliases),
             type_aliases: std::sync::Arc::as_ptr(&self.types.package_type_aliases) as usize,
             pragmas: (
                 self.module.strict_mode,
@@ -94,7 +103,7 @@ impl Interpreter {
         let table = crate::runtime::cow_table_mut(&mut self.module.lexical_import_replays);
         match replay {
             Some(replay) => {
-                table.insert(id, replay);
+                table.insert(id, Arc::new(replay));
             }
             None => {
                 table.remove(&id);
@@ -109,7 +118,7 @@ impl Interpreter {
             && std::sync::Arc::as_ptr(&reg.proto_functions) as usize == probe.proto_functions
             && std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize == probe.proto_subs
             && probe.classes_shared.shares_with(&reg.classes)
-            && self.module.imported_env_aliases.len() == probe.env_aliases
+            && self.module.imported_env_aliases.len() == probe.env_aliases.len()
             && std::sync::Arc::as_ptr(&self.types.package_type_aliases) as usize
                 == probe.type_aliases
             && probe.pragmas
@@ -153,38 +162,59 @@ impl Interpreter {
             env_keys,
             routine_aliases,
             own_routine_imports,
+            aliases_memo: (
+                Arc::clone(&probe.aliases_before),
+                Arc::clone(&self.module.imported_routine_aliases),
+            ),
+            env_aliases_memo: (
+                Arc::clone(&probe.env_aliases),
+                Arc::clone(&self.module.imported_env_aliases),
+            ),
         })
     }
 
     /// Replay the recorded effects of the `use` filling set `id` instead of
     /// importing again. `false`, having done nothing, without a record or
     /// before the set was filled.
-    // Cost: O(k + a), k = recorded env keys, a = recorded routine aliases.
+    // Cost: O(k), k = recorded env keys, while the alias tables are the ones
+    // the first run started from (the scope's exit restores them); O(k + a)
+    // otherwise, a = alias-table entries (one copy-on-write clone).
     pub(crate) fn replay_lexical_import(&mut self, id: Symbol) -> bool {
         if !self.module.lexical_import_sets.contains_key(&id) {
             return false;
         }
-        let Some(replay) = self.module.lexical_import_replays.get(&id).cloned() else {
+        let Some(replay) = self.module.lexical_import_replays.get(&id).map(Arc::clone) else {
             return false;
         };
         // What `record_import_env_key` records for a key no enclosing import
         // bound, without re-deriving the display name.
-        for (key, value, display) in replay.env_keys {
-            self.env.insert_sym(key, value);
-            if let Some(display) = display {
-                self.module.imported_env_aliases.insert(key, display);
-            }
-            if let Some(top) = self.module.import_scope_stack.last_mut() {
-                top.imported_env_keys.insert(key);
-            }
-        }
-        if let Some(top) = self.module.import_scope_stack.last_mut() {
+        let top = self.module.import_scope_stack.last_mut();
+        if let Some(top) = top {
+            top.imported_env_keys
+                .extend(replay.env_keys.iter().map(|(key, ..)| *key));
             top.own_routine_imports
                 .extend(replay.own_routine_imports.iter().copied());
         }
-        if !replay.routine_aliases.is_empty() {
-            let aliases = std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases);
-            aliases.extend(replay.routine_aliases);
+        for (key, value, _) in &replay.env_keys {
+            self.env.insert_sym(*key, value.clone());
+        }
+        let (before, after) = &replay.env_aliases_memo;
+        if Arc::ptr_eq(&self.module.imported_env_aliases, before) {
+            self.module.imported_env_aliases = Arc::clone(after);
+        } else if replay.env_keys.iter().any(|(_, _, display)| display.is_some()) {
+            let aliases = Arc::make_mut(&mut self.module.imported_env_aliases);
+            for (key, _, display) in &replay.env_keys {
+                if let Some(display) = display {
+                    aliases.insert(*key, *display);
+                }
+            }
+        }
+        let (before, after) = &replay.aliases_memo;
+        if Arc::ptr_eq(&self.module.imported_routine_aliases, before) {
+            self.module.imported_routine_aliases = Arc::clone(after);
+        } else if !replay.routine_aliases.is_empty() {
+            let aliases = Arc::make_mut(&mut self.module.imported_routine_aliases);
+            aliases.extend(replay.routine_aliases.iter().copied());
         }
         true
     }
