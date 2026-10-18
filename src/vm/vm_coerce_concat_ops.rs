@@ -515,7 +515,11 @@ impl Interpreter {
         if self.has_user_method(&cn, "Str")
             || self.is_native_method(&cn, "Str")
             || (!is_type_object
-                && crate::builtins::method_table::composed_roles::role_declares(self, &cn, "Str"))
+                && crate::builtins::method_table::composed_roles::role_declares(
+                    self,
+                    &cn,
+                    crate::symbol::wk::str_method(),
+                ))
         {
             let r = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
             return Ok(Value::str(r.to_string_value()));

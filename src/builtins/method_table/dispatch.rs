@@ -943,11 +943,7 @@ pub(crate) fn shapeless_row(
             // `composed_roles::answer`, so `Mu`'s declines.
             let interp = interp?;
             if arity == 0
-                && super::composed_roles::role_declares(
-                    interp,
-                    class_name.as_str(),
-                    method.as_str(),
-                )
+                && super::composed_roles::role_declares(interp, class_name.as_str(), method)
             {
                 return None;
             }

@@ -171,13 +171,20 @@ pub(super) static OWN_ROWS: &[MethodRow] = &[
 
 /// Whether `target` is an instance of a user class that composes `role`.
 // Cost: one memoized role lookup.
+///
+/// A subclass of a built-in number (`class F is Num`) answers from its
+/// payload through the built-in class's own methods, which come first in its
+/// MRO, so it is not one of these classes.
 fn composes(interp: &mut Interpreter, target: &Value, role: &str) -> bool {
-    match target.view() {
-        ValueView::Instance { class_name, .. } => {
-            interp.class_does_role(&class_name.resolve(), role)
-        }
-        _ => false,
-    }
+    let ValueView::Instance { class_name, .. } = target.view() else {
+        return false;
+    };
+    let class = class_name.resolve();
+    interp.class_does_role(&class, role)
+        && !interp.class_mro(&class).iter().any(|c| {
+            !matches!(c.as_str(), "Any" | "Mu" | "Cool")
+                && crate::builtin_types::catalog::builtin_type_mro_strs(c.as_str()).is_some()
+        })
 }
 
 /// Whether `target` is an instance of a user class that composes `Real`.

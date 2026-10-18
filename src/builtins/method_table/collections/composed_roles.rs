@@ -67,38 +67,49 @@ pub(crate) fn answer(
         ValueView::Package(name) if !name.as_str().contains('[') => {}
         _ => return None,
     }
+    let method_sym = Symbol::intern(method);
+    let owners: Vec<&str> = OWNERS
+        .into_iter()
+        .zip(owner_syms())
+        .filter(|&(_, &owner)| super::super::owner_row(owner, method_sym, args.len()).is_some())
+        .map(|(owner, _)| owner)
+        .collect();
+    if owners.is_empty() {
+        return None;
+    }
     // A composed role's method stands behind the class's own: the entry runs
     // before the class's methods are looked up, so a class (or a parent, or a
     // role it composes) that declares the method answers it (`method Bridge`
     // of a `does Real` class is the one `Real.sqrt` itself calls).
     if let Some(class) = class_of(target)
-        && interp.has_user_method(class.as_str(), method)
+        && interp.has_user_method_sym(class.as_str(), method_sym)
     {
-        return None;
-    }
-    let method_sym = Symbol::intern(method);
-    let owners: Vec<&str> = OWNERS
-        .into_iter()
-        .filter(|owner| {
-            super::super::owner_row(Symbol::intern(owner), method_sym, args.len()).is_some()
-        })
-        .collect();
-    if owners.is_empty() {
         return None;
     }
     crate::builtins::method_table::invoke_mro_late(interp, &owners, method, args, target)
 }
 
+/// [`OWNERS`] interned once per process: the checks below run on every truth
+/// test and string coercion of an instance.
+// Cost: O(1) after the first call.
+fn owner_syms() -> &'static [Symbol; 5] {
+    static CELL: std::sync::OnceLock<[Symbol; 5]> = std::sync::OnceLock::new();
+    CELL.get_or_init(|| OWNERS.map(Symbol::intern))
+}
+
 /// Whether a role `class_name` composes declares a zero-argument `method` row
 /// here: the question a context that would otherwise call only a user method
 /// asks (infix `~` stringifies a `does Real` instance through `Real.Str`).
-// Cost: O(o) memoized role lookups, o = 5 owners.
-pub(crate) fn role_declares(interp: &mut Interpreter, class_name: &str, method: &str) -> bool {
-    let method_sym = Symbol::intern(method);
-    OWNERS.into_iter().any(|owner| {
-        super::super::owner_row(Symbol::intern(owner), method_sym, 0).is_some()
-            && interp.class_does_role(class_name, owner)
-    })
+// Cost: O(o) row probes, o = 5 owners, and a memoized role lookup for each
+// owner that has the row.
+pub(crate) fn role_declares(interp: &mut Interpreter, class_name: &str, method: Symbol) -> bool {
+    OWNERS
+        .into_iter()
+        .zip(owner_syms())
+        .any(|(owner, &owner_sym)| {
+            super::super::owner_row(owner_sym, method, 0).is_some()
+                && interp.class_does_role(class_name, owner)
+        })
 }
 
 /// The class `target` is an instance or the type object of.

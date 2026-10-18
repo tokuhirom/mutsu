@@ -4498,7 +4498,13 @@ declares); `Mu`'s rows found by the class MRO walk (`shapeless_row`) decline a z
 name a composed role declares, so `Numeric.Bool` comes before `Mu.Bool`; infix `~`/`eq` and the
 truth test ask `composed_roles::role_declares` alongside the user-method check. The `Bridge`
 arms of `should_bypass_native_fastpath` and of the numeric-bridge probe are gone with the
-heuristic.
+heuristic. A subclass of a built-in number (`class F is Num`) is not one of these classes: its
+built-in parent answers from the payload. What the heuristic also covered and Rakudo has too,
+`Cool`'s numeric methods (`self.Numeric.METHOD`) on an instance of a `Cool` subclass with its
+own `Numeric` (`roast/S32-num/cool-num.t`), stays a narrow step in
+`dispatch_instance_and_fallback` marked `TODO: compile to bytecode` (a `Cool` row reached by
+the instance's MRO walk with an interpreter twin is its replacement), and `log`/`exp`/`atan2`
+coerce a `Real` argument through its `Bridge`, as the operators do.
 
 Behaviour changes toward Rakudo: `.Real`, `.Numeric`, `.conj` and a non-negative `.abs` answer the
 invocant; `.isNaN` no longer calls `Bridge`; `.is-prime` (not a `Real` method) is

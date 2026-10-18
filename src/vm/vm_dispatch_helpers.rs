@@ -565,7 +565,9 @@ impl Interpreter {
                 // class, ADR-11276 §9.179) is a method too.
                 if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
                     || crate::builtins::method_table::composed_roles::role_declares(
-                        self, &cn, "Bool",
+                        self,
+                        &cn,
+                        crate::symbol::wk::bool_method(),
                     )
                 {
                     let caller_code = self.current_code;

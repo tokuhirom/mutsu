@@ -1432,6 +1432,27 @@ impl Interpreter {
             }
         }
 
+        // `Cool`'s numeric methods are `self.Numeric.METHOD` (Rakudo's
+        // `Cool.abs` and kin), so an instance of a `Cool` subclass computes
+        // them through its own `Numeric` (`class C is Cool { method Numeric
+        // {...} }; C.new.abs`, `roast/S32-num/cool-num.t`). A `Real` class
+        // has the role's rows instead (ADR-11276 §9.179).
+        // TODO: compile to bytecode -- a `Cool` row reached through the
+        // instance's MRO walk (`shapeless_row`) with an interpreter twin that
+        // calls the instance's `Numeric`.
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && crate::value::cool_numeric_method(method)
+            && self.has_user_method(class_name.as_str(), "Numeric")
+            && self
+                .class_mro(class_name.as_str())
+                .iter()
+                .any(|c| c.as_str() == "Cool")
+            && let Ok(numeric) = self.call_method_with_values(target.clone(), "Numeric", vec![])
+            && numeric != target
+        {
+            return self.call_method_with_values(numeric, method, args);
+        }
+
         // Package (type object) dispatch -- private method call
         if let ValueView::Package(name) = target.view() {
             let normalized_method: String = method
