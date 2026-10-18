@@ -1625,14 +1625,11 @@ impl Interpreter {
         {
             return result;
         }
-        // Buf/Blob.allocate
+        // `Blob.allocate` is a row (ADR-11276 §9.163).
         if method == "allocate"
             && let ValueView::Package(name) = target.view()
         {
             let cn = name.resolve();
-            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                return self.buf_allocate(name, &args);
-            }
             // `CArray[T].allocate(n)` pre-sizes the array to `n` elements
             // instead of growing it one out-of-range index assignment at a
             // time (the mechanism the pre-2018.05 idiom documented in
@@ -1645,7 +1642,7 @@ impl Interpreter {
             // `$carray[n] = v` autovivifies through.
             if let Some(elem) = crate::value::value_carray::carray_elem_type_name(&cn) {
                 if crate::value::value_carray::is_native_carray_class(&cn) {
-                    return self.buf_allocate(name, &args);
+                    return Self::buf_allocate(name, &args);
                 }
                 let size = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
                 let mut items = Vec::new();
@@ -1656,34 +1653,6 @@ impl Interpreter {
                 })?;
                 items.resize(size, Self::native_fill_for_constraint(Some(elem)));
                 return Ok(Value::real_array(items));
-            }
-        }
-        // Buf/Blob class-level and instance-level methods
-        if method == "encoding" {
-            // Package (type object) encoding
-            if let ValueView::Package(name) = target.view() {
-                let cn = name.resolve();
-                if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                    // utf8 -> "utf-8", utf16 -> "utf-16", others -> Any type object
-                    let enc = match cn.as_str() {
-                        "utf8" => Value::str("utf-8".to_string()),
-                        "utf16" => Value::str("utf-16".to_string()),
-                        _ => Value::package(crate::symbol::wk::any()),
-                    };
-                    return Ok(enc);
-                }
-            }
-            // Instance encoding
-            if let ValueView::Instance { class_name, .. } = target.view() {
-                let cn = class_name.resolve();
-                if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                    let enc = match cn.as_str() {
-                        "utf8" => Value::str("utf-8".to_string()),
-                        "utf16" => Value::str("utf-16".to_string()),
-                        _ => Value::package(crate::symbol::wk::any()),
-                    };
-                    return Ok(enc);
-                }
             }
         }
         // Buf/Blob mutators on a receiver with no binding (chained calls such as
@@ -1708,16 +1677,6 @@ impl Interpreter {
                 {
                     return result;
                 }
-            }
-        }
-        // Buf/Blob .chars throws X::Buf::AsStr (`.Str` is the `Blob` row's,
-        // which decodes a `utf8`).
-        if (method == "chars" || method == "chop" || method == "chomp")
-            && let ValueView::Instance { class_name, .. } = target.view()
-        {
-            let cn = class_name.resolve();
-            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                return Err(Self::buf_as_str_error(&target, method));
             }
         }
         // Coerce Instance args for log/exp/atan2
