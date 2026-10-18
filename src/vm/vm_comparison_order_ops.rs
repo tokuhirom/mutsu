@@ -836,8 +836,18 @@ impl Interpreter {
         {
             return Ok(Value::TRUE);
         }
-        let left = self.reify_or_consume_eqv_operand(left)?;
-        let right = self.reify_or_consume_eqv_operand(right)?;
+        // A type object operand (`$seq eqv Any`) is answered by the `:U`
+        // candidate without iterating the other side: the Seq stays usable.
+        let (left, right) = if matches!(left.view(), ValueView::Package(_))
+            || matches!(right.view(), ValueView::Package(_))
+        {
+            (left, right)
+        } else {
+            (
+                self.reify_or_consume_eqv_operand(left)?,
+                self.reify_or_consume_eqv_operand(right)?,
+            )
+        };
         self.eval_binary_with_junctions(left, right, |interp, l, r| {
             interp.eqv_rakudo(&l, &r).map(Value::truth)
         })
