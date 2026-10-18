@@ -178,7 +178,7 @@ fn reads_through_interpreter(target: &Value) -> bool {
 /// `count-only`, are the interpreter's to read (`dispatch_tail`, §9.186).
 // Cost: O(1).
 pub(crate) fn unpulled_seq(target: &Value) -> bool {
-    matches!(target.view(), ValueView::Seq(body) if body.needs_touch())
+    matches!(target.view(), ValueView::Seq(body) if body.has_deferred_source())
 }
 
 /// Whether `.tail` on `target` must raise `X::Cannot::Lazy`: a lazy list or a
