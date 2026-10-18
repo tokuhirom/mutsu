@@ -254,6 +254,19 @@ impl Interpreter {
         self.compile_block_value_opts_under(body, is_eval_unit, routineness, None)
     }
 
+    /// The compiled chunk of the bytecode frame running now (the one calling
+    /// `EVAL`), or `None` outside one.
+    // Cost: O(1).
+    pub(crate) fn running_code(&self) -> Option<&crate::opcode::CompiledCode> {
+        if self.current_code == 0 {
+            return None;
+        }
+        // SAFETY: `current_code` is the address of the live bytecode frame's
+        // `CompiledCode`, kept alive for the whole frame by `vm_call_*`; the
+        // reference does not outlive `&self`, during which the frame runs.
+        Some(unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) })
+    }
+
     /// [`Self::compile_block_value_opts`] for a body `origin` was compiled
     /// from: the recompile sees the import sets of the `use`-blocks around
     /// it, as `origin` did (ADR-8751).
@@ -276,6 +289,9 @@ impl Interpreter {
             // block imported (ADR-8751): its bareword calls read the sets of
             // the blocks running around it.
             compiler.seed_lexical_import_chain(self.active_lexical_import_chain());
+            if let Some(code) = self.running_code() {
+                compiler.seed_eval_caller_code_vars(code.eval_scope_names.iter().map(String::as_str));
+            }
         } else if let Some(origin) = origin {
             compiler.seed_lexical_import_chain_from(origin);
         }
@@ -974,6 +990,12 @@ impl Interpreter {
                 }
             }
             for (k, v) in saved_code_env {
+                // A code variable of an enclosing scope the body assigned
+                // (`EVAL q[&h = { ... }]` on the caller's `my &h`) keeps the
+                // new value (#13657).
+                if code.free_var_writes.contains(&k) && !Self::block_declares_code_name(&code, k) {
+                    continue;
+                }
                 self.env.insert_sym(k, v);
             }
             // The `retain` this replaces dropped the frame-write log wholesale

@@ -153,10 +153,26 @@ impl Interpreter {
         // `roast/S04-statements/given.t` does, EVALing a fresh `sub test-given`
         // per subtest while an earlier subtest's `my sub test-given` is still
         // reachable.
+        //
+        // The static scopes around the call count too
+        // (`CompiledCode::eval_scope_names`): a `my &h` held only in the
+        // caller's slot is in no env tier, and an EVAL that assigns it keeps
+        // the store (#13657).
+        let caller_code_vars: Vec<String> = self
+            .running_code()
+            .map(|code| {
+                code.eval_scope_names
+                    .iter()
+                    .filter(|name| name.starts_with('&'))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
         crate::runtime::registration_sub::push_eval_outer_amp_names(
             self.env
                 .visible_keys_where(|k| k.starts_with('&'))
-                .into_iter(),
+                .into_iter()
+                .chain(caller_code_vars),
         );
         // ...and the registry counterpart, which is what the redeclaration
         // checks against `functions` consult. Interned `Symbol`s, so no strings
@@ -368,12 +384,15 @@ impl Interpreter {
         }
         // Lexical code variables created inside EVAL must not leak back into the
         // caller's environment, or repeated EVALs of the same helper sub will
-        // trip routine redeclaration checks on stale `&name` bindings.
+        // trip routine redeclaration checks on stale `&name` bindings. A
+        // caller's own `my &h` the EVAL assigned keeps its new value (#13657).
+        let outer_amp_writes = crate::runtime::registration_sub::pop_eval_outer_amp_names();
         let callable_keys: std::collections::HashSet<String> = current_env
             .keys()
             .chain(env_snapshot.keys())
             .filter(|key| key.starts_with("&"))
             .map(|key| key.resolve())
+            .filter(|key| !outer_amp_writes.contains(key))
             .collect();
         for key in callable_keys {
             if let Some(value) = env_snapshot.get(&key).cloned() {
@@ -387,7 +406,6 @@ impl Interpreter {
         // The caller's `$_` is deliberately not restored: the unit's tail value
         // travels on the VM stack (`Compiler::unit_tail_on_stack`), so whatever
         // `$_` holds now was written by the snippet itself (`EVAL '$_ = 1'`).
-        crate::runtime::registration_sub::pop_eval_outer_amp_names();
         crate::runtime::registration_sub::pop_eval_outer_routine_keys();
         crate::runtime::registration_sub::pop_eval_routine_depth();
         // An EVAL parse failure is exposed as `$!`, whose string form is what

@@ -1425,6 +1425,10 @@ impl Interpreter {
                     None => unreachable!("SetGlobal name must be a string constant"),
                 };
                 self.record_foreign_dynamic_write(code, code.const_sym(*name_idx));
+                // An `EVAL`'s store into a caller's `my &h` outlives the EVAL.
+                if name_str.starts_with('&') {
+                    crate::runtime::registration_sub::note_eval_outer_amp_write(name_str);
+                }
                 // ADR-0058: assigning a Seq to an `@`/`%` target reifies it
                 // (raku list semantics) -- the same rule `exec_set_local_op_inner`
                 // applies. An anonymous `my @ = EXPR` inside a nested block
