@@ -4421,6 +4421,34 @@ Pinned in `t/vm/writeback/container-store-rows.t`.
 - **Found, not fixed**: `Array.STORE(...)` on the type object raises `X::Method::NotFound` where
   Rakudo raises `X::Multi::NoMatch`: a `Mut` row has no type-object refusal step yet.
 
+### 9.175 `Any`'s autovivifying rows refuse a receiver with no container (2026-10-18)
+
+`refactor/11276-mut-type-object`. §9.171 and §9.172 vivified any undefined binding the place named.
+Three kinds of name had no container to vivify, and each was overwritten:
+- a read-only parameter or `for` alias (`sub f($p) { $p.push(1) }`);
+- a name bound straight to a type object (`my $x := Any`, a sigilless `my \s = Any`);
+- the bare type word of `Hash.ASSIGN-KEY(...)`, which reaches `CallMethodMut` with the spelling `Hash`
+  and was vivified into a stray env entry.
+
+- `vivify_binding` checks the binding as an assignment does (`check_readonly_for_modify`), so a
+  parameter or alias raises Rakudo's "Cannot assign to a readonly variable or a value".
+- `containerless_type_object` (`mutating/autoviv.rs`) names the other cases: a name stored under a
+  sigilless term key, a bare type word (the type's own spelling with no env binding), or a sigiled
+  name bound to the type object.
+  - The growing rows raise `X::Assignment::RO` ("Cannot modify an immutable 'Any' type object").
+  - `ASSIGN-KEY` raises "assign requires a concrete object (got a Hash type object instead)".
+  - `BIND-KEY` raises `X::Multi::NoMatch`.
+  - A `$` scalar arrives without its sigil, so these tests cannot mistake one; `my $Any` still
+    vivifies.
+- `Array.push(1)` now refuses with `X::Assignment::RO`. Rakudo's own refusal is `X::Multi::NoMatch` from
+  the `STORE` its `Any:U` candidate calls, an implementation detail not reproduced.
+
+Pinned in `t/types/any-autoviv-readonly-receivers.t`.
+
+- **Filed**: #13881. A type-object receiver of `Array`/`Hash`/the quant hashes reaches no `Mut` row
+  (`Array.pop`, `SetHash.set`, `Array.STORE`), so it raises `X::Method::NotFound` instead of Rakudo's
+  concreteness or no-match error.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

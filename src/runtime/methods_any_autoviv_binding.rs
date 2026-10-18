@@ -16,10 +16,14 @@ impl Interpreter {
     /// (`my $x; $x.push(1); $x.raku` is `$[1]`), and so does a never-written
     /// package-qualified `@`/`%` slot, which reads as `Any`
     /// (`@GLOBAL::a.push(1)` is `$[1]`, #10962); an `@`, `%` or `&` lexical
-    /// holds it bare.
-    // Cost: O(1), one env write (a `:=` alias is descended), plus one `our`
-    // write for a package-qualified name.
-    pub(crate) fn vivify_binding(&mut self, name: &str, fresh: Value) -> Value {
+    /// holds it bare. A read-only binding (a parameter without `is rw` or
+    /// `is copy`, a `for` alias, a name bound to a value) refuses with the
+    /// error an assignment to it raises, as Rakudo's `Any:U \SELF` candidate
+    /// does when it assigns to `SELF`.
+    // Cost: O(1), one readonly probe and one env write (a `:=` alias is
+    // descended), plus one `our` write for a package-qualified name.
+    pub(crate) fn vivify_binding(&mut self, name: &str, fresh: Value) -> Result<Value, RuntimeError> {
+        self.check_readonly_for_modify(name)?;
         let sym = Symbol::intern(name);
         let package_slot =
             crate::qualified::is_package_array(sym) || crate::qualified::is_package_hash(sym);
@@ -47,6 +51,6 @@ impl Interpreter {
                 self.set_our_var(name.to_string(), vivified.clone());
             }
         }
-        vivified
+        Ok(vivified)
     }
 }

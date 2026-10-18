@@ -124,7 +124,13 @@ fn grow(
     }
     if let Some(name) = place.name() {
         let name = name.to_string();
-        let vivified = interp.vivify_binding(&name, Value::real_array(Vec::new()));
+        if let Some(type_name) = containerless_type_object(interp, &name, value) {
+            return Some(Err(RuntimeError::assignment_ro_type_object(&type_name)));
+        }
+        let vivified = match interp.vivify_binding(&name, Value::real_array(Vec::new())) {
+            Ok(vivified) => vivified,
+            Err(err) => return Some(Err(err)),
+        };
         let mut array = place.rebound(&vivified)?;
         return array_row(interp, &mut array, args, named);
     }
@@ -134,6 +140,29 @@ fn grow(
         Ok(_) => Some(Ok(fresh)),
         Err(err) => Some(Err(err)),
     }
+}
+
+/// The type a name holds when it is bound straight to a type object, with no
+/// container to vivify: a sigilless name (`my \s = Any`), the bare type word
+/// of `Hash.ASSIGN-KEY(...)`, or a sigiled one bound to it (`my $x := Any`). A parameter or `for` alias is read-only for the
+/// assignment's own reason, which `vivify_binding` raises.
+// Cost: O(1), a tag probe, one env probe and one readonly probe.
+fn containerless_type_object(interp: &Interpreter, name: &str, value: &Value) -> Option<String> {
+    let ValueView::Package(type_name) = value.descalarize().view() else {
+        return None;
+    };
+    let type_name = type_name.resolve();
+    // A sigilless binding is stored under its term key; a bare type word
+    // (`Hash.ASSIGN-KEY(...)`) is its own spelling and names no binding. A `$`
+    // scalar arrives without its sigil, so neither test can mistake it.
+    let sigilless = name.starts_with(crate::term_names::TERM_PREFIX);
+    let bare_type_word = name == type_name && interp.env().get(name).is_none();
+    (sigilless
+        || bare_type_word
+        || interp
+            .readonly_kind(name)
+            .is_some_and(|kind| kind != crate::ast::ReadonlyKind::Alias))
+    .then_some(type_name)
 }
 
 /// Whether `value` is an undefined receiver `Any`'s keyed rows answer: `Nil`
@@ -165,7 +194,14 @@ fn vivify_hash_then(
         return None;
     }
     let name = place.name()?.to_string();
-    let vivified = interp.vivify_binding(&name, Value::hash(crate::value::ValueMap::default()));
+    if let Some(type_name) = containerless_type_object(interp, &name, place.value()) {
+        return Some(Err(RuntimeError::assign_requires_concrete_object(&type_name)));
+    }
+    let vivified =
+        match interp.vivify_binding(&name, Value::hash(crate::value::ValueMap::default())) {
+            Ok(vivified) => vivified,
+            Err(err) => return Some(Err(err)),
+        };
     let mut hash = place.rebound(&vivified)?;
     hash_row(interp, &mut hash, args, named)
 }
@@ -199,7 +235,20 @@ fn any_bind_key(
         return None;
     }
     let name = place.name()?.to_string();
-    let vivified = interp.vivify_binding(&name, Value::hash(crate::value::ValueMap::default()));
+    // A type object with no container has no `BIND-KEY` candidate at all.
+    if let Some(type_name) = containerless_type_object(interp, &name, place.value()) {
+        let profile = interp.format_call_arg_profile(args);
+        return Some(Err(
+            crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+                "BIND-KEY", &type_name, false, &profile, &[],
+            ),
+        ));
+    }
+    let vivified =
+        match interp.vivify_binding(&name, Value::hash(crate::value::ValueMap::default())) {
+            Ok(vivified) => vivified,
+            Err(err) => return Some(Err(err)),
+        };
     // `Any.BIND-KEY(Any:U \SELF: $key, $BIND)` takes the value, not the
     // caller's variable, so the hash binds what the argument holds now.
     let mut hash = place.rebound(&vivified)?.with_arg_sources(&[]);
