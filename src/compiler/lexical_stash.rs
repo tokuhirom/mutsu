@@ -121,8 +121,10 @@ impl Compiler {
         }
     }
 
-    /// Note that the innermost scope frame holds a `use`/`import`/`no` of its
-    /// own (see [`Self::import_scope_levels`]).
+    /// Note that the innermost scope frame holds a statement that opens a
+    /// run-time import scope (`Compiler::opens_import_scope`: a `use`, `need`,
+    /// `import`, `no` or `require`) of its own (see
+    /// [`Self::import_scope_levels`]).
     pub(crate) fn note_import_in_scope(&mut self) {
         let level = self.local_scopes.len();
         if self.import_scope_levels.last() != Some(&level) {

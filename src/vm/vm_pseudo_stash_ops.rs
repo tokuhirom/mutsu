@@ -88,13 +88,16 @@ impl Interpreter {
         }
         for (key, val) in self.env().iter() {
             let key_str = key.resolve();
-            if self.should_hide_from_my_global_stash(&key_str) {
+            if self.should_hide_from_my_global_stash(&key_str)
+                || self.module_name_hidden_here(&key_str)
+            {
                 continue;
             }
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
+        self.add_merged_module_packages(self.modules_merged_in_view(), &mut entries);
         if name == "UNIT::" {
             for (display, value) in self.unit_lexical_types() {
                 entries.entry(display).or_insert(value);
@@ -313,8 +316,11 @@ impl Interpreter {
         // makes MY:: stop leaking enclosing lexicals.
         for (key, value) in self.env().iter() {
             let key = key.resolve();
+            // A module's package the BEGIN-time preload bound is a pad entry
+            // only where the module is merged (ADR-11136, #13802).
             if self.should_hide_from_my_global_stash(&key)
                 || !matches!(value.view(), ValueView::Package(_))
+                || self.module_name_hidden_here(&key)
             {
                 continue;
             }
@@ -364,6 +370,19 @@ impl Interpreter {
                     .or_insert(value);
             }
         }
+        // A `use` merges the module's packages into the importing scope's
+        // pad: the unit's own for a top-level `use`, the block's for one in a
+        // block (#13802).
+        let merged_modules: Vec<Symbol> = match own_imports {
+            None => self.modules_merged_in_view(),
+            Some(Some(scope)) => self.import_scopes()[scope]
+                .imported_env_keys
+                .iter()
+                .filter_map(|key| Self::module_merge_key_module(*key))
+                .collect(),
+            Some(None) => Vec::new(),
+        };
+        self.add_merged_module_packages(merged_modules, &mut entries);
         match own_imports {
             None => self.add_visible_routines_to_pseudo_stash(&mut entries),
             Some(Some(scope)) => self.add_scope_imported_routines(scope, &mut entries),
@@ -469,13 +488,16 @@ impl Interpreter {
         }
         for (key, val) in self.env().iter() {
             let key_str = key.resolve();
-            if self.should_hide_from_my_global_stash(&key_str) {
+            if self.should_hide_from_my_global_stash(&key_str)
+                || self.module_name_hidden_here(&key_str)
+            {
                 continue;
             }
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
+        self.add_merged_module_packages(self.modules_merged_in_view(), &mut entries);
         self.pseudo_stash_hash(entries)
     }
 
