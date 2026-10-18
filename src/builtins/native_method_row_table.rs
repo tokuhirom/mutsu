@@ -1260,6 +1260,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Version", "parts", 1, 48),
     ("Version", "ACCEPTS", 2, 16),
     ("Numeric", "ACCEPTS", 2, 16),
+    // `Dateish`'s renderings, composed into a user class (ADR-11276 §9.181).
+    ("Dateish", "Str", 1, 16),
+    ("Dateish", "gist", 1, 16),
     // The `Real` and `Numeric` roles' methods, composed into a user class
     // (`method_table::collections::composed_real`, ADR-11276 §9.179).
     ("Real", "Complex", 1, 16),

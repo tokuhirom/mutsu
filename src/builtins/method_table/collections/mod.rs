@@ -17,6 +17,7 @@ mod any_interp;
 mod any_interp_twins;
 mod any_list_late;
 mod any_pos_late;
+mod composed_dateish;
 mod composed_real;
 mod match1_late;
 mod match3_late;
@@ -129,6 +130,7 @@ pub(super) static LATE_FAMILIES: &[&[MethodRow]] = &[
     composed_roles::ROWS,
     composed_real::BRIDGED_ROWS,
     composed_real::OWN_ROWS,
+    composed_dateish::ROWS,
     any_coerce_late::ROWS,
     any_enum_views::ROWS,
     any_list_late::ROWS,

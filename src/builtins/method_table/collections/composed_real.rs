@@ -158,11 +158,25 @@ bridged_fns!(
 
 pub(super) static OWN_ROWS: &[MethodRow] = &[
     row!("Real", "Bridge", 0, bridge),
-    row!("Real", "Real", 0, itself),
+    MethodRow {
+        owner: "Real",
+        name: "Real",
+        arity: 0,
+        handler: Handler::Interp(real_coercion),
+        flags: ROLE.or(RowFlags::TYPE_OBJECT_OK),
+        named: &[],
+    },
     row!("Real", "conj", 0, itself),
     row!("Real", "isNaN", 0, is_nan),
     row!("Real", "abs", 0, abs),
-    row!("Numeric", "Numeric", 0, numeric_itself),
+    MethodRow {
+        owner: "Numeric",
+        name: "Numeric",
+        arity: 0,
+        handler: Handler::Interp(numeric_itself),
+        flags: ROLE.or(RowFlags::TYPE_OBJECT_OK),
+        named: &[],
+    },
     row!("Numeric", "gist", 0, gist),
     row!("Numeric", "succ", 0, succ),
     row!("Numeric", "pred", 0, pred),
@@ -170,18 +184,23 @@ pub(super) static OWN_ROWS: &[MethodRow] = &[
 ];
 
 /// Whether `target` is an instance of a user class that composes `role`.
-// Cost: one memoized role lookup.
 ///
 /// A subclass of a built-in number (`class F is Num`) answers from its
 /// payload through the built-in class's own methods, which come first in its
 /// MRO, so it is not one of these classes.
+// Cost: one memoized role lookup and one MRO read.
 fn composes(interp: &mut Interpreter, target: &Value, role: &str) -> bool {
     let ValueView::Instance { class_name, .. } = target.view() else {
         return false;
     };
-    let class = class_name.resolve();
-    interp.class_does_role(&class, role)
-        && !interp.class_mro(&class).iter().any(|c| {
+    class_composes(interp, &class_name.resolve(), role)
+}
+
+/// [`composes`] for a class, an instance's or a type object's.
+// Cost: as [`composes`].
+fn class_composes(interp: &mut Interpreter, class: &str, role: &str) -> bool {
+    interp.class_does_role(class, role)
+        && !interp.class_mro(class).iter().any(|c| {
             !matches!(c.as_str(), "Any" | "Mu" | "Cool")
                 && crate::builtin_types::catalog::builtin_type_mro_strs(c.as_str()).is_some()
         })
@@ -249,7 +268,7 @@ fn bridge(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Nam
     Some(interp.call_method_with_values(target.clone(), "Num", Vec::new()))
 }
 
-/// `Real.Real`, `Real.conj`, `Numeric.Numeric`: the invocant.
+/// `Real.conj`: the invocant.
 // Cost: O(1).
 fn itself(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
     composes_real(interp, target).then(|| Ok(target.clone()))
@@ -278,15 +297,58 @@ fn abs(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<
     })())
 }
 
-/// `Numeric.Numeric`: the invocant.
-// Cost: O(1).
+/// `Numeric.Numeric`: the invocant; of the type object, Rakudo's
+/// `Numeric(Numeric:U:)`, which warns about the undefined value and answers
+/// `self.new`.
+// Cost: O(1) for an instance; a `new` call for a type object.
 fn numeric_itself(
     interp: &mut Interpreter,
     target: &Value,
     _args: &[Value],
     _named: Named<'_>,
 ) -> Answer {
+    if let ValueView::Package(name) = target.view() {
+        let class = name.resolve();
+        if !(class_composes(interp, &class, "Numeric") || class_composes(interp, &class, "Real")) {
+            return None;
+        }
+        return Some(undefined_numeric(interp, target, &class));
+    }
     composes_numeric(interp, target).then(|| Ok(target.clone()))
+}
+
+/// `Real.Real`: the invocant; of the type object, `Real(Real:U:)`, which warns
+/// and answers `self.new` as `Numeric(Numeric:U:)` does.
+// Cost: as [`numeric_itself`].
+fn real_coercion(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    if let ValueView::Package(name) = target.view() {
+        let class = name.resolve();
+        if !class_composes(interp, &class, "Real") {
+            return None;
+        }
+        return Some(undefined_numeric(interp, target, &class));
+    }
+    composes_real(interp, target).then(|| Ok(target.clone()))
+}
+
+/// The answer of a numeric coercion of the type object `target`: the warning
+/// about the undefined value, resumed with `self.new`.
+// Cost: one `new` call, plus the user code it runs.
+fn undefined_numeric(
+    interp: &mut Interpreter,
+    target: &Value,
+    class: &str,
+) -> Result<Value, RuntimeError> {
+    let fresh = interp.call_method_with_values(target.clone(), "new", Vec::new())?;
+    interp.raise_resumable_warning(
+        &format!("Use of uninitialized value of type {class} in numeric context"),
+        fresh,
+    )
 }
 
 /// `Numeric`'s answers written with an operator: `succ` is `self + 1`,

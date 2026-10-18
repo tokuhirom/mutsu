@@ -1,6 +1,8 @@
 //! The methods a user class gets from composing `Positional`, `Associative` or
 //! `Iterable` (ADR-11276 §9.165): `Positional.of`, `Associative.of` and
-//! `.keyof`, and `Iterable`'s `hyper`, `race` and `lazy`.
+//! `.keyof`, and `Iterable`'s `hyper`, `race` and `lazy`; and the entry the
+//! `Real`/`Numeric` (`composed_real`, §9.179) and `Dateish`
+//! (`composed_dateish`, §9.181) rows are reached through.
 //!
 //! A class that composes `Positional[V]` or `Associative[V, K]` keeps the
 //! role's type arguments in its class metadata, not in a native payload, so
@@ -49,11 +51,18 @@ pub(super) static ROWS: &[MethodRow] = &[
 ];
 
 /// The roles whose rows [`answer`] tries, in order.
-const OWNERS: [&str; 5] = ["Positional", "Associative", "Iterable", "Real", "Numeric"];
+const OWNERS: [&str; 6] = [
+    "Positional",
+    "Associative",
+    "Iterable",
+    "Real",
+    "Numeric",
+    "Dateish",
+];
 
 /// The answer of a composed role's row for a call on an instance or a type
 /// object of a class, or `None` when no such row answers it.
-// Cost: O(o) to find the rows, o = 3 owners, plus the handler's own cost.
+// Cost: O(o) to find the rows, o = 6 owners, plus the handler's own cost.
 pub(crate) fn answer(
     interp: &mut Interpreter,
     target: &Value,
@@ -92,15 +101,15 @@ pub(crate) fn answer(
 /// [`OWNERS`] interned once per process: the checks below run on every truth
 /// test and string coercion of an instance.
 // Cost: O(1) after the first call.
-fn owner_syms() -> &'static [Symbol; 5] {
-    static CELL: std::sync::OnceLock<[Symbol; 5]> = std::sync::OnceLock::new();
+fn owner_syms() -> &'static [Symbol; 6] {
+    static CELL: std::sync::OnceLock<[Symbol; 6]> = std::sync::OnceLock::new();
     CELL.get_or_init(|| OWNERS.map(Symbol::intern))
 }
 
 /// Whether a role `class_name` composes declares a zero-argument `method` row
 /// here: the question a context that would otherwise call only a user method
 /// asks (infix `~` stringifies a `does Real` instance through `Real.Str`).
-// Cost: O(o) row probes, o = 5 owners, and a memoized role lookup for each
+// Cost: O(o) row probes, o = 6 owners, and a memoized role lookup for each
 // owner that has the row.
 pub(crate) fn role_declares(interp: &mut Interpreter, class_name: &str, method: Symbol) -> bool {
     OWNERS
