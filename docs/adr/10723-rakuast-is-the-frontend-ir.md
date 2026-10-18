@@ -1333,3 +1333,14 @@ and hidden-role marker as leading `DoesDecl` entries. Conversion now folds a
 parent plus its hide marker into one `Trait::Hides`, and lowering rebuilds the
 same entries from the measured trait nodes. The focused regression checks both
 tree shapes, EVAL, and the resulting unhidden MRO.
+
+### 6.73 S10: multiple inline declarations in a comma list (2026-10-18)
+
+Rakudo renders adjacent inline variable declarations as separate operands of a
+comma `ApplyListInfix`. The parser groups adjacent declarations in one
+synthetic block, so conversion now emits one `VarDeclaration::Simple` per
+operand. Lowering restores the synthetic block when the list is the target of a
+subscript store, where Rakudo's postfix node omits the source parentheses, and
+keeps individual declaration terms for metaassignment targets. The focused
+regression checks the measured tree, the subscript store, and hyperassignment
+to the declaration list.

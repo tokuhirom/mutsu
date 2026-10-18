@@ -5295,9 +5295,34 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::ApplyPostfix => {
             let operand_node = named_child(node, "operand")?;
-            let operand =
-                super::postfix_grouping::restore(node, operand_node, lower_expr(operand_node)?)?;
             let postfix = named_child(node, "postfix")?;
+            let mut lowered_operand = lower_expr(operand_node)?;
+            // Rakudo omits the parentheses that let the parser represent a
+            // subscript store through inline declarations as one synthetic
+            // declaration block. Restore that form only for a subscript
+            // lvalue; metaassignment targets need individual declaration terms.
+            if postfix.class == RakuAstClass::PostcircumfixArrayIndex
+                && named_child(postfix, "assignee").is_ok()
+                && let Expr::ArrayLiteral(items) = &lowered_operand
+                && items.len() > 1
+                && items.iter().all(|item| {
+                    matches!(item, Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::VarDecl { .. }))
+                })
+            {
+                let Expr::ArrayLiteral(items) = lowered_operand else {
+                    unreachable!()
+                };
+                lowered_operand = Expr::DoStmt(Box::new(Stmt::SyntheticBlock(
+                    items
+                        .into_iter()
+                        .map(|item| match item {
+                            Expr::DoStmt(stmt) => *stmt,
+                            _ => unreachable!("all operands checked as declarations"),
+                        })
+                        .collect(),
+                )));
+            }
+            let operand = super::postfix_grouping::restore(node, operand_node, lowered_operand)?;
             match postfix.class {
                 // `.method`, `self!priv`, `."name"`, `.^name`, `.$name` / `.&f`.
                 RakuAstClass::CallMethod
