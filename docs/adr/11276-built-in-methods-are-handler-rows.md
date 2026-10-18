@@ -4465,6 +4465,16 @@ copy of the store for a user `is Hash`/`is Map` instance and a mixin over a hash
 
 Pinned in `t/vm/writeback/container-store-subclass.t`.
 
+### 9.177 The `List` type object refuses the mutators with `X::Immutable` (2026-10-18)
+
+`refactor/11276-list-type-object`. `List.push(1)` was `X::Method::NotFound`; Rakudo raises
+`X::Immutable` for `push`, `append`, `unshift`, `prepend`, `pop` and `shift`, as for an instance.
+`RowFlags::IMMUTABLE` marks a row whose owner is immutable: `Row::type_object_refusal` answers
+`X::Immutable` for it, so the refusal step of `invoke_mut` (#13881) covers it with no new code path.
+`List.splice` and `List.STORE` already answered Rakudo's no-match errors.
+
+Pinned in `t/collections/list-type-object-mutators.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
