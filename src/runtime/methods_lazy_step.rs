@@ -88,10 +88,10 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if let Some(pull) = crate::builtins::method_table::lazy_pull::pull_of(target, method) {
-            if let Some(answer) = pull(self, target, list, args) {
-                return Some(answer);
-            }
+        if let Some(pull) = crate::builtins::method_table::lazy_pull::pull_of(target, method)
+            && let Some(answer) = pull(self, target, list, args)
+        {
+            return Some(answer);
         }
         if !reifies_lazy_receiver(method)
             // A `.map`/`.grep` on a lazy map/grep pipeline, an infinite
