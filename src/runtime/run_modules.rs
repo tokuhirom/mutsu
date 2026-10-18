@@ -2051,7 +2051,7 @@ impl Interpreter {
     /// See `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`.
     pub(super) fn collect_unit_lexical_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for s in stmts {
+        for s in crate::ast::scope_statements(stmts) {
             let crate::ast::Stmt::VarDecl {
                 name,
                 is_our,
@@ -2136,7 +2136,7 @@ impl Interpreter {
     /// (the whole body still runs against the caller's `env`).
     pub(super) fn collect_module_own_dynamic_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for s in stmts {
+        for s in crate::ast::scope_statements(stmts) {
             let crate::ast::Stmt::VarDecl {
                 name,
                 is_our,
@@ -2296,7 +2296,7 @@ impl Interpreter {
             })
             .map_or(0, |i| i + 1);
         let mut names: Vec<String> = Vec::new();
-        for s in &stmts[after_unit..] {
+        for s in crate::ast::scope_statements(&stmts[after_unit..]) {
             let crate::ast::Stmt::VarDecl {
                 name,
                 is_our: true,
