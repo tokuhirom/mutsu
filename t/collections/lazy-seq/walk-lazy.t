@@ -1,6 +1,6 @@
 use Test;
 
-plan 7;
+plan 8;
 
 # `WALK(method)()` invokes the MRO-level candidates LAZILY — one method call per
 # pulled element (Rakudo). `for $obj.WALK("foo")() { ... }` calls exactly one
@@ -20,6 +20,8 @@ my class C3 is C2 {
 
 # Lazy: the Nth iteration triggers exactly the Nth candidate call.
 my $obj = C3.new;
+my $walk-seq = $obj.WALK("foo")();
+is $walk-seq.^name, 'Seq', 'invoked WALK returns a Seq';
 my @seen-counts;
 my $step = 0;
 for $obj.WALK("foo")() {

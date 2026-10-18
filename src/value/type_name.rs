@@ -36,6 +36,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         // CatHandle iterators pull from the live handle on demand internally,
         // but Rakudo exposes both `.lines` and `.handles` as eager `Seq`s.
         ValueView::LazyList(ll) if ll.is_cat_pull() => "Seq",
+        ValueView::LazyList(ll) if ll.walk_pending.is_some() => "Seq",
         ValueView::LazyList(ll) if ll.is_from_gather() => "Seq",
         ValueView::LazyList(ll) if ll.has_finite_closure_endpoint() => "Seq",
         // An untagged genuinely-lazy list (an infinite arithmetic/closure
