@@ -43,6 +43,30 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Any", "append", any_append),
     row!("Any", "unshift", any_unshift),
     row!("Any", "prepend", any_prepend),
+    MethodRow {
+        owner: "Any",
+        name: "ASSIGN-KEY",
+        arity: 2,
+        handler: Handler::Mut(any_assign_key),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Any",
+        name: "BIND-KEY",
+        arity: 2,
+        handler: Handler::Mut(any_bind_key),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Any",
+        name: "DELETE-KEY",
+        arity: 1,
+        handler: Handler::Mut(any_delete_key),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     row!("Range", "push", range_push),
     row!("Range", "append", range_append),
     row!("Range", "unshift", range_unshift),
@@ -100,7 +124,7 @@ fn grow(
     }
     if let Some(name) = place.name() {
         let name = name.to_string();
-        let vivified = interp.vivify_array_binding(&name);
+        let vivified = interp.vivify_binding(&name, Value::real_array(Vec::new()));
         let mut array = place.rebound(&vivified)?;
         return array_row(interp, &mut array, args, named);
     }
@@ -110,6 +134,88 @@ fn grow(
         Ok(_) => Some(Ok(fresh)),
         Err(err) => Some(Err(err)),
     }
+}
+
+/// Whether `value` is an undefined receiver `Any`'s keyed rows answer: `Nil`
+/// or the `Any`, `Mu` or `Hash` type object a container holds before its
+/// first write. Another type object (a typed scalar's, a user class's) is not
+/// one (#13823).
+// Cost: O(1), a tag probe and a short name compare.
+fn undefined_hash_receiver(value: &Value) -> bool {
+    match value.descalarize().view() {
+        ValueView::Nil => true,
+        ValueView::Package(name) => name == "Any" || name == "Mu" || name == "Hash",
+        _ => false,
+    }
+}
+
+/// `Any.ASSIGN-KEY` on an undefined binding: vivify it to a
+/// `Hash` and store through `Hash`'s row (`multi method ASSIGN-KEY(Any:U \SELF:
+/// \key, Mu \assignee)`). A receiver with no binding has nowhere to keep the
+/// hash and takes the cascade.
+// Cost: as `Hash`'s row, O(1) expected, plus one env write.
+fn vivify_hash_then(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    named: Named<'_>,
+    hash_row: Grow,
+) -> Answer {
+    if !undefined_hash_receiver(place.value()) {
+        return None;
+    }
+    let name = place.name()?.to_string();
+    let vivified = interp.vivify_binding(&name, Value::hash(crate::value::ValueMap::default()));
+    let mut hash = place.rebound(&vivified)?;
+    hash_row(interp, &mut hash, args, named)
+}
+
+// Cost: see `vivify_hash_then`.
+fn any_assign_key(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    named: Named<'_>,
+) -> Answer {
+    vivify_hash_then(
+        interp,
+        place,
+        args,
+        named,
+        super::subscript::hash_assign_key,
+    )
+}
+
+/// `Any.BIND-KEY` on an undefined binding: vivify it to a `Hash` and bind the
+/// argument's value under the key.
+// Cost: as `Hash`'s row, O(1) expected, plus one env write.
+fn any_bind_key(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    named: Named<'_>,
+) -> Answer {
+    if !undefined_hash_receiver(place.value()) {
+        return None;
+    }
+    let name = place.name()?.to_string();
+    let vivified = interp.vivify_binding(&name, Value::hash(crate::value::ValueMap::default()));
+    // `Any.BIND-KEY(Any:U \SELF: $key, $BIND)` takes the value, not the
+    // caller's variable, so the hash binds what the argument holds now.
+    let mut hash = place.rebound(&vivified)?.with_arg_sources(&[]);
+    super::subscript_bind::hash_bind_key(interp, &mut hash, args, named)
+}
+
+/// `Any.DELETE-KEY` on an undefined receiver: there is nothing to delete, and
+/// the receiver stays undefined (`multi method DELETE-KEY(Any:U: \key) { Nil }`).
+// Cost: O(1).
+fn any_delete_key(
+    _interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    undefined_hash_receiver(place.value()).then_some(Ok(Value::NIL))
 }
 
 macro_rules! range_refusal {

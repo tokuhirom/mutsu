@@ -1,7 +1,6 @@
 use super::vm_call_method_ops::MethodName;
 use super::*;
 use crate::symbol::Symbol;
-use crate::value::ValueMap;
 use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
@@ -1733,115 +1732,6 @@ impl Interpreter {
             ),
             _ => target,
         };
-
-        // Fast paths for xxKEY methods on Hash/Set/Bag/Mix types
-        match method {
-            "AT-KEY" if args.len() == 1 => {
-                let inner_target = match target.view() {
-                    ValueView::Scalar(inner) => inner,
-                    _ => &target,
-                };
-                // The element's own container, as the `Hash.AT-KEY` row
-                // answers (rakudo's `Hash.AT-KEY` is `is raw`).
-                if let Some(slot) = crate::builtins::method_table::subscript::hash_element_container(
-                    inner_target,
-                    &args[0],
-                ) {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "at-key");
-                    self.stack.push(slot);
-                    return Ok(());
-                }
-                if let ValueView::Hash(map) = inner_target.view() {
-                    // An object hash stores `.WHICH` keys.
-                    let key = if map.key_type.is_some() {
-                        crate::runtime::utils::value_which_key(&args[0])
-                    } else {
-                        args[0].to_string_value()
-                    };
-                    let raw = self.resolve_hash_entry(&map, &key);
-                    // ADR-0049 slice 5 (row 25): `resolve_hash_entry` returns
-                    // the raw `Value::NIL` absent-key sentinel with no
-                    // compensation of its own -- every OTHER hash-key reader
-                    // (`vm_var_index_ops.rs`) substitutes the container's own
-                    // default (`is default(...)` -> typed element type object
-                    // -> `Any`) when the key is missing; `AT-KEY` had none at
-                    // all, so `%h.AT-KEY("missing")` answered a bare `Nil`
-                    // instead of `(Any)`/`(Int)`/the declared default.
-                    let result = if raw.is_nil() {
-                        self.typed_container_default(inner_target)
-                    } else {
-                        raw
-                    };
-                    crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "at-key");
-                    self.stack.push(result);
-                    return Ok(());
-                }
-            }
-            // `ASSIGN-KEY` / `DELETE-KEY` on a hash or a quant hash are rows
-            // (`method_table::mutating::subscript`), answered by the generic
-            // arm below; what stays is the undefined receiver, which has no
-            // owner: `ASSIGN-KEY` vivifies a hash, `DELETE-KEY` answers `Nil`.
-            "ASSIGN-KEY" | "DELETE-KEY"
-                if matches!(target.view(), ValueView::Nil | ValueView::Package(_)) =>
-            {
-                let result = if method == "ASSIGN-KEY" && args.len() == 2 {
-                    let mut hash = ValueMap::default();
-                    hash.insert(args[0].to_string_value(), args[1].clone());
-                    self.env_mut().insert(
-                        target_name.to_string(),
-                        Value::hash_with_data(Value::hash_arc(hash)),
-                    );
-                    args[1].clone()
-                } else {
-                    Value::NIL
-                };
-                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "assign-key");
-                self.stack.push(result);
-                return Ok(());
-            }
-            // `BIND-KEY` on an undefined receiver vivifies a hash holding the
-            // bound pair; every owner is a row (`method_table::mutating::subscript_bind`).
-            "BIND-KEY"
-                if args.len() == 2
-                    && matches!(target.view(), ValueView::Nil | ValueView::Package(_)) =>
-            {
-                let key = args[0].to_string_value();
-                let value = args[1].clone();
-                let source_var = arg_sources
-                    .as_ref()
-                    .and_then(|s| s.get(1))
-                    .and_then(|s| s.clone());
-                let mut new_map = ValueMap::default();
-                let mut bind_source_install: Option<(String, Value)> = None;
-                if let Some(var_name) = source_var {
-                    let cell = match self.env().get(&var_name).map(Value::view) {
-                        Some(ValueView::ContainerRef(cell)) => cell.clone(),
-                        _ => {
-                            let cell =
-                                crate::gc::Gc::new(crate::value::ContainerCell::new(value.clone()));
-                            bind_source_install =
-                                Some((var_name, Value::container_ref(cell.clone())));
-                            cell
-                        }
-                    };
-                    new_map.insert(key, Value::container_ref(cell));
-                } else {
-                    new_map.insert(key, value.clone());
-                }
-                self.env_mut().insert(
-                    target_name.to_string(),
-                    Value::hash_with_data(Value::hash_arc(new_map)),
-                );
-                if let Some((source_name, cell_val)) = bind_source_install {
-                    self.set_env_with_main_alias(&source_name, cell_val.clone());
-                    self.update_local_if_exists(code, &source_name, &cell_val);
-                }
-                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "bind-key");
-                self.stack.push(value);
-                return Ok(());
-            }
-            _ => {}
-        }
 
         // Pre-dispatch Nil special cases — the same verdicts the scalar
         // `MethodCall` opcode reaches: warn-and-resume coercions (`$v.Int` /

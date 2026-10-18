@@ -1472,6 +1472,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Any", "toggle", 8, 28),
     ("Any", "tree", 8, 28),
     ("Any", "unshift", 8, 28),
+    // `Any`'s keyed mutators on an undefined receiver (ADR-11276 §9.172).
+    ("Any", "ASSIGN-KEY", 4, 26),
+    ("Any", "BIND-KEY", 4, 26),
+    ("Any", "DELETE-KEY", 2, 26),
     ("Array", "shape", 8, 60),
     ("Backtrace", "first", 8, 28),
     ("Backtrace", "map", 8, 28),

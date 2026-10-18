@@ -4346,6 +4346,32 @@ dispatch.
 
 Pinned in `t/types/any-autoviv-binding-rows.t`. The typed-scalar and `is rw` attribute gaps stay with #13823.
 
+### 9.172 `Any`'s keyed mutators are rows; the VM's key-method arms go (2026-10-18)
+
+`refactor/11276-vm-key-arms`. `CallMethodMut` kept a `match` on the method name ahead of dispatch:
+an `AT-KEY` fast path on a hash or quant hash, and `ASSIGN-KEY`, `DELETE-KEY` and `BIND-KEY` on an
+undefined receiver, which vivified a hash (with a copy of `Hash.BIND-KEY`'s variable binding) or
+answered `Nil`.
+
+- `Any` has `ASSIGN-KEY`, `BIND-KEY` and `DELETE-KEY` rows (`mutating/autoviv.rs`), as Rakudo declares
+  them (`Any:U \SELF` candidates). For an undefined binding (`Nil`, or the `Any`, `Mu` or `Hash` type
+  object), `ASSIGN-KEY` and `BIND-KEY` vivify it through `vivify_binding`, generalised from §9.171,
+  and store through `Hash`'s rows on the re-read binding. `DELETE-KEY` answers `Nil`. A receiver
+  with no binding, or a typed container's type object, takes the cascade (#13823).
+- `AT-KEY` needs no arm: the ordinary row dispatch answers every case the fast path did, including
+  a missing key's typed default, `is default`, the element container, an object hash, the quant
+  hashes and `Map`.
+- The recognition table gains `Any`'s three rows.
+
+Behaviour changes toward Rakudo: `my $x; $x.ASSIGN-KEY('a', 1)` leaves `${:a(1)}` (the hash in the
+`Scalar`), not `{:a(1)}`; `Any.BIND-KEY` binds the argument's value (`$BIND` is not raw), not the
+caller's variable. Pinned in `t/types/any-key-autoviv-rows.t`.
+
+- **Found, not fixed**: the HyperSeq/RaceSeq pseudo-method arms (`WHAT`, `^name`, `defined`) stay.
+  Without them, the `List` conversion that follows answers `List`; the conversion, not the arms,
+  is the debt. An element receiver (`@a[1].ASSIGN-KEY('e', 9)`) still raises `X::Method::NotFound`
+  where Rakudo vivifies the element (#13823).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
