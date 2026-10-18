@@ -2712,6 +2712,14 @@ pub(crate) struct ImportScopeSnapshot {
     /// shadows that unit's own top-level routines, but not another unit's
     /// (#11103), and a `need`/`use` it runs merges into it (ADR-11136).
     pub(crate) unit: Symbol,
+    /// The package an import in this scope gives short type-name aliases to
+    /// (`Interpreter::import_target_package_for_load` at the push), and the
+    /// aliases `package_type_aliases` held for it then. A block's import, and
+    /// a BEGIN-time preload of a module only a nested block `use`s, give that
+    /// package the exported types' short names; the pop takes them back, so
+    /// the block's `use` does not grant them to the whole package
+    /// (ADR-8751 stage 2).
+    pub(crate) importer_type_aliases: (String, Option<rustc_hash::FxHashMap<String, String>>),
 }
 
 impl Default for Interpreter {

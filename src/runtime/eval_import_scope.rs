@@ -28,9 +28,11 @@ impl Interpreter {
                 imported_env_keys,
                 mut shadowed_env_values,
                 imported_env_aliases,
+                importer_type_aliases,
                 ..
             } = snapshot;
             self.restore_import_env_keys(imported_env_keys, &mut shadowed_env_values);
+            self.restore_importer_type_aliases(importer_type_aliases);
             self.module.imported_env_aliases = imported_env_aliases;
         }
         result

@@ -377,7 +377,17 @@ Consequences that pin the design:
     the binary op does not know which spelling it was compiled from.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
-  - Classes and variables keep the `ImportScope` rollback. A top-level
+  - Classes and variables keep the `ImportScope` rollback. Since
+    2026-10-18 the rollback also covers the exported types' short-name
+    aliases (`package_type_aliases`): a block's `use`, and the BEGIN-time
+    preload of a module only nested blocks `use`, gave them to the
+    importing package for good, so `EVAL 'Foo'` after the block, or a
+    bare `Foo` the run-time resolution reached, still found the type. The
+    import scope snapshots the importer package's entry
+    (`ImportScopeSnapshot::importer_type_aliases`) and its pop puts it
+    back, and so does an `EVAL`'s import scope. While the block is open, a top-level routine it calls does not
+    take the alias either (`Env::frame_hides_unit_name`, the frame's
+    unit-hidden set). A top-level
     routine that names a variable by string (`EVAL '$v'`, `::('$v')`) no
     longer sees a block-scoped import of it when the block calls it
     (ADR-12529 phase 3 slice 20, #13604): its frame hides the open block

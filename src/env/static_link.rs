@@ -510,6 +510,25 @@ impl Env {
                 .is_some_and(|hidden| hidden.contains(&key))
     }
 
+    /// Whether the frame running this env hides `key` from its view of the
+    /// program scope ([`Self::static_hides`] on the nearest frame root): a
+    /// name a block-scoped `use` imported, read by a top-level routine that
+    /// block calls. A store that answers such a name outside the env (the
+    /// importer package's short type aliases) asks this first.
+    // Cost: O(d), d = envs between this one and its frame root.
+    pub(crate) fn frame_hides_unit_name(&self, key: Symbol) -> bool {
+        let mut cur = self;
+        loop {
+            if cur.frame_root {
+                return cur.static_hides(key);
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => return false,
+            }
+        }
+    }
+
     /// Whether this env is a call frame's root (`Env::scoped_child`), which
     /// can carry a static link.
     // Cost: O(1).
