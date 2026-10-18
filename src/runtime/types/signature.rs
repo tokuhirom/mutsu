@@ -538,6 +538,7 @@ pub(in crate::runtime) fn extract_named_from_unpack_target(
         .strip_prefix('$')
         .or_else(|| name.strip_prefix('@'))
         .or_else(|| name.strip_prefix('%'))
+        .or_else(|| name.strip_prefix('&'))
         .unwrap_or(name);
     if let Some(v) = named.get(name) {
         return Some(v.clone());
