@@ -8,8 +8,10 @@ for `@u` yet, because the hoisted registration seeds a cell only for a scalar.
 Its read then fell to the program sub's captured cell.
 
 The hoisted registration now also seeds a cell for the routine's own
-still-empty `@`/`%`/`$` variable (a `fresh_local` slot, which a call no longer
+still-empty `@`/`%` variable (a `fresh_local` slot, which a call no longer
 fills by name). When the declaration runs, it gives its value to that cell and
 the slot goes back to it, so the routine and the nested sub share one
 container from the routine's entry. A call before the declaration sees an
 empty array, as in rakudo. The declared element type moves with the value.
+
+The same case with a scalar `my $s` remains open (#13900).

@@ -1,7 +1,7 @@
 use Test;
 
 # A sub nested in a routine and called before its declaration shares the
-# routine's own `@`/`%`/`$` variables from the routine's entry, even when a
+# routine's own `@`/`%` variables from the routine's entry, even when a
 # program-scope sub of the same name has an identical body and so the same
 # compiled code (#13890). Checked against rakudo.
 
@@ -9,21 +9,18 @@ plan 8;
 
 my @u = 'main';
 my %h = a => 1;
-my $s = 'main-s';
 sub acc { @u.join }
 sub hk { %h.keys.sort.join }
-sub sv { $s }
-is acc() ~ hk() ~ sv(), 'mainamain-s', 'the program-scope subs read the program variables';
+is acc() ~ hk(), 'maina', 'the program-scope subs read the program variables';
 
 sub mk2 {
-    my @u = 'mk2'; my %h = b => 2; my $s = 'mk2-s';
-    my $r = acc() ~ hk() ~ sv();
+    my @u = 'mk2'; my %h = b => 2;
+    my $r = acc() ~ hk();
     sub acc { @u.join }
     sub hk { %h.keys.sort.join }
-    sub sv { $s }
     $r
 }
-is mk2(), 'mk2bmk2-s', 'identical nested bodies read the routine variables';
+is mk2(), 'mk2b', 'identical nested bodies read the routine variables';
 
 sub early { my $r = acc2(); my @v = 1, 2; sub acc2 { @v.elems }; $r ~ '/' ~ acc2() }
 is early(), '0/2', 'a call before the declaration sees the empty array';

@@ -166,7 +166,10 @@ impl Interpreter {
             // A cell seeded for a routine-nested sub's alias (no store bucket,
             // #13890): the alias holds the seeded cell, so the declaration's
             // own cell gives its value to it and the slot goes back to it.
-            if pending.unit_key.is_empty() && !Gc::ptr_eq(&c, &pending.cell) {
+            if pending.unit_key.is_empty()
+                && pending.name.starts_with(['@', '%'])
+                && !Gc::ptr_eq(&c, &pending.cell)
+            {
                 let value = c.lock().unwrap().clone();
                 Value::store_through_cell(&pending.cell, &value);
                 let boxed = Value::container_ref(pending.cell.clone());
