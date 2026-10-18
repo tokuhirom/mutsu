@@ -391,15 +391,6 @@ impl Interpreter {
         err
     }
 
-    pub(crate) fn is_buf_like_value(val: &Value) -> bool {
-        if let ValueView::Instance { class_name, .. } = val.view() {
-            let cn = class_name.resolve();
-            crate::runtime::utils::is_buf_or_blob_class(&cn)
-        } else {
-            false
-        }
-    }
-
     pub(crate) fn buf_mutate_method(
         &mut self,
         target_var: &str,

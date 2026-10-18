@@ -526,6 +526,21 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "read-int128", 6, 24),
     ("Blob", "read-num32", 6, 24),
     ("Blob", "read-num64", 6, 24),
+    // `Buf`'s `write-*` family (ADR-11276 §9.170): mutator rows, like `push`.
+    ("Blob", "write-uint8", 8, 26),
+    ("Blob", "write-int8", 8, 26),
+    ("Blob", "write-uint16", 8, 26),
+    ("Blob", "write-int16", 8, 26),
+    ("Blob", "write-uint32", 8, 26),
+    ("Blob", "write-int32", 8, 26),
+    ("Blob", "write-uint64", 8, 26),
+    ("Blob", "write-int64", 8, 26),
+    ("Blob", "write-uint128", 8, 26),
+    ("Blob", "write-int128", 8, 26),
+    ("Blob", "write-num32", 8, 26),
+    ("Blob", "write-num64", 8, 26),
+    ("Blob", "write-bits", 8, 26),
+    ("Blob", "write-ubits", 8, 26),
     // `.DEFINITE` is a quoted pseudo-method (like `.WHAT`/`.HOW`/`.WHICH`),
     // deliberately excluded from `MU_METHODS`'s `.^methods` introspection
     // list since it is a compiler-level construct rather than an ordinary

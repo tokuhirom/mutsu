@@ -1982,23 +1982,6 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
-                // Native fast path for mutating Buf write methods on a mutable Buf
-                // instance (ledger §1: native receiver dispatch -> Interpreter-native).
-                if modifier.is_none()
-                    && let Some(result) =
-                        self.try_native_buf_mut(target_name, &target, method, &args)
-                {
-                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-                    self.shadow_check_native_row_candidate(
-                        &target,
-                        method,
-                        method_sym,
-                        args.len(),
-                        true,
-                    );
-                    self.stack.push(result?);
-                    return Ok(());
-                }
                 // Native fast path for the Iterator protocol on a self-contained
                 // array-backed iterator (ledger §1: native receiver dispatch ->
                 // Interpreter-native). `$it.pull-one` etc. compile to CallMethodMut, so the
@@ -2576,105 +2559,5 @@ impl Interpreter {
         self.env_mut()
             .insert_through(target_name.to_string(), updated_instance.clone());
         updated_instance
-    }
-
-    /// Interpreter-native mutating Buf write methods (`write-bits`/`write-ubits`/
-    /// `write-num*`/`write-int*`/`write-uint*`) on a mutable `Buf` instance bound
-    /// to `target_name` (ledger §1: native receiver dispatch -> Interpreter-native). Mirrors
-    /// the interpreter's instance-mutate branches in `methods_mut.rs` exactly: the
-    /// byte transforms are the single shared pure implementations in `builtins/`
-    /// (`buf_bits`/`buf_write_num`/`buf_write_int`), and the writeback goes
-    /// straight into the receiver's shared cell (`Value::write_back_sharing`) so
-    /// aliases of the same buf observe the mutation — so the result is
-    /// behavior-invariant.
-    ///
-    /// Returns `None` (fall through to the interpreter) for type-object receivers
-    /// (`buf8.write-...` on the type returns a fresh buf), immutable `Blob`, and
-    /// malformed arity/arguments, leaving the interpreter to own those
-    /// error/construction semantics.
-    fn try_native_buf_mut(
-        &mut self,
-        target_name: &str,
-        target: &Value,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        let is_write_bits = matches!(method, "write-ubits" | "write-bits");
-        let is_write_num = crate::builtins::buf_write_num::write_num_size(method).is_some();
-        let is_write_int = crate::builtins::buf_write_int::write_int_info(method).is_some();
-        if !(is_write_bits || is_write_num || is_write_int) {
-            return None;
-        }
-        let ValueView::Instance {
-            class_name,
-            attributes,
-            id,
-        } = target.view()
-        else {
-            return None;
-        };
-        let cn = class_name.resolve();
-        if !crate::runtime::utils::is_buf_or_blob_class(&cn) {
-            return None;
-        }
-        // Immutable Blob: let the interpreter raise "Cannot modify immutable Blob".
-        if crate::runtime::utils::is_blob_like_class(&cn) && !cn.starts_with("utf") {
-            return None;
-        }
-        let mut bytes = crate::value::value_buf::buf_raw_bytes_or_empty(&attributes);
-        // Compute the new bytes via the shared pure transform.
-        let new_bytes: Vec<u8> = if is_write_bits {
-            if args.len() != 3 {
-                return None; // interpreter handles non-3-arg forms
-            }
-            let (Some(from), Some(bits)) = (
-                crate::runtime::Interpreter::value_to_non_negative_i64(&args[0]),
-                crate::runtime::Interpreter::value_to_non_negative_i64(&args[1]),
-            ) else {
-                return None; // let the interpreter raise the offset/bits parse error
-            };
-            match crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2]) {
-                Ok(b) => b,
-                Err(e) => return Some(Err(e)),
-            }
-        } else {
-            // write-num* / write-int*: 2 or 3 args (interpreter raises on others).
-            if args.len() < 2 || args.len() > 3 {
-                return None;
-            }
-            let offset_i64 = match args[0].view() {
-                ValueView::Int(i) => i,
-                ValueView::Num(f) => f as i64,
-                _ => 0,
-            };
-            let endian_val = if args.len() == 3 {
-                crate::builtins::buf_write_num::decode_endian(&args[2])
-            } else {
-                0
-            };
-            let width = crate::value::value_buf::buf_elem_width(&cn);
-            let res = if is_write_num {
-                crate::builtins::buf_write_num::apply_write_num(
-                    &mut bytes, method, offset_i64, &args[1], endian_val, width,
-                )
-            } else {
-                crate::builtins::buf_write_int::apply_write_int(
-                    &mut bytes, method, offset_i64, &args[1], endian_val, width,
-                )
-            };
-            if let Err(e) = res {
-                return Some(Err(e));
-            }
-            bytes
-        };
-        // Write the updated bytes straight into the receiver's live shared cell
-        // (so aliases observing the same buf see the mutation), then refresh the
-        // receiver binding to match the interpreter's `env.insert_through(target_var, ...)`.
-        let mut updated_attrs = attributes.to_map();
-        crate::value::value_buf::set_buf_raw_bytes(&mut updated_attrs, class_name, new_bytes);
-        let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
-        self.env_mut()
-            .insert_through(target_name.to_string(), updated.clone());
-        Some(Ok(updated))
     }
 }

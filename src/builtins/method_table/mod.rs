@@ -123,7 +123,6 @@ pub(crate) use dispatch::{
 };
 #[cfg(test)]
 pub(crate) use dispatch::{shapeless_row, try_dispatch};
-pub(crate) use mutating::buf::by_value as buf_by_value;
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use place::ReceiverPlace;
 pub(crate) use row::{Handler, MethodRow, Named, NamedFn, NarrowFn, RowFlags};
