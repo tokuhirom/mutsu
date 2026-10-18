@@ -2210,21 +2210,8 @@ impl Interpreter {
             return result;
         }
 
-        // STORE for BagHash/SetHash/MixHash: re-initialize the container.
-        // See `runtime::quanthash_store` for the folding rules and why the
-        // store keys must be the `.WHICH`-derived ones.
-        if method == "STORE" {
-            let mut detached = target.clone();
-            let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
-            if let Some(result) = crate::builtins::method_table::invoke_mut(
-                self,
-                &mut place,
-                crate::symbol::Symbol::intern("STORE"),
-                &args,
-            ) {
-                return result;
-            }
-        }
+        // A quant hash's `STORE` is its row, which the mutating entry above
+        // answers (`mutating::quanthash`).
         // STORE on a native Hash/Array: re-initialize its node in place.
         if method == "STORE"
             && let Some(stored) = self.native_container_store(&target, &args)
