@@ -136,11 +136,6 @@ impl AttributeTraits {
                 },
                 AttrTrait::Deprecated => match self.deprecated_message.as_deref() {
                     Some(DEPRECATED_DEFAULT) | None => trait_is("DEPRECATED", None),
-                    Some("") => {
-                        return Err(unsupported(
-                            "attribute `is DEPRECATED` with a computed message",
-                        ));
-                    }
                     Some(message) => trait_is(
                         "DEPRECATED",
                         Some(paren_argument(&Expr::Literal(Value::str(

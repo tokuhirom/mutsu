@@ -1362,3 +1362,10 @@ Package name adverbs now append `colonpairs` alongside an existing qualified
 `Name.parts` field. Lowering removes the adverbs while preserving the parts,
 then restores the parser's package header. The regression checks qualified
 class and role names, their adverbs, and EVAL of the resulting declarations.
+
+### 6.76 S10: explicit empty attribute deprecation messages (2026-10-18)
+
+An attribute's `is DEPRECATED('')` now retains its explicit parenthesized
+argument as `Trait::Is`, distinct from bare `is DEPRECATED`, which has no
+argument and uses the default message. The regression checks both RakuAST
+shape and the introspected message after EVAL.
