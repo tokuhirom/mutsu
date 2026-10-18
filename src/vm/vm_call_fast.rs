@@ -236,6 +236,7 @@ impl Interpreter {
             self.executing_source_file_sym(),
             cf.source_file_sym(),
             cf.is_hidden_from_backtrace,
+            Arc::as_ptr(&cf.code) as usize,
         );
         let let_mark = self.let_saves_len();
         // Frame-less path: roll back the line the body's ops advanced to manually.

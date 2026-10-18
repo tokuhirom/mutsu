@@ -710,14 +710,18 @@ impl Interpreter {
             return None;
         }
         // The running body's bucket: a same-named routine that captured
-        // nothing (a routine-nested `sub acc`) has none (#13613).
-        let key = &self
+        // nothing (a routine-nested `sub acc`) has none (#13613). A frame that
+        // does not record its body takes the latest registration's.
+        let owners = self
             .lexicals
             .mainline_lexical_subs
-            .get(frame.name.as_str())?
-            .iter()
-            .find(|owner| owner.runs_code(self.current_code))?
-            .bucket;
+            .get(frame.name.as_str())?;
+        let key = &if frame.code == 0 {
+            owners.last()?
+        } else {
+            owners.iter().find(|owner| owner.runs_code(frame.code))?
+        }
+        .bucket;
         if self
             .lexicals
             .unit_lexicals

@@ -650,6 +650,7 @@ impl Interpreter {
             self.executing_source_file_sym(),
             cf.source_file_sym(),
             cf.is_hidden_from_backtrace,
+            Arc::as_ptr(&cf.code) as usize,
         );
 
         // A routine body is its own topicalizer for a bare `when`/`default`: a

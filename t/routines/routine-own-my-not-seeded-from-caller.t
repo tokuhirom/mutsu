@@ -20,5 +20,5 @@ sub inner-scalar { my $v; $v // 'undef' }
 sub outer-scalar { my $v = 'leak'; inner-scalar() }
 is outer-scalar(), 'undef', 'a scalar starts undefined';
 
-sub hoisted { my @log = 'own'; peek(); sub peek { @log.join } }
+sub hoisted { my @log = 'own'; my $r = peek(); sub peek { @log.join }; $r }
 is hoisted(), 'own', 'a nested sub called before its declaration sees the routine array';

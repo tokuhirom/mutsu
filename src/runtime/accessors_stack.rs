@@ -293,10 +293,12 @@ impl Interpreter {
         file: Option<Symbol>,
         def_file: Option<Symbol>,
     ) {
-        self.push_routine_with_visibility(package, name, line, file, def_file, false);
+        self.push_routine_with_visibility(package, name, line, file, def_file, false, 0);
     }
 
-    /// Push a routine frame with its declaration's backtrace visibility.
+    /// Push a routine frame with its declaration's backtrace visibility and
+    /// the address of its body (`RoutineFrame::code`, `0` = not recorded).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_routine_with_visibility(
         &mut self,
         package: Symbol,
@@ -305,6 +307,7 @@ impl Interpreter {
         file: Option<Symbol>,
         def_file: Option<Symbol>,
         is_hidden_from_backtrace: bool,
+        code: usize,
     ) {
         let invocation_id = self.take_invocation_id();
         let lexical_package = self.lexical_package_for_frame(def_file);
@@ -330,6 +333,7 @@ impl Interpreter {
             def_file,
             invocation_id,
             callable_id: 0,
+            code,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -372,6 +376,7 @@ impl Interpreter {
             def_file,
             invocation_id,
             callable_id,
+            code: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -432,6 +437,7 @@ impl Interpreter {
             def_file,
             invocation_id,
             callable_id: 0,
+            code: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -1302,6 +1308,7 @@ mod call_site_file_tests {
             def_file,
             invocation_id: 1,
             callable_id: 0,
+            code: 0,
         }
     }
 

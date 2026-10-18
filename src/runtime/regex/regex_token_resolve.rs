@@ -609,6 +609,7 @@ impl Interpreter {
                 def_file: None,
                 invocation_id,
                 callable_id: 0,
+                code: 0,
             };
             interp.record_profile_routine_frame(&frame);
             interp.routine_stack.push(frame);
