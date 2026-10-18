@@ -5264,7 +5264,44 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 items.push(lower_expr(child)?);
             }
             if op == "," {
-                return Ok(Expr::ArrayLiteral(items));
+                if items
+                    .iter()
+                    .all(|item| matches!(item, Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::VarDecl { .. })))
+                {
+                    return Ok(Expr::DoStmt(Box::new(Stmt::SyntheticBlock(
+                        items
+                            .into_iter()
+                            .map(|item| match item {
+                                Expr::DoStmt(stmt) => *stmt,
+                                _ => unreachable!("all operands checked as declarations"),
+                            })
+                            .collect(),
+                    ))));
+                }
+                let mut lowered = Vec::with_capacity(items.len());
+                let mut declarations = Vec::new();
+                let flush_declarations = |declarations: &mut Vec<Stmt>, lowered: &mut Vec<Expr>| {
+                    if declarations.len() == 1 {
+                        lowered.push(Expr::DoStmt(Box::new(declarations.pop().unwrap())));
+                    } else if declarations.len() > 1 {
+                        lowered.push(Expr::DoStmt(Box::new(Stmt::SyntheticBlock(
+                            std::mem::take(declarations),
+                        ))));
+                    }
+                };
+                for item in items {
+                    match item {
+                        Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::VarDecl { .. }) => {
+                            declarations.push(*stmt);
+                        }
+                        other => {
+                            flush_declarations(&mut declarations, &mut lowered);
+                            lowered.push(other);
+                        }
+                    }
+                }
+                flush_declarations(&mut declarations, &mut lowered);
+                return Ok(Expr::ArrayLiteral(lowered));
             }
             // Every other list infix mutsu renders — the `andthen` family, the
             // junction constructors, `min`/`max` — is an ordinary left-nested

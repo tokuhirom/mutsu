@@ -3702,6 +3702,35 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 })
                 .ok_or_else(|| unsupported("declaration term"))
         }
+        // A parenthesized comma list of declarations is grouped by the parser
+        // into one synthetic block. Rakudo keeps each declaration as an
+        // operand of the comma ApplyListInfix.
+        Expr::DoStmt(stmt)
+            if matches!(stmt.as_ref(), Stmt::SyntheticBlock(stmts)
+                if stmts.len() > 1 && stmts.iter().all(|stmt| matches!(stmt, Stmt::VarDecl { .. }))) =>
+        {
+            let Stmt::SyntheticBlock(stmts) = stmt.as_ref() else {
+                unreachable!()
+            };
+            let mut operands = Vec::with_capacity(stmts.len());
+            for declaration in stmts {
+                let statement = var_decl_statement(var_decl_parts(declaration)?, false)?
+                    .ok_or_else(|| unsupported("declaration term"))?;
+                let expression =
+                    expression_of(&statement).ok_or_else(|| unsupported("declaration term"))?;
+                operands.push(Value::rakuast(Box::new(expression)));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyListInfix,
+                fields: vec![
+                    node_field(Some("infix"), plain_infix(",")),
+                    RakuAstField {
+                        name: Some("operands"),
+                        value: RakuAstFieldValue::List(operands),
+                    },
+                ],
+            })
+        }
         // `do for ... { }` / `do if ... { }` / `do given ... { }`: the loop or
         // conditional statement under `StatementPrefix::Do`.
         Expr::DoStmt(stmt) if is_do_statement(stmt) => {

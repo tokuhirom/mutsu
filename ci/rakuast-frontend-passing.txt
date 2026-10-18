@@ -371,6 +371,7 @@ t/collections/lazy-seq/seq-cache-returns-list.t
 t/collections/lazy-seq/seq-coercion-lazy-source.t
 t/collections/lazy-seq/seq-consumption-matrix.t
 t/collections/lazy-seq/seq-eager-list.t
+t/collections/lazy-seq/seq-eqv-type-object-keeps-seq.t
 t/collections/lazy-seq/seq-is-not-list.t
 t/collections/lazy-seq/seq-left-exclusive-listop.t
 t/collections/lazy-seq/seq-new-iterator-cursor.t
@@ -439,6 +440,7 @@ t/collections/list-infix-comparison-operand-precedence.t
 t/collections/list-listop-is-a-noop-on-a-seq.t
 t/collections/list-literal-element-container.t
 t/collections/list-literal-holds-list-element-value.t
+t/collections/list-literal-inline-decl-store.t
 t/collections/list-methods-read-only-what-they-need.t
 t/collections/list-numeric-comparison.t
 t/collections/list-readonly-binding-element.t
@@ -897,6 +899,7 @@ t/collections/transform/reduce-no-zero-arg-meaning.t
 t/collections/transform/reduce-notandthen.t
 t/collections/transform/reduce-numeric-string-whitespace.t
 t/collections/transform/reduce-reverse-metaop.t
+t/collections/transform/reduce-set-relation-chains.t
 t/collections/transform/reduce-single-element.t
 t/collections/transform/reverse-finite-gather.t
 t/collections/transform/reverse-meta-compound-assign.t
@@ -984,6 +987,7 @@ t/concurrency/nqp-spawnprocasync.t
 t/concurrency/proc-async-divergences.t
 t/concurrency/proc-async-method-rows.t
 t/concurrency/proc-async-slurpy-command.t
+t/concurrency/proc-async-subclass-positional-args.t
 t/concurrency/proc-async.t
 t/concurrency/procasync-final-grapheme-holdback.t
 t/concurrency/procasync-ready-publishes-started.t
@@ -2750,6 +2754,7 @@ t/modules/import-export/exported-code-value-module-stash.t
 t/modules/import-export/exported-enum-unit-module-name-mismatch.t
 t/modules/import-export/exported-infix-candidate-family.t
 t/modules/import-export/exported-main-dispatch.t
+t/modules/import-export/exported-method-named-and-class-default.t
 t/modules/import-export/exported-method-sub-collision.t
 t/modules/import-export/exported-multi-code-value-inside-module.t
 t/modules/import-export/exported-multi-family-candidates.t
@@ -3119,6 +3124,7 @@ t/modules/role-body-sub-sees-module-imports-in-eval.t
 t/modules/role-body-use-imports-into-role-package.t
 t/modules/role-body-use-module-imports-own-operator.t
 t/modules/role-but-init-module-lexical-role.t
+t/modules/role-does-constant-aliased-package.t
 t/modules/role-does-sibling-in-unit-module.t
 t/modules/role-group-module-candidate-mixin.t
 t/modules/role-method-closure-module-names.t
@@ -3263,6 +3269,7 @@ t/nativecall/native-int-num-str-slip-construct.t
 t/nativecall/native-int-optional-default-multi.t
 t/nativecall/native-int-param-binding.t
 t/nativecall/native-int-shift-left-wraps.t
+t/nativecall/native-int-store-unboxes-allomorph.t
 t/nativecall/native-io-coercion.t
 t/nativecall/native-io-path-comb.t
 t/nativecall/native-io-path-content-read.t
@@ -3843,6 +3850,7 @@ t/oo/method/buffer-instance-method-rows.t
 t/oo/method/builtin-method-name-rows.t
 t/oo/method/builtin-method-too-many-positionals.t
 t/oo/method/builtin-subclass-method-override.t
+t/oo/method/by-name-gate-method-rows.t
 t/oo/method/callframe-code-name-method-unit.t
 t/oo/method/capture-method-rows.t
 t/oo/method/capture-param-method-forwards-caller-containers.t
@@ -3955,6 +3963,7 @@ t/oo/method/interp-hash-method-and-typeobject-str.t
 t/oo/method/interp-method-arg-quotes.t
 t/oo/method/invalid-qualifier-method-name.t
 t/oo/method/invert-method-rows.t
+t/oo/method/is-copy-array-param-itemized-method.t
 t/oo/method/junction-own-method-rows.t
 t/oo/method/lazy-method-deferral-frame.t
 t/oo/method/lazy-method-map-grep.t
@@ -4498,6 +4507,7 @@ t/oo/role/role-conflict.t
 t/oo/role/role-constraint-transitive-narrowness.t
 t/oo/role/role-decl-adverbs-signature.t
 t/oo/role/role-decl-expr-value.t
+t/oo/role/role-default-method-rows.t
 t/oo/role/role-default-param-pun-name.t
 t/oo/role/role-default-type-capture-with-named-param.t
 t/oo/role/role-diamond-stub-concrete.t
@@ -4938,6 +4948,7 @@ t/rakuast/rakuast-method-return-type.t
 t/rakuast/rakuast-module-names.t
 t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-multidim-splat.t
+t/rakuast/rakuast-multiple-inline-list-declarations.t
 t/rakuast/rakuast-name-part-empty.t
 t/rakuast/rakuast-named-anon-declarations.t
 t/rakuast/rakuast-named-param-outer-signature.t
