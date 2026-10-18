@@ -29,8 +29,11 @@ const TWIN_NULLARY: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK)
 
 macro_rules! twin {
     ($name:literal, $flags:expr, |$interp:ident, $target:ident, $args:ident| $body:expr) => {
+        twin!("Any", $name, $flags, |$interp, $target, $args| $body)
+    };
+    ($owner:literal, $name:literal, $flags:expr, |$interp:ident, $target:ident, $args:ident| $body:expr) => {
         MethodRow {
-            owner: "Any",
+            owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Interp({
@@ -109,5 +112,19 @@ pub(super) static ROWS: &[MethodRow] = &[
             }
             _ => None,
         }
+    }),
+    // `fmt` with a `Format` object, or over elements whose `.Str`/`.Numeric`
+    // is user code, which the pure rows decline (§9.187).
+    twin!("fmt", TWIN, |interp, target, args| interp
+        .dispatch_fmt_with_format(&target, &args)
+        .or_else(
+            || interp.dispatch_fmt_with_user_coercion(&target, &args)
+        )),
+    // `Mu.Capture` of a receiver whose pure answer is wrong: a user object (its
+    // public attributes read through their accessor methods), a `Channel` or
+    // `Supply` (drained), a list with a non-`Str` `Pair` key (stringified
+    // through its `.Str`), a cat handle's lines (§9.187).
+    twin!("Mu", "Capture", TWIN_NULLARY, |interp, target, _args| {
+        interp.try_interpreter_capture(&target)
     }),
 ];

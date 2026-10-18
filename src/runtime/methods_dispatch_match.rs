@@ -98,6 +98,8 @@ impl Interpreter {
                 | "stem"
                 | "head"
                 | "tail"
+                | "fmt"
+                | "Capture"
         )
             || (matches!(method, "say" | "put") && !args.is_empty())
         {
