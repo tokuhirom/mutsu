@@ -67,7 +67,7 @@ jobs:
           save-if: false
 
       - name: Install mold
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -78,7 +78,7 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: "false"
 
       - name: Upload the release binary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mutsu-release-binary
           path: target/release/mutsu
@@ -152,7 +152,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -260,7 +260,7 @@ jobs:
 
       - name: Upload GC stress TAP crash reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gc-stress-tap-crash-reports
           path: tmp/crash/*.txt
@@ -269,7 +269,7 @@ jobs:
 
       - name: Upload GC stress TAP log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gc-stress-tap-log
           path: tmp/gc-stress-t.log
@@ -305,7 +305,7 @@ jobs:
           submodules: true
 
       - name: Download the release binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mutsu-release-binary
           path: target/release
@@ -387,7 +387,7 @@ jobs:
 
       - name: Upload GC stress roast crash reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gc-stress-roast-crash-reports
           path: tmp/crash/*.txt
@@ -396,7 +396,7 @@ jobs:
 
       - name: Upload GC stress roast log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gc-stress-roast-log
           path: tmp/gc-stress-roast.log
@@ -449,7 +449,7 @@ jobs:
       # Link with mold instead of GNU ld — see the `build` job for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -514,7 +514,7 @@ jobs:
 
       - name: Upload JIT stress TAP crash reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jit-stress-tap-crash-reports
           path: tmp/crash/*.txt
@@ -523,7 +523,7 @@ jobs:
 
       - name: Upload JIT stress TAP log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jit-stress-tap-log
           path: tmp/jit-stress-t.log
@@ -552,7 +552,7 @@ jobs:
           submodules: true
 
       - name: Download the release binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mutsu-release-binary
           path: target/release
@@ -613,7 +613,7 @@ jobs:
 
       - name: Upload JIT stress roast crash reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jit-stress-roast-crash-reports
           path: tmp/crash/*.txt
@@ -622,7 +622,7 @@ jobs:
 
       - name: Upload JIT stress roast log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jit-stress-roast-log
           path: tmp/jit-stress-roast.log
@@ -658,7 +658,7 @@ jobs:
           submodules: true
 
       - name: Download the release binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mutsu-release-binary
           path: target/release
@@ -716,7 +716,7 @@ jobs:
 
       - name: Upload precomp verify logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: precomp-verify-logs
           path: tmp/precomp-verify-*.log
