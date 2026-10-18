@@ -1106,9 +1106,11 @@ impl Interpreter {
         // `@_` is one of the fixed env keys EVERY compiled call writes, so its
         // symbol is pre-interned (`wk::positional_slurpy`) rather than re-hashed
         // per call (#7736).
+        // Only the running frame's own `@_` counts: a caller's empty `@_` is
+        // another routine's variable (ADR-12529 phase 3).
         let args_key = crate::symbol::wk::positional_slurpy();
         let skip_at_underscore = plain_args.is_empty()
-            && self.env.get_sym(args_key).is_some_and(
+            && self.env.get_sym_in_frame(args_key).is_some_and(
                 |v| matches!(v.view(), ValueView::Array(elems, _) if elems.is_empty()),
             );
         if !skip_at_underscore {
@@ -1224,21 +1226,26 @@ impl Interpreter {
         // name instead of "element".
         let mut container_param_sources: Vec<(String, String)> = Vec::new();
         let mut raw_nonlvalue_params: Vec<String> = Vec::new();
-        // Both are fixed per-call method-entry keys with pre-interned symbols
-        // (#7736): a by-name probe re-hashed them on every bind.
-        if let Some(invocant_value) = self
-            .env
-            .get_sym(crate::symbol::wk::self_())
-            .cloned()
-            .or_else(|| self.env.get_sym(crate::symbol::wk::class_decl()).cloned())
+        // An invocant parameter that captures its type (`::T $self:`) binds
+        // the capture to the invocant. Only such a signature asks for `self`:
+        // any other routine's probe found the caller's `self` (ADR-12529
+        // phase 3). Both are fixed per-call method-entry keys with
+        // pre-interned symbols (#7736).
+        let invocant_captures = param_defs.iter().filter_map(|pd| {
+            (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
+                .then(|| pd.captured_type_name())
+                .flatten()
+        });
+        let mut invocant_captures = invocant_captures.peekable();
+        if invocant_captures.peek().is_some()
+            && let Some(invocant_value) = self
+                .env
+                .get_sym(crate::symbol::wk::self_())
+                .cloned()
+                .or_else(|| self.env.get_sym(crate::symbol::wk::class_decl()).cloned())
         {
-            for pd in param_defs {
-                if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
-                    continue;
-                }
-                if let Some(captured_name) = pd.captured_type_name() {
-                    self.bind_type_capture(captured_name, &invocant_value);
-                }
+            for captured_name in invocant_captures {
+                self.bind_type_capture(captured_name, &invocant_value);
             }
         }
         if param_defs.is_empty() {
