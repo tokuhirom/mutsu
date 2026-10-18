@@ -2293,6 +2293,14 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Routine", "package", 8, 60),
     ("Code", "Capture", 1, 56),
     ("Code", "clone", 1, 48),
+    // `Routine`'s and `Code`'s own methods (ADR-11276 §9.166).
+    ("Routine", "wrap", 8, 60),
+    ("Routine", "unwrap", 8, 60),
+    ("Routine", "add_dispatchee", 8, 60),
+    ("Routine", "candidates", 8, 60),
+    ("Routine", "dispatchees", 8, 60),
+    ("Routine", "rw", 8, 60),
+    ("Code", "cando", 8, 60),
     // `ACCEPTS` of the code objects, `Signature` and a type object
     // (ADR-11276 §9.164): multis, as in Rakudo.
     ("Code", "ACCEPTS", 8, 28),

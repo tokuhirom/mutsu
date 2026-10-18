@@ -41,7 +41,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 // Cost: O(1).
 pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
     match target.view() {
-        ValueView::Sub(_) | ValueView::Routine { .. } => Some(&["Routine"]),
+        ValueView::Sub(_) | ValueView::Routine { .. } => Some(&["Routine", "Code"]),
         ValueView::Instance { class_name, .. }
             if matches!(
                 class_name.resolve().as_str(),
