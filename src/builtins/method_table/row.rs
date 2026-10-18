@@ -250,9 +250,11 @@ impl MethodRow {
                 self.owner, type_name, self.name, "self", true, true,
             ))
         } else if self.flags.contains(RowFlags::IMMUTABLE) {
-            Some(crate::runtime::methods_signature_errors::make_x_immutable_error(
-                self.name, self.owner,
-            ))
+            Some(
+                crate::runtime::methods_signature_errors::make_x_immutable_error(
+                    self.name, self.owner,
+                ),
+            )
         } else if self.flags.contains(RowFlags::DEFINITE_MULTI) {
             Some(
                 crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
