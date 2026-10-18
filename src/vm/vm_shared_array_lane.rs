@@ -33,8 +33,9 @@ impl Interpreter {
     /// `splice`) on the thread-shared binding `name`, or `None` when the call
     /// takes the ordinary path (another method, no shared entry yet for a
     /// removal, a twigil'd name).
-    // Cost: O(k) for k elements added, O(1) for a pop or shift, O(n) for a
-    // splice of an n-element array, each under the store's or the cell's lock.
+    // Cost: O(k) for k elements added (one type check each), O(1) for a pop or
+    // shift, O(n) for a splice of an n-element array, each under the store's
+    // or the cell's lock.
     pub(crate) fn shared_array_lane(
         &mut self,
         name: &str,
@@ -67,7 +68,11 @@ impl Interpreter {
         if self.env().get(name).is_some_and(Value::is_container_ref) {
             return match method {
                 "push" | "unshift" | "append" | "prepend" if !args.is_empty() => {
-                    let items = self.wrap_native_int_items(name, shared_lane_items(method, args));
+                    let items = shared_lane_items(method, args);
+                    if let Err(err) = self.check_container_element_types(name, target, &items) {
+                        return Some(Err(err));
+                    }
+                    let items = self.wrap_native_int_items(name, items);
                     let front = matches!(method, "unshift" | "prepend");
                     let result = self.celled_array_extend(name, items, front)?;
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
@@ -122,7 +127,11 @@ impl Interpreter {
                 );
                 // Stored through a native slot, so each element wraps to the
                 // element width (`my uint8 @e; @e.push(1, 300, 2)` -> 1, 44, 2).
-                let items = self.wrap_native_int_items(name, shared_lane_items(method, args));
+                let items = shared_lane_items(method, args);
+                if let Err(err) = self.check_container_element_types(name, target, &items) {
+                    return Some(Err(err));
+                }
+                let items = self.wrap_native_int_items(name, items);
                 let front = matches!(method, "unshift" | "prepend");
                 Some(Ok(self.shared_array_extend(name, items, front)))
             }
@@ -131,6 +140,9 @@ impl Interpreter {
                     "callmethodmut",
                     "shared-array-push-legacy",
                 );
+                if let Err(err) = self.check_container_element_types(name, target, args) {
+                    return Some(Err(err));
+                }
                 let result = self
                     .push_to_existing_shared_array(name, args.to_vec())
                     .unwrap_or_else(|| self.push_to_shared_var(name, args.to_vec(), target));
