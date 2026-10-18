@@ -258,7 +258,7 @@ fn empty_what(interp: &Interpreter, name: Option<&str>) -> String {
 /// metadata first, then (for an `@` variable only, since a scalar's constraint
 /// is the variable's, not the elements') the variable's declaration.
 // Cost: O(v) type checks, v = values.
-fn check_element_types(
+pub(super) fn check_element_types(
     interp: &mut Interpreter,
     name: Option<&str>,
     target: &Value,

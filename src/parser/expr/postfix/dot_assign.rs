@@ -5,7 +5,6 @@ use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PResult, parse_char};
 use crate::parser::primary::{colonpair_expr, parse_call_arg_list, primary};
 use crate::symbol::Symbol;
-use crate::value::Value;
 
 pub(crate) fn atomic_var_name(expr: &Expr) -> Option<String> {
     match expr {
@@ -339,7 +338,7 @@ fn expand_dot_assign(
         // invocant once, read the current value once, then branch at runtime:
         //   do { my $inv = INVOCANT;
         //        my $cur = $inv.attr;
-        //        $cur.^can("STORE")
+        //        __mutsu_custom_store($cur)
         //            ?? do { $cur.STORE($cur.meth); $cur }
         //            !! ($inv.attr = $cur.meth) }
         // For a non-lvalue invocant (`Foo.new.=meth`) the writeback path raises
@@ -391,14 +390,7 @@ fn expand_dot_assign(
                 Vec::new(),
                 meth_result,
             );
-            let can_store = Expr::MethodCall {
-                target: Box::new(cur_var),
-                name: Symbol::intern("can"),
-                args: vec![Expr::Literal(Value::str("STORE".to_string()))],
-                modifier: Some('^'),
-                quoted: false,
-                sugar: false,
-            };
+            let can_store = custom_store_check(cur_var);
             let ternary = Expr::Ternary {
                 cond: Box::new(can_store),
                 then_expr: Box::new(then_expr),
@@ -440,9 +432,9 @@ fn expand_dot_assign(
         // (Raku errors with "Cannot modify an immutable ..." there, but that path
         // is untested and the lax form is relied on elsewhere). Bind the target to
         // a temp so it is evaluated exactly once, then branch at runtime on
-        // `.^can("STORE")`:
+        // `__mutsu_custom_store` (a user `STORE`, not a built-in one):
         //   do { my $t = TARGET;
-        //        $t.^can("STORE") ?? do { $t.STORE($t.meth); $t } !! $t.meth }
+        //        __mutsu_custom_store($t) ?? do { $t.STORE($t.meth); $t } !! $t.meth }
         _ => {
             use std::sync::atomic::Ordering;
             let tmp = format!(
@@ -454,14 +446,7 @@ fn expand_dot_assign(
             // the resulting `$t.meth(args)` for both the STORE argument and the
             // no-STORE fallback (both branches share the same target `$t`).
             let meth_result = method_call_fn(tmp_var.clone());
-            let can_store = Expr::MethodCall {
-                target: Box::new(tmp_var.clone()),
-                name: Symbol::intern("can"),
-                args: vec![Expr::Literal(Value::str("STORE".to_string()))],
-                modifier: Some('^'),
-                quoted: false,
-                sugar: false,
-            };
+            let can_store = custom_store_check(tmp_var.clone());
             let store_call = Expr::MethodCall {
                 target: Box::new(tmp_var.clone()),
                 name: Symbol::intern("STORE"),
@@ -669,4 +654,16 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         sugar: false,
     });
     Ok((r_final, result))
+}
+
+/// `__mutsu_custom_store(VALUE)`: whether `.=` stores through the value's own
+/// `STORE` (a `Proxy`, or a user class or role declaring one) rather than
+/// assigning (`runtime/builtins_dot_assign_store.rs`). A built-in container's
+/// `STORE` does not count: `self.x .= Hash` on a `$` attribute rebinds it.
+fn custom_store_check(value: Expr) -> Expr {
+    Expr::Call {
+        name: Symbol::intern("__mutsu_custom_store"),
+        args: vec![value],
+        listop: false,
+    }
 }

@@ -4390,6 +4390,37 @@ mutating entry's arms lacked `isa`, so `my $h = (1..3).hyper; $h.isa(List)` was 
 Behaviour change toward Rakudo: `$h.isa(HyperSeq)` is `True` and `$h.isa(List)` is `False` through a
 variable, as they already were on a temporary. Pinned in `t/oo/mop/hyper-seq-mu-introspection.t`.
 
+### 9.174 `STORE` of `Array`, `List`, `Hash` and `Map` is rows (2026-10-18)
+
+`refactor/11276-container-store-rows`. `call_method_with_values` answered `STORE` from a name arm,
+`native_container_store`. It re-initialised any native hash or array and declined an immutable list.
+So `%h.STORE(keys, values)` stored the keys as alternating pairs, a built `Map` was overwritten, a
+typed array took any element, and `(1, 2).STORE(...)` was `X::Method::NotFound`.
+
+- `Handler::Mut` rows `Array.STORE`, `List.STORE`, `Hash.STORE` (one and two arguments) and
+  `Map.STORE` (`mutating/store.rs`), reached through `invoke_mut` from every entry.
+  - `Array` checks each element against the element type and stores into the shared node, keeping
+    its metadata (`store_into_array`).
+  - `List` without `:INITIALIZE` is Rakudo's list assignment into its elements, so a list of plain
+    values refuses with the first element's `X::Assignment::RO`. A list of containers takes the
+    existing path.
+  - `Hash` zips the two-argument form.
+  - `Map` without `:INITIALIZE` refuses with `X::Assignment::RO`.
+  - The answer is the container, not the item a `$` variable holds it in.
+- The name arm stays for what has no row: a user `is Hash`/`is Map` instance (its backing storage)
+  and a mixin over a hash or array.
+- The recognition table gains `Array.STORE`, `List.STORE` and `Hash.STORE`. `Array.^can('STORE')` is
+  then true, as in Rakudo. The parser's `.=` desugaring on a method-call lvalue had used `.^can('STORE')`
+  to mean "a custom container" (a `Proxy`, a user `STORE`), so `self.x .= Hash` on a `$` attribute
+  holding an `Array` began storing into the `Array`. It asks `__mutsu_custom_store` now
+  (`runtime/builtins_dot_assign_store.rs`): a `Proxy`, or a user class, role or mixin that declares
+  `STORE`.
+
+Pinned in `t/vm/writeback/container-store-rows.t`.
+
+- **Found, not fixed**: `Array.STORE(...)` on the type object raises `X::Method::NotFound` where
+  Rakudo raises `X::Multi::NoMatch`: a `Mut` row has no type-object refusal step yet.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
