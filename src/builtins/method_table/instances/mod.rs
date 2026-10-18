@@ -25,6 +25,7 @@ use narrow_row;
 
 pub(crate) mod backtrace;
 pub(crate) mod code;
+pub(crate) mod code_accepts;
 pub(crate) mod collation;
 pub(crate) mod compunit;
 pub(crate) mod compunit_repo;
@@ -80,6 +81,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     iterator::ROWS,
     collation::ROWS,
     code::ROWS,
+    code_accepts::ROWS,
     routine::ROWS,
     failure::ROWS,
     signature::ROWS,

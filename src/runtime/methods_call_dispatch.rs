@@ -1,33 +1,12 @@
 use super::methods::allomorph_numeric_equal;
-use super::methods_signature_errors::{
-    make_method_not_found_error, make_multi_no_match_error,
-    make_x_immutable_error,
-};
+use super::methods_signature_errors::make_multi_no_match_error;
 use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
-use crate::value::signature::extract_sig_info;
 use crate::value::value_buf::{buf_elem_width, buf_raw_bytes_or_empty, set_buf_raw_bytes};
 
 impl Interpreter {
-    /// A `.raku`-legal identifier derived from a `rakuseen` id, used for the
-    /// `(my \NAME = ...)` cycle backreference. Non-identifier characters (`::`,
-    /// `|`, spaces, …) are folded to `_` so the emitted binding parses.
-    fn rakuseen_backref_name(id: &str) -> String {
-        let sanitized: String = id
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        format!("{}_backref", sanitized)
-    }
-
     /// Build a `HyperConfiguration` instance carrying `.batch`/`.degree`. A
     /// `None` reports the core default (batch 64; degree = available CPU cores).
     pub(crate) fn make_hyper_configuration(batch: Option<i64>, degree: Option<i64>) -> Value {
@@ -559,68 +538,6 @@ impl Interpreter {
             return answer;
         }
 
-        // IO::Handle's inherited `.nl-out` getter on a pure-Raku subclass
-        // must answer the default newline (or a value written through the
-        // inherited accessor), just like `.chomp` below.  A subclass such as
-        // IO::MiddleMan can carry an attribute named `handle`, but that is a
-        // wrapped user-level IO::Handle, not the native descriptor the
-        // IO::Handle fast path expects at the top level.  Letting that path
-        // run raises "Expected IO::Handle" in code that merely appends
-        // `$.nl-out` before writing.
-        if method == "nl-out"
-            && args.is_empty()
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
-            && class_name != "IO::Handle"
-        {
-            let cls = class_name.resolve();
-            if !self.class_has_user_method(&cls, "nl-out")
-                && self
-                    .class_mro(&cls)
-                    .iter()
-                    .any(|c| c.as_str() == "IO::Handle")
-            {
-                return Ok(attributes
-                    .as_map()
-                    .get("nl-out")
-                    .cloned()
-                    .unwrap_or_else(|| Value::str_from("\n")));
-            }
-        }
-
-        // IO::Handle's `$.chomp is rw` attribute, inherited by a pure-Raku
-        // subclass (`class Text::IO::String is IO::Handle`): a blessed instance
-        // carries no native handle state and no "chomp" attribute, so nothing
-        // else answers the read. Return the stored attribute when a setter has
-        // written one, else the IO::Handle default (True). Exact `IO::Handle`
-        // instances keep their native-state path, and a user-declared `chomp`
-        // method/attribute outranks this.
-        if method == "chomp"
-            && args.is_empty()
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
-            && class_name != "IO::Handle"
-        {
-            let cls = class_name.resolve();
-            if !self.class_has_user_method(&cls, "chomp")
-                && self
-                    .class_mro(&cls)
-                    .iter()
-                    .any(|c| c.as_str() == "IO::Handle")
-            {
-                return Ok(attributes
-                    .as_map()
-                    .get("chomp")
-                    .cloned()
-                    .unwrap_or(Value::truth(true)));
-            }
-        }
         // `.REPR` / `.WHERE` on a NativeCall handle. Both need the class
         // registry to tell a `nativecast`ed CStruct/CUnion/CArray from an
         // ordinary instance, so they cannot be answered on the pure native fast
@@ -631,99 +548,6 @@ impl Interpreter {
             && let Some(v) = self.try_native_handle_repr_where(&target, method)
         {
             return Ok(v);
-        }
-        // `Regex.ACCEPTS($str)` matches the regex (the invocant) against the
-        // argument and returns the Match (like `$str ~~ $rx`), NOT a Bool. Reuse
-        // the string `.match` path (`$str.match($rx)`), which drives the regex
-        // engine and builds the Match object. Needs the interpreter, so it lives
-        // here rather than on the pure native fast path.
-        if method == "ACCEPTS"
-            && args.len() == 1
-            && matches!(
-                target.view(),
-                ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
-            )
-        {
-            return self.dispatch_match_method(args[0].clone(), std::slice::from_ref(&target));
-        }
-        // `Signature.ACCEPTS($capture)` is `$capture ~~ $signature` — the explicit
-        // form of the bind test. Cro's route matcher calls it directly
-        // (`$handler.signature.ACCEPTS($cap)`), and the smartmatch arm already
-        // implements it; without this it threw X::Method::NotFound.
-        if method == "ACCEPTS"
-            && args.len() == 1
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Signature")
-        {
-            let matched = self.smart_match(&args[0], &target);
-            return Ok(Value::truth(matched));
-        }
-        // `Int.ACCEPTS(5)` / `(Int:D).ACCEPTS(5)` — a TYPE OBJECT's `.ACCEPTS`
-        // is the type check `$y ~~ $x`, smiley included. The smartmatch operator
-        // already implements it; only the explicit method spelling threw
-        // X::Method::NotFound. Unlike the scalar arm above this defers to a
-        // user-declared `method ACCEPTS` on the class (a `subset`-like type that
-        // defines its own), which must keep winning.
-        if method == "ACCEPTS"
-            && args.len() == 1
-            && let ValueView::Package(name) = target.view()
-        {
-            let resolved = name.resolve();
-            let base = crate::runtime::types::strip_type_smiley(&resolved)
-                .0
-                .to_string();
-            if !self.has_user_method_including_role(&base, "ACCEPTS") {
-                // An `enum E does Weird` composes the role's `ACCEPTS` onto the
-                // enum type object too. The enum has no ClassDef, so
-                // `has_user_method_including_role` cannot see it — try the
-                // composed candidates here, before the type-check fallback that
-                // would otherwise swallow the override. When none of them binds
-                // the argument (`"x" ~~ F` against a `multi ACCEPTS(Int:D)`),
-                // fall through to the type check, which is `Mu.ACCEPTS`.
-                if let Some(result) = self.dispatch_enum_role_method(&target, "ACCEPTS", &args) {
-                    return result;
-                }
-                let matched = self.smart_match(&args[0], &target);
-                return Ok(Value::truth(matched));
-            }
-        }
-        // `.self` ignores any arguments (e.g. the fake-infix adverbs on
-        // `$x .= self :42moews`); it always returns the invocant.
-        if method == "self" && !args.is_empty() {
-            return self.call_method_with_values(target, "self", Vec::new());
-        }
-        // `.sum(:wrap)` / `.sum(:method)`: the only adverb that affects native
-        // arrays (`:wrap` selects wrapping overflow) is equivalent here; treat a
-        // named-only argument list as a plain `.sum`.
-        if method == "sum"
-            && !args.is_empty()
-            && args
-                .iter()
-                .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-        {
-            return self.call_method_with_values(target, "sum", Vec::new());
-        }
-        // `.hash` / `.Hash` on a bare positional list (`(Int, 1).hash`, and the
-        // `%(...)` literal, which compiles to `MakeArray(...).hash`) builds a
-        // plain Hash from the flattened elements. A bare type-object key
-        // stringifies to "" with the Rakudo "uninitialized value in string
-        // context" warning; the native `.hash` fast path cannot warn (no
-        // interpreter), so route list invocants through the interpreter-aware
-        // builder. Set/Bag/Mix/Instance/type-object invocants keep their native
-        // `.hash` semantics.
-        if matches!(method, "hash" | "Hash")
-            && args.is_empty()
-            && matches!(
-                target.view(),
-                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
-            )
-        {
-            let items: Vec<Value> = match target.view() {
-                ValueView::Array(items, _) => items.iter().cloned().collect(),
-                ValueView::Seq(items) => items.iter().cloned().collect(),
-                ValueView::Slip(items) => items.iter().cloned().collect(),
-                _ => unreachable!(),
-            };
-            return self.build_hash_from_items_warning(items);
         }
         // A `Channel` subclass's list coercions read its channel (#13634).
         if let Some(result) = Self::channel_subclass_coercion(&target, method) {
@@ -847,94 +671,18 @@ impl Interpreter {
         {
             return self.call_method_with_values(pairs, method, args);
         }
-        // `self.rakuseen($id, &code)`: Mu's cyclic-structure guard for
-        // `.raku`/`.gist`. A user `.raku` wraps its body in
-        // `self.rakuseen(self.^name, { ... })`; on the first sight of an id we run
-        // `&code` and return its rendering, but a REPEAT of the same id means a
-        // reference cycle — return a backreference name instead of re-running
-        // `&code` (which would recurse forever), and have the outer occurrence bind
-        // it as `(my \NAME = ...)`.
-        if method == "rakuseen" && args.len() >= 2 {
-            let id = args[0].to_string_value();
-            let code = args[1].clone();
-            if self.raku_cycle_guards.rakuseen.revisit(&id) {
-                return Ok(Value::str(Self::rakuseen_backref_name(&id)));
-            }
-            self.raku_cycle_guards.rakuseen.enter(id.clone());
-            let result = self.call_sub_value(code, vec![], true);
-            let cycle_hit = self.raku_cycle_guards.rakuseen.leave(&id);
-            let rendered = result?;
-            if cycle_hit {
-                return Ok(Value::str(format!(
-                    "(my \\{} = {})",
-                    Self::rakuseen_backref_name(&id),
-                    rendered.to_string_value()
-                )));
-            }
-            return Ok(rendered);
-        }
-        // `List.from-iterator($it)` / `Slip`/`Array`/`Seq`: build the named
-        // container by draining a Raku Iterator. Used by custom `does Iterable`
-        // types (Hash::Agnostic's `method List { List.from-iterator(self.iterator) }`).
-        //
-        // mutsu's `.iterator` yields a materialized `Iterator` instance whose
-        // `items`/`index` attributes hold the remaining elements; `pull-one`
-        // advances by writing the bumped index back to the ITERATOR'S VARIABLE, so
-        // driving `pull-one` on this temporary (unnamed) value would never advance
-        // and would loop forever. Read the elements straight out of the instance
-        // instead; fall back to the generic list coercion for any other shape.
-        if method == "from-iterator"
-            && args.len() == 1
-            && let ValueView::Package(name) = target.view()
-            && matches!(name.resolve().as_str(), "List" | "Slip" | "Array" | "Seq")
+        // `List.from-iterator` and `Array.from-iterator` are rows of their
+        // type objects (ADR-11276 §9.164).
+        if let Some(owners) = crate::builtins::method_table::from_iterator_owners_of(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
         {
-            let container = name.resolve();
-            let iterator = args.into_iter().next().unwrap();
-            let user_iterator = matches!(iterator.view(), ValueView::Instance { class_name, .. }
-                if class_name != "Iterator" && self.class_does_role(&class_name.resolve(), "Iterator"));
-            let items: Vec<Value> = if let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = iterator.view()
-                && class_name == "Iterator"
-            {
-                if let Some(rest) = self.map_grep_stream_drain(&attributes) {
-                    rest?
-                } else {
-                    self.iterator_remaining_items(&attributes.as_map())?
-                }
-            } else if user_iterator {
-                // A user-defined `does Iterator` instance: drive its `pull-one`
-                // until IterationEnd. Unlike the built-in `Iterator` (whose index
-                // write-back needs a named variable), a user iterator persists its
-                // own attribute mutations across `pull-one` calls, so driving the
-                // temporary directly reifies the elements the class produces.
-                let mut pulled = Vec::new();
-                loop {
-                    let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                    if val.is_iteration_end() {
-                        break;
-                    }
-                    pulled.push(val);
-                }
-                pulled
-            } else {
-                crate::runtime::utils::value_to_list(&iterator)
-            };
-            return Ok(match container.as_str() {
-                "Slip" => Value::slip_arc(std::sync::Arc::new(items)),
-                "Seq" => Value::seq(items),
-                "Array" => Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                    crate::value::ArrayKind::Array,
-                ),
-                // "List" and any fallthrough
-                _ => Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                    crate::value::ArrayKind::List,
-                ),
-            });
+            return result;
         }
         // `Rakudo::Internals::JSON.from-json` / `.to-json`: a core Rakudo class
         // routed to the native JSON implementation (used by OpenSSL, JSON::JWT).
@@ -1492,7 +1240,7 @@ impl Interpreter {
         // Probed by receiver kind first, so a call on any other receiver
         // pays one tag probe and no interning.
         // `splice` is also a row of `Any`, so any receiver may have one.
-        if method == "splice" || crate::builtins::method_table::mut_owners_of(&target, false).is_some() {
+        if method == "splice" || crate::builtins::method_table::mut_owners_of(&target).is_some() {
             let mut detached = target.clone();
             let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
             if let Some(result) = crate::builtins::method_table::invoke_mut(
@@ -1503,66 +1251,6 @@ impl Interpreter {
             ) {
                 return result;
             }
-        }
-        // Immutable Range: the six mutators rakudo DOES define on a `Range`
-        // throw X::Immutable, and `splice` -- declared on Array only -- resolves
-        // no candidate at all and raises X::Multi::NoMatch instead ("Cannot
-        // resolve caller splice(Range:D, Int:D, Int:D); Routine does not have
-        // any candidates."), which is the spelling Crane's CATCH maps to
-        // X::Crane::Add::RO. (An immutable `List` is answered by the
-        // `List` rows of the method table above.)
-        if matches!(
-            method,
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" 
-        ) && matches!(
-            target.view(),
-            ValueView::Range(..)
-                | ValueView::RangeExcl(..)
-                | ValueView::RangeExclStart(..)
-                | ValueView::RangeExclBoth(..)
-                | ValueView::GenericRange { .. }
-        ) {
-            return Err(make_x_immutable_error(method, "Range"));
-        }
-        // Any:U autovivification: calling push/append/unshift/prepend on an
-        // undefined value (Nil or type object Any) creates a new Array.
-        if matches!(method, "push" | "append" | "unshift" | "prepend")
-            && (target.is_nil()
-                || matches!(target.view(), ValueView::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu"))
-        {
-            let arr: Vec<Value> = if matches!(method, "unshift" | "prepend") {
-                args.to_vec()
-            } else {
-                args
-            };
-            return Ok(Value::real_array(arr));
-        }
-        // Non-container definite values: mutating methods throw errors.
-        // In Raku, push/unshift/append/prepend/splice are defined on Any:U so calling
-        // on a definite non-array value throws X::Multi::NoMatch; pop/shift have no
-        // such proto and throw X::Method::NotFound.
-        if matches!(
-            method,
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
-        ) && matches!(
-            target.view(),
-            ValueView::Int(_)
-                | ValueView::Num(_)
-                | ValueView::Str(_)
-                | ValueView::Bool(_)
-                | ValueView::Rat(..)
-                | ValueView::Complex(..)
-        ) {
-            if matches!(method, "pop" | "shift") {
-                let type_name = crate::runtime::utils::value_type_name(&target);
-                return Err(make_method_not_found_error(method, type_name, false));
-            }
-            return Err(make_multi_no_match_error(method));
-        }
-        // `Str.subst-mutate` binds its invocant as a writable container; a
-        // literal receiver (no variable, so no `Mut` row) matches no candidate.
-        if method == "subst-mutate" && matches!(target.view(), ValueView::Str(_)) {
-            return Err(make_multi_no_match_error(method));
         }
         // IO::Special.new("<STDOUT>")
         if let ValueView::Package(name) = target.view()
@@ -1692,18 +1380,6 @@ impl Interpreter {
                 }
             }
         }
-        // .arity / .count on callable values
-        if matches!(method, "arity" | "count")
-            && args.is_empty()
-            && let Some(sig_info) = extract_sig_info(&target)
-        {
-            return Ok(if method == "arity" {
-                Value::int(Self::signature_required_positional_count(&sig_info))
-            } else {
-                Self::signature_count_value(&sig_info)
-            });
-        }
-
         // .Str identity for Str-inheriting instances
         if method == "Str"
             && args.is_empty()

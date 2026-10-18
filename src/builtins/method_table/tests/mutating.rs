@@ -81,34 +81,40 @@ fn a_mut_row_is_in_the_mut_name_mask() {
 fn the_owner_chain_follows_the_value_kind() {
     use crate::builtins::method_table::mut_owners_of;
     assert_eq!(
-        mut_owners_of(&sample(DispatchShape::Array), false),
+        mut_owners_of(&sample(DispatchShape::Array)),
         Some(&["Array", "List"][..])
     );
     assert_eq!(
-        mut_owners_of(&sample(DispatchShape::List), false),
+        mut_owners_of(&sample(DispatchShape::List)),
         Some(&["Array", "List"][..])
     );
     assert_eq!(
-        mut_owners_of(&sample(DispatchShape::Hash), false),
+        mut_owners_of(&sample(DispatchShape::Hash)),
         Some(&["Hash", "Map"][..])
     );
     assert_eq!(
-        mut_owners_of(&sample(DispatchShape::BagHash), false),
+        mut_owners_of(&sample(DispatchShape::BagHash)),
         Some(&["BagHash"][..])
     );
     assert_eq!(
-        mut_owners_of(&sample(DispatchShape::Bag), false),
+        mut_owners_of(&sample(DispatchShape::Bag)),
         Some(&["Bag"][..])
     );
     assert_eq!(
-        mut_owners_of(&sample(DispatchShape::SetHash), false),
+        mut_owners_of(&sample(DispatchShape::SetHash)),
         Some(&["SetHash"][..])
     );
-    // A `Str` has a row only when the call names the variable it writes.
-    assert_eq!(mut_owners_of(&sample(DispatchShape::Str), false), None);
+    // A `Str`'s rows decline or refuse a receiver with no binding; a `Range`
+    // refuses the mutators it declares; a scalar with no mutator of its own
+    // is `Any`'s, whose rows end every chain.
     assert_eq!(
-        mut_owners_of(&sample(DispatchShape::Str), true),
+        mut_owners_of(&sample(DispatchShape::Str)),
         Some(&["Str"][..])
     );
-    assert_eq!(mut_owners_of(&sample(DispatchShape::Int), true), None);
+    assert_eq!(
+        mut_owners_of(&sample(DispatchShape::Range)),
+        Some(&["Range"][..])
+    );
+    assert_eq!(mut_owners_of(&sample(DispatchShape::Int)), Some(&[][..]));
+    assert_eq!(mut_owners_of(&sample(DispatchShape::Pair)), None);
 }

@@ -18,6 +18,7 @@ mod mu_emit;
 mod mu_identity;
 mod mu_isa;
 mod mu_numeric;
+mod mu_rakuseen;
 mod mu_render;
 mod mu_str;
 
@@ -47,6 +48,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     mu_answers::ROWS,
     mu_identity::ROWS,
     mu_emit::ROWS,
+    mu_rakuseen::ROWS,
     mu_isa::ROWS,
     mu_numeric::ROWS,
     mu_render::ROWS,

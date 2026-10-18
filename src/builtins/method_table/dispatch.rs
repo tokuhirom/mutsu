@@ -230,7 +230,7 @@ pub(crate) fn invoke_mut(
     }
     // `Any` ends every owner chain: the proto a kind with no mutator of its
     // own falls back to (`Any.splice`).
-    let owners = mutating::owners_of(place.value(), place.name().is_some()).unwrap_or(&[]);
+    let owners = mutating::owners_of(place.value()).unwrap_or(&[]);
     let id = owners
         .iter()
         .chain(&["Any"])
@@ -785,8 +785,15 @@ pub(crate) fn shapeless_row(
         // `comb($pattern, $limit)` has no row of its own: only an instance
         // with a user `Str` takes it (`answer_shapeless`).
         && !(arity == 2 && method == "comb")
+        // `Mu.rakuseen($id, &code)` takes two.
+        && !(arity == 2 && method == "rakuseen")
     {
         return None;
+    }
+    // A type object with no closer candidate answers `Mu.ACCEPTS`'s type
+    // check (§9.164).
+    if method == "ACCEPTS" && matches!(target.view(), ValueView::Package(_)) {
+        return super::owner_row(Symbol::intern("Mu"), method, arity);
     }
     // `Any.ACCEPTS` answers an instance whose MRO declares nothing closer
     // (§9.108). A code object, a regex, an enum or a mixin has its own

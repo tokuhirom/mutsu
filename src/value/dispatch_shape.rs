@@ -731,12 +731,12 @@ pub(crate) const CAPTURE_FOR_MATCH: [&str; 11] = [
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])
 /// and every receiver with no shape (`method_table::answer_shapeless`): their
 /// handlers read only the receiver's truth or its lazy flag, wrap it in an item
-/// container, sink it, or render it (`Str`, `Stringy`, which a shape with its own
+/// container, sink it, guard its rendering (`rakuseen`), or render it (`Str`, `Stringy`, which a shape with its own
 /// `Str` row answers first) or ask its type (`isa`), which every value supports. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
 /// answers its own row first.
-pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 19] = [
+pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 20] = [
     "so", "not", "is-lazy", "item", "sink", "self", "defined", "DEFINITE", "Bool", "WHICH",
-    "WHERE", "clone", "Str", "Stringy", "isa", "Capture", "gist", "raku", "emit",
+    "WHERE", "clone", "Str", "Stringy", "isa", "Capture", "gist", "raku", "emit", "rakuseen",
 ];
 
 /// Whether `list` contains `name`, for a `const fn`.

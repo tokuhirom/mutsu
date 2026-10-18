@@ -1,6 +1,6 @@
 use Test;
 
-# `List`/`Slip`/`Array`/`Seq`.from-iterator($iterator) builds the named container
+# `List`/`Slip`/`Array`.from-iterator($iterator) builds the named container
 # by consuming a Raku Iterator. Used by custom `does Iterable` types
 # (e.g. Hash::Agnostic's `method List { List.from-iterator(self.iterator) }`).
 
@@ -9,7 +9,9 @@ plan 12;
 is List.from-iterator((1, 2, 3).iterator).raku, '(1, 2, 3)', 'List.from-iterator';
 is Array.from-iterator((1, 2, 3).iterator).raku, '[1, 2, 3]', 'Array.from-iterator';
 is Slip.from-iterator((1, 2, 3).iterator).^name, 'Slip', 'Slip.from-iterator is a Slip';
-is Seq.from-iterator((1, 2, 3).iterator).^name,  'Seq',  'Seq.from-iterator is a Seq';
+# `Seq` declares no `from-iterator` (Rakudo's is `Seq.new($iterator)`).
+throws-like { Seq.from-iterator((1, 2, 3).iterator) }, X::Method::NotFound,
+    'Seq.from-iterator is no method';
 
 is List.from-iterator((1, 2, 3).iterator).elems, 3, 'List.from-iterator has all elems';
 is-deeply Array.from-iterator((<a b c>).iterator), ['a', 'b', 'c'], 'Array.from-iterator elements';

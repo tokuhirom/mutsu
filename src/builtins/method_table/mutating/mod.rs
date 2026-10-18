@@ -15,6 +15,7 @@ use crate::value::{DispatchShape, Value, ValueView};
 
 pub(crate) mod any;
 pub(crate) mod array;
+pub(crate) mod autoviv;
 pub(crate) mod baghash;
 pub(crate) mod buf;
 pub(crate) mod hash;
@@ -28,6 +29,7 @@ pub(crate) mod text;
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any::ROWS,
     array::ROWS,
+    autoviv::ROWS,
     baghash::ROWS,
     buf::ROWS,
     hash::ROWS,
@@ -40,16 +42,35 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
 
 /// The owners whose rows a mutating call on `value` may dispatch to, most
 /// derived first, or `None` when no mutating row can answer a value of that
-/// kind. `has_name` says whether the receiver is a named binding. A `Scalar`
-/// container is seen through. The owner is decided by what
+/// kind. A `Scalar` container is seen through. The owner is decided by what
 /// the value is (a `Bag` is a `BagHash` only when it is mutable), exactly the
 /// distinction each cascade arm used to make with its own receiver probe.
 // Cost: O(1), a tag probe.
-pub(crate) fn owners_of(value: &Value, has_name: bool) -> Option<&'static [&'static str]> {
+pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
     match value.descalarize().view() {
         // A method that replaces the value (`subst-mutate`) or writes back under
-        // the binding (`substr-rw`) has nothing to write to without a name.
-        ValueView::Str(_) if has_name => Some(&["Str"]),
+        // the binding (`substr-rw`) has nothing to write to without a name, so
+        // `Str`'s rows refuse or decline an unbound receiver.
+        ValueView::Str(_) => Some(&["Str"]),
+        // `Range` refuses the mutators it declares (`X::Immutable`).
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => Some(&["Range"]),
+        // No mutator of its own: `Any`'s rows, which end every chain, answer
+        // an undefined receiver (autovivification) and refuse a defined
+        // scalar (`5.push`).
+        ValueView::Nil
+        | ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Bool(_)
+        | ValueView::Rat(..)
+        | ValueView::FatRat(..)
+        | ValueView::BigRat(..)
+        | ValueView::Complex(..) => Some(&[]),
+        ValueView::Package(name) if name == "Any" || name == "Mu" => Some(&[]),
         // An immutable `List` is the same shape: its rows refuse the mutators.
         ValueView::Array(..) => Some(&["Array", "List"]),
         ValueView::Hash(_) => Some(&["Hash", "Map"]),

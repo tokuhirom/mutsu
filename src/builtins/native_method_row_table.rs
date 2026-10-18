@@ -2292,6 +2292,16 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Routine", "package", 8, 60),
     ("Code", "Capture", 1, 56),
     ("Code", "clone", 1, 48),
+    // `ACCEPTS` of the code objects, `Signature` and a type object
+    // (ADR-11276 §9.164): multis, as in Rakudo.
+    ("Code", "ACCEPTS", 8, 28),
+    ("Regex", "ACCEPTS", 8, 28),
+    ("WhateverCode", "ACCEPTS", 8, 28),
+    ("Signature", "ACCEPTS", 8, 28),
+    ("Mu", "ACCEPTS", 8, 28),
+    ("Mu", "rakuseen", 8, 57),
+    ("List", "from-iterator", 8, 57),
+    ("Array", "from-iterator", 8, 57),
     ("CompUnit::Handle", "export-package", 1, 56),
     ("RakuAST::Node", "visit-children", 2, 24),
     ("RakuAST::Node", "EVAL", 8, 28),

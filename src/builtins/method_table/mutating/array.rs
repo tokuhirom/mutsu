@@ -97,9 +97,9 @@ impl Op {
 }
 
 macro_rules! handler {
-    ($fn:ident, $op:expr) => {
+    ($vis:vis $fn:ident, $op:expr) => {
         // Cost: see `run`.
-        fn $fn(
+        $vis fn $fn(
             interp: &mut Interpreter,
             place: &mut ReceiverPlace<'_>,
             args: &[Value],
@@ -110,10 +110,10 @@ macro_rules! handler {
     };
 }
 
-handler!(push_row, Op::Push);
-handler!(append_row, Op::Append);
-handler!(unshift_row, Op::Unshift);
-handler!(prepend_row, Op::Prepend);
+handler!(pub(super) push_row, Op::Push);
+handler!(pub(super) append_row, Op::Append);
+handler!(pub(super) unshift_row, Op::Unshift);
+handler!(pub(super) prepend_row, Op::Prepend);
 handler!(pop_row, Op::Pop);
 handler!(shift_row, Op::Shift);
 handler!(splice_row, Op::Splice);

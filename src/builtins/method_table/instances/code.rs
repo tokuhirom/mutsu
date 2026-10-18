@@ -74,6 +74,14 @@ pub(crate) fn answer(
     method: &str,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
+    // `ACCEPTS` has a row on `Regex`, `WhateverCode` and `Code`
+    // (`code_accepts`, ADR-11276 §9.164).
+    if method == "ACCEPTS" {
+        let owners = super::code_accepts::code_accepts_owners(target)?;
+        return crate::builtins::method_table::invoke_owner(interp, owners, method, args, || {
+            target.clone()
+        });
+    }
     if !matches!(
         method,
         "of" | "returns"

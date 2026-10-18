@@ -63,6 +63,7 @@ mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
+pub(crate) use collections::from_iterator::owners_of as from_iterator_owners_of;
 pub(crate) use collections::iteration_buffer::owners_of as iteration_buffer_owners_of;
 pub(crate) use collections::{
     any_enum_views, clone as collection_clone, lazy, list, list_aggregate, positional, quanthash,
