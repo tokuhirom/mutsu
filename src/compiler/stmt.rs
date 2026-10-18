@@ -4165,16 +4165,27 @@ impl Compiler {
                 // redeclaration.
                 let body_local =
                     self.in_lexical_scope && !self.lexical_dup_routines.contains(&name.resolve());
-                let idx =
-                    if body_local && !custom_traits.iter().any(|(t, _)| t == "__lexical_hoist") {
-                        let mut marked = stmt.clone();
-                        if let Stmt::SubDecl { custom_traits, .. } = &mut marked {
+                let mark_hoist =
+                    body_local && !custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
+                let mark_nested = self.decl_scope_depth > 0
+                    && !custom_traits
+                        .iter()
+                        .any(|(t, _)| t == crate::ast::NESTED_SCOPE_DECL_MARKER);
+                let idx = if mark_hoist || mark_nested {
+                    let mut marked = stmt.clone();
+                    if let Stmt::SubDecl { custom_traits, .. } = &mut marked {
+                        if mark_hoist {
                             custom_traits.push(("__lexical_hoist".to_string(), None));
                         }
-                        self.add_sub_decl_plan(&marked)
-                    } else {
-                        self.add_sub_decl_plan(stmt)
-                    };
+                        if mark_nested {
+                            custom_traits
+                                .push((crate::ast::NESTED_SCOPE_DECL_MARKER.to_string(), None));
+                        }
+                    }
+                    self.add_sub_decl_plan(&marked)
+                } else {
+                    self.add_sub_decl_plan(stmt)
+                };
                 self.code.emit(OpCode::RegisterDecl(idx));
                 if name_expr.is_none() {
                     self.note_scope_routine(*name);

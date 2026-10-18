@@ -1159,6 +1159,18 @@ mod term_constants;
 mod trir_call;
 mod whenever_scope;
 
+/// What a bare `name(...)` call reaches among the `&name` bindings in scope
+/// (`Compiler::amp_binding_state`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AmpBinding {
+    /// No `&name` binding is in scope.
+    None,
+    /// A `my &name` binding (or `&name` parameter) is the nearest meaning.
+    Visible,
+    /// A binding is in scope, but a nearer scope declares `sub name`.
+    ShadowedByRoutine,
+}
+
 #[derive(Clone)]
 pub(crate) struct Compiler {
     code: CompiledCode,
@@ -2717,8 +2729,17 @@ impl Compiler {
     /// left behind by already-popped SIBLING blocks and would capture a call
     /// that is no longer in the binding's scope.
     pub(crate) fn amp_binding_in_active_scope(&self, name: &str) -> bool {
+        self.amp_binding_state(name) == AmpBinding::Visible
+    }
+
+    /// Whether a bare `name` call here reaches a `my &name` binding, a routine
+    /// a nearer scope declares that shadows such a binding (#13855), or
+    /// neither.
+    ///
+    /// Cost: O(s + r), s = scope frames, r = active routine declarations.
+    pub(crate) fn amp_binding_state(&self, name: &str) -> AmpBinding {
         if name.contains("::") {
-            return false;
+            return AmpBinding::None;
         }
         let key = format!("&{name}");
         // The innermost local scope frame binding `&name` (its depth, frame
@@ -2733,16 +2754,29 @@ impl Compiler {
                 .enclosing_scopes
                 .iter()
                 .any(|frame| frame.contains_key(&key));
+        let sym = Symbol::intern(name);
         if !bound {
-            return false;
+            // An `EVAL`'s caller's `&name` (`seed_eval_caller_code_vars`) is
+            // not a scope frame here, but the unit's own `sub name` shadows it
+            // all the same (#13855).
+            let declared_here = || self.scope_routine_decls.iter().any(|&(_, d)| d == sym);
+            if self.enclosing_local_names.contains(&key) && declared_here() {
+                return AmpBinding::ShadowedByRoutine;
+            }
+            return AmpBinding::None;
         }
         // A routine a nearer scope declares (`my &h = ...; { sub h {...}; h() }`)
-        // is what the name means there, not the outer binding (#13855).
-        let sym = Symbol::intern(name);
-        !self
-            .scope_routine_decls
-            .iter()
-            .any(|&(level, decl)| decl == sym && level > local_level.unwrap_or(0))
+        // is what the name means there, not the outer binding (#13855). A
+        // binding only an enclosing compilation holds (an `EVAL`'s caller) is
+        // further out than every declaration of this one.
+        let shadowed = self.scope_routine_decls.iter().any(|&(level, decl)| {
+            decl == sym && local_level.is_none_or(|bound_at| level > bound_at)
+        });
+        if shadowed {
+            AmpBinding::ShadowedByRoutine
+        } else {
+            AmpBinding::Visible
+        }
     }
 
     /// Hand a nested body's compiler the chain it is being compiled inside, so a

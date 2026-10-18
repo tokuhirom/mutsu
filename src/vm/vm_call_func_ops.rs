@@ -1253,6 +1253,9 @@ impl Interpreter {
             // key carries the name, so `has_function` is false), and the
             // multi-candidates full-map scan runs last, memoized.
             if !self.fn_base_name_registered_sym(name_str, name_sym)
+                // A nearer `sub name` shadows the outer `&name` at this call
+                // site (#13855).
+                || code.routine_shadowed_calls.contains(&name_sym)
                 || !self.has_declared_function_cached_sym(name_str, name_sym)
                 || self.has_proto_cached_sym(name_str, name_sym)
                 || self.has_multi_candidates_cached_sym(name_sym)

@@ -617,6 +617,13 @@ impl Compiler {
             {
                 custom_traits.push(("__hoisted".to_string(), None));
             }
+            if self.decl_scope_depth > 0
+                && !custom_traits
+                    .iter()
+                    .any(|(t, _)| t == crate::ast::NESTED_SCOPE_DECL_MARKER)
+            {
+                custom_traits.push((crate::ast::NESTED_SCOPE_DECL_MARKER.to_string(), None));
+            }
             // Strip user-defined custom traits during hoisting.
             // Traits like `is description(...)` require types/roles to be
             // registered first; they will be applied during the normal pass.
