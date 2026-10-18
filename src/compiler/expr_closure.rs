@@ -202,6 +202,10 @@ impl Compiler {
         is_whatever_code: bool,
         declarator: crate::ast::RoutineDeclarator,
     ) {
+        // A parameter type naming a `constant` alias is its target, as in a
+        // sub's signature (`param_defs_with_type_aliases_resolved`, #13728).
+        let resolved_defs = self.param_defs_with_type_aliases_resolved(param_defs);
+        let param_defs = resolved_defs.as_deref().unwrap_or(param_defs);
         let declarator_doc = self.pending_declarator_doc.take().map(std::sync::Arc::new);
         // The parser synthesizes `*%_` for a signature-less block that reads
         // `%_`. Inside a method, however, an ordinary nested block captures

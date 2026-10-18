@@ -194,7 +194,12 @@ impl Compiler {
         };
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
-        self.code.add_sub_decl_plan(stmt, name_chunk, trait_args)
+        match self.with_param_type_aliases_resolved(stmt) {
+            Some(resolved) => self
+                .code
+                .add_sub_decl_plan(&resolved, name_chunk, trait_args),
+            None => self.code.add_sub_decl_plan(stmt, name_chunk, trait_args),
+        }
     }
 
     /// [`Self::add_sub_decl_plan`] for a class declaration.

@@ -1334,7 +1334,11 @@ impl Compiler {
                 // declared/inferred type so `::a` is usable as a type later.
                 let owned_type_constraint = match owned_type_constraint {
                     Some(tc) if tc.starts_with("::") => None,
-                    other => other,
+                    // A constraint naming a `constant` type alias is its
+                    // target, settled here as rakudo settles it at compile
+                    // time (#13728).
+                    Some(tc) => Some(self.resolve_type_alias_constraint(&tc)),
+                    None => None,
                 };
                 let type_constraint = &owned_type_constraint;
                 // X::Dynamic::Package / X::Dynamic::Postdeclaration checks (see

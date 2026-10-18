@@ -1143,6 +1143,7 @@ mod outer_ref;
 mod package_runtime_body;
 mod proto_decl;
 mod require_stubs;
+mod type_alias_resolve;
 mod type_decl_value;
 pub(crate) use hoist_nested_types::nested_type_decls;
 pub(crate) use package_runtime_body::CLASS_LEXICAL;
@@ -3380,6 +3381,10 @@ impl Compiler {
         is_our: bool,
         hoisted: bool,
     ) {
+        // A constraint naming a `constant` type alias is its target, settled
+        // here as rakudo settles it at compile time: resolved at run time by
+        // name, a caller's same-named sigilless `my \T` answered (#13728).
+        let tc_idx = self.type_alias_resolved_constant(tc_idx);
         let scoped = !is_our
             && (self.is_routine || self.lexically_in_routine || self.lexically_in_block)
             && !name.starts_with('&')
@@ -3402,7 +3407,6 @@ impl Compiler {
                 .get(tc_idx as usize)
                 .and_then(|c| c.as_str().map(str::to_owned));
             if let Some(tc) = tc {
-                let tc = self.resolve_type_alias_constraint(&tc);
                 self.code.note_declared_constraint(name, &tc);
             }
         }
