@@ -241,3 +241,26 @@ pub(crate) fn is_group_declaration(inner: &[Stmt]) -> bool {
             .iter()
             .all(|s| matches!(s, Stmt::VarDecl { .. } | Stmt::SourceForm(_)))
 }
+
+/// The statements of the scope `stmts` makes up, with every
+/// [`Stmt::SyntheticBlock`] opened up into the statements it holds, as a
+/// pass that collects the scope's own declarations reads them. A synthetic
+/// block is a parser desugaring, not a scope: `my T $x .= new;` and
+/// `my ($a, $b) = ...;` declare in the enclosing scope.
+// Cost: O(n), n = `stmts` plus the statements nested in their synthetic
+// blocks.
+pub(crate) fn scope_statements(stmts: &[Stmt]) -> Vec<&Stmt> {
+    struct ScopeStatements<'ast>(Vec<&'ast Stmt>);
+    impl<'ast> crate::ast_visit::Visit<'ast> for ScopeStatements<'ast> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if matches!(stmt, Stmt::SyntheticBlock(_)) {
+                crate::ast_visit::walk_stmt(self, stmt);
+            } else {
+                self.0.push(stmt);
+            }
+        }
+    }
+    let mut collector = ScopeStatements(Vec::with_capacity(stmts.len()));
+    crate::ast_visit::walk_stmts(&mut collector, stmts);
+    collector.0
+}
