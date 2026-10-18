@@ -289,7 +289,9 @@ impl Interpreter {
                 continue;
             };
             let depth = depth.max(0) as usize;
-            let value = if slot == LEXICAL_STASH_ROUTINE_SLOT
+            let value = if slot == crate::opcode::LEXICAL_STASH_EXPORT_SLOT {
+                Value::package(Symbol::intern("EXPORT"))
+            } else if slot == LEXICAL_STASH_ROUTINE_SLOT
                 && let Some(routine) = name.strip_prefix('&')
             {
                 // A routine the frame declares (`Compiler::scope_routine_decls`).

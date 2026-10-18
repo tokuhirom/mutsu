@@ -187,11 +187,15 @@ impl Compiler {
         let Stmt::SubDecl {
             name_expr,
             custom_traits,
+            is_export,
             ..
         } = stmt
         else {
             panic!("add_sub_decl_plan expects SubDecl");
         };
+        if *is_export {
+            self.unit_exports_routine = true;
+        }
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
         match self.with_param_type_aliases_resolved(stmt) {
