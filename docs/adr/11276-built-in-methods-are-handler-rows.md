@@ -4210,6 +4210,31 @@ formatter (Rakudo answers both from `Mu`, whose `Numeric`/`Int` stay deferred wi
 
 Pinned in `t/oo/role/role-default-method-rows.t`.
 
+### 9.166 `Routine`'s and `Code`'s own methods are rows, one body per kind (2026-10-18)
+
+`refactor/11276-routine-code-rows`. `runtime/methods_sub.rs` answered `wrap`/`unwrap`, `assuming`,
+`add_dispatchee`, `candidates`/`dispatchees`, `cando`, `rw`, `prec`/`precedence`/`associative` and
+`is-implementation-detail` twice by name: once in `dispatch_routine_method` for a `&name` handle and once
+in `dispatch_sub_method` for a `Sub`, each from the state that kind carries (the registry entry under the
+name, or the `SubData`).
+
+- They are rows of the owner Rakudo declares them on: `Routine` for `wrap`, `unwrap`, `add_dispatchee`,
+  `candidates`, `dispatchees` and `rw`; `Code` for `assuming`, `cando`, `prec`, `precedence`,
+  `associative` and `is-implementation-detail` (`instances/code_methods.rs`, `OWNER_ONLY` interpreter
+  rows). The recognition table gains the `Routine` rows and `Code.cando`.
+- A row's handler picks the body by kind (`by_kind`): `Interpreter::routine_handle_*` for a handle and
+  `sub_*` for a `Sub`, each the arm it replaces moved verbatim (`runtime/methods_code_rows.rs`,
+  `methods_code_candidate_rows.rs`, `methods_code_wrap_rows.rs`). A handle's `wrap` of a non-regex routine
+  still wraps through a forwarding `Sub`, now by calling `sub_wrap` directly.
+- `routine::owners_of` answers `["Routine", "Code"]` for a `Sub` and a handle, so the existing owner lookup
+  in `dispatch_callable_method` reaches the rows ahead of the kind dispatchers. An instance of a code class
+  (a `Method` object) keeps `["Routine"]` and declines in `by_kind`.
+- The dead `Str` arm of the handle dispatcher (the `Code.Str` row answers first) goes. What is left by name
+  in the two dispatchers is not Rakudo's: `readonly`, `nextwith`, `callwith` and the `can` lists.
+
+`methods_sub.rs` shrinks from 1,475 to about 750 lines. No behaviour change; pinned in
+`t/oo/method/routine-code-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
