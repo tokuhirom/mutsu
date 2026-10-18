@@ -585,6 +585,12 @@ impl Interpreter {
                 if let Some(rendered) = self.raku_repr_with_dispatch(&target) {
                     return Ok(Value::str(rendered));
                 }
+                // An itemized lazy sequence renders as its own `raku` (the
+                // lazy step's pull) inside the `$( )` of the itemization.
+                if let ValueView::LazyList(_) = inner.view() {
+                    let rendered = self.call_method_with_values(inner.clone(), "raku", Vec::new())?;
+                    return Ok(Value::str(format!("$({})", rendered.to_string_value())));
+                }
                 return Ok(Value::str(
                     crate::builtins::methods_0arg::raku_repr::raku_value(&target),
                 ));
