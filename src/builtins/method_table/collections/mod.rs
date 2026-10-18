@@ -81,7 +81,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     join::ROWS,
     junction::ROWS,
     clone::ROWS,
-    composed_roles::ROWS,
     descriptor::ROWS,
     any_interp::ROWS,
     any_list_hash::ROWS,
@@ -126,6 +125,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
 /// lives.
 pub(super) static LATE_FAMILIES: &[&[MethodRow]] = &[
     any_interp_twins::ROWS,
+    composed_roles::ROWS,
     any_coerce_late::ROWS,
     any_enum_views::ROWS,
     any_list_late::ROWS,

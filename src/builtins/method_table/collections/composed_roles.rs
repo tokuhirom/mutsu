@@ -11,7 +11,10 @@
 //!
 //! The roles have no shape: an instance or a type object of a user class
 //! reaches the rows through [`answer`], and a handler declines a class whose
-//! composition does not answer the call.
+//! composition does not answer the call. `Positional.of` and
+//! `Associative.of`/`keyof` also have a pure row reading a parameterized
+//! type's name (`type_params`), which every other entry finds; these are its
+//! late twins (§9.136), registered after it and reached only by [`answer`].
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -65,19 +68,16 @@ pub(crate) fn answer(
         _ => return None,
     }
     let method_sym = Symbol::intern(method);
-    for owner in OWNERS {
-        if super::super::owner_row(Symbol::intern(owner), method_sym, args.len()).is_none() {
-            continue;
-        }
-        if let Some(answer) =
-            crate::builtins::method_table::invoke_owner(interp, &[owner], method, args, || {
-                target.clone()
-            })
-        {
-            return Some(answer);
-        }
+    let owners: Vec<&str> = OWNERS
+        .into_iter()
+        .filter(|owner| {
+            super::super::owner_row(Symbol::intern(owner), method_sym, args.len()).is_some()
+        })
+        .collect();
+    if owners.is_empty() {
+        return None;
     }
-    None
+    crate::builtins::method_table::invoke_mro_late(interp, &owners, method, args, target)
 }
 
 /// The class `target` is an instance or the type object of.
