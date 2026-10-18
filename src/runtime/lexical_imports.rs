@@ -171,7 +171,10 @@ impl Interpreter {
         match category {
             // `(elem)` / `(cont)` are built-ins the reduction tables do not
             // list; `crate::lexical_builtin_op` names them.
-            "infix" => !is_builtin_infix(op) && !crate::lexical_builtin_op::binds_lexically(name),
+            "infix" => {
+                (!is_builtin_infix(op) && !crate::lexical_builtin_op::binds_lexically(name))
+                    || crate::lexical_builtin_op::is_lexical_set_infix(op)
+            }
             "prefix" => !is_builtin_prefix(op),
             "postfix" => !is_builtin_postfix(op),
             "circumfix" => !is_builtin_circumfix(op),
@@ -441,7 +444,9 @@ impl Interpreter {
 /// block's set (ADR-8751 stage 2).
 // Cost: O(m), m = bytes of `name`.
 fn extends_builtin_operator(name: &str) -> bool {
-    name.contains(":<") && !Interpreter::lexically_bindable_operator(name)
+    name.contains(":<")
+        && (crate::lexical_builtin_op::binds_lexically(name)
+            || !Interpreter::lexically_bindable_operator(name))
 }
 
 /// Whether a proto body only dispatches: it is `{*}` or empty. Such a proto

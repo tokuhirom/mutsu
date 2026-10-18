@@ -353,4 +353,23 @@ impl Interpreter {
         debug_assert!(args.len() == 2);
         self.eval_infix_shape(op, &args[0], &args[1])
     }
+
+    /// One pairwise step of a chain reduction (`[<] ...`, `[⊆] ...`): the
+    /// routine an enclosing block's `use` bound for the operator when there
+    /// is one (`OpCode::LexImportMeta`, ADR-8751 stage 2), else the operator.
+    // Cost: one application of the operator.
+    pub(super) fn reduction_chain_step(
+        &mut self,
+        op: crate::compiled_operator::InfixRef<'_>,
+        callable: Option<&Value>,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Value, RuntimeError> {
+        match callable {
+            Some(_) => {
+                self.reduction_step_with_args(op, callable, vec![left.clone(), right.clone()])
+            }
+            None => self.eval_infix_shape(op, left, right),
+        }
+    }
 }

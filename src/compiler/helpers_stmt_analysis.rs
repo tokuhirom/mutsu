@@ -297,6 +297,17 @@ impl Compiler {
         }
         if let Some(name) = crate::lexical_builtin_op::infix_of_opcode(opcode) {
             self.emit_lex_import_builtin_named(name);
+        } else if let Some(name) = crate::lexical_builtin_op::relation_of_opcode(opcode) {
+            // A set relation's opcode asks no user candidate: an imported one
+            // replaces the op through the call prefix, which skips it on a hit.
+            let sym = Symbol::intern(name);
+            if let Some(chain_idx) = self.lexical_import_chain_idx(sym) {
+                let name_idx = self.code.add_constant(Value::str(name.to_string()));
+                self.code.emit(OpCode::LexImportInfix {
+                    chain_idx,
+                    name_idx,
+                });
+            }
         }
     }
 
@@ -336,7 +347,11 @@ impl Compiler {
         if op.is_empty() || self.lexical_import_chain.is_empty() {
             return;
         }
-        if crate::compiled_operator::is_builtin_infix(op) {
+        // A set operator runs the bound dispatcher, which falls back to the
+        // built-in (`crate::lexical_builtin_op::meta_runs_bound_dispatcher`).
+        if crate::compiled_operator::is_builtin_infix(op)
+            && !crate::lexical_builtin_op::meta_runs_bound_dispatcher(op)
+        {
             if let Some(name) = crate::lexical_builtin_op::infix_of_meta(op) {
                 self.emit_lex_import_builtin_named(&name);
             }
