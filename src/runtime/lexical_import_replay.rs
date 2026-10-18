@@ -29,6 +29,8 @@ pub(crate) struct LexicalImportReplay {
     env_keys: Vec<(Symbol, Value, Option<Symbol>)>,
     /// The routine aliases it noted (`GLOBAL::name`).
     routine_aliases: Vec<Symbol>,
+    /// Those of them the scope lists as its own imports (`MY::`).
+    own_routine_imports: Vec<Symbol>,
 }
 
 /// The state a block-scoped `use` must leave unchanged to be replayable.
@@ -42,6 +44,7 @@ pub(crate) struct ImportEffectProbe {
     pragmas: (bool, bool, bool, bool),
     aliases_before: std::sync::Arc<HashSet<Symbol>>,
     env_keys_before: HashSet<Symbol>,
+    own_imports_before: HashSet<Symbol>,
     had_export_args: bool,
 }
 
@@ -70,6 +73,12 @@ impl Interpreter {
                 .import_scope_stack
                 .last()
                 .map(|top| top.imported_env_keys.clone())
+                .unwrap_or_default(),
+            own_imports_before: self
+                .module
+                .import_scope_stack
+                .last()
+                .map(|top| top.own_routine_imports.clone())
                 .unwrap_or_default(),
             had_export_args: self.module.pending_use_export_args.is_some(),
         }
@@ -135,9 +144,15 @@ impl Interpreter {
             .difference(&probe.aliases_before)
             .copied()
             .collect();
+        let own_routine_imports = top
+            .own_routine_imports
+            .difference(&probe.own_imports_before)
+            .copied()
+            .collect();
         Some(LexicalImportReplay {
             env_keys,
             routine_aliases,
+            own_routine_imports,
         })
     }
 
@@ -162,6 +177,10 @@ impl Interpreter {
             if let Some(top) = self.module.import_scope_stack.last_mut() {
                 top.imported_env_keys.insert(key);
             }
+        }
+        if let Some(top) = self.module.import_scope_stack.last_mut() {
+            top.own_routine_imports
+                .extend(replay.own_routine_imports.iter().copied());
         }
         if !replay.routine_aliases.is_empty() {
             let aliases = std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases);

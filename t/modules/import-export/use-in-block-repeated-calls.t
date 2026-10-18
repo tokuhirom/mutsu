@@ -5,7 +5,7 @@ use Test;
 # the import wrote instead of importing again (#13906); every run must still
 # see the same names, and none of them may outlive the routine. Checked
 # against rakudo.
-plan 9;
+plan 10;
 
 use lib 't/lib';
 
@@ -21,6 +21,10 @@ is @closures.map({ $_() }).join(','), '2,3,4', 'closures made by later calls kee
 
 sub sym-of($x) { use UseInBlockRerun; &::('uibr-inc')($x) }
 is (1..3).map({ sym-of($_) }).join(','), '2,3,4', 'a by-name lookup sees the import on every call';
+
+sub my-of() { use UseInBlockRerun; MY::.keys.grep(/uibr/).sort.join(',') }
+my @mys = (^3).map({ my-of() });
+is @mys.unique.elems, 1, 'MY:: lists the import on every call';
 
 sub bump-twice() { use UseInBlockRerun; uibr-bump(); uibr-bump() }
 bump-twice();
