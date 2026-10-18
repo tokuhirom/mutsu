@@ -43,6 +43,7 @@ mod builtins_io;
 mod builtins_io_dir;
 mod builtins_io_fs;
 mod builtins_io_stream;
+mod builtins_dot_assign_store;
 mod builtins_lvalue;
 mod builtins_method_lvalue_slice;
 mod builtins_multidim;

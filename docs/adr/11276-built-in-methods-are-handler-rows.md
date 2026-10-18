@@ -4409,7 +4409,12 @@ typed array took any element, and `(1, 2).STORE(...)` was `X::Method::NotFound`.
   - The answer is the container, not the item a `$` variable holds it in.
 - The name arm stays for what has no row: a user `is Hash`/`is Map` instance (its backing storage)
   and a mixin over a hash or array.
-- The recognition table gains `Array.STORE`, `List.STORE` and `Hash.STORE`.
+- The recognition table gains `Array.STORE`, `List.STORE` and `Hash.STORE`. `Array.^can('STORE')` is
+  then true, as in Rakudo. The parser's `.=` desugaring on a method-call lvalue had used `.^can('STORE')`
+  to mean "a custom container" (a `Proxy`, a user `STORE`), so `self.x .= Hash` on a `$` attribute
+  holding an `Array` began storing into the `Array`. It asks `__mutsu_custom_store` now
+  (`runtime/builtins_dot_assign_store.rs`): a `Proxy`, or a user class, role or mixin that declares
+  `STORE`.
 
 Pinned in `t/vm/writeback/container-store-rows.t`.
 
