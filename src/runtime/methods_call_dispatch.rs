@@ -2018,7 +2018,14 @@ impl Interpreter {
                                 cascade_args,
                             )
                         }),
-                    _ => None,
+                    // No cascade takes more; a slurpy row (`Mu.WALK` with its
+                    // adverbs) may.
+                    _ => crate::builtins::method_table::answer_shapeless(
+                        Some(self),
+                        &target,
+                        method_sym,
+                        cascade_args,
+                    ),
                 }
             }
         };
