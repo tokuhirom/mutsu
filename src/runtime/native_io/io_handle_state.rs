@@ -256,6 +256,16 @@ impl Interpreter {
         target_val: &Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // As `nl-out`: a subclass with no handle of its own (`class
+        // Text::IO::String is IO::Handle`) answers its `chomp` attribute, or
+        // the default, `True`.
+        if args.is_empty() && Self::handle_id_from_value(target_val).is_none() {
+            let attr = match target_val.view() {
+                ValueView::Instance { attributes, .. } => attributes.as_map().get("chomp").cloned(),
+                _ => None,
+            };
+            return Ok(attr.unwrap_or(Value::TRUE));
+        }
         let set = args.first().map(|a| a.truthy());
         let chomp =
             self.with_handle_mut(target_val, |state| Ok(state.chomp_setting(set)))?;

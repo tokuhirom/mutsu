@@ -1994,43 +1994,14 @@ impl Interpreter {
                         None => {}
                     }
                     match method {
-                        // Any:U autovivification: push/append/unshift/prepend on
-                        // a runtime-undefined value (e.g. an out-of-range array
-                        // element `@a[5]` or an uninitialised variable) creates a
-                        // new Array, which the indexed-method writeback path then
-                        // stores back. A *literal* `Nil.push` is rejected at
-                        // compile time (see compile_expr in the compiler), so this
-                        // path only sees autovivifiable Nils.
+                        // Any:U autovivification: `Any`'s growing rows build the
+                        // fresh Array of a runtime-undefined value (an
+                        // out-of-range element `@a[5]`), which the indexed-method
+                        // writeback path then stores back (ADR-11276 §9.164). A
+                        // *literal* `Nil.push` is rejected at compile time (see
+                        // compile_expr in the compiler).
                         "push" | "append" | "unshift" | "prepend" => {
-                            let arr: Vec<Value> = match method {
-                                "append" | "prepend" => {
-                                    // Flatten list arguments for append/prepend
-                                    let mut flat = Vec::new();
-                                    for arg in &args {
-                                        match arg.view() {
-                                            ValueView::Array(items, _) => {
-                                                flat.extend(items.iter().cloned());
-                                            }
-                                            ValueView::Seq(items) => {
-                                                flat.extend(items.iter().cloned());
-                                            }
-                                            ValueView::Slip(items) => {
-                                                flat.extend(items.iter().cloned());
-                                            }
-                                            _ => flat.push(arg.clone()),
-                                        }
-                                    }
-                                    flat
-                                }
-                                "unshift" => args.to_vec(),
-                                _ => args,
-                            };
-                            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                                "callmethod",
-                                "nil-autoviv",
-                            );
-                            self.stack.push(Value::real_array(arr));
-                            return Ok(());
+                            // Fall through to the mutating rows below
                         }
                         "defined" | "Bool" | "so" | "not" | "gist" | "raku" | "WHAT" | "WHICH"
                         | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE" | "isa" | "does" | "can"
@@ -2098,40 +2069,6 @@ impl Interpreter {
                         }
                     }
                 }
-                // Any:U autovivification: push/append/unshift/prepend on a type
-                // object (e.g. Any from hash miss) creates a new Array.
-                if matches!(method, "push" | "append" | "unshift" | "prepend")
-                    && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu")
-                {
-                    let arr: Vec<Value> = match method {
-                        "append" | "prepend" => {
-                            let mut flat = Vec::new();
-                            for arg in &args {
-                                match arg.view() {
-                                    ValueView::Array(items, _) => {
-                                        flat.extend(items.iter().cloned());
-                                    }
-                                    ValueView::Seq(items) => {
-                                        flat.extend(items.iter().cloned());
-                                    }
-                                    ValueView::Slip(items) => {
-                                        flat.extend(items.iter().cloned());
-                                    }
-                                    _ => flat.push(arg.clone()),
-                                }
-                            }
-                            flat
-                        }
-                        "unshift" => args.to_vec(),
-                        _ => args,
-                    };
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "any-autoviv",
-                    );
-                    self.stack.push(Value::real_array(arr));
-                    return Ok(());
-                }
                 // If we have a pending Proxy subclass attribute reference and this
                 // is a mutating array method, delegate to the shared storage mutator
                 // so the mutation is visible through the Proxy subclass.
@@ -2160,7 +2097,7 @@ impl Interpreter {
                 // mutators so far: `$obj.q.grab`, `@sets[0].unset('x')`).
                 // Container identity (§3): the row writes through the
                 // receiver's SHARED backing node, so the holder observes it.
-                if crate::builtins::method_table::mut_owners_of(&target, false).is_some() {
+                if crate::builtins::method_table::mut_owners_of(&target).is_some() {
                     self.dispatch.method_dispatch_pure = false;
                     let mut detached = target.descalarize().clone();
                     let mut place =

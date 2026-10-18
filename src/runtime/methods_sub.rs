@@ -802,38 +802,6 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        // WhateverCode's ACCEPTS is its predicate interface: invoke the
-        // placeholder with the value being tested and return the result as a
-        // Bool. This is what paths' `:file(* eq $name)` matcher relies on;
-        // ordinary callable method composition would return a new composed
-        // Sub instead of evaluating the predicate.
-        if method == "ACCEPTS"
-            && args.len() == 1
-            && matches!(
-                data.env
-                    .get_sym(crate::symbol::well_known::callable_type())
-                    .map(Value::view),
-                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-            )
-        {
-            return Some(
-                self.call_sub_value(target.clone(), vec![args[0].clone()], false)
-                    .map(|value| Value::truth(value.truthy())),
-            );
-        }
-        // Code.ACCEPTS: `self.count ?? self($topic) !! self()`, answering the
-        // call's own result (raku: `(-> $x { $x }).ACCEPTS(0)` is 0, not
-        // False). Without it `.ACCEPTS` fell through to method composition and
-        // answered a `<composed-method:ACCEPTS>` Sub (#9429).
-        // Cost: O(1) plus the call.
-        if method == "ACCEPTS" && args.len() == 1 {
-            let call_args = if data.empty_sig {
-                Vec::new()
-            } else {
-                vec![args[0].clone()]
-            };
-            return Some(self.call_sub_value(target.clone(), call_args, false));
-        }
         if method == "nextwith" {
             // Tail-style dispatch: call target with caller frame and return from current frame.
             let saved_env = self.env.clone();

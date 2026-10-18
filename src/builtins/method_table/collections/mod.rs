@@ -31,6 +31,7 @@ pub(crate) mod capture;
 pub(crate) mod clone;
 mod descriptor;
 mod fmt;
+pub(crate) mod from_iterator;
 pub(crate) mod iteration_buffer;
 pub(crate) mod join;
 mod junction;
@@ -73,6 +74,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     render_names::CAPTURE_ROWS,
     render_names::STRINGY_ROWS,
     fmt::ROWS,
+    from_iterator::ROWS,
     capture::ROWS,
     list_bounds::ROWS,
     join::ROWS,

@@ -4128,6 +4128,61 @@ by-name blocks go; their `chop`/`chomp` arm was unreachable, because a buffer is
 method form also delivers to the dynamically enclosing supply's emitter. The two by-name `emit` blocks
 (interpreter and VM) go. Pinned in `t/oo/method/mu-emit-method-row.t`.
 
+### 9.164 The by-name gates of `call_method_with_values` are rows (2026-10-18)
+
+`refactor/11276-call-method-name-gates`. The interpreter entry kept a run of `method == "..."` gates
+between the receiver guards and the table lookup, which `--arms` does not count (they are no `match`
+arms). Each became a row of the owner Rakudo declares it on, or turned out to be answered by a row
+already and was deleted.
+
+**`ACCEPTS`.** `Regex.ACCEPTS` (the `Match` or `Nil`), `Code.ACCEPTS` (the call's own result,
+`self.count ?? self($topic) !! self()`), `WhateverCode.ACCEPTS` (the predicate's truth),
+`Signature.ACCEPTS` (the bind test) and `Mu.ACCEPTS` of a type object (the type check, `Mu:U:`) are
+`Handler::Interp` rows with `OBJECT_ARGS` (`instances/code_accepts.rs`). None of these receivers has a
+shape: the code objects reach their rows through `code::answer`, which picks the owners by kind
+(`Regex`, `WhateverCode`, `Code`); a `Signature` instance answers its built-in class's own row in
+`answer_shapeless`; and a type object with no closer candidate answers `Mu`'s there. `Mu.ACCEPTS`
+declines a class that declares its own `ACCEPTS` and tries an enum's composed role candidates first.
+The three gates and the two `ACCEPTS` arms of `dispatch_sub_method` go.
+
+**`IO::Handle`'s `nl-out` and `chomp`.** A subclass with no handle of its own (`class
+Text::IO::String is IO::Handle`) answers its attribute or the default from the row, as `nl-out`
+already did; `chomp` joins the by-MRO list, and both gates go.
+
+**The mutator refusals and `Any:U` autovivification.** `Any.push`/`append`/`unshift`/`prepend` are
+`Handler::Mut` rows (`mutating/autoviv.rs`): an undefined receiver with no binding (`Nil`, `Any`, `Mu`)
+answers a fresh `Array` grown through `Array`'s own rows (so `append`'s single-argument rule is
+`Array`'s), a defined scalar matches no candidate (`X::Multi::NoMatch`). `Range` declares the six
+mutators to refuse them (`X::Immutable`). `mutating::owners_of` gains the kinds (`Range`, the scalars,
+`Nil`, `Any`/`Mu` type objects) and loses its `has_name` argument: a `Str` always reaches `Str`'s rows,
+whose `subst-mutate` refuses a receiver with no binding. The interpreter's four gates go, and so do the
+VM's two autovivification copies (`nil-autoviv`, `any-autoviv`), which the mutating entry after them
+now answers. A named binding is still autovivified by the entry that holds it.
+
+**`Mu`'s `rakuseen`, `WALK` and `return`.** Rows every receiver reaches (`MU_FOR_CLOSED_SHAPES`); the
+bodies are `Interpreter::mu_rakuseen` and `try_walk_method`, and `.return` raises the method return.
+
+**`List.from-iterator`, `Array.from-iterator`, `Match.make`, `Seq.Int`.** Type-object rows found by
+owner (`from_iterator::owners_of`, a `Slip` reaching `List`'s); `Match.make` is an interpreter row
+reached by any match (`regex_match::make_answer`); `Seq.Int` (Rakudo's `self.cache.Int`) is a row, so
+the gate re-dispatching `sum`/`min`/`max`/`Int` of a `Seq` as a `List` goes.
+
+**Deleted as already answered by rows.** `.self(args)`, `.sum(:named)`, `.hash`/`.Hash` of a list,
+`.arity`/`.count` of a `Signature`, `.hyper`/`.race` with named arguments, and the second `STORE` block
+of a quant hash. A zero-denominator `Rat.Str` throws from its row, as `gist` already did, so that gate
+goes too.
+
+**Left by name in `call_method_with_values_inner`:** `Complex` coercions of a `Str` that numifies to a
+`Complex` (the `Str` rows are pure and decline it), the `pick`/`roll` family with a callable count,
+`split`, `of`/`keyof` of a class composing `Positional`/`Associative`, a user `Iterable`'s
+`hyper`/`race`/`lazy`, the lazy-list blocks, `STORE` of a `Hash`/`Array` (and their subclass
+instances and mixins), the `log`/`exp`/`atan2` argument coercion, the `Numeric`/`Real`/`Dateish`
+defaults of a class composing those roles, and the constructors.
+
+Behaviour changes toward Rakudo: `5.self(1, 2)` dies (a positional argument), and `Seq.from-iterator` is
+no method. Pinned in `t/oo/method/by-name-gate-method-rows.t`; `t/collections/lazy-seq/from-iterator.t`
+is updated.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

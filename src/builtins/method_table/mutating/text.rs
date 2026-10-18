@@ -55,7 +55,13 @@ fn subst_mutate_row(
     if !matches!(place.value().view(), ValueView::Str(_)) {
         return None;
     }
-    place.name()?;
+    // `Str.subst-mutate` binds its invocant as a writable container: a
+    // receiver with no binding (a literal) matches no candidate.
+    if place.name().is_none() {
+        return Some(Err(
+            crate::runtime::methods_signature_errors::make_multi_no_match_error("subst-mutate"),
+        ));
+    }
     let target = place.value().clone();
     // `.subst` and `.match` read the adverbs among their arguments.
     let mut all = args.to_vec();

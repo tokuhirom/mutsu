@@ -18,8 +18,10 @@ mod mu_emit;
 mod mu_identity;
 mod mu_isa;
 mod mu_numeric;
+mod mu_rakuseen;
 mod mu_render;
 mod mu_str;
+mod mu_walk_return;
 
 /// The HOW classes whose rows answer a metamethod call, in lookup order.
 pub(crate) static MOP_OWNERS: &[&str] = &[
@@ -47,6 +49,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     mu_answers::ROWS,
     mu_identity::ROWS,
     mu_emit::ROWS,
+    mu_rakuseen::ROWS,
+    mu_walk_return::ROWS,
     mu_isa::ROWS,
     mu_numeric::ROWS,
     mu_render::ROWS,
