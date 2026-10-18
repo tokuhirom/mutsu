@@ -43,7 +43,6 @@ fn is_type_object(target: &Value) -> bool {
     matches!(target.view(), ValueView::Package(_))
 }
 
-
 /// The name a type object renders as.
 fn type_object_name(target: &Value) -> String {
     match target.view() {
