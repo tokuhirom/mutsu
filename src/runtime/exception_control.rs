@@ -130,7 +130,8 @@ impl Interpreter {
     }
 
     /// A built-in exception raised by a method call carries the frames of the
-    /// call site, as the `die`/`fail` opcodes give theirs (so
+    /// call site, written into the exception itself (Rakudo's `throw` sets
+    /// the invocant's backtrace, so `$e.throw; $e === $!`), as the `die`/`fail` opcodes give theirs (so
     /// `.backtrace.list` is not empty). One that already has a backtrace (a
     /// rethrow) keeps it.
     // Cost: O(s), s = routine-stack depth, when a backtrace is built.
@@ -141,7 +142,7 @@ impl Interpreter {
         let ValueView::Instance {
             class_name,
             attributes,
-            ..
+            id,
         } = target.view()
         else {
             return target.clone();
@@ -164,6 +165,6 @@ impl Interpreter {
                 .entry("file".to_string())
                 .or_insert_with(|| Value::str_from(&file));
         }
-        Value::make_instance(class_name, attrs)
+        Value::write_back_sharing(&attributes, class_name, attrs, id)
     }
 }

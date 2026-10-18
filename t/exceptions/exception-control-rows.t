@@ -4,7 +4,7 @@ use Test;
 # `throw`, `rethrow`, `die`, `fail`, `resume` and `Exception.Failure`, reached by
 # the receiver's MRO for a built-in or user exception, refused for a type object.
 
-plan 26;
+plan 28;
 
 class MyEx is Exception { method message { "my message" } }
 class Plain is Exception { has $.message }
@@ -64,3 +64,10 @@ is outcome({ my $f = failing(); $f.defined; $f.rethrow }), 'X::AdHoc: boom',
 
 try { X::AdHoc.new(payload => "bt").throw };
 ok $!.backtrace.list.elems > 0, '.throw of a built-in exception carries a backtrace';
+
+{
+    my $e = Exception.new;
+    try $e.throw;
+    ok $e === $!, '.throw raises the invocant itself';
+    ok $e.backtrace.list.elems > 0, '... whose own backtrace is the throw site';
+}

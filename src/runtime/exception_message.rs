@@ -78,7 +78,7 @@ impl Interpreter {
         let ValueView::Instance {
             class_name,
             attributes,
-            ..
+            id,
         } = target.view()
         else {
             return target.clone();
@@ -92,7 +92,7 @@ impl Interpreter {
                 );
             }
         }
-        Value::make_instance(class_name, attrs)
+        Value::write_back_sharing(&attributes, class_name, attrs, id)
     }
 
     /// Cache the message computed at the throw site.  This is intentionally
@@ -103,7 +103,7 @@ impl Interpreter {
         let ValueView::Instance {
             class_name,
             attributes,
-            ..
+            id,
         } = target.view()
         else {
             return target.clone();
@@ -113,7 +113,7 @@ impl Interpreter {
             "__mutsu_thrown_message".to_string(),
             Value::str(message.to_string()),
         );
-        Value::make_instance(class_name, attrs)
+        Value::write_back_sharing(&attributes, class_name, attrs, id)
     }
 
     fn call_message_with_thrown_dynamics(
