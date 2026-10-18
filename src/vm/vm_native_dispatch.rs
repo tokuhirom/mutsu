@@ -387,10 +387,6 @@ impl Interpreter {
         {
             return None;
         }
-        // Squish/tail always bypass native
-        if method_sym == "squish" || method_sym == "tail" {
-            return None;
-        }
         // Buf write methods (`write-int*`/`write-uint*`/`write-num*`) on a type object
         // (`buf8.write-int32($off, $val, [$endian])` → fresh buf) or a non-mut-bound
         // instance (`\sigilless`/`(buf8.new).write-...` → mutate the shared cell). Pure
