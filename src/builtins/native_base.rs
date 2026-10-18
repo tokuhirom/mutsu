@@ -83,6 +83,9 @@ fn returns_the_instance(payload: &Value, method: &str) -> bool {
             matches!(method, "Rat" | "Numeric" | "Real")
         }
         ValueView::Pair(..) | ValueView::ValuePair(..) => method == "Pair",
+        // `Str.Str` and `Str.Stringy` are `self`: `S.new(value => "x").Str` is
+        // the `S` (ADR-11276 §9.183).
+        ValueView::Str(_) => matches!(method, "Str" | "Stringy"),
         _ => false,
     }
 }
@@ -162,12 +165,14 @@ pub(crate) fn dispatch(
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     let method = method_sym.as_str();
+    let payload = subclass_payload(target)?;
+    if args.is_empty() && returns_the_instance(&payload, method) {
+        return Some(Ok(target.clone()));
+    }
     if answered_by_the_instance(method) || own_row_answers(target, method_sym, args.len()) {
         return None;
     }
-    let payload = subclass_payload(target)?;
     match args {
-        [] if returns_the_instance(&payload, method) => Some(Ok(target.clone())),
         [] => super::methods_0arg::native_method_0arg(&payload, method_sym),
         [arg] => super::native_method_1arg(&payload, method_sym, arg),
         _ => None,
