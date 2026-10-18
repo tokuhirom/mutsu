@@ -1,7 +1,7 @@
 use super::*;
 
 /// The text methods [`Interpreter::text_method_by_mro`] answers.
-const TEXT_METHODS_BY_MRO: [&str; 14] = [
+const TEXT_METHODS_BY_MRO: [&str; 15] = [
     "match",
     "subst",
     "wordcase",
@@ -16,6 +16,7 @@ const TEXT_METHODS_BY_MRO: [&str; 14] = [
     "substr-eq",
     "substr",
     "trans",
+    "split",
 ];
 
 impl Interpreter {
