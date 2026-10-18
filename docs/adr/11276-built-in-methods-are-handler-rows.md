@@ -4478,7 +4478,7 @@ Pinned in `t/collections/list-type-object-mutators.t`.
 ### 9.178 A lazy receiver goes through the lazy step (2026-10-19)
 
 `refactor/11276-lazylist-rows`; the design is [ADR-13891](13891-lazy-receivers-pull-before-rows.md)
-(`Proposed`). The five `LazyList` blocks of `call_method_with_values_inner` (the `gist`/`Str`/`raku`
+(`Accepted` 2026-10-19). The five `LazyList` blocks of `call_method_with_values_inner` (the `gist`/`Str`/`raku`
 placeholders, `cache`, the `AT-POS`/`EXISTS-POS` partial force, `join`'s `...` and
 `should_force_lazy_list`'s force-and-redispatch) are one step, `Interpreter::lazy_receiver_step`:
 a *pull* registered by the owner Rakudo declares the method on (`method_table::lazy_pull`, 16

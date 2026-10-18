@@ -1,6 +1,6 @@
 # ADR-13891: A lazy receiver's methods run through per-method pulls
 
-- **Status**: Proposed (2026-10-19)
+- **Status**: Accepted (2026-10-19)
 - **Date**: 2026-10-19
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#13891](https://github.com/tokuhirom/mutsu/issues/13891)
