@@ -9001,6 +9001,29 @@ impl CompiledCode {
         self.binding_descs.get(idx).is_some_and(|d| d.declared_here)
     }
 
+    /// Whether a frame entry leaves slot `idx` alone instead of seeding it
+    /// from the env by name — see
+    /// [`crate::binding_desc::BindingDesc::fresh_local`].
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_fresh_local(&self, idx: usize) -> bool {
+        self.binding_descs.get(idx).is_some_and(|d| d.fresh_local)
+    }
+
+    /// Mark the slots [`crate::binding_desc::BindingDesc::fresh_local`]
+    /// describes. Runs after `compute_locals_sym` (which settles
+    /// `declared_here`) and `compute_free_vars`.
+    // Cost: O(l), l = locals; once per compiled chunk.
+    fn compute_fresh_locals(&mut self) {
+        for (desc, sym) in self.binding_descs.iter_mut().zip(self.locals_sym.iter()) {
+            desc.fresh_local = desc.declared_here
+                && self.my_declared_sym.contains(sym)
+                && !self.param_locals.contains(sym)
+                && !self.free_var_syms.contains(sym)
+                && !self.free_var_writes.contains(sym);
+        }
+    }
+
     /// Record that `name`'s declaration constrains it to `tc` — see
     /// [`Self::pending_declared_constraints`]. Called once per `SetVarType*`
     /// the compiler emits.
@@ -9159,6 +9182,7 @@ impl CompiledCode {
         self.compute_const_syms();
         self.compute_locals_sym();
         self.compute_free_vars();
+        self.compute_fresh_locals();
         // Collect env-only `my` declarations so the method-dispatch return merge
         // can treat them as callee-local and not propagate them into a same-named
         // caller lexical across (self-)recursion. Two sources:

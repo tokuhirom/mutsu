@@ -6,6 +6,42 @@
 
 use super::*;
 
+/// A routine body that owns an ADR-0024 unit-lexical bucket
+/// (`LexicalState::mainline_lexical_subs`).
+#[derive(Clone)]
+pub(crate) struct MainlineLexicalOwner {
+    /// The `unit_lexicals` bucket the body's free variables were captured in.
+    pub(crate) bucket: String,
+    /// The compiled body. Held, not only its address: the address identifies
+    /// the running body (`Interpreter::current_code`), and a freed body's
+    /// address could be reused by an unrelated one.
+    code: std::sync::Arc<crate::opcode::CompiledCode>,
+    /// The id of the body's TRIR lowering, which runs without `current_code`.
+    trir_id: Option<u64>,
+}
+
+impl MainlineLexicalOwner {
+    pub(crate) fn new(bucket: String, cf: &crate::opcode::CompiledFunction) -> Self {
+        Self {
+            bucket,
+            code: cf.code.clone(),
+            trir_id: cf.trir.as_ref().map(|chunk| chunk.id),
+        }
+    }
+
+    /// Whether this owner's body is the bytecode at `code_addr`.
+    // Cost: O(1).
+    pub(crate) fn runs_code(&self, code_addr: usize) -> bool {
+        std::sync::Arc::as_ptr(&self.code) as usize == code_addr
+    }
+
+    /// Whether this owner's body was lowered to the TRIR chunk `chunk_id`.
+    // Cost: O(1).
+    pub(crate) fn runs_trir_chunk(&self, chunk_id: u64) -> bool {
+        self.trir_id == Some(chunk_id)
+    }
+}
+
 pub(crate) struct LexicalState {
     /// The class or role whose package body (or role body, re-run at a
     /// composition) is running, innermost last. A block's
@@ -172,7 +208,14 @@ pub(crate) struct LexicalState {
     /// `GLOBAL` — see `Interpreter::active_unit_lexical_bucket`. Empty for a
     /// program with no such capture: zero cost beyond the map-presence check
     /// already paid by `unit_lexical_slot`.
-    pub(crate) mainline_lexical_subs: std::sync::Arc<std::collections::HashMap<String, String>>,
+    ///
+    /// The name alone does not identify the routine: a routine-nested
+    /// `sub acc` and a mainline or block `sub acc` share it, and only the
+    /// latter captured the bucket. Each entry therefore lists the compiled
+    /// bodies registered with a bucket ([`MainlineLexicalOwner`]), and a
+    /// lookup takes the bucket of the body that is running.
+    pub(crate) mainline_lexical_subs:
+        std::sync::Arc<std::collections::HashMap<String, Vec<MainlineLexicalOwner>>>,
     /// mutsu#9111: a sub declared inside a ROUTINE maps to its free variables
     /// and the hidden local of the declaring frame each is aliased to. A
     /// free-variable access from such a sub's frame reads the alias from env

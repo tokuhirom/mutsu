@@ -184,6 +184,7 @@ mod tests {
             def_file: None,
             invocation_id: 0,
             callable_id: 0,
+            code: 0,
         }
     }
 

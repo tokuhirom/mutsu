@@ -1570,6 +1570,12 @@ pub(crate) struct RoutineFrame {
     /// registration id identifies the frame). Read by
     /// `Interpreter::return_target_is_live`.
     pub callable_id: u64,
+    /// The address of the running routine's `CompiledCode`, for a routine
+    /// frame pushed by a compiled call path; `0` when the frame does not
+    /// record it. Identifies which of several same-named routines is running
+    /// (`Interpreter::active_unit_lexical_bucket`, #13613), where
+    /// `Interpreter::current_code` names whatever nested code runs right now.
+    pub code: usize,
 }
 
 /// Hands out *blocks* of routine-invocation ids, not individual ones.

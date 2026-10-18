@@ -177,6 +177,9 @@ impl Interpreter {
         }
         if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
+                if cf.code.is_fresh_local(i) {
+                    continue;
+                }
                 if let Some(val) = self.env().get_sym(*sym) {
                     self.locals[i] = val.clone();
                 }
@@ -233,6 +236,7 @@ impl Interpreter {
             self.executing_source_file_sym(),
             cf.source_file_sym(),
             cf.is_hidden_from_backtrace,
+            Arc::as_ptr(&cf.code) as usize,
         );
         let let_mark = self.let_saves_len();
         // Frame-less path: roll back the line the body's ops advanced to manually.

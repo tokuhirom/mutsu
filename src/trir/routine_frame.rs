@@ -53,6 +53,7 @@ impl Interpreter {
             self.executing_source_file_sym(),
             def_file,
             chunk.is_hidden_from_backtrace,
+            0,
         );
         let saved_unit = def_file.map(|file| {
             let unit = self.unit_of_source_sym(Some(file));

@@ -600,6 +600,7 @@ impl Interpreter {
         if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
                 if self.locals[i].is_nil()
+                    && !cf.code.is_fresh_local(i)
                     && let Some(val) = self.env().get_sym(*sym)
                 {
                     self.locals[i] = val.clone();
@@ -649,6 +650,7 @@ impl Interpreter {
             self.executing_source_file_sym(),
             cf.source_file_sym(),
             cf.is_hidden_from_backtrace,
+            Arc::as_ptr(&cf.code) as usize,
         );
 
         // A routine body is its own topicalizer for a bare `when`/`default`: a
