@@ -29,6 +29,7 @@ pub(crate) mod any_subscript;
 pub(crate) mod any_views;
 pub(crate) mod capture;
 pub(crate) mod clone;
+pub(crate) mod composed_roles;
 mod descriptor;
 mod fmt;
 pub(crate) mod from_iterator;
@@ -48,7 +49,7 @@ pub(crate) mod range;
 pub(crate) mod render;
 pub(crate) mod render_names;
 pub(crate) mod rotate;
-mod sampling;
+pub(crate) mod sampling;
 pub(crate) mod seq;
 pub(crate) mod subscript;
 pub(crate) mod terminals;
@@ -80,6 +81,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     join::ROWS,
     junction::ROWS,
     clone::ROWS,
+    composed_roles::ROWS,
     descriptor::ROWS,
     any_interp::ROWS,
     any_list_hash::ROWS,

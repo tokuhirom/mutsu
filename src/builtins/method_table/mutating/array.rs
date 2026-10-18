@@ -183,6 +183,20 @@ fn grab_row(
     let ValueView::Array(items, ArrayKind::Array) = place.value().view() else {
         return None;
     };
+    // A `Callable` count is called with the element count (§9.165).
+    let counted = match args.first() {
+        Some(arg) if arg.as_sub().is_some() => {
+            let target = place.value().clone();
+            match crate::builtins::method_table::sampling_callable_count(
+                interp, &target, arg, false,
+            )? {
+                Ok(count) => Some(count),
+                Err(err) => return Some(Err(err)),
+            }
+        }
+        _ => None,
+    };
+    let args = counted.as_ref().map(std::slice::from_ref).unwrap_or(args);
     let mut pool: Vec<usize> = (0..items.len()).collect();
     let want = match args.first().map(Value::view) {
         None => None,

@@ -63,8 +63,10 @@ mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
+pub(crate) use collections::composed_roles;
 pub(crate) use collections::from_iterator::owners_of as from_iterator_owners_of;
 pub(crate) use collections::iteration_buffer::owners_of as iteration_buffer_owners_of;
+pub(crate) use collections::sampling::callable_count as sampling_callable_count;
 pub(crate) use collections::{
     any_enum_views, clone as collection_clone, lazy, list, list_aggregate, positional, quanthash,
     range, render as collection_render, render_names as collection_render_names,

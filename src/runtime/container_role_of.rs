@@ -19,7 +19,7 @@ impl Interpreter {
     /// MRO) composes, if any.
     // Cost: O(m * r * d), m = classes in the MRO, r = roles each composes,
     // d = role chain depth (bounded by MAX_ROLE_DEPTH).
-    pub(super) fn composed_container_role_value_type(
+    pub(crate) fn composed_container_role_value_type(
         &mut self,
         class_name: &str,
     ) -> Option<String> {
@@ -29,7 +29,7 @@ impl Interpreter {
     /// The key type (`keyof`) of the `Associative[V, K]` that `class_name` (or
     /// a class in its MRO) composes: `Str(Any)` when the role names no key.
     // Cost: as `composed_container_role_value_type`.
-    pub(super) fn composed_container_role_key_type(&mut self, class_name: &str) -> Option<String> {
+    pub(crate) fn composed_container_role_key_type(&mut self, class_name: &str) -> Option<String> {
         self.composed_container_role_arg(class_name, 1)
     }
 

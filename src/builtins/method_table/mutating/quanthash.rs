@@ -224,7 +224,8 @@ fn callable_count_input(receiver: &Value, method: &str) -> Value {
 }
 
 /// Lower the result of a Callable count argument to the `Int` count.
-fn callable_count_to_int(count: Value) -> Value {
+// Cost: O(1).
+pub(crate) fn callable_count_to_int(count: Value) -> Value {
     match count.view() {
         ValueView::Int(n) => Value::int(n),
         ValueView::Num(f) => Value::int(f as i64),

@@ -2226,40 +2226,6 @@ impl Interpreter {
             return stored;
         }
 
-        // .pick/.roll/.grab/.grabpairs/.pickpairs with Callable arg on
-        // Bag/BagHash/Set/SetHash/Mix/MixHash/Array/List/Range:
-        // invoke the callable to get the actual count, then re-dispatch.
-        // NOTE: Supply.grab takes a Callable that transforms values, so exclude Supplies.
-        let is_supply_target = matches!(
-            target.view(),
-            ValueView::Instance { class_name, .. } if class_name == "Supply"
-        ) || matches!(target.view(), ValueView::Package(name) if name == "Supply");
-        if matches!(method, "pick" | "roll" | "grab" | "grabpairs" | "pickpairs")
-            && args.len() == 1
-            && args[0].as_sub().is_some()
-            && !is_supply_target
-        {
-            let callable = args[0].clone();
-            // For pick/grab, pass total; for pickpairs/grabpairs, pass elems
-            let input = match method {
-                "pickpairs" | "grabpairs" => {
-                    self.call_method_with_values(target.clone(), "elems", vec![])?
-                }
-                _ => self.call_method_with_values(target.clone(), "total", vec![])?,
-            };
-            let count = self.call_sub_value(callable, vec![input], false)?;
-            // Convert to Int
-            let count_int = match count.view() {
-                ValueView::Int(n) => Value::int(n),
-                ValueView::Num(f) => Value::int(f as i64),
-                ValueView::Rat(n, d) if d != 0 => Value::int(n / d),
-                _ => self
-                    .call_method_with_values(count.clone(), "Int", vec![])
-                    .unwrap_or_else(|_| count.clone()),
-            };
-            return self.call_method_with_values(target, method, vec![count_int]);
-        }
-
         // Comprehensive split handler
         // Skip for Supply (handled by Supply pipeline) and IO::Handle/IO::Pipe
         // (handled by native IO dispatch which reads the content first).
@@ -2280,68 +2246,14 @@ impl Interpreter {
             return self.dispatch_split_row(target, args);
         }
 
-        // A class that statically composes `Associative[V,K]` or
-        // `Positional[V]` keeps that role's type arguments in class metadata,
-        // rather than in the native Hash/Array payload. Reflect `.of` from the
-        // composition so `class C is Hash does Associative[Cool, DateTime]`
-        // answers `Cool`, including through a subclass of C.
-        if method == "of"
-            && args.is_empty()
-            && let ValueView::Instance { class_name, .. } = target.view()
-            && let Some(value_type) = self.composed_container_role_value_type(&class_name.resolve())
+        // `Positional.of`, `Associative.of`/`keyof` and `Iterable`'s
+        // `hyper`/`race`/`lazy` of a class composing the role are rows
+        // (ADR-11276 §9.165).
+        if args.is_empty()
+            && let Some(result) =
+                crate::builtins::method_table::composed_roles::answer(self, &target, method, &args)
         {
-            return Ok(Value::package(Symbol::intern(&value_type)));
-        }
-        // The same on the class's type object (`class A does Positional[Int];
-        // A.of`, #11726).
-        if method == "of"
-            && args.is_empty()
-            && let ValueView::Package(name) = target.view()
-            && !name.as_str().contains('[')
-            && let Some(value_type) = self.composed_container_role_value_type(name.as_str())
-        {
-            return Ok(Value::package(Symbol::intern(&value_type)));
-        }
-
-        // `keyof` of a class composing `Associative[V,K]`, from the same
-        // composition (#12989).
-        if method == "keyof" && args.is_empty() {
-            let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                ValueView::Package(name) if !name.as_str().contains('[') => {
-                    Some(name.as_str().to_string())
-                }
-                _ => None,
-            };
-            if let Some(class_name) = class_name
-                && let Some(key_type) = self.composed_container_role_key_type(&class_name)
-            {
-                return Ok(Value::package(Symbol::intern(&key_type)));
-            }
-        }
-
-        // `Iterable`'s `hyper`/`race`/`lazy` read a user `Iterable` through its
-        // own `iterator` method (#12929).
-        if matches!(method, "hyper" | "race" | "lazy")
-            && args.is_empty()
-            && let ValueView::Instance { class_name, .. } = target.view()
-            && self.class_does_role(&class_name.resolve(), "Iterable")
-            && self.has_user_method(&class_name.resolve(), "iterator")
-        {
-            let iterator = self.call_method_with_values(target.clone(), "iterator", Vec::new())?;
-            let mut items = Vec::new();
-            loop {
-                let item = self.call_method_with_values(iterator.clone(), "pull-one", Vec::new())?;
-                if item.is_iteration_end() {
-                    break;
-                }
-                items.push(item);
-            }
-            let list = Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                crate::value::ArrayKind::List,
-            );
-            return self.call_method_with_values(list, method, Vec::new());
+            return result;
         }
 
         // Complex -> Real type conversion (`$*TOLERANCE` decides whether the
