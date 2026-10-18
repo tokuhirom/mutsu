@@ -1,0 +1,154 @@
+//! The methods a user class gets from composing `Positional`, `Associative` or
+//! `Iterable` (ADR-11276 §9.165): `Positional.of`, `Associative.of` and
+//! `.keyof`, and `Iterable`'s `hyper`, `race` and `lazy`.
+//!
+//! A class that composes `Positional[V]` or `Associative[V, K]` keeps the
+//! role's type arguments in its class metadata, not in a native payload, so
+//! `.of`/`.keyof` read the composition
+//! (`Interpreter::composed_container_role_value_type`), on an instance and on
+//! the type object alike. A user `Iterable` with its own `iterator` is listed
+//! through it before it is hyperized or made lazy (#12929).
+//!
+//! The roles have no shape: an instance or a type object of a user class
+//! reaches the rows through [`answer`], and a handler declines a class whose
+//! composition does not answer the call. `Positional.of` and
+//! `Associative.of`/`keyof` also have a pure row reading a parameterized
+//! type's name (`type_params`), which every other entry finds; these are its
+//! late twins (§9.136), registered after it and reached only by [`answer`].
+
+use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::Named;
+use crate::runtime::Interpreter;
+use crate::symbol::Symbol;
+use crate::value::{RuntimeError, Value, ValueView};
+
+type Answer = Option<Result<Value, RuntimeError>>;
+
+const ROLE: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK);
+
+macro_rules! row {
+    ($owner:literal, $name:literal, $handler:ident) => {
+        MethodRow {
+            owner: $owner,
+            name: $name,
+            arity: 0,
+            handler: Handler::Interp($handler),
+            flags: ROLE,
+            named: &[],
+        }
+    };
+}
+
+pub(super) static ROWS: &[MethodRow] = &[
+    row!("Positional", "of", value_type),
+    row!("Associative", "of", value_type),
+    row!("Associative", "keyof", key_type),
+    row!("Iterable", "hyper", hyper),
+    row!("Iterable", "race", race),
+    row!("Iterable", "lazy", lazy),
+];
+
+/// The roles whose rows [`answer`] tries, in order.
+const OWNERS: [&str; 3] = ["Positional", "Associative", "Iterable"];
+
+/// The answer of a composed role's row for a call on an instance or a type
+/// object of a class, or `None` when no such row answers it.
+// Cost: O(o) to find the rows, o = 3 owners, plus the handler's own cost.
+pub(crate) fn answer(
+    interp: &mut Interpreter,
+    target: &Value,
+    method: &str,
+    args: &[Value],
+) -> Answer {
+    match target.view() {
+        ValueView::Instance { .. } => {}
+        // A parameterized type object (`Array[Int]`) answers from its own
+        // parameter, not a composition.
+        ValueView::Package(name) if !name.as_str().contains('[') => {}
+        _ => return None,
+    }
+    let method_sym = Symbol::intern(method);
+    let owners: Vec<&str> = OWNERS
+        .into_iter()
+        .filter(|owner| {
+            super::super::owner_row(Symbol::intern(owner), method_sym, args.len()).is_some()
+        })
+        .collect();
+    if owners.is_empty() {
+        return None;
+    }
+    crate::builtins::method_table::invoke_mro_late(interp, &owners, method, args, target)
+}
+
+/// The class `target` is an instance or the type object of.
+// Cost: O(1).
+fn class_of(target: &Value) -> Option<Symbol> {
+    match target.view() {
+        ValueView::Instance { class_name, .. } => Some(class_name),
+        ValueView::Package(name) => Some(name),
+        _ => None,
+    }
+}
+
+/// `Positional.of` / `Associative.of`: the value type the composition names.
+// Cost: as `Interpreter::composed_container_role_value_type`.
+fn value_type(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    let class = class_of(target)?;
+    let value_type = interp.composed_container_role_value_type(class.as_str())?;
+    Some(Ok(Value::package(Symbol::intern(&value_type))))
+}
+
+/// `Associative.keyof`: the key type the composition names (#12989).
+// Cost: as `Interpreter::composed_container_role_key_type`.
+fn key_type(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    let class = class_of(target)?;
+    let key_type = interp.composed_container_role_key_type(class.as_str())?;
+    Some(Ok(Value::package(Symbol::intern(&key_type))))
+}
+
+macro_rules! iterable_row {
+    ($fn:ident, $name:literal) => {
+        // Cost: see `iterate`.
+        fn $fn(
+            interp: &mut Interpreter,
+            target: &Value,
+            _args: &[Value],
+            _named: Named<'_>,
+        ) -> Answer {
+            iterate(interp, target, $name)
+        }
+    };
+}
+
+iterable_row!(hyper, "hyper");
+iterable_row!(race, "race");
+iterable_row!(lazy, "lazy");
+
+/// `Iterable.hyper`/`race`/`lazy` of a user `Iterable` instance with its own
+/// `iterator`: the elements it yields, as a `List`, hyperized or made lazy.
+// Cost: O(n), n = elements the iterator yields (one `pull-one` call each),
+// plus the list's own `method`.
+fn iterate(interp: &mut Interpreter, target: &Value, method: &str) -> Answer {
+    let ValueView::Instance { class_name, .. } = target.view() else {
+        return None;
+    };
+    let class = class_name.resolve();
+    if !interp.class_does_role(&class, "Iterable") || !interp.has_user_method(&class, "iterator") {
+        return None;
+    }
+    Some(
+        interp
+            .list_via_user_iterator(target)
+            .and_then(|list| interp.call_method_with_values(list, method, Vec::new())),
+    )
+}

@@ -4183,6 +4183,33 @@ Behaviour changes toward Rakudo: `5.self(1, 2)` dies (a positional argument), an
 no method. Pinned in `t/oo/method/by-name-gate-method-rows.t`; `t/collections/lazy-seq/from-iterator.t`
 is updated.
 
+### 9.165 The composed built-in roles' rows and the sampling `Callable` count (2026-10-18)
+
+`refactor/11276-role-default-rows`, after §9.164. Two more by-name gates of
+`call_method_with_values_inner` go.
+
+**`Positional`, `Associative`, `Iterable`.** A user class that composes `Positional[V]` or
+`Associative[V, K]` keeps the type arguments in its class metadata, and a user `Iterable` lists through
+its own `iterator`. `Positional.of`, `Associative.of`/`keyof` and `Iterable`'s `hyper`/`race`/`lazy` are
+interpreter rows of the roles (`collections/composed_roles.rs`, `OWNER_ONLY | TYPE_OBJECT_OK`). A role has
+no shape: `composed_roles::answer` tries the roles that have a row for the call (a table lookup, not a
+name list) on an instance or an unparameterized type object, and a handler declines a class whose
+composition does not answer (`Array[Int].of` keeps its own parameter).
+
+**The sampling methods' `Callable` count.** The count-taking rows of `pick`, `roll` and `pickpairs` are
+interpreter rows: a `Callable` count is called with the receiver's size (`total` for a quant hash's
+`pick`/`roll`, `elems` otherwise and for `pickpairs`; `Bool` counts the two values it samples) and lowered
+by the quant hashes' own `callable_count_to_int`. `Array.grab` takes one the same way. The gate that
+resolved the count and re-dispatched goes. The zero-argument rows stay `Narrow`.
+
+**Tried and left:** `split` (a deferred `Seq` argument and a grammar cursor reach no row);
+`log`/`exp`/`atan2` with an object argument (their arity-1 rows are `Narrow`, which the JIT and constant
+folding call, and `invoke_unadmitted` reaches only the first row of a key, so an interpreter twin would
+not be found); the `Numeric`/`Real` type-object default of a class composing the role and the `Dateish`
+formatter (Rakudo answers both from `Mu`, whose `Numeric`/`Int` stay deferred with #12551).
+
+Pinned in `t/oo/role/role-default-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -711,6 +711,9 @@ pub(crate) fn answer_shapeless(
         row(id).owner == "Mu"
             || method == "ACCEPTS"
             || COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str())
+            // An interpreter row has no answer without one (a count-taking
+            // `pick`/`roll`, §9.165).
+            || matches!(row(id).handler, Handler::Interp(_))
     });
     call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result)
 }

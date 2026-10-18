@@ -66,4 +66,23 @@ impl Interpreter {
             ),
         })
     }
+
+    /// The elements a user `Iterable` instance's own `iterator` yields, as a
+    /// `List` (`Iterable.hyper`/`race`/`lazy` read them so, #12929).
+    // Cost: O(n), n = elements yielded (one `pull-one` call each).
+    pub(crate) fn list_via_user_iterator(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+        let iterator = self.call_method_with_values(target.clone(), "iterator", Vec::new())?;
+        let mut items = Vec::new();
+        loop {
+            let item = self.call_method_with_values(iterator.clone(), "pull-one", Vec::new())?;
+            if item.is_iteration_end() {
+                break;
+            }
+            items.push(item);
+        }
+        Ok(Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+            crate::value::ArrayKind::List,
+        ))
+    }
 }
