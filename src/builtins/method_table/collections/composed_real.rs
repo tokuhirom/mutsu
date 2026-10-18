@@ -8,10 +8,13 @@
 //! `Numeric` and `conj` are the invocant, `isNaN` is `False`.
 //!
 //! The rows are composed-role rows ([`super::composed_roles::answer`]): an
-//! instance of a user class reaches them after its own methods and accessors,
-//! and a handler declines a class that does not compose `Real`. A type object
-//! takes the cascades (`R.sqrt` is Rakudo's `X::Multi::NoMatch` for an
-//! undefined invocant).
+//! instance of a user class reaches them after its own methods (the entry
+//! declines a name the class declares) and before `Mu`'s (`shapeless_row`
+//! declines a name a composed role declares), and a handler declines a class
+//! that does not compose the role. A type object takes the cascades (`R.sqrt`
+//! is Rakudo's `X::Multi::NoMatch` for an undefined invocant). `succ`, `pred`
+//! and `Bool` are `Numeric`'s, written with the operators, so a class that
+//! composes `Numeric` alone has them too.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -43,7 +46,6 @@ pub(super) static BRIDGED_ROWS: &[MethodRow] = &[
     row!("Real", "Num", 0, bridged_num),
     row!("Real", "Rat", 0, bridged_rat),
     row!("Real", "Rat", 1, bridged_rat),
-    row!("Real", "abs", 0, bridged_abs),
     row!("Real", "sign", 0, bridged_sign),
     row!("Real", "sqrt", 0, bridged_sqrt),
     row!("Real", "rand", 0, bridged_rand),
@@ -91,10 +93,7 @@ pub(super) static BRIDGED_ROWS: &[MethodRow] = &[
     row!("Numeric", "FatRat", 0, bridged_fatrat),
     row!("Numeric", "log10", 0, bridged_log10),
     row!("Numeric", "log2", 0, bridged_log2),
-    row!("Numeric", "succ", 0, bridged_succ),
-    row!("Numeric", "pred", 0, bridged_pred),
     row!("Numeric", "roots", 1, bridged_roots),
-    row!("Numeric", "Bool", 0, bridged_bool),
 ];
 
 /// One handler per bridged name: the guard step hands a handler no name.
@@ -112,7 +111,6 @@ bridged_fns!(
     bridged_int => "Int",
     bridged_num => "Num",
     bridged_rat => "Rat",
-    bridged_abs => "abs",
     bridged_sign => "sign",
     bridged_sqrt => "sqrt",
     bridged_rand => "rand",
@@ -155,10 +153,7 @@ bridged_fns!(
     bridged_fatrat => "FatRat",
     bridged_log10 => "log10",
     bridged_log2 => "log2",
-    bridged_succ => "succ",
-    bridged_pred => "pred",
     bridged_roots => "roots",
-    bridged_bool => "Bool",
 );
 
 pub(super) static OWN_ROWS: &[MethodRow] = &[
@@ -166,19 +161,36 @@ pub(super) static OWN_ROWS: &[MethodRow] = &[
     row!("Real", "Real", 0, itself),
     row!("Real", "conj", 0, itself),
     row!("Real", "isNaN", 0, is_nan),
-    row!("Numeric", "Numeric", 0, itself),
+    row!("Real", "abs", 0, abs),
+    row!("Numeric", "Numeric", 0, numeric_itself),
     row!("Numeric", "gist", 0, gist),
+    row!("Numeric", "succ", 0, succ),
+    row!("Numeric", "pred", 0, pred),
+    row!("Numeric", "Bool", 0, truth),
 ];
+
+/// Whether `target` is an instance of a user class that composes `role`.
+// Cost: one memoized role lookup.
+fn composes(interp: &mut Interpreter, target: &Value, role: &str) -> bool {
+    match target.view() {
+        ValueView::Instance { class_name, .. } => {
+            interp.class_does_role(&class_name.resolve(), role)
+        }
+        _ => false,
+    }
+}
 
 /// Whether `target` is an instance of a user class that composes `Real`.
 // Cost: one memoized role lookup.
 fn composes_real(interp: &mut Interpreter, target: &Value) -> bool {
-    match target.view() {
-        ValueView::Instance { class_name, .. } => {
-            interp.class_does_role(&class_name.resolve(), "Real")
-        }
-        _ => false,
-    }
+    composes(interp, target, "Real")
+}
+
+/// Whether `target` is an instance of a user class that composes `Numeric`,
+/// directly or through `Real`.
+// Cost: two memoized role lookups.
+fn composes_numeric(interp: &mut Interpreter, target: &Value) -> bool {
+    composes(interp, target, "Numeric") || composes_real(interp, target)
 }
 
 /// The value the role's methods compute with: the class's `Bridge` (or the
@@ -215,6 +227,18 @@ fn bridge(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Nam
     if !composes_real(interp, target) {
         return None;
     }
+    // `Real.Num` is `self.Bridge.Num`: with neither method of its own the class
+    // would recurse until the stack overflows (Rakudo loops forever), so the
+    // call dies instead.
+    let ValueView::Instance { class_name, .. } = target.view() else {
+        return None;
+    };
+    if !interp.has_user_method(class_name.as_str(), "Num") {
+        return Some(Err(RuntimeError::new(format!(
+            "{} does Real but has neither a Bridge nor a Num method",
+            class_name.resolve()
+        ))));
+    }
     Some(interp.call_method_with_values(target.clone(), "Num", Vec::new()))
 }
 
@@ -230,10 +254,69 @@ fn is_nan(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Nam
     composes_real(interp, target).then(|| Ok(Value::FALSE))
 }
 
+/// `Real.abs`: `self < 0 ?? -self !! self`, so a non-negative value is the
+/// invocant itself.
+// Cost: two operator calls, plus the user code their coercions run.
+fn abs(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    if !composes_real(interp, target) {
+        return None;
+    }
+    Some((|| {
+        let negative = interp.call_infix_routine("<", &[target.clone(), Value::int(0)])?;
+        if negative.truthy() {
+            interp.call_infix_routine("-", &[Value::int(0), target.clone()])
+        } else {
+            Ok(target.clone())
+        }
+    })())
+}
+
+/// `Numeric.Numeric`: the invocant.
+// Cost: O(1).
+fn numeric_itself(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
+    composes_numeric(interp, target).then(|| Ok(target.clone()))
+}
+
+/// `Numeric`'s answers written with an operator: `succ` is `self + 1`,
+/// `pred` is `self - 1`, and `Bool` is `self != 0`.
+// Cost: one operator call, plus the user code its coercions run.
+fn by_operator(
+    interp: &mut Interpreter,
+    target: &Value,
+    op: &str,
+    left: Value,
+    right: Value,
+) -> Answer {
+    if !composes_numeric(interp, target) {
+        return None;
+    }
+    Some(interp.call_infix_routine(op, &[left, right]))
+}
+
+// Cost: as [`by_operator`].
+fn succ(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    by_operator(interp, target, "+", target.clone(), Value::int(1))
+}
+
+// Cost: as [`by_operator`].
+fn pred(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    by_operator(interp, target, "-", target.clone(), Value::int(1))
+}
+
+// Cost: as [`by_operator`].
+fn truth(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+    by_operator(interp, target, "!=", target.clone(), Value::int(0))
+}
+
 /// `Numeric.gist`: `self.Str`.
 // Cost: one `Str` call, plus the user code it runs.
 fn gist(interp: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
-    if !composes_real(interp, target) {
+    if !composes_numeric(interp, target) {
         return None;
     }
     Some(interp.call_method_with_values(target.clone(), "Str", Vec::new()))

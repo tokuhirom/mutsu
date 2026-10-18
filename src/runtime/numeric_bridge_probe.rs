@@ -2,15 +2,16 @@
 //! bridge?" probe (#7712).
 //!
 //! `try_native_method_raw` asks this of **every** instance receiver before it
-//! will decline a method, and the question is three type-graph walks deep:
+//! will decline a method, and the question is two type-graph walks deep:
 //! `Real`, then `Numeric` (each walking the class's MRO *and* the transitive
-//! closure of its composed roles), then a `Bridge` method lookup. On a
+//! closure of its composed roles). A class with only a `Bridge` method is not
+//! bridged: Rakudo bridges through the `Real` role's methods alone
+//! (ADR-11276 §9.179). On a
 //! `Buf.push` loop those two `type_matches_value` walks alone were 52% of the
 //! whole program.
 //!
 //! The answer is a property of the **class**, not of the call: given a fixed
-//! registry, "does an instance of `C` match `Real`/`Numeric`, or have a
-//! `Bridge` method" cannot vary between two calls with the same receiver
+//! registry, "does an instance of `C` match `Real`/`Numeric`" cannot vary between two calls with the same receiver
 //! class. So it memoizes per class symbol — the only real question is
 //! invalidation.
 //!
@@ -65,7 +66,7 @@ pub(crate) struct NumericBridgeProbeCache {
 impl Interpreter {
     /// Whether an instance of `class_name` must decline the pure-native fast
     /// path in favour of the interpreter's Numeric bridge: it matches `Real`
-    /// or `Numeric`, or its class provides a `Bridge` method.
+    /// or `Numeric`.
     ///
     /// `target` must be the receiver whose `ValueView::Instance` supplied
     /// `class_name`; it is what the underlying `type_matches_value` walks (and,
@@ -123,11 +124,9 @@ impl Interpreter {
         answer
     }
 
-    /// The un-memoized probe: the three questions `try_native_method_raw` used
+    /// The un-memoized probe: the two questions `try_native_method_raw` used
     /// to ask inline.
-    fn compute_numeric_bridge_probe(&mut self, class_name: Symbol, target: &Value) -> bool {
-        self.type_matches_value("Real", target)
-            || self.type_matches_value("Numeric", target)
-            || self.has_user_method(class_name.as_str(), "Bridge")
+    fn compute_numeric_bridge_probe(&mut self, _class_name: Symbol, target: &Value) -> bool {
+        self.type_matches_value("Real", target) || self.type_matches_value("Numeric", target)
     }
 }

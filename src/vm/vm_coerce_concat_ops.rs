@@ -512,7 +512,11 @@ impl Interpreter {
             let r = self.try_compiled_method_or_interpret(v, "Stringy", Vec::new())?;
             return Ok(Value::str(r.to_string_value()));
         }
-        if self.has_user_method(&cn, "Str") || self.is_native_method(&cn, "Str") {
+        if self.has_user_method(&cn, "Str")
+            || self.is_native_method(&cn, "Str")
+            || (!is_type_object
+                && crate::builtins::method_table::composed_roles::role_declares(self, &cn, "Str"))
+        {
             let r = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
             return Ok(Value::str(r.to_string_value()));
         }

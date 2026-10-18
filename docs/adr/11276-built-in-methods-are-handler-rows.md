@@ -4475,6 +4475,45 @@ Pinned in `t/vm/writeback/container-store-subclass.t`.
 
 Pinned in `t/collections/list-type-object-mutators.t`.
 
+### 9.179 The `Real` and `Numeric` roles' methods are composed-role rows (2026-10-19)
+
+`refactor/11276-real-role-rows`. A user class that composes `Real` got the role's methods from a
+heuristic in `dispatch_instance_and_fallback`: any method the class did not answer was re-sent
+to `.Numeric` (or `.Bridge`) of the instance, with `Bool`, `Bridge` and `log` gated ahead of it,
+and it applied to every class with a `Bridge` or `Numeric` method, composing a role or not.
+Rakudo bridges only through the roles' declared methods (`Real.^candidates[0].^method_table`
+and the `Numeric` role's), so the heuristic is gone and the methods are rows of `Real` and
+`Numeric` (`collections/composed_real.rs`, about 60 rows), reached through
+`composed_roles::answer` like `Positional.of`:
+
+- `self.Bridge.METHOD(...)` for the conversions, rounding, transcendental, `base`,
+  `polymod`, `unpolar`, `roots` and `Str`; an argument that composes `Real` is bridged too.
+- `Real.Bridge` is `self.Num` (a class with neither dies instead of recursing, where Rakudo
+  loops), `Real`, `Numeric` and `conj` are the invocant, `isNaN` is `False`, `abs` is
+  `self < 0 ?? -self !! self`, `succ`/`pred`/`Bool` are `self ± 1` / `self != 0` through the
+  operators, `Numeric.gist` is `self.Str`.
+
+Placement: the class's own methods win (`composed_roles::answer` declines a name the class
+declares); `Mu`'s rows found by the class MRO walk (`shapeless_row`) decline a zero-argument
+name a composed role declares, so `Numeric.Bool` comes before `Mu.Bool`; infix `~`/`eq` and the
+truth test ask `composed_roles::role_declares` alongside the user-method check. The `Bridge`
+arms of `should_bypass_native_fastpath` and of the numeric-bridge probe are gone with the
+heuristic.
+
+Behaviour changes toward Rakudo: `.Real`, `.Numeric`, `.conj` and a non-negative `.abs` answer the
+invocant; `.isNaN` no longer calls `Bridge`; `.is-prime` (not a `Real` method) is
+`X::Method::NotFound`; a class with only a `Bridge` or `Numeric` method no longer answers
+`log`/`sqrt`/`Int`/`succ`/... (Rakudo: `X::Method::NotFound`), and keeps `Mu.Bool`.
+`t/types/numeric/numeric-bridge-probe-memo.t`'s last test augmented a `Bridge` onto a plain
+class and expected `.Int`; it now augments a `Numeric` and checks `+`.
+
+Left: `ACCEPTS` (#13894: `Any.ACCEPTS` answers first, and `Int.ACCEPTS` does not bridge), the
+type-object answers (`R.sqrt` is `X::Multi::NoMatch` in Rakudo), the `Numeric`/`Real`
+type-object default in `call_method_with_values_inner`, and the operators' own `Bridge`
+coercion (`builtins_operators_coerce.rs`), which is the operators' and stays.
+
+Pinned in `t/oo/role/real-role-composed-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

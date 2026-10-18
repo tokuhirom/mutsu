@@ -938,7 +938,20 @@ pub(crate) fn shapeless_row(
         ValueView::Instance { class_name, .. } if mu => {
             // The first class in the MRO that declares the method answers it
             // (`class M is Match` keeps `Match.not`); `Mu` ends every MRO.
-            let owner = interp?
+            // A role the class composes comes before its parents: its row
+            // (`Numeric.Bool` of a `does Real` class, §9.179) answers through
+            // `composed_roles::answer`, so `Mu`'s declines.
+            let interp = interp?;
+            if arity == 0
+                && super::composed_roles::role_declares(
+                    interp,
+                    class_name.as_str(),
+                    method.as_str(),
+                )
+            {
+                return None;
+            }
+            let owner = interp
                 .class_mro(class_name.as_str())
                 .iter()
                 .copied()
