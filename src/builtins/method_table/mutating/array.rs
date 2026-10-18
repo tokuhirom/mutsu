@@ -32,12 +32,15 @@ use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:ident) => {
+        row!($owner, $name, $handler, RowFlags::NONE)
+    };
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Mut($handler),
-            flags: RowFlags::SLURPY,
+            flags: RowFlags::SLURPY.or($flags),
             named: &[],
         }
     };
@@ -45,16 +48,19 @@ macro_rules! row {
 
 /// Every row is slurpy from zero arguments: `push` takes any number, and `pop`
 /// and `shift` take none but must answer a call with some with Rakudo's arity
-/// error rather than "No such method".
+/// error rather than "No such method". A type-object receiver (#13881) is
+/// refused by the methods Rakudo declares `Array:D` only: `pop` and `shift`
+/// (`only`, an invalid concreteness), `splice` and `grab` (multis, no
+/// candidate). The growing methods keep vivifying a type object a binding holds.
 pub(super) static ROWS: &[MethodRow] = &[
     row!("Array", "push", push_row),
     row!("Array", "append", append_row),
     row!("Array", "unshift", unshift_row),
     row!("Array", "prepend", prepend_row),
-    row!("Array", "pop", pop_row),
-    row!("Array", "shift", shift_row),
-    row!("Array", "splice", splice_row),
-    row!("Array", "grab", grab_row),
+    row!("Array", "pop", pop_row, RowFlags::DEFINITE),
+    row!("Array", "shift", shift_row, RowFlags::DEFINITE),
+    row!("Array", "splice", splice_row, RowFlags::DEFINITE_MULTI),
+    row!("Array", "grab", grab_row, RowFlags::DEFINITE_MULTI),
     row!("List", "push", push_row),
     row!("List", "append", append_row),
     row!("List", "unshift", unshift_row),

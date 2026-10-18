@@ -47,7 +47,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "add",
         arity: 0,
         handler: Handler::Mut(add_row),
-        flags: RowFlags::SLURPY,
+        // `only method add(BagHash:D: ...)`: a type object is refused (#13881).
+        flags: RowFlags::SLURPY.or(RowFlags::DEFINITE),
         named: &[],
     },
     MethodRow {
@@ -55,7 +56,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "remove",
         arity: 0,
         handler: Handler::Mut(remove_row),
-        flags: RowFlags::SLURPY,
+        flags: RowFlags::SLURPY.or(RowFlags::DEFINITE),
         named: &[],
     },
 ];
