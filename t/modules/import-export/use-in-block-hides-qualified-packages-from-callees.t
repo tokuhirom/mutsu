@@ -5,11 +5,12 @@ use Test;
 # `::('&M::f')`) resolves inside the block, but not after it and not in a
 # routine written outside it that the block calls (#13801). Checked against
 # rakudo.
-plan 10;
+plan 12;
 
 use lib 't/lib';
 
 sub callee-type { (try ::('UseInBlockQualifiedPkg::Foo').hi) // 'hidden' }
+sub callee-bare { ::('UseInBlockQualifiedPkg') ~~ Failure ?? 'hidden' !! 'seen' }
 sub callee-code { (try ::('&UseInBlockQualifiedPkg::osub')()) // 'hidden' }
 my &keeps;
 {
@@ -28,4 +29,9 @@ is keeps(), 'foo', 'a closure made in the block keeps the import';
 {
     use UseInBlockQualifiedPkg;
     is ::('UseInBlockQualifiedPkg::Foo').hi, 'foo', 'a sibling block\'s `use` grants it again';
+}
+{
+    require UseInBlockQualifiedPkg;
+    is callee-type(), 'hidden', 'a callee does not see the type a block\'s `require` loaded';
+    is callee-bare(), 'hidden', 'nor the package name `require` binds in the block';
 }
