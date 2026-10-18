@@ -5,7 +5,7 @@ use Test;
 # program-scope sub of the same name has an identical body and so the same
 # compiled code (#13890). Checked against rakudo.
 
-plan 8;
+plan 9;
 
 my @u = 'main';
 my %h = a => 1;
@@ -21,6 +21,7 @@ sub mk2 {
     $r
 }
 is mk2(), 'mk2b', 'identical nested bodies read the routine variables';
+is acc() ~ hk(), 'maina', '...and the program-scope subs still read the program variables (#13900)';
 
 sub early { my $r = acc2(); my @v = 1, 2; sub acc2 { @v.elems }; $r ~ '/' ~ acc2() }
 is early(), '0/2', 'a call before the declaration sees the empty array';

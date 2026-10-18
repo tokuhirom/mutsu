@@ -167,7 +167,7 @@ impl Interpreter {
         };
         // mutsu#9111: a routine-nested sub's per-activation binding.
         // The owner is what `run_trir_routine` pushes as the chunk's frame.
-        let owner = (self.current_package_sym(), chunk.def_file.get().copied());
+        let owner = (self.current_package_sym(), chunk.def_file.get().copied(), 0);
         if let Some(v) = self.lexsub_alias_binding_for(callee, owner, name) {
             return Some(celled(v));
         }
