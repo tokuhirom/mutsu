@@ -130,6 +130,13 @@ fn run(
     op: Op,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
+    // A binding more than one thread can reach writes to its one shared home
+    // (`Interpreter::shared_array_lane`, ADR-11276 §9.169).
+    if let Some(name) = place.name()
+        && let Some(answer) = interp.shared_array_lane(name, place.value(), op.name(), args)
+    {
+        return Some(answer);
+    }
     let ValueView::Array(_, kind) = place.value().descalarize().view() else {
         return None;
     };

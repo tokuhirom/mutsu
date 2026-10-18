@@ -4276,6 +4276,27 @@ Pinned in `t/oo/method/routine-code-method-rows.t`.
   the subscript rows (§9.106, §9.138) answer it.
 
 No behaviour change.
+### 9.169 The thread-shared lane is the first step of `Array`'s mutator rows (2026-10-18)
+
+`refactor/11276-shared-array-place`. §9.23 left the VM's thread-shared lanes with their own copies of
+`push`, `unshift`, `append`, `prepend`, `pop`, `shift` and `splice` ("a `Shared` place is slice 5's"):
+`CallMethodMut` answered a plain lexical `@name` that several threads reach from a block of its own, writing
+to the binding's one cross-thread home (its decl-site `ContainerRef` cell, or the atomic store keyed by
+the name).
+
+- The block is one `Interpreter` method, `shared_array_lane` (`vm/vm_shared_array_lane.rs`), and the first
+  step of `Array`'s rows (`mutating::array::run`): when the place names a binding the lane applies to
+  (`shared_array_lane_applies`, the two conditions the VM tested), the row answers from it; otherwise the
+  row runs as before. The lane's conditions are properties of the binding (shared variables active, a
+  plain lexical `@name`, held in a cell or not re-declared), read from the place's name, so no new place
+  kind is needed: the named place already carries what the lane reads.
+- `CallMethodMut` asks `invoke_mut` at the old position when the lane applies, and goes on to the full
+  dispatch otherwise, as before. The copies of the seven mutators in the VM go.
+- Every other entry that reaches a row with a named place (the interpreter's by-name mutating entry, a
+  run-time method name) now takes the lane too, where it used to write the thread-local copy.
+
+The `ArrayPush` opcode keeps its own lane; it is not a method call. Pinned in
+`t/vm/writeback/shared-array-mutator-rows.t`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
