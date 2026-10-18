@@ -286,6 +286,10 @@ fn set_name(
                 )))
             }
         }
+        // A method object renames its method table entry (§9.167).
+        ValueView::Instance { .. } => {
+            interp.method_object_code_row(target, "set_name", args.to_vec())
+        }
         _ => None,
     }
 }
