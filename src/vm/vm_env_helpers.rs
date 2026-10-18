@@ -2551,8 +2551,14 @@ impl Interpreter {
                         self.pending_rw_writeback_slots
                             .remove(&source, self.call_frames.len());
                     }
-                    if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
-                        && let Some(val) = self.env().get(&source).cloned()
+                    // A caller's rw parameter may already be the shared cell
+                    // captured by the callee. Replacing that slot with the
+                    // environment's value would detach it from the source
+                    // variable before the caller's next write.
+                    if !matches!(
+                        self.locals[slot].view(),
+                        ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_)
+                    ) && let Some(val) = self.env().get(&source).cloned()
                     {
                         self.locals[slot] = val;
                     }
