@@ -411,6 +411,10 @@ pub(crate) struct ModuleState {
     /// `OpCode::LexImportCall` sites lexically inside the block read it.
     pub(crate) lexical_import_sets:
         HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
+    /// The ids of the `lexical_import_sets` that bind a built-in operator's
+    /// dispatcher (ADR-8751 stage 2). A built-in op compiled under an import
+    /// chain asks the chain only while one exists (#13906).
+    pub(crate) lexical_operator_import_sets: HashSet<Symbol>,
     /// The definition of each captured candidate (by its code object's `id`)
     /// of a dispatcher over a built-in operator's imported user candidates
     /// (ADR-8751 stage 2): the winner is ranked against the operator's core
@@ -607,6 +611,7 @@ impl ModuleState {
             imported_exported_proto_tags: Default::default(),
             imported_env_aliases: HashMap::new(),
             lexical_import_sets: HashMap::new(),
+            lexical_operator_import_sets: HashSet::new(),
             lexical_operator_candidate_defs: Default::default(),
             lexical_import_capture: None,
             strict_mode: false,
@@ -691,6 +696,7 @@ impl ModuleState {
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             imported_env_aliases: self.imported_env_aliases.clone(),
             lexical_import_sets: self.lexical_import_sets.clone(),
+            lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),
             lexical_import_capture: None,
             strict_mode: self.strict_mode,

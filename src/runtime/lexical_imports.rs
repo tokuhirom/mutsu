@@ -243,6 +243,14 @@ impl Interpreter {
                 set.insert(name, binding);
             }
         }
+        if set
+            .values()
+            .any(|b| matches!(b, LexicalImport::Code(v) if Self::is_builtin_operator_dispatcher(v)))
+        {
+            self.module.lexical_operator_import_sets.insert(id);
+        } else {
+            self.module.lexical_operator_import_sets.remove(&id);
+        }
         self.module
             .lexical_import_sets
             .insert(id, std::sync::Arc::new(set));

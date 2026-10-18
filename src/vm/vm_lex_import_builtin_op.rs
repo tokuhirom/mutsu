@@ -24,7 +24,8 @@ impl Interpreter {
     /// Run the op at `ip + 1` with the user candidates of the built-in
     /// operator `name_idx` that one of the import sets of chain `chain_idx`
     /// binds, or as it is when none binds them. Returns the ip after that op.
-    // Cost: O(c) probe, c = enclosing `use`-blocks, plus the op at ip + 1.
+    // Cost: O(1) when no import set binds an operator; else an O(c) probe,
+    // c = enclosing `use`-blocks; plus the op at ip + 1.
     pub(super) fn exec_lex_import_builtin_op_site(
         &mut self,
         code: &CompiledCode,
@@ -33,6 +34,11 @@ impl Interpreter {
         name_idx: u32,
         compiled_fns: &CompiledFns,
     ) -> Result<usize, RuntimeError> {
+        // No import set in the process binds an operator's candidates: the op
+        // runs as built in, without asking the chain (#13906).
+        if self.module.lexical_operator_import_sets.is_empty() {
+            return Ok(ip + 1);
+        }
         let name = code.const_sym(name_idx);
         let dispatcher = code
             .lexical_import_chains
