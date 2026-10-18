@@ -140,6 +140,7 @@ impl Interpreter {
         };
         Value::store_through_cell(&pending.cell, default);
         let boxed = Value::container_ref(pending.cell.clone());
+        self.mark_fresh_cell_declared_untyped(&boxed, name);
         self.env_mut().insert(name.to_string(), boxed);
         true
     }
@@ -166,19 +167,21 @@ impl Interpreter {
             // A cell seeded for a routine-nested sub's alias (no store bucket,
             // #13890): the alias holds the seeded cell, so the declaration's
             // own cell gives its value to it and the slot goes back to it.
-            if pending.unit_key.is_empty()
-                && pending.name.starts_with(['@', '%'])
-                && !Gc::ptr_eq(&c, &pending.cell)
-            {
+            if pending.unit_key.is_empty() && !Gc::ptr_eq(&c, &pending.cell) {
                 let value = c.lock().unwrap().clone();
                 Value::store_through_cell(&pending.cell, &value);
                 let boxed = Value::container_ref(pending.cell.clone());
                 self.register_container_cell_constraint_for_name(&boxed, &pending.name);
+                self.mark_fresh_cell_declared_untyped(&boxed, &pending.name);
                 self.locals[slot] = boxed.clone();
                 self.env_mut().insert(pending.name, boxed);
                 return;
             }
-            if !Gc::ptr_eq(&c, &pending.cell) {
+            if Gc::ptr_eq(&c, &pending.cell) {
+                // The store went through the seeded cell: it is the
+                // declaration's container, and says what that would (#13900).
+                self.mark_fresh_cell_declared_untyped(&new, &pending.name);
+            } else {
                 // The store already boxed the variable itself: the store entry
                 // follows that cell.
                 self.set_hoist_store_entry(&pending, Some(new));
@@ -198,6 +201,9 @@ impl Interpreter {
         // name from another frame (an `EVAL` in the sub, #13746) checks the
         // cell's constraint, not a record of the frame it runs in.
         self.register_container_cell_constraint_for_name(&boxed, &pending.name);
+        // ...and, untyped, says so to an integer atomic reaching it through an
+        // alias, as the declaration's own container would (#13900).
+        self.mark_fresh_cell_declared_untyped(&boxed, &pending.name);
         self.locals[slot] = boxed.clone();
         self.env_mut().insert(pending.name, boxed);
     }
