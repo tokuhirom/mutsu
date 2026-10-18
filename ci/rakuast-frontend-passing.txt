@@ -2928,6 +2928,7 @@ t/modules/import-export/use-in-block-binds-lexically.t
 t/modules/import-export/use-in-block-binds-multis-lexically.t
 t/modules/import-export/use-in-block-binds-nontrivial-proto-lexically.t
 t/modules/import-export/use-in-block-binds-operators-lexically.t
+t/modules/import-export/use-in-block-binds-repeat-postfix-lexically.t
 t/modules/import-export/use-in-block-binds-set-operators-lexically.t
 t/modules/import-export/use-in-block-binds-string-operators-lexically.t
 t/modules/import-export/use-in-block-builtin-operator-candidates.t
