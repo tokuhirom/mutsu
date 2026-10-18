@@ -33,7 +33,8 @@ macro_rules! row {
             name: "STORE",
             arity: $arity,
             handler: Handler::Mut($handler),
-            flags: RowFlags::NONE,
+            // Every `STORE` candidate wants a defined invocant (#13881).
+            flags: RowFlags::DEFINITE_MULTI,
             named: INITIALIZE,
         }
     };

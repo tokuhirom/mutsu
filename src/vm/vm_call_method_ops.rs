@@ -2036,7 +2036,9 @@ impl Interpreter {
                 // mutators so far: `$obj.q.grab`, `@sets[0].unset('x')`).
                 // Container identity (§3): the row writes through the
                 // receiver's SHARED backing node, so the holder observes it.
-                if crate::builtins::method_table::mut_owners_of(&target).is_some() {
+                if crate::builtins::method_table::mut_owners_of(&target).is_some()
+                    || crate::builtins::method_table::mut_type_object_owners(&target).is_some()
+                {
                     self.dispatch.method_dispatch_pure = false;
                     let mut detached = target.descalarize().clone();
                     let mut place =

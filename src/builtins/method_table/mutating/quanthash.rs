@@ -30,20 +30,26 @@ use num_traits::Signed;
 
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:ident) => {
+        row!($owner, $name, $handler, RowFlags::DEFINITE_MULTI)
+    };
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Mut($handler),
-            flags: RowFlags::SLURPY,
+            flags: RowFlags::SLURPY.or($flags),
             named: &[],
         }
     };
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row!("SetHash", "set", set_row),
-    row!("SetHash", "unset", unset_row),
+    // `set` and `unset` are `only` methods of `SetHash:D`; every other row here
+    // is a multi with `:D` candidates only, so a type object finds none
+    // (#13881).
+    row!("SetHash", "set", set_row, RowFlags::DEFINITE),
+    row!("SetHash", "unset", unset_row, RowFlags::DEFINITE),
     row!("SetHash", "grab", grab_row),
     row!("SetHash", "grabpairs", grabpairs_row),
     row!("BagHash", "grab", grab_row),

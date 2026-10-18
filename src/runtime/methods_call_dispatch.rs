@@ -1021,7 +1021,10 @@ impl Interpreter {
         // Probed by receiver kind first, so a call on any other receiver
         // pays one tag probe and no interning.
         // `splice` is also a row of `Any`, so any receiver may have one.
-        if method == "splice" || crate::builtins::method_table::mut_owners_of(&target).is_some() {
+        if method == "splice"
+            || crate::builtins::method_table::mut_owners_of(&target).is_some()
+            || crate::builtins::method_table::mut_type_object_owners(&target).is_some()
+        {
             let mut detached = target.clone();
             let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
             if let Some(result) = crate::builtins::method_table::invoke_mut(

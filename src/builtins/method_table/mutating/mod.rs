@@ -111,3 +111,28 @@ pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
         _ => None,
     }
 }
+
+/// The owner chain of a container *type object* (`Array`, `SetHash`, ...),
+/// for the refusal step of [`invoke_mut`](super::invoke_mut) (#13881): a row
+/// Rakudo declares for a defined invocant only refuses the type object with
+/// its concreteness or no-match error. `None` for any other receiver, which
+/// [`owners_of`] answers.
+// Cost: O(1), a tag probe and a short name compare.
+pub(crate) fn type_object_owners(value: &Value) -> Option<&'static [&'static str]> {
+    let ValueView::Package(name) = value.descalarize().view() else {
+        return None;
+    };
+    Some(match name.resolve().as_str() {
+        "Array" => &["Array", "List"],
+        "List" => &["List"],
+        "Hash" => &["Hash", "Map"],
+        "Map" => &["Map"],
+        "SetHash" => &["SetHash"],
+        "BagHash" => &["BagHash"],
+        "MixHash" => &["MixHash"],
+        "Set" => &["Set"],
+        "Bag" => &["Bag"],
+        "Mix" => &["Mix"],
+        _ => return None,
+    })
+}

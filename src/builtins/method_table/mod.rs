@@ -125,6 +125,7 @@ pub(crate) use dispatch::{
 #[cfg(test)]
 pub(crate) use dispatch::{shapeless_row, try_dispatch};
 pub(crate) use mutating::owners_of as mut_owners_of;
+pub(crate) use mutating::type_object_owners as mut_type_object_owners;
 pub(crate) use place::ReceiverPlace;
 pub(crate) use row::{Handler, MethodRow, Named, NamedFn, NarrowFn, RowFlags};
 #[cfg(test)]

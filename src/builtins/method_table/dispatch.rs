@@ -228,6 +228,32 @@ pub(crate) fn invoke_mut(
     if !super::table::names_a_mut_row(method, arity) {
         return None;
     }
+    // A container type object (`Array.pop`, `SetHash.set`) is refused by the
+    // rows Rakudo declares for a defined invocant only (#13881); the others
+    // (`Array.push`, which vivifies a type object a binding holds) go on.
+    if let Some(type_owners) = mutating::type_object_owners(place.value())
+        && let Some(id) = type_owners
+            .iter()
+            .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))
+        && let crate::value::ValueView::Package(type_name) = place.value().descalarize().view()
+        && let Some(refusal) = row(id).type_object_refusal(&type_name.resolve())
+    {
+        // A multi's no-match error names the call's argument types, as
+        // Rakudo's does (`STORE(Array:U: List:D)`).
+        if row(id).flags.contains(RowFlags::DEFINITE_MULTI) {
+            let profile = interp.format_call_arg_profile(args);
+            return Some(Err(
+                crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+                    row(id).name,
+                    &type_name.resolve(),
+                    false,
+                    &profile,
+                    &[],
+                ),
+            ));
+        }
+        return Some(Err(refusal));
+    }
     // `Any` ends every owner chain: the proto a kind with no mutator of its
     // own falls back to (`Any.splice`).
     let owners = mutating::owners_of(place.value()).unwrap_or(&[]);
