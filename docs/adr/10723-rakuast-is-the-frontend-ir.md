@@ -1323,3 +1323,13 @@ returns to the existing placeholder-scope check. `start` blocks with the same
 scope error also retain their prefix through the desugared-block path. The
 focused regression checks valid supply execution and the normal
 `X::Placeholder::Block` diagnostic for both prefixes.
+
+### 6.72 S10: hidden role traits (2026-10-18)
+
+Rakudo renders `role R hides Parent` as `Trait::Hides(Type::Simple)` and
+`role R is Parent is hidden` as `Trait::Is(type => ...)` followed by
+`Trait::Is(name => "hidden")`. The parser already retains the hide relationship
+and hidden-role marker as leading `DoesDecl` entries. Conversion now folds a
+parent plus its hide marker into one `Trait::Hides`, and lowering rebuilds the
+same entries from the measured trait nodes. The focused regression checks both
+tree shapes, EVAL, and the resulting unhidden MRO.
