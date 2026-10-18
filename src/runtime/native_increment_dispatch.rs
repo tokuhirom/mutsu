@@ -125,8 +125,6 @@ impl Interpreter {
         if !self.has_multi_function_cached(name) {
             return None;
         }
-        let operand = Self::increment_operand(&args[0]);
-        let (core_constraint, core_distance) = self.core_increment_candidate(&operand);
         // Rank against the user candidate multi dispatch would otherwise run.
         // With no matching user candidate there is nothing to compare and the
         // core implementation runs by default. `args` is passed through as the
@@ -136,17 +134,27 @@ impl Interpreter {
         let Some(def) = self.resolve_function_with_types(name, args).ok().flatten() else {
             return Some(true);
         };
+        Some(self.core_increment_wins_over(&def, args))
+    }
+
+    /// Whether the core candidate set out-ranks the user candidate `def`
+    /// that multi dispatch picked for the one-argument increment call `args`
+    /// ([`Self::core_increment_candidate_wins`]; also the ranking of an
+    /// imported candidate a block's import set binds, ADR-8751 stage 2).
+    // Cost: O(p + h), p = `def`'s parameters, h = the type-hierarchy distance
+    // walk.
+    pub(crate) fn core_increment_wins_over(&mut self, def: &FunctionDef, args: &[Value]) -> bool {
+        let operand = Self::increment_operand(&args[0]);
+        let (core_constraint, core_distance) = self.core_increment_candidate(&operand);
         if core_constraint == "Mu" {
             // `Mu` is the root of the type hierarchy, so every other parameter
             // type — an unconstrained parameter included, since that is `Any` —
             // is strictly narrower and takes the call. Only a user candidate
             // that is itself constrained to `Mu` ties, and a tie goes to core.
-            return Some(
-                Self::user_increment_constraint(&def)
-                    .as_deref()
-                    .map(Self::constraint_base_name)
-                    .is_some_and(|base| base == "Mu"),
-            );
+            return Self::user_increment_constraint(def)
+                .as_deref()
+                .map(Self::constraint_base_name)
+                .is_some_and(|base| base == "Mu");
         }
         // A typed core candidate. Rank against the user's the way multi dispatch
         // does, but with *nominal type* narrowness as the primary key: a
@@ -156,14 +164,14 @@ impl Interpreter {
         // is a plain nominal type, so it carries one typed positional and no
         // refinement of any kind.
         let (literal, typed, constrained, subsig, _traits) =
-            self.candidate_specificity_rank_for_args(&def, args);
+            self.candidate_specificity_rank_for_args(def, args);
         let user_key = (typed, literal, constrained, subsig);
         let core_key = (1usize, 0usize, 0usize, 0usize);
         if user_key != core_key {
-            return Some(core_key > user_key);
+            return core_key > user_key;
         }
-        let user_distance = self.candidate_type_distance(args, &def);
-        Some(core_distance <= user_distance)
+        let user_distance = self.candidate_type_distance(args, def);
+        core_distance <= user_distance
     }
 
     /// The value an increment operand carries, looking through the `VarRef`
@@ -194,7 +202,7 @@ impl Interpreter {
                 inner.clone(),
                 index.map(|i| i as usize),
             ),
-            None => (None, arg.clone(), None),
+            None => (None, Self::element_location_value(arg), None),
         };
         // An undefined operand starts from its type's zero (`my Num $n; $n++`
         // is `0e0`, `my Bool $b; $b++` is `False`), matching the core
@@ -222,7 +230,35 @@ impl Interpreter {
                 None => self.assign_varref_target(&name, index, new.clone())?,
             }
             self.pending_rw_writeback_sources.push(name);
+        } else {
+            // An element operand (`@a[0]++`) arrives as its location.
+            Self::store_element_location(arg, new.clone());
         }
         Ok(if op.yields_old_value() { old } else { new })
+    }
+
+    /// The value an element location (`IndexArgRef`'s `ContainerRef` cell,
+    /// or the deferred `HashEntryRef` of a missing key) holds; any other
+    /// value as it is.
+    // Cost: O(1), or O(k) for a deferred entry, k = path depth.
+    fn element_location_value(arg: &Value) -> Value {
+        match arg.view() {
+            ValueView::ContainerRef(_) => arg.deref_container(),
+            ValueView::HashEntryRef { .. } => arg.hash_entry_read(),
+            _ => arg.clone(),
+        }
+    }
+
+    /// Store `new` through the element location `arg`; a no-op for any other
+    /// value, which has no location to write.
+    // Cost: O(1), or O(k) for a deferred entry, k = path depth.
+    fn store_element_location(arg: &Value, new: Value) {
+        match arg.view() {
+            ValueView::ContainerRef(_) => {
+                arg.assign_into_container(new);
+            }
+            ValueView::HashEntryRef { .. } => arg.hash_entry_write(new),
+            _ => {}
+        }
     }
 }

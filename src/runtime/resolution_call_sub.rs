@@ -310,6 +310,25 @@ impl Interpreter {
             candidates,
             &call_args,
         )? {
+            // An imported increment candidate joins the native increment's
+            // core candidates and takes the call only when it out-ranks them,
+            // as a registry candidate does (ADR-8751 stage 2).
+            if let Some(family) = family_name
+                && let Some(op) =
+                    crate::runtime::native_increment_dispatch::IncrementOp::from_routine_name(
+                        family,
+                    )
+                && let [arg] = call_args.as_slice()
+                && let ValueView::Sub(data) = candidate.view()
+                && let Some(def) = self
+                    .module
+                    .lexical_operator_candidate_defs
+                    .get(&data.id)
+                    .cloned()
+                && self.core_increment_wins_over(&def, &call_args)
+            {
+                return self.run_core_increment(op, arg, None);
+            }
             let candidate = Self::bind_family_dispatcher(&candidate, family_name, func);
             return self.call_captured_multi_winner(
                 family_name.unwrap_or(""),
@@ -412,6 +431,11 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(op) = name.strip_prefix("infix:<").and_then(|s| s.strip_suffix('>')) {
             return self.call_infix_routine(Self::normalize_unicode_infix(op), args);
+        }
+        if let Some(op) = crate::runtime::native_increment_dispatch::IncrementOp::from_routine_name(name)
+            && let [arg] = args
+        {
+            return self.run_core_increment(op, arg, None);
         }
         if let Some(op) = name.strip_prefix("prefix:<").and_then(|s| s.strip_suffix('>'))
             && let [arg] = args

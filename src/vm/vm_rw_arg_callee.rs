@@ -115,6 +115,15 @@ impl Interpreter {
                 // `my &g = sub ($x is rw) { ... }; g(@a[0])`.
                 let name = Self::const_str(code, *name_idx);
                 let name_sym = code.const_sym(*name_idx);
+                // The increment operators' core candidates take their operand
+                // `is rw`: a call of one (a user candidate made `$x++` a
+                // call) hands an element over as its location, which the
+                // native increment writes when it takes the call.
+                if crate::runtime::native_increment_dispatch::IncrementOp::from_routine_name(name)
+                    .is_some()
+                {
+                    return positional == 0;
+                }
                 // A frame-lexical routine (ADR-0113) is in no registry, so
                 // both questions below miss it, and the code-variable
                 // resolution then walked every registered routine's key on
