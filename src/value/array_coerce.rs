@@ -230,6 +230,18 @@ fn coerce_to_array_inner(value: Value) -> Value {
             Value::array_with_kind(arc, ArrayKind::Array)
         }
         ValueView::LazyList(_) => value.clone(),
+        // A role mixed into a list (`my @b = (1, 2, 3) but R`) is still that
+        // list, so it flattens into the array's elements as the bare list
+        // would. The mix-in is a new object, not the container it was made
+        // from: `my @g = $[1, 2] but R` holds two elements, as in Rakudo.
+        ValueView::Mixin(inner, _)
+            if matches!(
+                inner.view(),
+                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
+            ) =>
+        {
+            coerce_to_array_inner(crate::value::flat::deitemize_flat_operand(&inner))
+        }
         // A bare Hash assigned to an @-var flattens into its pairs
         // (`my @a = %h`). An *itemized* hash (`my $h = %(...); my @a = $h`)
         // stays a single element — `ItemizeVar` now tags it with the per-holder

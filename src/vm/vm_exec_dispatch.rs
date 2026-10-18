@@ -3603,7 +3603,16 @@ impl Interpreter {
                         {
                             Value::scalar(val)
                         }
-                        ValueView::Mixin(..) if self.mixin_composes_method(&val, "iterator") => {
+                        // A role mixed into a list (`my $l = (1, 2) but R`)
+                        // flattens on `@`-assignment like the bare list
+                        // (`coerce_to_array`), so held in a scalar it stays one
+                        // item, as an itemized list does.
+                        ValueView::Mixin(inner, _)
+                            if matches!(
+                                inner.view(),
+                                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
+                            ) || self.mixin_composes_method(&val, "iterator") =>
+                        {
                             Value::scalar(val)
                         }
                         _ => Self::itemize_value(val),
