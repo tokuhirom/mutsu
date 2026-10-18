@@ -96,6 +96,15 @@ impl super::Compiler {
         }
     }
 
+    /// Record that a bare `name(...)` call here reaches the routine a nearer
+    /// scope declares, past an outer `&name` binding (see
+    /// [`CompiledCode::routine_shadowed_calls`]).
+    pub(super) fn note_routine_shadowed_call(&mut self, name: Symbol) {
+        if !self.code.routine_shadowed_calls.contains(&name) {
+            self.code.routine_shadowed_calls.push(name);
+        }
+    }
+
     /// Prepare a fresh compiler that is about to compile `origin`'s AST again
     /// (the inline `map`/`grep` path, a sequence generator): every bare call
     /// `origin` (or a closure nested in it) resolved to a shadowing `&name`

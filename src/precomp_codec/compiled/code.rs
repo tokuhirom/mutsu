@@ -99,6 +99,7 @@ impl Encode for CompiledCode {
             named_sub_captures,
             lexical_routines,
             amp_shadowed_calls,
+            routine_shadowed_calls,
             lexsub_refs,
             code_var_upvalue_reads,
             lexical_subtree,
@@ -258,6 +259,7 @@ impl Encode for CompiledCode {
         named_sub_captures.encode(encoder)?;
         lexical_routines.encode(encoder)?;
         amp_shadowed_calls.encode(encoder)?;
+        routine_shadowed_calls.encode(encoder)?;
         lexsub_refs.encode(encoder)?;
         code_var_upvalue_reads.encode(encoder)?;
         lexical_subtree.encode(encoder)?;
@@ -405,6 +407,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             named_sub_captures: Decode::decode(decoder)?,
             lexical_routines: Decode::decode(decoder)?,
             amp_shadowed_calls: Decode::decode(decoder)?,
+            routine_shadowed_calls: Decode::decode(decoder)?,
             lexsub_refs: Decode::decode(decoder)?,
             code_var_upvalue_reads: Decode::decode(decoder)?,
             lexical_subtree: Decode::decode(decoder)?,
