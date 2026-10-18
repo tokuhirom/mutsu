@@ -275,6 +275,13 @@ impl Interpreter {
     /// `ACCEPTS` that dies, a method named by a Pair matcher that does not
     /// exist), which [`Interpreter::smart_match`] reports as "no match".
     // Cost: as `smart_match`.
+    /// Whether `value` is an instance of a user class composing `Real`.
+    // Cost: one memoized role lookup and one MRO read.
+    fn user_real_instance(&mut self, value: &Value) -> bool {
+        matches!(value.view(), ValueView::Instance { .. })
+            && crate::builtins::method_table::is_user_real_instance(self, value)
+    }
+
     pub(crate) fn try_smart_match(
         &mut self,
         left: &Value,
@@ -1840,6 +1847,40 @@ impl Interpreter {
                     (crate::value::rat_to_f64(n, d)) == br && bi == 0.0
                 } else {
                     false
+                }
+            }
+            // `Numeric.ACCEPTS(Any:D \a)` is `a == self`: an instance of a
+            // user class composing `Real` compares through the operator,
+            // which bridges it, whether it is the topic (`$r ~~ 3`) or the
+            // matcher (`3 ~~ $r`, the role's `ACCEPTS`, #13894).
+            (
+                ValueView::Instance { .. },
+                ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..),
+            ) if self.user_real_instance(left) => {
+                match self.call_infix_routine("==", &[left.clone(), right.clone()]) {
+                    Ok(v) => v.truthy(),
+                    Err(e) => {
+                        err.get_or_insert(e);
+                        false
+                    }
+                }
+            }
+            (_, ValueView::Instance { .. })
+                if !matches!(
+                    left.view(),
+                    ValueView::Junction { .. } | ValueView::Package(_)
+                ) && self.user_real_instance(right) =>
+            {
+                match self.call_infix_routine("==", &[left.clone(), right.clone()]) {
+                    Ok(v) => v.truthy(),
+                    Err(e) => {
+                        err.get_or_insert(e);
+                        false
+                    }
                 }
             }
             // `Numeric.ACCEPTS(Any:D \a)` is `a == self`, and a `Duration` is

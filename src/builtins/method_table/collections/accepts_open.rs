@@ -63,7 +63,11 @@ fn smartmatch(
 ) -> Option<Result<Value, RuntimeError>> {
     // An exception raised while matching (a Blob topic against a Str
     // receiver dies `X::Buf::AsStr`) propagates.
-    if let Some(pure) = crate::vm::vm_smart_match::pure_smart_match(&args[0], target) {
+    // A user class composing `Real` compares through the operator, which only
+    // the interpreter's smartmatch does (#13894).
+    if !crate::builtins::method_table::is_user_real_instance(interp, target)
+        && let Some(pure) = crate::vm::vm_smart_match::pure_smart_match(&args[0], target)
+    {
         return Some(Ok(Value::truth(pure)));
     }
     Some(interp.try_smart_match(&args[0], target).map(Value::truth))

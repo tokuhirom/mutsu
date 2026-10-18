@@ -758,6 +758,15 @@ impl Interpreter {
             }
             _ => false,
         };
+        // A matcher composing `Real` has `Numeric.ACCEPTS` (`a == self`),
+        // which the interpreter's smartmatch compares through the operator;
+        // the pure arms would read an instance by identity (#13894).
+        if matches!(right.view(), ValueView::Instance { .. })
+            && !matches!(left.view(), ValueView::Junction { .. })
+            && crate::builtins::method_table::is_user_real_instance(self, right)
+        {
+            return self.smart_match_into(left, right, err);
+        }
         if right_has_user_accepts && !matches!(left.view(), ValueView::Junction { .. }) {
             match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
                 Ok(v) => return v.truthy(),

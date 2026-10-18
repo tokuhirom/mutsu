@@ -18,7 +18,7 @@ mod any_interp_twins;
 mod any_list_late;
 mod any_pos_late;
 mod composed_dateish;
-mod composed_real;
+pub(crate) mod composed_real;
 mod match1_late;
 mod match3_late;
 mod mu_late;
