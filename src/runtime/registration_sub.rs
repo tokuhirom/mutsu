@@ -678,7 +678,9 @@ impl Interpreter {
         if matches!(existing.view(), ValueView::Mixin(..)) {
             return false;
         }
-        let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
+        let allow_lexical_shadow = (self.block_scope_depth > 0
+            || is_lexical_hoist
+            || self.in_inlined_block_frame())
             && (in_routine_called_by_eval(&self.routine_stack, name)
                 || (!matches!(
                     self.env.get("__mutsu_in_eval").map(Value::view),
@@ -869,6 +871,13 @@ impl Interpreter {
         let allow_redeclare = supersede || is_method_value_decl;
         let is_our_scoped = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
         let is_lexical_hoist = custom_traits.iter().any(|(t, _)| t == "__lexical_hoist");
+        // Declared in a scope nested in its compilation unit's or routine's
+        // own (an `if` body, a bare block): it may shadow an outer `&name`
+        // binding, as rakudo's lexical `sub` does (#13855).
+        let in_nested_scope = is_lexical_hoist
+            || custom_traits
+                .iter()
+                .any(|(t, _)| t == crate::ast::NESTED_SCOPE_DECL_MARKER);
         let package = self.current_package();
         // Imports are aliases in the importing scope, not declarations in
         // that scope. A later local `sub` replaces the alias; once replaced,
@@ -913,7 +922,7 @@ impl Interpreter {
             && !multi
             && !is_method_value_decl
             && !custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
-            && !self.sub_decl_would_redeclare(name, is_lexical_hoist)
+            && !self.sub_decl_would_redeclare(name, in_nested_scope)
         {
             let fq = self.current_package_qualified(name).to_string();
             let fq_sym = Symbol::intern(&fq);
@@ -968,7 +977,7 @@ impl Interpreter {
             && !is_our_scoped
             && associativity.is_none()
             && !custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
-            && !self.sub_decl_would_redeclare(name, is_lexical_hoist)
+            && !self.sub_decl_would_redeclare(name, in_nested_scope)
         {
             let pkg = self.current_package().to_string();
             let fq = crate::qualified::qualified_text(&pkg, name)
@@ -1354,7 +1363,9 @@ impl Interpreter {
             })
         };
         let has_proto = self.registry().proto_subs_contains(&single_key);
-        let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
+        let allow_lexical_shadow = (self.block_scope_depth > 0
+            || in_nested_scope
+            || self.in_inlined_block_frame())
             && (in_routine_called_by_eval(&self.routine_stack, name)
                 || (!matches!(
                     self.env.get("__mutsu_in_eval").map(Value::view),
@@ -2734,5 +2745,16 @@ impl Interpreter {
             map.insert(key.clone(), val.to_value());
         }
         crate::builtins::map_hash_coerce::to_map(Value::hash(map))
+    }
+}
+
+impl Interpreter {
+    /// Whether the innermost frame is an inlined bare block (`PushBlockFrame`,
+    /// a statement-level `{ ... }` that is the unit's last statement): a
+    /// lexical scope whose `sub` may shadow an outer `&name`, as a block run
+    /// under `BlockScope` may (#13855).
+    // Cost: O(1).
+    fn in_inlined_block_frame(&self) -> bool {
+        self.routine_stack.last().is_some_and(|f| f.is_inlined_block)
     }
 }

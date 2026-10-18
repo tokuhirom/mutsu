@@ -462,11 +462,15 @@ impl Compiler {
         // dispatched to an outer `sub f` and usually died on its arity ("Too few
         // positionals passed"). Compile it as the `&f(...)` form, which already
         // has an opcode (`CallOnCodeVar`).
-        if name.with_str(|n| self.amp_binding_in_active_scope(n)) {
-            self.note_amp_shadowed_call(*name);
-            let target = Expr::CodeVar(name.resolve());
-            self.compile_expr_call_on(&target, args);
-            return;
+        match name.with_str(|n| self.amp_binding_state(n)) {
+            AmpBinding::Visible => {
+                self.note_amp_shadowed_call(*name);
+                let target = Expr::CodeVar(name.resolve());
+                self.compile_expr_call_on(&target, args);
+                return;
+            }
+            AmpBinding::ShadowedByRoutine => self.note_routine_shadowed_call(*name),
+            AmpBinding::None => {}
         }
         // A routine an enclosing block declared is that block's `&name`
         // binding for this closure body (ADR-12529 phase 2): call it as

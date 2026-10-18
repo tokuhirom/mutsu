@@ -7144,6 +7144,12 @@ pub(crate) struct CompiledCode {
     /// sequence generator) has no scope chain, so it re-seeds these names to
     /// reach the same binding instead of the outer routine.
     pub(crate) amp_shadowed_calls: Vec<Symbol>,
+    /// Bare call names (`h(...)`) this chunk compiled as a call of the routine
+    /// although a `my &h` binding (or `&h` parameter) of an outer scope was
+    /// visible, because a nearer scope declares `sub h` (#13855). The call's
+    /// run-time resolution must not take that outer `&h` as a lexical override
+    /// of the routine.
+    pub(crate) routine_shadowed_calls: Vec<Symbol>,
     /// Block-declared routines (ADR-12529 phase 2) this closure chunk names by
     /// bare name: `g` for a `sub g` declared in an enclosing block, loop body
     /// or closure body, read from here as `g(...)` or `&g`. Such a call compiles
@@ -8256,6 +8262,7 @@ impl CompiledCode {
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
             amp_shadowed_calls: Vec::new(),
+            routine_shadowed_calls: Vec::new(),
             lexsub_refs: Vec::new(),
             code_var_upvalue_reads: Vec::new(),
             lexical_subtree: false,
