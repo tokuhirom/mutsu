@@ -101,11 +101,12 @@ impl Interpreter {
         // is (see `shared_array_extend`). Writing the base key directly lets a
         // sibling thread's `set_shared_var` clobber it with a stale empty
         // snapshot during env sync (lost update). The atomic store is exempt
-        // from that clobber. Attribute / dynamic / twigil'd hashes (`%!`, `%.`,
-        // `%*`) share a name across instances, so they keep the base-key path;
+        // from that clobber. A dynamic `%*h` takes the same lane (see
+        // `routes_through_atomic_lane`). Attribute / twigil'd hashes (`%!`,
+        // `%.`) share a name across instances, so they keep the base-key path;
         // a thread-local `my %h` (not present in shared_vars) also falls through
         // to the normal local assignment.
-        if Self::is_plain_lexical_name(key) {
+        if crate::runtime::thread_sharing::ThreadSharing::routes_through_atomic_lane(key) {
             let atomic_key = atomic_lane_str_key(key, true);
             let is_shared = {
                 self.threads.shared_vars.contains_key(atomic_key)
@@ -202,10 +203,11 @@ impl Interpreter {
         // A genuinely-shared plain lexical `@name` routes through the
         // `__mutsu_atomic_arr::` shared store (same as concurrent `.push`, see
         // `shared_array_extend`) so a sibling thread's stale `set_shared_var`
-        // cannot clobber the merged array. Attribute / dynamic / twigil'd arrays
-        // keep the base-key path; a thread-local `my @a` (not present in
+        // cannot clobber the merged array. A dynamic `@*a` takes the same lane
+        // (see `routes_through_atomic_lane`). Attribute / twigil'd arrays keep
+        // the base-key path; a thread-local `my @a` (not present in
         // shared_vars) falls through to the normal local assignment.
-        if Self::is_plain_lexical_name(key) {
+        if crate::runtime::thread_sharing::ThreadSharing::routes_through_atomic_lane(key) {
             let atomic_key = atomic_lane_str_key(key, false);
             let is_shared = {
                 self.threads.shared_vars.contains_key(atomic_key)

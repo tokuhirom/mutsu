@@ -151,6 +151,21 @@ pub(crate) struct ThreadSharing {
 }
 
 impl ThreadSharing {
+    /// Whether an element store into the shared `@`/`%` container `key` goes
+    /// through the `__mutsu_atomic_*` lane rather than the base-key entry: a
+    /// plain lexical, or a dynamic (`@*a` / `%*h`).
+    ///
+    /// The read side (`GetLocal`'s lane probe in `vm_var_assign_local_get`)
+    /// consults the atomic lane for EVERY `@`/`%` name and never the base-key
+    /// entry on the main thread, so a store the base-key path takes is lost to
+    /// the frame that owns the variable: `my %*h; await start {...};` then a
+    /// closure (an inline `.then` callback) assigning `%*h<k>` cloned the
+    /// base-key hash, and the owner kept reading its old one (#13772).
+    // Cost: O(1).
+    pub(crate) fn routes_through_atomic_lane(key: &str) -> bool {
+        Interpreter::is_plain_lexical_name(key) || crate::env::is_dynamic_var_name(key)
+    }
+
     /// The main interpreter's state: the root of the shared store, sharing not
     /// yet active, nothing masked.
     // Cost: O(1).
