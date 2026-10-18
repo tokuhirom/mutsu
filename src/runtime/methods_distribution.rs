@@ -34,7 +34,7 @@ impl Interpreter {
         // `globalish-symbols` (kept hidden until `merge-symbols`), which needs
         // the dedicated Stash object below instead.
         let Some(symbols) = symbols else {
-            return self.package_stash_value("GLOBAL");
+            return self.globalish_stash_value();
         };
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str_from("GLOBALish"));

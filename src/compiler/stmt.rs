@@ -952,10 +952,7 @@ impl Compiler {
             return;
         }
         self.note_construct_body_block(stmt);
-        if matches!(
-            stmt,
-            Stmt::Use { .. } | Stmt::Import { .. } | Stmt::No { .. }
-        ) {
+        if Self::opens_import_scope(stmt) {
             self.note_import_in_scope();
         }
         match stmt {
