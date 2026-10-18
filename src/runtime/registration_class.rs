@@ -910,6 +910,17 @@ impl Interpreter {
             {
                 return format!("{}{}", lookup, suffix);
             }
+            // `constant VT = Some::Pkg; role R does VT::Node`: the leading
+            // component names a package through a constant.
+            if let Some(real) = self.resolve_package_alias_prefix(lookup) {
+                let registry = self.registry();
+                if registry.classes.contains_key(real.as_str())
+                    || registry.roles.contains_key(real.as_str())
+                    || registry.enum_types.contains_key(real.as_str())
+                {
+                    return format!("{}{}", real, suffix);
+                }
+            }
         }
         if let ValueView::Package(pkg) = self.resolve_indirect_type_name(lookup).view() {
             return format!("{}{}", pkg.resolve(), suffix);
