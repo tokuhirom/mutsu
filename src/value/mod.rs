@@ -3498,6 +3498,8 @@ pub(crate) enum IndexTransform {
     AntiPairs,
     /// `.kv`: element `i` → two flat outputs `i, elem`.
     Kv,
+    /// `.keys`: element `i` → its index `i`.
+    Keys,
     /// `.lazy` over an unbounded range (`(1..*).lazy`): each element passes
     /// through unchanged, so the result is a lazy `Seq` rather than the Range.
     Identity,

@@ -12,7 +12,7 @@
 //!   `cache` keeps the iterator, `gist` of an infinite sequence is `(...)`),
 //!   usually by handing the pulled prefix to the method's own row; or
 //! - it declines (`None`), and the lazy step reifies the receiver whole when
-//!   the method needs every element (the reify table of `methods_lazy_step.rs`).
+//!   the method needs every element ([`reifies`]).
 //!
 //! The lazy step finds the pull by walking the owners of the type the receiver
 //! reports, most-derived first, so a lazy `@`-array's `AT-POS` is `Array`'s and
@@ -59,7 +59,85 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
     "Array"."raku" => raku,
     "Seq"."join" => join,
     "List"."join" => join,
+    "Mu"."item" => item,
 ];
+
+/// The methods that reify a lazy receiver whole before they run, when no
+/// pull answered: the lazy step's step 2 and the VM's forcing lanes
+/// (`lazy_list_needs_forcing`) read this one table.
+///
+/// It is a table, not "every method the reported type has a row for": on an
+/// infinite sequence Rakudo answers `Bool`, `is-lazy` and `lazy` without
+/// reifying, and an unlisted name goes on to the rows unchanged. Audited on
+/// `(1..*).map(*+0)` against Rakudo (ADR-13891 §3, 2026-10-19):
+///
+/// - stay lazy, and are answered before this table: `.list`, `.List`,
+///   `.Array`, `.Seq`, `.values`, `.cache` (laziness-preserving coercions),
+///   `.flat`, `.unique`, `.repeated`, `.squish`, `.skip`, `.rotor`,
+///   `.batch`, `.produce` (the streaming adaptors), `.kv`, `.pairs`,
+///   `.antipairs`, `.keys` (the index pipes), `.first`, `.head` (pull a
+///   prefix);
+/// - throw `X::Cannot::Lazy` from the force (a `Failure` in Rakudo for
+///   `elems`, `end`, `Numeric`, `Int`, `sum`, `reverse`, `pick`, `roll`):
+///   the counting, ordering and sampling methods;
+/// - `hyper` and `race` reify, so an infinite sequence throws: Rakudo
+///   hyperizes it lazily, which mutsu's `HyperSeq` cannot hold yet;
+/// - `item` is not here: it itemizes the receiver as it is (its pull).
+// Cost: O(n), n = names in the table.
+pub(crate) fn reifies(method: &str) -> bool {
+    matches!(
+        method,
+        "list"
+            | "Array"
+            | "Numeric"
+            | "Int"
+            | "elems"
+            | "end"
+            | "hyper"
+            | "race"
+            | "first"
+            | "grep"
+            | "map"
+            | "sort"
+            | "reverse"
+            | "join"
+            | "head"
+            | "tail"
+            | "min"
+            | "max"
+            | "minmax"
+            | "sum"
+            | "flat"
+            | "unique"
+            | "repeated"
+            | "squish"
+            | "classify"
+            | "categorize"
+            | "produce"
+            | "skip"
+            | "rotor"
+            | "batch"
+            | "reduce"
+            | "Supply"
+            | "combinations"
+            | "permutations"
+            | "values"
+            | "List"
+            | "Str"
+            | "Stringy"
+            | "gist"
+            | "raku"
+            | "Seq"
+            | "cache"
+            | "pick"
+            | "roll"
+            | "keys"
+            | "kv"
+            | "pairs"
+            | "antipairs"
+            | "sink"
+    )
+}
 
 /// The owners a lazy receiver's methods are looked up on: the MRO of the type
 /// it reports.
@@ -220,6 +298,18 @@ fn join(
     (args.len() <= 1 && crate::builtins::is_join_lazy(target)).then(|| Ok(Value::str_from("...")))
 }
 
+/// `item`: Rakudo's `Mu.item` puts the receiver in a `$` container as it is;
+/// it reads no element, so an infinite sequence itemizes too.
+// Cost: O(1).
+fn item(
+    _interp: &mut Interpreter,
+    target: &Value,
+    _list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    args.is_empty().then(|| Ok(target.clone().item()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::PULLS;
@@ -256,3 +346,4 @@ mod tests {
         }
     }
 }
+
