@@ -55,8 +55,8 @@ pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, 
         let ValueView::RakuAst(name) = name.view() else {
             return Err(unsupported("declaration name"));
         };
-        if name.fields.iter().any(|f| f.name.is_some()) {
-            return Err(unsupported("a qualified name with adverbs"));
+        if name.fields.iter().any(|f| f.name == Some("colonpairs")) {
+            return Err(unsupported("a name that already has colonpairs"));
         }
         let mut name = name.clone();
         let mut pairs = Vec::new();
