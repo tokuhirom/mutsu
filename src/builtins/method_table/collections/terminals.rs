@@ -140,7 +140,7 @@ pub(crate) fn tail_one(target: &Value, args: &[Value]) -> Option<Result<Value, R
     }
     // A lazy list cannot be tailed: the interpreter raises `X::Cannot::Lazy`
     // (`dispatch_tail`), and reads a `Seq.new($iterator)` body.
-    if reads_through_interpreter(target) || is_lazy_tail_target(target) {
+    if reads_through_interpreter(target) || is_lazy_tail_target(target) || unpulled_seq(target) {
         return None;
     }
     let last = |items: &[Value]| items.last().cloned().unwrap_or(Value::NIL);
@@ -171,6 +171,14 @@ fn user_instance(class: crate::symbol::Symbol) -> bool {
 fn reads_through_interpreter(target: &Value) -> bool {
     matches!(target.view(), ValueView::Mixin(..))
         && crate::value::value_buf::buf_target(target).is_some()
+}
+
+/// Whether `target` is a `Seq` whose source has not been pulled (a
+/// `Seq.new($iterator)` body): its elements, or a predictive iterator's
+/// `count-only`, are the interpreter's to read (`dispatch_tail`, §9.186).
+// Cost: O(1).
+pub(crate) fn unpulled_seq(target: &Value) -> bool {
+    matches!(target.view(), ValueView::Seq(body) if body.has_deferred_source())
 }
 
 /// Whether `.tail` on `target` must raise `X::Cannot::Lazy`: a lazy list or a

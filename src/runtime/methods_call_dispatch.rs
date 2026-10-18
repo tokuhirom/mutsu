@@ -1717,35 +1717,6 @@ impl Interpreter {
         {
             return r;
         }
-        if method == "tail"
-            && !bypass_native_fastpath
-            // `Mu` is no `Any`: it has no `tail`.
-            && !matches!(target.view(), ValueView::Package(name) if name == "Mu")
-        {
-            // `dispatch_tail` reads `args[0]` as the tail COUNT, so it needs the
-            // same named-blindness the arity cascade below gets: `tail` is
-            // declared as accepting no adverb, and `(1,2,3).tail(:zzz)` used to
-            // die "Cannot use 'zzz\tTrue' as a tail count" where raku answers 3.
-            return self.dispatch_tail(target, cascade_args);
-        }
-        // `.head(&callable)` / `.head(*)` — WhateverCode/Whatever argument. The
-        // native fast path only handles plain numeric counts; resolve the
-        // callable here against a finite, materializable target.
-        if method == "head"
-            && args.len() == 1
-            && matches!(
-                args[0].view(),
-                ValueView::Whatever
-                    | ValueView::Sub(_)
-                    | ValueView::WeakSub(_)
-                    | ValueView::Routine { .. }
-            )
-            && !bypass_native_fastpath
-            && !matches!(target.view(), ValueView::Instance { .. })
-            && !crate::builtins::method_table::terminals::is_lazy_tail_target(&target)
-        {
-            return self.dispatch_head(target, &args[0]);
-        }
         // .raku/.perl on a container holding a value whose repr is only
         // reachable through method dispatch (a user instance, a built-in object
         // type). See `methods_raku_dispatch`.

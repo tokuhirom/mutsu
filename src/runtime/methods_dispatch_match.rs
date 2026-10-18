@@ -87,7 +87,17 @@ impl Interpreter {
         // rows are the cascade's last resort.
         if matches!(
             method,
-            "THREAD" | "encode" | "unpack" | "enums" | "set_why" | "snip" | "snitch" | "nomark" | "stem"
+            "THREAD"
+                | "encode"
+                | "unpack"
+                | "enums"
+                | "set_why"
+                | "snip"
+                | "snitch"
+                | "nomark"
+                | "stem"
+                | "head"
+                | "tail"
         )
             || (matches!(method, "say" | "put") && !args.is_empty())
         {

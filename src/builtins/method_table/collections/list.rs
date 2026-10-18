@@ -385,6 +385,7 @@ pub(crate) fn tail(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
     };
     if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
         || super::terminals::is_lazy_tail_target(target)
+        || super::terminals::unpulled_seq(target)
     {
         return None;
     }

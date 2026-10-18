@@ -23,7 +23,7 @@ impl Interpreter {
     /// reified Seq: the last k are sliced off the borrowed items. O(e), e =
     /// elements, on any other list-like (decomposed first) and on a
     /// `Seq.new($iterator)` body (O(e) `skip-one` calls).
-    pub(in crate::runtime) fn dispatch_tail(
+    pub(crate) fn dispatch_tail(
         &mut self,
         target: Value,
         args: &[Value],
@@ -161,7 +161,7 @@ impl Interpreter {
     /// the native fast path, not here.
     /// Cost: O(e), e = elements of the invocant (copied whole; a `*-n` count needs
     /// the length anyway).
-    pub(in crate::runtime) fn dispatch_head(
+    pub(crate) fn dispatch_head(
         &mut self,
         target: Value,
         arg: &Value,

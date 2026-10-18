@@ -4619,6 +4619,22 @@ stays a gate. No behaviour change; the existing typed-container tests
 (`t/collections/subscript/shaped-array-*.t`, the constrained-hash and typed-array `raku` tests)
 pin it.
 
+### 9.186 `tail` and `head(&callable)` are `Any`'s interpreter twins (2026-10-19)
+
+`refactor/11276-head-tail-twins`. Two by-name gates of `call_method_with_values_inner` sent every
+`.tail` call (over the pure answer the prologue had already computed) and every
+`.head(&callable)`/`.head(*)` call to the interpreter's routines (`dispatch_tail`,
+`dispatch_head`). The pure rows (`terminals`, `list`) answer a plain list; what the gates covered
+is what they decline: a lazy list (`X::Cannot::Lazy`), a `Seq.new($iterator)` body that has not
+been pulled (a predictive iterator's `count-only`), an instance, a `Callable` or `Whatever`
+count. Those are now `Any`'s interpreter twins (`any_interp_twins`, §9.135), reached through the
+late MRO walk of `dispatch_method_by_name_1` once the pure rows declined; the gates are gone.
+`tail` ignores a named argument as before (`(1, 2, 3).tail(:zzz)` is 3). The pure `tail` rows now
+decline an unpulled `Seq` (`terminals::unpulled_seq`), which they used to read as empty. No
+behaviour change: the 242 `t/` files calling `.head`/`.tail` pass, among them
+`t/types/any-head-tail-rows.t`, `t/routines/call/tail-function.t` and
+`t/collections/lazy-seq/predictive-seq-tail-scope.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
