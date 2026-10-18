@@ -163,6 +163,18 @@ impl Interpreter {
         }
         let new = self.locals[slot].clone();
         if let ValueView::ContainerRef(c) = new.view() {
+            // A cell seeded for a routine-nested sub's alias (no store bucket,
+            // #13890): the alias holds the seeded cell, so the declaration's
+            // own cell gives its value to it and the slot goes back to it.
+            if pending.unit_key.is_empty() && !Gc::ptr_eq(&c, &pending.cell) {
+                let value = c.lock().unwrap().clone();
+                Value::store_through_cell(&pending.cell, &value);
+                let boxed = Value::container_ref(pending.cell.clone());
+                self.register_container_cell_constraint_for_name(&boxed, &pending.name);
+                self.locals[slot] = boxed.clone();
+                self.env_mut().insert(pending.name, boxed);
+                return;
+            }
             if !Gc::ptr_eq(&c, &pending.cell) {
                 // The store already boxed the variable itself: the store entry
                 // follows that cell.
