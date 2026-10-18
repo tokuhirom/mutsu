@@ -368,11 +368,27 @@ Consequences that pin the design:
   - Rakudo 2026.09 ignores an *imported* `infix:<xx>` candidate inside the
     block, though it calls one the unit declares itself; mutsu calls both.
 
+  **Slice 9 done** (`fix/13836-increment-ops-bind-lexically`, 2026-10-18):
+  the increment operators `++`/`--`, in both positions, bind their imported
+  candidates in the set (#13836).
+  - **They are call-spelled.** An imported candidate turns their uses into
+    calls of the operator; `is_lexical_prefix`/`is_lexical_postfix` list
+    them. The dispatcher ranks its winner against the native increment's
+    core candidates as the registry path does
+    (`core_increment_wins_over`, split out of
+    `core_increment_candidate_wins`) and falls back to `run_core_increment`.
+    Before, an imported candidate made `$i++` on an Int die in the block
+    ("Cannot resolve caller"): the registry path's ranking did not see the
+    imported family.
+  - **An element operand is a location.** A call of an increment operator
+    passes a subscript argument as its element cell
+    (`rw_arg_callee_binds_container`: the core candidates are `is rw`), and
+    the native increment writes through it. `@a[0]++` beside a user
+    `postfix:<++>` candidate left the element unchanged before, the unit's
+    own candidate included.
+
   Left for stage 2:
-  - The increment operators (`++`/`--`, both positions) and
-    `postcircumfix:<< >>` keep their imported candidates in the registry.
-    An imported `postfix:<++>` candidate also breaks `$i++` on an Int in
-    the block (#13836).
+  - `postcircumfix:<< >>` keeps its imported candidates in the registry.
   - A program's own `multi infix:<(|)>` candidate also answers `∪` (#13795):
     the binary op does not know which spelling it was compiled from.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they

@@ -41,8 +41,12 @@
 //! opens before it asks the registry, and its dispatcher falls back to the
 //! built-in subscript.
 //!
+//! The increment operators `++`/`--` (both positions) are call-spelled too;
+//! their dispatcher ranks a candidate against the native increment's core
+//! candidates (`Interpreter::core_increment_wins_over`) and falls back to it.
+//!
 //! Every other built-in operator keeps its imported candidates in the
-//! registry: its uses reach them by name (`++`/`--`, `postcircumfix:<< >>`).
+//! registry: its uses reach them by name (`postcircumfix:<< >>`).
 
 use crate::opcode::{CompoundBaseOp, OpCode};
 
@@ -156,11 +160,11 @@ pub(crate) fn meta_runs_bound_dispatcher(op: &str) -> bool {
 
 /// The built-in postfixes whose uses in a block that imports a candidate are
 /// calls of the imported user operator, and whose dispatcher can fall back to
-/// the built-in (`Interpreter::core_postfix_op`). `++`/`--` mutate their
-/// operand through opcodes of their own.
+/// the built-in (`Interpreter::core_postfix_op`, and the native increment for
+/// `++`/`--`).
 // Cost: O(1).
 pub(crate) fn is_lexical_postfix(op: &str) -> bool {
-    op == "i"
+    matches!(op, "i" | "++" | "--")
 }
 
 /// The built-in postcircumfixes (by their space-separated delimiters) whose
@@ -181,11 +185,15 @@ pub(crate) fn postcircumfix_of_subscript(is_positional: bool) -> &'static str {
 }
 
 /// The built-in prefixes a dispatcher over imported candidates can fall back
-/// to (`Interpreter::core_prefix_op`). `++`/`--` mutate their operand
-/// through opcodes of their own.
+/// to (`Interpreter::core_prefix_op`, and the native increment
+/// `Interpreter::run_core_increment` for `++`/`--`, whose uses the parser
+/// turns into calls of the operator once a candidate is imported).
 // Cost: O(1).
 fn is_lexical_prefix(op: &str) -> bool {
-    matches!(op, "!" | "+" | "-" | "−" | "~" | "?" | "so" | "not")
+    matches!(
+        op,
+        "!" | "+" | "-" | "−" | "~" | "?" | "so" | "not" | "++" | "--"
+    )
 }
 
 /// The `infix:<op>` routine the binary opcode `op` applies, when its user
