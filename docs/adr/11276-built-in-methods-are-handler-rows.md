@@ -4691,6 +4691,17 @@ lazy step on both VM lanes (`lazy_pull::itemized_lazy_receiver`), and its `raku`
 own inside `$( )`. `sink` stays off the VM's forcing lane, whose force does not mark a sunk gather
 consumed. Pinned in `t/collections/lazy-seq/lazy-receiver-reify-audit.t`.
 
+### 9.190 A string that spells a `Complex` converts through late twins (2026-10-19)
+
+`refactor/11276-complex-real-gate`. A by-name gate of `call_method_with_values_inner` answered
+`Int`/`UInt`/`Num`/`Rat`/`FatRat`/`Real` of a `Complex` and of a string that numifies to one
+through `dispatch_complex_to_real`. A `Complex` receiver's conversions were rows already (§9.70,
+`Cool.UInt` §9.71), so the gate only still answered the string (`"1+2i".Int`), which the pure
+`Str.Int`/`Str.Num`/`Cool.Rat`/`FatRat`/`Real` rows decline because it needs `$*TOLERANCE`. Those
+five are now late interpreter twins (`scalars/str_complex_real.rs`) reached through the late MRO
+walk for a `Str` receiver, and `Cool.UInt` answers the string itself. The gate is gone. No
+behaviour change; pinned in `t/types/string/str-complex-real-coercion.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
