@@ -241,11 +241,9 @@ impl Interpreter {
             .shared_vars
             .with_entry_mut(key, |val| {
                 val.with_array_mut(|arc, kind| {
-                    let data = crate::gc::Gc::make_mut(arc);
-                    if idx >= data.items().len() {
-                        data.items_mut().resize(idx + 1, Value::NIL);
-                    }
-                    data.live_mut()[idx] = value.clone();
+                    // The one `@a[$i] = $v` store (ADR-0118): `Any` gap
+                    // markers recorded as holes, not `Nil`s.
+                    crate::gc::Gc::make_mut(arc).store_element(idx, value.clone());
                     if *kind == ArrayKind::List {
                         *kind = ArrayKind::Array;
                     }

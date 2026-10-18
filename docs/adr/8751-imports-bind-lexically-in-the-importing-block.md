@@ -342,9 +342,21 @@ Consequences that pin the design:
     `::('&M::f')` (`resolve_indirect_type_name`) now pass the same gate.
     The key is lexically scoped (`env::static_link::lexically_scoped`) and
     in a top-level routine's unit-hidden set, so a callee written outside
-    the block is not granted the block's merge. Still open: `MY::` in the
-    block does not list `M`, and `GLOBAL::` lists a loaded module's
-    packages even where nothing merged them (#13802).
+    the block is not granted the block's merge.
+  - The stash views follow the merge too (#13802). `GLOBAL::` (and `OUR::`
+    at the root) leaves out a loaded module's top-level packages, its
+    package-less routines, the routines an import aliased into `GLOBAL`, and
+    an `EXPORT` package only modules exported into
+    (`drop_module_merges_from_global`). The program's own declarations stay.
+    The `MY::` of the scope whose `use`, `need` or `require` merged a module
+    lists the module's top-level packages (`add_merged_module_packages`):
+    a block's own merges from its import scope, the unit root's from
+    `unit_merged_modules`. A package binding the BEGIN-time preload left in
+    the root env is listed only where `bare_name_visible_here` holds. A
+    CompUnit's `globalish-package` still navigates the unfiltered `GLOBAL`.
+    Left: `GLOBAL::` still lists the program's own `EXPORT` (rakudo keeps it
+    in `OUR::` only), and a package the program declares later in the file
+    is not listed before its declaration runs.
 
 ## 5. Acceptance
 

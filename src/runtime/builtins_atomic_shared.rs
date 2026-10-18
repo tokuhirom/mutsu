@@ -453,7 +453,7 @@ impl Interpreter {
     /// through the `__mutsu_atomic_arr::` shared store, so concurrent
     /// `start { @a[...] = ... }` blocks each writing a different index all land
     /// instead of clobbering a stale snapshot via `set_shared_var`. Grows the
-    /// array with `Nil` holes up to `idx`. Returns the assigned element value.
+    /// array with `Any` holes up to `idx` (`ArrayData::store_element`). Returns the assigned element value.
     pub(crate) fn shared_array_elem_set(
         &mut self,
         arr_name: &str,
@@ -486,8 +486,12 @@ impl Interpreter {
             // (module file-scope / mainline captured free var) before the
             // plain `env` entry, and deref through a `ContainerRef` binding
             // either way — see `shared_array_mutate`'s twin comment.
-            let mut elements: Vec<Value> = match shared.get(atomic_key).map(Value::view) {
-                Some(ValueView::Array(elems, _)) => elems.to_vec(),
+            // The source's element record is kept (`clone`, not `to_vec`) so
+            // `store_element` -- the one `@a[$i] = $v` store (ADR-0118) -- can
+            // tell its earlier gaps from assigned slots and grow new ones as
+            // `Any` holes, not `Nil`s.
+            let mut data: crate::value::ArrayData = match shared.get(atomic_key).map(Value::view) {
+                Some(ValueView::Array(elems, _)) => (**elems).clone(),
                 _ => match shared
                     .get(arr_name)
                     .cloned()
@@ -496,18 +500,15 @@ impl Interpreter {
                     .map(|v| v.deref_container())
                 {
                     Some(v) => match v.view() {
-                        ValueView::Array(elems, _) => elems.to_vec(),
-                        _ => Vec::new(),
+                        ValueView::Array(elems, _) => (**elems).clone(),
+                        _ => crate::value::ArrayData::new(Vec::new()),
                     },
-                    None => Vec::new(),
+                    None => crate::value::ArrayData::new(Vec::new()),
                 },
             };
-            if idx >= elements.len() {
-                elements.resize(idx + 1, Value::NIL);
-            }
-            elements[idx] = value.clone();
+            data.store_element(idx, value.clone());
             let new_arr = Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(elements)),
+                crate::gc::Gc::new(data),
                 crate::value::ArrayKind::Array,
             );
             shared.insert(atomic_key.to_string(), new_arr.clone());

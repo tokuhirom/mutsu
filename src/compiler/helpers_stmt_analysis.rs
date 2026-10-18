@@ -387,11 +387,17 @@ impl Compiler {
     /// statement (non-recursive). A `need` or `require` merges a module into the
     /// block too (ADR-11136).
     pub(super) fn has_use_stmt(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(|s| match s {
+        stmts.iter().any(Self::opens_import_scope)
+    }
+
+    /// Whether `stmt` makes the block holding it open a run-time import scope
+    /// (`OpCode::ImportScope`): a `use`, `need`, `import`, `no` or `require`.
+    pub(super) fn opens_import_scope(stmt: &Stmt) -> bool {
+        match stmt {
             Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } | Stmt::No { .. } => true,
             Stmt::Expr(crate::ast::Expr::Call { name, .. }) => *name == "require",
             _ => false,
-        })
+        }
     }
 
     /// The declaration inside the bind source of `$target := my $z = ...`,
