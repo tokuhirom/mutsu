@@ -138,7 +138,7 @@ impl Interpreter {
     /// held when the scope opened ([`ImportScopeSnapshot::importer_type_aliases`]).
     // Cost: O(1) when the scope gave the package no alias; otherwise one table
     // write (a copy-on-write clone of the table while a thread shares it).
-    fn restore_importer_type_aliases(
+    pub(crate) fn restore_importer_type_aliases(
         &mut self,
         (importer, aliases): (String, Option<rustc_hash::FxHashMap<String, String>>),
     ) {

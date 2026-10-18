@@ -5,7 +5,7 @@ use Test;
 # constant that a block-scoped `use` imported is not there, so the routine
 # does not see it when the block calls it; a same-named symbol of the
 # routine's own outer still answers. Checked against rakudo.
-plan 13;
+plan 14;
 
 use lib 't/lib';
 
@@ -39,3 +39,5 @@ my &keeps-type;
 }
 is keeps-type(), 'imported', 'a closure taken in the block keeps the class';
 is (try EVAL q[UibFoo.hi]) // 'no type', 'no type', 'a second block\'s import ends with it too';
+EVAL q[use UseInBlockTypesConsts; 1];
+is (try EVAL q[UibFoo.hi]) // 'no type', 'no type', 'an EVAL\'s import ends with the EVAL';
