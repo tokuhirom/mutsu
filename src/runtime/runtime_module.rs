@@ -96,10 +96,10 @@ impl Interpreter {
                 shadowed_functions: HashMap::new(),
                 shadowed_proto_functions: HashMap::new(),
                 shadowed_proto_names: HashSet::new(),
-                imported_env_keys: HashSet::new(),
+                imported_env_keys: Default::default(),
                 shadowed_env_values: HashMap::new(),
                 imported_routine_aliases: self.module.imported_routine_aliases.clone(),
-                own_routine_imports: HashSet::new(),
+                own_routine_imports: Default::default(),
                 imported_exported_proto_tags: self.module.imported_exported_proto_tags.clone(),
                 newline_mode: self.io.newline_mode,
                 strict_mode: self.module.strict_mode,
@@ -111,11 +111,10 @@ impl Interpreter {
                 leave_phasers: Vec::new(),
                 lexical_sets: Vec::new(),
                 unit: self.executing_unit_sym_for_module_load(),
-                importer_type_aliases: {
-                    let importer = self.import_target_package_for_load();
-                    let aliases = self.types.package_type_aliases.get(&importer).cloned();
-                    (importer, aliases)
-                },
+                importer_type_aliases: (
+                    self.import_target_package_for_load(),
+                    std::sync::Arc::clone(&self.types.package_type_aliases),
+                ),
             }
         };
         self.module.import_scope_stack.push(snapshot);
@@ -136,15 +135,21 @@ impl Interpreter {
 
     /// Put back the short type-name aliases an import scope's importer package
     /// held when the scope opened ([`ImportScopeSnapshot::importer_type_aliases`]).
-    // Cost: O(1) when the scope gave the package no alias; otherwise one table
-    // write (a copy-on-write clone of the table while a thread shares it).
+    // Cost: O(1) when the scope wrote no alias; otherwise one table write (a
+    // copy-on-write clone of the table while the snapshot or a thread shares
+    // it).
     pub(crate) fn restore_importer_type_aliases(
         &mut self,
-        (importer, aliases): (String, Option<rustc_hash::FxHashMap<String, String>>),
+        (importer, before): (String, std::sync::Arc<crate::runtime::package_keyed::PackageKeyed<String>>),
     ) {
-        if self.types.package_type_aliases.get(&importer) == aliases.as_ref() {
+        if std::sync::Arc::ptr_eq(&before, &self.types.package_type_aliases) {
             return;
         }
+        let aliases = before.get(&importer);
+        if self.types.package_type_aliases.get(&importer) == aliases {
+            return;
+        }
+        let aliases = aliases.cloned();
         let table = crate::runtime::cow_table_mut(&mut self.types.package_type_aliases);
         match aliases {
             Some(aliases) => {
@@ -176,9 +181,10 @@ impl Interpreter {
         } else {
             format!("${key}")
         };
-        self.module
-            .imported_env_aliases
-            .insert(key_sym, Symbol::intern(&display));
+        let display = Symbol::intern(&display);
+        if self.module.imported_env_aliases.get(&key_sym) != Some(&display) {
+            std::sync::Arc::make_mut(&mut self.module.imported_env_aliases).insert(key_sym, display);
+        }
         // A block's import over a name an enclosing import already bound
         // shadows that binding, and its scope exit puts it back (`use M :t;
         // { use M } t`). Only an import visible when the scope opened counts:
@@ -406,7 +412,13 @@ impl Interpreter {
     // Cost: O(k + m), k = interned `GLOBAL::MAIN/…` names, m = symbols interned
     // since the family index last caught up.
     fn drop_foreign_global_main_candidates(&mut self, program_path: Option<Symbol>) {
-        let main = Symbol::intern("GLOBAL::MAIN");
+        // The routine table this check last found clean is still the one
+        // installed: versions are never reused, so nothing was added since.
+        let version = self.registry().functions.version();
+        if self.module.foreign_main_clean_version == Some(version) {
+            return;
+        }
+        let main = crate::symbol::wk::global_main();
         let mut keys = crate::qualified_tail_index::names_in_family("GLOBAL::MAIN");
         keys.push(main);
         let foreign: Vec<Symbol> = {
@@ -422,14 +434,15 @@ impl Interpreter {
                 })
                 .collect()
         };
-        if foreign.is_empty() {
-            return;
+        if !foreign.is_empty() {
+            let mut reg = self.registry_mut();
+            let functions = reg.functions_mut();
+            for key in foreign {
+                functions.remove(&key);
+            }
         }
-        let mut reg = self.registry_mut();
-        let functions = reg.functions_mut();
-        for key in foreign {
-            functions.remove(&key);
-        }
+        let version = self.registry().functions.version();
+        self.module.foreign_main_clean_version = Some(version);
     }
 
     // Cost: O(1) per registry table the scope did not write (the snapshot is the
@@ -508,13 +521,6 @@ impl Interpreter {
             // set), so it goes with the scope too -- otherwise
             // `sub f { use FiniteField; ... }` inside a module leaked its
             // `infix:<**>` into every later call in that package.
-            let scope_aliases: HashSet<Symbol> = self
-                .module
-                .imported_routine_aliases
-                .difference(&imported_routine_aliases)
-                .copied()
-                .collect();
-            let module_keys = std::mem::take(&mut self.module.module_registered_functions);
             let program_path = self.io.program_path_sym;
             // A table the scope never wrote added nothing to roll back; only a
             // module-declared `GLOBAL::MAIN` candidate registered before the
@@ -524,6 +530,13 @@ impl Interpreter {
             if functions_unchanged {
                 self.drop_foreign_global_main_candidates(program_path);
             } else {
+                let scope_aliases: HashSet<Symbol> = self
+                    .module
+                    .imported_routine_aliases
+                    .difference(&imported_routine_aliases)
+                    .copied()
+                    .collect();
+                let module_keys = std::sync::Arc::clone(&self.module.module_registered_functions);
                 self.registry_mut().functions_mut().retain(|key, def| {
                     // A `GLOBAL::MAIN` candidate a module declared is lexical to the
                     // block that imported it even when a parse-time `use` already
@@ -581,7 +594,6 @@ impl Interpreter {
                                 .is_some_and(|file| Some(file) != program_path))
                     }));
             }
-            self.module.module_registered_functions = module_keys;
             // Same exception for classes: a module's own package-qualified
             // classes (`ScanCacheHelper::ScanCacheThing`) persist as long as the
             // module is loaded. `loaded_modules` is never rolled back, so a

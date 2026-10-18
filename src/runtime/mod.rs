@@ -2671,7 +2671,7 @@ pub(crate) struct ImportScopeSnapshot {
     /// diffing would drop those too just because they happened to be
     /// written for the first time inside a `use`-containing block — see
     /// `pop_import_scope`'s doc comment for the regression that caused.
-    pub(crate) imported_env_keys: HashSet<Symbol>,
+    pub(crate) imported_env_keys: rustc_hash::FxHashSet<Symbol>,
     /// The value each of `imported_env_keys` held before this scope first
     /// imported over it, for the keys that already had one. The block's
     /// import shadows that outer binding, so `pop_import_scope` puts it back
@@ -2679,7 +2679,7 @@ pub(crate) struct ImportScopeSnapshot {
     /// outer import of `t`).
     pub(crate) shadowed_env_values: HashMap<Symbol, Value>,
     /// Imported environment aliases visible before this scope was pushed.
-    pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
+    pub(crate) imported_env_aliases: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// Imported routine aliases visible before this scope was pushed. The
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.
@@ -2687,7 +2687,7 @@ pub(crate) struct ImportScopeSnapshot {
     /// The routine aliases (`Pkg::name`) imported while this scope was the
     /// innermost one, including re-imports of an alias an enclosing scope
     /// already had: the block's own `MY::` lists exactly these (#10626).
-    pub(crate) own_routine_imports: HashSet<Symbol>,
+    pub(crate) own_routine_imports: rustc_hash::FxHashSet<Symbol>,
     /// Export tags inherited by local multis extending imported exported protos.
     pub(crate) imported_exported_proto_tags: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
     pub(crate) newline_mode: NewlineMode,
@@ -2720,12 +2720,13 @@ pub(crate) struct ImportScopeSnapshot {
     pub(crate) unit: Symbol,
     /// The package an import in this scope gives short type-name aliases to
     /// (`Interpreter::import_target_package_for_load` at the push), and the
-    /// aliases `package_type_aliases` held for it then. A block's import, and
+    /// `package_type_aliases` table then (copy-on-write, so holding it is
+    /// O(1), where copying the package's own aliases out was O(aliases)). A block's import, and
     /// a BEGIN-time preload of a module only a nested block `use`s, give that
     /// package the exported types' short names; the pop takes them back, so
     /// the block's `use` does not grant them to the whole package
     /// (ADR-8751 stage 2).
-    pub(crate) importer_type_aliases: (String, Option<rustc_hash::FxHashMap<String, String>>),
+    pub(crate) importer_type_aliases: (String, Arc<package_keyed::PackageKeyed<String>>),
 }
 
 impl Default for Interpreter {

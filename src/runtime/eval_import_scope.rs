@@ -91,15 +91,17 @@ impl Interpreter {
     // Cost: O(k), k = keys the scope imported.
     pub(crate) fn restore_import_env_keys(
         &mut self,
-        imported_env_keys: HashSet<Symbol>,
+        imported_env_keys: rustc_hash::FxHashSet<Symbol>,
         shadowed_env_values: &mut HashMap<Symbol, Value>,
     ) {
         for key in imported_env_keys {
-            let ks = key.resolve();
-            let unqualified = ks.strip_prefix(['$', '@', '%', '&']).unwrap_or(ks.as_str());
             // A sigil carries no `:`, so the key's own classification answers.
-            let is_module_owned_qualified =
-                crate::qualified::is_qualified(key) && !unqualified.starts_with("GLOBAL::");
+            let is_module_owned_qualified = crate::qualified::is_qualified(key)
+                && !key.with_str(|ks| {
+                    ks.strip_prefix(['$', '@', '%', '&'])
+                        .unwrap_or(ks)
+                        .starts_with("GLOBAL::")
+                });
             if is_module_owned_qualified {
                 continue;
             }
