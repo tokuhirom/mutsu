@@ -1687,6 +1687,19 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `roast/integration/deep-recursion-initing-native-array.t` is the
    program's own), so the count is an upper bound.
 
+   **Slice 48 done** (`fix/13728-param-type-alias-at-compile-time`): a
+   type constraint that names a `constant` type alias
+   (`constant time = int64; sub f(time \year)`, `my time $t`) is the
+   alias's target from compile time on, as in rakudo (`&f.signature` is
+   `:(int64 \year)`). The binder and the declaration's type check had
+   looked the alias up by name when they ran, through the caller frames, so
+   a caller's sigilless `my \time = 1577934245` answered (#13728,
+   Timezones::ZoneInfo). The compiler resolves it in a routine's and a
+   block's signature (`param_defs_with_type_aliases_resolved`) and in a
+   variable declaration's constraint. Its alias table is the unit's
+   `constant X = Type` declarations, scope-blind as it already was for
+   the native-storage decisions it serves.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
