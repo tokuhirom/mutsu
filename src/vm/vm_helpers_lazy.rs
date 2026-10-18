@@ -1064,7 +1064,10 @@ impl Interpreter {
     // Cost: O(n), n = names in the table; the force itself is O(p) for p
     // elements the source produces.
     pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {
-        crate::builtins::method_table::lazy_pull::reifies(method)
+        // `sink` reifies in the lazy step, which also marks a sunk gather
+        // consumed (`reify_lazy_receiver`); this lane's force does not, so
+        // it leaves `sink` to the step.
+        method != "sink" && crate::builtins::method_table::lazy_pull::reifies(method)
     }
 
     /// `.AT-POS($i)` / `.EXISTS-POS($i)` on a plain gather pull only the

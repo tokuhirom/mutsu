@@ -989,13 +989,14 @@ impl Interpreter {
                     inner.clone()
                 }
                 // An itemized lazy sequence (`$seq.item`) answers through the
-                // lazy step like the bare one, which the pure rows cannot reach
-                // through the wrapper; the renderers keep the itemization.
-                ValueView::Scalar(inner)
-                    if matches!(inner.view(), ValueView::LazyList(_))
-                        && !matches!(method, "raku" | "gist" | "VAR" | "item") =>
+                // lazy step like the bare one.
+                ValueView::Scalar(_)
+                    if let Some(inner) =
+                        crate::builtins::method_table::lazy_pull::itemized_lazy_receiver(
+                            &target, method,
+                        ) =>
                 {
-                    inner.clone()
+                    inner
                 }
                 _ => target,
             }

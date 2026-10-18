@@ -69,6 +69,13 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
         // A mixin renders through the value it wraps or the roles mixed into
         // it, which the cascade's mixin step and the interpreter resolve.
         ValueView::Mixin(..) => None,
+        // An itemized lazy sequence renders the prefix it pulls inside the
+        // itemization's `$( )`, which only the interpreter can.
+        ValueView::Scalar(inner)
+            if method == "raku" && matches!(inner.view(), ValueView::LazyList(_)) =>
+        {
+            None
+        }
         // A parameterized role type object: raku is the bare name
         // (`Cup[EggNog]`), gist wraps it in type-object parens.
         ValueView::ParametricRole { .. } => {

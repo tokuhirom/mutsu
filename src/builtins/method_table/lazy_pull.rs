@@ -310,6 +310,23 @@ fn item(
     args.is_empty().then(|| Ok(target.clone().item()))
 }
 
+/// The lazy sequence an itemized receiver (`$seq.item`, a `Scalar` around a
+/// `LazyList`) answers `method` through, as the bare one does: the pure rows
+/// cannot read through the wrapper. `None` keeps the wrapper: the renderers
+/// (`raku`, `gist`) show the itemization, and `VAR`/`item` read it.
+// Cost: O(1).
+pub(crate) fn itemized_lazy_receiver(target: &Value, method: &str) -> Option<Value> {
+    match target.view() {
+        crate::value::ValueView::Scalar(inner)
+            if matches!(inner.view(), crate::value::ValueView::LazyList(_))
+                && !matches!(method, "raku" | "gist" | "VAR" | "item") =>
+        {
+            Some((*inner).clone())
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::PULLS;
