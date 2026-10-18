@@ -1676,6 +1676,7 @@ t/exceptions/exception-adhoc-subclass-payload.t
 t/exceptions/exception-attributes.t
 t/exceptions/exception-computed-message.t
 t/exceptions/exception-concreteness.t
+t/exceptions/exception-control-rows.t
 t/exceptions/exception-die-method.t
 t/exceptions/exception-fail-method.t
 t/exceptions/exception-failure-method.t
@@ -3173,6 +3174,7 @@ t/nativecall/comb-native-layer.t
 t/nativecall/contains-options-native.t
 t/nativecall/cstruct-bodyless-struct-argument-refused.t
 t/nativecall/cstruct-carray-expr-index-write.t
+t/nativecall/cstruct-create-set-value-body.t
 t/nativecall/cstruct-field-constant-type-alias.t
 t/nativecall/cstruct-field-enum-write.t
 t/nativecall/cstruct-new-native-body.t
@@ -3833,6 +3835,7 @@ t/oo/method/augment-method-build-attr-validation.t
 t/oo/method/augment-method-lexical-scoping.t
 t/oo/method/begin-add-method-versioned-class.t
 t/oo/method/blob-buf-method-rows.t
+t/oo/method/blob-class-method-rows.t
 t/oo/method/blob-decode-method-rows.t
 t/oo/method/bound-element-cell-rw-arg-in-method.t
 t/oo/method/bound-nil-method-warn.t
@@ -3906,6 +3909,7 @@ t/oo/method/dynamic-method-name-matches-static.t
 t/oo/method/dynamic-method-object-call.t
 t/oo/method/dynamic-method-type-object.t
 t/oo/method/dynamic-method.t
+t/oo/method/elems-default-method-rows.t
 t/oo/method/emit-method.t
 t/oo/method/empty-body-method-compiled.t
 t/oo/method/end-listop-and-method.t
@@ -4064,6 +4068,7 @@ t/oo/method/mixin-inherited-method-self-dispatch.t
 t/oo/method/mixin-method-compiled.t
 t/oo/method/mixin-private-method-self-dispatch.t
 t/oo/method/monitor-method-does-not-leak-topic-or-self.t
+t/oo/method/mu-emit-method-row.t
 t/oo/method/mu-isa-method-rows.t
 t/oo/method/mu-set-why-method-row.t
 t/oo/method/multi-method-any-class-specificity.t
@@ -4388,6 +4393,7 @@ t/oo/role/mixin-role-group-candidate.t
 t/oo/role/mixin-role-transitive-does.t
 t/oo/role/mixin-roles-introspection.t
 t/oo/role/mro-excludes-composed-roles.t
+t/oo/role/mro-role-hides.t
 t/oo/role/mro-roles-last-declared-first.t
 t/oo/role/multi-method-nested-role-narrowness.t
 t/oo/role/multi-method-roles.t
@@ -5009,6 +5015,7 @@ t/rakuast/rakuast-require-import-list.t
 t/rakuast/rakuast-require-statement.t
 t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-arg-blocks.t
+t/rakuast/rakuast-role-hidden-traits.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
 t/rakuast/rakuast-routine-custom-traits.t
@@ -5267,6 +5274,7 @@ t/regex/match/smartmatch-method-dispatch.t
 t/regex/match/smartmatch-nondestructive-forms.t
 t/regex/match/smartmatch-pair-method.t
 t/regex/match/smartmatch-regex-capture-index.t
+t/regex/match/smartmatch-rhs-array-element-accepts.t
 t/regex/match/smartmatch-signature-value.t
 t/regex/match/smartmatch-user-accepts-multi-fallback.t
 t/regex/match/smartmatch-user-accepts.t
@@ -5520,6 +5528,7 @@ t/regex/subst/regex-capture-markers-and-subst-modifier.t
 t/regex/subst/smartmatch-subst-topic.t
 t/regex/subst/ss-substitution.t
 t/regex/subst/str-trans-errors.t
+t/regex/subst/str-trans-ignores-unknown-named.t
 t/regex/subst/subset-name-vs-subst-operator.t
 t/regex/subst/subst-accessor-element-lhs.t
 t/regex/subst/subst-assign-expr-replacement.t
@@ -6933,6 +6942,7 @@ t/types/mu-identity-rows.t
 t/types/mu-int-numeric-nomatch.t
 t/types/mu-late-rows.t
 t/types/mu-perl-calls-raku.t
+t/types/mu-qualified-gist-type-object.t
 t/types/mu-render-rows.t
 t/types/mu-say-put-with-args-use-own-print.t
 t/types/mu-set-why-on-instance.t
