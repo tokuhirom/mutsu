@@ -644,7 +644,7 @@ impl Interpreter {
         // write the storage's shared node in place (ADR-11276 §9.37).
         if matches!(
             method_name,
-            "ASSIGN-KEY" | "DELETE-KEY" | "push" | "append"
+            "ASSIGN-KEY" | "DELETE-KEY" | "push" | "append" | "STORE"
         ) {
             let outcome = attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
                 let mut place = crate::builtins::method_table::ReceiverPlace::detached(storage);
@@ -657,7 +657,7 @@ impl Interpreter {
             })?;
             if let Some(result) = outcome {
                 return Some(match method_name {
-                    "push" | "append" => result.map(|_| invocant.clone()),
+                    "push" | "append" | "STORE" => result.map(|_| invocant.clone()),
                     _ => result,
                 });
             }
