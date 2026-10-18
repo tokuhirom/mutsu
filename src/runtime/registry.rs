@@ -1990,6 +1990,9 @@ impl Registry {
     /// (`roast/S32-num/real-bridge.t`).
     pub(crate) fn builtin_role_parents(role_name: &str) -> &'static [&'static str] {
         match role_name {
+            // Rakudo declares this marker role with `is Exception`; classes
+            // that compose it inherit Exception's methods and MRO entry.
+            "X::Control" => &["Exception"],
             "Real" => &["Numeric"],
             "QuantHash" => &["Associative"],
             "Setty" | "Baggy" => &["QuantHash", "Associative"],

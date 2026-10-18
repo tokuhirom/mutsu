@@ -39,18 +39,14 @@ impl Interpreter {
         }
         let class = class.resolve();
         let mro = self.class_mro(&class);
-        // A class doing `X::Control` is an `Exception` (Rakudo's role is
-        // `X::Control is Exception`), whose parent mutsu's MRO does not list
-        // (#13805); so is every built-in `X::`/`CX::` class, some of whose
-        // catalog MROs (`CX::Take`) do not list it either.
+        // Some built-in `X::`/`CX::` classes have catalog MROs (such as
+        // `CX::Take`) that do not list Exception.
         let builtin_exception = class.starts_with("X::") || class.starts_with("CX::");
         let owner = CONTROL_OWNERS.into_iter().find(|&owner| {
             has_row(owner)
                 && (class == owner
                     || (owner == "Exception" && builtin_exception)
-                    || mro
-                        .iter()
-                        .any(|p| p == owner || (owner == "Exception" && p == "X::Control")))
+                    || mro.iter().any(|p| p == owner))
         })?;
         crate::builtins::method_table::invoke_mro_late(self, &[owner], method, args, target)
     }

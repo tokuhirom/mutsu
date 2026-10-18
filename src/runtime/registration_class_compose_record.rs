@@ -96,17 +96,15 @@ impl Interpreter {
                     if !seen_roles.insert(role_name.clone()) {
                         continue;
                     }
-                    if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
-                        for rp in rparents {
-                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.is_role_type_name(rp_base) {
-                                // It's a sub-role, recurse
-                                role_stack.push(rp_base.to_string());
-                            } else if self.registry().classes.contains_key(rp_base)
-                                && !class_def.parents.contains(&rp)
-                            {
-                                class_def.parents.push(rp);
-                            }
+                    for rp in self.registry().role_parents_of(&role_name) {
+                        let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
+                        if self.is_role_type_name(rp_base) {
+                            // It's a sub-role, recurse
+                            role_stack.push(rp_base.to_string());
+                        } else if self.registry().classes.contains_key(rp_base)
+                            && !class_def.parents.contains(&rp)
+                        {
+                            class_def.parents.push(rp);
                         }
                     }
                 }

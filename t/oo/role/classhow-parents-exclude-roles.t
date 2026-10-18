@@ -5,7 +5,7 @@ use Test;
 # the default form also stops at Cool/Any/Mu (matching Rakudo's ClassHOW).
 # The gist strings below were verified against reference `raku`.
 
-plan 19;
+plan 22;
 
 # A class that only composes a role has no class parents.
 role R {}
@@ -20,6 +20,16 @@ role A is Exception {}
 class X::Ouch does A {}
 is X::Ouch.^parents.gist, '((Exception))',
     'role composed from a class contributes the class as a parent, not the role';
+
+# X::Control is a built-in marker role whose Rakudo declaration inherits
+# Exception. Its consumers inherit Exception's MRO and methods too.
+class ControlOuch does X::Control {}
+is ControlOuch.^parents.gist, '((Exception))',
+    'built-in X::Control contributes its Exception parent';
+ok ControlOuch.^mro.grep(* eq 'Exception'),
+    'built-in role parent appears in the composing class MRO';
+lives-ok { ControlOuch.new.message },
+    'built-in role parent methods are callable on the composing class';
 
 # Multiple composed roles: still no class parents.
 role S {}
