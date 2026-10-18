@@ -208,11 +208,12 @@ While iterating, run only the tests your change touches.
   result reports it instead of running again, even if commit ancestry changed. A rebase that brings
   unrelated `main` files into the tree produces a new tree and reruns every stage; avoid that rebase
   when the branch check passes and none of the intervening changes are relevant. `--fresh` forces a run.
-- **In a remote container `gate` defaults to the quick profile** (ADR-0126, amendment 2026-10-02):
+- **`gate` defaults to the quick profile in every environment** (ADR-0126, amendment 2026-10-19):
   `checks`, default clippy and the debug `cargo test`, then `prove` on the *debug* binary
   over the `t/`/`roast/` files your branch touches plus any `--focus PATH...` you name. Name the
   tests that exercise what you changed (`--focus t/regex roast/S05-match`) — a change to shared
-  machinery without a focus has not been run. CI runs the rest; `--full` runs the whole gate.
+  machinery without a focus has not been run. CI runs the rest; `--full` runs the whole gate when
+  you need the complete local matrix.
 - Quote the `scripts/dev status <id>` summary in the PR body.
 - A **documentation-only** change (CI skips the build jobs too, see `docs/ci-pipeline.md`): verify
   with `git diff --check`, plus a focused check only if it touches generated output, an executable
