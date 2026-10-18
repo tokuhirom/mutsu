@@ -77,7 +77,7 @@ impl Handler {
 /// Facts about a row that the guard step reads before it calls the handler
 /// (ADR-11276 §2, `RowFlags`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct RowFlags(u16);
+pub(crate) struct RowFlags(u32);
 
 impl RowFlags {
     /// No flag: the row answers a defined receiver of a plain shape, and its
@@ -177,6 +177,12 @@ impl RowFlags {
     /// The owner is immutable and the method refuses every receiver, a type
     /// object included, with `X::Immutable` (`List.push`).
     pub(crate) const IMMUTABLE: RowFlags = RowFlags(1 << 15);
+    /// A positional argument is a number the method reads as one (Rakudo's
+    /// `Num(Real) $base`, `Numeric $x`): a user object the guard step
+    /// declines is coerced first, through its `Bridge` when its class composes
+    /// `Real` and its `Numeric` otherwise, and the row is handed the number
+    /// (`invoke_unadmitted`; `Num.log($real-object)`, ADR-11276 §9.184).
+    pub(crate) const NUMERIC_ARGS: RowFlags = RowFlags(1 << 16);
 
     /// The flags of both.
     // Cost: O(1).

@@ -55,6 +55,16 @@ macro_rules! narrow {
 /// owner's `$extra` rows. `exp`, `log` and `sqrt` are `multi`s whose every
 /// candidate takes a defined invocant (`Int.sqrt` is `X::Multi::NoMatch`), and
 /// so are `log2` and `log10` except on `Cool` (`$log2` is their flag).
+/// A row whose argument is coerced to a number first ([`RowFlags::NUMERIC_ARGS`]).
+macro_rules! numeric_args {
+    ($row:expr) => {
+        MethodRow {
+            flags: RowFlags::ANY_ARGS.or(RowFlags::NUMERIC_ARGS),
+            ..$row
+        }
+    };
+}
+
 macro_rules! math_rows {
     ($owner:literal, $log2:expr; $($extra:expr),* $(,)?) => {
         &[
@@ -99,9 +109,9 @@ macro_rules! real_math_rows {
         math_rows!($owner, $log2;
             pure!($owner, "cis", cis),
             pure!($owner, "atan2", atan2),
-            narrow!($owner, "atan2", 1, atan2_1),
-            narrow!($owner, "exp", 1, exp_1),
-            narrow!($owner, "log", 1, log_1),
+            numeric_args!(narrow!($owner, "atan2", 1, atan2_1)),
+            numeric_args!(narrow!($owner, "exp", 1, exp_1)),
+            numeric_args!(narrow!($owner, "log", 1, log_1)),
             // Rakudo refuses a type object inside the method (`Int.roots(2)`).
             MethodRow {
                 flags: RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
@@ -123,8 +133,8 @@ pub(super) static COOL_ROWS: &[MethodRow] = real_math_rows!("Cool", RowFlags::NO
 pub(super) static COMPLEX_ROWS: &[MethodRow] = math_rows!("Complex", RowFlags::DEFINITE_MULTI;
     pure!("Complex", "cis", cis),
     pure!("Complex", "polar", polar),
-    narrow!("Complex", "exp", 1, exp_1),
-    narrow!("Complex", "log", 1, log_1),
+    numeric_args!(narrow!("Complex", "exp", 1, exp_1)),
+    numeric_args!(narrow!("Complex", "log", 1, log_1)),
     narrow!("Complex", "roots", 1, roots),
 );
 

@@ -45,6 +45,34 @@ fn is_builtin_value_argument(arg: &Value) -> bool {
     }
 }
 
+/// The arguments of a [`RowFlags::NUMERIC_ARGS`] row: each user object
+/// coerced to its number, through its `Bridge` when its class composes `Real`
+/// (the operators' rule, `coerce_infix_operand_numeric`) and its `Numeric`
+/// otherwise; a built-in value is left as it is. `None` when a coercion fails,
+/// and the call takes the cascades.
+// Cost: O(a), a = arguments, plus the coercions' user code.
+fn numeric_arguments(interp: &mut Interpreter, args: &[Value]) -> Option<Vec<Value>> {
+    args.iter()
+        .map(|arg| {
+            if !matches!(arg.descalarize().view(), ValueView::Instance { .. })
+                || is_builtin_value_argument(arg)
+            {
+                return Some(arg.clone());
+            }
+            let arg = arg.descalarize().clone();
+            let first = if interp.type_matches_value("Real", &arg) {
+                "Bridge"
+            } else {
+                "Numeric"
+            };
+            interp
+                .call_method_with_values(arg.clone(), first, Vec::new())
+                .or_else(|_| interp.call_method_with_values(arg, "Bridge", Vec::new()))
+                .ok()
+        })
+        .collect()
+}
+
 /// Answer `method` from the [`RowFlags::ANY_ARGS`] row the receiver's shape
 /// (or, for an allomorph, the part it reads) resolves, with arguments the
 /// guard step did not admit. `None` when the receiver has no shape, no such row exists, or an argument is not a
@@ -83,6 +111,14 @@ pub(crate) fn invoke_unadmitted(
     if !flags.contains(RowFlags::ANY_ARGS) {
         return None;
     }
+    // A numeric parameter coerces a user object (`Num.log($real-object)`).
+    let coerced;
+    let args = if flags.contains(RowFlags::NUMERIC_ARGS) {
+        coerced = numeric_arguments(interp, args)?;
+        &coerced[..]
+    } else {
+        args
+    };
     // A user object is an argument only a row that binds `Mu` takes; a
     // `Junction` autothreads and a `Failure` may explode before any row.
     let admitted = if flags.contains(RowFlags::OBJECT_ARGS) {
