@@ -1077,6 +1077,13 @@ impl Interpreter {
                     {
                         let msg = msg.to_string_value();
                         return Ok(with_backtrace(&target, msg));
+                    } else if method == "message" {
+                        // A class that reaches Exception through a role still
+                        // has Exception.message even when it has no stored
+                        // message attribute. Match the native row's empty
+                        // default instead of falling through to "No such
+                        // method" for user-named exception classes.
+                        return Ok(Value::str(String::new()));
                     } else if cn == "X::AdHoc"
                         // `X::AdHoc` (what `die "..."` builds) carries its text in
                         // `payload`, not `message`.
