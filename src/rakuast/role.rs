@@ -75,7 +75,9 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         .take_while(|stmt| matches!(stmt, Stmt::DoesDecl { also: false, .. }))
         .count();
     let mut traits = Vec::new();
-    for stmt in &role.body[..header_len] {
+    let mut index = 0;
+    while index < header_len {
+        let stmt = &role.body[index];
         let Stmt::DoesDecl {
             name,
             args,
@@ -86,9 +88,33 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             unreachable!("counted above");
         };
         let name = name.resolve();
-        // `hides` and `is hidden` are internal markers with their own shape.
-        if name.starts_with("__mutsu_role_") {
-            return Err(unsupported("role with `hides` / `is hidden`"));
+        if name == "__mutsu_role_hidden__" {
+            traits.push(Value::rakuast(Box::new(RakuAstNode {
+                class: RakuAstClass::TraitIs,
+                fields: vec![node_field(
+                    Some("name"),
+                    super::convert::name_from_identifier("hidden"),
+                )],
+            })));
+            index += 1;
+            continue;
+        }
+        let hides_prefix = crate::meta_ns::MetaNs::RoleHides.owned_key_for_str("");
+        if index + 1 < header_len
+            && let Stmt::DoesDecl { name: marker, .. } = &role.body[index + 1]
+        {
+            let marker = marker.resolve();
+            if let Some(hidden_name) = marker.strip_prefix(&hides_prefix) {
+                if hidden_name != name {
+                    return Err(unsupported("role hides marker does not match its parent"));
+                }
+                traits.push(Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::TraitHides,
+                    fields: vec![node_field(None, build_type_node(&name)?)],
+                })));
+                index += 2;
+                continue;
+            }
         }
         let type_node = if let Some(args) = args {
             super::type_args::parameterized_type_node(&name, Some(args))?
@@ -106,6 +132,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![node_field(None, type_node)],
             }
         })));
+        index += 1;
     }
     // Rakudo lists the traits in source order, which the parser does not keep
     // between the parent clauses, `is export` and `is rw`.
@@ -214,6 +241,17 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         header.push(parent_clause(node, type_node, true)?);
                         continue;
                     }
+                    if let Ok(name) = named_child(t, "name")
+                        && matches!(positional_leaf(name)?.view(), ValueView::Str(s) if s.as_str() == "hidden")
+                    {
+                        header.push(Stmt::DoesDecl {
+                            name: Symbol::intern("__mutsu_role_hidden__"),
+                            args: None,
+                            from_is: false,
+                            also: false,
+                        });
+                        continue;
+                    }
                     if let Some(entry) = super::routine_traits::lower_custom(node, t)? {
                         custom_traits.push(entry);
                         continue;
@@ -221,6 +259,24 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     if !flags.read(t)? || flags.is_raw {
                         return Err(unsupported_node(node));
                     }
+                }
+                RakuAstClass::TraitHides => {
+                    let hidden_type = named_child_or_positional(t)?;
+                    let hidden_name = super::type_lower::type_constraint(node, hidden_type)?;
+                    header.push(Stmt::DoesDecl {
+                        name: Symbol::intern(&hidden_name),
+                        args: None,
+                        from_is: false,
+                        also: false,
+                    });
+                    header.push(Stmt::DoesDecl {
+                        name: Symbol::intern(
+                            &crate::meta_ns::MetaNs::RoleHides.owned_key_for_str(&hidden_name),
+                        ),
+                        args: None,
+                        from_is: false,
+                        also: false,
+                    });
                 }
                 _ => return Err(unsupported_node(node)),
             }
