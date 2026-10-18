@@ -4449,6 +4449,22 @@ Pinned in `t/types/any-autoviv-readonly-receivers.t`.
   (`Array.pop`, `SetHash.set`, `Array.STORE`), so it raises `X::Method::NotFound` instead of Rakudo's
   concreteness or no-match error.
 
+### 9.176 `STORE` of `is Hash`/`is Map` instances and mixins runs the rows (2026-10-18)
+
+`refactor/11276-store-subclass`. §9.174 left `native_container_store` as a name arm with its own
+copy of the store for a user `is Hash`/`is Map` instance and a mixin over a hash or array.
+
+- `native_container_store` now only finds the storage (the instance's `__mutsu_hash_storage`, a mixin's
+  inner value) and runs `Hash.STORE`/`Array.STORE` on it as a detached place through
+  `native_array_storage_mut`, answering the invocant. The plain-container case is no longer
+  there: the rows answer it, and a row that declined (`Map` without `:INITIALIZE`) is not overridden.
+- A mixin whose role composes `STORE_AT_KEY` still stores pair by pair through that method.
+- The call is still reached by name from `call_method_with_values` and from the `callsame` bridges
+  (`native_hash_storage_base`, `mixin_base_native_entry`), because `mutating::owners_of` cannot name
+  an instance or mixin receiver from its value; it is a bridge to the rows, not a second store.
+
+Pinned in `t/vm/writeback/container-store-subclass.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

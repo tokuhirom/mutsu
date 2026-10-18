@@ -15,8 +15,8 @@
 //!
 //! The store goes into the container's shared node, keeping its element type,
 //! `is default` and other metadata (`Interpreter::store_into_array`,
-//! `store_into_hash`). A user `is Hash`/`is Map` instance and a mixin keep the
-//! interpreter's `native_container_store`.
+//! `store_into_hash`). A user `is Hash`/`is Map` instance and a mixin reach the
+//! same rows through `native_container_store`, which hands them their storage.
 
 use crate::builtins::method_table::{Handler, MethodRow, Named, ReceiverPlace, RowFlags};
 use crate::runtime::Interpreter;
