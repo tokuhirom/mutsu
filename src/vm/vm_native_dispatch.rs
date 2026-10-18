@@ -469,81 +469,79 @@ impl Interpreter {
             }
         }
         // Instance-specific bypasses (avoid for non-Instance targets)
-        else if matches!(target.view(), ValueView::Instance { .. }) {
-            if let ValueView::Instance { class_name, .. } = target.view() {
-                let cn = class_name.resolve();
-                // Native method on instance class: an interpreter-side handler
-                // (`IO::Handle.say`, ...) serves it, so decline the pure native
-                // path. Decided BEFORE the numeric-bridge probes below, which
-                // reach the same `None` for such a class only after two full
-                // `type_matches_value` walks (`Real`, then `Numeric`) -- the
-                // cost every `$output.say` in the vendored `Test` was paying.
-                if self.is_native_method(&cn, method_name) {
-                    return None;
-                }
-                // Numeric bridge — Real/Numeric instances route through the
-                // interpreter's Numeric bridge for arithmetic and coercion.
-                // Exception: pure-render methods (gist/Str/raku/...) don't need
-                // the bridge, so let `native_method_0arg` render the known
-                // builtin numeric instances (Instant/Duration) directly. A
-                // user numeric class that overrides one of these keeps the
-                // bypass so its method runs; unknown numeric instances return
-                // `None` from native and still fall through to the interpreter.
-                let is_pure_render = matches!(method_name, "gist" | "Str" | "Stringy" | "raku");
-                let render_overridden = is_pure_render && self.has_user_method(&cn, method_name);
-                // The probe (`~~ Real`, `~~ Numeric`, own `Bridge` method)
-                // is a property of the receiver's CLASS, not of the call, so
-                // it is memoized per class symbol. Asked inline it made two
-                // full `type_matches_value` walks -- each over the class MRO
-                // *and* the transitive closure of its composed roles -- 52% of
-                // a `Buf.push` loop. The memo is keyed on the registry write
-                // generation, bumped by the registry's sole write path, so no
-                // enumeration of mutation sites can go stale (#7712).
-                if (!is_pure_render || render_overridden)
-                    && self.instance_needs_numeric_bridge(class_name, target)
-                {
-                    return None;
-                }
-                // `.gist`/`.Str` render the exception's
-                // message, and the native fast path can only read the stored
-                // `message` ATTRIBUTE. A class that COMPUTES its message
-                // (`method message { $!message //= … }`) leaves that attribute
-                // undefined until the method runs, so the fast path would report
-                // the literal text `(Any)`. Only the interpreter can see the
-                // class registry, so defer the decision to it.
-                if matches!(method_name, "gist" | "Str" | "Stringy")
-                    && self.exception_render_needs_interpreter(target, &cn)
-                {
-                    return None;
-                }
-                // A Cool-only builtin (`.uc`, `.flip`, `.subst`, ...) is not
-                // resolvable on a plain Any-derived instance in raku, so a
-                // class declaring `handles *` / `FALLBACK` must be given the
-                // chance to intercept it instead of this fast path
-                // unconditionally stringifying the receiver. Name-gated
-                // first (a cheap `matches!`) so the MRO walk only runs for
-                // the rare "Instance x Cool-only name" shape.
-                if Self::cool_only_builtin_method(method_name)
-                    && self.class_has_wildcard_handles_or_fallback(&cn)
-                {
-                    return None;
-                }
-                // ADR-0051 P4: a Cool-only builtin the receiver's own
-                // ancestry does NOT actually provide (no `Cool` -- or, for
-                // `Instant`/`DateTime`/`Date`, no own-method row -- anywhere
-                // in the dispatch chain) must not be answered by this fast
-                // path either: its cascade arms are receiver-class-blind by
-                // construction and would unconditionally stringify the
-                // receiver (`"G()".uc`), which is wrong for a genuinely
-                // unresolved method (real Rakudo throws
-                // `X::Method::NotFound`). Deferring to the interpreter lets
-                // normal "no candidate" resolution throw instead of
-                // fabricating a stringified answer.
-                if Self::cool_only_builtin_method(method_name)
-                    && !self.e2_native_method_exists(target, method_sym.as_str())
-                {
-                    return None;
-                }
+        else if let ValueView::Instance { class_name, .. } = target.view() {
+            let cn = class_name.resolve();
+            // Native method on instance class: an interpreter-side handler
+            // (`IO::Handle.say`, ...) serves it, so decline the pure native
+            // path. Decided BEFORE the numeric-bridge probes below, which
+            // reach the same `None` for such a class only after two full
+            // `type_matches_value` walks (`Real`, then `Numeric`) -- the
+            // cost every `$output.say` in the vendored `Test` was paying.
+            if self.is_native_method(&cn, method_name) {
+                return None;
+            }
+            // Numeric bridge — Real/Numeric instances route through the
+            // interpreter's Numeric bridge for arithmetic and coercion.
+            // Exception: pure-render methods (gist/Str/raku/...) don't need
+            // the bridge, so let `native_method_0arg` render the known
+            // builtin numeric instances (Instant/Duration) directly. A
+            // user numeric class that overrides one of these keeps the
+            // bypass so its method runs; unknown numeric instances return
+            // `None` from native and still fall through to the interpreter.
+            let is_pure_render = matches!(method_name, "gist" | "Str" | "Stringy" | "raku");
+            let render_overridden = is_pure_render && self.has_user_method(&cn, method_name);
+            // The probe (`~~ Real`, `~~ Numeric`, own `Bridge` method)
+            // is a property of the receiver's CLASS, not of the call, so
+            // it is memoized per class symbol. Asked inline it made two
+            // full `type_matches_value` walks -- each over the class MRO
+            // *and* the transitive closure of its composed roles -- 52% of
+            // a `Buf.push` loop. The memo is keyed on the registry write
+            // generation, bumped by the registry's sole write path, so no
+            // enumeration of mutation sites can go stale (#7712).
+            if (!is_pure_render || render_overridden)
+                && self.instance_needs_numeric_bridge(class_name, target)
+            {
+                return None;
+            }
+            // `.gist`/`.Str` render the exception's
+            // message, and the native fast path can only read the stored
+            // `message` ATTRIBUTE. A class that COMPUTES its message
+            // (`method message { $!message //= … }`) leaves that attribute
+            // undefined until the method runs, so the fast path would report
+            // the literal text `(Any)`. Only the interpreter can see the
+            // class registry, so defer the decision to it.
+            if matches!(method_name, "gist" | "Str" | "Stringy")
+                && self.exception_render_needs_interpreter(target, &cn)
+            {
+                return None;
+            }
+            // A Cool-only builtin (`.uc`, `.flip`, `.subst`, ...) is not
+            // resolvable on a plain Any-derived instance in raku, so a
+            // class declaring `handles *` / `FALLBACK` must be given the
+            // chance to intercept it instead of this fast path
+            // unconditionally stringifying the receiver. Name-gated
+            // first (a cheap `matches!`) so the MRO walk only runs for
+            // the rare "Instance x Cool-only name" shape.
+            if Self::cool_only_builtin_method(method_name)
+                && self.class_has_wildcard_handles_or_fallback(&cn)
+            {
+                return None;
+            }
+            // ADR-0051 P4: a Cool-only builtin the receiver's own
+            // ancestry does NOT actually provide (no `Cool` -- or, for
+            // `Instant`/`DateTime`/`Date`, no own-method row -- anywhere
+            // in the dispatch chain) must not be answered by this fast
+            // path either: its cascade arms are receiver-class-blind by
+            // construction and would unconditionally stringify the
+            // receiver (`"G()".uc`), which is wrong for a genuinely
+            // unresolved method (real Rakudo throws
+            // `X::Method::NotFound`). Deferring to the interpreter lets
+            // normal "no candidate" resolution throw instead of
+            // fabricating a stringified answer.
+            if Self::cool_only_builtin_method(method_name)
+                && !self.e2_native_method_exists(target, method_sym.as_str())
+            {
+                return None;
             }
         }
         if let Some(result) = self.try_rakudo_internals_method(target, method_name, args) {
