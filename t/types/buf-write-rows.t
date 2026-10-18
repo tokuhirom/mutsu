@@ -5,7 +5,7 @@ use Test;
 # has no such method, and a wrong argument count is Rakudo's bind error.
 # `Blob`'s mutator protos refuse a `Blob:D`. Expected values are Rakudo's.
 
-plan 24;
+plan 28;
 
 # Type objects answer a fresh buffer.
 is-deeply buf8.write-uint16(0, 258), buf8.new(2, 1), 'buf8.write-uint16 on the type object';
@@ -60,3 +60,15 @@ throws-like { Blob.new(1).append(2) }, X::Multi::NoMatch, 'Blob.append';
 throws-like { "a".encode.unshift(1) }, X::Multi::NoMatch, 'utf8.unshift';
 throws-like { my $bl = Blob.new(1); $bl.pop }, X::Method::NotFound, 'Blob.pop';
 throws-like { Blob.new(1).reallocate(4) }, X::Method::NotFound, 'Blob.reallocate';
+
+# A user class composing a buffer role is the buffer it composes.
+{
+    class UBuf does Buf[uint8] is repr('VMArray') { }
+    my $u = UBuf.new(0, 0);
+    $u.write-uint16(0, 513);
+    is $u.list, (1, 2), 'write-uint16 on a Buf-composing user class';
+    is UBuf.write-uint8(0, 5).^name, 'UBuf', '... and on its type object';
+    class UBlob does Blob[uint8] is repr('VMArray') { }
+    throws-like { UBlob.new(1).push(2) }, X::Multi::NoMatch, 'a Blob-composing class refuses push';
+    throws-like { UBlob.new(1).write-uint8(0, 2) }, X::Method::NotFound, '... and has no write-uint8';
+}

@@ -48,7 +48,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
 /// the value is (a `Bag` is a `BagHash` only when it is mutable), exactly the
 /// distinction each cascade arm used to make with its own receiver probe.
 // Cost: O(1), a tag probe; a type object's name is matched against the
-// `Buf` type names, O(n) in its length.
+// `Buf` type names, O(n) in its length, and so is an instance's once a user
+// buffer class exists.
 pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
     match value.descalarize().view() {
         // A method that replaces the value (`subst-mutate`) or writes back under
@@ -86,9 +87,19 @@ pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
         // A mutable byte buffer; a `Blob` and the encoding buffers have no
         // mutators (Rakudo declares them on `Buf` only), and `Blob`'s rows
         // refuse the calls its protos name.
-        ValueView::Instance { .. } => match value.descalarize().dispatch_shape() {
+        // A user class composing a buffer role over a `VMArray` body
+        // (`class C does Buf[uint8] is repr('VMArray')`) is the buffer it
+        // composes.
+        ValueView::Instance { class_name, .. } => match value.descalarize().dispatch_shape() {
             Some(DispatchShape::Buf) => Some(&["Buf"]),
             Some(DispatchShape::Blob) => Some(&["Blob"]),
+            _ if crate::value::value_buf::any_buffer_class() => {
+                match crate::value::value_buf::buffer_class_type(&class_name.resolve()) {
+                    Some(kind) if kind.starts_with("Buf") => Some(&["Buf"]),
+                    Some(_) => Some(&["Blob"]),
+                    None => None,
+                }
+            }
             _ => None,
         },
         // A `Buf` type object: its `write-*` rows answer a fresh buffer.
