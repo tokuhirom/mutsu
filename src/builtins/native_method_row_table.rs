@@ -1440,6 +1440,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Map", "new", 7, 28),
     ("Map", "sort", 7, 28),
     ("Map", "STORE", 7, 28),
+    // `STORE` of the positional and associative containers (ADR-11276 §9.174).
+    ("Array", "STORE", 2, 26),
+    ("List", "STORE", 2, 26),
+    ("Hash", "STORE", 6, 26),
     ("List", "iterator", 1, 28),
     ("List", "new", 7, 60),
     ("Seq", "iterator", 1, 60),
