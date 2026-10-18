@@ -369,6 +369,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("multiness", Absent::Str("")),
             ("name", NAME),
             ("signature", Absent::EmptyNode(Signature)),
+            ("traits", Absent::EmptyList),
             ("body", Absent::Required),
         ],
         // A package declaration without a source name (`class { }`) has no

@@ -300,9 +300,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             export_tags,
             ..
         } => {
-            if *is_export || !export_tags.is_empty() {
-                return Err(unsupported("exported regex declaration"));
-            }
             if params.len() != param_defs.len() {
                 return Err(unsupported(
                     "regex declaration with an unnamed parameter list",
@@ -331,6 +328,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 scope,
                 multi.then_some("multi"),
                 param_defs,
+                super::package_header::export_trait_value(
+                    *is_export || !export_tags.is_empty(),
+                    export_tags,
+                ),
             )?)))
         }
         // `proto token t {*}`: the declaration with no regex, only the
@@ -363,6 +364,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     class: RakuAstClass::OnlyStar,
                     fields: Vec::new(),
                 },
+                Vec::new(),
             )?)))
         }
         Stmt::RuleDecl {
@@ -375,9 +377,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             export_tags,
             ..
         } => {
-            if *is_export || !export_tags.is_empty() {
-                return Err(unsupported("exported rule declaration"));
-            }
             if params.len() != param_defs.len() {
                 return Err(unsupported(
                     "rule declaration with an unnamed parameter list",
@@ -393,6 +392,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 None,
                 multi.then_some("multi"),
                 param_defs,
+                super::package_header::export_trait_value(
+                    *is_export || !export_tags.is_empty(),
+                    export_tags,
+                ),
             )?)))
         }
         // A signature declaration (`my ($a, @b) = …`): the parser keeps its
@@ -5207,6 +5210,7 @@ fn regex_declaration(
     scope: Option<&str>,
     multiness: Option<&str>,
     param_defs: &[ParamDef],
+    export_trait: Option<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
     regex_declaration_with_body(
         class,
@@ -5215,6 +5219,7 @@ fn regex_declaration(
         multiness,
         param_defs,
         regex_node(&tree.body)?,
+        export_trait.into_iter().collect(),
     )
 }
 
@@ -5227,8 +5232,9 @@ fn regex_declaration_with_body(
     multiness: Option<&str>,
     param_defs: &[ParamDef],
     body: RakuAstNode,
+    traits: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut fields = Vec::with_capacity(5);
+    let mut fields = Vec::with_capacity(6);
     if let Some(scope) = scope {
         fields.push(leaf_field(Some("scope"), Value::str_from(scope)));
     }
@@ -5243,6 +5249,12 @@ fn regex_declaration_with_body(
             Some("signature"),
             signature(param_defs, true, None)?,
         ));
+    }
+    if !traits.is_empty() {
+        fields.push(RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(traits),
+        });
     }
     fields.push(node_field(Some("body"), body));
     Ok(RakuAstNode { class, fields })
@@ -6871,7 +6883,15 @@ fn anon_regex_declaration(v: &Value, tree: &RegexTree) -> Result<RakuAstNode, Ru
         .regex_signature()
         .map(|p| (*p).clone())
         .unwrap_or_default();
-    regex_declaration_with_body(class, None, None, None, &params, regex_node(&tree.body)?)
+    regex_declaration_with_body(
+        class,
+        None,
+        None,
+        None,
+        &params,
+        regex_node(&tree.body)?,
+        Vec::new(),
+    )
 }
 
 /// `FakeSignature.new(Signature(parameters => (...)[, returns => Type]))` for a
