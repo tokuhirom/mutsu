@@ -4254,6 +4254,29 @@ name, or the `SubData`).
 
 Pinned in `t/oo/method/routine-code-method-rows.t`.
 
+### 9.168 The native fast path's name lists shrink: `Supply` by owner, adverbs and `AT-POS` by rows (2026-10-18)
+
+`refactor/11276-native-gate-names`. Slice 5 deletes `try_native_method_raw`'s name checks and
+`should_bypass_native_fastpath`; this removes the ones the rows already make redundant.
+
+- **`Supply`.** The VM gate declined twenty `Supply` method names twice (an instance and the type
+  object) and `Supplier.Supply`. A `Supply` answers its methods through its own rows and dispatcher, which
+  need the interpreter, so the VM now declines any call whose receiver `supply_owners_of` names: a
+  property of the receiver's class, not of the name. The interpreter twin keeps its list, because
+  `Supply.list` and its kin answer from `answer_shapeless` inside the native step it guards.
+- **`squish` and `tail`** were sent to the interpreter by name (`tail` by the VM, `squish` by both
+  gates): their rows answer every receiver the cascades used to misread, so the names go.
+- **The adverb interceptors.** `contains`, `starts-with`, `ends-with` and `substr-eq` with `:i`/`:m`,
+  and `base(..., :no-trailing-zeroes)`, were answered by interceptors in front of the VM's arity cascade,
+  and `base` also by an interpreter twin. The search rows already bind every adverb (`str_search_interp`,
+  `ANY_NAMED`); `Rat`'s and `FatRat`'s `base` rows now declare `:no-trailing-zeroes` (`Handler::Named`),
+  the adverb Rakudo's `Rational.base` takes. The interceptors and the dead `native_*_with_options`
+  helpers (`methods_narg/str_match.rs`) go.
+- **`AT-POS`.** Both entries answered an explicit `.AT-POS` through `builtin_at_pos` ahead of the table;
+  the subscript rows (§9.106, §9.138) answer it.
+
+No behaviour change.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

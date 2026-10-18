@@ -43,23 +43,64 @@ macro_rules! base_rows {
 pub(super) static INT_ROWS: &[MethodRow] = base_rows!("Int", RowFlags::DEFINITE_MULTI);
 pub(super) static NUM_ROWS: &[MethodRow] = base_rows!("Num", RowFlags::NONE);
 /// Rakudo declares `base` on `Rational`, which `FatRat` composes too.
-pub(super) static FAT_RAT_ROWS: &[MethodRow] = base_rows!("FatRat", RowFlags::DEFINITE_MULTI);
+pub(super) static FAT_RAT_ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "FatRat",
+        name: "base",
+        arity: 1,
+        handler: Handler::Named(base_named),
+        flags: RowFlags::ANY_ARGS.or(RowFlags::DEFINITE_MULTI),
+        named: RATIONAL_BASE_NAMED,
+    },
+    MethodRow {
+        owner: "FatRat",
+        name: "base",
+        arity: 2,
+        handler: Handler::Named(base_named),
+        flags: RowFlags::ANY_ARGS.or(RowFlags::DEFINITE_MULTI),
+        named: RATIONAL_BASE_NAMED,
+    },
+];
+
+/// The adverb `Rational.base` declares (ADR-11276 §9.168): every fractional
+/// digit that is a trailing zero goes, and the radix point with the last one.
+const RATIONAL_BASE_NAMED: &[&str] = &["no-trailing-zeroes"];
+
+/// `Rational.base($radix, $digits?, :no-trailing-zeroes)`.
+// Cost: as [`base_1`] / [`base_2`], plus O(n) to strip, n = chars rendered.
+fn base_named(
+    target: &Value,
+    args: &[Value],
+    named: crate::builtins::method_table::Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if !named.pairs().is_empty() {
+        let mut all = args.to_vec();
+        all.extend_from_slice(named.pairs());
+        if let Some(answer) = crate::builtins::native_base_with_options(target, &all) {
+            return Some(answer);
+        }
+    }
+    match args.len() {
+        1 => base_1(target, args),
+        _ => base_2(target, args),
+    }
+}
 pub(super) static RAT_ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "Rat",
         name: "base",
         arity: 1,
-        handler: Handler::Narrow(base_1),
+        handler: Handler::Named(base_named),
         flags: RowFlags::ANY_ARGS,
-        named: &[],
+        named: RATIONAL_BASE_NAMED,
     },
     MethodRow {
         owner: "Rat",
         name: "base",
         arity: 2,
-        handler: Handler::Narrow(base_2),
+        handler: Handler::Named(base_named),
         flags: RowFlags::ANY_ARGS,
-        named: &[],
+        named: RATIONAL_BASE_NAMED,
     },
     MethodRow {
         owner: "Rat",

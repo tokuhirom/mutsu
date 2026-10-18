@@ -14,7 +14,6 @@ pub(crate) mod flatten;
 mod fmt_contains;
 pub(crate) mod indent;
 mod numeric;
-mod str_match;
 
 pub(crate) use base::{f64_to_rat, native_base_with_options};
 pub(crate) use buf::{
@@ -24,8 +23,6 @@ pub(crate) use buf::{
 pub(crate) use dispatch_1arg::{native_method_1arg, native_method_1arg_without_table};
 pub(crate) use dispatch_2arg::native_method_2arg;
 pub(crate) use fmt_contains::{
-    fmt_joinable_target, fmt_native, list_item_pair_split, native_contains_with_options,
-    pair_key_value,
+    fmt_joinable_target, fmt_native, list_item_pair_split, pair_key_value,
 };
 pub(crate) use numeric::compute_roots;
-pub(crate) use str_match::{native_prefix_suffix_with_options, native_substr_eq_with_options};

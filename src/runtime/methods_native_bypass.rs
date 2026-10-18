@@ -243,34 +243,29 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> bool {
-        // `squish` always routes to the interpreter regardless of owner:
-        // `methods_0arg/collection.rs` implements it per-view, so a row miss
-        // must not fall through to a wrong native answer (ADR-0019 E4b step
-        // 2's "confirmed NOT reducible" finding).
-        method == "squish"
-            || (matches!(
-                method,
-                "max"
-                    | "min"
-                    | "head"
-                    | "flat"
-                    | "sort"
-                    | "comb"
-                    | "words"
-                    | "batch"
-                    | "rotor"
-                    | "rotate"
-                    | "produce"
-                    | "snip"
-                    | "minmax"
-                    | "start"
-                    | "wait"
-                    | "zip"
-                    | "zip-latest"
-                    | "list"
-                    | "Array"
-                    | "Seq"
-            ) && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
+        (matches!(
+            method,
+            "max"
+                | "min"
+                | "head"
+                | "flat"
+                | "sort"
+                | "comb"
+                | "words"
+                | "batch"
+                | "rotor"
+                | "rotate"
+                | "produce"
+                | "snip"
+                | "minmax"
+                | "start"
+                | "wait"
+                | "zip"
+                | "zip-latest"
+                | "list"
+                | "Array"
+                | "Seq"
+        ) && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "elems" && matches!(target.view(), ValueView::Instance { .. }))
             // `.gist`/`.Str`/`.Stringy` render
             // `$exc.message`; the native fast path can only read the stored
@@ -386,7 +381,6 @@ impl Interpreter {
                 return true;
             }
             return skip_pseudo
-                || method == "squish"
                 || method == "elems"
                 || (matches!(method, "gist" | "Str" | "Stringy")
                     && self.exception_render_needs_interpreter(target, owner))

@@ -1,4 +1,3 @@
-use super::str_match::is_str_or_match_receiver;
 use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -77,84 +76,6 @@ pub(crate) fn fmt_list_item(fmt: &str, item: &Value) -> Result<String, RuntimeEr
     Ok(match list_item_pair_split(fmt, item)? {
         Some((k, v)) => runtime::format_sprintf_args(fmt, &[k, v]),
         None => runtime::format_sprintf(fmt, Some(item)),
-    })
-}
-
-/// `.contains($needle, $pos?, :i/:ignorecase/:m/:ignoremark?)` on a `Str` receiver —
-/// the forms that carry a start position and/or the case-/mark-insensitive named
-/// markings. These never reach the arity-keyed `native_method_*arg` dispatch (a Pair
-/// or a 3rd arg pushes them past it), so they previously bounced to the interpreter.
-/// Both it and `Interpreter::dispatch_contains` call `str_prim::contains`, which
-/// folds `:i`/`:m` the way `nqp::indexic`/`indexim` do; the start position is taken
-/// from the second positional (Int/Num/Str-parsed).
-///
-/// Returns `None` (fall through to the interpreter) for: non-Str receivers, a Package
-/// (type-object) needle, a `BigInt` position (overflow → X::OutOfRange handled by the
-/// interpreter), and out-of-range / negative positions (X::OutOfRange Failure). The
-/// plain single-needle form (`contains($needle)`) keeps its `native_method_1arg` arm.
-// Cost: O(d * m) amortized, d = chars searched from `$pos`, m = chars of the
-// needle, once the invocant's grapheme index is cached (`$pos` is resolved
-// through it). :i/:m fold the searched graphemes, O(d) extra.
-pub(crate) fn native_contains_with_options(
-    target: &Value,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    if !is_str_or_match_receiver(target) {
-        return None;
-    }
-    let mut positional: Vec<&Value> = Vec::new();
-    let mut ignore_case = false;
-    let mut ignore_mark = false;
-    for arg in args {
-        if let ValueView::Pair(key, value) = arg.view() {
-            match key.as_str() {
-                "i" | "ignorecase" => ignore_case = value.truthy(),
-                "m" | "ignoremark" => ignore_mark = value.truthy(),
-                // An unexpected named arg: let the interpreter own the semantics.
-                _ => return None,
-            }
-        } else {
-            positional.push(arg);
-        }
-    }
-    // Only the positioned / named forms are handled here; the bare single needle
-    // (`contains($needle)`) stays on the existing 1-arg native arm.
-    let needle: &Value = positional.first().copied()?;
-    if positional.len() == 1 && args.len() == 1 {
-        return None;
-    }
-    if let ValueView::Package(_) = needle.view() {
-        return None;
-    }
-    // A Regex needle needs the regex engine (&mut self); let the interpreter's
-    // dispatch_contains own it rather than searching for the regex's gist.
-    if let ValueView::Regex(..) = needle.view() {
-        return None;
-    }
-    let start = match positional.get(1).copied().map(Value::view) {
-        Some(ValueView::Int(i)) => i,
-        Some(ValueView::Num(f)) => f as i64,
-        Some(ValueView::Str(s)) => s.parse::<i64>().ok()?,
-        Some(_) => return None,
-        None => 0,
-    };
-    if start < 0 {
-        return None;
-    }
-    // The position is a grapheme index, resolved through the cached index
-    // rather than by re-collecting the suffix (#9140).
-    crate::builtins::grapheme_index::with_str_index(target, |text, idx| {
-        if start as usize > idx.len() {
-            return None;
-        }
-        let fold = crate::builtins::str_prim::Fold::new(ignore_case, ignore_mark);
-        Some(Ok(crate::builtins::str_prim::contains(
-            text,
-            idx,
-            start as usize,
-            needle,
-            fold,
-        )))
     })
 }
 
