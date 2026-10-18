@@ -630,6 +630,14 @@ impl Interpreter {
             // exactly one thing — the env-alias fallback that was serving the
             // wrong scope's symbol.
             module_val
+        } else if let Some(own) = self.own_package_type_over_foreign_term(name, name_sym) {
+            // A module body runs against its importer's env, so a constant
+            // the importer declared (`constant SpecRegistry =
+            // Reg::SpecRegistry`, still unassigned while `use Reg` loads) is
+            // visible to `term_binding` below although the module's scope
+            // never saw it (#13628). The module's package declares the type,
+            // which is what its source means.
+            own
         } else if let Some(v) = self
             .term_binding(name)
             // As for the plain `env` hit below, a type name keeps meaning the
@@ -1071,6 +1079,29 @@ impl Interpreter {
             return None;
         }
         Some(Value::package(own_sym))
+    }
+
+    /// The type the running package (or an enclosing one) declares under
+    /// `name`, when `name` would otherwise read a sigil-less term the running
+    /// code did not bind -- one inherited from the scope that loaded or called
+    /// the module (#13628). The twin of
+    /// [`Self::own_package_type_over_foreign_enum`]. Its caller sits below
+    /// the live-frame term and the running module's own file-scope symbols,
+    /// so those keep outranking the type. `None` in GLOBAL.
+    // Cost: O(p), p = enclosing packages of the running one.
+    fn own_package_type_over_foreign_term(&self, name: &str, name_sym: Symbol) -> Option<Value> {
+        if self.current_package_is_global() || crate::qualified::is_qualified(name_sym) {
+            return None;
+        }
+        // A term the running code imported is its own binding.
+        let term_key = crate::runtime::term_names::term_key_sym(name_sym);
+        if self.module.imported_env_aliases.contains_key(&term_key)
+            || self.module.imported_env_aliases.contains_key(&name_sym)
+        {
+            return None;
+        }
+        let own = self.resolve_type_in_current_package(name)?;
+        Some(Value::package(Symbol::intern(&own)))
     }
 
     fn running_module_bareword(&self, name: &str) -> Option<Value> {
