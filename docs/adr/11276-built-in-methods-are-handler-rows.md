@@ -4324,7 +4324,7 @@ Behaviour changes toward Rakudo: `buf8.write-bits`/`write-ubits` on a type objec
 `utf8`, or a `Blob[uint8]` answer before); `Blob`'s mutators raise Rakudo's exception types; the
 argument-count error is Rakudo's. Pinned in `t/types/buf-write-rows.t`.
 
-- **Found, not fixed**: the folded `Blob` owner makes `Blob.can("reallocate")` and
+- **Found, not fixed** (#13849): the folded `Blob` owner makes `Blob.can("reallocate")` and
   `Blob.can("write-uint8")` true (Rakudo: false), as it already did for `reallocate`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
