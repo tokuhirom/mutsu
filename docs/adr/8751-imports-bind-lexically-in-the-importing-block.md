@@ -335,6 +335,16 @@ Consequences that pin the design:
     set also takes the imported constants and type names (an uppercase
     `constant KONST`, a `class Foo`), so `::('Foo')` and `EVAL 'KONST'` in
     such a routine no longer find them either.
+  - Package-qualified names follow the module's block-level merge
+    (#13801). A block's `use M` grants `M::*` through a `MetaNs::ModuleMerge`
+    env key that the scope's pop removes (ADR-11136). The bareword and
+    qualified-call gates (#7797) already read that key. `::('M::Foo')` and
+    `::('&M::f')` (`resolve_indirect_type_name`) now pass the same gate.
+    The key is lexically scoped (`env::static_link::lexically_scoped`) and
+    in a top-level routine's unit-hidden set, so a callee written outside
+    the block is not granted the block's merge. Still open: `MY::` in the
+    block does not list `M`, and `GLOBAL::` lists a loaded module's
+    packages even where nothing merged them (#13802).
 
 ## 5. Acceptance
 

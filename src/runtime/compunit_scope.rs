@@ -297,6 +297,18 @@ impl Interpreter {
         if Self::top_segment_is_setting_package(top) {
             return true;
         }
+        // A top segment bound lexically to that very package is how rakudo
+        // resolves the rest of the name: through the binding. A `sub EXPORT`
+        // hook's `'NativeCall' => NativeCall` binds it without the importer
+        // ever `use`ing the package itself. A module's own bare package name
+        // is in the env wherever the module loaded; it counts only where the
+        // bare name itself is visible (ADR-11136).
+        if self.env.get(top).is_some_and(|value| {
+            matches!(value.view(), crate::value::ValueView::Package(pkg) if pkg.as_str() == top)
+        }) && !self.module_name_hidden_here(top)
+        {
+            return true;
+        }
         let granted = self.package_granted_from(executing, top);
         // A package a module published bare (`package OuterPkg { }` in a
         // package-less module) is the module's own declaration: visible where

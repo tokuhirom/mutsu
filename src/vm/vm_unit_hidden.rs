@@ -9,6 +9,7 @@
 //! is in the routine's lexical outer, so the frame hides them
 //! (`Env::set_unit_hidden`).
 
+use crate::meta_ns::MetaNs;
 use crate::opcode::CompiledCode;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
@@ -33,7 +34,9 @@ impl Interpreter {
         // Any variable-shaped key counts, an uppercase one too: an imported
         // `constant KONST` or `class Foo` is no more the routine's than a
         // lowercase variable is (ADR-8751). A same-named symbol of the
-        // routine's own outer is a shadowed value, so it stays visible.
+        // routine's own outer is a shadowed value, so it stays visible. So is
+        // the block's merge of the module's packages (`MetaNs::ModuleMerge`):
+        // the routine's `::('M::Foo')` is not granted by it (#13801).
         let imported: Vec<Symbol> = self
             .module
             .import_scope_stack
@@ -44,8 +47,10 @@ impl Interpreter {
                     .imported_env_keys
                     .iter()
                     .filter(|key| {
-                        key.with_str(crate::env::is_user_variable_key)
-                            && !scope.shadowed_env_values.contains_key(*key)
+                        key.with_str(|s| {
+                            crate::env::is_user_variable_key(s)
+                                || s.starts_with(MetaNs::ModuleMerge.prefix())
+                        }) && !scope.shadowed_env_values.contains_key(*key)
                     })
                     .copied()
             })

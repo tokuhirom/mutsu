@@ -611,6 +611,15 @@ impl Interpreter {
         if self.module_name_hidden_here(name) {
             return Self::no_such_symbol_failure(name);
         }
+        // A package-qualified name (`::('M::Foo')`, `::('&M::f')`) passes the
+        // gate a `M::Foo` bareword does (#7797): it is visible only where a
+        // `use` of its package is live, so a block-scoped `use M` grants it in
+        // that block alone, not after it or in a callee written outside it
+        // (#13801).
+        let base = name.trim_start_matches(['&', '$', '@', '%']);
+        if !self.is_my_scoped_type_name(base) && !self.qualified_name_visible_here(base) {
+            return Self::no_such_symbol_failure(name);
+        }
         // A lexical type remains registered for escaped values, but its
         // source-facing qualified name is not a package symbol visible from an
         // unrelated compunit (#8120). Check this before the generic compound
