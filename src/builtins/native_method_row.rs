@@ -341,14 +341,42 @@ pub(crate) fn declared_names_for_owner(owner: &str) -> Vec<&'static str> {
 /// bit on each row (set once, F3 step 2's raku-verified triage) is the only
 /// thing that used to live in those slices.
 pub(crate) fn introspectable_names_for_owner(owner: &str) -> Vec<&'static str> {
-    rows()
-        .iter()
-        .filter(|&&(o, _, _, flags)| {
-            let flags = NativeRowFlags(flags);
-            o == owner && flags.contains(NativeRowFlags::INTROSPECTABLE) && flags.in_force()
+    owner_row_index()
+        .get(owner)
+        .map(|rows| {
+            rows.iter()
+                .filter(|&&(_, flags)| {
+                    let flags = NativeRowFlags(flags);
+                    flags.contains(NativeRowFlags::INTROSPECTABLE) && flags.in_force()
+                })
+                .map(|&(name, _)| name)
+                .collect()
         })
-        .map(|&(_, name, _, _)| name)
-        .collect()
+        .unwrap_or_default()
+}
+
+type OwnerRows = FxHashMap<&'static str, Vec<(&'static str, u8)>>;
+
+// Cost: O(1) after the first call; that call is O(r), r = rows in the table.
+// Groups `(name, flags)` by owner in table order so per-owner enumeration is
+// O(k), k = rows of that owner, instead of a scan of the whole table.
+fn owner_row_index() -> &'static OwnerRows {
+    static INDEX: OnceLock<OwnerRows> = OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut index = OwnerRows::default();
+        for &(owner, name, _, flags) in rows() {
+            index.entry(owner).or_default().push((name, flags));
+        }
+        index
+    })
+}
+
+/// Whether `name` is in [`introspectable_names_for_owner`]`(owner)`: the
+/// membership test without building the list. `owner` is already folded.
+// Cost: O(1), one hash probe.
+pub(crate) fn introspectable_name_listed(owner: &str, name: &str) -> bool {
+    entry(owner, name)
+        .is_some_and(|(_, flags)| NativeRowFlags(flags).contains(NativeRowFlags::INTROSPECTABLE))
 }
 
 /// The full native-method-row catalog for one built-in owner, in `.^methods`
