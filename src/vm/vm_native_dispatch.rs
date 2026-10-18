@@ -444,6 +444,13 @@ impl Interpreter {
         {
             return None;
         }
+        // A `Supply` (instance or type object) answers its methods through
+        // its own rows and dispatcher, which need the interpreter (a supply
+        // materializes, taps or schedules); the pure cascades would read it as
+        // one item (`Supply.batch` on the type object, ADR-11276 §9.168).
+        if crate::builtins::method_table::supply_owners_of(target).is_some() {
+            return None;
+        }
         // Lazy Match: class is statically "Match" — mirror the Instance
         // bypasses below without materializing. (A Match never matches
         // Real/Numeric, and the Supply/Supplier arms cannot apply.)
@@ -469,38 +476,6 @@ impl Interpreter {
         else if matches!(target.view(), ValueView::Instance { .. }) {
             if let ValueView::Instance { class_name, .. } = target.view() {
                 let cn = class_name.resolve();
-                // Supply methods
-                if cn == "Supply"
-                    && matches!(
-                        method_name,
-                        "max"
-                            | "min"
-                            | "lines"
-                            | "elems"
-                            | "head"
-                            | "flat"
-                            | "sort"
-                            | "comb"
-                            | "words"
-                            | "batch"
-                            | "throttle"
-                            | "rotor"
-                            | "rotate"
-                            | "produce"
-                            | "snip"
-                            | "minmax"
-                            | "start"
-                            | "wait"
-                            | "zip"
-                            | "zip-latest"
-                    )
-                {
-                    return None;
-                }
-                // Supplier.Supply
-                if cn == "Supplier" && method_sym == "Supply" && args.is_empty() {
-                    return None;
-                }
                 // Native method on instance class: an interpreter-side handler
                 // (`IO::Handle.say`, ...) serves it, so decline the pure native
                 // path. Decided BEFORE the numeric-bridge probes below, which
@@ -574,32 +549,6 @@ impl Interpreter {
                     return None;
                 }
             }
-        } else if matches!(target.view(), ValueView::Package(name) if name == "Supply")
-            && matches!(
-                method_name,
-                "max"
-                    | "min"
-                    | "lines"
-                    | "elems"
-                    | "head"
-                    | "flat"
-                    | "sort"
-                    | "comb"
-                    | "words"
-                    | "batch"
-                    | "throttle"
-                    | "rotor"
-                    | "rotate"
-                    | "produce"
-                    | "snip"
-                    | "minmax"
-                    | "start"
-                    | "wait"
-                    | "zip"
-                    | "zip-latest"
-            )
-        {
-            return None;
         }
         if let Some(result) = self.try_rakudo_internals_method(target, method_name, args) {
             return Some(result);
