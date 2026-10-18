@@ -92,10 +92,14 @@ else {
         try Thread.start({ 1 });
         say "thread: ", $!.^name, ": ", $!.message if $!;
         say "survived";
-        CODE
+    CODE
     my ($, $calib) = run-child($refuse);
     my $vmsize = $calib.lines.head.Int;
-    my ($rc, $rout, $rerr) = run-child($refuse, :ulimit(~($vmsize + 12_000)));
+    # Leave room for startup mappings to vary between the calibration and
+    # constrained children under load, while staying below the smallest 32 MiB
+    # stack tier so the OS still has to refuse every stack size.
+    my $stack-startup-slack-kib = 28_000;
+    my ($rc, $rout, $rerr) = run-child($refuse, :ulimit(~($vmsize + $stack-startup-slack-kib)));
     ok $rout.contains('survived'), 'a refused thread does not take the process down';
     my @refusals = $rout.lines.grep(/^ ['start'|'thread'] ': '/);
     # An awaited refusal arrives `but X::Await::Died`, as in rakudo.
