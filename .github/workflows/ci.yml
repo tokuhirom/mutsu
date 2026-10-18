@@ -405,7 +405,7 @@ jobs:
       # Link with mold instead of GNU ld — see `test-suites` for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -539,7 +539,7 @@ jobs:
       # would widen the blast radius for nothing. `-fuse-ld=mold` finds
       # `/usr/local/bin/ld.mold` on PATH.
       - name: Install mold
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -738,7 +738,7 @@ jobs:
         # diagnosed from the artifact even when the web log viewer truncates the
         # step. Retained briefly; this is a debugging aid, not a release artifact.
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: roast-log
           path: tmp/roast.log
@@ -751,7 +751,7 @@ jobs:
         # so this artifact exists only when an unexpected crash happened. The
         # four stress-job uploads below follow the same rule.
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: crash-reports
           path: tmp/crash/*.txt
@@ -1127,7 +1127,7 @@ jobs:
           scripts/build-npm-package.sh
           mv pkg site/pkg
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
 
@@ -1240,7 +1240,7 @@ jobs:
       # Link with mold instead of GNU ld — see `test-suites` for why it comes
       # from its own release tarball rather than from apt.
       - name: Install mold
-        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621 # v1
+        uses: rui314/setup-mold@da13e0b42e392e3a45d1215033a2270b849d7d36 # v1
         with:
           mold-version: '2.42.0'
           make-default: false
@@ -1291,7 +1291,7 @@ jobs:
 
       - name: Upload debug TAP crash reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: debug-tap-crash-reports
           path: tmp/crash/*.txt
@@ -1300,7 +1300,7 @@ jobs:
 
       - name: Upload debug TAP log
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: debug-tap-log
           path: tmp/debug-tap.log
