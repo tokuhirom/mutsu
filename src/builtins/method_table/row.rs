@@ -174,6 +174,9 @@ impl RowFlags {
     /// type object that reaches the row is refused with `X::Multi::NoMatch`,
     /// as Rakudo's multi dispatch finds no candidate (`Int.sqrt`).
     pub(crate) const DEFINITE_MULTI: RowFlags = RowFlags(1 << 14);
+    /// The owner is immutable and the method refuses every receiver, a type
+    /// object included, with `X::Immutable` (`List.push`).
+    pub(crate) const IMMUTABLE: RowFlags = RowFlags(1 << 15);
 
     /// The flags of both.
     // Cost: O(1).
@@ -245,6 +248,10 @@ impl MethodRow {
         if self.flags.contains(RowFlags::DEFINITE) {
             Some(RuntimeError::parameter_invalid_concreteness(
                 self.owner, type_name, self.name, "self", true, true,
+            ))
+        } else if self.flags.contains(RowFlags::IMMUTABLE) {
+            Some(crate::runtime::methods_signature_errors::make_x_immutable_error(
+                self.name, self.owner,
             ))
         } else if self.flags.contains(RowFlags::DEFINITE_MULTI) {
             Some(

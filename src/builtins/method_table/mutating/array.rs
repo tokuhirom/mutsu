@@ -61,12 +61,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Array", "shift", shift_row, RowFlags::DEFINITE),
     row!("Array", "splice", splice_row, RowFlags::DEFINITE_MULTI),
     row!("Array", "grab", grab_row, RowFlags::DEFINITE_MULTI),
-    row!("List", "push", push_row),
-    row!("List", "append", append_row),
-    row!("List", "unshift", unshift_row),
-    row!("List", "prepend", prepend_row),
-    row!("List", "pop", pop_row),
-    row!("List", "shift", shift_row),
+    row!("List", "push", push_row, RowFlags::IMMUTABLE),
+    row!("List", "append", append_row, RowFlags::IMMUTABLE),
+    row!("List", "unshift", unshift_row, RowFlags::IMMUTABLE),
+    row!("List", "prepend", prepend_row, RowFlags::IMMUTABLE),
+    row!("List", "pop", pop_row, RowFlags::IMMUTABLE),
+    row!("List", "shift", shift_row, RowFlags::IMMUTABLE),
 ];
 
 /// The seven mutators.
