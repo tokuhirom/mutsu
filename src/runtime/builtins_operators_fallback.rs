@@ -164,34 +164,9 @@ impl Interpreter {
                 let arg = &args[0];
                 match op {
                     "i" => {
-                        // For Instance/Package types, try calling .Numeric method first
-                        let coerced = if matches!(
-                            arg.view(),
-                            ValueView::Instance { .. } | ValueView::Package(..)
-                        ) {
-                            self.call_method_with_values(arg.clone(), "Numeric", vec![])
-                                .unwrap_or_else(|_| arg.clone())
-                        } else {
-                            arg.clone()
-                        };
-                        // Applying `i` to an existing Complex (directly, or via a
-                        // `.Numeric` coercion that returns one) rotates it 90°
-                        // (multiplies by i): `(r+ei)\i == -e+ri`.
-                        if let ValueView::Complex(r, i) = coerced.view() {
-                            return Ok(Value::complex(-i, r));
-                        }
-                        let n = crate::runtime::coerce_to_numeric(coerced);
-                        let num_val = match n.view() {
-                            ValueView::Int(i) => i as f64,
-                            ValueView::Num(f) => f,
-                            ValueView::Rat(n, d) => crate::value::rat_to_f64(n, d),
-                            _ => {
-                                return Err(RuntimeError::new(
-                                    "Cannot coerce to Numeric for postfix:<i>".to_string(),
-                                ));
-                            }
-                        };
-                        return Ok(Value::complex(0.0, num_val));
+                        return self
+                            .core_postfix_op(op, arg)
+                            .expect("postfix:<i> is a core postfix");
                     }
                     _ => {
                         // Hyper postfix operator, e.g. postfix:<»i>: apply the

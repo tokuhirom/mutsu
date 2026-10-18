@@ -419,6 +419,17 @@ impl Interpreter {
         {
             return result;
         }
+        if let Some(op) = name.strip_prefix("postfix:<").and_then(|s| s.strip_suffix('>'))
+            && let [arg] = args
+            && let Some(result) = self.core_postfix_op(op, arg)
+        {
+            return result;
+        }
+        match name {
+            "postcircumfix:<[ ]>" => return self.builtin_postcircumfix_subscript(args, true),
+            "postcircumfix:<{ }>" => return self.builtin_postcircumfix_subscript(args, false),
+            _ => {}
+        }
         Err(self.multi_no_match_error(name, args))
     }
 

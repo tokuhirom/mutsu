@@ -363,6 +363,12 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let right = self.fetch_proxy_operand(right)?;
         let left = self.fetch_proxy_operand(left)?;
+        // A user `infix:<x>` candidate answers first (`x=` compiles to this op
+        // too, so its compound form reaches the candidate as well).
+        if let Some(result) = self.try_user_infix("infix:<x>", &left, &right)? {
+            self.stack.push(result);
+            return Ok(());
+        }
 
         // Warn on uninitialized type object used as repeat count
         if let ValueView::Package(name) = right.view()
@@ -377,6 +383,16 @@ impl Interpreter {
             return Ok(());
         }
 
+        // An object count repeats by its `.Int` (CORE's `x` coerces the count
+        // with `.Int`), which dies for a class without one.
+        let right = if matches!(right.view(), ValueView::Instance { .. }) {
+            let caller_code = self.current_code;
+            let count = self.try_compiled_method_or_interpret(right, "Int", vec![]);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            count?
+        } else {
+            right
+        };
         let Some(n_raw) = crate::runtime::Interpreter::parse_repeat_count(&right)? else {
             return Err(crate::runtime::Interpreter::repeat_error(
                 "X::Numeric::CannotConvert",

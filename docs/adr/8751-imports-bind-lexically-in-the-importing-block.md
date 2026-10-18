@@ -342,13 +342,37 @@ Consequences that pin the design:
     reduction now applies a bound dispatcher pair by pair
     (`reduction_chain_step`), so a candidate's true result chains to `True`.
 
+  **Slice 8 done** (`fix/8751-repeat-postfix-ops-lexical`, 2026-10-18): the
+  repetition operators `x` and `xx`, the built-in postfix `i` and the
+  subscripts `postcircumfix:<[ ]>` / `postcircumfix:<{ }>` bind their
+  imported candidates in the set. A callee written outside the block no
+  longer sees them, and a closure taken in the block keeps them.
+  - **`x`, `xx` and `i` are call-spelled.** Once a block imports a
+    candidate, the parser turns their uses into calls of the user operator,
+    as for the Unicode set spellings
+    (`lexical_builtin_op::is_call_spelled_infix`, `is_lexical_postfix`).
+    The dispatcher falls back to the built-in; `postfix:<i>`'s core body
+    moved to `Interpreter::core_postfix_op`, shared by the call fallback and
+    the dispatcher.
+  - **`x=` and the `StringRepeat` op ask the user candidates.**
+    `exec_string_repeat_op` asks `try_user_infix` first, so `$s x= $r`
+    reaches a candidate the unit declares too (it ignored one before), and
+    in a `use`-block the op carries the `LexImportBuiltinOp` prefix. An
+    object repeat count coerces with `.Int`, as CORE does (it repeated zero
+    times before).
+  - **The subscript op reads the operator scope.** The compiler prefixes
+    `OpCode::Index` with `LexImportBuiltinOp`, and the op asks the bound
+    candidates before the registry (`exec_index_op_with_positional`); none
+    accepting the operands leaves the subscript to the built-in. The
+    dispatcher falls back to `builtin_postcircumfix_subscript`.
+  - Rakudo 2026.09 ignores an *imported* `infix:<xx>` candidate inside the
+    block, though it calls one the unit declares itself; mutsu calls both.
+
   Left for stage 2:
-  - The built-in operators outside those lists (`x`, `xx`, a `postfix`,
-    `postcircumfix`) keep their imported candidates in the registry. A
-    callee outside the block still sees those, and a closure taken out of
-    the block loses them. (Rakudo 2026.09 ignores an *imported*
-    `infix:<xx>` candidate inside the block, though it calls one the unit
-    declares itself; mutsu calls both.)
+  - The increment operators (`++`/`--`, both positions) and
+    `postcircumfix:<< >>` keep their imported candidates in the registry.
+    An imported `postfix:<++>` candidate also breaks `$i++` on an Int in
+    the block (#13836).
   - A program's own `multi infix:<(|)>` candidate also answers `∪` (#13795):
     the binary op does not know which spelling it was compiled from.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they

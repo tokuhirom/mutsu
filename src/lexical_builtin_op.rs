@@ -22,15 +22,27 @@
 //!
 //! The Unicode spellings of the set operators and every spelling of the set
 //! relations (`∪`, `∈`, `⊆`, `(<=)`, `≡`, ...) are a third kind
-//! ([`is_lexical_set_infix`]): once a block imports a candidate, the parser
+//! ([`is_call_spelled_infix`]): once a block imports a candidate, the parser
 //! turns each binary use of the spelling into a call of the user operator
 //! (`OpCode::LexImportInfix` reads the set), and a reduction or hyper over it
 //! runs the bound dispatcher (`OpCode::LexImportMeta`). The dispatcher falls
 //! back to the built-in, so a call none of the candidates accepts is the
 //! operator's own.
 //!
+//! The repetition operators `x` and `xx` are of the third kind too: an
+//! imported candidate turns their uses into calls of the user operator. So is
+//! the built-in postfix `i`, whose uses the parser turns into calls of
+//! `postfix:<i>` ([`is_lexical_postfix`]); its dispatcher falls back to the
+//! built-in imaginary-unit multiplication.
+//!
+//! The subscript operators `postcircumfix:<[ ]>` and `postcircumfix:<{ }>`
+//! are of the first kind ([`is_lexical_postcircumfix`]): the subscript op
+//! (`OpCode::Index`) asks the operator scope `OpCode::LexImportBuiltinOp`
+//! opens before it asks the registry, and its dispatcher falls back to the
+//! built-in subscript.
+//!
 //! Every other built-in operator keeps its imported candidates in the
-//! registry: its uses reach them by name (`x`, a postfix, `postcircumfix`).
+//! registry: its uses reach them by name (`++`/`--`, `postcircumfix:<< >>`).
 
 use crate::opcode::{CompoundBaseOp, OpCode};
 
@@ -45,8 +57,10 @@ pub(crate) fn binds_lexically(name: &str) -> bool {
         return false;
     };
     match category {
-        "infix" => is_lexical_infix(op) || is_lexical_set_infix(op),
+        "infix" => is_lexical_infix(op) || is_call_spelled_infix(op),
         "prefix" => is_lexical_prefix(op),
+        "postfix" => is_lexical_postfix(op),
+        "postcircumfix" => is_lexical_postcircumfix(op),
         _ => false,
     }
 }
@@ -94,14 +108,17 @@ fn is_lexical_infix(op: &str) -> bool {
     )
 }
 
-/// The set operator spellings whose uses in a block that imports a candidate
-/// are calls of the imported user operator (see the module docs): the Unicode
-/// spellings of the set operators, and the set relations in every spelling.
+/// The built-in infixes whose uses in a block that imports a candidate are
+/// calls of the imported user operator (see the module docs): the Unicode
+/// spellings of the set operators, the set relations in every spelling, and
+/// the repetition operators.
 // Cost: O(1).
-pub(crate) fn is_lexical_set_infix(op: &str) -> bool {
+pub(crate) fn is_call_spelled_infix(op: &str) -> bool {
     matches!(
         op,
-        "∪" | "∩"
+        "x" | "xx"
+            | "∪"
+            | "∩"
             | "⊎"
             | "⊍"
             | "∖"
@@ -130,11 +147,37 @@ pub(crate) fn is_lexical_set_infix(op: &str) -> bool {
 /// in a block that imports candidates of it runs the bound dispatcher
 /// (`OpCode::LexImportMeta`), rather than the built-in with the candidates in
 /// scope (`OpCode::LexImportBuiltinOp`): the set operator spellings of
-/// [`is_lexical_set_infix`], and `(elem)`/`(cont)`, whose chained reduction
+/// [`is_call_spelled_infix`], and `(elem)`/`(cont)`, whose chained reduction
 /// applies the dispatcher pair by pair.
 // Cost: O(1).
 pub(crate) fn meta_runs_bound_dispatcher(op: &str) -> bool {
-    is_lexical_set_infix(op) || matches!(op, "(elem)" | "(cont)")
+    is_call_spelled_infix(op) || matches!(op, "(elem)" | "(cont)")
+}
+
+/// The built-in postfixes whose uses in a block that imports a candidate are
+/// calls of the imported user operator, and whose dispatcher can fall back to
+/// the built-in (`Interpreter::core_postfix_op`). `++`/`--` mutate their
+/// operand through opcodes of their own.
+// Cost: O(1).
+pub(crate) fn is_lexical_postfix(op: &str) -> bool {
+    op == "i"
+}
+
+/// The built-in postcircumfixes (by their space-separated delimiters) whose
+/// subscript op reads the operator scope `OpCode::LexImportBuiltinOp` opens.
+// Cost: O(1).
+pub(crate) fn is_lexical_postcircumfix(delims: &str) -> bool {
+    matches!(delims, "[ ]" | "{ }")
+}
+
+/// The `postcircumfix` routine a subscript op applies.
+// Cost: O(1).
+pub(crate) fn postcircumfix_of_subscript(is_positional: bool) -> &'static str {
+    if is_positional {
+        "postcircumfix:<[ ]>"
+    } else {
+        "postcircumfix:<{ }>"
+    }
 }
 
 /// The built-in prefixes a dispatcher over imported candidates can fall back
@@ -186,6 +229,7 @@ pub(crate) fn infix_of_opcode(op: &OpCode) -> Option<&'static str> {
         OpCode::SetMultiply => "infix:<(.)>",
         OpCode::SetDiff => "infix:<(-)>",
         OpCode::SetSymDiff => "infix:<(^)>",
+        OpCode::StringRepeat => "infix:<x>",
         _ => return None,
     })
 }
@@ -224,6 +268,7 @@ pub(crate) fn infix_of_compound(op: CompoundBaseOp) -> Option<&'static str> {
         CompoundBaseOp::InfixMin => "infix:<min>",
         CompoundBaseOp::InfixMax => "infix:<max>",
         CompoundBaseOp::Concat => "infix:<~>",
+        CompoundBaseOp::StringRepeat => "infix:<x>",
         _ => return None,
     })
 }
