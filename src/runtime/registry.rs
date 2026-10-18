@@ -1223,6 +1223,9 @@ impl Registry {
             .get(class_name)
             .map(|c| c.parents.clone())
             .unwrap_or_default();
+        let is_role = |name: &str| {
+            self.roles.contains_key(name) || crate::runtime::types::is_builtin_role_name(name)
+        };
         // If a user-defined class has no explicit parents, it implicitly
         // inherits from Any (which in turn inherits from Mu).  This matches
         // Raku's default class hierarchy. A directly-*augmented* builtin
@@ -1232,13 +1235,14 @@ impl Registry {
         // catalog ancestor chain (`Cool`/`Any`/`Mu`) is still reachable below.
         //
         // "No explicit parents" means no *class* parent: a class whose only
-        // `parents` entries are composed roles (`class K does A {}`) still
-        // inherits from Any in raku. Without this, its linearization stopped at
-        // the role and `K.isa(Any)` / `K.isa(Mu)` were False even though
-        // `K.^mro` (computed elsewhere) listed both.
+        // `parents` entries are composed roles (`class K does A {}`), including
+        // core roles that have no `RoleDef`, still inherits from Any in raku.
+        // Without this, its linearization stopped at the role and
+        // `K.isa(Any)` / `K.isa(Mu)` were False even though `K.^mro` (computed
+        // elsewhere) listed both.
         let has_class_parent = explicit_parents.iter().any(|p| {
             let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p);
-            !self.roles.contains_key(base)
+            !is_role(base)
         });
         let parents = if !has_class_parent && self.classes.contains_key(class_name) {
             match crate::builtin_types::catalog::builtin_type_info(class_name) {
@@ -1354,7 +1358,7 @@ impl Registry {
             .iter()
             .filter(|p| {
                 let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p);
-                !(self.roles.contains_key(base)
+                !(is_role(base)
                     && !self.classes.contains_key(p.as_str())
                     && carried.contains(p.as_str()))
             })
