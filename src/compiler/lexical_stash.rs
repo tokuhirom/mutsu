@@ -86,6 +86,19 @@ impl Compiler {
                 }
             }
         }
+        // A unit that exports a routine holds its `EXPORT` package in its
+        // root scope (#13854).
+        if self.unit_exports_routine
+            && target_index == self.enclosing_scopes.len() + self.unit_root_scope
+            && !seen.contains("EXPORT")
+        {
+            entries.push(Value::array(vec![
+                Value::str("EXPORT".to_string()),
+                Value::str("EXPORT".to_string()),
+                Value::int(depth as i64),
+                Value::int(crate::opcode::LEXICAL_STASH_EXPORT_SLOT),
+            ]));
+        }
         let spec_idx = self.code.add_constant(Value::array(entries));
         // `LEXICAL::` is every lexical visible from the frame, so its routines
         // are all the visible ones; only `MY::` is narrowed to the frame's own.

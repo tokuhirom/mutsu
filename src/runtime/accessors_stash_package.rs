@@ -327,6 +327,17 @@ impl Interpreter {
         // A loaded module's own routines are its importers' lexicals, never
         // `GLOBAL` members (#13802).
         let module_units = (pkg_is_global && !module_merges).then(|| self.loaded_module_units());
+        // Likewise the unit's own `EXPORT` stash (`EXPORT::DEFAULT::`): a
+        // package-less module's exports land in the same table, but they are
+        // that module's, except to the module's own code (its `sub EXPORT`
+        // reading `EXPORT::all::`) (#13854).
+        let module_units = module_units.or_else(|| {
+            (package_name == "EXPORT" || package_name.starts_with("EXPORT::")).then(|| {
+                let mut units = self.loaded_module_units();
+                units.remove(&self.current_unit);
+                units
+            })
+        });
         for (key, def) in &functions {
             let key_s = key.resolve();
             let Some(base) = self.routine_stash_member(&key_s, &package_name, true) else {

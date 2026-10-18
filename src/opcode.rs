@@ -761,6 +761,11 @@ pub(crate) enum LexicalStashRoutines {
 /// env-only one). Its value is resolved by name as a routine.
 pub(crate) const LEXICAL_STASH_ROUTINE_SLOT: i64 = -2;
 
+/// The slot an [`OpCode::GetLexicalStash`] spec entry carries for the unit's
+/// own `EXPORT` package (rakudo: `MY::<EXPORT>` at a unit's root that exports
+/// anything, #13854).
+pub(crate) const LEXICAL_STASH_EXPORT_SLOT: i64 = -3;
+
 /// Which jump target of an [`OpCode::LoopExitGuard`] to patch.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum LoopExitGuardField {
