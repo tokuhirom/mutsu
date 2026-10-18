@@ -11,10 +11,11 @@
 //! `Range` declares the six mutators to refuse them (`X::Immutable`); it has no
 //! `splice`, which `Any`'s proto answers with no candidate.
 //!
-//! An undefined receiver with no binding (the value of an expression, as an
+//! A named binding is autovivified here (`Interpreter::vivify_array_binding`,
+//! §9.171) and grows through `Array`'s row as the binding it now is. An
+//! undefined receiver with no binding (the value of an expression, as an
 //! out-of-range element read through the interpreter) answers the fresh
-//! `Array`, which the caller stores where the value came from; a named binding
-//! is autovivified by the mutating entry that holds it.
+//! `Array`, which the caller stores where the value came from.
 
 use crate::builtins::method_table::{Handler, MethodRow, Named, ReceiverPlace, RowFlags};
 use crate::runtime::Interpreter;
@@ -71,7 +72,8 @@ any_grow!(any_prepend, "prepend", super::array::prepend_row);
 
 /// `Any.push` and its kin: autovivify an undefined receiver to an `Array` and
 /// grow it through `Array`'s row; refuse a defined scalar.
-// Cost: as `Array`'s row, O(k) for k elements.
+// Cost: as `Array`'s row, O(k) for k elements, plus one env write to vivify a
+// binding.
 fn grow(
     interp: &mut Interpreter,
     place: &mut ReceiverPlace<'_>,
@@ -81,9 +83,13 @@ fn grow(
     array_row: Grow,
 ) -> Answer {
     let value = place.value().descalarize();
+    // An `Array` type object in a named binding (`my Array $a; $a.push(1)`)
+    // vivifies as an undefined `Any` does.
+    let array_type = matches!(value.view(), ValueView::Package(name) if name == "Array");
     match value.view() {
         ValueView::Nil => {}
         ValueView::Package(name) if name == "Any" || name == "Mu" => {}
+        ValueView::Package(_) if array_type && place.name().is_some() => {}
         ValueView::Int(_)
         | ValueView::Num(_)
         | ValueView::Str(_)
@@ -92,8 +98,11 @@ fn grow(
         | ValueView::Complex(..) => return Some(Err(make_multi_no_match_error(method))),
         _ => return None,
     }
-    if place.name().is_some() {
-        return None;
+    if let Some(name) = place.name() {
+        let name = name.to_string();
+        let vivified = interp.vivify_array_binding(&name);
+        let mut array = place.rebound(&vivified)?;
+        return array_row(interp, &mut array, args, named);
     }
     let mut fresh = Value::real_array(Vec::new());
     let mut array = ReceiverPlace::detached(&mut fresh);
