@@ -615,18 +615,6 @@ impl Interpreter {
             id: target_id,
         } = target.view()
         {
-            // An `is Pair` subclass keeps its built Pair in `__mutsu_pair_value`;
-            // the Pair accessors it does not override run on that payload.
-            if matches!(
-                method,
-                "key" | "value" | "kv" | "keys" | "values" | "antipair" | "invert" | "pairs"
-                    | "Str" | "fmt" | "elems" | "List" | "Slip" | "Hash" | "Map" | "Bool"
-                    | "Numeric" | "Int" | "cmp"
-            ) && !self.has_user_method(&class_name.resolve(), method)
-                && let Some(payload) = attributes.as_map().get("__mutsu_pair_value")
-            {
-                return self.call_method_with_values(payload.clone(), method, args);
-            }
             // `.^lookup`/`.^find_method` return Method/Submethod instances,
             // whose callable payload already carries the invocant as its
             // first parameter. Reuse the callable's normal `.assuming`
@@ -1451,6 +1439,19 @@ impl Interpreter {
             && numeric != target
         {
             return self.call_method_with_values(numeric, method, args);
+        }
+
+        // A subclass of a built-in type (`class P is Pair`, `class B is Bag`,
+        // `class I is Int`) inherits every method of its base: a method the
+        // class does not declare runs on the base value it carries
+        // (`native_base::redirect`), as the table's guard step answers it.
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && let Some(payload) = crate::builtins::native_base::redirect(&target, method)
+            && self
+                .resolve_user_method_or_accessor(&class_name.resolve(), method)
+                .is_none()
+        {
+            return self.call_method_with_values(payload, method, args);
         }
 
         // Package (type object) dispatch -- private method call

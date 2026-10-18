@@ -864,6 +864,13 @@ pub(crate) fn shapeless_row(
     {
         return None;
     }
+    // An `is Pair` or quant-hash subclass answers its base's methods on the
+    // value it carries (`native_base::redirect`), not `Any`'s on itself.
+    if crate::builtins::native_base::has_collection_payload(target)
+        && crate::builtins::native_base::redirect(target, method.as_str()).is_some()
+    {
+        return None;
+    }
     let text = cool_text_for_shapeless(method.as_str());
     let list = crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());

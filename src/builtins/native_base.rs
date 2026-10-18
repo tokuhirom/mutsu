@@ -107,6 +107,19 @@ fn subclass_payload(target: &Value) -> Option<Value> {
         .cloned()
 }
 
+/// Whether `target` is an instance of an `is Pair` or quant-hash subclass:
+/// its base's methods (`Pair.Hash`, inherited from `Any`) answer on the
+/// payload, so `Any`'s rows read through the instance's own MRO walk must not
+/// answer for it (`shapeless_row`).
+// Cost: O(1), two attribute-map lookups.
+pub(crate) fn has_collection_payload(target: &Value) -> bool {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return false;
+    };
+    let map = attributes.as_map();
+    map.contains_key("__mutsu_pair_value") || map.contains_key("__baggy_data__")
+}
+
 /// The value standing in for `target` as the invocant of the built-in
 /// `method`: the payload of an instance of a user class deriving from a
 /// built-in scalar type, unless the method answers about the instance itself.
@@ -116,11 +129,26 @@ fn subclass_payload(target: &Value) -> Option<Value> {
 // attribute-map lookups.
 #[inline]
 pub(crate) fn redirect(target: &Value, method: &str) -> Option<Value> {
-    if !matches!(target.view(), ValueView::Instance { .. }) || answered_by_the_instance(method) {
+    if !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
     let payload = subclass_payload(target)?;
+    if answered_by_the_instance(method) && !stringifies_as_payload(&payload, method) {
+        return None;
+    }
     (!returns_the_instance(&payload, method)).then_some(payload)
+}
+
+/// Whether `method` is a string coercion an `is Pair` subclass answers with
+/// its `Pair`'s (`P.new(:key<a>, :value(3)).Str` is `a\t3`, Rakudo's
+/// `Pair.Str`). A scalar subclass renders itself through the value renderers.
+// Cost: O(1).
+fn stringifies_as_payload(payload: &Value, method: &str) -> bool {
+    matches!(method, "Str" | "Stringy")
+        && matches!(
+            payload.view(),
+            ValueView::Pair(..) | ValueView::ValuePair(..)
+        )
 }
 
 /// Answer a native method called on an instance with a native base, in the
