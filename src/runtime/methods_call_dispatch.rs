@@ -632,21 +632,6 @@ impl Interpreter {
         {
             return Ok(v);
         }
-        // .emit on any value: push to the supply emit buffer if inside a
-        // supply block, otherwise raise CX::Emit like the `emit` sub.
-        if method == "emit"
-            && args.is_empty()
-            && !matches!(
-                target.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Supplier"
-            )
-        {
-            if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
-                buf.push(target);
-                return Ok(Value::NIL);
-            }
-            return Err(RuntimeError::emit_signal(target));
-        }
         // `Regex.ACCEPTS($str)` matches the regex (the invocant) against the
         // argument and returns the Match (like `$str ~~ $rx`), NOT a Bool. Reuse
         // the string `.match` path (`$str.match($rx)`), which drives the regex

@@ -1113,25 +1113,6 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        // .emit on any value: push to supply emit buffer if inside a supply
-        // block, otherwise raise CX::Emit. Skip for Supplier instances (they
-        // have their own emit method).
-        if method == "emit"
-            && args.is_empty()
-            && !matches!(
-                target.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Supplier"
-            )
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "emit");
-            if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
-                buf.push(target);
-                self.stack.push(Value::NIL);
-                // Buffering into the supply emit buffer touches no env: no mark.
-                return Ok(());
-            }
-            return Err(RuntimeError::emit_signal(target));
-        }
         // Fast path: 0-arg attribute accessor on Instance (e.g. $obj.x). This is
         // a pure read that touches no env, so it runs safely under a scoped
         // overlay env (the common `$.attr` read inside a scoped method body) --

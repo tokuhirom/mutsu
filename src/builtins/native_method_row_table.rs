@@ -534,6 +534,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // needs a SPECIAL row (never claims a `.^methods`-visible slot) to stop
     // being counted as unmodeled.
     ("Mu", "DEFINITE", 1, 60),
+    ("Mu", "emit", 1, 57),
     // ADR-0019 E2b: `Pair`/`Seq` rows, hand-probed against a real
     // `Value::pair`/`Value::seq` sample (2026-08-10) -- neither owner has a
     // `builtin_type_method_names` entry to draw candidates from (see

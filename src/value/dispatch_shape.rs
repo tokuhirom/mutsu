@@ -734,9 +734,9 @@ pub(crate) const CAPTURE_FOR_MATCH: [&str; 11] = [
 /// container, sink it, or render it (`Str`, `Stringy`, which a shape with its own
 /// `Str` row answers first) or ask its type (`isa`), which every value supports. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
 /// answers its own row first.
-pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 18] = [
+pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 19] = [
     "so", "not", "is-lazy", "item", "sink", "self", "defined", "DEFINITE", "Bool", "WHICH",
-    "WHERE", "clone", "Str", "Stringy", "isa", "Capture", "gist", "raku",
+    "WHERE", "clone", "Str", "Stringy", "isa", "Capture", "gist", "raku", "emit",
 ];
 
 /// Whether `list` contains `name`, for a `const fn`.
