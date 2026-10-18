@@ -4184,6 +4184,7 @@ t/oo/method/revision-d-shape-method-rows.t
 t/oo/method/revision-e-method-rows.t
 t/oo/method/revision-e-shape-method-rows.t
 t/oo/method/rotate-splice-name-method-rows.t
+t/oo/method/routine-code-method-rows.t
 t/oo/method/routine-submethod-routine-name-wrong.t
 t/oo/method/rw-fallback-method-assignment.t
 t/oo/method/rw-method-conditional-tail-container.t
