@@ -1939,26 +1939,6 @@ impl Interpreter {
             return stored;
         }
 
-        // Comprehensive split handler
-        // Skip for Supply (handled by Supply pipeline) and IO::Handle/IO::Pipe
-        // (handled by native IO dispatch which reads the content first).
-        if method == "split"
-            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
-            && !matches!(target.view(), ValueView::Package(name) if name.as_str().starts_with("IO::Spec"))
-        {
-            // `IO::Path.split` splits the file's contents, not the path (the
-            // row's routine, `method_table::io_path_content`).
-            if let ValueView::Instance { class_name, attributes, .. } = target.view()
-                && crate::value::DispatchShape::from_instance_class(class_name)
-                    == Some(crate::value::DispatchShape::IoPath)
-            {
-                let attributes = crate::value::AttrMap::clone(&attributes.as_map());
-                return self.io_path_split(&attributes, &args);
-            }
-            // The `Str`/`Cool` rows' routine (`method_table::str_interp`).
-            return self.dispatch_split_row(target, args);
-        }
-
         // `Positional.of`, `Associative.of`/`keyof` and `Iterable`'s
         // `hyper`/`race`/`lazy` of a class composing the role are rows
         // (ADR-11276 §9.165), and so are the `Real` and `Numeric` roles'

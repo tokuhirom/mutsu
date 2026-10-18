@@ -4563,6 +4563,18 @@ role methods spelled out by hand:
 No behaviour change. Pinned in `t/oo/role/real-role-composed-rows.t` and
 `t/oo/role/dateish-role-composition.t`.
 
+### 9.182 `split` is found through the receiver's MRO (2026-10-19)
+
+`refactor/11276-split-gate`. `call_method_with_values_inner` sent every `.split` call that was not
+on an `IO::Handle`, `IO::Pipe`, `IO::CatHandle` or `IO::Spec` to the `Str`/`Cool` rows' routine
+(`dispatch_split_row`), or to `IO::Path`'s content split. The rows already exist on each of those
+owners (§9.76, §9.20-§9.22); what the arm still covered were the receivers the guard step does not
+take: a grammar cursor, a `Cool` subclass, and a call whose argument is a deferred `Seq` (a
+`gather` of needles). `split` joins the text methods `text_method_by_mro` answers, which walks the
+receiver's MRO to the first owner declaring the row (a cursor reaches `Cool`'s, an `IO::Path`
+its own) and reads a `Cool` instance with its own `Str` through it. The arm is gone. No behaviour
+change. Pinned in `t/oo/class/split-receivers-by-mro.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
