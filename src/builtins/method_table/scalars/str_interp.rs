@@ -12,7 +12,7 @@
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Any positional argument (a `Regex`, a `Pair`, a closure), and every named
 /// one: the adverbs belong to the pattern or the format.
@@ -144,7 +144,21 @@ fn trans(
     args: &[Value],
     named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    Some(interp.dispatch_trans(target.clone(), &joined(args, named)))
+    // Only `:s` / `:d` / `:c` (and their long names) are adverbs of `trans`;
+    // any other named argument (`:g`) is ignored rather than read as a
+    // mapping pair.
+    let mut all = args.to_vec();
+    all.extend(named.pairs().iter().filter(|arg| {
+        matches!(
+            arg.view(),
+            ValueView::Pair(key, _)
+                if matches!(
+                    key.as_str(),
+                    "s" | "squash" | "d" | "delete" | "c" | "complement"
+                )
+        )
+    }).cloned());
+    Some(interp.dispatch_trans(target.clone(), &all))
 }
 
 /// `.indices`.
