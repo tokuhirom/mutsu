@@ -1700,6 +1700,16 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `constant X = Type` declarations, scope-blind as it already was for
    the native-storage decisions it serves.
 
+   **Slice 49 done** (`fix/13855-block-sub-shadows-outer-code-var`): a bare
+   call `h()` compiled into a `CallOnCodeVar &h` whenever any scope frame
+   bound a `my &h`, so a routine whose body declares its own `sub h` (or
+   `my sub h`) called the outer code variable. The compiler now compares
+   depths (`amp_binding_in_active_scope` against `scope_routine_decls`):
+   a routine declared in a nearer scope is what the name means there, and
+   the call takes the frame-lexical route to it. A routine declared in a
+   *mainline block* still loses to an outer `my &h`, because its
+   registration binds no `&h` in the block's tier (#13855).
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

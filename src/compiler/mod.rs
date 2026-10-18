@@ -2717,10 +2717,28 @@ impl Compiler {
             return false;
         }
         let key = format!("&{name}");
-        self.enclosing_scopes
+        // The innermost local scope frame binding `&name` (its depth, frame
+        // index + 1); an enclosing compiler's frame is below every local one.
+        let local_level = self
+            .local_scopes
             .iter()
-            .chain(self.local_scopes.iter())
-            .any(|frame| frame.contains_key(&key))
+            .rposition(|frame| frame.contains_key(&key))
+            .map(|i| i + 1);
+        let bound = local_level.is_some()
+            || self
+                .enclosing_scopes
+                .iter()
+                .any(|frame| frame.contains_key(&key));
+        if !bound {
+            return false;
+        }
+        // A routine a nearer scope declares (`my &h = ...; { sub h {...}; h() }`)
+        // is what the name means there, not the outer binding (#13855).
+        let sym = Symbol::intern(name);
+        !self
+            .scope_routine_decls
+            .iter()
+            .any(|&(level, decl)| decl == sym && level > local_level.unwrap_or(0))
     }
 
     /// Hand a nested body's compiler the chain it is being compiled inside, so a
