@@ -318,13 +318,38 @@ Consequences that pin the design:
     `sub_dispatcher_signature` answers it (#13792). A call never binds it:
     it goes to the captured candidates.
 
+  **Slice 7 done** (`fix/8751-set-operator-spellings-lexical`, 2026-10-18):
+  the Unicode spellings of the set operators (`∪`, `∩`, `⊎`, `⊍`, `∖`, `⊖`)
+  and the set relations in every spelling (`∈`, `∋`, `⊆`, `⊇`, `⊂`, `⊃`,
+  their negations, `(<=)`, `(>=)`, `(<)`, `(>)`, `(==)`, `≡`, `≢`) bind
+  their imported candidates in the set (`lexical_builtin_op::
+  is_lexical_set_infix`).
+  - **No new op reads them.** Once a block imports a candidate, the parser
+    turns each binary use of the spelling into a call of the user operator,
+    which `LexImportInfix` already reads. A reduction, triangle reduction or
+    hyper over one runs the bound dispatcher (`LexImportMeta`,
+    `meta_runs_bound_dispatcher`), and so does one over `(elem)`/`(cont)`.
+    The dispatcher falls back to the built-in, so `set(1) ⊆ set(1, 2)` in
+    such a block answers `True`; it died with "Cannot resolve caller"
+    before, because `⊆` was taken for a user operator with no built-in
+    behind it. A callee written outside the block no longer sees an
+    imported `∪` candidate.
+  - **The set relations are built-in chain reductions** (#13794). They join
+    `is_builtin_infix` and the chain comparisons (`is_set_relation_op`), and
+    a reduction evaluates them through `call_infix_routine`. Before,
+    `[(elem)]`, `[∈]` and `[⊆]` died with "Unknown function" even without
+    an import, because the reduction resolved them as user routines. A chain
+    reduction now applies a bound dispatcher pair by pair
+    (`reduction_chain_step`), so a candidate's true result chains to `True`.
+
   Left for stage 2:
-  - The built-in operators outside that list (the Unicode set operators,
-    the subset comparisons, `x`, `postfix`, `postcircumfix`) keep their
-    imported candidates in the registry. A callee outside the block still sees those, and a closure
-    taken out of the block loses them.
-  - `[(elem)]` dies on `Unknown function` even without an import (#13794),
-    and a `(|)` candidate also answers `∪` (#13795).
+  - The built-in operators outside those lists (`x`, `xx`, a `postfix`,
+    `postcircumfix`) keep their imported candidates in the registry. A
+    callee outside the block still sees those, and a closure taken out of
+    the block loses them. (Rakudo ignores a user `infix:<xx>` candidate
+    altogether; mutsu calls it.)
+  - A program's own `multi infix:<(|)>` candidate also answers `∪` (#13795):
+    the binary op does not know which spelling it was compiled from.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
     do, they need the prefix too.
   - Classes and variables keep the `ImportScope` rollback. A top-level

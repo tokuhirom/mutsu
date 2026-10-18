@@ -60,6 +60,11 @@ impl Interpreter {
                 return result;
             }
         }
+        // The set relations (`[⊆]`, `Z∈`, `»(elem)»`) have no entry in the
+        // reduction tables: run the routine their infix calls run (#13794).
+        if crate::runtime::is_set_relation_op(canonical) {
+            return self.call_infix_routine(canonical, &[left.clone(), right.clone()]);
+        }
         // Thread junctions through arithmetic/comparison reduction ops
         if matches!(left.view(), ValueView::Junction { .. })
             || matches!(right.view(), ValueView::Junction { .. })

@@ -70,7 +70,9 @@ pub(crate) fn is_chain_comparison_op(op: &str) -> bool {
             | "<=>"
             | "%%"
             | "!%%"
-    ) || matches!(
+    ) || is_set_relation_op(op)
+        || op.strip_prefix('!').is_some_and(is_set_relation_op)
+        || matches!(
         op.strip_prefix('!'),
         Some("==")
             | Some("===")
@@ -87,6 +89,37 @@ pub(crate) fn is_chain_comparison_op(op: &str) -> bool {
             | Some("cmp")
             | Some("leg")
             | Some("<=>")
+    )
+}
+
+/// The set membership and set relation operators, in every spelling: like
+/// the comparisons, they are chain-associative (`[⊆] $a, $b, $c` is
+/// `$a ⊆ $b and $b ⊆ $c`).
+// Cost: O(1).
+pub(crate) fn is_set_relation_op(op: &str) -> bool {
+    matches!(
+        op,
+        "(elem)"
+            | "∈"
+            | "∉"
+            | "(cont)"
+            | "∋"
+            | "∌"
+            | "(<=)"
+            | "⊆"
+            | "⊈"
+            | "(>=)"
+            | "⊇"
+            | "⊉"
+            | "(<)"
+            | "⊂"
+            | "⊄"
+            | "(>)"
+            | "⊃"
+            | "⊅"
+            | "(==)"
+            | "≡"
+            | "≢"
     )
 }
 

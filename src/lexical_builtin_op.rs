@@ -20,9 +20,17 @@
 //! set operators whose ops ask it (`(elem)`, `(cont)`, `(|)`, `(&)`, `(+)`,
 //! `(.)`, `(-)`, `(^)`).
 //!
+//! The Unicode spellings of the set operators and every spelling of the set
+//! relations (`∪`, `∈`, `⊆`, `(<=)`, `≡`, ...) are a third kind
+//! ([`is_lexical_set_infix`]): once a block imports a candidate, the parser
+//! turns each binary use of the spelling into a call of the user operator
+//! (`OpCode::LexImportInfix` reads the set), and a reduction or hyper over it
+//! runs the bound dispatcher (`OpCode::LexImportMeta`). The dispatcher falls
+//! back to the built-in, so a call none of the candidates accepts is the
+//! operator's own.
+//!
 //! Every other built-in operator keeps its imported candidates in the
-//! registry: its uses reach them by name (the Unicode set operators and the
-//! subset comparisons, a postfix, `postcircumfix`).
+//! registry: its uses reach them by name (`x`, a postfix, `postcircumfix`).
 
 use crate::opcode::{CompoundBaseOp, OpCode};
 
@@ -37,7 +45,7 @@ pub(crate) fn binds_lexically(name: &str) -> bool {
         return false;
     };
     match category {
-        "infix" => is_lexical_infix(op),
+        "infix" => is_lexical_infix(op) || is_lexical_set_infix(op),
         "prefix" => is_lexical_prefix(op),
         _ => false,
     }
@@ -84,6 +92,49 @@ fn is_lexical_infix(op: &str) -> bool {
             | "(-)"
             | "(^)"
     )
+}
+
+/// The set operator spellings whose uses in a block that imports a candidate
+/// are calls of the imported user operator (see the module docs): the Unicode
+/// spellings of the set operators, and the set relations in every spelling.
+// Cost: O(1).
+pub(crate) fn is_lexical_set_infix(op: &str) -> bool {
+    matches!(
+        op,
+        "∪" | "∩"
+            | "⊎"
+            | "⊍"
+            | "∖"
+            | "⊖"
+            | "∈"
+            | "∋"
+            | "⊆"
+            | "⊇"
+            | "⊂"
+            | "⊃"
+            | "⊄"
+            | "⊅"
+            | "⊈"
+            | "⊉"
+            | "(<=)"
+            | "(>=)"
+            | "(<)"
+            | "(>)"
+            | "(==)"
+            | "≡"
+            | "≢"
+    )
+}
+
+/// Whether a reduction, triangle reduction or hyper over the built-in `op`
+/// in a block that imports candidates of it runs the bound dispatcher
+/// (`OpCode::LexImportMeta`), rather than the built-in with the candidates in
+/// scope (`OpCode::LexImportBuiltinOp`): the set operator spellings of
+/// [`is_lexical_set_infix`], and `(elem)`/`(cont)`, whose chained reduction
+/// applies the dispatcher pair by pair.
+// Cost: O(1).
+pub(crate) fn meta_runs_bound_dispatcher(op: &str) -> bool {
+    is_lexical_set_infix(op) || matches!(op, "(elem)" | "(cont)")
 }
 
 /// The built-in prefixes a dispatcher over imported candidates can fall back

@@ -275,8 +275,9 @@ impl Interpreter {
                         let mut all_true = true;
                         for i in 0..list.len() - 1 {
                             if all_true {
-                                let v = self.eval_infix_shape(
+                                let v = self.reduction_chain_step(
                                     op_shape.as_ref(),
+                                    callable.as_ref(),
                                     &list[i],
                                     &list[i + 1],
                                 )?;
@@ -536,7 +537,12 @@ impl Interpreter {
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {
-                    let v = self.eval_infix_shape(op_shape.as_ref(), &list[i], &list[i + 1])?;
+                    let v = self.reduction_chain_step(
+                        op_shape.as_ref(),
+                        callable.as_ref(),
+                        &list[i],
+                        &list[i + 1],
+                    )?;
                     let truthy = if negate { !v.truthy() } else { v.truthy() };
                     if !truthy {
                         result = false;
