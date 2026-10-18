@@ -2887,6 +2887,7 @@ t/modules/import-export/unit-class-parent-use-import-scope.t
 t/modules/import-export/unit-class-role-and-composition.t
 t/modules/import-export/unit-class-short-name-not-in-scope.t
 t/modules/import-export/unit-class-use-before-decl-operator.t
+t/modules/import-export/unit-export-stash-lists-own-exports.t
 t/modules/import-export/unit-module-bare-is-trait.t
 t/modules/import-export/unit-module-compound-subset-qualified-name.t
 t/modules/import-export/unit-module-custom-export-proto.t
@@ -4336,6 +4337,7 @@ t/oo/qualified-runtime-does.t
 t/oo/role/add-method-alias-unpunned-role-multi.t
 t/oo/role/add-role-declaration-expression.t
 t/oo/role/allomorph-role-mixin-what.t
+t/oo/role/also-does-parametric-role.t
 t/oo/role/anon-class-does-imported-role.t
 t/oo/role/anonymous-role-pun-new.t
 t/oo/role/attr-does-role-trait.t
@@ -6212,6 +6214,7 @@ t/routines/nested-routine-undeclared.t
 t/routines/nested-sub-in-block-otf-compile.t
 t/routines/nested-sub-latest-activation.t
 t/routines/nested-sub-reregistration.t
+t/routines/nested-sub-shadows-outer-code-variable.t
 t/routines/os-functions.t
 t/routines/output-routine-forms-agree.t
 t/routines/p5-time-routines-not-core.t
@@ -6585,6 +6588,7 @@ t/routines/signature/sub-signature-array-param-iterable.t
 t/routines/signature/sub-signature-decl-time-exprs-capture-outer-lexicals.t
 t/routines/signature/sub-signature-default-multi-dispatch.t
 t/routines/signature/sub-signature-named-callable-required.t
+t/routines/signature/sub-signature-named-callable.t
 t/routines/signature/sub-signature-where-clause.t
 t/routines/signature/sub-signature-with-where.t
 t/routines/signature/subsig-destructure-through-itemization.t
@@ -6705,6 +6709,7 @@ t/types/any-autoviv-binding-rows.t
 t/types/any-combinations-batch-rows.t
 t/types/any-first-min-max-rows.t
 t/types/any-head-tail-rows.t
+t/types/any-key-autoviv-rows.t
 t/types/any-list-derived-methods-use-user-list.t
 t/types/any-reverse-rotate.t
 t/types/any-sampling-minmax-rows.t
@@ -7600,6 +7605,7 @@ t/vm/scope/dynamic-codevar-chdir.t
 t/vm/scope/dynamic-codevar-unbound.t
 t/vm/scope/dynamic-collection-decl-init.t
 t/vm/scope/dynamic-scope-pragma.t
+t/vm/scope/dynamic-stash-key-walks-dynamic-scope.t
 t/vm/scope/dynamic-var-bound-missing-elem-push-autoviv.t
 t/vm/scope/dynamic-var-later-redecl-desync.t
 t/vm/scope/dynamic-var-missing-failure.t

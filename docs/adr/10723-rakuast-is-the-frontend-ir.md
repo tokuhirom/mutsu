@@ -1369,3 +1369,14 @@ An attribute's `is DEPRECATED('')` now retains its explicit parenthesized
 argument as `Trait::Is`, distinct from bare `is DEPRECATED`, which has no
 argument and uses the default message. The regression checks both RakuAST
 shape and the introspected message after EVAL.
+
+### 6.77 S10: computed arguments to `also does` (2026-10-18)
+
+Rakudo renders `also does R[1 + 2]` as a `Statement::Also` with a
+`Trait::Does` whose `Type::Parameterized.args` contains the ordinary
+`ApplyInfix` expression. The parser already retains both the argument `Expr`
+and the complete role application spelling; conversion now carries those
+arguments into the same parameterized type node used by declaration headers.
+Lowering already rebuilds the `DoesDecl` with its argument expressions, so role
+composition continues through the existing compiled declaration path. The
+focused regression checks the node shape, EVAL, and the composed role's value.

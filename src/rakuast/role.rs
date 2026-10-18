@@ -308,12 +308,22 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }))
 }
 
-/// `also does R;` -> `Statement::Also(traits => (Trait::Does(R),))`.
-// Cost: O(k), k = length of the role's spelling.
-pub(super) fn also_statement(role: &str) -> Result<RakuAstNode, RuntimeError> {
+/// `also does R[ARGS];` -> `Statement::Also(traits => (Trait::Does(R[ARGS]),))`.
+// Cost: O(k + a), k = role spelling length; a = number of arguments.
+pub(super) fn also_statement(
+    role: &str,
+    args: Option<&[crate::ast::Expr]>,
+) -> Result<RakuAstNode, RuntimeError> {
     let does = RakuAstNode {
         class: RakuAstClass::TraitDoes,
-        fields: vec![node_field(None, build_type_node(role)?)],
+        fields: vec![node_field(
+            None,
+            if let Some(args) = args {
+                super::type_args::parameterized_type_node(role, Some(args))?
+            } else {
+                build_type_node(role)?
+            },
+        )],
     };
     Ok(RakuAstNode {
         class: RakuAstClass::StatementAlso,

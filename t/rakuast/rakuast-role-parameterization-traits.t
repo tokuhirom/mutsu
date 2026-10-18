@@ -6,7 +6,7 @@ use Test;
 # A role's parameterization, header traits and `also does` in RakuAST,
 # measured on rakudo 2026.09.
 
-plan 24;
+plan 27;
 
 sub decl($src) { $src.AST.statements.tail.expression }
 
@@ -43,6 +43,15 @@ is EVAL(Q|role R8[$x, :$y = 7] { method v { "$x $y" } }; class C8 does R8[3] { }
     '3 7', 'value parameters and their defaults survive it';
 is EVAL(Q|role B9 { method b { 'b' } }; role R9 { also does B9 }; class C9 does R9 { }; C9.new.b|.AST),
     'b', '`also does` survives it';
+
+my $also-parameterized = decl(Q|role R9a[$x] { }; class C9a { also does R9a[1 + 2] }|)
+    .body.body.statement-list.statements.first(RakuAST::Statement::Also);
+isa-ok $also-parameterized.traits[0].type, RakuAST::Type::Parameterized,
+    '`also does` retains a parameterized role type';
+isa-ok $also-parameterized.traits[0].type.args.args[0], RakuAST::ApplyInfix,
+    'computed role arguments remain ordinary expressions';
+is EVAL(Q|role R9b[$x] { method value { $x } }; class C9b { also does R9b[1 + 2] }; C9b.new.value|.AST),
+    3, 'computed `also does` arguments survive EVAL and role composition';
 
 my $adverb = decl(Q|role R10:ver<1.0>:auth<zef:test>[Bool :$enabled = False] {
     my sub label { 'role-body' }
