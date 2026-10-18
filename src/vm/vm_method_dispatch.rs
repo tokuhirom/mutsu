@@ -2233,7 +2233,9 @@ impl Interpreter {
                 // back to the caller's array.
                 if let Some(pd) = pd.filter(|pd| pd.traits.iter().any(|t| t == "copy")) {
                     val = if pd.name.starts_with('@') {
-                        val.into_param_copy('@')
+                        // An itemized holder (`$[1]`) copies its Positional, not the
+                        // Scalar wrapper, as the general binder does.
+                        val.deitemize_for_sigil_bind().into_param_copy('@')
                     } else {
                         val.detach_shared_container()
                     };

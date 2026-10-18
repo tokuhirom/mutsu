@@ -125,8 +125,24 @@ impl Interpreter {
             method_param_defs
         };
         let invocant_name = sub_param_defs[0].name.clone();
+        // The method's named parameters become one slurpy hash on the exported
+        // sub, forwarded as `|%hash`: the method rebinds and checks them, and an
+        // omitted optional one stays omitted (no explicit `Any` is passed).
+        let mut named_template: Option<ParamDef> = None;
         for p in rest {
+            if p.named && !p.slurpy {
+                named_template.get_or_insert_with(|| p.clone());
+                continue;
+            }
             sub_param_defs.push(p.clone());
+            if p.slurpy && p.name.starts_with('%') {
+                forward_args.push(crate::ast::Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr: Box::new(crate::ast::Expr::HashVar(p.name[1..].to_string())),
+                    word: false,
+                });
+                continue;
+            }
             if p.is_plain_capture() || p.is_capture_subsignature() {
                 // A method exported as a sub must pass a captured argument
                 // list through to the method proto. Expanding the capture at
@@ -138,6 +154,35 @@ impl Interpreter {
                 });
             } else if !p.named && !p.slurpy {
                 forward_args.push(crate::ast::Expr::Var(p.name.clone()));
+            }
+        }
+        if let Some(mut tpl) = named_template
+            && !sub_param_defs.iter().any(|p| p.slurpy && p.name.starts_with('%'))
+        {
+            tpl.name = "%__fwd_named".to_string();
+            tpl.named = false;
+            tpl.slurpy = true;
+            tpl.required = false;
+            tpl.type_constraint = None;
+            tpl.default = None;
+            tpl.where_constraint = None;
+            tpl.traits.clear();
+            tpl.trait_args.clear();
+            tpl.code = Default::default();
+            sub_param_defs.push(tpl);
+            forward_args.push(crate::ast::Expr::Unary {
+                op: crate::token_kind::TokenKind::Pipe,
+                expr: Box::new(crate::ast::Expr::HashVar("__fwd_named".to_string())),
+                word: false,
+            });
+        }
+        // `method m($class = $?CLASS: ...) is export`: the exported sub has no
+        // enclosing class to read `$?CLASS` from at call time, so the default
+        // names the declaring class directly.
+        for p in sub_param_defs.iter_mut() {
+            if matches!(&p.default, Some(crate::ast::Expr::Var(n)) if n == "?CLASS") {
+                p.default = Some(crate::ast::Expr::BareWord(class_name.to_string()));
+                p.code = Default::default();
             }
         }
         let body = vec![Stmt::Expr(crate::ast::Expr::MethodCall {
