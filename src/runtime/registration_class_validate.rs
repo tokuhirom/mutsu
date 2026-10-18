@@ -225,7 +225,8 @@ impl Interpreter {
                 .extend(hidden_parents.iter().cloned());
         }
         // Roles composed via `does` (not `is Role` puns) are not MRO entries in
-        // Rakudo's `.^mro_unhidden`; record them so the filter can drop them.
+        // Rakudo's `.^mro_unhidden`; record user and core roles so the filter
+        // can drop them.
         if !does_parents.is_empty() {
             let does_roles: Vec<String> = does_parents
                 .iter()
@@ -233,6 +234,7 @@ impl Interpreter {
                 .filter(|p| {
                     let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p);
                     self.registry().roles.contains_key(base)
+                        || crate::runtime::types::is_builtin_role_name(base)
                 })
                 .cloned()
                 .collect();
