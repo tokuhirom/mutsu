@@ -22,6 +22,9 @@ use super::*;
 use crate::runtime::lexical_imports::LexicalImport;
 use std::sync::Arc;
 
+/// `ModuleState::imported_env_aliases`.
+type EnvAliases = Arc<HashMap<Symbol, Symbol>>;
+
 /// What a block-scoped `use` wrote that its scope's exit removes again.
 pub(crate) struct LexicalImportReplay {
     /// The module-merge env keys, the values the import bound them to and
@@ -36,7 +39,7 @@ pub(crate) struct LexicalImportReplay {
     /// installs `after` instead of copying the set to extend it.
     aliases_memo: (Arc<HashSet<Symbol>>, Arc<HashSet<Symbol>>),
     /// The same for the env-alias display names.
-    env_aliases_memo: (Arc<HashMap<Symbol, Symbol>>, Arc<HashMap<Symbol, Symbol>>),
+    env_aliases_memo: (EnvAliases, EnvAliases),
 }
 
 /// The state a block-scoped `use` must leave unchanged to be replayable.
@@ -45,7 +48,7 @@ pub(crate) struct ImportEffectProbe {
     proto_functions: usize,
     proto_subs: usize,
     classes_shared: crate::runtime::registry::ClassTable,
-    env_aliases: Arc<HashMap<Symbol, Symbol>>,
+    env_aliases: EnvAliases,
     type_aliases: usize,
     pragmas: (bool, bool, bool, bool),
     aliases_before: Arc<HashSet<Symbol>>,
