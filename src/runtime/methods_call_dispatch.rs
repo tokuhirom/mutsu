@@ -3165,6 +3165,11 @@ impl Interpreter {
             && args.is_empty()
             && let Some(result) = self.dispatch_create(&target)
         {
+            // A bare REPR allocation: an `is repr('CStruct')` object gets its
+            // zeroed native body, as `nqp::create` gives it (ADR-11209).
+            if let Ok(instance) = &result {
+                self.install_cstruct_storage(instance);
+            }
             return result;
         }
 
