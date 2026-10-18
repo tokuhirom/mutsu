@@ -3143,6 +3143,17 @@ impl Compiler {
     ///
     /// This is the lexical-axis twin of [`Interpreter::push_eval_caller_frames`](crate::runtime::Interpreter::push_eval_caller_frames),
     /// which already models the same layout on the caller axis for `CALLER::`.
+    /// Let this (EVAL) unit assign the `my &name` code variables the static
+    /// scopes around its `EVAL` call declare (`names`, the calling chunk's
+    /// `CompiledCode::eval_scope_names`): `&h = { ... }` on such a name
+    /// stores into the caller's container instead of being the read-only
+    /// store a routine name gets (#13657).
+    // Cost: O(n), n = `names`.
+    pub(crate) fn seed_eval_caller_code_vars<'a>(&mut self, names: impl Iterator<Item = &'a str>) {
+        self.enclosing_local_names
+            .extend(names.filter(|n| n.starts_with('&')).map(str::to_string));
+    }
+
     pub(crate) fn mark_as_eval_unit(&mut self) {
         self.unit_tail_on_stack = true;
         self.push_local_scope();

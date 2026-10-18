@@ -596,6 +596,14 @@ impl Interpreter {
         if name.is_empty() {
             return Self::no_such_symbol_failure(name);
         }
+        // A leading `EXPORT` is the running unit's own export package, a
+        // lexical of the unit (rakudo: `MY::<EXPORT>`), which mutsu keeps
+        // under the unit's package: `::('EXPORT::DEFAULT::&mine')` in a
+        // program is `GLOBAL::EXPORT::DEFAULT::&mine` (#13808).
+        if let Some(rest) = name.strip_prefix("EXPORT::") {
+            let own = format!("{}::EXPORT::{rest}", self.current_package());
+            return self.resolve_indirect_type_name(&own);
+        }
         // The core `IterationEnd` sentinel term (as the bareword resolves it
         // in `vm_var_get_ops`), so `::('IterationEnd') =:= IterationEnd`.
         if name == "IterationEnd" {

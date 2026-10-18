@@ -68,6 +68,12 @@ thread_local! {
     /// (`EVAL 'my &x; sub x {}'`) is NOT in this set and still conflicts.
     static EVAL_OUTER_AMP_NAMES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
 
+    /// Per active EVAL, the outer `&name` keys (in `EVAL_OUTER_AMP_NAMES`) the
+    /// EVAL assigned: a caller's `my &h` that `EVAL q[&h = { ... }]` stored
+    /// into. The EVAL's exit keeps their new values instead of restoring the
+    /// pre-EVAL snapshot (#13657).
+    static EVAL_OUTER_AMP_WRITES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
+
     /// The registry counterpart of `EVAL_OUTER_AMP_NAMES`: the routine keys
     /// (`Pkg::name`, and `Pkg::name/arity` for multis) already registered when
     /// an `EVAL` began.
@@ -141,12 +147,33 @@ fn is_outer_routine_key(key: Symbol) -> bool {
 pub(crate) fn push_eval_outer_amp_names(amp_names: impl Iterator<Item = String>) {
     let set: HashSet<String> = amp_names.collect();
     EVAL_OUTER_AMP_NAMES.with(|stack| stack.borrow_mut().push(set));
+    EVAL_OUTER_AMP_WRITES.with(|stack| stack.borrow_mut().push(HashSet::new()));
 }
 
-/// Pop the outer-amp snapshot when an EVAL finishes.
-pub(crate) fn pop_eval_outer_amp_names() {
+/// Pop the outer-amp snapshot when an EVAL finishes, with the outer `&name`
+/// keys the EVAL assigned ([`note_eval_outer_amp_write`]).
+// Cost: O(1).
+pub(crate) fn pop_eval_outer_amp_names() -> HashSet<String> {
     EVAL_OUTER_AMP_NAMES.with(|stack| {
         stack.borrow_mut().pop();
+    });
+    EVAL_OUTER_AMP_WRITES
+        .with(|stack| stack.borrow_mut().pop())
+        .unwrap_or_default()
+}
+
+/// Record that the innermost active EVAL assigned the code variable
+/// `code_var_key` (`&name`), when it existed before the EVAL: the caller's
+/// `my &h`, whose new value outlives the EVAL. A no-op outside an EVAL.
+// Cost: O(|code_var_key|).
+pub(crate) fn note_eval_outer_amp_write(code_var_key: &str) {
+    if !is_outer_amp_name(code_var_key) {
+        return;
+    }
+    EVAL_OUTER_AMP_WRITES.with(|stack| {
+        if let Some(writes) = stack.borrow_mut().last_mut() {
+            writes.insert(code_var_key.to_string());
+        }
     });
 }
 
