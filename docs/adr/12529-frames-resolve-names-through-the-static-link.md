@@ -1655,6 +1655,38 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `unchanged_free`, `Env::get_sym_through_callers`) are deleted. Pinned by
    `t/routines/closure/subrule-argument-closure-shares-caller-cell.t`.
 
+   **Slice 47 done** (`refactor/12529-binder-probes-read-own-frame`): a
+   tenth census logged every non-dynamic key a by-name lookup found in an
+   intermediate caller frame, over all of `t/` and the whitelisted roast
+   files, with the Rust call site of each key's first hit per file. The
+   binder's own probes were the largest rows: `@_` (106,423 hits in `t/`,
+   85,266 in roast), because a call with no arguments skipped binding `@_`
+   when an `@_` it could see was already empty, and that was usually the
+   caller's; and `self` (6,956 in `t/`), which the binder fetched on every
+   call to bind an invocant's type capture (`::T $self:`), so a sub called
+   from a method found the method's invocant. The `@_` probe now reads the
+   running frame only (`Env::get_sym_in_frame`), and the invocant probe
+   runs only for a signature that has such a capture. The `t/` census went
+   from 234,362 hits to 122,438 (`@_` 282, `self` 1,857). Neither leak
+   was observable, because the caller's `@_` is copy-on-write.
+
+   The rest of the list, for the next slices:
+   - lexicals of a routine's lexical outer, which is also its caller (a
+     `my sub`, Test's `throws-like` closures): correct as they are;
+   - a closure call reading its own capture chain
+     (`call_compiled_closure_in_unit`'s authoritative and owned captures),
+     which phase 4 replaces;
+   - `__mutsu_callable_id::*` (`registration_callable_id`: which clone of
+     a nested named sub a call reaches);
+   - `remove_sym` tombstoning a caller's `?ROLE`, `__mutsu_type::*` or
+     sigilless-alias record from the callee frame;
+   - the CATCH handler's `leave_installing_env` and the inline map/grep
+     loop's topic probe (`enter_inline_loop_env`).
+   A tier that a deep chain's flattening copied past a frame root also
+   counts as a caller frame here (`@mat` in
+   `roast/integration/deep-recursion-initing-native-array.t` is the
+   program's own), so the count is an upper bound.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
