@@ -344,6 +344,16 @@ impl Interpreter {
                     base_constraint
                 )));
             }
+            // An allomorph (`IntStr`, `$*USER`) stores its `Int` part: the
+            // native slot holds a plain integer, not the mixin.
+            if let ValueView::Mixin(inner, _) = value.view()
+                && matches!(inner.view(), ValueView::Int(_) | ValueView::BigInt(_))
+            {
+                let inner = inner.as_ref().clone();
+                self.validate_native_int_assignment(base_constraint, &inner)?;
+                *self.stack.last_mut().unwrap() = inner;
+                return Ok(());
+            }
             self.validate_native_int_assignment(base_constraint, &value)?;
             return Ok(());
         }
