@@ -910,7 +910,25 @@ pub(crate) fn shapeless_row(
     let coerce =
         COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()) || lazy_complex || list_numeric;
     let text = text || coerce;
-    let container = arity == 0 && CONTAINER_FOR_SHAPELESS.contains(&method.as_str());
+    // A shaped array's element type lives in the interpreter's registry, so
+    // a pure entry leaves its `raku` to the interpreter's row below.
+    if method == "raku"
+        && interp.is_none()
+        && matches!(
+            target.view(),
+            ValueView::Array(_, crate::value::ArrayKind::Shaped)
+        )
+    {
+        return None;
+    }
+    // A shaped or itemized array or hash renders as its own type's `raku`
+    // (a typed one as `Array[Int].new(...)`, §9.185), an interpreter row; a
+    // pure entry keeps `Mu`'s rendering.
+    let container = arity == 0
+        && (CONTAINER_FOR_SHAPELESS.contains(&method.as_str())
+            || (method == "raku"
+                && interp.is_some()
+                && matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_))));
     if !(text || list || mu || iterable || container) || Receiver::of_settled(target).is_some() {
         return None;
     }

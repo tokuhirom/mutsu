@@ -4601,6 +4601,24 @@ of the name never reaches the rows, so it still sees its argument unchanged. The
 the coercion runs in the interpreter's entry, not in the handler, so constant folding and the JIT
 see the same rows. No behaviour change. Pinned in `t/types/numeric/numeric-math-object-args.t`.
 
+### 9.185 `raku` of a typed container is the `raku` row's (2026-10-19)
+
+`refactor/11276-raku-row-typed-containers`. Three by-name gates of `call_method_with_values_inner`
+rendered a container whose element or key type the interpreter's registry records:
+`Hash[Int,Str].new(...)` (or `(my Int % = ...)`), `Array[Int].new(...)` and
+`array[int].new(:shape(...), ...)`. They ran after the pure prologue had computed its answer and
+overrode it, while the `raku` rows of `Array` and `Hash` (§9.95, `render_names`) declined such a
+container to them. The three renderings are now one routine, `Interpreter::typed_container_raku`
+(`runtime/methods_raku_typed.rs`), which the `raku` row's handler calls first, and the gates are
+gone. The receivers that reach no `Array`/`Hash` shape: a shaped or itemized array or hash reaches
+the type's row through `answer_shapeless` (when it has an interpreter: a pure entry keeps `Mu`'s
+rendering, which the "odd number of elements" message reads), and the pure prologue leaves a
+shaped array's `raku` to it, since only the interpreter knows its element type. The
+dispatch-leaf rendering (`raku_repr_with_dispatch`: an element whose own `raku` is user code)
+stays a gate. No behaviour change; the existing typed-container tests
+(`t/collections/subscript/shaped-array-*.t`, the constrained-hash and typed-array `raku` tests)
+pin it.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
