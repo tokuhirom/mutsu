@@ -23,6 +23,7 @@ is @a.elems, 2, 'an itemized lazy sequence is one element';
 # An itemized lazy sequence held in a variable reads and renders as the bare one.
 my $i = endless.item;
 is $i.head(3), (1, 2, 3), '.head of a held itemized sequence';
-like $i.raku, /^ '$((1, 2, 3, ' .* '100...).lazy.Seq)' $/, '.raku of an itemized infinite sequence';
+my $k = endless.item;
+like $k.raku, /^ '$((1, 2, 3, ' .* '100...).lazy.Seq)' $/, '.raku of an itemized infinite sequence';
 is (1..3).map(* + 0).lazy.item.raku, '$((1, 2, 3).lazy.Seq)', '.raku of an itemized .lazy sequence';
 is (gather { take 1; take 2 }).item.raku, '$((1, 2).Seq)', '.raku of an itemized gather';
