@@ -70,45 +70,48 @@ impl Interpreter {
         Self::array_inplace_reassign_inheriting_meta(gc, &new_gc, kind)
     }
 
-    /// `STORE` on a native Hash or Array (or a `Mixin` over one): store into
-    /// its node and hand back the invocant. `None` for any other invocant.
+    /// `STORE` on what the method-table rows cannot name from the value alone:
+    /// a user `is Hash`/`is Map` instance (its backing storage) and a `Mixin`
+    /// over a native Hash or Array. The storage is the row's receiver
+    /// (`Hash.STORE`, `Array.STORE`, `Map.STORE`, ADR-11276 §9.174); the answer
+    /// is the invocant. `None` for any other invocant.
     // Cost: O(n), n = number of values stored.
     pub(crate) fn native_container_store(
         &mut self,
         invocant: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let values = args
-            .iter()
-            .find(|a| {
-                !matches!(a.view(), ValueView::Pair(k, _) if matches!(k.as_str(), "INITIALIZE" | "DECONT"))
-            })
-            .cloned()
-            .unwrap_or(Value::NIL);
         let target = invocant.deref_container();
         // A user `is Map`/`is Hash` instance keeps its entries in a backing
         // hash; its native `STORE` (what a user `STORE` reaches through
         // `Map.^lookup('STORE')`) stores there and answers the instance.
         if let ValueView::Instance { attributes, .. } = target.view()
-            && let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned()
-            && let ValueView::Hash(gc) = storage.view()
+            && let Some(mut storage) = attributes.as_map().get("__mutsu_hash_storage").cloned()
+            && matches!(storage.view(), ValueView::Hash(..))
         {
-            return Some(self.store_into_hash(&gc, &values).map(|_| target.clone()));
+            let stored = self.native_array_storage_mut(&mut storage, "STORE", args)?;
+            return Some(stored.map(|_| target.clone()));
         }
-        let inner = match target.view() {
-            ValueView::Mixin(inner, _) => inner.as_ref().clone(),
-            _ => target.clone(),
+        let ValueView::Mixin(inner, _) = target.view() else {
+            return None;
         };
-        match inner.view() {
-            ValueView::Hash(gc) if self.mixin_composes_method(&target, "STORE_AT_KEY") => {
-                Some(self.store_into_hash_via_store_at_key(&gc, &target, &values))
-            }
-            ValueView::Hash(gc) => Some(self.store_into_hash(&gc, &values).map(|_| target)),
-            ValueView::Array(gc, kind) if !kind.is_immutable_list() => {
-                Self::store_into_array(&gc, kind, &values);
-                Some(Ok(target))
-            }
-            _ => None,
+        let mut storage = inner.as_ref().clone();
+        if matches!(storage.view(), ValueView::Hash(..))
+            && self.mixin_composes_method(&target, "STORE_AT_KEY")
+        {
+            let values = args
+                .iter()
+                .find(|a| {
+                    !matches!(a.view(), ValueView::Pair(k, _) if matches!(k.as_str(), "INITIALIZE" | "DECONT"))
+                })
+                .cloned()
+                .unwrap_or(Value::NIL);
+            let ValueView::Hash(gc) = storage.view() else {
+                return None;
+            };
+            return Some(self.store_into_hash_via_store_at_key(&gc, &target, &values));
         }
+        let stored = self.native_array_storage_mut(&mut storage, "STORE", args)?;
+        Some(stored.map(|_| target.clone()))
     }
 }
