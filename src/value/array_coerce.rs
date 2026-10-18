@@ -240,7 +240,7 @@ fn coerce_to_array_inner(value: Value) -> Value {
                 ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
             ) =>
         {
-            coerce_to_array_inner(crate::value::flat::deitemize_flat_operand(&inner))
+            coerce_to_array_inner(crate::value::flat::deitemize_flat_operand(inner))
         }
         // A bare Hash assigned to an @-var flattens into its pairs
         // (`my @a = %h`). An *itemized* hash (`my $h = %(...); my @a = $h`)
