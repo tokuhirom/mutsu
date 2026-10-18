@@ -4473,7 +4473,7 @@ Pinned in `t/vm/writeback/container-store-subclass.t`.
 `X::Immutable` for it, so the refusal step of `invoke_mut` (#13881) covers it with no new code path.
 `List.splice` and `List.STORE` already answered Rakudo's no-match errors.
 
-Pinned in `t/types/list-type-object-mutators.t`.
+Pinned in `t/collections/list-type-object-mutators.t`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
