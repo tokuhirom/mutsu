@@ -4475,6 +4475,23 @@ Pinned in `t/vm/writeback/container-store-subclass.t`.
 
 Pinned in `t/collections/list-type-object-mutators.t`.
 
+### 9.178 A lazy receiver goes through the lazy step (2026-10-19)
+
+`refactor/11276-lazylist-rows`; the design is [ADR-13891](13891-lazy-receivers-pull-before-rows.md)
+(`Accepted` 2026-10-19). The five `LazyList` blocks of `call_method_with_values_inner` (the `gist`/`Str`/`raku`
+placeholders, `cache`, the `AT-POS`/`EXISTS-POS` partial force, `join`'s `...` and
+`should_force_lazy_list`'s force-and-redispatch) are one step, `Interpreter::lazy_receiver_step`:
+a *pull* registered by the owner Rakudo declares the method on (`method_table::lazy_pull`, 16
+pulls on `Seq`, `List`, `Array` and `Any`), found through the MRO of the type the receiver
+reports, answers from what it pulls or declines; a method in the reify table then reifies the
+receiver and re-dispatches on a settled `Seq`, whose rows answer it. No behaviour change.
+
+Left: the reify table is still names (it becomes "the rows without a pull" after each name is
+audited on an infinite sequence); the streaming adaptors and index pipes stay ahead of the step
+because they also serve an infinite `Range` (ADR-13891 §4).
+
+Pinned in `t/collections/lazy-seq/lazy-receiver-pulls.t`.
+
 ### 9.179 The `Real` and `Numeric` roles' methods are composed-role rows (2026-10-19)
 
 `refactor/11276-real-role-rows`. A user class that composes `Real` got the role's methods from a

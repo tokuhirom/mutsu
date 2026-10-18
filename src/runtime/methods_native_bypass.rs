@@ -164,61 +164,6 @@ impl Interpreter {
         true
     }
 
-    /// Check if a method on LazyList should force evaluation.
-    pub(super) fn should_force_lazy_list(method: &str) -> bool {
-        matches!(
-            method,
-            "list"
-                | "Array"
-                | "Numeric"
-                | "Int"
-                | "elems"
-                | "end"
-                | "hyper"
-                | "race"
-                | "first"
-                | "grep"
-                | "map"
-                | "sort"
-                | "reverse"
-                | "join"
-                | "head"
-                | "tail"
-                | "min"
-                | "max"
-                | "minmax"
-                | "sum"
-                | "flat"
-                | "unique"
-                | "repeated"
-                | "squish"
-                | "classify"
-                | "categorize"
-                | "produce"
-                | "rotor"
-                | "batch"
-                | "reduce"
-                | "combinations"
-                | "permutations"
-                | "values"
-                | "List"
-                | "Str"
-                | "Stringy"
-                | "gist"
-                | "raku"
-                | "Seq"
-                | "item"
-                | "cache"
-                | "pick"
-                | "roll"
-                | "keys"
-                | "kv"
-                | "pairs"
-                | "antipairs"
-                | "sink"
-        )
-    }
-
     /// ADR-0019 E4b design decision 3's "receiver-state facts become
     /// resolver guards" bucket (category 1 of the three-way split in
     /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`):

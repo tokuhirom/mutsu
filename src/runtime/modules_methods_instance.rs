@@ -13,6 +13,7 @@ mod methods_mut_proxy;
 mod methods_mut_rw_attr;
 mod methods_mut_substr_buf;
 mod methods_mut_wildcard_delegate;
+mod methods_lazy_step;
 mod methods_native_bypass;
 mod method_perl_alias;
 mod methods_object;
