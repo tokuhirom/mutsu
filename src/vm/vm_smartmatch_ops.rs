@@ -181,6 +181,13 @@ impl Interpreter {
         } else {
             right
         };
+        // A method that hands back an array element (`@a.head`, `@a.tail`) yields
+        // the element's Scalar container; ACCEPTS dispatch is on the value in it.
+        let right = if matches!(right.view(), ValueView::ContainerRef(..)) {
+            right.deref_container()
+        } else {
+            right
+        };
         // `IO::Path.ACCEPTS` stringifies its candidate. An unhandled Failure
         // must throw at that read boundary, rather than being compared as the
         // printable string "Failure()". Other smartmatches may inspect a
