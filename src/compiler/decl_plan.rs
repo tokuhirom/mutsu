@@ -123,7 +123,17 @@ impl Compiler {
         chunk_compiler.set_current_package(package.to_string());
         chunk_compiler.static_class = static_class.map(str::to_string);
         chunk_compiler.class_body_static_code_vars = class_body_static_code_vars.clone();
-        chunk_compiler.package_body_lexicals = package_body_lexicals.clone();
+        // The lexicals visible where the package is declared stay lexical in
+        // its body's statements too: an undeclared `$read` there is no
+        // package variable (rakudo rejects it), so a name that compiles is an
+        // outer lexical. Qualified (`A::read`), it became no free variable of
+        // the declaring routine, which then captured nothing for it, and the
+        // statement read whatever the env held under the bare name (#13675).
+        let mut lexicals = package_body_lexicals.clone();
+        for frame in self.enclosing_scopes.iter().chain(self.local_scopes.iter()) {
+            lexicals.extend(frame.keys().filter(|n| !n.contains("::")).cloned());
+        }
+        chunk_compiler.package_body_lexicals = lexicals;
         chunk_compiler
             .type_aliases
             .extend(class_body_type_aliases.clone());
