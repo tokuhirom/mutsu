@@ -2554,11 +2554,14 @@ impl Interpreter {
                     // A caller's rw parameter may already be the shared cell
                     // captured by the callee. Replacing that slot with the
                     // environment's value would detach it from the source
-                    // variable before the caller's next write.
-                    if !matches!(
-                        self.locals[slot].view(),
-                        ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_)
-                    ) && let Some(val) = self.env().get(&source).cloned()
+                    // variable before the caller's next write. Captured outer
+                    // lexicals also queue writeback, but have no baked rw slot
+                    // and must still refresh their caller's local.
+                    let shared_rw_cell = baked_raw.is_some()
+                        && matches!(self.locals[slot].view(), ValueView::ContainerRef(_));
+                    if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
+                        && !shared_rw_cell
+                        && let Some(val) = self.env().get(&source).cloned()
                     {
                         self.locals[slot] = val;
                     }
