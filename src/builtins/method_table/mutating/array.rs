@@ -387,10 +387,12 @@ fn grow_in_place(
         }
     });
     if written.is_some() {
-        // The same node every holder shares.
+        // The same node every holder shares, answered as the `Array` rather
+        // than the item a `$` binding holds (`my $x = [1]; $x.push(2)` is
+        // `[1, 2]`, not `$[1, 2]`).
         return match place.slot(interp).map(|slot| slot.view()) {
             Some(ValueView::Array(arc_items, kind)) => {
-                Value::array_with_kind(crate::gc::Gc::clone(&arc_items), kind)
+                Value::array_with_kind(crate::gc::Gc::clone(&arc_items), kind.decontainerize())
             }
             _ => target.clone(),
         };

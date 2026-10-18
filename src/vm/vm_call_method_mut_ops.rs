@@ -1873,51 +1873,6 @@ impl Interpreter {
                 None => {}
             }
         }
-        // Auto-vivify undefined values (Nil, Any, Mu type objects) to empty Arrays
-        // for mutating list methods. In Raku, calling push/unshift/append/prepend on
-        // an undefined variable auto-vivifies it to an Array.
-        let target = if matches!(method, "push" | "unshift" | "append" | "prepend")
-            && (target.is_nil()
-                || matches!(
-                    target.view(),
-                    ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
-                )) {
-            // A `$` variable holds the vivified Array in its Scalar
-            // container (raku: `my $x; $x.push(1); $x.raku` is `$[1]`), and so
-            // does a never-written package-qualified `@`/`%` slot, which reads
-            // as `Any` (`@GLOBAL::a.push(1); @GLOBAL::a.raku` is `$[1]`, #10962).
-            let target_sym = Symbol::intern(target_name);
-            let package_slot = crate::qualified::is_package_array(target_sym)
-                || crate::qualified::is_package_hash(target_sym);
-            let empty_array = if target_name.starts_with(['@', '%', '&']) && !package_slot {
-                Value::real_array(vec![])
-            } else {
-                Value::real_array(vec![]).item()
-            };
-            // A writable loop parameter such as `for @rows <-> $row` names a
-            // `ContainerRef` cell for the source element. Replacing the env
-            // binding here detaches the vivified array from that element, so
-            // later reads still see Any. Descend through the alias when one
-            // exists; ordinary lexical variables retain the old env fallback.
-            if let Some(slot) = self.env_root_descended_mut(target_name) {
-                *slot = empty_array.clone();
-            } else {
-                self.env_mut()
-                    .insert(target_name.to_string(), empty_array.clone());
-                // A package-qualified name (`$GLOBAL::n.push(1)`) is a package
-                // variable. The env write reaches only the running frame, whose
-                // exit drops a key it did not hold on entry, so persist the
-                // vivified array in `our_vars` as `SetGlobal` and the
-                // read-modify-write store do (#10620). The two share one
-                // array, so the mutation below lands in both.
-                if crate::qualified::is_qualified(target_sym) {
-                    self.set_our_var(target_name.to_string(), empty_array.clone());
-                }
-            }
-            empty_array
-        } else {
-            target
-        };
         // For .* and .+ modifiers, skip the single-dispatch call and go
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier {

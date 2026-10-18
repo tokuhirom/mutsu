@@ -4327,6 +4327,25 @@ argument-count error is Rakudo's. Pinned in `t/types/buf-write-rows.t`.
 - **Found, not fixed** (#13849): the folded `Blob` owner makes `Blob.can("reallocate")` and
   `Blob.can("write-uint8")` true (Rakudo: false), as it already did for `reallocate`.
 
+### 9.171 `Any`'s growing rows autovivify a named binding (2026-10-18)
+
+`refactor/11276-any-autoviv-binding`. §9.164 left the autovivification of a *named* undefined
+receiver (`my $x; $x.push(1)`) to "the mutating entry that holds it": the VM's `CallMethodMut` kept a
+`push`/`unshift`/`append`/`prepend` name gate that wrote a fresh `Array` into the binding before
+dispatch.
+
+- The `Any` rows (`mutating/autoviv.rs`) do it now. `Interpreter::vivify_array_binding`, moved
+  verbatim from the VM block, stores the array (in its `Scalar` for a `$` variable or a
+  package-qualified slot, and through a `:=` alias or a `<->` loop parameter). The row then grows it
+  through `Array`'s row with the same binding, re-read (`ReceiverPlace::rebound`). An `Array` type
+  object in a named binding (`my Array $a`) vivifies too, as the VM block did.
+- The VM block goes. The modifier forms no longer see a pre-vivified receiver: `$q.+push(1)` now
+  vivifies once and answers `([1],)` as Rakudo does, where the VM answered `([1], [1], [1])`.
+- `Array`'s growing row answers the array decontainerized (`my $y = [1]; $y.push(2)` is `[1, 2]`,
+  not `$[1, 2]`), as Rakudo does; the binding keeps its item.
+
+Pinned in `t/types/any-autoviv-binding-rows.t`. The typed-scalar and `is rw` attribute gaps stay with #13823.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

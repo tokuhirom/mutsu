@@ -72,6 +72,28 @@ impl<'a> ReceiverPlace<'a> {
         }
     }
 
+    /// The same binding, read as `value` now: the place a row hands on after
+    /// it replaced what the binding holds (`Any.push` autovivifying it to an
+    /// `Array`). `None` for a detached receiver, which has no binding to
+    /// re-read.
+    // Cost: O(1).
+    pub(crate) fn rebound<'b>(&'b self, value: &'b Value) -> Option<ReceiverPlace<'b>> {
+        match self {
+            ReceiverPlace::Var {
+                name,
+                code,
+                arg_sources,
+                ..
+            } => Some(ReceiverPlace::Var {
+                name,
+                value,
+                code: *code,
+                arg_sources,
+            }),
+            ReceiverPlace::Detached(_) => None,
+        }
+    }
+
     /// The same place, carrying the call's argument sources (see
     /// [`ReceiverPlace::Var`]). A detached place has no caller variables, so
     /// it is returned unchanged.
