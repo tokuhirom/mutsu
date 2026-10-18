@@ -1710,6 +1710,17 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    *mainline block* still loses to an outer `my &h`, because its
    registration binds no `&h` in the block's tier (#13855).
 
+   **Slice 50 done** (`fix/13590-dynamic-stash-walks-frames`): the
+   `DYNAMIC::` row of §2.1, keyed form. `DYNAMIC::<key>` walks the dynamic
+   scope frame by frame and looks the key up as spelled in each frame's own
+   lexicals: the slots its code declares, then its env tiers
+   (`Env::get_sym_in_frame`), never the process tier. Each `VmCallFrame`
+   records its caller's code (`caller_code`), the names of the slot region
+   it saves, so a caller's slot-only `my $x` is found. A frame's own
+   dynamic shadows the caller's from the frame's entry: before its
+   `my $*d` runs it reads `Any` (#13590). The whole-stash form
+   (`DYNAMIC::.keys`) still reads the env chains.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

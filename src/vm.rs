@@ -214,6 +214,7 @@ mod vm_data_ops;
 mod vm_data_push_ops;
 mod vm_dispatch_helpers;
 pub(crate) mod vm_do_block;
+mod vm_dynamic_stash;
 mod vm_element_producers;
 mod vm_env_helpers;
 mod vm_eval_capture_cells;
@@ -535,6 +536,12 @@ pub(crate) struct CatchHandlerCode {
 
 pub(crate) struct VmCallFrame {
     pub saved_env: Env,
+    /// The address of the caller's `CompiledCode` (`Interpreter::current_code`
+    /// at the push; 0 when none ran yet): the names of the slots in
+    /// `saved_locals_base`'s region, for a reader that walks the dynamic
+    /// scope by name (`DYNAMIC::<key>`, `vm_dynamic_stash`). The caller's code
+    /// outlives the frame: it is the code waiting for this call to return.
+    pub caller_code: usize,
     /// The callee's argument capture, recorded only for code that reads it
     /// (`nqp::usecapture`, see `runtime::call_capture`). Kept on the frame
     /// rather than in the env so a return merge can never copy it into the

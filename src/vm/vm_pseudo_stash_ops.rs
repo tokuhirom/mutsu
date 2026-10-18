@@ -229,6 +229,13 @@ impl Interpreter {
         key: &Value,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        // `DYNAMIC::<key>` walks the dynamic scope for the one key (#13590).
+        if name == "DYNAMIC::"
+            && let ValueView::Str(key_str) = key.deref_container().view()
+        {
+            self.push_dynamic_stash_for_key(code, &key_str);
+            return Ok(());
+        }
         let keyed = match key.deref_container().view() {
             ValueView::Str(key_str) => self.named_pseudo_stash_target(name).and_then(|target| {
                 loan_env!(self, package_stash_keyed_value(&target, &key_str))
@@ -446,7 +453,7 @@ impl Interpreter {
     /// paths — so the type travels as the hash's declared type, exactly the way
     /// a `Map` does. Without this the spellings answered a bare `Hash`, with no
     /// symbol-table type at all.
-    fn pseudo_stash_hash(&mut self, entries: ValueMap) -> Value {
+    pub(super) fn pseudo_stash_hash(&mut self, entries: ValueMap) -> Value {
         let hash = Value::hash_with_data(Value::hash_arc(entries));
         self.tag_container_metadata(
             hash,
