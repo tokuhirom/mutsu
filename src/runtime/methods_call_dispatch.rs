@@ -1823,24 +1823,6 @@ impl Interpreter {
             return self.call_method_with_values(list, method, args);
         }
 
-        // gist/Str/raku of a *genuinely* lazy list (an infinite sequence or a
-        // lazy map/grep pipeline) cannot reify the whole sequence, so raku
-        // renders a placeholder instead of materializing: `(...)` for gist/raku,
-        // `...` for Str. (An eager gather has neither `sequence_spec` nor
-        // `lazy_pipe` and falls through to the force-and-render path below,
-        // which materializes its elements.)
-        if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "raku")
-            && ll.renders_lazy_placeholder()
-        {
-            if matches!(method, "raku") && Self::lazy_seq_raku_applies(&ll) {
-                return Ok(Value::str(self.lazy_seq_raku(&ll)?));
-            }
-            return Ok(Value::str(crate::value::lazy_list_placeholder(
-                method,
-                ll.in_array_context(),
-            )));
-        }
         // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
         // lazy index-pipe stage instead of forcing the source (mirrors the
         // CallMethodMut fast-path so a chained `.pairs` stays lazy too).
@@ -1856,69 +1838,12 @@ impl Interpreter {
             return Ok(pipe);
         }
 
-        // `.cache` on a genuinely-lazy list must stay lazy: Rakudo's `.cache`
-        // reifies and caches elements on demand, it does not force the list. A
-        // `LazyList` already caches pulled elements internally, so `.cache` is a
-        // no-op that returns it unchanged. Forcing here would defeat e.g.
-        // `(my $l = $cat.lines).cache` whose later `$l[2,3]` must reflect
-        // mid-iteration changes to the cat's `.nl-in`/`.chomp`.
+        // A lazy receiver: a method's pull answers from what it reads, a method
+        // that needs every element reifies it (the lazy step, ADR-13891).
         if let ValueView::LazyList(ll) = target.view()
-            && method == "cache"
-            && let Some(result) = ll.cache_lazy_view()
+            && let Some(result) = self.lazy_receiver_step(&target, &ll, method, &args)
         {
-            return Ok(result);
-        }
-
-        // `.AT-POS($i)` / `.EXISTS-POS($i)` as an explicit method call is the
-        // same `postcircumfix:<[ ]>` protocol method that `$l[$i]` compiles
-        // down to (`Language/subscripts.rakudoc`), so it must pull only as
-        // many elements as the index needs — forcing the whole LazyList
-        // here (as the generic `should_force_lazy_list` cascade below does
-        // for other methods) would hang on an infinite sequence's
-        // `.AT-POS($i)` where `$l[$i]` does not (#8521).
-        if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "AT-POS" | "EXISTS-POS")
-            && args.len() == 1
-        {
-            let index = args[0].clone();
-            let forced = self.force_lazy_list_for_index(&ll, &index)?;
-            let arr = Value::array(forced);
-            return self.call_method_with_values(arr, method, args);
-        }
-
-        // Force LazyList and re-dispatch as Seq
-        if let ValueView::LazyList(ll) = target.view()
-            && Self::should_force_lazy_list(method)
-            // A `.map`/`.grep` on a lazy map/grep pipeline, an infinite
-            // sequence/closure spec, OR a gather coroutine appends another lazy
-            // stage (`dispatch_map_method`/`dispatch_grep` via
-            // `is_lazy_pipe_source`); a laziness-preserving coercion returns the
-            // list unchanged. Neither forces the (possibly infinite) sequence (L2b).
-            && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
-            && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
-                && crate::runtime::Interpreter::lazy_pipe_preserving_coercion(method))
-        {
-            // A single-pass `.lazy` Seq throws on a second consuming touch
-            // (`claim_lazy_seq_touch`'s doc comment, #9789); `should_force_lazy_list`
-            // also names non-consuming methods (`gist`, `elems`, ...) that must
-            // keep reading it repeatably, so gate on the same
-            // `seq_method_consumes` table a real `Value::Seq` uses.
-            if crate::value::seq_method_consumes(method) {
-                crate::value::claim_lazy_seq_touch(&ll)?;
-            }
-            let saved_env = self.env.clone();
-            let items = self.force_lazy_list_bridge(&ll)?;
-            // A successful `.sink` consumes the original gather Seq as well
-            // as the temporary Seq used for re-dispatch. Mark only after the
-            // bridge returns: a gather body that throws was not sunk.
-            if method == "sink" && ll.is_from_gather() {
-                crate::value::lazylist_consume(&ll);
-            }
-            if !matches!(method, "elems" | "hyper" | "race") {
-                self.env = saved_env;
-            }
-            let seq = Value::seq(items);
-            return self.call_method_with_values(seq, method, args);
+            return result;
         }
 
         // Callable introspection
@@ -1977,17 +1902,6 @@ impl Interpreter {
                 source_value,
                 None,
             ));
-        }
-
-        // .join on LazyList
-        if method == "join"
-            && let ValueView::LazyList(list) = target.view()
-        {
-            if crate::builtins::is_join_lazy(&target) {
-                return Ok(Value::str("...".to_string()));
-            }
-            let items = self.force_lazy_list_bridge(&list)?;
-            return self.call_method_with_values(Value::real_array(items), method, args);
         }
 
         // ^meta_method dispatch (except ^name)
