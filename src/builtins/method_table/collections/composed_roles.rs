@@ -49,7 +49,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 ];
 
 /// The roles whose rows [`answer`] tries, in order.
-const OWNERS: [&str; 3] = ["Positional", "Associative", "Iterable"];
+const OWNERS: [&str; 5] = ["Positional", "Associative", "Iterable", "Real", "Numeric"];
 
 /// The answer of a composed role's row for a call on an instance or a type
 /// object of a class, or `None` when no such row answers it.

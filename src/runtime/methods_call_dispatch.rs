@@ -2022,9 +2022,9 @@ impl Interpreter {
 
         // `Positional.of`, `Associative.of`/`keyof` and `Iterable`'s
         // `hyper`/`race`/`lazy` of a class composing the role are rows
-        // (ADR-11276 §9.165).
-        if args.is_empty()
-            && let Some(result) =
+        // (ADR-11276 §9.165), and so are the `Real` and `Numeric` roles'
+        // methods (§9.179).
+        if let Some(result) =
                 crate::builtins::method_table::composed_roles::answer(self, &target, method, &args)
         {
             return result;
