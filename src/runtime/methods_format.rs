@@ -222,7 +222,7 @@ impl Interpreter {
     /// Handle `<collection>.fmt($format, $separator)` where `$format` is a `Format`.
     /// Returns `None` when the first argument is not a `Format` instance, leaving the
     /// regular string-based `.fmt` path untouched.
-    pub(super) fn dispatch_fmt_with_format(
+    pub(crate) fn dispatch_fmt_with_format(
         &mut self,
         target: &Value,
         args: &[Value],
@@ -246,7 +246,7 @@ impl Interpreter {
     /// here; this mirrors its branch structure exactly, but routes each
     /// value through `coerce_sprintf_args` (the same `.Str`/`.Int`/`.Numeric`
     /// dispatch `sprintf`/`printf` use) before formatting.
-    pub(super) fn dispatch_fmt_with_user_coercion(
+    pub(crate) fn dispatch_fmt_with_user_coercion(
         &mut self,
         target: &Value,
         args: &[Value],

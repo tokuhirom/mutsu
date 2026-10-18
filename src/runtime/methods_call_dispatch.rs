@@ -1114,21 +1114,6 @@ impl Interpreter {
         if let Some(result) = self.formatter_syntax_parse(&target, method, &args) {
             return result;
         }
-        // <collection>.fmt($format) where $format is a Format object.
-        if method == "fmt"
-            && let Some(result) = self.dispatch_fmt_with_format(&target, &args)
-        {
-            return result;
-        }
-        // <value>.fmt($format) where $format is a plain Str and some
-        // key/value/item of target needs `.Str`/`.Int`/`.Numeric` coercion
-        // that the native fast path can't dispatch (it bailed here for
-        // exactly this reason — see `fmt_value_needs_coercion`).
-        if method == "fmt"
-            && let Some(result) = self.dispatch_fmt_with_user_coercion(&target, &args)
-        {
-            return result;
-        }
         // `Match.make` is a row (ADR-11276 §9.164).
         if let Some(result) =
             crate::builtins::method_table::regex_match::make_answer(self, &target, method, &args)
@@ -1705,17 +1690,6 @@ impl Interpreter {
                 args.len(),
                 native_result.is_some(),
             );
-        }
-        // `.Capture` on targets that must call user methods or drain a live source
-        // (a `Channel`/`Supply` drains to a list; a List/Array/Seq with a non-Str
-        // Pair key stringifies the key via its `.Str`). The pure native fast path
-        // (`value_to_capture`) handles every other target.
-        if method == "Capture"
-            && args.is_empty()
-            && !bypass_native_fastpath
-            && let Some(r) = self.try_interpreter_capture(&target)
-        {
-            return r;
         }
         // .raku/.perl on a container holding a value whose repr is only
         // reachable through method dispatch (a user instance, a built-in object

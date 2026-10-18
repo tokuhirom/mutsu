@@ -4635,6 +4635,18 @@ behaviour change: the 242 `t/` files calling `.head`/`.tail` pass, among them
 `t/types/any-head-tail-rows.t`, `t/routines/call/tail-function.t` and
 `t/collections/lazy-seq/predictive-seq-tail-scope.t`.
 
+### 9.187 `Capture` and `fmt` of the declined receivers are interpreter twins (2026-10-19)
+
+`refactor/11276-capture-fmt-twins`. Three by-name gates of `call_method_with_values_inner` handed
+`.Capture` of a user object, a `Channel`, a `Supply`, a cat handle's lines or a list with a non-`Str`
+`Pair` key to `try_interpreter_capture`, and `.fmt` with a `Format` object or over elements whose
+`.Str`/`.Numeric` is user code to `dispatch_fmt_with_format`/`dispatch_fmt_with_user_coercion`. The
+pure rows (`Mu.Capture`, the collections' `Capture`, `fmt`) already decline exactly those
+receivers, so the routines are now the late interpreter twins `Mu.Capture` and `Any.fmt`
+(`any_interp_twins`; the twin macro takes an owner), reached through the late MRO walk of
+`dispatch_method_by_name_1` like `tail` (§9.186). The gates are gone. No behaviour change. Pinned
+in `t/routines/call/capture-fmt-interpreter-twins.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
