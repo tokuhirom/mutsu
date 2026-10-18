@@ -1176,63 +1176,6 @@ impl Interpreter {
             {
                 return result;
             }
-            if method == "Bool"
-                && args.is_empty()
-                && ((target.does_check("Real") || target.does_check("Numeric"))
-                    || self.has_user_method(&class_name.resolve(), "Bridge"))
-                && let Ok(coerced) = self
-                    .call_method_with_values(target.clone(), "Numeric", vec![])
-                    .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
-            {
-                return Ok(Value::truth(coerced.truthy()));
-            }
-            if method == "Bridge"
-                && args.is_empty()
-                && target.does_check("Real")
-                && !self.has_user_method(&class_name.resolve(), "Bridge")
-            {
-                if let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
-                    && coerced != target
-                {
-                    return Ok(coerced);
-                }
-                if let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
-                    && coerced != target
-                {
-                    return Ok(coerced);
-                }
-            }
-            if method == "Bridge"
-                && args.is_empty()
-                && self.has_user_method(&class_name.resolve(), "Num")
-                && !self.has_user_method(&class_name.resolve(), "Bridge")
-                && let Ok(coerced) = self.call_method_with_values(target.clone(), "Num", vec![])
-                && coerced != target
-            {
-                return Ok(coerced);
-            }
-            if method == "log"
-                && args.len() == 1
-                && self.has_user_method(&class_name.resolve(), "Bridge")
-                && let Ok(bridged) = self.call_method_with_values(target.clone(), "Bridge", vec![])
-            {
-                let base = if let Some(arg) = args.first() {
-                    if matches!(arg.view(), ValueView::Instance { class_name, .. }
-                        if self.has_user_method(&class_name.resolve(), "Bridge"))
-                    {
-                        self.call_method_with_values(arg.clone(), "Numeric", vec![])
-                            .or_else(|_| {
-                                self.call_method_with_values(arg.clone(), "Bridge", vec![])
-                            })
-                            .unwrap_or_else(|_| arg.clone())
-                    } else {
-                        arg.clone()
-                    }
-                } else {
-                    Value::NIL
-                };
-                return self.call_method_with_values(bridged, "log", vec![base]);
-            }
             // User-defined methods take priority over auto-generated accessors
             // only when they win the per-MRO-level race: a child class's
             // accessor shadows a parent's explicit method, and a method that
@@ -1489,87 +1432,25 @@ impl Interpreter {
             }
         }
 
-        // For user-defined numeric/real-like objects, delegate unknown methods through
-        // their coercion bridge so default Real behavior is available.
-        if matches!(target.view(), ValueView::Instance { class_name, .. }
-            if (target.does_check("Real") || target.does_check("Numeric"))
-                || self.has_user_method(&class_name.resolve(), "Bridge")
-                || self.has_user_method(&class_name.resolve(), "Numeric"))
+        // `Cool`'s numeric methods are `self.Numeric.METHOD` (Rakudo's
+        // `Cool.abs` and kin), so an instance of a `Cool` subclass computes
+        // them through its own `Numeric` (`class C is Cool { method Numeric
+        // {...} }; C.new.abs`, `roast/S32-num/cool-num.t`). A `Real` class
+        // has the role's rows instead (ADR-11276 §9.179).
+        // TODO: compile to bytecode -- a `Cool` row reached through the
+        // instance's MRO walk (`shapeless_row`) with an interpreter twin that
+        // calls the instance's `Numeric`.
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && crate::value::cool_numeric_method(method)
+            && self.has_user_method(class_name.as_str(), "Numeric")
+            && self
+                .class_mro(class_name.as_str())
+                .iter()
+                .any(|c| c.as_str() == "Cool")
+            && let Ok(numeric) = self.call_method_with_values(target.clone(), "Numeric", vec![])
+            && numeric != target
         {
-            if matches!(method, "Bridge" | "Real")
-                && let Ok(coerced) = self.call_method_with_values(target.clone(), "Numeric", vec![])
-                && coerced != target
-            {
-                return Ok(coerced);
-            }
-            // When the object has its OWN `Str` method, stringification must not
-            // be delegated through the numeric bridge: `.Stringy` (and `.Str`)
-            // should use that custom stringification, not the numeric value
-            // (e.g. HTTP::Status: `method Numeric { $!code }; method Str
-            // { $!title }` → `~$status` / `"$status"` is the title, not the
-            // code). A class that `does Real` with no custom `Str` keeps
-            // bridging `.Str`/`.gist` to its number (e.g. `class P does Real
-            // { method Bridge { $!n.Num } }` → `P.new(n=>7).gist` is "7").
-            let has_user_str = matches!(target.view(), ValueView::Instance { class_name, .. }
-                if self.has_user_method(&class_name.resolve(), "Str"));
-            let is_numeric_coercion = matches!(method, "Numeric" | "Real" | "Bridge");
-            let is_own_stringify = has_user_str && matches!(method, "Str" | "Stringy");
-            // A class that merely DECLARES a method named `Numeric` (without
-            // `does Real`/`does Numeric`) still gets numeric-context coercion
-            // bridged to it -- `P.new + 1` is 8 in rakudo too, with no role
-            // composition at all -- but stringification is NOT part of that
-            // deal: `Mu.Str` is the fallback there, and a `Numeric` method has
-            // no bearing on it (#8153). Gate the two kinds of coercion
-            // separately: numeric ops may ride the bare-method exception
-            // (`has_user_method(..., "Numeric"/"Bridge")` alone, checked by the
-            // outer `if` above), but `.Str`/`.Stringy` bridge to the number
-            // only when the object genuinely composes Real/Numeric.
-            let is_stringify_method = matches!(method, "Str" | "Stringy");
-            // `does_check` is a `Value`-only check (no interpreter access), so
-            // it sees a *mixin* role composition (`$x but Real`) but not a
-            // plain class's static `does Real` -- that lives in the class
-            // registry, reached through `class_does_role`. Check both: a
-            // class-composed role must count too (`class P does Real { ... }`
-            // is the exact case this branch's own comment documents keeping).
-            let genuinely_numeric = target.does_check("Real")
-                || target.does_check("Numeric")
-                || matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if self.class_does_role(&class_name.resolve(), "Real")
-                        || self.class_does_role(&class_name.resolve(), "Numeric"));
-            if !is_numeric_coercion
-                && !is_own_stringify
-                && (!is_stringify_method || genuinely_numeric)
-                && let Ok(coerced) = self
-                    .call_method_with_values(target.clone(), "Numeric", vec![])
-                    .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
-                && coerced != target
-                && let Ok(result) = {
-                    let mut delegated_args = Vec::with_capacity(args.len());
-                    for arg in &args {
-                        let coerced_arg = if matches!(arg.view(), ValueView::Instance { class_name, .. }
-                            if self.has_user_method(&class_name.resolve(), "Bridge")
-                                || arg.does_check("Real")
-                                || arg.does_check("Numeric"))
-                        {
-                            self.call_method_with_values(arg.clone(), "Numeric", vec![])
-                                .or_else(|_| {
-                                    self.call_method_with_values(arg.clone(), "Bridge", vec![])
-                                })
-                                .unwrap_or_else(|_| arg.clone())
-                        } else {
-                            arg.clone()
-                        };
-                        delegated_args.push(coerced_arg);
-                    }
-                    // `call_method_with_values` already tries the native arity
-                    // cascade first (ADR-0019 E11: keep native dispatch behind
-                    // the one canonical resolver entry point instead of
-                    // duplicating the by-arity match here).
-                    self.call_method_with_values(coerced, method, delegated_args)
-                }
-            {
-                return Ok(result);
-            }
+            return self.call_method_with_values(numeric, method, args);
         }
 
         // Package (type object) dispatch -- private method call

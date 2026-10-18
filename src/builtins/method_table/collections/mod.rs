@@ -17,6 +17,7 @@ mod any_interp;
 mod any_interp_twins;
 mod any_list_late;
 mod any_pos_late;
+mod composed_real;
 mod match1_late;
 mod match3_late;
 mod mu_late;
@@ -126,6 +127,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
 pub(super) static LATE_FAMILIES: &[&[MethodRow]] = &[
     any_interp_twins::ROWS,
     composed_roles::ROWS,
+    composed_real::BRIDGED_ROWS,
+    composed_real::OWN_ROWS,
     any_coerce_late::ROWS,
     any_enum_views::ROWS,
     any_list_late::ROWS,

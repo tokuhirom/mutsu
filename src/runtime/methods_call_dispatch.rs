@@ -1132,10 +1132,18 @@ impl Interpreter {
                     continue;
                 }
                 let original = arg.clone();
-                if let Ok(coerced) = self
-                    .call_method_with_values(original.clone(), "Numeric", vec![])
-                    .or_else(|_| self.call_method_with_values(original.clone(), "Bridge", vec![]))
-                {
+                // A `Real` instance's `Numeric` is itself (the role's), so it
+                // computes through its `Bridge`, as the infix operators do
+                // (`coerce_infix_operand_numeric`).
+                let coerced = if self.type_matches_value("Real", &original) {
+                    self.call_method_with_values(original.clone(), "Bridge", vec![])
+                } else {
+                    self.call_method_with_values(original.clone(), "Numeric", vec![])
+                        .or_else(|_| {
+                            self.call_method_with_values(original.clone(), "Bridge", vec![])
+                        })
+                };
+                if let Ok(coerced) = coerced {
                     *arg = coerced;
                 }
             }
@@ -2022,9 +2030,9 @@ impl Interpreter {
 
         // `Positional.of`, `Associative.of`/`keyof` and `Iterable`'s
         // `hyper`/`race`/`lazy` of a class composing the role are rows
-        // (ADR-11276 §9.165).
-        if args.is_empty()
-            && let Some(result) =
+        // (ADR-11276 §9.165), and so are the `Real` and `Numeric` roles'
+        // methods (§9.179).
+        if let Some(result) =
                 crate::builtins::method_table::composed_roles::answer(self, &target, method, &args)
         {
             return result;

@@ -385,7 +385,6 @@ impl Interpreter {
                 || (matches!(method, "gist" | "Str" | "Stringy")
                     && self.exception_render_needs_interpreter(target, owner))
                 || self.is_native_method(owner, method)
-                || self.has_user_method(owner, "Bridge")
                 || (!is_pseudo_method
                     && (self.grammar_has_user_method(owner, method)
                         || self.has_public_accessor(owner, method)
@@ -425,7 +424,6 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 let class_name = class_name.resolve();
                 self.is_native_method(&class_name, method)
-                    || self.has_user_method(&class_name, "Bridge")
                     || (!is_pseudo_method
                         && (self
                             .resolve_user_method_or_accessor(&class_name, method)

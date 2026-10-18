@@ -561,7 +561,15 @@ impl Interpreter {
             }
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
-                if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some() {
+                // A composed role's `Bool` (`Numeric.Bool` of a `does Real`
+                // class, ADR-11276 §9.179) is a method too.
+                if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
+                    || crate::builtins::method_table::composed_roles::role_declares(
+                        self,
+                        &cn,
+                        crate::symbol::wk::bool_method(),
+                    )
+                {
                     let caller_code = self.current_code;
                     let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
                     self.reconcile_caller_after_internal_dispatch(caller_code);

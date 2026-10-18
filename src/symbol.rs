@@ -714,6 +714,11 @@ pub(crate) mod wk {
         /// The method name `new`, which the constructor lane gates every
         /// `CallMethodMut` on (see `vm_ctor_lane`).
         new_method => "new";
+        /// The method names `Bool` and `Str`, which the truth test and the
+        /// string coercions ask a composed role about
+        /// (`method_table::composed_roles::role_declares`).
+        bool_method => "Bool";
+        str_method => "Str";
         /// The method names `perl` and `raku`: `Mu.perl` is `self.raku`, and
         /// the call entries resolve the one to the other
         /// (`Interpreter::perl_as_raku`).
