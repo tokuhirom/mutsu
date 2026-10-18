@@ -47,14 +47,15 @@ impl Interpreter {
             .then(|| Self::callsite_line_of_view(&self.stack[end].view()))
             .flatten();
         let args = &self.stack[start..end];
-        let light = !args.iter().any(|a| {
-            matches!(
-                a.unwrap_varref().view(),
-                ValueView::Pair(..) | ValueView::ValuePair(..)
-            ) || Self::extract_junction_from_arg(a.unwrap_varref()).is_some()
-        }) && Self::is_positional_light_call_eligible(cf, name, args.len(), args, Some(code))
-            && !Self::call_shares_container_into_scalar_param(cf, args)
-            && self.wrap_sub_id_for_name(name).is_none();
+        let light =
+            !args.iter().any(|a| {
+                matches!(
+                    a.unwrap_varref().view(),
+                    ValueView::Pair(..) | ValueView::ValuePair(..)
+                ) || Self::extract_junction_from_arg(a.unwrap_varref()).is_some()
+            }) && Self::is_positional_light_call_eligible(cf, name, args.len(), args, Some(code))
+                && !Self::call_shares_container_into_scalar_param(cf, args)
+                && self.wrap_sub_id_for_name(name).is_none();
         if !light {
             return Ok(false);
         }
