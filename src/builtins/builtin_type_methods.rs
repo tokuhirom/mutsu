@@ -39,6 +39,15 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
     crate::builtins::native_method_row::introspectable_names_for_owner(owner)
 }
 
+/// Whether `method` is one of [`builtin_type_method_names`]`(type_name)`,
+/// without materialising the list.
+// Cost: O(1), one hash probe.
+pub(crate) fn builtin_type_method_listed(type_name: &str, method: &str) -> bool {
+    let owner = canonical_builtin_owner(type_name);
+    !owner.is_empty()
+        && crate::builtins::native_method_row::introspectable_name_listed(owner, method)
+}
+
 /// A representative sample VALUE for a *concrete* built-in type, used by
 /// `native_method_row.rs`'s inverse-probe tests to confirm a `RAW_ROWS` row's
 /// claimed arity is actually backed by the real native dispatch cascade.
@@ -513,5 +522,25 @@ mod tests {
                 assert!(known(parent), "MRO parent `{parent}` of `{ty}` is unknown");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod listed_tests {
+    use super::*;
+
+    /// The O(1) membership probe agrees with the enumerated name list.
+    #[test]
+    fn listed_matches_names_for_every_owner() {
+        for owner in BUILTIN_METHOD_OWNERS {
+            let names = builtin_type_method_names(owner);
+            for name in &names {
+                assert!(builtin_type_method_listed(owner, name), "{owner}.{name}");
+            }
+            assert!(!builtin_type_method_listed(owner, "no-such-method"));
+        }
+        assert!(builtin_type_method_listed("IO::Path", "lines"));
+        assert!(!builtin_type_method_listed("IO::Path", "chars"));
+        assert!(!builtin_type_method_listed("NoSuchType", "lines"));
     }
 }
