@@ -414,7 +414,10 @@ impl Interpreter {
             keys.into_iter()
                 .filter(|key| {
                     reg.functions.get(key).is_some_and(|def| {
-                        def.source_file.as_deref().map(Symbol::intern).is_some_and(|f| Some(f) != program_path)
+                        def.source_file
+                            .as_deref()
+                            .map(Symbol::intern)
+                            .is_some_and(|f| Some(f) != program_path)
                     })
                 })
                 .collect()
@@ -464,12 +467,16 @@ impl Interpreter {
             // `use` that bound only lexical routines, or a replayed one,
             // #13906): then no name-keyed resolution cache can hold a routine
             // this pop removes, and none needs invalidating.
-            let tables_untouched = std::sync::Arc::ptr_eq(&func_snapshot, &self.registry().functions)
-                && std::sync::Arc::ptr_eq(&proto_sub_snapshot, &self.registry().proto_subs_snapshot())
-                && std::sync::Arc::ptr_eq(&proto_fn_snapshot, &self.registry().proto_functions)
-                && class_snapshot.shares_with(&self.registry().classes)
-                && shadowed_functions.is_empty()
-                && shadowed_proto_functions.is_empty();
+            let tables_untouched =
+                std::sync::Arc::ptr_eq(&func_snapshot, &self.registry().functions)
+                    && std::sync::Arc::ptr_eq(
+                        &proto_sub_snapshot,
+                        &self.registry().proto_subs_snapshot(),
+                    )
+                    && std::sync::Arc::ptr_eq(&proto_fn_snapshot, &self.registry().proto_functions)
+                    && class_snapshot.shares_with(&self.registry().classes)
+                    && shadowed_functions.is_empty()
+                    && shadowed_proto_functions.is_empty();
             // Remove functions added since the push, EXCEPT a module's own
             // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,
             // `Fancy::Utilities::EXPORT::ALL::lolgreet`). Those persist as long
@@ -517,59 +524,63 @@ impl Interpreter {
             if functions_unchanged {
                 self.drop_foreign_global_main_candidates(program_path);
             } else {
-            self.registry_mut().functions_mut().retain(|key, def| {
-                // A `GLOBAL::MAIN` candidate a module declared is lexical to the
-                // block that imported it even when a parse-time `use` already
-                // registered it before the block opened (and so into
-                // `func_snapshot`): only the program's own `MAIN` stays.
-                if let Some(file) = def.source_file.as_deref().map(Symbol::intern)
-                    && Some(file) != program_path
-                    && Self::is_global_main_key(key.as_str())
-                {
-                    return false;
-                }
-                if func_snapshot.contains_key(key) {
-                    return true;
-                }
-                let ks = key.resolve();
-                // A `MAIN` the block imported (`{ use CLI::Ecosystem; }` -- the
-                // idiom for loading a MAIN-exporting module without running
-                // it) is lexical to the block, so the program's own MAIN
-                // dispatch must not find it once the block is gone. The
-                // module's load keeps it in `module_keys`, which protects
-                // other routines but is not an owner of the importing scope's
-                // MAIN.
-                if Self::is_global_main_key(&ks) {
-                    return false;
-                }
-                if module_keys.contains(key) {
-                    return true;
-                }
-                if !scope_aliases.is_empty() {
-                    let base = ks.split_once('/').map_or(ks.as_str(), |(base, _)| base);
-                    if Symbol::lookup(base).is_some_and(|sym| scope_aliases.contains(&sym)) {
+                self.registry_mut().functions_mut().retain(|key, def| {
+                    // A `GLOBAL::MAIN` candidate a module declared is lexical to the
+                    // block that imported it even when a parse-time `use` already
+                    // registered it before the block opened (and so into
+                    // `func_snapshot`): only the program's own `MAIN` stays.
+                    if let Some(file) = def.source_file.as_deref().map(Symbol::intern)
+                        && Some(file) != program_path
+                        && Self::is_global_main_key(key.as_str())
+                    {
                         return false;
                     }
-                }
-                crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
-            });
+                    if func_snapshot.contains_key(key) {
+                        return true;
+                    }
+                    let ks = key.resolve();
+                    // A `MAIN` the block imported (`{ use CLI::Ecosystem; }` -- the
+                    // idiom for loading a MAIN-exporting module without running
+                    // it) is lexical to the block, so the program's own MAIN
+                    // dispatch must not find it once the block is gone. The
+                    // module's load keeps it in `module_keys`, which protects
+                    // other routines but is not an owner of the importing scope's
+                    // MAIN.
+                    if Self::is_global_main_key(&ks) {
+                        return false;
+                    }
+                    if module_keys.contains(key) {
+                        return true;
+                    }
+                    if !scope_aliases.is_empty() {
+                        let base = ks.split_once('/').map_or(ks.as_str(), |(base, _)| base);
+                        if Symbol::lookup(base).is_some_and(|sym| scope_aliases.contains(&sym)) {
+                            return false;
+                        }
+                    }
+                    crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
+                });
             }
             // An imported proto/multi family has lexical shadowing semantics,
             // but its candidates share the importing package's flat registry
             // keys. Restore any enclosing definitions that the first import in
             // this scope hid before leaving the scope.
-            self.registry_mut().functions_mut().extend(
-                shadowed_functions.into_iter().filter(|(key, def)| {
-                    // ...and what the import hid is not the program's `MAIN`
-                    // either when a module declared it.
-                    !(Self::is_global_main_key(key.as_str())
-                        && def
-                            .source_file
-                            .as_deref()
-                            .map(Symbol::intern)
-                            .is_some_and(|file| Some(file) != program_path))
-                }),
-            );
+            // Only when the import hid something: `functions_mut` copies the
+            // table while the snapshot still shares it.
+            if !shadowed_functions.is_empty() {
+                self.registry_mut()
+                    .functions_mut()
+                    .extend(shadowed_functions.into_iter().filter(|(key, def)| {
+                        // ...and what the import hid is not the program's `MAIN`
+                        // either when a module declared it.
+                        !(Self::is_global_main_key(key.as_str())
+                            && def
+                                .source_file
+                                .as_deref()
+                                .map(Symbol::intern)
+                                .is_some_and(|file| Some(file) != program_path))
+                    }));
+            }
             self.module.module_registered_functions = module_keys;
             // Same exception for classes: a module's own package-qualified
             // classes (`ScanCacheHelper::ScanCacheThing`) persist as long as the
@@ -598,8 +609,7 @@ impl Interpreter {
             {
                 self.registry_mut().proto_subs_retain(|key| {
                     proto_sub_snapshot.contains(key)
-                        || (crate::qualified::is_qualified_str(key)
-                            && !key.starts_with("GLOBAL::"))
+                        || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
                 });
             }
             if !std::sync::Arc::ptr_eq(&proto_fn_snapshot, &self.registry().proto_functions) {
@@ -611,9 +621,11 @@ impl Interpreter {
                     crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
                 });
             }
-            self.registry_mut()
-                .proto_functions_mut()
-                .extend(shadowed_proto_functions);
+            if !shadowed_proto_functions.is_empty() {
+                self.registry_mut()
+                    .proto_functions_mut()
+                    .extend(shadowed_proto_functions);
+            }
             // The `env` half: drop the aliases this scope imported (see
             // `restore_import_env_keys`). A PRELOAD scope (`scope_classes ==
             // false`, see `push_preload_scope`) keeps them.

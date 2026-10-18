@@ -24,8 +24,9 @@ use crate::runtime::lexical_imports::LexicalImport;
 /// What a block-scoped `use` wrote that its scope's exit removes again.
 #[derive(Clone)]
 pub(crate) struct LexicalImportReplay {
-    /// The module-merge env keys and the values the import bound them to.
-    env_keys: Vec<(Symbol, Value)>,
+    /// The module-merge env keys, the values the import bound them to and
+    /// the display names `record_import_env_key` gave them, if it did.
+    env_keys: Vec<(Symbol, Value, Option<Symbol>)>,
     /// The routine aliases it noted (`GLOBAL::name`).
     routine_aliases: Vec<Symbol>,
 }
@@ -125,7 +126,8 @@ impl Interpreter {
             if !key.with_str(|k| k.starts_with(merge)) {
                 return None;
             }
-            env_keys.push((*key, self.env.get_sym(*key)?.clone()));
+            let display = self.module.imported_env_aliases.get(key).copied();
+            env_keys.push((*key, self.env.get_sym(*key)?.clone(), display));
         }
         let routine_aliases = self
             .module
@@ -150,9 +152,16 @@ impl Interpreter {
         let Some(replay) = self.module.lexical_import_replays.get(&id).cloned() else {
             return false;
         };
-        for (key, value) in replay.env_keys {
+        // What `record_import_env_key` records for a key no enclosing import
+        // bound, without re-deriving the display name.
+        for (key, value, display) in replay.env_keys {
             self.env.insert_sym(key, value);
-            key.with_str(|k| self.record_import_env_key(k));
+            if let Some(display) = display {
+                self.module.imported_env_aliases.insert(key, display);
+            }
+            if let Some(top) = self.module.import_scope_stack.last_mut() {
+                top.imported_env_keys.insert(key);
+            }
         }
         if !replay.routine_aliases.is_empty() {
             let aliases = std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases);
