@@ -12,7 +12,7 @@
 //!   `cache` keeps the iterator, `gist` of an infinite sequence is `(...)`),
 //!   usually by handing the pulled prefix to the method's own row; or
 //! - it declines (`None`), and the lazy step reifies the receiver whole when
-//!   the method needs every element (`LAZY_REIFYING`, `methods_lazy_step.rs`).
+//!   the method needs every element (the reify table of `methods_lazy_step.rs`).
 //!
 //! The lazy step finds the pull by walking the owners of the type the receiver
 //! reports, most-derived first, so a lazy `@`-array's `AT-POS` is `Array`'s and

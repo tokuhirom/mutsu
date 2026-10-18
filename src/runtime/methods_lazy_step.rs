@@ -7,7 +7,7 @@
 //! 1. The method has a *pull* on the type the receiver reports
 //!    (`method_table::lazy_pull`): it answers from what it pulls (`AT-POS`,
 //!    `cache`, the placeholders of `gist`/`Str`/`raku`/`join`).
-//! 2. The method needs every element ([`LAZY_REIFYING`]): the receiver is
+//! 2. The method needs every element ([`reifies_lazy_receiver`]): the receiver is
 //!    reified and the call re-dispatched on a settled `Seq` of its elements,
 //!    whose rows answer it.
 //! 3. Neither: the call goes on to the later steps unchanged.
