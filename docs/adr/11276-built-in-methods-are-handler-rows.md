@@ -4542,6 +4542,27 @@ No behaviour change for the names the list had, bar `cmp` (Rakudo: `X::Method::N
 instance; mutsu now names `Pair`). Pinned in
 `t/collections/range-pair/pair-subclass-payload-methods.t`.
 
+### 9.181 The roles' type-object coercions and `Dateish`'s renderings are rows (2026-10-19)
+
+`refactor/11276-role-type-object-rows`. Two by-name gates of `call_method_with_values_inner` were
+role methods spelled out by hand:
+
+- `.Numeric`/`.Real` of the type object of a class composing the role warned "Use of
+  uninitialized value of type C in numeric context" and answered `C.new`. That is Rakudo's
+  `Numeric(Numeric:U:)` and `Real(Real:U:)`: the §9.179 rows `Numeric.Numeric` and `Real.Real`
+  now take a type object (`TYPE_OBJECT_OK`) and answer it so, through
+  `raise_resumable_warning`.
+- `.Str`/`.gist`/`.Stringy` of an instance of a user class composing `Dateish` called its
+  private `!formatter` as from a method of the class. They are rows of `Dateish`
+  (`collections/composed_dateish.rs`; Rakudo's `Str(Dateish:D:) { self!formatter }` and
+  `gist(Dateish:D:) { self.Str }`), reached through `composed_roles::answer` (`Dateish` joins its
+  owners). `Stringy` is `Mu`'s `self.Str`, and infix `~` and interpolation ask
+  `composed_roles::role_declares`, so no row of its own is needed. `Date`, `DateTime` and their
+  subclasses render natively and decline.
+
+No behaviour change. Pinned in `t/oo/role/real-role-composed-rows.t` and
+`t/oo/role/dateish-role-composition.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

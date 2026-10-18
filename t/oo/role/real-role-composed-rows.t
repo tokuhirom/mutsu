@@ -4,7 +4,7 @@ use Test;
 # through its `Bridge` (ADR-11276 §9.179); a class that does not compose it is
 # not bridged, whatever methods it has.
 
-plan 25;
+plan 29;
 
 class R does Real {
     has $.n;
@@ -46,3 +46,14 @@ ok B.new.Bool, 'a class with a Bridge keeps Mu.Bool';
 class M { method Numeric { 9 } }
 throws-like { M.new.sqrt }, X::Method::NotFound, 'a Numeric method alone does not either';
 is M.new + 1, 10, 'but the operators numify through it';
+
+# The type object's numeric coercions are the roles' `:U` candidates: they
+# warn about the undefined value and answer `self.new`.
+class Z does Real { has $.n = 0; method Bridge { $!n.Num } }
+isa-ok (quietly Z.Numeric), Z, 'Numeric of the type object is a new instance';
+isa-ok (quietly Z.Real), Z, 'Real of the type object too';
+class NumOnly does Numeric { }
+isa-ok (quietly NumOnly.Numeric), NumOnly, 'and Numeric of a Numeric-only class';
+my $warned = 0;
+{ Z.Numeric; CONTROL { when CX::Warn { $warned++; .resume } } }
+is $warned, 1, 'the coercion warns';
