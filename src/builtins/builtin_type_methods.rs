@@ -39,6 +39,15 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
     crate::builtins::native_method_row::introspectable_names_for_owner(owner)
 }
 
+/// Whether `method` is one of [`builtin_type_method_names`]`(type_name)`,
+/// without materialising the list.
+// Cost: O(1), one hash probe.
+pub(crate) fn builtin_type_method_listed(type_name: &str, method: &str) -> bool {
+    let owner = canonical_builtin_owner(type_name);
+    !owner.is_empty()
+        && crate::builtins::native_method_row::introspectable_name_listed(owner, method)
+}
+
 /// A representative sample VALUE for a *concrete* built-in type, used by
 /// `native_method_row.rs`'s inverse-probe tests to confirm a `RAW_ROWS` row's
 /// claimed arity is actually backed by the real native dispatch cascade.
@@ -157,9 +166,19 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
             crate::value::ValueView::RakuAst(node) => Symbol::intern(node.class.printed_name()),
             _ => Symbol::intern(&crate::value::what_type_name(value)),
         };
-        for arity in 0..=2u8 {
-            if crate::builtins::method_table::owner_row(own, sym, usize::from(arity)).is_some() {
-                arities |= 1 << arity;
+        // A built-in exception class (every `X::...` is one) also reaches the
+        // rows of `Exception`, which its MRO ends in (its control methods,
+        // ADR-11276 §9.163).
+        let exception = value
+            .instance_is_exception_by_name()
+            .then(|| Symbol::intern("Exception"));
+        for owner in std::iter::once(own).chain(exception) {
+            for arity in 0..=2u8 {
+                if crate::builtins::method_table::owner_row(owner, sym, usize::from(arity))
+                    .is_some()
+                {
+                    arities |= 1 << arity;
+                }
             }
         }
     }
@@ -513,5 +532,25 @@ mod tests {
                 assert!(known(parent), "MRO parent `{parent}` of `{ty}` is unknown");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod listed_tests {
+    use super::*;
+
+    /// The O(1) membership probe agrees with the enumerated name list.
+    #[test]
+    fn listed_matches_names_for_every_owner() {
+        for owner in BUILTIN_METHOD_OWNERS {
+            let names = builtin_type_method_names(owner);
+            for name in &names {
+                assert!(builtin_type_method_listed(owner, name), "{owner}.{name}");
+            }
+            assert!(!builtin_type_method_listed(owner, "no-such-method"));
+        }
+        assert!(builtin_type_method_listed("IO::Path", "lines"));
+        assert!(!builtin_type_method_listed("IO::Path", "chars"));
+        assert!(!builtin_type_method_listed("NoSuchType", "lines"));
     }
 }

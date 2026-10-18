@@ -140,7 +140,6 @@ mod vm_call_lexical_override;
 mod vm_call_light;
 mod vm_call_light_runtime_names;
 mod vm_call_site_ops;
-mod vm_exception_failure;
 mod vm_frame_lexical;
 mod vm_lex_import_builtin_op;
 mod vm_lex_import_call;

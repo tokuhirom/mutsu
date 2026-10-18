@@ -1,10 +1,8 @@
-//! Built-in methods whose invocant must be concrete (`:D:`), called on a
-//! *type object*: `X::NYI.throw`, `IO::Path.e`. Rakudo rejects these with
-//! `X::Parameter::InvalidConcreteness` from the invocant's signature binding;
-//! without this check mutsu would report "No such method" (the native row only
-//! serves instances) or fall through to a generic `Cool`/`Any` method.
-//! Shared by the CallMethod and CallMethodMut dispatch paths (a bareword-target
-//! method call like `X::NYI.throw` or `IO::Path.e` compiles to CallMethodMut).
+//! Numeric context on a built-in `IO::Path` type object (`IO::Path.Int`,
+//! `IO::Path + 1`): Rakudo rejects it with `X::Parameter::InvalidConcreteness`
+//! from `IO::Path.Numeric`'s `:D` invocant. A `:D:`-invocant method called
+//! explicitly is refused by its row (`RowFlags::DEFINITE`). Shared by the
+//! CallMethod and CallMethodMut dispatch paths.
 
 use super::*;
 
@@ -33,17 +31,13 @@ pub(super) fn io_path_numeric_concreteness_error(type_name: &str) -> Option<Runt
 }
 
 impl Interpreter {
-    /// `X::Parameter::InvalidConcreteness` for a `:D:`-invocant built-in
-    /// method called on a type object, or `None` when the call is fine.
+    /// `X::Parameter::InvalidConcreteness` for `Int` on a built-in `IO::Path`
+    /// type object, which is numeric context (`Mu.Int` is
+    /// `self.Numeric.Int`), or `None` when the call is fine.
     ///
-    /// - `fail`/`die`/`throw`/`rethrow`/`resume` (no args) on an Exception
-    ///   type object (`X::NYI.throw`).
-    ///
-    /// - `Int` on a built-in `IO::Path` type object, which is numeric context.
-    ///
-    /// `IO::Path`'s own `:D` methods (`IO::Path.e`) are refused by their rows
-    /// (`RowFlags::DEFINITE`).
-    // Cost: O(d), d = the class's parent-chain depth.
+    /// Every other `:D:`-invocant built-in method (`IO::Path.e`,
+    /// `X::NYI.throw`) is refused by its row (`RowFlags::DEFINITE`).
+    // Cost: O(1).
     pub(super) fn type_object_concreteness_error(
         &self,
         method: &str,
@@ -53,21 +47,9 @@ impl Interpreter {
         let ValueView::Package(type_name) = target.view() else {
             return None;
         };
-        let name = type_name.resolve();
-        // `Mu.Int` is `self.Numeric.Int`: numeric context, which a built-in
-        // `IO::Path` type object refuses.
         if method == "Int" && args.is_empty() {
-            return io_path_numeric_concreteness_error(&name);
+            return io_path_numeric_concreteness_error(type_name.as_str());
         }
-        if !matches!(method, "fail" | "die" | "throw" | "rethrow" | "resume") || !args.is_empty() {
-            return None;
-        }
-        let is_exc = name == "Exception"
-            || name.starts_with("X::")
-            || name.starts_with("CX::")
-            || self.class_inherits_from_exception(&name);
-        is_exc.then(|| {
-            RuntimeError::parameter_invalid_concreteness("Exception", &name, method, "", true, true)
-        })
+        None
     }
 }

@@ -11,6 +11,20 @@ impl Interpreter {
     // O(k + t + c), k = interned names under the package (the package index),
     // t = registered classes, roles and package declarations.
     pub(crate) fn package_stash_value(&self, package: &str) -> Value {
+        self.package_stash_value_with(package, false)
+    }
+
+    /// `GLOBAL`'s stash including what the loaded modules' merges put there:
+    /// the view a file-system CompUnit's `globalish-package` navigates
+    /// (`.globalish-package<Pkg>`), which is the loaded module's own packages.
+    // Cost: as `package_stash_value`.
+    pub(crate) fn globalish_stash_value(&self) -> Value {
+        self.package_stash_value_with("GLOBAL", true)
+    }
+
+    /// [`Self::package_stash_value`]; `module_merges` keeps in a `GLOBAL`
+    /// stash the entries only a module merge put there (#13802).
+    fn package_stash_value_with(&self, package: &str, module_merges: bool) -> Value {
         let package_name = Self::normalize_stash_package(package);
         // Classified once for the whole build (every member loop below asks).
         let package_sym = Symbol::intern(&package_name);
@@ -310,11 +324,19 @@ impl Interpreter {
                 .collect(),
         };
         drop(registry);
+        // A loaded module's own routines are its importers' lexicals, never
+        // `GLOBAL` members (#13802).
+        let module_units = (pkg_is_global && !module_merges).then(|| self.loaded_module_units());
         for (key, def) in &functions {
             let key_s = key.resolve();
             let Some(base) = self.routine_stash_member(&key_s, &package_name, true) else {
                 continue;
             };
+            if let Some(units) = &module_units
+                && self.routine_declared_in_units(def, units)
+            {
+                continue;
+            }
             if !registered_routines.insert(base.to_string()) {
                 continue;
             }
@@ -569,6 +591,11 @@ impl Interpreter {
             });
         }
 
+        // Rakudo installs a `use`d module's packages lexically in the
+        // importing scope, never in `GLOBAL` (#13802).
+        if pkg_is_global && !module_merges {
+            self.drop_module_merges_from_global(&mut symbols);
+        }
         Self::make_stash_instance(package, symbols)
     }
 

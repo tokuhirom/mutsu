@@ -476,6 +476,11 @@ fn instance_shape_of_type_object(target: &Value) -> Option<DispatchShape> {
 /// `X::Method::NotFound`).
 const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
 
+/// The container methods `Array` and `Hash` declare, which an array or hash
+/// with no settled shape (a typed, shaped or lazy one) answers from its own
+/// type's row ([`answer_shapeless`]; ADR-11276 §9.163).
+const CONTAINER_FOR_SHAPELESS: [&str; 1] = ["default"];
+
 /// `Cool`'s coercions a receiver with no shape reaches ([`answer_shapeless`];
 /// ADR-11276 §9.92): an enum, a lazy or shaped array, an unsettled `Seq`, an
 /// instance whose MRO reaches `Cool` with no built-in class declaring the name
@@ -627,6 +632,8 @@ fn walk_mro(
 /// - `Iterable`'s `lazy` ([`ITERABLE_FOR_SHAPELESS`]) and `flat($levels)`
 ///   answer a `LazyList` or unsettled `Seq` from `Seq`'s row and a lazy or
 ///   shaped array or a `Slip` from `List`'s.
+/// - `Array`'s and `Hash`'s `default` ([`CONTAINER_FOR_SHAPELESS`]) answer a
+///   typed, shaped or lazy array or hash from its own type's row.
 ///
 /// An instance walks its class's MRO and declines when a built-in class ahead
 /// of `Cool`/`Any` declares the method (`class MyPath is IO::Path` reads its
@@ -848,7 +855,8 @@ pub(crate) fn shapeless_row(
     let coerce =
         COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()) || lazy_complex || list_numeric;
     let text = text || coerce;
-    if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
+    let container = arity == 0 && CONTAINER_FOR_SHAPELESS.contains(&method.as_str());
+    if !(text || list || mu || iterable || container) || Receiver::of_settled(target).is_some() {
         return None;
     }
     // A `.VAR` descriptor asks the value its container holds (ADR-0064), which
@@ -876,6 +884,9 @@ pub(crate) fn shapeless_row(
         // `Iterable.hyper.configuration`).
         ValueView::Package(name) if iterable && name == "Iterable" => Symbol::intern("List"),
         _ if iterable => return None,
+        ValueView::Array(..) if container => Symbol::intern("Array"),
+        ValueView::Hash(_) if container => Symbol::intern("Hash"),
+        _ if container => return None,
         // `Mu`'s answers reach a `Failure` too: asking its truth handles it.
         ValueView::Instance { class_name, .. } if mu && class_name == "Failure" => mu_owner,
         // Without an interpreter no MRO can be read: `Mu`'s renderings answer
@@ -918,10 +929,10 @@ pub(crate) fn shapeless_row(
             }
         }
         // A package stash is a `Hash` of its symbols that `Any`'s `kv`,
-        // `pairs` and `hash` read as such (`any_views`, §9.109); its MRO has
-        // no row that does.
+        // `pairs`, `hash` and `elems` read as such (`any_views`, §9.109,
+        // §9.163); its MRO has no row that does.
         ValueView::Instance { class_name, .. }
-            if matches!(method.as_str(), "kv" | "pairs" | "hash" | "list")
+            if matches!(method.as_str(), "kv" | "pairs" | "hash" | "list" | "elems")
                 && crate::value::types::is_stash_class_name(&class_name.resolve()) =>
         {
             any

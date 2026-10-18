@@ -185,7 +185,11 @@ impl Interpreter {
         } = obj.view()
         {
             let key = attribute_meta_storage_key(meta, &obj_attrs, &attr_name);
-            return Ok(obj_attrs.set_attribute_value(key, new_val.clone()));
+            let stored = obj_attrs.set_attribute_value(key, new_val.clone());
+            // An `is repr('CStruct')` object that owns a native body keeps the
+            // field in C memory too (ADR-11209).
+            self.cstruct_store_through(&obj_attrs, key, new_val);
+            return Ok(stored);
         }
         Ok(Value::NIL)
     }

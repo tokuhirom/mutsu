@@ -1123,8 +1123,7 @@ impl Interpreter {
                 // declared per-type lists cover them. NativeHelpers::Blob's
                 // `blob-from-pointer` branches on `$type.can('allocate')` and
                 // takes a REPR-poking fallback when it wrongly answers false.
-                || crate::builtins::builtin_type_methods::builtin_type_method_names(&class_name)
-                    .contains(&method_name)
+                || crate::builtins::builtin_type_methods::builtin_type_method_listed(&class_name, method_name)
                 // Check native methods registered on the target class or its
                 // MRO. A proto with no candidates has no user overload row,
                 // but its marker is still an introspectable method.

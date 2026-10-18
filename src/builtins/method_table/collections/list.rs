@@ -605,6 +605,12 @@ pub(crate) fn default(target: &Value, _args: &[Value]) -> Option<Result<Value, R
             .default
             .as_deref()
             .cloned()
+            // A typed container's default is its element type (`my Int @a`).
+            .or_else(|| {
+                a.value_type
+                    .as_deref()
+                    .map(|t| Value::package(crate::symbol::Symbol::intern(t)))
+            })
             .unwrap_or_else(|| Value::package(crate::symbol::wk::any())))),
         _ => None,
     }

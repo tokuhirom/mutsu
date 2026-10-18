@@ -139,3 +139,23 @@ impl Interpreter {
             .is_some_and(|f| f.quit_seen)
     }
 }
+
+impl Interpreter {
+    /// `emit $value`, and `Mu.emit` (`emit self`): the value goes to the
+    /// innermost *dynamically* enclosing supply's emitter, else into the
+    /// innermost emit-buffer frame; outside any supply block it is a
+    /// `CX::Emit` control exception that a `CONTROL` block can observe.
+    // Cost: O(1) to buffer it; an emitter's `emit` runs its taps.
+    pub(crate) fn emit_to_supply(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        if let Some(emitter) = self.async_state.active_supply_emitters.last().cloned() {
+            return self
+                .call_method_with_values(emitter, "emit", vec![value])
+                .map(|_| Value::NIL);
+        }
+        if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
+            buf.push(value);
+            return Ok(Value::NIL);
+        }
+        Err(RuntimeError::emit_signal(value))
+    }
+}

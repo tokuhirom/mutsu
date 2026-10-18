@@ -7,6 +7,7 @@
 use super::{Handler, MethodRow, Named, RowFlags};
 
 pub(crate) mod blob;
+mod blob_class;
 pub(crate) mod blob_decode;
 pub(crate) mod blob_pos;
 pub(crate) mod blob_read;
@@ -101,6 +102,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     blob::BYTES_ROWS,
     blob::COERCE_ROWS,
     blob::OF_ROWS,
+    blob_class::ROWS,
     blob_decode::ROWS,
     blob_read::READ_ROWS,
     blob_read::SUBBUF_ROWS,

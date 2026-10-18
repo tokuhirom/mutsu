@@ -318,33 +318,6 @@ impl Interpreter {
     }
 
     /// Check if a class inherits from an immutable Setty type (Set, Bag, Mix).
-    /// Whether a user-declared class `name` inherits (transitively) from the base
-    /// `Exception` type (or a built-in `X::`/`CX::` exception). Walks the registry
-    /// parent chain with a shared borrow.
-    pub(crate) fn class_inherits_from_exception(&self, name: &str) -> bool {
-        self.class_inherits_from_exception_seen(name, &mut Vec::new())
-    }
-
-    fn class_inherits_from_exception_seen(&self, name: &str, seen: &mut Vec<String>) -> bool {
-        let Some((key, parents)) = self.resolved_class_parents(name) else {
-            return false;
-        };
-        if seen.contains(&key) {
-            return false;
-        }
-        seen.push(key);
-        for parent in &parents {
-            if parent == "Exception"
-                || parent.starts_with("X::")
-                || parent.starts_with("CX::")
-                || self.class_inherits_from_exception_seen(parent, seen)
-            {
-                return true;
-            }
-        }
-        false
-    }
-
     pub(crate) fn class_inherits_from_immutable_setty(&self, name: &str) -> bool {
         self.class_inherits_from_immutable_setty_seen(name, &mut Vec::new())
     }

@@ -461,7 +461,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Range", "Int", 1, 0),
     ("Range", "excludes-min", 1, 56),
     ("Range", "excludes-max", 1, 56),
-    ("Blob", "allocate", 8, 28),
+    ("Blob", "allocate", 6, 25),
     ("Blob", "new", 8, 26),
     ("Blob", "push", 8, 26),
     ("Blob", "pop", 8, 26),
@@ -490,6 +490,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "decode", 3, 24),
     ("Blob", "elems", 1, 24),
     ("Blob", "bytes", 1, 24),
+    ("Blob", "encoding", 1, 25),
+    ("Blob", "chars", 1, 24),
     ("Blob", "of", 1, 24),
     ("Blob", "reverse", 1, 24),
     ("Blob", "list", 1, 24),
@@ -532,6 +534,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // needs a SPECIAL row (never claims a `.^methods`-visible slot) to stop
     // being counted as unmodeled.
     ("Mu", "DEFINITE", 1, 60),
+    ("Mu", "emit", 1, 57),
     // ADR-0019 E2b: `Pair`/`Seq` rows, hand-probed against a real
     // `Value::pair`/`Value::seq` sample (2026-08-10) -- neither owner has a
     // `builtin_type_method_names` entry to draw candidates from (see
@@ -1519,6 +1522,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Exception", "die", 8, 60),
     ("Exception", "fail", 8, 60),
     ("Exception", "rethrow", 8, 60),
+    ("Exception", "Failure", 1, 56),
     ("IO::Path", "new", 8, 28),
     ("IO::Path", "path", 8, 60),
     ("Instant", "acos", 8, 60),

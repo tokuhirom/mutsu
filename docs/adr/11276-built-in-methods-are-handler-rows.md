@@ -4074,6 +4074,60 @@ Decision.
 Not done: `WhateverCode.gist` is still `WhateverCode.new`, where Rakudo prints the source (`* + 1`).
 Pinned in `t/types/mu-render-rows.t`.
 
+### 9.163 Exception's control methods, `Any.elems`, `Blob`'s class methods and `Mu.emit` are rows (2026-10-18)
+
+`refactor/11276-exception-control-rows`. Four by-name clusters of `call_method_with_values_inner`, the
+VM's CallMethod entry and the zero-argument cascade, each replaced by rows.
+
+**Exception's control methods.** `throw`, `rethrow`, `die`, `fail`, `resume` and `Failure` were two
+by-name blocks of `call_method_with_values_inner` (one for an `Exception` or `X::Control` MRO, one for an
+`X::`/`CX::` MRO), a VM gate refusing them on a type object, the VM's `exception_failure_method`, a VM
+step stamping a throw-site backtrace on a built-in exception, and two pure rows (`throw`, `resume`) that
+answered only the core classes.
+
+- They are `OWNER_ONLY | DEFINITE` `Handler::Interp` rows of `Exception`
+  (`instances/exception_control.rs`); the handlers are `Interpreter::exception_control` and
+  `failure_control` (`runtime/exception_control.rs`), which own the backtrace stamping, the throw-site
+  dynamics, the deferred user `message` (#12625), `X::Control` and `CX::Warn`.
+- One entry, `exception_control_by_mro`, sits where the first block was. It asks the table whether
+  `Exception` or `Failure` has an interpreter row for the call (a bit test and one scan), then whether the
+  receiver's MRO reaches that owner, and walks the late rows (`invoke_mro_late`). A class doing
+  `X::Control` reaches `Exception`: Rakudo's role is `X::Control is Exception`, a parent mutsu's MRO does
+  not list.
+- `DEFINITE` refuses a type object (`X::NYI.throw`), so the VM gate keeps only `IO::Path`'s numeric
+  context.
+- `Failure`'s `rethrow`, `die` and `fail` are rows of `Failure`. Rakudo answers them through `FALLBACK`,
+  so `rows_are_declared_by_rakudo` names them. Its `throw` stays the pure row.
+
+Behaviour change toward Rakudo: `.fail` of an *unhandled* `Failure` throws its exception (it answered a
+`Failure` of the `Failure`); `Exception.^can('Failure')` is true. Pinned in
+`t/exceptions/exception-control-rows.t`.
+
+**`Any.elems` and the containers' `default`.** `dispatch_core_numeric.rs`, the last family of the
+zero-argument cascade, answered `elems` and `default` for every receiver no row reached.
+
+- `Any.elems` is a `Narrow` row carrying the arm's body (a junction's eigenstates, a native buffer, a
+  genuinely lazy list's `X::Cannot::Lazy`, a stash's symbols), `TYPE_OBJECT_OK`. Like `end` (§9.109),
+  it joins `ANY_LIST_FOR_CLOSED_SHAPES`; a shape whose type declares `elems` answers its own row first.
+- `Array.default` and `Hash.default` answer a typed, shaped or lazy container through `answer_shapeless`
+  (`CONTAINER_FOR_SHAPELESS`).
+- `dispatch_core_numeric.rs` and `dispatch_core_families` are deleted: the zero-argument cascade ends in
+  `answer_shapeless`.
+
+Behaviour change toward Rakudo: a typed container's default is its element type (`my Int @a; @a.default`
+is `Int`). Pinned in `t/oo/method/elems-default-method-rows.t`.
+
+**`Blob`'s class methods.** `allocate`, `encoding` and `chars` (`X::Buf::AsStr`) are rows of `Blob` and
+`Buf` (`scalars/blob_class.rs`); `buf_allocate` needs no interpreter. `allocate` binds any fill
+(`OBJECT_ARGS`), and an instance is `X::Multi::NoMatch`, since every candidate is `Blob:U:`. The three
+by-name blocks go; their `chop`/`chomp` arm was unreachable, because a buffer is not `Cool` (#13313).
+`CArray[T].allocate` keeps its block. Pinned in `t/oo/method/blob-class-method-rows.t`.
+
+**`Mu.emit`.** Rakudo's `method emit() { emit self }` is an interpreter row reached by every receiver
+(`MU_FOR_CLOSED_SHAPES`). Its handler is the `emit` routine's own, `Interpreter::emit_to_supply`, so the
+method form also delivers to the dynamically enclosing supply's emitter. The two by-name `emit` blocks
+(interpreter and VM) go. Pinned in `t/oo/method/mu-emit-method-row.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
