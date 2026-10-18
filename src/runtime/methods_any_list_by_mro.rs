@@ -108,6 +108,13 @@ impl Interpreter {
         {
             return None;
         }
+        // An `is Pair` or quant-hash subclass answers its base's methods on
+        // the value it carries (`native_base::redirect`), not `Any`'s on itself.
+        if crate::builtins::native_base::has_collection_payload(target)
+            && crate::builtins::native_base::redirect(target, method).is_some()
+        {
+            return None;
+        }
         // `Mu.say`/`print`/`put`/`note` take no argument; a call with some is a
         // class acting as `$*OUT` (its own `print`), answered by the cascade.
         if matches!(method, "say" | "print" | "put" | "note") && !args.is_empty() {

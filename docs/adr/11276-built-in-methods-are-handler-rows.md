@@ -4520,6 +4520,28 @@ coercion (`builtins_operators_coerce.rs`), which is the operators' and stays.
 
 Pinned in `t/oo/role/real-role-composed-rows.t`.
 
+### 9.180 A built-in subclass answers its base's methods on its payload (2026-10-19)
+
+`refactor/11276-builtin-subclass-payload`. `dispatch_instance_and_fallback` opened with a list of
+nineteen names (`key`, `value`, `kv`, ..., `Str`, `Hash`, `Map`, `cmp`) that an `is Pair`
+subclass sent to the `Pair` it carries. The table's guard step already answers such an instance
+from its payload's rows (`native_base::redirect`, §9.79); what the list covered beyond it were
+the methods the `Pair` shape has no row for (`Hash`/`Map`, which are `Any`'s) and `Str`. The list
+is gone; instead:
+
+- the late instance step of `dispatch_instance_and_fallback` re-dispatches a method the class
+  does not declare (no user method or accessor) on `native_base::redirect`'s payload, for every
+  built-in subclass;
+- `Any`'s rows reached through the instance's own MRO walk (`shapeless_row`,
+  `any_list_method_by_mro`) decline for an `is Pair` or quant-hash subclass
+  (`native_base::has_collection_payload`), so `Any.Hash` runs on the `Pair`, not on the instance;
+- `redirect` answers `Str`/`Stringy` of an `is Pair` subclass with the `Pair`'s (`a\t3`, Rakudo's
+  `Pair.Str`); a scalar subclass keeps rendering itself.
+
+No behaviour change for the names the list had, bar `cmp` (Rakudo: `X::Method::NotFound` on the
+instance; mutsu now names `Pair`). Pinned in
+`t/collections/range-pair/pair-subclass-payload-methods.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
