@@ -1865,6 +1865,46 @@ impl Interpreter {
         // same-named private attribute (`$!index` of an unrelated class whose
         // method is up the call chain), so ask `self` first.
         if let CodeVarBinding::Routine(def) = &binding {
+            // A plain routine called with positional arguments takes the
+            // positional-light entry, as the registry alias the import used to
+            // install does in `dispatch_func_call_inner` (#13906). The general
+            // entry below handles everything else: named or Junction
+            // arguments, a deprecated routine, and the frame features the
+            // light binder declines.
+            if let Some(cf) = def.compiled_fn()
+                && def.deprecated_message.is_none()
+                && !args.iter().any(|a| {
+                    matches!(
+                        a.unwrap_varref().view(),
+                        ValueView::Pair(..) | ValueView::ValuePair(..)
+                    ) || Self::extract_junction_from_arg(a.unwrap_varref()).is_some()
+                })
+                && Self::is_positional_light_call_eligible(
+                    cf,
+                    &name,
+                    Self::positional_light_argc(&args),
+                    &args,
+                    Some(code),
+                )
+                && !Self::call_shares_container_into_scalar_param(cf, &args)
+                && !loan_env!(self, routine_is_test_assertion_by_name(&name, &args))
+                && self.wrap_sub_id_for_name(&name).is_none()
+            {
+                let cf = std::sync::Arc::clone(cf);
+                let fns = cf.compiled_fns.clone();
+                let result = self.call_compiled_function_positional_light(
+                    &cf,
+                    &args,
+                    fns.as_deref().unwrap_or(compiled_fns),
+                    &name,
+                    name_sym,
+                    Some(code),
+                )?;
+                let result =
+                    loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()))?;
+                self.stack.push(result);
+                return Ok(());
+            }
             self.set_pending_call_arg_sources(arg_sources);
             let result = self.call_lexical_import_routine(def, args, compiled_fns);
             self.set_pending_call_arg_sources(None);
