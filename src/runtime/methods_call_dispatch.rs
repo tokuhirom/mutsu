@@ -2375,23 +2375,6 @@ impl Interpreter {
             }
         }
 
-        // Zero-denominator Rat/FatRat .Str
-        if matches!(method, "Str" | "gist")
-            && args.is_empty()
-            && matches!(
-                target.view(),
-                ValueView::Rat(_, 0) | ValueView::FatRat(_, 0)
-            )
-            && let Some(err) = crate::runtime::utils::zero_denominator_rational_error(&target)
-        {
-            return Err(err);
-        }
-
-        // .hyper/.race with named args: validate and wrap (§9.137).
-        if matches!(method, "hyper" | "race") && !args.is_empty() {
-            return self.hyperize_with_config(&target, method, &args);
-        }
-
         // HyperSeq/RaceSeq: the methods they declare are their rows; every
         // other method reads the sequence as its `List` (§9.137).
         if let Some(owners) = crate::builtins::method_table::hyper_seq_owners_of(&target) {

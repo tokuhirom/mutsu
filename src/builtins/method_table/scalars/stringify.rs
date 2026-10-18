@@ -92,14 +92,18 @@ fn scripted(decimal: &str, digits: &[char; 11]) -> String {
 }
 
 /// `.Str`: the receiver itself for a `Str`, its rendering for a number, or
-/// `None` for a zero-denominator rational.
+/// `X::Numeric::DivideByZero` for a zero-denominator rational.
 // Cost: O(1) for a `Str` (the value is shared, not copied); O(n) for a
 // number, n = chars of the rendering.
 fn str(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
         ValueView::Str(_) => Some(Ok(target.clone())),
-        ValueView::Rat(_, 0) | ValueView::FatRat(_, 0) => None,
-        ValueView::BigRat(_, d) if num_traits::Zero::is_zero(d) => None,
+        ValueView::Rat(n, 0) | ValueView::FatRat(n, 0) => Some(Err(
+            RuntimeError::rational_to_str_divide_by_zero(Value::int(n)),
+        )),
+        ValueView::BigRat(n, d) if num_traits::Zero::is_zero(d) => Some(Err(
+            RuntimeError::rational_to_str_divide_by_zero(Value::from_bigint(n.clone())),
+        )),
         _ => Some(Ok(Value::str(target.to_string_value()))),
     }
 }
