@@ -106,11 +106,14 @@ impl Interpreter {
                 Some(slot)
                     if plan.hoist_seed_slots.contains(&slot)
                         && !code.param_locals.contains(&a.var)
-                        && !a.var.as_str().starts_with(['@', '%', '&'])
-                        // A still-empty slot boxes nothing (the in-sequence
-                        // pass binds it); only a value showing through
-                        // before the declaration needs the seeded cell.
-                        && self.locals.get(slot as usize).is_some_and(|v| !v.is_nil()) =>
+                        && !a.var.as_str().starts_with('&')
+                        && (self.hoist_seeds_own_aggregate(code, slot as usize, a.var)
+                            // A still-empty slot of another kind boxes
+                            // nothing (the in-sequence pass binds it); only a
+                            // value showing through before the declaration
+                            // needs the seeded cell.
+                            || (!a.var.as_str().starts_with(['@', '%'])
+                                && self.locals.get(slot as usize).is_some_and(|v| !v.is_nil()))) =>
                 {
                     let name = a.var.resolve();
                     self.pending_hoist_cell_at(slot as usize)
@@ -447,5 +450,23 @@ impl Interpreter {
                 env.insert_sym(*sym, cell);
             }
         }
+    }
+}
+
+impl Interpreter {
+    /// Whether the hoisted pass seeds the cell of `code`'s slot `slot`
+    /// although it is still empty: the routine's own plain `my @`/`my %`
+    /// (`CompiledCode::is_fresh_local`), which a call no longer fills by name.
+    /// A nested sub called before the declaration ran then shares the
+    /// container the declaration adopts, as in rakudo, instead of resolving
+    /// its free variable through a same-named sub's captured cell (#13890).
+    /// A scalar keeps reading by name until the in-sequence registration: its
+    /// cell would carry the container's native/atomic identity, which an
+    /// `is rw` argument checks (`t/nativecall/atomic-int-native-target.t`).
+    // Cost: O(1).
+    fn hoist_seeds_own_aggregate(&self, code: &CompiledCode, slot: usize, var: Symbol) -> bool {
+        var.with_str(|v| v.starts_with(['@', '%']))
+            && code.is_fresh_local(slot)
+            && self.locals.get(slot).is_some_and(Value::is_nil)
     }
 }
