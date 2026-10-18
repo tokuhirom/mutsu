@@ -4168,6 +4168,7 @@ t/oo/method/q-adverb-array-method-interp.t
 t/oo/method/qualified-method-call.t
 t/oo/method/qualified-name-method-multi-part-qualifier.t
 t/oo/method/qualified-parent-method-on-type-object.t
+t/oo/method/qualified-private-method-nested-owner.t
 t/oo/method/quanthash-str-clone-method-rows.t
 t/oo/method/quoted-pseudo-method-and-anon-enum-name.t
 t/oo/method/quoted-pseudo-method-on-variable.t
@@ -4794,6 +4795,7 @@ t/rakuast/rakuast-colonpair-allomorph.t
 t/rakuast/rakuast-colonpair-literal.t
 t/rakuast/rakuast-compound-assign.t
 t/rakuast/rakuast-compunit.t
+t/rakuast/rakuast-computed-package-adverbs.t
 t/rakuast/rakuast-constant-initializer-terms.t
 t/rakuast/rakuast-constant-smiley-term.t
 t/rakuast/rakuast-construct-block.t
@@ -4986,6 +4988,7 @@ t/rakuast/rakuast-proto-onlystar-coercion.t
 t/rakuast/rakuast-pseudo-type-coercion-param.t
 t/rakuast/rakuast-qualified-decl-name.t
 t/rakuast/rakuast-qualified-module-constants.t
+t/rakuast/rakuast-qualified-package-adverbs.t
 t/rakuast/rakuast-qualified-variable-declaration.t
 t/rakuast/rakuast-quietly-sigilless-callassign.t
 t/rakuast/rakuast-quoted-method-dispatch.t
@@ -6447,6 +6450,7 @@ t/routines/signature/param-invalid-type-suggestions.t
 t/routines/signature/param-is-required.t
 t/routines/signature/param-itemize-on-bind.t
 t/routines/signature/param-smiley-invalid-type.t
+t/routines/signature/param-type-constant-alias-resolves-at-declaration.t
 t/routines/signature/param-type-then-type-capture.t
 t/routines/signature/param-where-forward-ref.t
 t/routines/signature/paramdef-light-bind.t
@@ -6735,6 +6739,7 @@ t/types/buf-splice-list-bytes.t
 t/types/buf-type-object-repr.t
 t/types/buf-wide-read-write-int.t
 t/types/buf-write-int-int-subclass.t
+t/types/buf-write-rows.t
 t/types/cas-typed-constraint.t
 t/types/coercion/allomorph-angle-bracket-whitespace.t
 t/types/coercion/allomorph-numeric-compare.t
@@ -7856,6 +7861,7 @@ t/vm/writeback/scalar-share-holder-cell.t
 t/vm/writeback/scalar-store-alias-key-filter.t
 t/vm/writeback/scalar-store-array-share-mark.t
 t/vm/writeback/shared-array-mutate-keeps-container-cell.t
+t/vm/writeback/shared-array-mutator-rows.t
 t/vm/writeback/shared-array-push.t
 t/vm/writeback/shared-elem-assign.t
 t/vm/writeback/shared-store-lineage-scope.t

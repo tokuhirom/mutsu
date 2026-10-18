@@ -1355,3 +1355,10 @@ to the same `Expr` as an angle adverb. Angle forms remain words quotes, while
 parenthesized forms retain a `Circumfix::Parentheses` around their expression.
 The regression checks class and role declarations, angle and computed forms,
 source order, and evaluated metadata.
+
+### 6.75 S10: qualified package names with adverbs (2026-10-18)
+
+Package name adverbs now append `colonpairs` alongside an existing qualified
+`Name.parts` field. Lowering removes the adverbs while preserving the parts,
+then restores the parser's package header. The regression checks qualified
+class and role names, their adverbs, and EVAL of the resulting declarations.
