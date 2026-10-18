@@ -74,7 +74,7 @@ impl Compiler {
         }
         let resolved_at = |pd: &crate::ast::ParamDef| {
             let tc = pd.type_constraint.as_deref()?;
-            let resolved = self.resolve_type_alias_constraint(tc);
+            let resolved = self.declared_type_alias_target(tc);
             (resolved != tc).then_some(resolved)
         };
         if !defs.iter().any(|pd| resolved_at(pd).is_some()) {
@@ -110,10 +110,27 @@ impl Compiler {
         else {
             return tc_idx;
         };
-        let resolved = self.resolve_type_alias_constraint(&tc);
+        let resolved = self.declared_type_alias_target(&tc);
         if resolved == tc {
             return tc_idx;
         }
         self.code.add_constant(Value::str(resolved))
+    }
+
+    /// The type a declaration's constraint `tc` names once its `constant`
+    /// type alias is settled ([`Self::resolve_type_alias_constraint`]), or
+    /// `tc` itself when the alias chain ends at a package-qualified name.
+    /// What `P::S` names is decided by `P`'s stash at run time: an `our
+    /// constant S = P::S::S` there is the class, not the nested package
+    /// `P::S` the spelling suggests, and the compiler sees neither. The
+    /// alias's own name then resolves at run time, to the constant's value.
+    // Cost: O(a + n), a = the alias chain's length (at most 16), n = the
+    // resolved name's length.
+    fn declared_type_alias_target(&self, tc: &str) -> String {
+        let resolved = self.resolve_type_alias_constraint(tc);
+        if resolved != tc && crate::qualified::is_qualified_str(&resolved) {
+            return tc.to_string();
+        }
+        resolved
     }
 }
