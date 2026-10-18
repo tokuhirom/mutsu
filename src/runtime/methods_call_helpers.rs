@@ -412,8 +412,8 @@ impl Interpreter {
         data.splice_live(start, end, replacement)
     }
 
-    pub(super) fn buf_allocate(
-        &mut self,
+    // Cost: O(n), n = the elements allocated.
+    pub(crate) fn buf_allocate(
         class_name: Symbol,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {

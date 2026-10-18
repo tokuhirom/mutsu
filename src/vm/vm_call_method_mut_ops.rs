@@ -734,13 +734,13 @@ impl Interpreter {
         } else {
             args
         };
-        // `X::Foo.throw`/`.fail`/..., `IO::Path.e`/... on a type object (compiled
-        // here because the bareword target routes through CallMethodMut) require
-        // a concrete invocant: X::Parameter::InvalidConcreteness.
+        // Numeric context on a built-in `IO::Path` type object (`IO::Path.Int`,
+        // compiled here because the bareword target routes through
+        // CallMethodMut) requires a concrete invocant.
         if let Some(err) = self.type_object_concreteness_error(method, &args, &target) {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
-                "exception-concreteness",
+                "io-path-concreteness",
             );
             return Err(err);
         }
@@ -883,11 +883,6 @@ impl Interpreter {
             && let Some(weight) = self.quanthash_weight_pair_value(target.unwrap_varref())
         {
             self.stack.push(weight);
-            return Ok(());
-        }
-        if let Some(failure) = self.exception_failure_method(&target, method, &args) {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "Failure");
-            self.stack.push(failure);
             return Ok(());
         }
         // Mutating a lazy `@`-array (infinite source). raku rejects operations

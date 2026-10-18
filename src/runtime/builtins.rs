@@ -1034,18 +1034,7 @@ impl Interpreter {
                 // parser's `supply` rewrite only reaches `emit` written
                 // directly in the body, so route through the active emit
                 // buffer here — the same buffer the `.emit` method form uses.
-                if let Some(emitter) = self.async_state.active_supply_emitters.last().cloned() {
-                    return self
-                        .call_method_with_values(emitter, "emit", vec![value])
-                        .map(|_| Value::NIL);
-                }
-                if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
-                    buf.push(value);
-                    return Ok(Value::NIL);
-                }
-                // Outside any supply block this is a CX::Emit control
-                // exception that a CONTROL block can observe.
-                Err(RuntimeError::emit_signal(value))
+                self.emit_to_supply(value)
             }
             "return" => {
                 let mut err = RuntimeError::new("return");

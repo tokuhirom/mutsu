@@ -14,6 +14,7 @@ mod enum_how;
 mod grammar;
 mod mu_answers;
 mod mu_base;
+mod mu_emit;
 mod mu_identity;
 mod mu_isa;
 mod mu_numeric;
@@ -45,6 +46,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     mu_base::ROWS,
     mu_answers::ROWS,
     mu_identity::ROWS,
+    mu_emit::ROWS,
     mu_isa::ROWS,
     mu_numeric::ROWS,
     mu_render::ROWS,

@@ -9,8 +9,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         owner: "Any",
         name: "elems",
         arity: 0,
-        handler: Handler::Pure(elems),
-        flags: RowFlags::NONE,
+        handler: Handler::Narrow(elems),
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
     MethodRow {
@@ -64,10 +64,77 @@ fn enum_view(view: View) -> Value {
     super::any_enum_views::view(view, &super::any_enum_views::bool_variants())
 }
 
-// Cost: O(1), Any's scalar invocant is one element.
-pub(crate) fn elems(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    debug_assert!(scalar_like(target));
-    Ok(Value::int(1))
+/// `Any.elems`: the number of elements of whatever the invocant reads as a
+/// list. A scalar (and a type object) is one element; a genuinely lazy list
+/// has no count (a `Failure` of `X::Cannot::Lazy`, as in Rakudo); a lazy list
+/// that is not lazy declines, so the interpreter reifies and counts it. A
+/// receiver whose own type declares `elems` (a `List`, a `Range`, a quant hash)
+/// answers its own row first; this one answers the rest: a `Junction`'s
+/// eigenstates, a native `CArray`/`Buf` instance, a `Channel`, a `Stash`.
+// Cost: O(1) on a scalar, a reified list/array, hash or integer Range; a
+// finite LazyList is forced first (O(e), deferred to the runtime).
+pub(crate) fn elems(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if scalar_like(target) || matches!(target.view(), ValueView::Package(_)) {
+        return Some(Ok(Value::int(1)));
+    }
+    if let ValueView::LazyList(list) = target.view() {
+        // Only a GENUINELY lazy list refuses `.elems`; a plain `gather {...}`
+        // Seq, a `.map`/`.grep` pipe over a finite source and an
+        // `IO::CatHandle` pull are not lazy (`is_genuinely_lazy`).
+        if !list.is_genuinely_lazy() {
+            return None;
+        }
+        return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
+    }
+    // A lazy (infinite-backed) array cannot report its element count; checked
+    // before `as_list_items`, which would answer the capped backing length.
+    if let ValueView::Array(_, kind) = target.view()
+        && kind.is_lazy()
+    {
+        return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
+    }
+    if let Some(items) = target.as_list_items() {
+        return Some(Ok(Value::int(items.len() as i64)));
+    }
+    Some(Ok(match target.view() {
+        ValueView::Hash(items) => Value::int(items.len() as i64),
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+            return super::quanthash::elems(target, &[]);
+        }
+        ValueView::Junction { values, .. } => Value::int(values.len() as i64),
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) => {
+            // An unmanaged `CArray` (a `nativecast`ed handle: a bare C address
+            // and no storage) has no length, and Rakudo throws rather than
+            // answering 0 (`NativeHelpers::Blob`'s `dies-ok { $au.elems }`).
+            if !crate::value::value_buf::has_buf_elems(&attributes)
+                && attributes.contains_key("address")
+            {
+                return Some(Err(RuntimeError::new(
+                    "Don't know how many elements a C array returned from a library",
+                )));
+            }
+            Value::int(crate::value::value_buf::buf_len_or_zero(&attributes) as i64)
+        }
+        ValueView::Channel(_) => {
+            return crate::builtins::method_table::promise_channel::channel_elems(target, &[]);
+        }
+        _ if target.is_range() => return super::range::elems(target, &[]),
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if crate::value::types::is_stash_class_name(class_name.as_str()) => {
+            match attributes.as_map().get("symbols").map(Value::view) {
+                Some(ValueView::Hash(map)) => Value::int(map.len() as i64),
+                _ => Value::int(0),
+            }
+        }
+        _ => Value::int(1),
+    }))
 }
 
 /// `Any.end`: the last index of whatever the invocant reads as a list. A
