@@ -499,6 +499,24 @@ impl Interpreter {
         self.compile_and_call_function_def_inner(def, args, compiled_fns, caller, true)
     }
 
+    /// [`Self::compile_and_call_function_def_at`] for a call site that names
+    /// the routine `callsite_name`: a def it resolved through a
+    /// package-qualified name (`RE::name`) is called as
+    /// [`Self::compile_and_call_qualified_def`] calls one, so it is never
+    /// cached as what its bare name means in the calling package (#13873).
+    // Cost: O(1) on top of the call.
+    pub(crate) fn compile_and_call_function_def_named(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+        caller: Option<(&CompiledCode, &[Value])>,
+        callsite_name: Symbol,
+    ) -> Result<Value, RuntimeError> {
+        let bare = !crate::qualified::is_qualified(callsite_name);
+        self.compile_and_call_function_def_inner(def, args, compiled_fns, caller, bare)
+    }
+
     fn compile_and_call_function_def_inner(
         &mut self,
         def: &crate::ast::FunctionDef,
