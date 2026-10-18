@@ -2433,7 +2433,13 @@ impl Interpreter {
                     // The binder names a raw / `is rw` parameter's caller
                     // variable from these, as on the single-sub arm below.
                     self.set_pending_call_arg_sources(arg_sources.clone());
-                    let result = self.compile_and_call_function_def(&def, args, compiled_fns);
+                    let result = self.compile_and_call_function_def_named(
+                        &def,
+                        args,
+                        compiled_fns,
+                        None,
+                        name_sym,
+                    );
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
@@ -2493,7 +2499,13 @@ impl Interpreter {
                     {
                         let returns_container = Self::routine_is_rw_capable(&def);
                         self.set_pending_call_arg_sources(arg_sources.clone());
-                        let result = self.compile_and_call_function_def(&def, args, compiled_fns);
+                        let result = self.compile_and_call_function_def_named(
+                            &def,
+                            args,
+                            compiled_fns,
+                            None,
+                            name_sym,
+                        );
                         self.set_pending_call_arg_sources(None);
                         let result = result?;
                         loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
@@ -2564,11 +2576,12 @@ impl Interpreter {
                             // The binder names an `is rw` parameter's caller
                             // variable from these (mutsu#10520).
                             self.set_pending_call_arg_sources(arg_sources.clone());
-                            let result = self.compile_and_call_function_def_at(
+                            let result = self.compile_and_call_function_def_named(
                                 &def,
                                 args,
                                 compiled_fns,
                                 trir_args.map(|raw| (code, raw)),
+                                name_sym,
                             );
                             self.set_pending_call_arg_sources(None);
                             let result = result?;
@@ -2636,11 +2649,12 @@ impl Interpreter {
                     // parameter still needs the caller variable's name
                     // (mutsu#10520).
                     self.set_pending_call_arg_sources(arg_sources);
-                    let result = self.compile_and_call_function_def_at(
+                    let result = self.compile_and_call_function_def_named(
                         &def,
                         args,
                         compiled_fns,
                         caller_code,
+                        name_sym,
                     );
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
