@@ -1,10 +1,12 @@
 //! The `Buf` mutators (ADR-11276 §8.3, slice 3F remainder): `push`, `append`,
 //! `unshift`, `prepend`, `pop`, `shift`, `splice` and `reallocate`.
 //!
-//! Rakudo declares them on `Buf`, not on `Blob`, so the rows are `Buf`'s
-//! alone: a `Blob` or `utf8` receiver has no row and takes the cascade, which
-//! refuses the call. The recognition table folds `Buf`/`Blob`/`utf8` into one
-//! owner; what the rows add is the receiver's mutability.
+//! Rakudo declares them on `Buf`. `Blob` declares only the protos of `push`,
+//! `append`, `unshift` and `prepend`, whose candidates all want a `Buf:D`, so
+//! a `Blob` or encoding-buffer receiver gets `X::Multi::NoMatch` from `Blob`'s
+//! rows here and no row at all for `pop`, `shift` and `reallocate`
+//! (`X::Method::NotFound`). The recognition table folds `Buf`/`Blob`/`utf8`
+//! into one owner; what the rows add is the receiver's mutability.
 //!
 //! A named binding is written through the interpreter's by-name routines
 //! (`buf_mutate_method`, `buf_pop_shift_splice`, `buf_reallocate`), which
@@ -31,6 +33,20 @@ macro_rules! row {
     };
 }
 
+/// A `Blob` proto with no candidate for a `Blob:D` invocant.
+macro_rules! blob_row {
+    ($name:literal, $handler:ident) => {
+        MethodRow {
+            owner: "Blob",
+            name: $name,
+            arity: 0,
+            handler: Handler::Mut($handler),
+            flags: RowFlags::SLURPY,
+            named: &[],
+        }
+    };
+}
+
 /// Every row is slurpy from zero arguments, as the `Array` mutators are.
 pub(super) static ROWS: &[MethodRow] = &[
     row!("push", push_row),
@@ -41,7 +57,42 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("shift", shift_row),
     row!("splice", splice_row),
     row!("reallocate", reallocate_row),
+    blob_row!("push", blob_push_row),
+    blob_row!("append", blob_append_row),
+    blob_row!("unshift", blob_unshift_row),
+    blob_row!("prepend", blob_prepend_row),
 ];
+
+macro_rules! blob_handler {
+    ($fn:ident, $method:literal) => {
+        // Cost: O(a), a = arguments (their type names, for the message).
+        fn $fn(
+            interp: &mut Interpreter,
+            place: &mut ReceiverPlace<'_>,
+            args: &[Value],
+            _named: Named<'_>,
+        ) -> Option<Result<Value, RuntimeError>> {
+            let ValueView::Instance { class_name, .. } = place.value().descalarize().view() else {
+                return None;
+            };
+            let profile = interp.format_call_arg_profile(args);
+            Some(Err(
+                crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+                    $method,
+                    &class_name.resolve(),
+                    true,
+                    &profile,
+                    &[],
+                ),
+            ))
+        }
+    };
+}
+
+blob_handler!(blob_push_row, "push");
+blob_handler!(blob_append_row, "append");
+blob_handler!(blob_unshift_row, "unshift");
+blob_handler!(blob_prepend_row, "prepend");
 
 macro_rules! handler {
     ($fn:ident, $method:literal) => {
@@ -111,11 +162,7 @@ fn run(
 /// answer. `pop` and `shift` answer the element they would remove and leave the
 /// buffer alone.
 // Cost: O(e + k), e = elements, k = arguments' elements.
-pub(crate) fn by_value(
-    target: &Value,
-    method: &str,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
+fn by_value(target: &Value, method: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let ValueView::Instance {
         class_name,
         attributes,

@@ -112,6 +112,13 @@ pub(crate) fn register_buffer_class(class_name: &str, buffer_type: String) {
     ANY_BUFFER_CLASS.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Whether any user class has been registered as a buffer, so a caller can
+/// skip resolving a class name in a program that declares none.
+// Cost: O(1), one relaxed load.
+pub(crate) fn any_buffer_class() -> bool {
+    ANY_BUFFER_CLASS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The buffer type the user class `class_name` composes, when it is one (see
 /// [`register_buffer_class`]).
 // Cost: O(1) (one relaxed load; a hash lookup once any buffer class exists).

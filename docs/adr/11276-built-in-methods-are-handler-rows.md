@@ -4298,6 +4298,35 @@ the name).
 The `ArrayPush` opcode keeps its own lane; it is not a method call. Pinned in
 `t/vm/writeback/shared-array-mutator-rows.t`.
 
+### 9.170 `Buf`'s `write-*` family is rows; `Blob`'s mutator protos refuse (2026-10-18)
+
+`refactor/11276-buf-write-rows`. The 3B remainder named "the `write-*` family (no recognition rows)":
+`write-int8` .. `write-int128`, `write-uint8` .. `write-uint128`, `write-num32`, `write-num64`,
+`write-bits` and `write-ubits` had six copies: the VM native fast path (`try_native_buf_write`), the
+VM `CallMethodMut` lane (`try_native_buf_mut`), the interpreter's mutating entry (an instance and a
+type-object branch for each sub-family, and a `write-bits` instance fallback) and its by-value entry.
+
+- They are `Handler::Mut` rows of `Buf` (`mutating/buf_write.rs`), reached through `invoke_mut` from
+  every entry. A `Buf` type object now has the owner `Buf` (`mutating::owners_of`), so `buf8.write-*`
+  answers a fresh buffer from the same rows; an instance is written into its shared attribute cell.
+- One transform, `buf_write_int::apply_buf_write`, checks the argument count against Rakudo's
+  signatures (`Too few positionals passed; expected 3 or 4 arguments but got 2`) and computes the
+  bytes. The six copies go.
+- `Blob` declares only the protos of `push`, `append`, `unshift` and `prepend`. Its rows
+  (`mutating/buf.rs`) raise `X::Multi::NoMatch` for a `Blob:D` or an encoding buffer, and `pop`,
+  `shift` and `reallocate` have no `Blob` row, so they raise `X::Method::NotFound`. The two name-gated
+  interceptors that refused a `Blob` with an `X::AdHoc` go, and so does the by-value copy of the `Buf`
+  mutators that the rows already answered.
+- The recognition table gains the 14 names under its folded `Blob` owner, like `push`.
+
+Behaviour changes toward Rakudo: `buf8.write-bits`/`write-ubits` on a type object work; a `Blob`,
+`blob8` or `utf8` receiver of `write-*` raises `X::Method::NotFound` (an `X::AdHoc`, a write into the
+`utf8`, or a `Blob[uint8]` answer before); `Blob`'s mutators raise Rakudo's exception types; the
+argument-count error is Rakudo's. Pinned in `t/types/buf-write-rows.t`.
+
+- **Found, not fixed** (#13849): the folded `Blob` owner makes `Blob.can("reallocate")` and
+  `Blob.can("write-uint8")` true (Rakudo: false), as it already did for `reallocate`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

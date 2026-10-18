@@ -5,9 +5,8 @@
 //   method write-uint8(Buf:D: $offset, uint8 $value, $endian = NativeEndian --> Buf:D)
 //   (similarly for write-int8, write-uint16, ..., write-int128)
 
-use crate::symbol::Symbol;
-use crate::value::value_buf::{buf_elem_width, buf_raw_bytes_or_empty, set_buf_raw_bytes};
-use crate::value::{InstanceAttrs, RuntimeError, Value, ValueView};
+use crate::value::value_buf::buf_elem_width;
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Returns Some((byte_size, is_signed)) if the method is a write-int/uint method.
 pub(crate) fn write_int_info(method: &str) -> Option<(usize, bool)> {
@@ -185,121 +184,70 @@ pub(crate) fn apply_write_int(
     Ok(())
 }
 
-/// The shared attribute cell of a Buf *instance* receiver, captured so a write can be
-/// committed straight back into it (propagating to every binding sharing the same buf).
-struct BufWriteCell {
-    attributes: crate::gc::Gc<InstanceAttrs>,
-    class_sym: Symbol,
-    id: u64,
-}
-
-/// Non-mut native dispatch for the Buf write methods (`write-int*` / `write-uint*` /
-/// `write-num*`), covering both forms:
-/// - **type object** (`buf8.write-int32($off, $val, [$endian])`): builds a *fresh*
-///   buf, applies the write, returns it — a pure value transform, no interpreter state.
-/// - **instance** (`$b.write-int32(...)` reached without a mut binding, e.g. a
-///   `\sigilless`-bound buf or `(buf8.new).write-...`): applies the write to a copy of
-///   the current bytes and commits them straight into the receiver's *shared* attribute
-///   cell (`write_back_sharing` → `commit_attrs`), so every binding observing the same
-///   buf sees the mutation. Returns the updated value (which the method call yields).
-///
-/// Mirrors the interpreter's non-mut branches in `runtime/methods.rs` exactly: the byte
-/// transforms are the shared pure `apply_write_int` / `apply_write_num` impls.
-///
-/// Returns `None` (fall through to the interpreter) for:
-/// - non write-int/uint/num methods,
-/// - non Buf/Blob receivers,
-/// - `Blob`/`blob8` (type object has no such method in raku; instance is immutable —
-///   the interpreter raises "Cannot modify immutable Blob"). Current behavior preserved.
-/// - bad arity (not 2 or 3 args) and non-numeric offsets — the interpreter raises those
-///   errors / resolves Whatever positions.
-pub(crate) fn try_native_buf_write(
-    target: &Value,
+/// Apply the `write-*` call `method(args)` to `bytes`, the elements of a buffer
+/// of type `class_name` (empty for a type object, whose call answers a fresh
+/// buffer). The one implementation every receiver form shares (ADR-11276
+/// §9.170). The arguments are checked against Rakudo's signatures: `write-bits`
+/// and `write-ubits` take an offset, a bit count and a value; the others an
+/// offset, a value and an optional endianness.
+// Cost: O(e + w), e = elements (a write past the end grows the buffer), w =
+// bytes written.
+pub(crate) fn apply_buf_write(
+    class_name: &str,
+    bytes: Vec<u8>,
     method: &str,
     args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    let is_num = crate::builtins::buf_write_num::write_num_size(method).is_some();
-    let is_int = write_int_info(method).is_some();
-    if !(is_num || is_int) {
-        return None;
+) -> Result<Vec<u8>, RuntimeError> {
+    if matches!(method, "write-bits" | "write-ubits") {
+        check_positionals(args.len(), 3, 3)?;
+        let Some(from) = crate::runtime::Interpreter::value_to_non_negative_i64(&args[0]) else {
+            return Err(RuntimeError::new(
+                "write-ubits/write-bits expects Int offset",
+            ));
+        };
+        let Some(bits) = crate::runtime::Interpreter::value_to_non_negative_i64(&args[1]) else {
+            return Err(RuntimeError::new(
+                "write-ubits/write-bits expects Int bit count",
+            ));
+        };
+        return crate::builtins::buf_bits::write_bits(&bytes, from, bits, &args[2]);
     }
-    // Resolve the receiver into class name, current bytes, and (for instances) the
-    // shared attribute cell to commit back into.
-    let cn: String;
-    let mut bytes: Vec<u8> = Vec::new();
-    let inst: Option<BufWriteCell>;
-    match target.view() {
-        ValueView::Package(name) => {
-            cn = name.resolve();
-            if !crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                return None;
-            }
-            inst = None;
-        }
-        ValueView::Instance {
-            class_name,
-            attributes,
-            id,
-        } => {
-            cn = class_name.resolve();
-            if !crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                return None;
-            }
-            bytes = buf_raw_bytes_or_empty(&attributes);
-            inst = Some(BufWriteCell {
-                attributes: attributes.clone(),
-                class_sym: class_name,
-                id,
-            });
-        }
-        _ => return None,
-    }
-    // Blob has no write methods (type object) and is immutable (instance) — let the
-    // interpreter own those semantics so current behavior is byte-identical.
-    if crate::runtime::utils::is_blob_like_class(&cn) && !cn.starts_with("utf") {
-        return None;
-    }
-    if args.len() < 2 || args.len() > 3 {
-        return None;
-    }
-    let offset_i64 = match args[0].view() {
+    check_positionals(args.len(), 2, 3)?;
+    let offset = match args[0].view() {
         ValueView::Int(i) => i,
         ValueView::Num(f) => f as i64,
-        _ => return None,
+        _ => 0,
     };
-    let endian_val = if args.len() == 3 {
-        crate::builtins::buf_write_num::decode_endian(&args[2])
-    } else {
-        0
-    };
-    let width = buf_elem_width(&cn);
-    let res = if is_num {
+    let endian = args
+        .get(2)
+        .map_or(0, crate::builtins::buf_write_num::decode_endian);
+    let width = buf_elem_width(class_name);
+    let mut bytes = bytes;
+    if crate::builtins::buf_write_num::write_num_size(method).is_some() {
         crate::builtins::buf_write_num::apply_write_num(
-            &mut bytes, method, offset_i64, &args[1], endian_val, width,
-        )
+            &mut bytes, method, offset, &args[1], endian, width,
+        )?;
     } else {
-        apply_write_int(&mut bytes, method, offset_i64, &args[1], endian_val, width)
+        apply_write_int(&mut bytes, method, offset, &args[1], endian, width)?;
+    }
+    Ok(bytes)
+}
+
+/// Rakudo's signature-bind failure for `n` positionals against a method taking
+/// `min..=max` besides the invocant, which its count includes.
+// Cost: O(1).
+fn check_positionals(n: usize, min: usize, max: usize) -> Result<(), RuntimeError> {
+    if (min..=max).contains(&n) {
+        return Ok(());
+    }
+    let expected = if min == max {
+        format!("{}", min + 1)
+    } else {
+        format!("{} or {}", min + 1, max + 1)
     };
-    if let Err(e) = res {
-        return Some(Err(e));
-    }
-    match inst {
-        Some(cell) => {
-            let mut updated_map = cell.attributes.to_map();
-            set_buf_raw_bytes(&mut updated_map, cell.class_sym, bytes);
-            Some(Ok(Value::write_back_sharing(
-                &cell.attributes,
-                cell.class_sym,
-                updated_map,
-                cell.id,
-            )))
-        }
-        None => {
-            let normalized = crate::runtime::utils::normalize_buf_type_name(&cn);
-            Some(Ok(crate::builtins::buf_write_num::make_buf_value_from_raw(
-                &normalized,
-                bytes,
-            )))
-        }
-    }
+    let few_or_many = if n < min { "few" } else { "many" };
+    Err(RuntimeError::new(format!(
+        "Too {few_or_many} positionals passed; expected {expected} arguments but got {}",
+        n + 1
+    )))
 }
