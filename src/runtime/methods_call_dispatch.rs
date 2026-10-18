@@ -1942,16 +1942,6 @@ impl Interpreter {
         // for this cascade: if it declines, the original `args` (nameds intact)
         // go on to the by-name dispatchers, the constructors and the user
         // method, none of which may lose a named.
-        // The interpreter-side twin of `try_native_method_raw`'s `base`
-        // interceptor: `.base($radix, $digits, :no-trailing-zeroes)` is a
-        // three-argument call no arity arm matches, so the adverb has to be read
-        // before the cascade or the implicit-`*%_` retry silently drops it.
-        if method == "base"
-            && !bypass_native_fastpath
-            && let Some(result) = crate::builtins::native_base_with_options(&target, &args)
-        {
-            return result;
-        }
         if method == "AT-POS"
             && !bypass_native_fastpath
             && let Some(result) = self.builtin_at_pos(&target, &args)

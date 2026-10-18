@@ -609,44 +609,6 @@ impl Interpreter {
         {
             return Some(result);
         }
-        // `.contains($needle, $pos?, :i/:m?)` — the positioned / case-insensitive
-        // forms carry a Pair or a 3rd arg, so they never reach the arity-keyed
-        // native_method_*arg dispatch below. Handle them natively (pure Str search,
-        // mirrors Interpreter::dispatch_contains). The bare single-needle form keeps
-        // its native_method_1arg arm; out-of-range / BigInt positions fall through.
-        if method_name == "contains"
-            && let Some(result) = crate::builtins::native_contains_with_options(target, args)
-        {
-            return Some(result);
-        }
-        // `.starts-with`/`.ends-with`/`.substr-eq` with `:i`/`:ignorecase` markings
-        // (and, for substr-eq, a start position) carry a Pair / 3rd arg that pushes
-        // them past the arity-keyed dispatch below. Handle the case-insensitive forms
-        // natively (mirror dispatch_prefix_suffix_check / dispatch_substr_eq); the bare
-        // forms keep their 1-/2-arg arms, and `:m`/out-of-range fall through.
-        if matches!(method_name, "starts-with" | "ends-with")
-            && let Some(result) = crate::builtins::native_prefix_suffix_with_options(
-                target,
-                args,
-                method_name == "starts-with",
-            )
-        {
-            return Some(result);
-        }
-        if method_name == "substr-eq"
-            && let Some(result) = crate::builtins::native_substr_eq_with_options(target, args)
-        {
-            return Some(result);
-        }
-        // `.base($radix, $digits, :no-trailing-zeroes)` — the one adverb `base`
-        // declares. It has to be read in front of the cascade: a three-argument
-        // call matches no arity arm, and the implicit-`*%_` retry then drops the
-        // adverb before the 2-ary arm sees it.
-        if method_name == "base"
-            && let Some(result) = crate::builtins::native_base_with_options(target, args)
-        {
-            return Some(result);
-        }
         // `Range.int-bounds($from is rw, $to is rw --> Bool)`: writes the bounds
         // into the caller's containers, so it needs `&mut self` and the call
         // site's arg-source names (see `vm/vm_range_int_bounds.rs`). The
