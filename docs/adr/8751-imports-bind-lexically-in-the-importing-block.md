@@ -346,8 +346,9 @@ Consequences that pin the design:
   - The built-in operators outside those lists (`x`, `xx`, a `postfix`,
     `postcircumfix`) keep their imported candidates in the registry. A
     callee outside the block still sees those, and a closure taken out of
-    the block loses them. (Rakudo ignores a user `infix:<xx>` candidate
-    altogether; mutsu calls it.)
+    the block loses them. (Rakudo 2026.09 ignores an *imported*
+    `infix:<xx>` candidate inside the block, though it calls one the unit
+    declares itself; mutsu calls both.)
   - A program's own `multi infix:<(|)>` candidate also answers `∪` (#13795):
     the binary op does not know which spelling it was compiled from.
   - `X`/`Z`/`R` over a user operator do not parse yet (#13591). When they
