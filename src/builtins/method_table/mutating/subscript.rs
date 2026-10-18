@@ -69,7 +69,7 @@ fn read_only(typename: &str, value: &Value) -> RuntimeError {
 /// hash keying by `.WHICH` and remembering the key object. Answers `$value`.
 // Cost: O(1) expected (one hash insert; an object hash also records its key
 // object).
-fn hash_assign_key(
+pub(super) fn hash_assign_key(
     interp: &mut Interpreter,
     place: &mut ReceiverPlace<'_>,
     args: &[Value],

@@ -54,7 +54,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// Answers the bound value.
 // Cost: O(1) expected (one hash insert; an object hash also records its key
 // object).
-fn hash_bind_key(
+pub(super) fn hash_bind_key(
     interp: &mut Interpreter,
     place: &mut ReceiverPlace<'_>,
     args: &[Value],

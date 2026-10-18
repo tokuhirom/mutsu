@@ -70,7 +70,7 @@ pub(crate) use collections::sampling::callable_count as sampling_callable_count;
 pub(crate) use collections::{
     any_enum_views, clone as collection_clone, lazy, list, list_aggregate, positional, quanthash,
     range, render as collection_render, render_names as collection_render_names,
-    rotate as collection_rotate, subscript, terminals,
+    rotate as collection_rotate, terminals,
 };
 pub(crate) use ctors_mop::attribute::owners_of as attribute_owners_of;
 pub(crate) use instances::code_methods::method_object_answer;
