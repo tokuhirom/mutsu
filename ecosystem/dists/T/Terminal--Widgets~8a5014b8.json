@@ -20,7 +20,30 @@
     "unresolved": []
   },
   "dist": "Terminal::Widgets",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 22.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "Terminal::Widgets": "ok",
     "Terminal::Widgets::App": "ok",
@@ -66,7 +89,7 @@
     "Terminal::Widgets::Viewer::Tree": "ok",
     "Terminal::Widgets::Viz::SmokeChart": "ok",
     "Terminal::Widgets::Viz::Sparkline": "ok",
-    "Terminal::Widgets::Volatile::DirTree": "Unknown role: VTree::Node",
+    "Terminal::Widgets::Volatile::DirTree": "ok",
     "Terminal::Widgets::Volatile::Tree": "ok",
     "Terminal::Widgets::Widget": "ok",
     "Terminal::Widgets::WidgetRegistry": "ok",
@@ -74,10 +97,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-17",
+    "date": "2026-10-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ce113a66",
+    "mutsu_commit": "e152e90b",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -88,12 +111,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERMINAL_WIDGETS/56e26be85bf16b3e8778cabba90ab60a6a347005.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.3.2"

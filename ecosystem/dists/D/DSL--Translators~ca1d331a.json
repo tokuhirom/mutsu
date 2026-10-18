@@ -19,6 +19,7 @@
       "DSL::English::DataQueryWorkflows",
       "DSL::English::EpidemiologyModelingWorkflows",
       "DSL::English::FoodPreparationWorkflows",
+      "DSL::English::IntegrationWorkflows",
       "DSL::English::LatentSemanticAnalysisWorkflows",
       "DSL::English::QuantileRegressionWorkflows",
       "DSL::English::RecommenderWorkflows",
@@ -114,7 +115,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.11,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -124,14 +125,14 @@
       "cmp": "no_baseline",
       "path": "t/02-RecommenderWorkflows-Python.rakutest",
       "raku": {
-        "first_failure": "simple-Titanic-command",
-        "nok": 4,
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
         "ok": 0,
-        "plan": 4,
-        "secs": 169.12,
+        "plan": null,
+        "secs": 240.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "timeout"
       }
     },
     {
@@ -142,7 +143,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 10.17,
+        "secs": 194.51,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -156,7 +157,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 10.22,
+        "secs": 13.9,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -170,7 +171,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 9.44,
+        "secs": 12.89,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -184,7 +185,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 7.65,
+        "secs": 13.18,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -198,7 +199,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 8.16,
+        "secs": 13.76,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -212,7 +213,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 8.01,
+        "secs": 12.92,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -226,7 +227,7 @@
         "nok": 3,
         "ok": 1,
         "plan": 4,
-        "secs": 8.03,
+        "secs": 10.6,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -238,10 +239,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-17",
+    "date": "2026-10-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ce113a66",
+    "mutsu_commit": "e152e90b",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -250,7 +251,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/SL/DSL_TRANSLATORS/80522b95512178acd0a4b3a33fb1de9c080dfedf.tar.gz"
+    "url": "https://360.zef.pm/D/SL/DSL_TRANSLATORS/5186dee2e56a89045802992fe41110e8efd902a3.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -260,5 +261,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

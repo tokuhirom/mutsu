@@ -30,11 +30,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller prefix:<!>(Hash:D); none of these signatures matches",
-        "nok": 1,
+        "first_failure": "No such method 'columns' for invocant of type",
+        "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.25,
+        "secs": 5.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -44,7 +44,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 149.42,
+        "secs": 60.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,11 +53,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "falling back (to mute this message, please define the $*RED-FALLBACK variable): Ambiguous call to 'where(Post::ResultSeq: )'; these signatures all match:",
+        "first_failure": "No matching candidate found for the parametric role",
         "nok": 3,
         "ok": 14,
         "plan": null,
-        "secs": 15.94,
+        "secs": 11.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -67,7 +67,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 4.38,
+        "secs": 2.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.36,
+        "secs": 2.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.55,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -101,10 +101,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-17",
+    "date": "2026-10-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ce113a66",
+    "mutsu_commit": "e152e90b",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
