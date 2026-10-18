@@ -195,7 +195,9 @@ fn vivify_hash_then(
     }
     let name = place.name()?.to_string();
     if let Some(type_name) = containerless_type_object(interp, &name, place.value()) {
-        return Some(Err(RuntimeError::assign_requires_concrete_object(&type_name)));
+        return Some(Err(RuntimeError::assign_requires_concrete_object(
+            &type_name,
+        )));
     }
     let vivified =
         match interp.vivify_binding(&name, Value::hash(crate::value::ValueMap::default())) {
@@ -240,7 +242,11 @@ fn any_bind_key(
         let profile = interp.format_call_arg_profile(args);
         return Some(Err(
             crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
-                "BIND-KEY", &type_name, false, &profile, &[],
+                "BIND-KEY",
+                &type_name,
+                false,
+                &profile,
+                &[],
             ),
         ));
     }
