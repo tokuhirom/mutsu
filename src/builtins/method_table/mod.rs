@@ -77,6 +77,7 @@ pub(crate) use instances::code_methods::method_object_answer;
 pub(crate) use instances::collation::owners_of as collation_owners_of;
 pub(crate) use instances::compunit::owners_of as compunit_owners_of;
 pub(crate) use instances::enumeration::owners_of as enumeration_owners_of;
+pub(crate) use instances::hyper_seq::answers_as_itself as hyper_seq_answers_as_itself;
 pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;

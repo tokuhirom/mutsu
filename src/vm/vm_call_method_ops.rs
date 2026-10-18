@@ -1685,77 +1685,16 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
-        if matches!(
-            target.view(),
-            ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
-        ) {
-            match method {
-                "^name" => {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-name",
-                    );
-                    let name = if matches!(target.view(), ValueView::HyperSeq(_)) {
-                        "HyperSeq"
-                    } else {
-                        "RaceSeq"
-                    };
-                    self.stack.push(Value::str(name.to_string()));
-                    // Pure reflection (no env write): no env_dirty mark needed.
-                    return Ok(());
-                }
-                "WHAT" => {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-what",
-                    );
-                    let name = if matches!(target.view(), ValueView::HyperSeq(_)) {
-                        "HyperSeq"
-                    } else {
-                        "RaceSeq"
-                    };
-                    self.stack.push(Value::package(Symbol::intern(name)));
-                    // Pure reflection (no env write): no env_dirty mark needed.
-                    return Ok(());
-                }
-                "isa" | "does" => {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-isa",
-                    );
-                    let type_name = if !args.is_empty() {
-                        match args[0].view() {
-                            ValueView::Package(name) => name.resolve(),
-                            ValueView::Str(s) => (**s).clone(),
-                            _ => args[0].to_string_value(),
-                        }
-                    } else {
-                        String::new()
-                    };
-                    // Delegate to isa_check which handles the full type hierarchy
-                    let result = target.isa_check(&type_name);
-                    self.stack.push(Value::truth(result));
-                    // Pure reflection (no env write): no env_dirty mark needed.
-                    return Ok(());
-                }
-                "defined" => {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-defined",
-                    );
-                    self.stack.push(Value::TRUE);
-                    // Pure reflection (no env write): no env_dirty mark needed.
-                    return Ok(());
-                }
-                _ => {}
-            }
-        }
         // Convert HyperSeq/RaceSeq to List for method dispatch
         let target = match target.view() {
-            ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => Value::array_with_kind(
-                crate::value::Value::array_arc(items.to_vec()),
-                crate::value::ArrayKind::List,
-            ),
+            ValueView::HyperSeq(items) | ValueView::RaceSeq(items)
+                if !crate::builtins::method_table::hyper_seq_answers_as_itself(method) =>
+            {
+                Value::array_with_kind(
+                    crate::value::Value::array_arc(items.to_vec()),
+                    crate::value::ArrayKind::List,
+                )
+            }
             _ => target,
         };
         // Regex.Bool / Regex.so: smartmatch against $_ (needs runtime context)
