@@ -1473,19 +1473,10 @@ impl Interpreter {
             return self.call_method_with_values(list, method, args);
         }
 
-        // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
-        // lazy index-pipe stage instead of forcing the source (mirrors the
-        // CallMethodMut fast-path so a chained `.pairs` stays lazy too).
-        if args.is_empty()
-            && let Some(pipe) =
-                crate::builtins::lazy_scan::index_pipe_method(&target, method, false)
-        {
-            return Ok(pipe);
-        }
-
-        // Stream `.skip`/`.rotor`/`.unique`/... over a lazy invocant (#9159).
-        if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
-            return Ok(pipe);
+        // A streaming method (`skip`, `rotor`, `pairs`, ...) on a receiver
+        // that may not end: a lazy stage over it (ADR-13891 §4).
+        if let Some(stage) = self.lazy_stream(&target, method, &args) {
+            return Ok(stage);
         }
 
         // A lazy receiver: a method's pull answers from what it reads, a method

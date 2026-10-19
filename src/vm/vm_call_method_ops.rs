@@ -1547,22 +1547,12 @@ impl Interpreter {
         // Non-gather LazyLists (e.g. from infinite ranges) are NOT forced here — they
         // go through builtins which may return Failure for methods like .elems.
         // Exception: .List and .values on coroutine-equipped gathers preserve laziness.
-        // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
-        // lazy index-pipe stage instead of forcing (mirrors the CallMethodMut
-        // fast-path so a chained `.pairs` stays lazy too).
-        if args.is_empty()
-            && let Some(pipe) = crate::builtins::lazy_scan::index_pipe_method(&target, method, true)
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-index-pipe");
-            self.stack.push(pipe);
-            return Ok(());
-        }
-        // `.skip`/`.rotor`/`.batch`/`.unique`/`.repeated`/`.squish`/`.produce`/
-        // `.flat` over a lazy invocant: stream through an adaptor stage
-        // instead of forcing the (possibly infinite) source (#9159).
-        if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-adaptor");
-            self.stack.push(pipe);
+        // A streaming method (`skip`, `rotor`, `pairs`, ...) on a receiver
+        // that may not end: a lazy stage over it instead of forcing the
+        // (possibly infinite) source (ADR-13891 §4).
+        if let Some(stage) = self.lazy_stream(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-stream");
+            self.stack.push(stage);
             return Ok(());
         }
         let target = if let ValueView::LazyList(ll) = target.view()

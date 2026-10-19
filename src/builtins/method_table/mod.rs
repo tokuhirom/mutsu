@@ -54,6 +54,7 @@ pub(crate) mod index_arg;
 mod instances;
 mod io_concurrency;
 pub(crate) mod lazy_pull;
+pub(crate) mod lazy_stream;
 mod lazy_refusal;
 mod mutating;
 mod place;

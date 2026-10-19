@@ -158,7 +158,7 @@ pub(crate) fn reifies(method: &str) -> bool {
 /// The owners a lazy receiver's methods are looked up on: the MRO of the type
 /// it reports.
 // Cost: O(1).
-fn owners_of(target: &Value) -> &'static [&'static str] {
+pub(super) fn owners_of(target: &Value) -> &'static [&'static str] {
     const fn mro(name: &str) -> &'static [&'static str] {
         match crate::builtin_types::catalog::builtin_type_mro_strs(name) {
             Some(mro) => mro,
