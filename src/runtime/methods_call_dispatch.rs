@@ -1435,16 +1435,6 @@ impl Interpreter {
                 native_result.is_some(),
             );
         }
-        // .raku/.perl on a container holding a value whose repr is only
-        // reachable through method dispatch (a user instance, a built-in object
-        // type). See `methods_raku_dispatch`.
-        if matches!(method, "raku")
-            && args.is_empty()
-            && let Some(rendered) = self.raku_repr_with_dispatch(&target)
-        {
-            return Ok(Value::str(rendered));
-        }
-
         if let Some(result) = native_result {
             return result;
         }
