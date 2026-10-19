@@ -62,6 +62,9 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
     "Mu"."item" => item,
     "Mu"."Stringy" => stringy,
     "Any"."values" => values,
+    "Any"."list" => list_context,
+    "Any"."List" => list_context,
+    "Any"."first" => first,
     "Any"."sum" => super::lazy_refusal::sum,
     "Any"."reverse" => super::lazy_refusal::reverse,
     "Any"."pick" => super::lazy_refusal::pick,
@@ -331,6 +334,42 @@ fn item(
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     args.is_empty().then(|| Ok(target.clone().item()))
+}
+
+/// `list`/`List` of a live `gather`: the same sequence, reporting `List`, so
+/// it stays pullable one `take` at a time (a `for` over it sees the elements
+/// already taken before a later `die`), and a later reify renders a `List`
+/// rather than a `Seq`. Any other lazy receiver declines.
+// Cost: O(1).
+fn list_context(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    (args.is_empty() && list.coroutine.is_some()).then(|| {
+        Ok(Value::lazy_list(crate::gc::Gc::new(
+            list.with_list_context(),
+        )))
+    })
+}
+
+/// `first`: pull until an element matches, instead of reifying a sequence
+/// that may be infinite (`Interpreter::try_lazy_gather_first`). A matcher it
+/// cannot evaluate while pulling (an adverb other than `:k`, a `Bool`)
+/// declines, and the receiver is reified.
+// Cost: O(k) pulled elements, k = the matching element's position, each
+// tested once.
+fn first(
+    interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    if !list.needs_vm_lazy_dispatch() {
+        return None;
+    }
+    interp.try_lazy_gather_first(list, args)
 }
 
 /// `Any.values` is `self.list` (Rakudo's `method values() { self.list }`):

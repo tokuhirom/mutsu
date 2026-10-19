@@ -1547,17 +1547,6 @@ impl Interpreter {
         // Non-gather LazyLists (e.g. from infinite ranges) are NOT forced here — they
         // go through builtins which may return Failure for methods like .elems.
         // Exception: .List and .values on coroutine-equipped gathers preserve laziness.
-        // Lazy `.first` over a gather coroutine: pull incrementally instead of
-        // forcing the (possibly infinite) list to completion.
-        if let ValueView::LazyList(ll) = target.view()
-            && ll.needs_vm_lazy_dispatch()
-            && method == "first"
-            && let Some(result) = self.try_lazy_gather_first(&ll, &args)
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-first");
-            self.stack.push(result?);
-            return Ok(());
-        }
         // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
         // lazy index-pipe stage instead of forcing (mirrors the CallMethodMut
         // fast-path so a chained `.pairs` stays lazy too).
@@ -1574,22 +1563,6 @@ impl Interpreter {
         if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-adaptor");
             self.stack.push(pipe);
-            return Ok(());
-        }
-        // List coercions change the view of a live gather without forcing its
-        // coroutine. This keeps an infinite gather pullable while ensuring a
-        // later force renders the finite result as a List rather than a Seq.
-        if let ValueView::LazyList(ll) = target.view()
-            && ll.coroutine.is_some()
-            && args.is_empty()
-            && matches!(method, "List" | "list" | "values")
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethod",
-                "gather-list-context",
-            );
-            self.stack
-                .push(Value::lazy_list(crate::gc::Gc::new(ll.with_list_context())));
             return Ok(());
         }
         let target = if let ValueView::LazyList(ll) = target.view()
