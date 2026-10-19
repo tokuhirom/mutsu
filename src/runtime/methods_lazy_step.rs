@@ -27,9 +27,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if let Some(pull) = crate::builtins::method_table::lazy_pull::pull_of(target, method)
-            && let Some(answer) = pull(self, target, list, args)
-        {
+        if let Some(answer) = self.lazy_receiver_pull(target, list, method, args) {
             return Some(answer);
         }
         if !crate::builtins::method_table::lazy_pull::reifies(method)
@@ -45,6 +43,22 @@ impl Interpreter {
             return None;
         }
         Some(self.reify_lazy_receiver(list, method, args))
+    }
+
+    /// Step 1 alone: the answer of `method`'s pull on the lazy receiver
+    /// `target`, if it has one that answers. The VM's method lanes ask this
+    /// before their own lazy handling, so a pull answers a call however it
+    /// was compiled.
+    // Cost: O(p) to find the pull, p = registered pulls, plus the pull's own.
+    pub(crate) fn lazy_receiver_pull(
+        &mut self,
+        target: &Value,
+        list: &crate::value::LazyList,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let pull = crate::builtins::method_table::lazy_pull::pull_of(target, method)?;
+        pull(self, target, list, args)
     }
 
     /// Step 2: reify `list` and re-dispatch the call on a `Seq` of its elements.

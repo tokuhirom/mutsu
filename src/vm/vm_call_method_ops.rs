@@ -1531,26 +1531,14 @@ impl Interpreter {
         } else {
             target
         };
-        // gist/Str/raku of a *genuinely* lazy list (an infinite sequence or a
-        // lazy map/grep pipeline) renders as raku's placeholder rather than
-        // reifying the (possibly infinite) sequence: `(...)` for gist/raku,
-        // `...` for Str. An eager gather has neither `sequence_spec` nor
-        // `lazy_pipe` and is forced & rendered normally below.
+        // A lazy receiver's pull answers first: the placeholders of
+        // `gist`/`Str`/`raku`, `cache`, `values`, and the refusals of the
+        // counting methods (the lazy step, ADR-13891).
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "Stringy" | "raku")
-            && ll.renders_lazy_placeholder()
+            && let Some(answer) = self.lazy_receiver_pull(&target, &ll, method, &args)
         {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-placeholder");
-            if matches!(method, "raku") && Interpreter::lazy_seq_raku_applies(&ll) {
-                let text = self.lazy_seq_raku(&ll)?;
-                self.stack.push(Value::str(text));
-                return Ok(());
-            }
-            self.stack
-                .push(Value::str(crate::value::lazy_list_placeholder(
-                    method,
-                    ll.in_array_context(),
-                )));
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-pull");
+            self.stack.push(answer?);
             return Ok(());
         }
         // Force gather-sourced LazyList before method dispatch for methods that need
@@ -1586,19 +1574,6 @@ impl Interpreter {
         if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-adaptor");
             self.stack.push(pipe);
-            return Ok(());
-        }
-        // `.cache` on a genuinely-lazy list must stay lazy: Rakudo's `.cache`
-        // reifies on demand, it does not force. A `LazyList` already caches
-        // pulled elements internally, so return it unchanged — this keeps
-        // `(my $l = $cat.lines).cache` lazy so later slice reads still reflect
-        // mid-iteration changes to the cat's `.nl-in`/`.chomp`.
-        if let ValueView::LazyList(ll) = target.view()
-            && method == "cache"
-            && let Some(result) = ll.cache_lazy_view()
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-cache");
-            self.stack.push(result);
             return Ok(());
         }
         // List coercions change the view of a live gather without forcing its

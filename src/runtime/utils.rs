@@ -78,17 +78,35 @@ pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
 /// attempted on a lazy iterable (e.g. `(1..*).elems` / `.Int` / `+@a`):
 /// `X::Cannot::Lazy` with the message `Cannot .<action> a lazy list`.
 pub(crate) fn cannot_lazy_failure(action: &str) -> Value {
-    let mut ex_attrs = HashMap::new();
-    ex_attrs.insert(
-        "message".to_string(),
-        Value::str(format!("Cannot .{} a lazy list", action)),
-    );
-    ex_attrs.insert("action".to_string(), Value::str(format!(".{}", action)));
-    let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
+    cannot_lazy_failure_onto(&format!(".{action}"), "")
+}
+
+/// The `Failure` of an `X::Cannot::Lazy` whose `action` and `what` are
+/// Rakudo's own (`.sum` onto a `Seq`): `Cannot .sum a lazy list onto a Seq`,
+/// or `Cannot .elems a lazy list` when `what` is empty.
+// Cost: O(1).
+pub(crate) fn cannot_lazy_failure_onto(action: &str, what: &str) -> Value {
+    let exception = cannot_lazy_exception(action, what);
     let mut failure_attrs = HashMap::new();
     failure_attrs.insert("exception".to_string(), exception);
     failure_attrs.insert("handled".to_string(), Value::FALSE);
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
+/// The `X::Cannot::Lazy` of [`cannot_lazy_failure_onto`] itself, for a
+/// method that dies with it (`tail`).
+// Cost: O(1).
+pub(crate) fn cannot_lazy_exception(action: &str, what: &str) -> Value {
+    let message = if what.is_empty() {
+        format!("Cannot {action} a lazy list")
+    } else {
+        format!("Cannot {action} a lazy list onto a {what}")
+    };
+    let mut ex_attrs = HashMap::new();
+    ex_attrs.insert("message".to_string(), Value::str(message));
+    ex_attrs.insert("action".to_string(), Value::str(action.to_string()));
+    ex_attrs.insert("what".to_string(), Value::str(what.to_string()));
+    Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs)
 }
 
 /// Build the Failure returned by an empty reduction whose operator has no
