@@ -220,7 +220,10 @@ impl Interpreter {
             }
             has_attribute |= !class_def.attributes.is_empty();
         }
-        has_attribute || is_exception
+        // A class the program declared with no attribute is constructed like
+        // one with attributes; a built-in type registered without any is not
+        // assumed to be plain data.
+        has_attribute || is_exception || self.types.user_declared_classes.contains(cn_resolved)
     }
 
     /// A role whose composition the native default constructor serves: a user
