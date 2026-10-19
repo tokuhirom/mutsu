@@ -972,13 +972,6 @@ impl Interpreter {
                 return result;
             }
         }
-        // IO::Special.new("<STDOUT>")
-        if let ValueView::Package(name) = target.view()
-            && name.resolve() == "IO::Special"
-            && method == "new"
-        {
-            return self.native_io_special(&AttrMap::new(), "new", args);
-        }
         // A row that binds its own arguments (`Num.Rat($epsilon)` with an
         // allomorph or a `Duration` as the epsilon): the table's own entry
         // declined the argument, and no cascade arm answered it.
