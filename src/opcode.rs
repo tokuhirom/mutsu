@@ -1010,6 +1010,13 @@ pub(crate) enum OpCode {
     /// `@`/`%`/`&`-sigiled, `constant`, `:=` bound, or shadowing an outer
     /// `constant`) keeps the old sequence unchanged.
     DeclareOurScalar { slot: u32, qualified_idx: u32 },
+    /// The bind-source tag of a package-qualified scalar (`my $x := $Pkg::y`,
+    /// #13941), in place of [`Self::WrapVarRef`]. Pops the value the read
+    /// pushed; when the package variable lives in a shared `ContainerRef`
+    /// cell (`DeclareOurScalar`), pushes that cell raw, so the bind aliases it
+    /// with no by-name source; otherwise behaves as `WrapVarRef` with no slot.
+    /// Stack: `[value] → [cell | varref]`.
+    WrapPackageVarRef { name_idx: u32 },
     /// Read a variable by name. Stack: `[] → [value]`.
     ///
     /// The operand is the constant-pool index of the variable's env key

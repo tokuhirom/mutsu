@@ -867,6 +867,14 @@ impl Compiler {
                 name_idx,
                 slot: u32::MAX,
             });
+        } else if is_bind_target
+            && let Expr::Var(name) = arg
+            && Self::is_package_scalar_name(name)
+        {
+            // `my $x := $Pkg::y` aliases the package variable's own cell,
+            // not a source resolved by name later (#13941).
+            let name_idx = self.code.add_constant(Value::str(name.clone()));
+            self.code.emit(OpCode::WrapPackageVarRef { name_idx });
         } else if let Some(name) = source_name {
             // Deliberately the non-ADR-0032-D1 emitter here, for EVERY arg
             // shape (including a genuine `Expr::Var`/`Expr::DoStmt` VarDecl
@@ -903,6 +911,19 @@ impl Compiler {
             // flag and the bind degrades to today's bind-by-value.
             self.mark_trailing_method_call_as_accessor_ref();
         }
+    }
+
+    /// Whether `name` (an `Expr::Var` spelling) is a package-qualified scalar
+    /// of a real package (`Pkg::x`, `GLOBAL::x`), not a twigil'd name or a
+    /// pseudo-package lookup (`OUTER::x`, `CALLER::x`, ...).
+    // Cost: O(n), n = length of `name`.
+    fn is_package_scalar_name(name: &str) -> bool {
+        let Some((head, rest)) = name.split_once("::") else {
+            return false;
+        };
+        !rest.is_empty()
+            && head.starts_with(|c: char| c.is_alphabetic() || c == '_')
+            && (head == "GLOBAL" || !crate::parser::is_pseudo_package(head))
     }
 
     /// Insert a `MarkAccessorRefContext` immediately before the trailing

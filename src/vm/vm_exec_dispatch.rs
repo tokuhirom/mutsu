@@ -7635,6 +7635,11 @@ impl Interpreter {
                 self.publish_state_local(code, *slot);
                 *ip += 1;
             }
+            // Cost: O(1) amortized: one env probe and one package-store probe.
+            OpCode::WrapPackageVarRef { name_idx } => {
+                self.exec_wrap_package_var_ref_op(code, *name_idx);
+                *ip += 1;
+            }
             // Cost: O(1).
             OpCode::DeclareOurScalar {
                 slot,
