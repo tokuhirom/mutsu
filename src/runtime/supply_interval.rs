@@ -49,7 +49,7 @@ impl Interpreter {
         // the shared timer path used below.
         // A `CurrentThreadScheduler` cannot honour `:every`, so ticking
         // through it makes the tap die exactly as Rakudo's does.
-        let scheduler = Self::named_value(&args, "scheduler")
+        let scheduler = Self::named_value(args, "scheduler")
             .or_else(|| self.user_scheduler())
             .or_else(|| self.current_thread_scheduler());
 
@@ -98,6 +98,6 @@ impl Interpreter {
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
         attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
         attrs.insert("live".to_string(), Value::FALSE);
-        return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
+        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 }
