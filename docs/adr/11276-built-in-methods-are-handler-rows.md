@@ -4797,6 +4797,17 @@ message at 72 columns as Rakudo's `naive-word-wrapper` does, rather than at a fi
 `Block` (`-> str $dir { $dir ne '.' && $dir ne '..' }`), so the fix is to answer one, not to give a
 class mutsu invented a row (#13959).
 
+### 9.199 The wrapper roles' `gist` is a row (2026-10-19)
+
+`refactor/11276-wrapper-role-gist`. `X::Promise::Broken`, `X::React::Died` and `X::Await::Died`,
+the roles Rakudo mixes into the exception that `Promise.result`, a dying `react` or `await`
+rethrows, declare `gist` alone. Two by-name gates answered it: one in `call_method_with_values` and
+its twin in the VM's native lane (`vm_native_dispatch.rs`). The gist is now an `OWNER_ONLY` row of
+each role (`instances/wrapper_role.rs`), found by the outermost wrapper role the receiver carries,
+from both places; its body is `Interpreter::wrapper_role_gist` as before. Pinned in
+`t/concurrency/promise/promise-wrapper-role-gist-rows.t`. `try react { whenever ... }` is a
+compile-time SORRY in mutsu (#13966); the test uses `try { react { ... } }`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
