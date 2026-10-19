@@ -17,7 +17,14 @@ pub(crate) fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -
             rest = r2;
             continue;
         }
-        if let Ok((r2, suffix)) = parse_ident_with_hyphens(after_colon) {
+        // An adverb name starts like an identifier: `"$port:8123"` is `$port`
+        // followed by the text `:8123`, not a variable named `port:8123`.
+        if after_colon
+            .chars()
+            .next()
+            .is_some_and(crate::parser::helpers::is_raku_identifier_start)
+            && let Ok((r2, suffix)) = parse_ident_with_hyphens(after_colon)
+        {
             // Keep postfix adverb names available to postfix parsing.
             // This avoids treating `$a:delete` as a variable named `a:delete`.
             if matches!(suffix, "delete" | "exists" | "v" | "kv" | "k" | "p") {
