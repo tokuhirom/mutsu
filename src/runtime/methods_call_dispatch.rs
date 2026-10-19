@@ -1380,17 +1380,8 @@ impl Interpreter {
                             )
                         },
                     ),
-                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b)
-                        .or_else(|| {
-                            crate::builtins::method_table::answer_shapeless(
-                                Some(self),
-                                &target,
-                                method_sym,
-                                cascade_args,
-                            )
-                        }),
-                    // No cascade takes more; a slurpy row (`Mu.WALK` with its
-                    // adverbs) may.
+                    // No cascade takes two arguments or more; a row with no
+                    // shape (`Mu.WALK` with its adverbs) may.
                     _ => crate::builtins::method_table::answer_shapeless(
                         Some(self),
                         &target,
@@ -1400,23 +1391,6 @@ impl Interpreter {
                 }
             }
         };
-        if native_result.is_some() {
-            self.record_native_row_coverage(
-                "methods_call_dispatch::call_method_with_values",
-                &target,
-                method_sym.as_str(),
-                cascade_args.len(),
-            );
-        }
-        if !bypass_native_fastpath {
-            self.shadow_check_native_row_candidate(
-                &target,
-                method,
-                method_sym,
-                args.len(),
-                native_result.is_some(),
-            );
-        }
         if let Some(result) = native_result {
             return result;
         }

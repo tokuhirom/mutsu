@@ -493,6 +493,10 @@ pub(crate) enum NativeBase {
     /// A container-protocol override on a subclass of `Array` / `Hash` /
     /// a baggy: the native behavior on the backing storage, else `Value`.
     Storage,
+    /// A user method on a subclass of a built-in type whose MRO has a built-in
+    /// method of that name: the built-in, run on the receiver with the
+    /// override hidden.
+    BuiltinAncestor,
     /// Decided by the frame's invocant value: an instance's default rendering,
     /// a mixin's inner value, or a core-type receiver's builtin.
     Value,

@@ -115,12 +115,6 @@ impl Interpreter {
             method_sym,
             args,
         ) {
-            self.record_native_row_coverage(
-                "vm_native_dispatch::method_table",
-                target,
-                method_sym.as_str(),
-                args.len(),
-            );
             return Some(self.settle_native_warning(result));
         }
         // `Any` is not a `Cool` (#7773): the cascades below recognize a `Cool`
@@ -374,14 +368,10 @@ impl Interpreter {
         if let Some(value) = self.inherited_adhoc_method(target, method_name, args) {
             return Some(Ok(value));
         }
-        // ADR-0051 §3 (#9948): a name only some `Cool` subtypes declare
-        // (`succ`, `base`, `lazy`, ...) is answered by receiver-blind
-        // cascades that coerce ANY receiver, so a Match, Str, Int, Pair or
-        // Complex whose own ancestry lacks it must reach normal resolution,
-        // which throws `X::Method::NotFound` as Rakudo does.
-        if Self::cool_subtype_only_builtin_method(method_name)
-            && !self.e2_native_method_exists(target, method_sym.as_str())
-        {
+        // The receiver guard the interpreter's entry runs too: an
+        // interpreter-side handler, a computed exception message, a `Cool`
+        // name the receiver lacks.
+        if self.native_receiver_guard(target, method_name) {
             return None;
         }
         // A `Supply` (instance or type object) answers its methods through
@@ -403,27 +393,10 @@ impl Interpreter {
             if (!is_pure_render || render_overridden) && self.has_user_method(owner, "Bridge") {
                 return None;
             }
-            if matches!(method_name, "gist" | "Str" | "Stringy")
-                && self.exception_render_needs_interpreter(target, owner)
-            {
-                return None;
-            }
-            if self.is_native_method(owner, method_name) {
-                return None;
-            }
         }
         // Instance-specific bypasses (avoid for non-Instance targets)
         else if let ValueView::Instance { class_name, .. } = target.view() {
             let cn = class_name.resolve();
-            // Native method on instance class: an interpreter-side handler
-            // (`IO::Handle.say`, ...) serves it, so decline the pure native
-            // path. Decided BEFORE the numeric-bridge probes below, which
-            // reach the same `None` for such a class only after two full
-            // `type_matches_value` walks (`Real`, then `Numeric`) -- the
-            // cost every `$output.say` in the vendored `Test` was paying.
-            if self.is_native_method(&cn, method_name) {
-                return None;
-            }
             // Numeric bridge — Real/Numeric instances route through the
             // interpreter's Numeric bridge for arithmetic and coercion.
             // Exception: pure-render methods (gist/Str/raku/...) don't need
@@ -444,34 +417,6 @@ impl Interpreter {
             // enumeration of mutation sites can go stale (#7712).
             if (!is_pure_render || render_overridden)
                 && self.instance_needs_numeric_bridge(class_name, target)
-            {
-                return None;
-            }
-            // `.gist`/`.Str` render the exception's
-            // message, and the native fast path can only read the stored
-            // `message` ATTRIBUTE. A class that COMPUTES its message
-            // (`method message { $!message //= … }`) leaves that attribute
-            // undefined until the method runs, so the fast path would report
-            // the literal text `(Any)`. Only the interpreter can see the
-            // class registry, so defer the decision to it.
-            if matches!(method_name, "gist" | "Str" | "Stringy")
-                && self.exception_render_needs_interpreter(target, &cn)
-            {
-                return None;
-            }
-            // ADR-0051 P4: a Cool-only builtin the receiver's own
-            // ancestry does NOT actually provide (no `Cool` -- or, for
-            // `Instant`/`DateTime`/`Date`, no own-method row -- anywhere
-            // in the dispatch chain) must not be answered by this fast
-            // path either: its cascade arms are receiver-class-blind by
-            // construction and would unconditionally stringify the
-            // receiver (`"G()".uc`), which is wrong for a genuinely
-            // unresolved method (real Rakudo throws
-            // `X::Method::NotFound`). Deferring to the interpreter lets
-            // normal "no candidate" resolution throw instead of
-            // fabricating a stringified answer.
-            if Self::cool_only_builtin_method(method_name)
-                && !self.e2_native_method_exists(target, method_sym.as_str())
             {
                 return None;
             }
@@ -579,53 +524,38 @@ impl Interpreter {
         if args.is_empty() && matches!(method_name, "unique" | "repeated" | "squish") {
             self.warm_which_identity(target);
         }
-        let mut result =
-            if args.len() == 2 {
-                crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1]).or_else(
-                    || {
-                        crate::builtins::method_table::answer_shapeless(
-                            Some(self),
-                            target,
-                            method_sym,
-                            args,
-                        )
-                    },
-                )
-            } else if args.len() == 1 {
-                crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0])
-                    .or_else(|| {
-                        crate::builtins::method_table::answer_shapeless(
-                            Some(self),
-                            target,
-                            method_sym,
-                            &args[..1],
-                        )
-                    })
-            } else if args.is_empty() {
-                // The cascade without the method table: `try_native_method` asked
-                // the table for this very receiver and method before calling here,
-                // and a row it would answer from but the lever-A gate above refused
-                // must not answer here either.
-                crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym)
-                    .or_else(|| {
-                        crate::builtins::method_table::answer_shapeless(
-                            Some(self),
-                            target,
-                            method_sym,
-                            &[],
-                        )
-                    })
-            } else {
-                return None;
-            };
-        if result.is_some() {
-            self.record_native_row_coverage(
-                "vm_native_dispatch::try_native_method_raw",
-                target,
-                method_sym.as_str(),
-                args.len(),
-            );
-        }
+        let mut result = if args.len() == 2 {
+            // No cascade takes two arguments: a row with no shape may.
+            crate::builtins::method_table::answer_shapeless(Some(self), target, method_sym, args)
+        } else if args.len() == 1 {
+            crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0]).or_else(
+                || {
+                    crate::builtins::method_table::answer_shapeless(
+                        Some(self),
+                        target,
+                        method_sym,
+                        &args[..1],
+                    )
+                },
+            )
+        } else if args.is_empty() {
+            // The cascade without the method table: `try_native_method` asked
+            // the table for this very receiver and method before calling here,
+            // and a row it would answer from but the lever-A gate above refused
+            // must not answer here either.
+            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym).or_else(
+                || {
+                    crate::builtins::method_table::answer_shapeless(
+                        Some(self),
+                        target,
+                        method_sym,
+                        &[],
+                    )
+                },
+            )
+        } else {
+            return None;
+        };
 
         // For gather-based LazyList, .List and .values preserve laziness
         // by returning the LazyList itself (which can be forced on demand).

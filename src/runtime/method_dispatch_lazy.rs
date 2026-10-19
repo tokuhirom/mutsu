@@ -349,6 +349,24 @@ impl Interpreter {
             && self.has_user_method(receiver_class, method_name);
         // A grammar's own `method ws` / `alpha` / ...: the built-in rule on the
         // cursor is the last candidate (`DeferralEntry::Native`).
+        // A user method on a class whose MRO reaches a built-in method of the
+        // same name (`class S is Str { method uc { callsame } }`, `class I is
+        // Int { method succ { nextsame } }`): that built-in is a real
+        // candidate in Rakudo's MRO, so it is the last one here, run on the
+        // receiver with the override hidden (ADR-11276 slice 4). Without it a
+        // deferral out of the override answered Nil.
+        // The receiver is an instance or a built-in value its class wraps (an
+        // `is List` subclass's list); a type object and a role mixin have
+        // their own bases.
+        let builtin_ancestor_override = !matches!(
+            invocant.view(),
+            ValueView::Package(_) | ValueView::Mixin(..)
+        ) && !Self::invocant_carries_native_storage(&invocant)
+            && self.has_user_method(receiver_class, method_name)
+            && {
+                let mro = self.class_mro(receiver_class);
+                Self::builtin_method_level(&mro, method_name).is_some()
+            };
         let grammar_rule_override = super::regex::regex_builtin_rule::is_builtin_rule_name(method_name)
             && matches!(invocant.view(), ValueView::Instance { .. })
             && self.class_is_grammar(receiver_class)
@@ -366,6 +384,7 @@ impl Interpreter {
             || mu_base_override
             || new_base_override
             || container_protocol_override
+            || builtin_ancestor_override
             || accessor_base_override;
         // Fast path: a name with at most one *structural* dispatch candidate across
         // the MRO has no user candidate to defer to (arg-matching only reduces the
@@ -487,6 +506,8 @@ impl Interpreter {
                 Some(super::NativeBase::Storage)
             } else if core_type_override || any_base_override {
                 Some(super::NativeBase::Value)
+            } else if builtin_ancestor_override {
+                Some(super::NativeBase::BuiltinAncestor)
             } else {
                 None
             };

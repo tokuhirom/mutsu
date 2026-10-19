@@ -193,7 +193,10 @@ pub(crate) enum ResolvedCandidate {
     /// are name-based (not per-level user overloads), so the first MRO level
     /// (including its `canonical_builtin_owner` fold) with a servable row
     /// wins, mirroring how the arity cascades themselves are name-dispatched
-    /// rather than per-level.
+    /// rather than per-level. `owner` is the level the row was found at:
+    /// only the tests read it until slice 4 of ADR-11276 makes the candidate
+    /// invocable.
+    #[cfg_attr(not(test), allow(dead_code))]
     Native { owner: TypeId },
 }
 
@@ -747,47 +750,6 @@ impl Interpreter {
                 "class={class_name} method={method} real={:?} shadow={:?}",
                 real.map(|(o, _)| o.as_str()),
                 shadow.as_ref().map(|(o, _)| o.as_str()),
-            )
-        });
-    }
-
-    /// ADR-0019 E4b step 4/9 shadow probe (`MUTSU_VM_STATS`-gated, a no-op
-    /// otherwise): does `resolve_sequence`'s new `Native` candidate agree
-    /// with whether the pure arity cascade actually served this call?
-    /// `real_served` must be a result the caller already computed by
-    /// actually invoking `native_method_{0,1,2}arg` (`call_method_with_values`
-    /// only calls this when `!bypass_native_fastpath`, i.e. the cascade was
-    /// genuinely consulted) — this function never invokes the cascade
-    /// itself, so it carries no double-invocation side-effect risk even for
-    /// a mutating row.
-    pub(crate) fn shadow_check_native_row_candidate(
-        &mut self,
-        target: &Value,
-        method: &str,
-        method_sym: Symbol,
-        arg_count: usize,
-        real_served: bool,
-    ) {
-        if !crate::vm::vm_stats::enabled() {
-            return;
-        }
-        let chain = self.dispatch_mro(target);
-        let native_shape = NativeCallShape::new(arg_count, value_is_definite(target));
-        let seq = self.resolve_sequence(
-            &chain,
-            method_sym,
-            native_shape,
-            MethodVisibility::Public,
-            RoleFallback::Disabled,
-        );
-        let native_row_owner = seq.candidates.iter().find_map(|c| match c {
-            ResolvedCandidate::Native { owner } => Some(owner.as_str()),
-            ResolvedCandidate::User { .. } | ResolvedCandidate::NativeCallBinding => None,
-        });
-        let shadow_served = native_row_owner.is_some();
-        crate::vm::vm_stats::record_native_row_shadow_check(real_served == shadow_served, || {
-            format!(
-                "method={method} arity={arg_count} real={real_served} shadow={shadow_served} native_row_owner={native_row_owner:?}"
             )
         });
     }

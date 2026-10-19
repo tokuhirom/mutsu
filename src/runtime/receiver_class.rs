@@ -496,64 +496,6 @@ impl Interpreter {
         });
     }
 
-    /// ADR-0019 Phase E box E2a shadow check (`MUTSU_VM_STATS`-gated, a no-op
-    /// otherwise): when a native arity cascade at `site` just recognized
-    /// `name` on `target` at `arity` (returned `Some`), verify the
-    /// [`crate::builtins::native_method_row`] catalog already accounts for
-    /// it, bumping `native_call_unmodeled` when it does not. `name` must be a
-    /// `Symbol::as_str()` result (interned, `'static`) so the row lookup does
-    /// not need to allocate. See adr0019-e2-e4-resolver-core (#7540)
-    /// decision 2's counter-to-zero discipline; nothing reads this catalog to
-    /// make a real dispatch decision yet.
-    ///
-    /// **E2b**: walks the full [`Self::dispatch_owner_chain`], not just its
-    /// first (most-derived) element. A row lives at the owner that actually
-    /// *declares* the method (e.g. `so`/`not`/`defined` are `Any`-declared
-    /// and recognized for every concrete receiver by the shared arity-0
-    /// cascade arms), the same way [`Self::resolve_sequence`] walks the whole
-    /// chain rather than probing only the receiver's own concrete type. A
-    /// flat point lookup at the concrete owner alone over-counted every
-    /// inherited-and-recognized method as unmodeled even though a row for it
-    /// already existed further up the chain.
-    ///
-    /// Each chain element is also tried through
-    /// [`canonical_builtin_owner`](crate::builtins::builtin_type_methods::canonical_builtin_owner),
-    /// which folds a handful of builtin families to the single owner whose
-    /// native table actually serves them (`Sub`/`Method`/`Block`/`Routine`/
-    /// `Code` -> `Code`; the whole `Buf`/`Blob`/`utf8`/... family -> `Blob`;
-    /// `FatRat` -> `Rat`). raku's own `.^mro` for these types does NOT
-    /// include the folded owner (`Buf.new.^mro` is `Buf, Any, Mu`, not
-    /// `Buf, Blob, Any, Mu`) -- confirmed against real `raku`, 2026-08-10 --
-    /// so [`Self::dispatch_owner_chain`] correctly omits it too, and a plain
-    /// chain walk can never find the folded owner's rows. The row catalog
-    /// itself is generated keyed by this same folded owner (via
-    /// [`builtin_method_entries`](crate::builtins::builtin_type_methods::builtin_method_entries)), so without
-    /// this second lookup every Buf/Blob/FatRat-family method reads as
-    /// permanently unmodeled no matter how many rows are added.
-    pub(crate) fn record_native_row_coverage(
-        &mut self,
-        site: &str,
-        target: &Value,
-        name: &'static str,
-        arity: usize,
-    ) {
-        if !crate::vm::vm_stats::enabled() {
-            return;
-        }
-        let chain = self.dispatch_owner_chain(target);
-        let mask = crate::builtins::native_method_row::NativeArityMask::for_arity(arity);
-        let covered = chain_owner_probe(&chain, |owner| {
-            crate::builtins::native_method_row::native_method_row(owner, name)
-                .0
-                .contains(mask)
-        });
-        let owner = chain
-            .first()
-            .map(|t| t.as_str())
-            .unwrap_or_else(|| crate::type_id::well_known_types().any.as_str());
-        crate::vm::vm_stats::record_native_call_recognition(site, owner, name, covered);
-    }
-
     /// ADR-0019 Phase E box E7 step 4 (`.^can`,
     /// `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 4"): does the E2
     /// native-method-row catalog have an explicit recognition row for `name`
@@ -569,8 +511,8 @@ impl Interpreter {
     /// requiring definedness, still means `.can` is true) -- confirmed
     /// against real Raku behavior (`raku -e 'say List.can("push")'` is
     /// `(&push)`, true, on an INDEFINITE type object). Shares the same
-    /// chain-walk-plus-`canonical_builtin_owner`-fold traversal as
-    /// [`Self::record_native_row_coverage`] via [`chain_owner_probe`].
+    /// chain-walk-plus-`canonical_builtin_owner`-fold traversal via
+    /// [`chain_owner_probe`].
     pub(crate) fn e2_native_method_exists(&mut self, target: &Value, name: &'static str) -> bool {
         // A RakuAST node answers the accessor of each field its class declares
         // (`Substitution.samespace`), which have no row of their own: without
@@ -587,7 +529,7 @@ impl Interpreter {
     }
 }
 
-/// Shared chain-walk-plus-fold traversal for [`Interpreter::record_native_row_coverage`]
+/// Shared chain-walk-plus-fold traversal for [`Interpreter::e2_native_method_exists`]
 /// and [`Interpreter::e2_native_method_exists`]: try `probe` at each level of
 /// `chain` (most-derived first), and, when it fails, retry through
 /// [`crate::builtins::builtin_type_methods::canonical_builtin_owner`]'s fold
@@ -629,7 +571,7 @@ mod tests {
     /// row was added its chain was just `["Failure"]` -- no continuation to
     /// `Any`/`Mu` at all, meaning the `Any`-declared universal-method rows
     /// (`so`/`defined`/`sink`/...) could never be found via the chain walk in
-    /// `record_native_row_coverage` no matter how many rows were added.
+    /// `e2_native_method_exists` no matter how many rows were added.
     #[test]
     fn failure_chain_reaches_any_and_mu_via_nil() {
         let mut i = interp();

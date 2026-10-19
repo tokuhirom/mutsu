@@ -1183,13 +1183,6 @@ impl Interpreter {
                 crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
             {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-                self.shadow_check_native_row_candidate(
-                    &target,
-                    method,
-                    method_sym,
-                    args.len(),
-                    true,
-                );
                 self.stack.push(result?);
                 return Ok(());
             }
@@ -1670,13 +1663,6 @@ impl Interpreter {
                             "callmethodmut",
                             "native",
                         );
-                        self.shadow_check_native_row_candidate(
-                            &target,
-                            method,
-                            method_sym,
-                            args.len(),
-                            true,
-                        );
                         self.stack.push(result?);
                         return Ok(());
                     }
@@ -1689,13 +1675,6 @@ impl Interpreter {
                     && let Some(result) = self.try_native_iterator(&target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-                    self.shadow_check_native_row_candidate(
-                        &target,
-                        method,
-                        method_sym,
-                        args.len(),
-                        true,
-                    );
                     self.stack.push(result?);
                     return Ok(());
                 }
@@ -1828,18 +1807,6 @@ impl Interpreter {
                                 "callmethodmut",
                                 "native",
                             );
-                            // ADR-0019 E6b step 1: shadow-check against the actual
-                            // opcode receiver `target` (the Instance), not the
-                            // backing `storage` value the Tier-A helper above was
-                            // fed — `target` is what a real E6b cutover would
-                            // query resolve_sequence with.
-                            self.shadow_check_native_row_candidate(
-                                &target,
-                                method,
-                                method_sym,
-                                args.len(),
-                                true,
-                            );
                             self.stack.push(
                                 if matches!(method, "push" | "append" | "prepend" | "unshift") {
                                     updated_instance
@@ -1868,13 +1835,6 @@ impl Interpreter {
                                 "callmethodmut",
                                 "native",
                             );
-                            self.shadow_check_native_row_candidate(
-                                &target,
-                                method,
-                                method_sym,
-                                args.len(),
-                                true,
-                            );
                             self.stack.push(r?);
                             return Ok(());
                         }
@@ -1882,13 +1842,6 @@ impl Interpreter {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethodmut",
                                 "native",
-                            );
-                            self.shadow_check_native_row_candidate(
-                                &target,
-                                method,
-                                method_sym,
-                                args.len(),
-                                true,
                             );
                             self.stack.push(r?);
                             return Ok(());
@@ -1906,13 +1859,6 @@ impl Interpreter {
                                 "callmethodmut",
                                 "native",
                             );
-                            self.shadow_check_native_row_candidate(
-                                &target,
-                                method,
-                                method_sym,
-                                args.len(),
-                                true,
-                            );
                             self.stack.push(r?);
                             return Ok(());
                         }
@@ -1921,13 +1867,6 @@ impl Interpreter {
                         // (non-simple methods on `is Array` storage). See ledger §1.
                         crate::vm::vm_stats::record_method_fallback(method);
                         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
-                        self.shadow_check_native_row_candidate(
-                            &target,
-                            method,
-                            method_sym,
-                            args.len(),
-                            false,
-                        );
                         // Seed the synthetic binding with the current storage
                         // BEFORE dispatching: methods like `ASSIGN-POS`/`BIND-POS`/
                         // `DELETE-POS` mutate by scanning `self.env` for a binding
@@ -1990,13 +1929,6 @@ impl Interpreter {
                     self.try_hash_storage_delegate_mut(target_name, &target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-                    self.shadow_check_native_row_candidate(
-                        &target,
-                        method,
-                        method_sym,
-                        args.len(),
-                        true,
-                    );
                     self.stack.push(result?);
                     return Ok(());
                 }
@@ -2058,23 +1990,9 @@ impl Interpreter {
                             "callmethodmut",
                             "native",
                         );
-                        self.shadow_check_native_row_candidate(
-                            &target,
-                            method,
-                            method_sym,
-                            args.len(),
-                            true,
-                        );
                         native_result
                     } else {
                         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
-                        self.shadow_check_native_row_candidate(
-                            &target,
-                            method,
-                            method_sym,
-                            args.len(),
-                            false,
-                        );
                         self.dispatch_compiled_method_mut_with_raw_invocant(
                             code,
                             target_name,
@@ -2085,13 +2003,6 @@ impl Interpreter {
                         )
                     }
                 } else {
-                    // ADR-0019 E6b step 1: NOT shadow-checked here. `skip_native`
-                    // means the arity cascade was deliberately never consulted for
-                    // this call (a user-defined method override, a pseudo-method
-                    // like WHAT/HOW, junction .gist, Stash AT-KEY, ...) -- there is
-                    // no "did the cascade serve this call" outcome to compare the
-                    // resolver's Native candidate against, unlike the genuine
-                    // native/user completions above.
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
                     self.dispatch_compiled_method_mut_with_raw_invocant(
                         code,

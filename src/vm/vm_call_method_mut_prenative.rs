@@ -127,7 +127,6 @@ impl Interpreter {
             // the dispatch is not assumed env-pure.
             self.dispatch.method_dispatch_pure = false;
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
-            self.shadow_check_native_row_candidate(target, method, method_sym, args.len(), false);
             return Some(result);
         }
         None
@@ -230,7 +229,6 @@ impl Interpreter {
         // value-returning native on an immutable receiver is env-pure.
         self.dispatch.method_dispatch_pure = true;
         crate::vm::vm_stats::record_dispatch_entry_outcome(entry, "native");
-        self.shadow_check_native_row_candidate(target, method, method_sym, args.len(), true);
         Some(native_result)
     }
 

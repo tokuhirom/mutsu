@@ -300,11 +300,10 @@ impl Interpreter {
 
     /// Whether `target`'s own state needs the interpreter for this call, so
     /// the built-in rows and cascades must not answer it (ADR-11276 §2.4's
-    /// guard step): a receiver kind the receiver-blind cascades misread, a
-    /// computed exception message, a method the instance's class implements
-    /// in the interpreter, or a `Cool` name the receiver's ancestry
-    /// does not declare (normal resolution throws `X::Method::NotFound`).
-    /// Whether a *declaration* takes the call is the other question,
+    /// guard step): the checks both native entries share
+    /// ([`Self::native_receiver_guard`]) plus the interpreter entry's own
+    /// receiver kinds the receiver-blind cascades misread. Whether a
+    /// *declaration* takes the call is the other question,
     /// [`Self::user_shadows_builtin`].
     // Cost: O(1) amortized for most calls (name and tag probes); a memoized
     // MRO probe for the `Cool`-only names.
@@ -314,41 +313,60 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> bool {
-        // ADR-0051 §3 (#9948): a `Cool`-subtype-only name the receiver's
-        // ancestry does not declare must not be answered by a receiver-blind
-        // cascade (the twin of `try_native_method_raw`'s gate).
+        self.native_receiver_guard(target, method)
+            || if target.is_lazy_match_value() {
+                // `view()` would materialize it; of the receiver kinds below
+                // only this one can apply to a Match.
+                method == "elems"
+            } else {
+                self.native_fastpath_receiver_state_guard(target, method, args)
+            }
+    }
+
+    /// The receiver guard both native entries (the VM's
+    /// `try_native_method_raw` and the interpreter's `call_method_with_values`)
+    /// run before a row or cascade answers: a method the instance's class
+    /// implements in the interpreter (a NativeCall binding, `IO::Handle.say`),
+    /// a computed exception message, or a `Cool` name the receiver's ancestry
+    /// does not declare (normal resolution throws `X::Method::NotFound`).
+    // Cost: O(1) amortized: name and tag probes, plus memoized MRO probes.
+    pub(crate) fn native_receiver_guard(&mut self, target: &Value, method: &str) -> bool {
+        // ADR-0051 §3 (#9948): a name only some `Cool` subtypes declare
+        // (`succ`, `base`, `lazy`, ...) is answered by receiver-blind cascades
+        // that coerce ANY receiver, so a Match, Str, Int, Pair or Complex whose
+        // own ancestry lacks it must reach normal resolution.
         if Self::cool_subtype_only_builtin_method(method)
             && !self.e2_native_method_exists(target, crate::symbol::Symbol::intern(method).as_str())
         {
             return true;
         }
-        // A lazy Match: `view()` would materialize it, and of the receiver
-        // guards only these can apply to a Match.
-        if target.is_lazy_match_value() {
-            let owner = target.match_dispatch_class();
-            return method == "elems"
-                || (matches!(method, "gist" | "Str" | "Stringy")
-                    && self.exception_render_needs_interpreter(target, owner))
-                || self.is_native_method(owner, method);
-        }
-        if self.native_fastpath_receiver_state_guard(target, method, args) {
-            return true;
-        }
-        // A method the instance's class implements in the interpreter (a
-        // NativeCall binding, `IO::Handle.say`): its handler serves it.
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && self.is_native_method(class_name.as_str(), method)
-        {
-            return true;
-        }
-        // ADR-0051 P4: a `Cool`-only builtin the instance's own ancestry does
-        // NOT provide (no `Cool`, or for the few types with their own row,
-        // e.g. `Instant.Date`, no such row) must not be answered: its cascade
-        // arms are receiver-class-blind and would stringify the receiver
-        // (`"G()".uc`), where Rakudo throws `X::Method::NotFound`.
-        matches!(target.view(), ValueView::Instance { .. })
-            && Self::cool_only_builtin_method(method)
-            && !self.e2_native_method_exists(target, crate::symbol::Symbol::intern(method).as_str())
+        // A lazy Match dispatches under its cursor's class; `view()` would
+        // materialize it.
+        let (class, instance) = if target.is_lazy_match_value() {
+            (crate::symbol::Symbol::intern(target.match_dispatch_class()), false)
+        } else if let ValueView::Instance { class_name, .. } = target.view() {
+            (class_name, true)
+        } else {
+            return false;
+        };
+        let cn = class.as_str();
+        // An interpreter-side handler serves the method. Decided before the
+        // VM's numeric-bridge probe, which reaches the same answer for such a
+        // class only after two `type_matches_value` walks.
+        self.is_native_method(cn, method)
+            // `.gist`/`.Str` render the exception's message, and the native
+            // path can only read the stored `message` attribute: a class that
+            // computes its message leaves it undefined until the method runs.
+            || (matches!(method, "gist" | "Str" | "Stringy")
+                && self.exception_render_needs_interpreter(target, cn))
+            // ADR-0051 P4: a `Cool`-only builtin the instance's ancestry does
+            // NOT provide (no `Cool`, or for the few types with their own row,
+            // e.g. `Instant.Date`, no such row): its cascade arms are
+            // receiver-class-blind and would stringify the receiver
+            // (`"G()".uc`), where Rakudo throws `X::Method::NotFound`.
+            || (instance
+                && Self::cool_only_builtin_method(method)
+                && !self.e2_native_method_exists(target, crate::symbol::Symbol::intern(method).as_str()))
     }
 
     /// Check if a Mixin's role mixins define the given method (either a real

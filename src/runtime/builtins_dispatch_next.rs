@@ -551,12 +551,19 @@ impl Interpreter {
         else {
             return None;
         };
-        if !InstanceBacking::Array.is_in(&attributes)
-            || !self
-                .mro_readonly(&class_name.resolve())
-                .iter()
-                .any(|n| n == "Array")
-        {
+        if !InstanceBacking::Array.is_in(&attributes) {
+            return None;
+        }
+        // An `is List` subclass reads through its storage as an `is Array`
+        // one does; only an `Array` writes to it.
+        let (is_array, is_list) = {
+            let mro = self.mro_readonly(&class_name.resolve());
+            (
+                mro.iter().any(|n| n == "Array"),
+                mro.iter().any(|n| n == "List"),
+            )
+        };
+        if !is_array && !is_list {
             return None;
         }
         // Mutating array methods (push/append/prepend/unshift/pop/shift) must
@@ -572,10 +579,12 @@ impl Interpreter {
         // array), so those four map the mutation's Ok value to `invocant.clone()`
         // — the SAME instance (same id, same attribute cell), so `===` and
         // `.^name` come out right; `pop`/`shift` return the removed element as-is.
-        if matches!(
-            method_name,
-            "push" | "append" | "prepend" | "unshift" | "pop" | "shift" | "ASSIGN-POS" | "DELETE-POS"
-        ) {
+        if is_array
+            && matches!(
+                method_name,
+                "push" | "append" | "prepend" | "unshift" | "pop" | "shift" | "ASSIGN-POS" | "DELETE-POS"
+            )
+        {
             let outcome = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
                 self.native_array_storage_mut(storage, method_name, args)
             })?;
@@ -1210,6 +1219,9 @@ impl Interpreter {
                         }
                         NativeBase::Storage => {
                             self.native_storage_base_entry(&invocant, &name, &args)
+                        }
+                        NativeBase::BuiltinAncestor => {
+                            Some(self.run_core_type_builtin(invocant.clone(), &name, args.clone()))
                         }
                         NativeBase::Value => None,
                     };
@@ -1851,6 +1863,22 @@ impl Interpreter {
                 frame.in_wrapper = false;
                 if let Some(callee) = self.dispatcher_redispatch_callee(&name) {
                     return Ok(callee);
+                }
+            }
+            // The built-in method a subclass of a built-in type inherits: its
+            // method object, which runs the built-in on the invocant it is
+            // given without re-dispatching to the override (ADR-11276 slice 4).
+            if let Some(frame) = self.dispatch.method_dispatch_stack.last_mut()
+                && let Some(DeferralEntry::Native {
+                    name,
+                    base: NativeBase::BuiltinAncestor,
+                }) = frame.remaining.first().cloned()
+            {
+                frame.remaining.remove(0);
+                let receiver_class = frame.receiver_class.clone();
+                let mro = self.class_mro(&receiver_class);
+                if let Some(owner) = Self::builtin_method_level(&mro, &name).map(|i| mro[i]) {
+                    return Ok(self.make_native_method_object(&name, owner.as_str()));
                 }
             }
             // MRO exhausted: the native base candidate. For the subscript

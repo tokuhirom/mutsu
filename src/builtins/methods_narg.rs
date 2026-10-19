@@ -9,7 +9,6 @@ pub(crate) mod allomorph;
 pub(crate) mod base;
 pub(crate) mod buf;
 mod dispatch_1arg;
-mod dispatch_2arg;
 pub(crate) mod flatten;
 mod fmt_contains;
 pub(crate) mod indent;
@@ -21,7 +20,6 @@ pub(crate) use buf::{
     resolve_buf_index,
 };
 pub(crate) use dispatch_1arg::{native_method_1arg, native_method_1arg_without_table};
-pub(crate) use dispatch_2arg::native_method_2arg;
 pub(crate) use fmt_contains::{
     fmt_joinable_target, fmt_native, list_item_pair_split, pair_key_value,
 };

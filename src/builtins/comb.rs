@@ -3,7 +3,7 @@
 //! `.comb` splits a string by a matcher. The *pure* matcher cases — an `Int`
 //! chunk size and a fixed `Str` needle — need no interpreter state, so they live
 //! here in the native layer as the single shared implementation, reachable by
-//! both the VM (`native_method_1arg`/`native_method_2arg` -> `native_comb_method`)
+//! both the VM (the `comb` rows of the method table -> `native_comb_method`)
 //! and the interpreter (`dispatch_comb_with_args`, which calls [`comb_pure`]
 //! instead of reimplementing the split). This follows the same layering as
 //! `builtins::split`.
