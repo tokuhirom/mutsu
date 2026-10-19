@@ -1,0 +1,1 @@
+Multi candidates now preserve Rakudo's coercion-based specificity when candidate signatures have different optional positional counts. A specific leading parameter can therefore win over a coercion candidate, while ordinary arity-mismatched candidates retain their existing ambiguity rules.
