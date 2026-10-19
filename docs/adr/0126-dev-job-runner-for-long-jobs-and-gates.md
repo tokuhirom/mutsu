@@ -289,3 +289,17 @@ and `WIDE_FOCUS_DIRS` in `scripts/dev`; `scripts/dev self-test` pins both direct
 change keeps the narrow focus, so a parser or docs change pays nothing. The directories run on the debug
 binary like the rest of the focus; `--full` is unchanged. Add a prefix to the list when another area
 shows the same shape.
+
+### Amendment (2026-10-19): quick is the default in every environment
+
+The full gate remained the local default after the quick profile was introduced for remote
+containers. Local runs on the maintainer's 12-core box still took roughly 25–40 minutes because
+the gate runs the lint, test and roast stages serially, while CI distributes equivalent work across
+several runners. Local core count did not make the serial full gate a useful default during normal
+iteration.
+
+`scripts/dev gate` now selects the quick profile in every environment. `--full` explicitly opts
+into the full local matrix; `--quick` remains accepted to make the choice explicit in scripts and
+notes. As before, quick runs the focused debug checks locally and CI supplies the remaining full
+matrix. The report records the selected profile, so the distinction remains visible when reporting
+a gate result.

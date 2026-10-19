@@ -6,8 +6,8 @@ Decision and rationale: docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md
     scripts/dev run <name> -- <command...>   start a detached job, print its id
     scripts/dev gate [--only a,b] [--fresh]  run `cargo fmt --all`, then branch/checks/lint/test/
         [--quick|--full] [--focus PATH...]   roast as one job (the formatter is applied, never
-                                             checked); the quick profile (default in a remote
-                                             container) builds debug only: branch, checks,
+                                             checked); the quick profile (the default) builds
+                                             debug only: branch, checks,
                                              default clippy, cargo test, and the t/ and
                                              roast files the change touches or --focus names
     scripts/dev wait <id> [--max SECONDS]    block until done, at most --max (540)
@@ -567,9 +567,9 @@ def cmd_run(root: str, args) -> int:
     return 0
 
 
-def is_remote_container() -> bool:
-    """The ephemeral Claude Code remote container (docs/agent-environments.md)."""
-    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+def quick_profile_selected(quick: bool, full: bool) -> bool:
+    """Quick is the default in every environment; --full opts into the full gate."""
+    return quick or not full
 
 
 def git_lines(root: str, *argv: str) -> list[str] | None:
@@ -663,7 +663,7 @@ def focus_commands(t_files: list[str], roast_files: list[str]) -> dict:
 
 
 def cmd_gate(root: str, args) -> int:
-    quick = args.quick or (is_remote_container() and not args.full)
+    quick = quick_profile_selected(args.quick, args.full)
     profile = QUICK_STAGES if quick else GATE_STAGES
     stages = [s for s in profile if not args.only or s in args.only.split(",")]
     unknown = set(args.only.split(",")) - set(profile) if args.only else set()
@@ -896,6 +896,9 @@ def self_test(root: str) -> int:
           QUICK_STAGES[:2] == ("branch", "checks") and "clippy" in BLOCKING_STAGES)
     check("quick gate: every stage has a command",
           all(s in STAGE_COMMANDS or s in ("t-focus", "roast-focus") for s in QUICK_STAGES))
+    check("gate: quick is the default in every environment",
+          quick_profile_selected(False, False) and not quick_profile_selected(False, True)
+          and quick_profile_selected(True, False))
     check("gate: formatting is applied up front, not a stage that can fail on a check",
           "fmt" not in GATE_STAGES + QUICK_STAGES + BLOCKING_STAGES
           and "fmt" not in STAGE_COMMANDS
@@ -1166,8 +1169,8 @@ def main(argv: list[str]) -> int:
     p.add_argument("--fresh", action="store_true", help="run even if this tree has a result")
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--quick", action="store_true",
-                      help="debug-build profile (the default in a remote container)")
-    mode.add_argument("--full", action="store_true", help="the full gate, even remotely")
+                      help="debug-build profile (the default)")
+    mode.add_argument("--full", action="store_true", help="run the full gate")
     p.add_argument("--focus", nargs="+", metavar="PATH",
                    help="quick profile: also run these t/ or roast files or directories")
     p = sub.add_parser("wait", help="block until the job ends, at most --max seconds")
