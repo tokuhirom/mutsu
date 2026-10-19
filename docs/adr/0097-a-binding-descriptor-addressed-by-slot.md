@@ -1,6 +1,6 @@
 # ADR-0097: A binding's own metadata lives on a slot-addressed descriptor, not under a key derived from its name
 
-- Status: Proposed
+- Status: Accepted (user approval 2026-10-20, slices 2-5; slice 5 stays gated behind #8069 §4.2 as §5 says)
 - Date: 2026-09-13
 - Related: [ADR-0042](0042-type-constraints-belong-to-the-container-not-to-a-name.md)
   (a type constraint belongs to the container, not to a name — the same
