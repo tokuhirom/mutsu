@@ -7,6 +7,7 @@ mod decl_scan;
 mod dynamic_stash;
 mod enum_values;
 mod export_hook;
+pub(crate) mod exported_vars;
 mod import_tags;
 mod installed_repo;
 mod source_scan;
@@ -84,6 +85,11 @@ struct ModuleScanResult {
     /// cache-compatibility reason as `declares_export_hook`.
     #[serde(default)]
     dynamic_export_stash: bool,
+    /// The `our` variables the module exports (`exported_vars.rs`).
+    /// Defaulted for the same cache-compatibility reason as
+    /// `declares_export_hook`.
+    #[serde(default)]
+    exported_vars: Vec<exported_vars::ExportedVar>,
     /// `module Foo { sub bar is export }` blocks declared *inside* the scanned
     /// module. The nested parse registers these in the process-wide inline
     /// export table, which — unlike the scopes — the scan does not restore, so
@@ -244,6 +250,8 @@ pub(crate) fn register_module_exports(module: &str) {
 /// the module's `is export` traits; see [`apply_scan_types`].
 pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Option<&[String]>) {
     record_use_scan_outcome(module, false);
+    // Unknown until a scan below says otherwise.
+    exported_vars::record(module, None);
     if module == "Test" {
         let exports: Vec<InlineModuleExport> = TEST_EXPORTS
             .iter()
@@ -277,6 +285,11 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         // a zero-argument slang activation would call its four-argument
         // EXPORT with no arguments and fail every Slangify-based module.
         record_use_scan_outcome(module, module != "Slangify" && scan.uses_slangify);
+        exported_vars::record(
+            module,
+            (!scan.declares_export_hook && !scan.dynamic_export_stash)
+                .then(|| scan.exported_vars.as_slice().into()),
+        );
         apply_scan_types(&scan, import_tags);
         note_nested_import_exports(&scan.exports);
         apply_module_exports(&scan.exports);
@@ -963,6 +976,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         uses_slangify,
         declares_export_hook,
         dynamic_export_stash: decls.dynamic_export_stash,
+        exported_vars: decls.exported_vars,
         inline_module_exports,
         // Filled in by `find_and_scan_module`, which owns the dependency frame
         // and the file stamp.

@@ -1077,6 +1077,7 @@ mod atomic_elem_forms;
 mod atomic_target;
 mod begin_use;
 mod bind_ternary;
+mod block_imported_vars;
 mod block_lexsubs;
 mod body_scans;
 mod call_arg_index_assign;

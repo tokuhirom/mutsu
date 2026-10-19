@@ -4750,6 +4750,11 @@ impl Compiler {
                         arg_count,
                         lexical_set_idx,
                     });
+                    // The variables it imports are the block's own bindings
+                    // (ADR-8751).
+                    if lexical_set_idx.is_some() && arg.is_none() {
+                        self.bind_block_imported_vars(module, tags);
+                    }
                 }
             }
             Stmt::Import { module, tags } => {
