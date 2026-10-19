@@ -2214,7 +2214,7 @@ impl Interpreter {
                         "AT-POS",
                         vec![Value::int(i)],
                     )?
-                } else if has_typed_positional_default {
+                } else if is_positional && has_typed_positional_default {
                     // A parameterized Array subclass stores its element type
                     // in side metadata rather than in a user AT-POS method.
                     // Any.AT-POS is still the inherited method for ordinary
@@ -2222,9 +2222,13 @@ impl Interpreter {
                     // their element default (e.g. A[Int].new[0] is Int).
                     Value::NIL
                 } else if !is_positional && !has_user_at_key {
-                    // The inherited Any.AT-POS is only a positional default;
-                    // `{...}` on an object without AT-KEY produces a Failure.
-                    Self::make_assoc_indexing_failure(&class_name)
+                    // Native Associatives retain their element defaults;
+                    // other objects have no inherited associative default.
+                    if self.type_matches_value("Associative", &target) {
+                        Value::NIL
+                    } else {
+                        Self::make_assoc_indexing_failure(&class_name)
+                    }
                 } else {
                     self.try_compiled_method_or_interpret(
                         target.clone(),

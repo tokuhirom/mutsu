@@ -12,6 +12,13 @@ ok TypedHash[Int].new<missing>.WHAT === Int,
     'a typed Hash subclass retains its missing-key default';
 ok TypedHash[Int,Str].new<missing>.WHAT === Int,
     'an object Hash subclass retains its missing-key default';
+ok TypedHash[Int].new{0}.WHAT === Int,
+    'a typed Hash subclass also defaults an integer key';
+ok TypedHash[Int,Int].new{0}.WHAT === Int,
+    'an object Hash subclass also defaults an integer key';
+class TypedArray is Array { }
+is TypedArray[Int].new{0}.^name, 'Failure',
+    'a typed Array default does not make associative integer indexing valid';
 throws-like { Plain.new\i }, X::Multi::NoMatch, 'a plain object has no postfix i candidate';
 role Marker { }
 my $mixed = Plain.new but Marker;
