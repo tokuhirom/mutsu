@@ -687,8 +687,19 @@ impl Interpreter {
                         continue;
                     }
                 }
-                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                // `@*name`: the `*` twigil stays part of the name, as its
+                // env key spells it.
+                let twigil = usize::from(
+                    chars.get(j) == Some(&'*')
+                        && chars
+                            .get(j + 1)
+                            .is_some_and(|c| c.is_alphabetic() || *c == '_'),
+                );
+                if j + twigil < chars.len()
+                    && (chars[j + twigil].is_alphabetic() || chars[j + twigil] == '_')
+                {
                     let name_start = j;
+                    j += twigil;
                     while j < chars.len()
                         && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
                     {
@@ -696,21 +707,6 @@ impl Interpreter {
                     }
                     let bare_name: String = chars[name_start..j].iter().collect();
                     let sigiled_name = format!("@{bare_name}");
-                    let preserve_array_interpolation =
-                        crate::runtime::regex_parse::PRESERVE_ARRAY_INTERPOLATION
-                            .with(|flag| flag.get());
-                    if preserve_array_interpolation {
-                        // The structural `<@name>` arm reads the array from
-                        // the match environment. This is needed for a bare
-                        // `@name` inside a named lookaround: expanding it to
-                        // text here would capture the array's old contents
-                        // when the regex is reused after reassignment.
-                        out.push('<');
-                        out.push_str(&sigiled_name);
-                        out.push('>');
-                        i = j;
-                        continue;
-                    }
                     let value =
                         super::regex::regex_helpers::interp_closure_scope_get(&sigiled_name)
                             .or_else(|| self.env.get(&sigiled_name).cloned())

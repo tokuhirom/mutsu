@@ -236,7 +236,9 @@ fn skip_interp_block(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
     // nested regex literal (term position: after `~~`, `(`, `,`, ...) from a
     // division or the `$/` variable.
     let mut prev_sig: Option<char> = Some('{');
+    let mut prev: Option<char> = None;
     while let Some((_, ch)) = chars.next() {
+        let before = prev.replace(ch);
         if ch == '/' && prev_sig.is_some_and(crate::regex_code_nested::slash_opens_regex_after) {
             // A nested regex literal (`<!{ $s ~~ / <["']> $/ }>`): its quote
             // characters are regex text, not string openers. Skip it with the
@@ -273,6 +275,13 @@ fn skip_interp_block(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
             '\\' => {
                 chars.next();
             }
+            // An apostrophe inside an identifier (`don't`, allowed between
+            // two letters) opens no string (#13928).
+            '\'' if before.is_some_and(char::is_alphanumeric)
+                && chars
+                    .clone()
+                    .next()
+                    .is_some_and(|(_, next)| next.is_alphabetic()) => {}
             '\'' | '"' => {
                 let quote = ch;
                 loop {

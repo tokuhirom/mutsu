@@ -166,152 +166,30 @@ pub(super) fn scan_angle_assertion_consumed(rest: &[char]) -> usize {
 }
 
 /// Read the body of a `{ ... }` regex code block from `chars`, the opening
-/// brace already consumed, stopping at the `}` that closes it.
-///
-/// Braces inside `'…'` / `"…"` string literals are code, not block delimiters,
-/// which is the whole point: a naive depth count reads the `}` in
-/// `{ say "a}b" }` as the end of the block, truncating the code and leaving the
-/// rest of the string to be parsed as pattern text. The quote rule is the same
-/// one [`scan_code_assertion_body`] applies to `<{ … }>`; this spelling exists
-/// because these callers hold an iterator rather than a `&[char]` slice.
-fn read_code_block_body(chars: &mut impl Iterator<Item = char>) -> String {
-    let mut code = String::new();
-    let mut depth = 1usize;
-    let mut quote: Option<char> = None;
-    let mut escaped = false;
-    for ch in chars {
-        if let Some(closer) = quote {
-            code.push(ch);
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == closer {
-                quote = None;
-            }
-            continue;
+/// brace already consumed, and consume it through the `}` that closes it
+/// ([`crate::regex_code_nested::code_block_body_len`] decides where that is).
+/// An unclosed block takes the rest of the text.
+// Cost: O(n), n = the chars left in the pattern.
+fn read_code_block_body(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let rest: Vec<char> = chars.clone().collect();
+    match crate::regex_code_nested::code_block_body_len(&rest) {
+        Some(end) => {
+            chars.nth(end);
+            rest[..end].iter().collect()
         }
-        if escaped {
-            escaped = false;
-            code.push(ch);
-            continue;
-        }
-        if ch == '\\' {
-            escaped = true;
-            code.push(ch);
-            continue;
-        }
-        if let Some(closer) = super::regex_parse::regex_quote_closer(ch) {
-            quote = Some(closer);
-            code.push(ch);
-            continue;
-        }
-        match ch {
-            '{' => {
-                depth += 1;
-                code.push(ch);
-            }
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    break;
-                }
-                code.push(ch);
-            }
-            _ => code.push(ch),
+        None => {
+            chars.by_ref().for_each(drop);
+            rest.into_iter().collect()
         }
     }
-    code
 }
 
 /// Scan the body of a `{ ... }` code assertion, having already consumed the
-/// opening brace. Braces inside quoted strings are code, not block delimiters.
+/// opening brace: the body and the chars consumed through the closing `}`.
+// Cost: O(n), n = chars scanned.
 fn scan_code_assertion_body(rest: &[char]) -> Option<(String, usize)> {
-    let mut code = String::new();
-    let mut brace_depth = 1usize;
-    let mut quote: Option<char> = None;
-    let mut escaped = false;
-    let mut comment = false;
-    // The last non-whitespace code character outside strings/comments, to
-    // recognise a nested regex literal (`<!{ $s ~~ / <["']> / }>`) whose quote
-    // characters are regex text, not string openers.
-    let mut prev_sig = '{';
-    let mut skip_to = 0usize;
-
-    for (idx, &ch) in rest.iter().enumerate() {
-        if idx < skip_to {
-            code.push(ch);
-            continue;
-        }
-        if quote.is_none()
-            && !comment
-            && !escaped
-            && ch == '/'
-            && crate::regex_code_nested::slash_opens_regex_after(prev_sig)
-            && let Some(len) = crate::regex_code_nested::nested_regex_literal_len(&rest[idx + 1..])
-        {
-            code.push(ch);
-            skip_to = idx + 1 + len;
-            prev_sig = '/';
-            continue;
-        }
-        if quote.is_none() && !comment && !ch.is_whitespace() {
-            prev_sig = ch;
-        }
-        if comment {
-            code.push(ch);
-            if ch == '\n' {
-                comment = false;
-            }
-            continue;
-        }
-        if let Some(closer) = quote {
-            code.push(ch);
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == closer {
-                quote = None;
-            }
-            continue;
-        }
-        if escaped {
-            escaped = false;
-            code.push(ch);
-            continue;
-        }
-        if ch == '\\' {
-            escaped = true;
-            code.push(ch);
-            continue;
-        }
-        if ch == '#' {
-            comment = true;
-            code.push(ch);
-            continue;
-        }
-        if let Some(closer) = super::regex_parse::regex_quote_closer(ch) {
-            quote = Some(closer);
-            code.push(ch);
-            continue;
-        }
-        match ch {
-            '{' => {
-                brace_depth += 1;
-                code.push(ch);
-            }
-            '}' => {
-                brace_depth -= 1;
-                if brace_depth == 0 {
-                    return Some((code, idx + 1));
-                }
-                code.push(ch);
-            }
-            _ => code.push(ch),
-        }
-    }
-    None
+    let end = crate::regex_code_nested::code_block_body_len(rest)?;
+    Some((rest[..end].iter().collect(), end + 1))
 }
 
 /// True when `s` (the text after the `?`/`!` prefix of a `<?…>` / `<!…>`
@@ -1157,7 +1035,21 @@ impl Interpreter {
         // references as opaque atoms further down.
         let interpolated = if mode == RegexParseMode::Match {
             match self.interpolate_regex_scalars(pattern) {
-                Ok(s) => s,
+                Ok(s) => {
+                    // A sub-pattern (a lookaround body, above all) is
+                    // interpolated here, a step below its enclosing pattern,
+                    // whose own interpolation copies a `<...>` assertion
+                    // through verbatim. A substitution made here is then
+                    // invisible in the enclosing pattern's memo key, so the
+                    // enclosing tree is no function of its text: a later
+                    // value of the variable would reuse this one (#13928).
+                    // This parse is still memoized under its own,
+                    // interpolated, text.
+                    if s != pattern {
+                        Self::note_regex_parse_ambient_read();
+                    }
+                    s
+                }
                 Err(e) => {
                     PENDING_REGEX_ERROR.with(|err| {
                         *err.borrow_mut() = Some(e);
@@ -3529,8 +3421,6 @@ impl Interpreter {
                                         derived: Default::default(),
                                     }
                                 } else {
-                                    let _preserve_array_interpolation =
-                                    crate::runtime::regex_parse::PreserveArrayInterpolationScope::enter();
                                     let Some(parsed) = self.parse_regex_with_mode(&inner, mode)
                                     else {
                                         continue;
