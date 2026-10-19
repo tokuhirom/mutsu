@@ -23,7 +23,8 @@ impl Interpreter {
             } if class_name.as_str() == "IO::Path::Parts" => {
                 // TODO: Rakudo's zen slice of a `Parts` is the `Parts`, which
                 // iterates its pairs through its own `iterator`; mutsu's `Parts`
-                // does not iterate yet, so the slice hands out the pairs instead.
+                // does not iterate yet, so the slice hands out the pairs instead
+                // (#14034).
                 let attrs = attributes.as_map();
                 // ADR-0021 I2: a data-minted pair defaults positional.
                 Value::array(
