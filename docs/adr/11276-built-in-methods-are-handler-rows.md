@@ -4702,15 +4702,6 @@ five are now late interpreter twins (`scalars/str_complex_real.rs`) reached thro
 walk for a `Str` receiver, and `Cool.UInt` answers the string itself. The gate is gone. No
 behaviour change; pinned in `t/types/string/str-complex-real-coercion.t`.
 
-### 9.192 A type object has no `coerce` (2026-10-19)
-
-`fix/11276-no-type-object-coerce`. A by-name gate of `call_method_with_values_inner` answered
-`Type.coerce($value)` on any type object through `try_coerce_value_for_constraint`, a method
-Rakudo does not have (`Int.coerce("3")` is `X::Method::NotFound`); coercion is the coercion
-type's HOW's (`Metamodel::CoercionHOW.coerce`, an interpreter row). Nothing in mutsu called it,
-and a class's own `coerce` is found before it. The gate is gone, so the call now fails as in
-Rakudo; pinned in `t/types/coercion/type-object-has-no-coerce.t`.
-
 ### 9.191 `Allomorph.ACCEPTS` of an object is a late interpreter twin (2026-10-19)
 
 `refactor/11276-allomorph-accepts`. A by-name gate of `call_method_with_values_inner` matched an
@@ -4723,6 +4714,15 @@ its `allomorph_numeric_equal` copy are gone. Smartmatch with an allomorph matche
 topic (`N.new ~~ <42>`, `False` before) now reaches the twin, and an instance of a `Str` subclass
 smartmatches its string payload (`S.new(value => "42") ~~ "42"`, `False` before). Pinned in
 `t/types/coercion/allomorph-accepts-object.t`.
+
+### 9.192 A type object has no `coerce` (2026-10-19)
+
+`fix/11276-no-type-object-coerce`. A by-name gate of `call_method_with_values_inner` answered
+`Type.coerce($value)` on any type object through `try_coerce_value_for_constraint`, a method
+Rakudo does not have (`Int.coerce("3")` is `X::Method::NotFound`); coercion is the coercion
+type's HOW's (`Metamodel::CoercionHOW.coerce`, an interpreter row). Nothing in mutsu called it,
+and a class's own `coerce` is found before it. The gate is gone, so the call now fails as in
+Rakudo; pinned in `t/types/coercion/type-object-has-no-coerce.t`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
