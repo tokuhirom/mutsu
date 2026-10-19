@@ -81,7 +81,9 @@ pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabula
 pub(in crate::parser) use lib_paths::{
     parser_lib_paths, register_preload_module_exports, try_add_parse_time_lib_path,
 };
-pub(crate) use module_exports::exported_vars::{ExportedVar, scanned_exported_vars};
+pub(crate) use module_exports::exported_vars::{
+    ExportedVar, scanned_exported_vars, scanned_exported_vars_complete,
+};
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_import_tags,
     register_inline_module_exports, register_module_exports, register_module_exports_with_tags,

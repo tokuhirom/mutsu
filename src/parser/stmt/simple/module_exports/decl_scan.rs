@@ -60,6 +60,13 @@ pub(super) struct ModuleDecls {
     /// The `our` variables the module exports from its package spine
     /// (`exported_vars.rs`).
     pub(super) exported_vars: Vec<super::exported_vars::ExportedVar>,
+    /// Whether the module exports a variable that is no `exported_vars` entry:
+    /// an `our` declared directly in an `EXPORT::<tag>` stash (exported by
+    /// construction), an `is export` one off the package spine, or an `our`
+    /// variable or constant outside every package, which is GLOBAL's (a
+    /// bare-file module's, one before `unit class`). Its exported variables
+    /// are then not all known.
+    pub(super) unlisted_exported_vars: bool,
 }
 
 /// Walk a module's parsed statements once and collect what the importer's
@@ -369,6 +376,19 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // Only one on the package spine is known to be declared when
                 // the module loads.
                 let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
+                if *is_our && is_export_stash_package(&self.package) && !name.starts_with('&') {
+                    self.out.unlisted_exported_vars = true;
+                }
+                // An `our` variable or constant outside every package (a
+                // bare-file module's, one before `unit class`) is a GLOBAL
+                // one, which the importer sees as well.
+                if (*is_our || is_constant)
+                    && !name.is_empty()
+                    && !name.starts_with('&')
+                    && (self.prefix.is_empty() || (*is_export && !self.spine))
+                {
+                    self.out.unlisted_exported_vars = true;
+                }
                 if *is_export
                     && (*is_our || is_constant)
                     && self.spine

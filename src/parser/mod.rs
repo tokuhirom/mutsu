@@ -40,7 +40,7 @@ pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::modifier::for_modifier_loop_params;
 pub(crate) use stmt::modifier::rewrite_placeholder_block_modifier_stmt;
-pub(crate) use stmt::simple::{ExportedVar, scanned_exported_vars};
+pub(crate) use stmt::simple::{ExportedVar, scanned_exported_vars, scanned_exported_vars_complete};
 pub(crate) use stmt::sub::{INDIRECT_DECL_NAME, op_prec_trait};
 
 /// Lowered RakuAST blocks need the same lexical user-sub view the parser had
@@ -330,6 +330,7 @@ pub(crate) use stmt::assign::callable_lvalue_assign_expr;
 pub(crate) use stmt::assign::paren_list_assign_expr;
 pub(crate) use stmt::control::else_pointy_clause;
 pub(crate) use stmt::control::loop_pointy_clause;
+pub(crate) use stmt::control::repeat_param_clause;
 pub(crate) use stmt::control::{
     given_pointy_body, if_pointy_clause, unless_clause, with_then_branch,
 };

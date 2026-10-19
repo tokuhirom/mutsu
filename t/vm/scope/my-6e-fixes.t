@@ -13,11 +13,11 @@ is my sub {7}(), 7, 'my sub {7}() without parens around the sub';
 
 # A `my` declared inside EVAL must NOT leak into the caller pad.
 EVAL 'my $leak1 = 99';
-nok $leak1.defined, 'EVAL my scalar does not leak';
+nok (try EVAL '$leak1').defined, 'EVAL my scalar does not leak';
 EVAL 'loop (my $leak2 = 1; 0; 1) { }';
-nok $leak2.defined, 'EVAL loop-init my does not leak';
+nok (try EVAL '$leak2').defined, 'EVAL loop-init my does not leak';
 EVAL 'if my $leak3 = 1 { } else { }';
-nok $leak3.defined, 'EVAL if-cond my does not leak';
+nok (try EVAL '$leak3').defined, 'EVAL if-cond my does not leak';
 
 # But EVAL can still read + assign the caller's existing lexicals.
 my $outer = 10;

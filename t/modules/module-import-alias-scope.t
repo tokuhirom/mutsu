@@ -15,7 +15,7 @@ is i7692-mid(), '42/hi', 'a unit module routine sees its imported variable and c
 is i7692-nested(), '42', 'a nested sub inherits the unit module import scope';
 is i7692-block(), '42/hi', 'a nested block inherits the unit module import scope';
 is $issue7692-value, 'caller-value', 'a same-named caller variable is restored';
-nok (try $issue7692-only).defined, 'an imported variable does not leak to the caller';
+nok (try EVAL '$issue7692-only').defined, 'an imported variable does not leak to the caller';
 nok (try I7692Class.new.hi).defined, 'an imported class does not leak to the caller';
 nok (try i7692-exported()).defined, 'a transitive imported sub does not leak to the caller';
 
