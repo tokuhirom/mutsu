@@ -74,6 +74,9 @@ impl Interpreter {
         // interpreter. So such a class is native-constructible even though
         // `has_attribute` stays false; track that here.
         let mut is_exception = false;
+        // Every class of the MRO (past `Any`/`Mu`/`Cool`) is one the program
+        // declared.
+        let mut all_user_declared = true;
         // A Baggy/Setty class stores its elements in a QuantHash, which only
         // the full constructor builds (`construct_baggy_instance`).
         if self.class_does_baggy_or_setty(cn_resolved) {
@@ -111,7 +114,10 @@ impl Interpreter {
             // class-typed attribute also falls through at build time (it may be
             // set by BUILD, which the conservative native path does not assume).
             let simple = registry.user_method_overloads(&cls, "BUILDALL").is_none()
-                && (allow_user_new || registry.user_method_overloads(&cls, "new").is_none())
+                && (allow_user_new
+                    || (registry.user_method_overloads(&cls, "new").is_none()
+                        // A `proto method new` owns the dispatch, body or not.
+                        && registry.method_entry_proto(&cls, "new").is_none()))
                 && class_def.native_methods.is_empty()
                 // An `is built(Bool)` trait only flips whether an attribute is
                 // assigned from a named arg — the native builder already honours
@@ -219,11 +225,13 @@ impl Interpreter {
                 return false;
             }
             has_attribute |= !class_def.attributes.is_empty();
+            all_user_declared &= self.types.user_declared_classes.contains(cls.as_str());
         }
         // A class the program declared with no attribute is constructed like
-        // one with attributes; a built-in type registered without any is not
-        // assumed to be plain data.
-        has_attribute || is_exception || self.types.user_declared_classes.contains(cn_resolved)
+        // one with attributes, when its whole MRO is the program's own; a
+        // built-in type registered without any (an `IterationBuffer` base,
+        // say) is not assumed to be plain data.
+        has_attribute || is_exception || all_user_declared
     }
 
     /// A role whose composition the native default constructor serves: a user
@@ -403,12 +411,15 @@ impl Interpreter {
             // an `Exception` anywhere in the MRO (`message`/`payload`/`got`/… are
             // not declared anywhere), and a class that declares no attribute at
             // all (every built-in `X::…` type is registered with an empty
-            // attribute list and used purely as a bag). A class the program
-            // declared with no attribute is not such a bag: its attribute set
-            // is known to be empty. `IO::Handle` has a declared default path
+            // attribute list and used purely as a bag). A class whose whole
+            // MRO the program declared, with no attribute, is not such a bag:
+            // its attribute set is known to be empty. `IO::Handle` has a declared default path
             // but still accepts native option attributes.
             let attrs_fully_known = (!class_attrs.is_empty()
-                || self.types.user_declared_classes.contains(cn_resolved))
+                || mro.iter().all(|cls| {
+                    matches!(cls.as_str(), "Any" | "Mu" | "Cool")
+                        || self.types.user_declared_classes.contains(cls.as_str())
+                }))
                 && !mro.iter().any(|cls| cls == "IO::Handle")
                 && {
                     let registry = self.registry();
