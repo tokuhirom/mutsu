@@ -210,11 +210,11 @@ impl Compiler {
         // The parser synthesizes `*%_` for a signature-less block that reads
         // `%_`. Inside a method, however, an ordinary nested block captures
         // the method's implicit `%_`; it does not shadow it with a new empty
-        // hash. RakuAST blocks carrying the real
-        // `VarDeclaration::Placeholder::SlurpyHash` deliberately leave
-        // `block_param` false (see `make_rakuast_anon_sub`), so they retain
-        // their own named-slurpy binding even when lowered inside a method.
-        if self.lexically_in_method
+        // hash. RakuAST lowering resolves the same method binding; an unbound
+        // placeholder keeps `block_param` false, while a read resolved to the
+        // method's hash follows this inferred-parameter capture path.
+        if declarator == crate::ast::RoutineDeclarator::Block
+            && self.lexically_in_method
             && params.len() == 1
             && params[0] == "%_"
             && param_defs.len() == 1
@@ -234,7 +234,8 @@ impl Compiler {
         // name (`sub f(@a, *%_) { @a.map({ to-json $_, |%_ }) }`) the block
         // reads the outer lexical and keeps the default `$_` signature, as in
         // rakudo -- it is not a placeholder at all (JSON::Fast::Hyper).
-        if !params.is_empty()
+        if declarator == crate::ast::RoutineDeclarator::Block
+            && !params.is_empty()
             && params.len() == param_defs.len()
             && param_defs.iter().all(|pd| {
                 matches!(pd.name.as_str(), "@_" | "%_")

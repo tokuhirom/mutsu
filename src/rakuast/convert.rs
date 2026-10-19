@@ -13,7 +13,7 @@ use conditional::*;
 use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
 use super::origin;
-use super::placeholder::{is_placeholder_name, is_placeholder_param, placeholder_node};
+use super::placeholder::{is_placeholder_name, placeholder_node};
 use super::routine_source::return_type_spelling;
 pub(super) use super::routine_source::routine_node;
 use super::{
@@ -50,6 +50,7 @@ pub(super) fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstFie
 
 /// Top-level: a parsed program becomes a `RakuAST::StatementList`.
 pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _scope = bareword::DeclaredNames::collect(stmts);
     statement_list_inner(stmts)
 }
@@ -71,6 +72,7 @@ pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, Runti
 }
 
 fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::block(stmts);
     let _block = bareword::BlockScope::enter(stmts);
     let mut fields = Vec::new();
     // The line of the statement about to be converted: the `SetLine` marker
@@ -3940,7 +3942,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if is_desugar_marker(name) && !crate::ast::anon_state::is_array(name) {
                 return Err(desugared(name));
             }
-            if name == "_" {
+            if name == "_" && super::underscore_bindings::declares_placeholder(true) {
                 return Ok(RakuAstNode {
                     class: RakuAstClass::VarDeclarationPlaceholderSlurpyArray,
                     fields: Vec::new(),
@@ -3970,7 +3972,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if is_desugar_marker(name) && !crate::ast::anon_state::is_hash(name) {
                 return Err(desugared(name));
             }
-            if name == "_" {
+            if name == "_" && super::underscore_bindings::declares_placeholder(false) {
                 return Ok(RakuAstNode {
                     class: RakuAstClass::VarDeclarationPlaceholderSlurpyHash,
                     fields: Vec::new(),
@@ -4628,7 +4630,6 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             pointy_block_from_lambda(param, *param_sigilless, body)
         }
         Expr::AnonSubParams {
-            params,
             param_defs,
             body,
             is_rw,
@@ -4647,15 +4648,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             // A bare placeholder block is a Block whose body contains
             // placeholder declarations, not a PointyBlock with a signature.
-            // The parser records the implicit parameters on AnonSubParams, so
-            // recover the source-level node only for the ordinary scalar
-            // placeholder subset handled by this regex boundary.
-            if *declarator == crate::ast::RoutineDeclarator::Block
-                && !params.is_empty()
-                && (params.iter().all(|param| is_placeholder_param(param))
-                    || crate::regex_tree::is_array_slurpy_placeholder_block(expr)
-                    || crate::regex_tree::is_hash_slurpy_placeholder_block(expr))
-            {
+            // The declarator and inferred parameters retain this distinction,
+            // including blocks that combine different placeholder kinds.
+            if crate::ast::placeholders::is_implicit_placeholder_block(expr) {
                 return signature_block_node(body);
             }
             if declarator.is_routine() {
@@ -5215,6 +5210,7 @@ fn regex_declaration(
     param_defs: &[ParamDef],
     export_trait: Option<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     regex_declaration_with_body(
         class,
         Some(name),
@@ -5430,6 +5426,7 @@ pub(super) fn pointy_block(
     body: &[Stmt],
     returns: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     let mut fields = Vec::new();
     if !param_defs.is_empty() || returns.is_some() {
         fields.push(node_field(
@@ -5455,6 +5452,7 @@ fn anon_routine_node(
     body: &[Stmt],
     returns: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     let mut fields = Vec::new();
     if !param_defs.is_empty() || returns.is_some() {
         fields.push(node_field(
@@ -5492,6 +5490,7 @@ fn method_literal_node(
     body: &[Stmt],
     returns: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     let [receiver, rest @ ..] = param_defs else {
         return Err(unsupported("method literal without a receiver"));
     };
@@ -7368,9 +7367,7 @@ fn colonpair_value_node(expr: &Expr, parenthesize: bool) -> Result<RakuAstNode, 
                 | Expr::Block(_)
                 | Expr::Hash(_, crate::ast::HashSpelling::Composer)
         )
-        || crate::regex_tree::is_scalar_placeholder_block(right)
-        || crate::regex_tree::is_array_slurpy_placeholder_block(right)
-        || crate::regex_tree::is_hash_slurpy_placeholder_block(right);
+        || crate::ast::placeholders::is_implicit_placeholder_block(right);
     if is_direct_block || !parenthesize {
         return Ok(RakuAstNode {
             class: RakuAstClass::ColonPairValue,

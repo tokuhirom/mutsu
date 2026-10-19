@@ -92,7 +92,7 @@ pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, Runti
             is_raw: false,
             custom_traits: Default::default(),
             is_whatever_code: false,
-            declarator: crate::ast::RoutineDeclarator::Block,
+            declarator: crate::ast::RoutineDeclarator::PointyBlock,
         }),
     }
 }

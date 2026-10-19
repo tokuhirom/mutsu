@@ -25,6 +25,43 @@ use super::{Expr, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use crate::regex_tree::RegexNode;
 
+/// Whether a bare placeholder name can be represented by the source model.
+// Cost: O(k), k = name length.
+pub(crate) fn is_placeholder_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+}
+
+/// A bare block's inferred signature, including mixed positional, named and
+/// legacy aggregate placeholders. An explicit pointy signature is a different
+/// declarator even when it spells the same @_/%_ names.
+// Cost: O(p + k), p = parameters, k = their total name length.
+pub(crate) fn is_implicit_placeholder_block(expr: &Expr) -> bool {
+    let Expr::AnonSubParams {
+        params,
+        param_defs,
+        declarator: super::RoutineDeclarator::Block,
+        is_whatever_code: false,
+        ..
+    } = expr
+    else {
+        return false;
+    };
+    !params.is_empty()
+        && params.iter().all(|param| {
+            matches!(param.as_str(), "@_" | "%_") || {
+                let rest = param.strip_prefix(['$', '@', '%', '&']).unwrap_or(param);
+                rest.strip_prefix(['^', ':'])
+                    .is_some_and(is_placeholder_name)
+            }
+        })
+        && param_defs.iter().all(|param| {
+            !matches!(param.name.as_str(), "@_" | "%_") || (param.slurpy && !param.double_slurpy)
+        })
+}
+
 /// A statement whose body is a `{ ... }` block (or a statement modifier's
 /// lowering of one) that the ADR-0048 oracle classifies.
 // Cost: O(1).

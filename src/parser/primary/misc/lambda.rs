@@ -101,7 +101,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 is_raw: false,
                 custom_traits: Default::default(),
                 is_whatever_code: false,
-                declarator: crate::ast::RoutineDeclarator::Block,
+                declarator: crate::ast::RoutineDeclarator::PointyBlock,
             },
         ));
     }
@@ -123,7 +123,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 is_raw: false,
                 custom_traits: Default::default(),
                 is_whatever_code: false,
-                declarator: crate::ast::RoutineDeclarator::Block,
+                declarator: crate::ast::RoutineDeclarator::PointyBlock,
             },
         ));
     }
@@ -169,7 +169,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 is_raw: false,
                 custom_traits: Default::default(),
                 is_whatever_code: false,
-                declarator: crate::ast::RoutineDeclarator::Block,
+                declarator: crate::ast::RoutineDeclarator::PointyBlock,
             },
         ));
     }
@@ -228,7 +228,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 is_raw: false,
                 custom_traits: Default::default(),
                 is_whatever_code: false,
-                declarator: crate::ast::RoutineDeclarator::Block,
+                declarator: crate::ast::RoutineDeclarator::PointyBlock,
             },
         ))
     } else {
@@ -319,7 +319,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                     is_raw: false,
                     custom_traits: Default::default(),
                     is_whatever_code: false,
-                    declarator: crate::ast::RoutineDeclarator::Block,
+                    declarator: crate::ast::RoutineDeclarator::PointyBlock,
                 },
             ))
         }

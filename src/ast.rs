@@ -945,8 +945,7 @@ fn declarator_sub() -> RoutineDeclarator {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum RoutineDeclarator {
-    /// No routine declarator: a pointy block (`-> $a, $b { }`), a placeholder
-    /// block (`{ $^a }`), and the closures the compiler/runtime synthesize.
+    /// A placeholder block (`{ $^a }`) or a compiler/runtime closure.
     Block,
     /// `sub ($x) { }`, `anon Str sub { }`, one candidate of an anonymous
     /// `multi sub`.
@@ -956,6 +955,9 @@ pub(crate) enum RoutineDeclarator {
     /// A `submethod (...) { }` literal, including its `anon` and `my`
     /// spellings.
     Submethod,
+    /// An explicitly written `->` / `<->` block. Keep its signature distinct
+    /// from the implicit @_/%_ parameters of a bare placeholder block.
+    PointyBlock,
 }
 
 impl RoutineDeclarator {
@@ -963,7 +965,10 @@ impl RoutineDeclarator {
     /// that makes `return` a boundary and gives parameters an `Any` nominal
     /// type.
     pub(crate) fn is_routine(self) -> bool {
-        !matches!(self, RoutineDeclarator::Block)
+        !matches!(
+            self,
+            RoutineDeclarator::Block | RoutineDeclarator::PointyBlock
+        )
     }
 
     /// The `custom_traits` marker this declarator leaves on the declaration
@@ -975,7 +980,9 @@ impl RoutineDeclarator {
         match self {
             RoutineDeclarator::Method => Some(METHOD_LITERAL_MARKER),
             RoutineDeclarator::Submethod => Some(SUBMETHOD_LITERAL_MARKER),
-            RoutineDeclarator::Block | RoutineDeclarator::Sub => None,
+            RoutineDeclarator::Block | RoutineDeclarator::PointyBlock | RoutineDeclarator::Sub => {
+                None
+            }
         }
     }
 
@@ -1004,7 +1011,9 @@ impl RoutineDeclarator {
         match self {
             RoutineDeclarator::Method => Some("Method"),
             RoutineDeclarator::Submethod => Some("Submethod"),
-            RoutineDeclarator::Block | RoutineDeclarator::Sub => None,
+            RoutineDeclarator::Block | RoutineDeclarator::PointyBlock | RoutineDeclarator::Sub => {
+                None
+            }
         }
     }
 }
@@ -3314,51 +3323,6 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             declarator: crate::ast::RoutineDeclarator::Block,
         }
     }
-}
-
-/// Build the execution closure for a RakuAST `Block` whose body contains an
-/// implicit legacy placeholder.  RakuAST has already told us that `%_` is the
-/// block's own named-slurpy declaration, so keep it distinct from the parser's
-/// ordinary signature-less block.  The latter may capture an enclosing
-/// method's `%_` instead of introducing a shadowing hash.
-pub(crate) fn make_rakuast_anon_sub(stmts: Vec<Stmt>) -> Expr {
-    let expr = make_anon_sub(stmts);
-    if let Expr::AnonSubParams {
-        params, param_defs, ..
-    } = &expr
-        && params.len() == 1
-        && params[0] == "%_"
-        && param_defs.len() == 1
-        && param_defs[0].name == "%_"
-    {
-        let Expr::AnonSubParams {
-            params,
-            mut param_defs,
-            return_type,
-            body,
-            is_rw,
-            is_raw,
-            custom_traits,
-            is_whatever_code,
-            declarator,
-        } = expr
-        else {
-            unreachable!("the RakuAST legacy placeholder shape was checked above")
-        };
-        param_defs[0].block_param = false;
-        return Expr::AnonSubParams {
-            params,
-            param_defs,
-            return_type,
-            body,
-            is_rw,
-            is_raw,
-            custom_traits,
-            is_whatever_code,
-            declarator,
-        };
-    }
-    expr
 }
 
 #[cfg(test)]

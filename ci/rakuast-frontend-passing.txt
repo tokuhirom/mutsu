@@ -327,6 +327,7 @@ t/collections/lazy-seq/lazy-array-gist.t
 t/collections/lazy-seq/lazy-array-numeric.t
 t/collections/lazy-seq/lazy-array-reify-on-mutation.t
 t/collections/lazy-seq/lazy-array-reify.t
+t/collections/lazy-seq/lazy-first-list-context-pulls.t
 t/collections/lazy-seq/lazy-gather-and-junction.t
 t/collections/lazy-seq/lazy-gather-elems-cannot-lazy.t
 t/collections/lazy-seq/lazy-gather-grep-map-laziness.t
@@ -347,6 +348,7 @@ t/collections/lazy-seq/lazy-pairs-kv-antipairs.t
 t/collections/lazy-seq/lazy-positional-views-and-combinatorics.t
 t/collections/lazy-seq/lazy-rat-index.t
 t/collections/lazy-seq/lazy-receiver-pulls.t
+t/collections/lazy-seq/lazy-receiver-refusals.t
 t/collections/lazy-seq/lazy-receiver-reify-audit.t
 t/collections/lazy-seq/lazy-rotor-flat-tree.t
 t/collections/lazy-seq/lazy-self-ending-generator-stays-lazy.t
@@ -1030,6 +1032,7 @@ t/concurrency/promise/promise-subclass-factory-methods.t
 t/concurrency/promise/promise-then-callback-die-skips-outer-catch.t
 t/concurrency/promise/promise-then-callback-output-order.t
 t/concurrency/promise/promise-then-sibling-ordering.t
+t/concurrency/promise/promise-wrapper-role-gist-rows.t
 t/concurrency/promise/start-await.t
 t/concurrency/promise/start-block-and-then-keep-captured-binding.t
 t/concurrency/promise/start-block-destructured-array-param.t
@@ -1227,6 +1230,7 @@ t/concurrency/supply/supply-whenever-ondemand-live-chain.t
 t/concurrency/supply/supply-whenever-promise.t
 t/concurrency/supply/supply-whenever-supplier.t
 t/concurrency/supply/supply-worker-panic-reaches-quit.t
+t/concurrency/supply/try-react-whenever.t
 t/concurrency/supply/whenever-body-closure-cross-thread-cell.t
 t/concurrency/supply/whenever-body-lexical-private.t
 t/concurrency/supply/whenever-broken-promise-quits.t
@@ -1973,6 +1977,7 @@ t/grammar/grammar-wrapped-token-dispatch.t
 t/grammar/grammar-zero-width-silent-action.t
 t/grammar/grammarhow-new-type-add-regex-method.t
 t/grammar/ipv6-mapped-dotted-decimal.t
+t/grammar/lookahead-interpolates-dynvar-of-calling-rule.t
 t/grammar/match-of-x-namespaced-grammar-is-not-an-exception.t
 t/grammar/multi-token-protoless-dispatch.t
 t/grammar/multi-token-start-rule-arity.t
@@ -2052,6 +2057,7 @@ t/io/for-slurpy-rw-lazy.t
 t/io/handle-lines-head-reads-prefix.t
 t/io/handle-subclass-open-keeps-subclass.t
 t/io/hyper-map-implicit-named-slurpy-leak.t
+t/io/implicit-named-slurpy-gate.t
 t/io/indir-return-value-laziness.t
 t/io/io-blob-content-length.t
 t/io/io-builtin-user-sub-shadow.t
@@ -2363,6 +2369,7 @@ t/lang/operators/metaop-doubled-infix-base.t
 t/lang/operators/metaop-function-compose-inner-op.t
 t/lang/operators/metaop-inner-operator-decoded-once.t
 t/lang/operators/metaop-over-code-var.t
+t/lang/operators/metaop-user-declared-symbol-infix.t
 t/lang/operators/metaoperators-custom-infix.t
 t/lang/operators/negated-pair.t
 t/lang/operators/nonassoc-comparison.t
@@ -2618,6 +2625,7 @@ t/modules/bind-to-package-var-takes-its-container.t
 t/modules/block-declares-in-its-own-package.t
 t/modules/block-import-operator-unit-module-scope.t
 t/modules/block-use-keeps-nested-module-imports.t
+t/modules/block-use-package-var-outside-block-is-unmerged.t
 t/modules/builtin-args-package-body-lexical-cell.t
 t/modules/callframe-my-package.t
 t/modules/class-body-typed-hash-static-per-module.t
@@ -2957,6 +2965,7 @@ t/modules/import-export/use-in-block-call-shapes.t
 t/modules/import-export/use-in-block-env-scope.t
 t/modules/import-export/use-in-block-hides-qualified-packages-from-callees.t
 t/modules/import-export/use-in-block-hides-types-and-constants-from-callees.t
+t/modules/import-export/use-in-block-repeated-calls-types.t
 t/modules/import-export/use-in-block-repeated-calls.t
 t/modules/import-export/use-in-do-block-is-scoped.t
 t/modules/import-export/use-in-nested-block-is-begin-time.t
@@ -3011,6 +3020,7 @@ t/modules/module-local-class-shadows-builtin-ns.t
 t/modules/module-local-type-shadows-builtin.t
 t/modules/module-method-lexical-sub.t
 t/modules/module-method-resolves-in-its-own-unit.t
+t/modules/module-my-package-is-lexical-to-module.t
 t/modules/module-nested-sub-captures-routine-array.t
 t/modules/module-noarg-default-private-sub-comma.t
 t/modules/module-our-globals-outlive-scope.t
@@ -3604,6 +3614,7 @@ t/oo/attribute/interp-attribute-array-hash-method.t
 t/oo/attribute/interp-self-accessor-call.t
 t/oo/attribute/let-temp-attribute-and-term-forms.t
 t/oo/attribute/lvalue-invocant-attribute-accessor-container.t
+t/oo/attribute/map-to-hash-attribute-construction.t
 t/oo/attribute/method-accessor-element-bind.t
 t/oo/attribute/method-table-reports-rw-accessor.t
 t/oo/attribute/mixin-attribute-get-value.t
@@ -3680,6 +3691,7 @@ t/oo/class/class-body-in-routine-writes-outer-lexical.t
 t/oo/class/class-body-lexical-read.t
 t/oo/class/class-body-my-lexical-scope.t
 t/oo/class/class-body-my-shadows-outer-lexical.t
+t/oo/class/class-body-statements-see-composed-class.t
 t/oo/class/class-body-static-compound-assignment.t
 t/oo/class/class-body-static-in-named-sub.t
 t/oo/class/class-body-static-in-sub.t
@@ -3806,6 +3818,7 @@ t/oo/construct/mixin-type-object-custom-new-bless.t
 t/oo/construct/new-attr-nil-resets-to-default.t
 t/oo/construct/new-build-parent-required-attr.t
 t/oo/construct/new-ctor-lane.t
+t/oo/construct/new-empty-class-unknown-named.t
 t/oo/construct/new-ignores-undeclared-named-args.t
 t/oo/construct/new-on-builtin-instance.t
 t/oo/construct/new-on-instance.t
@@ -5016,6 +5029,7 @@ t/rakuast/rakuast-object-hash.t
 t/rakuast/rakuast-obsolete-interpolation.t
 t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operators.t
+t/rakuast/rakuast-outer-slurpy-bindings.t
 t/rakuast/rakuast-package-indirect-lookup.t
 t/rakuast/rakuast-parameter-optional-traits.t
 t/rakuast/rakuast-paren-list-assign.t
@@ -5458,6 +5472,7 @@ t/regex/regex-left-word-boundary-interpolation.t
 t/regex/regex-literal-is-a-closure.t
 t/regex/regex-literal-lt-then-scalar.t
 t/regex/regex-longname-alias-rhs.t
+t/regex/regex-lookaround-array-matches-elements-literally.t
 t/regex/regex-lookaround-bound-param.t
 t/regex/regex-lookaround-compiled-op.t
 t/regex/regex-lookaround.t
@@ -6282,6 +6297,7 @@ t/routines/placeholder-scope-all-positions.t
 t/routines/placeholder-scope-loop-condition.t
 t/routines/placeholder-scope-rejecting.t
 t/routines/placeholder-sub-rejects-extra-positionals.t
+t/routines/placeholder-underscore-vars-from-enclosing-routine.t
 t/routines/placeholder.t
 t/routines/process-stash-routine-symbols.t
 t/routines/proxy-rw-routine-return-bind.t
@@ -6302,6 +6318,7 @@ t/routines/routine-prec.t
 t/routines/routine-precedence-associative.t
 t/routines/routine-set-name-qualified.t
 t/routines/routine-topic-is-fresh-any-not-caller.t
+t/routines/routine-uses-var-declared-later-is-undeclared.t
 t/routines/routine-value-self-recursion-after-import-scope-pop.t
 t/routines/routine-yada-stub-kinds.t
 t/routines/routine-yada.t

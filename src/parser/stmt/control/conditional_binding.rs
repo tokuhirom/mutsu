@@ -158,7 +158,7 @@ fn expand_if_pointy(
             is_raw: false,
             custom_traits: Default::default(),
             is_whatever_code: false,
-            declarator: crate::ast::RoutineDeclarator::Block,
+            declarator: crate::ast::RoutineDeclarator::PointyBlock,
         }),
         args,
     };
@@ -266,7 +266,7 @@ fn expand_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stm
             is_raw: false,
             custom_traits: Default::default(),
             is_whatever_code: false,
-            declarator: crate::ast::RoutineDeclarator::Block,
+            declarator: crate::ast::RoutineDeclarator::PointyBlock,
         }),
         // One argument, as in `lower_if_clause_binding` -- `else -> ...` shares
         // the rule.

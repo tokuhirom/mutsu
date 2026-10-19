@@ -10,6 +10,7 @@
 use super::convert::leaf_field;
 use super::lower::{positional_leaf, unsupported};
 use super::{RakuAstClass, RakuAstNode};
+pub(super) use crate::ast::placeholders::is_placeholder_name;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The node for a placeholder variable written `sigil` + twigil + `name`.
@@ -19,25 +20,6 @@ pub(super) fn placeholder_node(class: RakuAstClass, sigil: &str, name: &str) -> 
         class,
         fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
     }
-}
-
-/// Whether `name` (a placeholder's name without sigil and twigil) is one the
-/// RakuAST placeholder nodes can spell.
-// Cost: O(k), k = length of the name.
-pub(super) fn is_placeholder_name(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
-}
-
-/// Whether a block's implicit parameter (`^x`, `$^x`, `@^a`, `%^h`, `&^cb`,
-/// `:foo`) is a placeholder variable the RakuAST nodes can spell.
-// Cost: O(k), k = length of the parameter.
-pub(super) fn is_placeholder_param(param: &str) -> bool {
-    let rest = param.strip_prefix(['$', '@', '%', '&']).unwrap_or(param);
-    rest.strip_prefix(['^', ':'])
-        .is_some_and(is_placeholder_name)
 }
 
 /// A placeholder node's sigil and bare name: `"@a"` is `('@', "a")`.
