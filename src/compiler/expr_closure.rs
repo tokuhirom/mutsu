@@ -1,4 +1,5 @@
 use super::*;
+use super::expr_routine_literal::collect_whatever_expr_decls;
 
 use crate::symbol::Symbol;
 
