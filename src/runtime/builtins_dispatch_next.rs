@@ -551,12 +551,19 @@ impl Interpreter {
         else {
             return None;
         };
-        if !InstanceBacking::Array.is_in(&attributes)
-            || !self
-                .mro_readonly(&class_name.resolve())
-                .iter()
-                .any(|n| n == "Array")
-        {
+        if !InstanceBacking::Array.is_in(&attributes) {
+            return None;
+        }
+        // An `is List` subclass reads through its storage as an `is Array`
+        // one does; only an `Array` writes to it.
+        let (is_array, is_list) = {
+            let mro = self.mro_readonly(&class_name.resolve());
+            (
+                mro.iter().any(|n| n == "Array"),
+                mro.iter().any(|n| n == "List"),
+            )
+        };
+        if !is_array && !is_list {
             return None;
         }
         // Mutating array methods (push/append/prepend/unshift/pop/shift) must
@@ -572,10 +579,12 @@ impl Interpreter {
         // array), so those four map the mutation's Ok value to `invocant.clone()`
         // — the SAME instance (same id, same attribute cell), so `===` and
         // `.^name` come out right; `pop`/`shift` return the removed element as-is.
-        if matches!(
-            method_name,
-            "push" | "append" | "prepend" | "unshift" | "pop" | "shift" | "ASSIGN-POS" | "DELETE-POS"
-        ) {
+        if is_array
+            && matches!(
+                method_name,
+                "push" | "append" | "prepend" | "unshift" | "pop" | "shift" | "ASSIGN-POS" | "DELETE-POS"
+            )
+        {
             let outcome = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
                 self.native_array_storage_mut(storage, method_name, args)
             })?;
@@ -1210,6 +1219,9 @@ impl Interpreter {
                         }
                         NativeBase::Storage => {
                             self.native_storage_base_entry(&invocant, &name, &args)
+                        }
+                        NativeBase::BuiltinAncestor => {
+                            Some(self.run_core_type_builtin(invocant.clone(), &name, args.clone()))
                         }
                         NativeBase::Value => None,
                     };
