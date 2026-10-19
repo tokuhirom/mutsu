@@ -178,7 +178,7 @@ impl Interpreter {
     /// stop the cascade from being (wrongly) tried — each of these stays an
     /// explicit guard even after the eventual resolver cutover. Only used
     /// from the main (non-lazy-Match) body of
-    /// [`Self::should_bypass_native_fastpath`]: the lazy-Match branch avoids
+    /// [`Self::native_receiver_defers`]: the lazy-Match branch avoids
     /// `target.view()` (it would materialize the lazy value) and instead
     /// inlines the subset of these checks that can ever apply to a Match
     /// receiver.
@@ -299,215 +299,57 @@ impl Interpreter {
             || self.class_has_wildcard_handles_or_fallback(&class_name)
     }
 
-    /// Determine whether to bypass the native method fast path.
-    pub(super) fn should_bypass_native_fastpath(
+    /// Whether `target`'s own state needs the interpreter for this call, so
+    /// the built-in rows and cascades must not answer it (ADR-11276 §2.4's
+    /// guard step): a receiver kind the receiver-blind cascades misread, a
+    /// computed exception message, a method the instance's class implements
+    /// in the interpreter, or a `Cool` name the receiver's ancestry
+    /// does not declare (normal resolution throws `X::Method::NotFound`).
+    /// Whether a *declaration* takes the call is the other question,
+    /// [`Self::user_shadows_builtin`].
+    // Cost: O(1) amortized for most calls (name and tag probes); a memoized
+    // MRO probe for the `Cool`-only names.
+    pub(super) fn native_receiver_defers(
         &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
-        skip_pseudo: bool,
-        is_pseudo_method: bool,
     ) -> bool {
-        // Lazy-Match head branch: the chain below reads `target.view()`
-        // repeatedly, which would materialize a lazy Match per method call.
-        // Its class is statically "Match", so evaluate the Instance arms that
-        // can apply to it directly (the Supply/IO::Handle/Proc::Async/Stash
-        // arms and the Real/Numeric bridge arm can never hit a Match).
-        if target.is_lazy_match_value() {
-            // A grammar cursor dispatches under the grammar's own class (raku:
-            // `Grammar` IS a `Match` subclass), so a `method` the grammar body
-            // declares takes precedence over the native `Match` row. The
-            // lookups below all MRO-walk, so `Match`'s own rows still apply.
-            let owner = target.match_dispatch_class();
-            if Self::cool_subtype_only_builtin_method(method)
-                && !self
-                    .e2_native_method_exists(target, crate::symbol::Symbol::intern(method).as_str())
-            {
-                return true;
-            }
-            return skip_pseudo
-                || method == "elems"
-                || (matches!(method, "gist" | "Str" | "Stringy")
-                    && self.exception_render_needs_interpreter(target, owner))
-                || self.is_native_method(owner, method)
-                || (!is_pseudo_method
-                    && (self.grammar_has_user_method(owner, method)
-                        || self.has_public_accessor(owner, method)
-                        || (self.has_class_level_attr(owner, method)
-                            && !self.has_public_accessor(owner, method))));
-        }
-        if skip_pseudo || self.native_fastpath_receiver_state_guard(target, method, args) {
-            return true;
-        }
-        // ADR-0051 §3 (#9948): see `try_native_method_raw`'s twin of this
-        // gate -- a `Cool`-subtype-only name the receiver's ancestry does not
-        // declare must not be answered by a receiver-blind cascade.
+        // ADR-0051 §3 (#9948): a `Cool`-subtype-only name the receiver's
+        // ancestry does not declare must not be answered by a receiver-blind
+        // cascade (the twin of `try_native_method_raw`'s gate).
         if Self::cool_subtype_only_builtin_method(method)
             && !self.e2_native_method_exists(target, crate::symbol::Symbol::intern(method).as_str())
         {
             return true;
         }
-        // ADR-0019 E4b step 12 (authoritative switch, category 3): the
-        // Instance branch's `has_user_method(..) || has_public_accessor(..)`
-        // pair collapses into one `resolve_user_method_or_accessor` call --
-        // shadow-verified equivalent in step 1 (`t/`-wide sweep, only 2/36992
-        // unrelated mismatches). The Package branch stays its own narrower
-        // `has_user_method` check with no accessor lookup (step 11: folding
-        // in `resolve_user_method_or_accessor` there would be a real behavior
-        // change, since an instance attribute's accessor is meaningless on
-        // the bare type object). `is_native_method` (category 2) stays a
-        // direct call rather than routing through `resolve_sequence`'s
-        // `NativeCallBinding` candidate: both compute the exact same MRO walk
-        // (`resolve_sequence`'s detection deliberately mirrors
-        // `is_native_method`), so building a full sequence here would only
-        // add cost, not correctness -- `NativeCallBinding` earns its keep at
-        // future multi-candidate consumers (E5-E7), not this single-fact
-        // check. The class-level-attr arm (category 4, `has_class_level_attr
-        // && !has_public_accessor`) is invisible to every resolver helper
-        // (step 11) and stays an explicit check on both branches.
-        let receiver_bypass = match target.view() {
-            ValueView::Instance { class_name, .. } => {
-                let class_name = class_name.resolve();
-                self.is_native_method(&class_name, method)
-                    || (!is_pseudo_method
-                        && (self
-                            .resolve_user_method_or_accessor(&class_name, method)
-                            .is_some()
-                            || (self.has_class_level_attr(&class_name, method)
-                                && !self.has_public_accessor(&class_name, method))))
-                    // A Cool-only builtin (`.uc`, `.flip`, `.subst`, ...) is
-                    // not resolvable on a plain Any-derived instance in raku,
-                    // so a class declaring `handles *` / `FALLBACK` must get
-                    // the chance to intercept it instead of this fast path
-                    // unconditionally stringifying the receiver. Name-gated
-                    // first (a cheap `matches!`) so the MRO walk only runs
-                    // for the rare "Instance x Cool-only name" shape.
-                    || (Self::cool_only_builtin_method(method)
-                        && self.class_has_wildcard_handles_or_fallback(&class_name))
-                    // ADR-0051 P4: a Cool-only builtin the receiver's own
-                    // ancestry does NOT actually provide (no `Cool` --
-                    // or, for the handful of types with their own genuine
-                    // row, e.g. `Instant.Date` -- anywhere in the dispatch
-                    // chain) must not be answered by this fast path either:
-                    // its cascade arms are receiver-class-blind by
-                    // construction and would unconditionally stringify the
-                    // receiver (`"G()".uc`), which is wrong for a
-                    // genuinely unresolved method (real Rakudo throws
-                    // `X::Method::NotFound`). Deferring to the interpreter
-                    // lets normal "no candidate" resolution throw instead
-                    // of fabricating a stringified answer.
-                    || (Self::cool_only_builtin_method(method)
-                        && !self.e2_native_method_exists(
-                            target,
-                            crate::symbol::Symbol::intern(method).as_str(),
-                        ))
-            }
-            ValueView::Package(class_name) => {
-                let class_name = class_name.resolve();
-                !is_pseudo_method
-                    && (self.grammar_has_user_method(&class_name, method)
-                        && (!matches!(method, "gist" | "raku")
-                            || !args.is_empty()
-                            || self
-                                .resolve_method_with_owner_invocant(
-                                    &class_name,
-                                    method,
-                                    args,
-                                    target,
-                                )
-                                .is_some())
-                        || self.package_has_applicable_user_method(target, method, args)
-                        || (self.has_class_level_attr(&class_name, method)
-                            && !self.has_public_accessor(&class_name, method)))
-            }
-            _ => false,
-        };
-        receiver_bypass
-            || (!is_pseudo_method
-                && (self.mixin_role_has_method(target, method)
-                    || self.mixin_wrapped_instance_has_method(target, method)))
-    }
-
-    /// ADR-0019 E4b shadow probe (`MUTSU_VM_STATS`-gated, a no-op otherwise):
-    /// compare `should_bypass_native_fastpath`'s "does a user method/
-    /// accessor/class-level-attr (or, for an Instance, a NativeCall binding)
-    /// win" categories — the scoping doc's categories 2 and 3,
-    /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`
-    /// — against the resolver's answer for the receiver's own class.
-    /// Recomputes the same sub-expression `should_bypass_native_fastpath`
-    /// evaluates at lines 179-180/214-224, independent of whatever the real
-    /// bypass decision turned out to be (a category-1 special case can make
-    /// the real decision `true` while this probe's `real` is `false`, and
-    /// that is expected — this only asks whether the two answer this one
-    /// sub-question the same way). Purely observational: nothing here feeds a
-    /// dispatch decision.
-    ///
-    /// Step 3 (2026-08-11): category 2 (`is_native_method`) is not visible to
-    /// `resolve_user_method_or_accessor` on its own (a pure native-method
-    /// binding with no matching accessor, e.g. `Supply.tap`, ~82% of step 1's
-    /// mismatches) — it now has its own `ResolvedCandidate::NativeCallBinding`
-    /// entry in `resolve_sequence`, OR'd in here for an Instance receiver.
-    pub(super) fn shadow_check_bypass_user_method_categories(
-        &mut self,
-        target: &Value,
-        method: &str,
-        is_pseudo_method: bool,
-        arg_count: usize,
-    ) {
-        if !crate::vm::vm_stats::enabled() {
-            return;
+        // A lazy Match: `view()` would materialize it, and of the receiver
+        // guards only these can apply to a Match.
+        if target.is_lazy_match_value() {
+            let owner = target.match_dispatch_class();
+            return method == "elems"
+                || (matches!(method, "gist" | "Str" | "Stringy")
+                    && self.exception_render_needs_interpreter(target, owner))
+                || self.is_native_method(owner, method);
         }
-        let (class_name, is_instance) = match target.view() {
-            ValueView::Instance { class_name, .. } => (class_name.resolve(), true),
-            ValueView::Package(class_name) => (class_name.resolve(), false),
-            _ => return,
-        };
-        let real = if is_instance {
-            self.is_native_method(&class_name, method)
-                || (!is_pseudo_method
-                    && (self.has_user_method(&class_name, method)
-                        || self.has_public_accessor(&class_name, method)
-                        || (self.has_class_level_attr(&class_name, method)
-                            && !self.has_public_accessor(&class_name, method))))
-        } else {
-            !is_pseudo_method
-                && (self.has_user_method(&class_name, method)
-                    || (self.has_class_level_attr(&class_name, method)
-                        && !self.has_public_accessor(&class_name, method)))
-        };
-        // ADR-0019 E4b step 10 scoping: built for BOTH receiver kinds, not just
-        // Instance. `is_native_method` (`real`'s category-2 term above) is
-        // deliberately never checked for a Package receiver -- calling an `is
-        // native(&sym)` binding through the bare type object rather than an
-        // instance is not a case the real bypass logic accounts for. Widening
-        // this shadow-only check to Package too (rather than short-circuiting
-        // to `None`) answers, empirically, whether `resolve_sequence`'s
-        // presence-only `NativeCallBinding` walk (which does not distinguish
-        // receiver kind) ever actually disagrees with that omission --
-        // load-bearing before the eventual authoritative switch can safely
-        // consume `resolve_sequence` uniformly for both receiver kinds.
-        let chain = self.dispatch_mro(target);
-        let native_shape = super::resolution_sequence::NativeCallShape::new(arg_count, is_instance);
-        let seq = self.resolve_sequence(
-            &chain,
-            Symbol::intern(method),
-            native_shape,
-            super::resolution_sequence::MethodVisibility::Public,
-            super::resolution_sequence::RoleFallback::Disabled,
-        );
-        let native_binding_owner = seq.candidates.iter().find_map(|c| match c {
-            ResolvedCandidate::NativeCallBinding { owner } => Some(owner.as_str().to_string()),
-            ResolvedCandidate::User { .. } | ResolvedCandidate::Native { .. } => None,
-        });
-        let shadow = native_binding_owner.is_some()
-            || self
-                .resolve_user_method_or_accessor(&class_name, method)
-                .is_some();
-        crate::vm::vm_stats::record_bypass_shadow_check(real == shadow, || {
-            format!(
-                "class={class_name} method={method} real={real} shadow={shadow} native_binding_owner={native_binding_owner:?}"
-            )
-        });
+        if self.native_fastpath_receiver_state_guard(target, method, args) {
+            return true;
+        }
+        // A method the instance's class implements in the interpreter (a
+        // NativeCall binding, `IO::Handle.say`): its handler serves it.
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && self.is_native_method(class_name.as_str(), method)
+        {
+            return true;
+        }
+        // ADR-0051 P4: a `Cool`-only builtin the instance's own ancestry does
+        // NOT provide (no `Cool`, or for the few types with their own row,
+        // e.g. `Instant.Date`, no such row) must not be answered: its cascade
+        // arms are receiver-class-blind and would stringify the receiver
+        // (`"G()".uc`), where Rakudo throws `X::Method::NotFound`.
+        matches!(target.view(), ValueView::Instance { .. })
+            && Self::cool_only_builtin_method(method)
+            && !self.e2_native_method_exists(target, crate::symbol::Symbol::intern(method).as_str())
     }
 
     /// Check if a Mixin's role mixins define the given method (either a real
@@ -779,8 +621,8 @@ mod tests {
     /// `registration_class_body_attr.rs`'s `SkipTail` return) and
     /// `resolve_sequence` (whose `User` candidates come from
     /// `user_method_overloads`, not `class_level_attrs`, and which has no
-    /// notion of accessors at all). `should_bypass_native_fastpath`'s own
-    /// `has_class_level_attr(..) && !has_public_accessor(..)` arm is
+    /// notion of accessors at all). `user_shadows_builtin`'s
+    /// `class_scoped_accessor_shadows` term is
     /// therefore the ONLY place this is checked; it cannot be retired by
     /// folding into either resolver helper as they exist today.
     #[test]
@@ -804,7 +646,7 @@ mod tests {
         );
     }
 
-    /// ADR-0019 E4b step 11 finding: the real `should_bypass_native_fastpath`
+    /// ADR-0019 E4b step 11 finding: `user_shadows_builtin`
     /// deliberately never calls `has_public_accessor` for a `Package`
     /// (type-object) receiver — only `has_user_method`/`has_class_level_attr`
     /// apply, since an instance attribute accessor is meaningless on the bare

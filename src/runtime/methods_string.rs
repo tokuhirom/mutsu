@@ -126,8 +126,8 @@ impl Interpreter {
         // actually provide `.subst` (no `Cool` anywhere in its dispatch
         // chain) must not be answered here -- this function is
         // receiver-class-blind by construction (unconditional
-        // `target.to_string_value()` below). `should_bypass_native_fastpath`/
-        // `shadows_builtin` already route a plain (non-wildcard-handles)
+        // `target.to_string_value()` below). `user_shadows_builtin`
+        // already routes a plain (non-wildcard-handles)
         // class's `.subst` call past this function entirely; this direct
         // guard is the one the ADR also calls for, so it stays correct even
         // if reached by a future call path that skips those two gates. Real

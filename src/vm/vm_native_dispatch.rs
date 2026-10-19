@@ -288,29 +288,6 @@ impl Interpreter {
         {
             return Some(Ok(v));
         }
-        // `.WHICH`/`.WHY` are ordinary, overridable methods in raku — unlike the
-        // other six MOP pseudo-methods (DEFINITE/WHAT/WHO/HOW/WHERE/VAR), which
-        // are compile-time macros that raku never lets a same-named user method
-        // override, regardless of call syntax. This is the single shared guard
-        // for every call form that reaches `try_native_method` (bareword,
-        // `.$m`/`."$m"()` dynamic, hyper `».WHICH`): when the receiver's class
-        // defines its own WHICH/WHY, defer to the interpreter so the override
-        // wins over the native identity hash / default Pod-doc answer.
-        if matches!(method_name, "WHICH" | "WHY") {
-            let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                ValueView::Package(name) => Some(name.resolve()),
-                _ => None,
-            };
-            // A public attribute of that name (`has ObjAt $.WHICH`) is an
-            // override too: its accessor is an ordinary method.
-            if let Some(cn) = class_name
-                && (self.has_user_method(&cn, method_name)
-                    || self.has_public_accessor(&cn, method_name))
-            {
-                return None;
-            }
-        }
         // `.Capture` that must call user methods / drain a live source (Channel/
         // Supply, or a non-Str Pair key needing `.Str`) is interpreter-aware; other
         // targets fall through to the pure native `value_to_capture` below.
@@ -387,37 +364,15 @@ impl Interpreter {
         {
             return None;
         }
-        // Mixin role method bypass -- and the wrapped instance's own methods
-        // and accessors (`has $.cache` must not answer as `Any.cache`).
-        if self.mixin_role_has_method(target, method_name)
-            || self.mixin_wrapped_instance_has_method(target, method_name)
-        {
+        // A declaration of the program takes the call from the built-in row:
+        // a user method or accessor (`.WHICH`/`.WHY` included: they are
+        // ordinary, overridable methods), a role mixed in, an `augment` or
+        // `.wrap` of a built-in type. The one shadow query (ADR-11276 §2.3).
+        if self.user_shadows_builtin(target, method_sym, args, false) {
             return None;
         }
         if let Some(value) = self.inherited_adhoc_method(target, method_name, args) {
             return Some(Ok(value));
-        }
-        // Augmented native-type bypass: a plain Array/List/Hash/Str/Range/Set/
-        // Bag/Mix/... receiver is not `Instance`/`Package`, so it carries no
-        // per-call user-method check of its own here -- the callers' own
-        // `skip_native` gates only extract a class name for those two shapes.
-        // Without this, `augment class Array { method sort {...} }` (legal raku:
-        // `Array` does not declare its own `sort`, so no redeclaration error --
-        // unlike `augment class Str { method uc {...} }`) was silently shadowed
-        // by the native fast path below. See `t/augment-native-lever-a-methods.t`.
-        // `is_lazy_match_value()` is a cheap tag probe; a lazy Match always
-        // decodes to `ValueView::Instance` (see `nanbox/peek.rs`), so this
-        // gate would never fire for one anyway — checking the tag first
-        // avoids forcing full Match materialization (`force_attrs()`) just to
-        // learn that.
-        if !target.is_lazy_match_value()
-            && !matches!(
-                target.view(),
-                ValueView::Instance { .. } | ValueView::Package(_)
-            )
-            && self.native_lever_a_user_override_sym(target, method_sym)
-        {
-            return None;
         }
         // ADR-0051 §3 (#9948): a name only some `Cool` subtypes declare
         // (`succ`, `base`, `lazy`, ...) is answered by receiver-blind
@@ -441,7 +396,7 @@ impl Interpreter {
         // Real/Numeric, and the Supply/Supplier arms cannot apply.)
         if target.is_lazy_match_value() {
             // A grammar cursor's dispatch owner is the grammar's own class, not
-            // `Match` — see `should_bypass_native_fastpath`'s twin of this gate.
+            // `Match` — as `native_receiver_defers` reads it.
             let owner = target.match_dispatch_class();
             let is_pure_render = matches!(method_name, "gist" | "Str" | "Stringy" | "raku");
             let render_overridden = is_pure_render && self.has_user_method(owner, method_name);
@@ -501,18 +456,6 @@ impl Interpreter {
             // class registry, so defer the decision to it.
             if matches!(method_name, "gist" | "Str" | "Stringy")
                 && self.exception_render_needs_interpreter(target, &cn)
-            {
-                return None;
-            }
-            // A Cool-only builtin (`.uc`, `.flip`, `.subst`, ...) is not
-            // resolvable on a plain Any-derived instance in raku, so a
-            // class declaring `handles *` / `FALLBACK` must be given the
-            // chance to intercept it instead of this fast path
-            // unconditionally stringifying the receiver. Name-gated
-            // first (a cheap `matches!`) so the MRO walk only runs for
-            // the rare "Instance x Cool-only name" shape.
-            if Self::cool_only_builtin_method(method_name)
-                && self.class_has_wildcard_handles_or_fallback(&cn)
             {
                 return None;
             }
