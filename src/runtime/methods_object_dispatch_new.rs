@@ -1022,6 +1022,23 @@ impl Interpreter {
                 );
                 return Ok(Value::make_instance(*class_name, attrs));
             }
+            // A user subclass of Range (`class Q is Range {}`, #14015) is the
+            // same: `Range.new($min, $max, :excludes-min, :excludes-max)`
+            // builds the range it carries under `__mutsu_range_value`, and the
+            // native-base redirect answers `Range`'s methods on it.
+            let is_range_subclass = cn_resolved != "Range"
+                && self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "Range");
+            if is_range_subclass && (skip_user_new || !self.has_user_method(class_key, "new")) {
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    crate::builtins::native_base::RANGE_PAYLOAD.to_string(),
+                    Self::range_new_late(&args)?,
+                );
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             // The native constructor of a builtin class (`native_ctor`): the
             // arms of what used to be a `match` on this name. A user
             // declaration of the same name bypassed it (`constructor_dispatch_name`).
