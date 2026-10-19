@@ -72,7 +72,7 @@ impl Interpreter {
         if top.def_file == Some(file) {
             return f(self);
         }
-        let mut switched = top.clone();
+        let mut switched = *top;
         switched.def_file = Some(file);
         switched.lexical_package = self.lexical_package_for_frame(Some(file));
         let original = self.routine_stack.pop();
