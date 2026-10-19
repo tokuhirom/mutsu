@@ -18,9 +18,6 @@ pub(in crate::runtime) fn first_var_used_before_unit_declares(
 ) -> Option<Undeclared> {
     let mut top_names = HashSet::new();
     collect_top_level_decls(stmts, &mut top_names);
-    if top_names.is_empty() {
-        return None;
-    }
     let mut refs = VarRefs::default();
     walk_stmts(&mut refs, stmts);
     let placeholder_names = refs
@@ -112,6 +109,7 @@ impl UndeclaredVars<'_> {
         } else {
             format!("{sigil}{name}")
         };
-        forward.bail || !forward.top_names.contains(&key)
+        let _ = key;
+        forward.bail
     }
 }
