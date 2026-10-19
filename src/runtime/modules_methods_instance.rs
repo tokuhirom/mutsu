@@ -15,6 +15,7 @@ mod methods_mut_substr_buf;
 mod methods_mut_wildcard_delegate;
 mod methods_lazy_step;
 mod methods_native_bypass;
+mod builtin_shadow;
 mod method_perl_alias;
 mod methods_object;
 mod methods_object_attr_constraints;

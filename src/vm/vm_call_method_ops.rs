@@ -1394,23 +1394,13 @@ impl Interpreter {
             return Ok(());
         }
 
-        // When the method name was quoted (e.g. ."DEFINITE"()) and the receiver
-        // has a user-defined method of that name, skip the native pseudo-method
-        // fast path so the user method is called instead. Without such a
-        // method the quoted call is the ordinary built-in (`42."WHAT"()` is
-        // `(Int)`), so the native path must still answer it.
-        let mut skip_native = method == "VAR"
-            || (quoted
-                && matches!(
-                    method,
-                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE"
-                )
-                && match target.view() {
-                    ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
-                        self.grammar_has_user_method_memo(class_name, method_sym)
-                    }
-                    _ => false,
-                });
+        // A declaration of the program that takes the call from the built-in
+        // row (a user method or accessor, a role mixed in, an `augment`, a
+        // quoted pseudo-method the class overrides) sends it to the
+        // interpreter's resolution: the one shadow query (ADR-11276 §2.3).
+        // `VAR` is never a built-in row.
+        let mut skip_native =
+            method == "VAR" || self.user_shadows_builtin(&target, method_sym, &args, quoted);
         let is_junction_target = match target.view() {
             ValueView::Junction { .. } => true,
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
@@ -1418,46 +1408,6 @@ impl Interpreter {
         };
         if matches!(method, "gist" | "raku") && is_junction_target {
             skip_native = true;
-        }
-        // Also skip native if the target has a user-defined method with this name,
-        // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
-        // WHICH/WHY are exceptions: unlike the other six, raku treats them as
-        // ordinary, overridable methods in every call form (not just quoted),
-        // so a user override must win here too.
-        if !skip_native
-            && !matches!(
-                method,
-                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHERE" | "VAR"
-            )
-        {
-            let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name),
-                ValueView::Package(name) => Some(name),
-                _ => None,
-            };
-            if let Some(cn) = class_name
-                && match target.view() {
-                    ValueView::Package(_) => {
-                        self.grammar_has_user_method_memo(cn, method_sym)
-                            || self.package_has_applicable_user_method(&target, method, &args)
-                            // A class-scoped `my @.list` accessor shadows the
-                            // `Any` method of that name.
-                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
-                    }
-                    // A quoted or run-time name reaches a generated accessor
-                    // (`$obj."$n"()` with `$n = "hash"` and `has %.hash`).
-                    _ => {
-                        // An augmented slurpy-only `multi` on a built-in
-                        // ancestor ranks after the built-in method (#13509).
-                        (self.grammar_has_user_method_memo(cn, method_sym)
-                            && !self.user_candidates_all_outranked_by_builtin(cn.as_str(), method))
-                            || (quoted && self.has_public_accessor(&cn.resolve(), method))
-                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
-                    }
-                }
-            {
-                skip_native = true;
-            }
         }
         if !skip_native
             && matches!(method, "AT-KEY" | "keys" | "values")

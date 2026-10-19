@@ -2226,7 +2226,7 @@ impl Interpreter {
                 }
                 // A bare type object's own instance-attribute accessor is
                 // meaningless (there is no instance to read from), so
-                // `should_bypass_native_fastpath`'s Package branch never
+                // `user_shadows_builtin`'s type-object branch never
                 // routes here through the accessor and the call falls all
                 // the way to "no such method" instead. raku instead resolves
                 // to the real accessor and lets ITS body raise this error

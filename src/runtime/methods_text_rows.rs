@@ -80,8 +80,8 @@ impl Interpreter {
         // chain) must not be answered by this generic interceptor --
         // it is receiver-class-blind by construction (unconditional
         // `target.to_string_value()`), which is exactly the leak the
-        // ADR closes. `should_bypass_native_fastpath`/`shadows_builtin`
-        // already route this call past this function entirely for a
+        // ADR closes. `user_shadows_builtin`
+        // already routes this call past this function entirely for a
         // plain (non-wildcard-handles) class; this is the direct
         // guard the ADR also calls for, so this interceptor stays
         // correct even if reached by a future call path that skips

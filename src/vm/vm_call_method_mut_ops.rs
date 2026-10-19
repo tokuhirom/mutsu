@@ -1434,21 +1434,14 @@ impl Interpreter {
             }
         }
 
-        // A quoted pseudo-method skips the native answer only when the class
-        // declares a method of that name, as the `CallMethod` twin does
-        // (`vm_call_method_ops.rs`): `$x."WHICH"()` on an `Int` is `Int|5`
-        // (#13055). `VAR` always skips.
-        let mut skip_native = quoted
-            && (method == "VAR"
-                || matches!(
-                    method,
-                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE"
-                ) && match target.view() {
-                    ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
-                        self.grammar_has_user_method_memo(class_name, Symbol::intern(method))
-                    }
-                    _ => false,
-                });
+        // A declaration of the program that takes the call from the built-in
+        // row goes to the interpreter's resolution: the one shadow query
+        // (ADR-11276 §2.3), as the `CallMethod` twin asks it. A quoted
+        // pseudo-method skips the native answer only when the class declares
+        // a method of that name: `$x."WHICH"()` on an `Int` is `Int|5`
+        // (#13055). A quoted `VAR` always skips.
+        let mut skip_native = (quoted && method == "VAR")
+            || self.user_shadows_builtin(&target, method_sym, &args, quoted);
         let is_junction_target = match target.view() {
             ValueView::Junction { .. } => true,
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
@@ -1456,51 +1449,6 @@ impl Interpreter {
         };
         if matches!(method, "gist" | "raku") && is_junction_target {
             skip_native = true;
-        }
-        // Also skip native if the target has a user-defined method with this name,
-        // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
-        // WHICH/WHY are exceptions: unlike the other six, raku treats them as
-        // ordinary, overridable methods in every call form (not just quoted),
-        // so a user override must win here too.
-        if !skip_native
-            && !matches!(
-                method,
-                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHERE" | "VAR"
-            )
-        {
-            let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name),
-                ValueView::Package(name) => Some(name),
-                _ => None,
-            };
-            if let Some(cn) = class_name
-                && match target.view() {
-                    ValueView::Package(_) => {
-                        self.grammar_has_user_method_memo(cn, method_sym)
-                            || self.package_has_applicable_user_method(&target, method, &args)
-                            // A class-scoped `my @.list` / `our $.elems`
-                            // accessor shadows the `Any` method of that name
-                            // (`C.list.push(...)`, BDD::Behave's
-                            // `Failures.list`), as `should_bypass_native_fastpath`
-                            // already decides for the interpreter's dispatch.
-                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
-                    }
-                    _ => {
-                        self.grammar_has_user_method_memo(cn, method_sym)
-                            // `has ObjAt $.WHICH` overrides `.WHICH` (Rake), and
-                            // a quoted or run-time name (`$obj."$n"()` with
-                            // `$n = "hash"`) reaches `has %.hash`'s accessor
-                            // too: the plain-name lanes that answer an
-                            // accessor read are skipped for a quoted name.
-                            || ((quoted || matches!(method, "WHICH" | "WHY"))
-                                && self.has_public_accessor(&cn.resolve(), method))
-                            // The class-scoped accessor, as for a type object.
-                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
-                    }
-                }
-            {
-                skip_native = true;
-            }
         }
         // A callback that binds `$_` rw writes back into the named array
         // (`@a.map({ $_++ })`): the interpreter's rw-writeback dispatch must

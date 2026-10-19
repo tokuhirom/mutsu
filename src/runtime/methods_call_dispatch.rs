@@ -1313,28 +1313,14 @@ impl Interpreter {
         // *before* user-method resolution; that dispatch consults the flag to
         // fall through to the user method and clears it there (see the
         // `skip_pseudo_method_native` read at the top of that function).
-        // WHICH/WHY are excluded here: unlike the other six MOP pseudo-methods,
-        // raku treats them as ordinary, overridable methods in every call form
-        // (not just a compile-time-literal quoted call), so a user-defined
-        // override must be able to shadow the native/macro default below.
-        let is_pseudo_method = matches!(
-            method,
-            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHERE" | "VAR"
-        );
-        let bypass_native_fastpath = self.should_bypass_native_fastpath(
-            &target,
-            method,
-            &args,
-            skip_pseudo,
-            is_pseudo_method,
-        );
-        self.shadow_check_bypass_user_method_categories(
-            &target,
-            method,
-            is_pseudo_method,
-            args.len(),
-        );
         let method_sym = crate::symbol::Symbol::intern(method);
+        // The built-in rows answer unless the receiver's state needs the
+        // interpreter or a declaration of the program takes the call (the one
+        // shadow query, ADR-11276 §2.3; a MOP pseudo-method only through the
+        // quoted call `skip_pseudo` marks).
+        let bypass_native_fastpath = skip_pseudo
+            || self.native_receiver_defers(&target, method, &args)
+            || self.user_shadows_builtin(&target, method_sym, &args, false);
         // Named-blind arity cascade -- the interpreter-side twin of the guard in
         // `vm_native_dispatch::try_native_method_raw`. The arity cascade selects
         // its arm by argument *count*, so a named argument the method does not
@@ -1680,65 +1666,10 @@ impl Interpreter {
         // rule, so a grammar with a rule called `map` — YAMLish's block-mapping
         // rule is exactly that — needs `A.map($/)` to reach the action method and
         // not the collection builtin, which rejected the Match as "not callable".
-        // Checked for the type object too, since `:actions(A)` passes the class.
-        // `.WHAT` and friends are *macros*, not builtin methods: `$o.WHAT` is the
-        // type object even when the class declares `method WHAT`, and only the
-        // quoted `$o."WHAT"()` reaches it (roast/S12-methods/what.t). They keep
-        // their existing `skip_pseudo_method_native` handling. `WHICH`/`WHY`
-        // are excluded from `is_pseudo_method` (see above), so they fall into
-        // this ordinary `class_has_user_method` shadowing check like any other
-        // method name, in every call form.
-        let shadows_builtin = !is_pseudo_method
-            && match target.view() {
-                ValueView::Instance { class_name, .. } => {
-                    let class_name = class_name.resolve();
-                    // An augmented slurpy-only `multi` on a built-in ancestor
-                    // ranks after the built-in method, so it does not shadow it
-                    // (#13509).
-                    (self.class_has_user_method(&class_name, method)
-                        && !self.native_base_bypass_hit(&target, Symbol::intern(method))
-                        && !self.user_candidates_all_outranked_by_builtin(&class_name, method))
-                        || self.class_scoped_accessor_shadows(&class_name, method, &args)
-                        // A Cool-only builtin (`.subst`, `.trans`, ...) is not
-                        // resolvable on a plain Any-derived instance in raku, so
-                        // a class declaring `handles *` / `FALLBACK` must be
-                        // given the chance to intercept it instead of this
-                        // by-name builtin dispatcher unconditionally
-                        // stringifying the receiver (the arity-0 twin of this
-                        // gate lives in `try_native_method_raw`/
-                        // `should_bypass_native_fastpath`).
-                        || (Self::cool_only_builtin_method(method)
-                            && self.class_has_wildcard_handles_or_fallback(&class_name))
-                    // ADR-0051 P4 NOTE: no blanket "cool_only && !e2_native_method_exists"
-                    // term here, unlike the other two gate sites. `dispatch_method_by_name_1/2/3`
-                    // mix receiver-class-BLIND arms (`.IO`, `.subst` -- guarded directly at
-                    // their own call sites instead, see `dispatch_method_by_name_1`'s `"IO"`
-                    // arm and `dispatch_subst`) with receiver-class-AWARE arms that happen to
-                    // share a cool_only name with no E2 row of their own (e.g. `Supply.comb`/
-                    // `.words` in `dispatch_method_by_name_2`, which explicitly checks
-                    // `class_name == "Supply"` and returns `None` for anything else). A
-                    // blanket `shadows_builtin` term here would skip ALL THREE dispatch
-                    // functions whenever `e2_native_method_exists` misses -- which it does for
-                    // any name recognized only by a by-name arm's own internal receiver check,
-                    // never modeled in the E2 native-method-row catalog at all. Confirmed by a
-                    // real regression: `roast/S17-supply/comb.t`/`words.t` broke this way
-                    // before this term was removed. Per-arm guards at the specific
-                    // receiver-blind sites are the correct granularity; this match arm's older
-                    // `handles */FALLBACK` term above is unaffected.
-                }
-                ValueView::Package(name) => {
-                    let name = name.resolve();
-                    self.class_has_user_method(&name, method)
-                        // A class-scoped `my $.elems` accessor shadows the
-                        // `Any` method of that name (see
-                        // `should_bypass_native_fastpath`); the by-name arms
-                        // would answer it, recursing on the type object.
-                        || self.class_scoped_accessor_shadows(&name, method, &args)
-                }
-                // `Foo.new but role {...}` keeps `Foo`'s own `$.elems` (#10232).
-                ValueView::Mixin(..) => self.mixin_wrapped_instance_has_method(&target, method),
-                _ => false,
-            };
+        // The one shadow query (ADR-11276 §2.3), the same answer the native
+        // entries read; `.WHAT` and the other MOP macros are not overridable
+        // here (only the quoted `$o."WHAT"()` reaches a user method).
+        let shadows_builtin = self.user_shadows_builtin(&target, method_sym, &args, false);
 
         // Named-blind by-name dispatch, the slow-path twin of the arity-cascade
         // guard above. These three handlers read `args[0]`/`args[1]` positionally
