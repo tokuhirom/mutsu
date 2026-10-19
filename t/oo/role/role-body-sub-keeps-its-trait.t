@@ -6,7 +6,7 @@ use Test;
 # (as NativeCall's `is native` binds its body) answered a call from a
 # composed method with the declared body (#13645). Checked against rakudo.
 
-plan 5;
+plan 7;
 
 multi trait_mod:<is>(Routine $r, :$wrapped!) { $r.wrap(-> |c { 'wrapped' }) }
 
@@ -26,3 +26,9 @@ role Q { my $v = 'role lexical'; method m { g() }; sub g { $v } }
 class KQ does Q { }
 is KQ.new.m, 'role lexical', 'a role body sub still sees the role body lexicals';
 dies-ok { EVAL 'g()' }, 'and is not callable outside the role';
+
+role P { submethod BUILD { $*built = p() }; method m { p() }; sub p is wrapped { 'plain' } }
+my $*built;
+my $punned = P.new;
+is $*built, 'wrapped', 'a punned role\'s BUILD runs the wrapper';
+is $punned.m, 'wrapped', 'and so does its method';
