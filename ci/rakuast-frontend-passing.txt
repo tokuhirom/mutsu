@@ -221,6 +221,7 @@ t/collections/hash/tied-hash-associative.t
 t/collections/hash/tied-hash-bind.t
 t/collections/hash/tied-hash-bound-element.t
 t/collections/hash/tied-hash-iterate.t
+t/collections/hash/tied-hash-qualified-plain.t
 t/collections/hash/tied-hash-reassign.t
 t/collections/hash/tied-hash-store-initialize.t
 t/collections/hash/tied-hash-store-oddnumber.t
@@ -2611,6 +2612,7 @@ t/modules/begin-once-in-module-routine.t
 t/modules/begin-package-dynvar.t
 t/modules/begin-prologue-package-body.t
 t/modules/bind-through-outer-pseudo-package.t
+t/modules/bind-to-package-var-takes-its-container.t
 t/modules/block-declares-in-its-own-package.t
 t/modules/block-import-operator-unit-module-scope.t
 t/modules/block-use-keeps-nested-module-imports.t
@@ -2938,6 +2940,7 @@ t/modules/import-export/use-if-false-undeclared-routine.t
 t/modules/import-export/use-if-pragma.t
 t/modules/import-export/use-in-block-binds-affix-operators-lexically.t
 t/modules/import-export/use-in-block-binds-builtin-operator-candidates-lexically.t
+t/modules/import-export/use-in-block-binds-constants-lexically.t
 t/modules/import-export/use-in-block-binds-increments-lexically.t
 t/modules/import-export/use-in-block-binds-lexically.t
 t/modules/import-export/use-in-block-binds-multis-lexically.t
@@ -4667,6 +4670,7 @@ t/oo/role/trait-named-like-role-param-stays-a-named-trait.t
 t/oo/role/typed-array-element-container-ref-role-check.t
 t/oo/role/typed-decl-imported-parametric-role.t
 t/oo/role/uppercase-is-trait-reaches-trait-mod-on-a-role.t
+t/oo/role/var-trait-curried-role.t
 t/oo/role/walk-mixin-role.t
 t/oo/role/wrapped-accessor-role-method-rw-wrapper.t
 t/oo/route-block-dsl.t
@@ -4770,6 +4774,7 @@ t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
 t/oo/trait/variable-trait-block-add-phaser.t
 t/oo/trait/variable-trait-object-mixin.t
+t/oo/trait/variable-trait-rows.t
 t/oo/trait/variable-trait-var-assign.t
 t/oo/trait/variable-traits.t
 t/oo/trait/wrap-proto-method-trait.t
@@ -6971,6 +6976,7 @@ t/types/enum-subset/enum-value-shadows-same-named-sub.t
 t/types/enum-subset/enum-value-which.t
 t/types/enum-subset/eval-enum-bare-key-transitive.t
 t/types/enum-subset/eval-enum-bare-key.t
+t/types/enum-subset/generics-nominalizable-class.t
 t/types/enum-subset/inline-subset-object-hash-key.t
 t/types/enum-subset/inline-subset-term.t
 t/types/enum-subset/lowercase-subset-return-type.t

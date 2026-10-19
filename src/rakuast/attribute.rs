@@ -148,12 +148,13 @@ impl AttributeTraits {
                         .is_type
                         .as_deref()
                         .ok_or_else(|| unsupported("attribute `is TYPE` without a type"))?;
-                    if !super::convert::is_simple_type(name) {
-                        return Err(unsupported(
-                            "attribute with a parameterised `is TYPE` trait",
-                        ));
-                    }
-                    trait_is_name_or_type(name)
+                    Value::rakuast(Box::new(RakuAstNode {
+                        class: RakuAstClass::TraitIs,
+                        fields: vec![node_field(
+                            Some("type"),
+                            super::decl_traits::type_node(name)?,
+                        )],
+                    }))
                 }
                 AttrTrait::Custom => {
                     let (kind, name, argument) = custom
@@ -396,7 +397,10 @@ fn lower_trait_is(
         && field.name == Some("type")
     {
         let type_node = named_child(t, "type")?;
-        if type_node.class != RakuAstClass::TypeSimple {
+        if !matches!(
+            type_node.class,
+            RakuAstClass::TypeSimple | RakuAstClass::TypeParameterized
+        ) {
             return Err(refuse());
         }
         let name = super::type_lower::type_constraint(t, type_node)?;

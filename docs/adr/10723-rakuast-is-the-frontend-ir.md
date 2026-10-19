@@ -1407,3 +1407,15 @@ parser already retained the variable term, but its handle-spec reconstruction
 recognized only scalar variables and rejected array and hash variables. Those
 terms now retain the same dynamic expression for attribute and method
 delegation. The regression checks both measured trait nodes and EVAL forwarding.
+
+### 6.81 S10: type-valued `is` traits on declarations (2026-10-19)
+
+Aggregate variable and attribute declarations now preserve parameterized type
+applications in `Trait::Is(type => Type::Parameterized)`. Variable declaration
+traits also recognize qualified names that resolve to a declared type, while
+unresolved names and custom `is NAME(args)` traits remain explicit coverage
+boundaries. Lowering accepts the same parameterized type node and restores the
+parser's existing type spelling, so execution stays on the normal declaration
+path. The focused tests check qualified and parameterized type nodes, EVAL, and
+the existing tied-container and generic-attribute behavior. The frontend
+ratchet now lists 7,939 of 7,984 files.

@@ -7,7 +7,7 @@ use Test;
 # but the gist omits. This file passes under both mutsu and raku. Distinct
 # class names because `.AST` registers the symbol.
 
-plan 15;
+plan 17;
 
 sub attr(Str $src) {
     $src.AST.statements[0].expression.body.body.statement-list.statements[0].expression
@@ -41,6 +41,14 @@ sub attr(Str $src) {
 }
 
 is attr(Q[class A5 { has $.v }]).traits.elems, 0, 'a plain attribute has no traits';
+
+{
+    my $a = attr(Q[class A6 { has @.values is Array[Int] }]);
+    isa-ok $a.traits.head.type, RakuAST::Type::Parameterized,
+        'an aggregate attribute keeps a parameterized is-type trait';
+    like $a.traits.head.type.gist, /'Type::Parameterized'/,
+        'including its parameterized type node';
+}
 
 # Write direction.
 is EVAL(Q[class B1 { has $.x = 7 }; B1.new.x].AST), 7, 'a default round-trips';
