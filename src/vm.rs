@@ -334,6 +334,7 @@ mod vm_slot_type_constraint;
 mod vm_unit_cell_shadow;
 mod vm_unit_hidden;
 pub(crate) mod vm_unit_lexical_meta_lanes;
+mod vm_zen_slice;
 pub(crate) use vm_core_type_object_methods::SCHEDULER_USAGE_COLUMNS;
 mod vm_rakudo_internals;
 pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;

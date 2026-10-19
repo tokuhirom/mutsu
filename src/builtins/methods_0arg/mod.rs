@@ -220,11 +220,6 @@ pub(crate) fn native_method_0arg_cascade(
         if let Some(result) = match_owner_row(target, method_sym, &[]) {
             return Some(result);
         }
-        // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
-        // Cost: O(1).
-        if method == "__mutsu_zen_angle" {
-            return Some(Ok(target.clone()));
-        }
     }
 
     // ADR-0064: a `.VAR` container descriptor answers only its own properties

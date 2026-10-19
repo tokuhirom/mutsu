@@ -203,14 +203,7 @@ fn parse_postfix_angle_index_zen() {
     assert_eq!(rest, "");
     assert!(matches!(
         expr,
-        Expr::MethodCall {
-            target,
-            name,
-            args,
-            ..
-        } if name == "__mutsu_zen_angle"
-            && args.is_empty()
-            && matches!(*target, Expr::Var(ref n) if n.as_str() == "x")
+        Expr::ZenSlice(target) if matches!(*target, Expr::Var(ref n) if n.as_str() == "x")
     ));
 }
 

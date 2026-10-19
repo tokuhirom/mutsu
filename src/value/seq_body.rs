@@ -1315,15 +1315,6 @@ pub(crate) fn seq_method_never_touches(method: &str) -> bool {
             | "does"
             | "^name"
             | "is-lazy"
-            // `$s<>` (postcircumfix `< >` zen slice, desugared to this synthetic
-            // method by the parser): a pure pass-through that returns the SAME
-            // Seq value unchanged (`builtins/methods_0arg/coercion.rs`'s
-            // `"__mutsu_zen_angle"` arm). Must NOT route through the default
-            // "reify" branch — that would mark the body `retained`, silently
-            // exempting it from later consumption ("ZEN slices do not cache
-            // Seqs", measured against raku: `$z<>.iterator; $z.iterator`
-            // throws `X::Seq::Consumed` on the second call).
-            | "__mutsu_zen_angle"
     )
 }
 
