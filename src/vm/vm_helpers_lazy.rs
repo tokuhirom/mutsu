@@ -1031,6 +1031,15 @@ impl Interpreter {
                     ValueView::Package(_) => !initialized.as_ref().is_some_and(|s| s.contains(&i)),
                     _ => false,
                 };
+                // The prefix's holes are what `:delete` emptied, and they
+                // stay with the list for `:exists` (`LazyList::deleted_indices`).
+                // An `initialized` set exists once an element was written or
+                // deleted; without one every slot is present.
+                if is_hole && initialized.is_some() {
+                    source.mark_deleted_index(i);
+                } else {
+                    source.clear_deleted_index(i);
+                }
                 if is_hole { default.clone() } else { v.clone() }
             })
             .collect();

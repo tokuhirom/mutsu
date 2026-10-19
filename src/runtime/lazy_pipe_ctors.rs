@@ -53,6 +53,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            deleted_indices: Default::default(),
             itemized: false,
         }
     }
@@ -96,6 +97,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            deleted_indices: Default::default(),
             itemized: false,
         }
     }

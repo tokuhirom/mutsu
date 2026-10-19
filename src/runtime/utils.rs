@@ -31,13 +31,6 @@ pub(crate) fn sigilless_readonly_key(name: &str) -> crate::symbol::Symbol {
     crate::meta_ns::MetaNs::SigillessReadonly.key_for_str(name)
 }
 
-/// The env key tracking which indices of `name` were `:delete`d. A `my`
-/// redeclaration clears it so a fresh variable cannot inherit an earlier
-/// same-named one's holes.
-pub(crate) fn deleted_index_key(name: &str) -> String {
-    MetaNs::DeletedIndex.owned_key_for_str(name)
-}
-
 /// The other spelling of a `$*`-twigil dynamic variable's env key: `$*OUT` <->
 /// `*OUT`. A dynamic var is stored under both the sigilled and the sigilless
 /// form (seeded together — see `BASE_TIER_DYNAMICS`), and every writer or

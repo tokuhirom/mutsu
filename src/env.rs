@@ -363,7 +363,7 @@ static BOUND_SLICE_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 static SCALAR_NO_CONTAINER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
 /// Monotonic, process-global flag for the per-element index metadata keys
-/// (`__mutsu_bound_index::*`, `__mutsu_elem_share::*`, `__mutsu_deleted_index::*`).
+/// (`__mutsu_bound_index::*`, `__mutsu_elem_share::*`).
 /// Their probes run on *every* element write (`@a[i] = x`) and on `:exists`, and
 /// each would otherwise cost a `format!` plus a `Symbol::intern`ing env lookup.
 /// The keys only ever appear once the program `:=`-binds an element, `=`-shares a
@@ -515,7 +515,6 @@ pub(crate) fn note_env_key(key: &str) {
             SHAPED_ARRAY_DIMS_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_index::")
             || key.starts_with("__mutsu_elem_share::")
-            || key.starts_with("__mutsu_deleted_index::")
         {
             ELEM_INDEX_META_SEEN.store(true, Ordering::Relaxed);
         }

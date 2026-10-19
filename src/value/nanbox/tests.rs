@@ -625,6 +625,7 @@ fn lazy_list_roundtrips_by_identity() {
         array_context: false,
         list_context: false,
         cached_no_sink: false,
+        deleted_indices: Default::default(),
         itemized: false,
     });
     match roundtrip(ValueRepr::LazyList(node.clone())) {
