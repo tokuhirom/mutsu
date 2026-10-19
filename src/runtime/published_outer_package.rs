@@ -17,16 +17,20 @@ impl Interpreter {
     /// package, publish that package under the short name.
     // Cost: O(n), n = length of `qualified`.
     pub(crate) fn publish_same_named_outer_package(&mut self, qualified: &str) {
-        let Some((outer, short)) = qualified.rsplit_once("::") else {
+        use crate::qualified::{is_qualified, package_parent, unqualified_part};
+        let sym = Symbol::intern(qualified);
+        let Some(outer) = package_parent(sym) else {
             return;
         };
-        let Some((_, outer_short)) = outer.rsplit_once("::") else {
-            return;
-        };
-        if short != outer_short || short.is_empty() || !self.is_declared_package(outer) {
+        let short = unqualified_part(sym);
+        if !is_qualified(outer)
+            || unqualified_part(outer) != short
+            || short.as_str().is_empty()
+            || !self.is_declared_package(outer.as_str())
+        {
             return;
         }
-        let entry = (short.to_string(), outer.to_string());
+        let entry = (short.as_str().to_string(), outer.as_str().to_string());
         // The program's own publications are filed under the empty name.
         let module = self.module.module_load_stack.last().cloned();
         {
@@ -54,12 +58,15 @@ impl Interpreter {
         if self.module.published_outer_packages.is_empty() {
             return None;
         }
-        let (head, rest) = qualified.split_once("::")?;
-        let target = self.lookup_in_running_package(&self.types.package_type_aliases, head)?;
-        if !self.is_published_outer_package(head, target) {
+        use crate::qualified::{package_ancestors, package_parent, qualified_text};
+        let sym = Symbol::intern(qualified);
+        let head = package_ancestors(package_parent(sym)?).last()?;
+        let target = self.lookup_in_running_package(&self.types.package_type_aliases, head.as_str())?;
+        if !self.is_published_outer_package(head.as_str(), target) {
             return None;
         }
-        let resolved = format!("{target}::{rest}");
+        let rest = &qualified[head.as_str().len() + 2..];
+        let resolved = qualified_text(target.as_str(), rest).as_str().to_string();
         self.has_type_direct(&resolved).then_some(resolved)
     }
 
