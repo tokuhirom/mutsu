@@ -4775,6 +4775,15 @@ snapshot. `.var` no longer answers a `.VAR` descriptor, which Rakudo's `Scalar` 
 
 Pinned in `t/concurrency/supply/supply-interval-class-row.t`. `Raku.version` on the type object and
 `Kernel.name`'s error still differ from Rakudo, as they did (#13952).
+### 9.197 `IO::Special.new` is a class-method row (2026-10-19)
+
+`refactor/11276-leave-io-special`. A by-name gate of `call_method_with_values_inner` built the
+`IO::Special` stand-in for `IO::Special.new($what)`. It is now a class-method row
+(`class_methods.rs`, `TYPE_OBJECT_OK`), found by owner for the `IO::Special` type object as
+`Supply`'s class methods are (§9.122); the gate is gone. `leave` keeps its gate: Rakudo 2026.09
+implements no `leave` (`Routine.leave` dies "not yet implemented"), and mutsu's answers receivers
+Rakudo declares none on (`leave Sub: 42`), so it is no row of a Rakudo owner. Pinned in
+`t/io/io-special-new-class-row.t`.
 
 ### 9.198 `Stash.merge-symbols` and `Raku.legacy` are rows (2026-10-19)
 
