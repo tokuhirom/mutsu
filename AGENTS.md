@@ -205,9 +205,11 @@ While iterating, run only the tests your change touches.
   (`ci/known-env-failures.toml`) and are matched by exact shape, so a known file that starts failing
   differently is `unexpected` too. Never dismiss an `unexpected` file as "pre-existing".
 - The result is keyed by the working tree (`git write-tree`): `gate` on a tree that already has a
-  result reports it instead of running again, even if commit ancestry changed. A rebase that brings
-  unrelated `main` files into the tree produces a new tree and reruns every stage; avoid that rebase
-  when the branch check passes and none of the intervening changes are relevant. `--fresh` forces a run.
+  result reports it instead of running again, even if commit ancestry changed. A rebase changes the
+  tree and would rerun every stage, so **do not rerun the gate after a rebase or a base merge**
+  (user decision, 2026-10-19): the gate verified your change, CI verifies the rebased head. Rerun
+  only the focused tests (`--focus`) when resolving a conflict meant composing two sides' logic.
+  `--fresh` forces a run.
 - **`gate` defaults to the quick profile in every environment** (ADR-0126, amendment 2026-10-19):
   `checks`, default clippy and the debug `cargo test`, then `prove` on the *debug* binary
   over the `t/`/`roast/` files your branch touches plus any `--focus PATH...` you name. Name the
@@ -425,7 +427,8 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
    and inspect the intervening commits and changed paths. When they do not affect your branch's paths,
    prerequisites, or behavior, keep the branch as-is; run `scripts/dev branch-check` against the latest
    `origin/main` before publishing. Rebase when an overlapping change, a required prerequisite, a
-   conflict, or a failing branch check makes it necessary, then rerun the gate on the rebased tree.
+   conflict, or a failing branch check makes it necessary; do not rerun the gate on the rebased tree
+   (run `scripts/dev branch-check`, plus focused tests only if the conflict touched logic).
    **Name the branch after the change**: `<type>/<issue>-<slug>` or `<type>/<slug>`, using the
    PR-title types (`fix/11190-rakuast-callassign-initializer`, `perf/csv-map-closure`,
    `eco/asn-grammar`). A harness-assigned name (`claude/<adjective>-<name>-<hash>`, `ccr-<hash>`)
