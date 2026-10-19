@@ -44,7 +44,12 @@ impl Scope {
                 if let Stmt::VarDecl { name, .. } = stmt {
                     self.0 |= name_bit(name);
                 }
-                crate::ast::placeholders::walk_stmt_placeholder_scope(self, stmt);
+                crate::ast::scope_scan::walk_stmt_own_scope(self, stmt);
+            }
+            fn visit_expr(&mut self, expr: &'ast Expr) {
+                if !crate::ast::scope_scan::opens_own_scope(expr) {
+                    crate::ast_visit::walk_expr(self, expr);
+                }
             }
         }
         let previous = BOUND.get();
@@ -189,6 +194,15 @@ mod tests {
             assert!(!declares_placeholder(false));
         }
         assert!(!declares_placeholder(false));
+    }
+
+    #[test]
+    fn nested_routine_declarations_do_not_bind_the_outer_block() {
+        let _root = Scope::reset();
+        let (body, _) = crate::parser::parse_program("my &inner = sub { my %_ = (); };")
+            .expect("the nested routine parses");
+        let _block = Scope::block(&body);
+        assert!(declares_placeholder(false));
     }
 
     #[test]
