@@ -453,7 +453,6 @@ impl Interpreter {
             receiver_class,
             method_name,
             &args,
-            &invocant,
             chosen_fp,
             &remaining,
         );

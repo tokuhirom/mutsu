@@ -501,10 +501,9 @@ impl Interpreter {
     /// native-method-row catalog have an explicit recognition row for `name`
     /// at ANY level of `target`'s dispatch chain -- the "does Raku consider
     /// this name a method on this type at all" existence question `.^can`
-    /// asks. This is deliberately a DIFFERENT question from
-    /// [`native_row_servable`](crate::builtins::native_method_row::native_row_servable)'s
-    /// call-shape-specific "is this row reachable for THIS call" (E4b's
-    /// `Native` resolver candidate): unlike that function, this does NOT
+    /// asks. It is deliberately not a call-shape question (the resolver's
+    /// retired `Native` candidate asked "is this row reachable for THIS
+    /// call"): it does NOT
     /// exclude `SPECIAL`/`MUTATES_RECEIVER` rows (a mutating method like
     /// `List.push` still IS a method `.can` should find) and ignores
     /// arity/definedness entirely (a method existing at any arity, or

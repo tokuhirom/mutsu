@@ -653,7 +653,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("bar"),
-            super::resolution_sequence::NativeCallShape::new(0, false),
             super::resolution_sequence::MethodVisibility::Public,
             super::resolution_sequence::RoleFallback::Disabled,
         );
