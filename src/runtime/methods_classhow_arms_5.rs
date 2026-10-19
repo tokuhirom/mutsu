@@ -166,7 +166,15 @@ impl Interpreter {
             if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name)
                 && !class_def.parents.contains(&parent_name)
             {
-                class_def.parents.push(parent_name);
+                // A class whose name shadows a catalog builtin starts with an
+                // explicit `Any` parent. Keep dynamically added parents ahead
+                // of that root, or C3 would order `Any` before the new class
+                // parent and reject the linearization.
+                if let Some(any_index) = class_def.parents.iter().position(|p| p == "Any") {
+                    class_def.parents.insert(any_index, parent_name);
+                } else {
+                    class_def.parents.push(parent_name);
+                }
                 changed = true;
             }
             if changed {
