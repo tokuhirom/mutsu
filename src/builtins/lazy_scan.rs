@@ -3,7 +3,7 @@
 //! primitives above `Value`, so it lives here rather than as a `LazyList`
 //! method (issue #10779).
 
-use crate::value::{IndexTransform, LazyList, Value, ValueView};
+use crate::value::{LazyList, Value, ValueView};
 
 /// Force a scan-based lazy list to compute up to `needed` elements.
 /// Uses builtin arithmetic for common operators. Returns the cached elements.
