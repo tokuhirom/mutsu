@@ -6820,6 +6820,7 @@ impl Interpreter {
                 // Mark as my-scoped so the package is hidden from global
                 // lookups and package stash resolution outside its scope.
                 self.mark_my_scoped_package_item(name.clone());
+                self.record_lexical_package_unit(code.const_sym(*name_idx));
                 // Mark as block-declared so the name is cleaned up
                 // when the enclosing block scope exits.
                 let name_sym = code.const_sym(*name_idx);
