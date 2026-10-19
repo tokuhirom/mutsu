@@ -584,7 +584,6 @@ include!("modules_state_run.rs");
 include!("modules_supply_system.rs");
 include!("modules_utilities.rs");
 pub(crate) use self::any_cool_method_gate::cool_method_not_found as cool_method_not_found_on_any;
-#[cfg(test)]
 pub(crate) use self::locals::Locals;
 pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
 pub(crate) use self::output_sink::OutputSink;
