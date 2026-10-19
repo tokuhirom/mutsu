@@ -989,6 +989,15 @@ impl Interpreter {
                     result?;
                 }
             }
+            // Ordinary classes also cross the native compose boundary. A
+            // custom HOW's `callsame` reaches this same handler; when no hook
+            // exists, drive the native step here so subsequent class-body
+            // runtime statements observe the composed MOP view.
+            if !self.class_how_compose_hook(&storage_name)
+                && !self.registry().composed_classes.contains(&storage_name)
+            {
+                self.mop_compose(vec![Value::package(Symbol::intern(&storage_name))])?;
+            }
 
             // Slice F: write the deferred body's outer-lexical mutations through
             // to this caller frame's local slots (`register_class_decl` ran the

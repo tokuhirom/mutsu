@@ -41,7 +41,8 @@ plan 8;
 
     # `self.methods($obj, :local)` on a HOW subclass returns the local methods.
     my @names = $how.methods(Target, :local).map(*.name).sort;
-    is-deeply @names, ['double', 'triple'], 'HOW subclass can call self.methods(:local)';
+    is-deeply @names, ['POPULATE', 'double', 'triple'],
+        'HOW subclass can call self.methods(:local), including POPULATE';
 
     # `compose` wraps every local method; the wrappers call through (callsame)
     # AND record the call on the HOW's own state.

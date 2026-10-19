@@ -316,6 +316,13 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "Metamodel::ClassHOW",
+        "is_composed",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_is_composed(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::ClassHOW",
         "add_parent",
         2,
         true,

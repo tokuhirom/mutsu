@@ -263,7 +263,8 @@ status here.
   §2.2 requires. The mainline and EVAL take the partition as the first step of
   `phasers::reorder_phasers`. A module takes it on its own
   (`begin_prologue::order_unit`), because a module's top level gets no other
-  reordering.
+  reordering. The mainline and module loader also split eligible class bodies
+  at their source position, so their run-time statements follow composition.
 - The partition covers the unit up to its last top-level statement-form
   `BEGIN`. Within that prefix, the prologue takes:
   - the `BEGIN`s;
@@ -967,9 +968,18 @@ method-level proto outside a package, implemented**
     BEGIN of a routine runs after it, so their source order is only kept when the
     body's come first. A routine's BEGIN that changes the class (`.^add_method`)
     sees it composed.
-  - A `unit class` / `unit module` declaration is not covered, nor is a BEGIN in a
-    `has` default, in a `token`/`rule`/`proto` body, or in the value-form
-    initializer of a class-body variable.
+  - A BEGIN in a `has` default, in a `token`/`rule`/`proto` body, or in the
+    value-form initializer of a class-body variable.
+- **Class-body composition timing (#13213).** Eligible named class bodies are
+  split at their declaration site into the declaration and a
+  `PackageRuntimeBody`. The declaration registers and composes first; bare
+  run-time statements then execute at their original position, after custom
+  HOW `compose` hooks have run. This includes `unit class` declarations and
+  classes in the mainline or a loaded unit. Classes whose body declares an
+  `our` variable still use the registration path because package re-entry
+  currently changes that variable's binding. `ClassHOW.is_composed` reports
+  native composition state, and `.^methods(:local)` includes the generated
+  `POPULATE` candidate after composition.
 - **A bug fixed on the way.** The run-time part of a class body that the prologue
   declares ahead (`Stmt::PackageRuntimeBody`) did not swallow the error of an
   `EVAL` or `BEGIN` statement, as a class body registered in place does

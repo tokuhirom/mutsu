@@ -1007,6 +1007,7 @@ impl Interpreter {
                     }),
                     None => order(&mut stmts),
                 };
+                crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
                 let facts = super::module_load_facts::ModuleLoadFacts::compute(
                     &stmts,
                     prologue_len,

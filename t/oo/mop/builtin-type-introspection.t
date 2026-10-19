@@ -18,6 +18,7 @@ ok $rat-methods ~~ /<< 'Str' >>/, 'Rat.^methods(:local) includes Str';
 ok $rat-methods ~~ /<< 'round' >>/, 'Rat.^methods(:local) includes round';
 ok Rat.^methods(:local).grep({.name eq 'log'}).elems > 0, 'Rat.^methods(:local) includes log';
 
-# user classes still report only their own methods with :local
+# user classes report their own methods and the generated local POPULATE method
 class Foo { method bar { 42 } }
-is Foo.^methods(:local).map({.name}).join(','), 'bar', 'user class :local methods unchanged';
+is Foo.^methods(:local).map({.name}).sort.join(','), 'POPULATE,bar',
+    'user class :local methods include POPULATE after composition';
