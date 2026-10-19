@@ -544,7 +544,7 @@ impl Interpreter {
     /// candidate (`pending_skip_constraint_recheck`): a user `subset`
     /// constraint is then trusted instead of running its predicate a second
     /// time (#10986).
-    fn check_and_coerce_param_type(
+    pub(super) fn check_and_coerce_param_type(
         &mut self,
         pd: &ParamDef,
         mut value: Value,
