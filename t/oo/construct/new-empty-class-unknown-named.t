@@ -5,7 +5,7 @@ use Test;
 # no attribute, as it does for a class with attributes, and the
 # constructor lane serves it.
 
-plan 6;
+plan 8;
 
 class Empty { }
 class WithMethod { method hi { 'hi' } }
@@ -20,5 +20,12 @@ is (^50).map({ Empty.new }).grep(Empty).elems, 50, 'repeated construction';
 
 class X::Mine is Exception { }
 lives-ok { X::Mine.new(message => 'x') }, 'an Exception subclass keeps its attribute bag';
+
+# Not plain empty classes: a built-in base, and a `proto method new`.
+class Buffy is IterationBuffer { }
+is Buffy.new.^name, 'Buffy', 'an empty subclass of a built-in keeps its constructor';
+
+my class WithProto { proto method new() { 42 } }
+is WithProto.new, 42, 'a proto new still runs its body';
 
 # vim: expandtab shiftwidth=4
