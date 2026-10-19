@@ -319,9 +319,14 @@ pub(crate) fn handle_specs_from_term(term: &crate::ast::Expr) -> Option<Vec<Hand
             }
             Some(specs)
         }
-        Expr::Var(_) | Expr::MethodCall { .. } | Expr::Call { .. } => {
-            Some(vec![HandleSpec::Expr(Box::new(term.clone()))])
-        }
+        // Variable-backed lists and hashes are the written terms of dynamic
+        // `handles @names` / `handles %names` clauses. Preserve the expression
+        // so RakuAST and the compiler evaluate the same delegation source.
+        Expr::Var(_)
+        | Expr::ArrayVar(_)
+        | Expr::HashVar(_)
+        | Expr::MethodCall { .. }
+        | Expr::Call { .. } => Some(vec![HandleSpec::Expr(Box::new(term.clone()))]),
         Expr::RegexLiteral { value, .. } => match value.view() {
             crate::value::ValueView::Regex(pattern) => {
                 Some(vec![HandleSpec::Regex(pattern.to_string())])

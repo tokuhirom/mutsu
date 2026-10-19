@@ -85,6 +85,7 @@ t/collections/concat-append-in-place-elements.t
 t/collections/constant-hash-element-ro.t
 t/collections/constant-sigilless-element-lvalue.t
 t/collections/container-bind-element.t
+t/collections/container-raku-user-elements.t
 t/collections/cool-numeric-range-seq.t
 t/collections/count-only.t
 t/collections/deep-element-bind-writeback-coherence.t
@@ -2462,6 +2463,7 @@ t/lang/parsing/parser-lowercase-type-smiley-union.t
 t/lang/parsing/parser-modifier-key-after-comma.t
 t/lang/parsing/parser-nesting-limit.t
 t/lang/parsing/parser-pipe-prefixed-declaration.t
+t/lang/parsing/parser-two-terms-statement-shapes.t
 t/lang/parsing/semicolon-list-literal.t
 t/lang/parsing/slang-l10n-vocabulary.t
 t/lang/parsing/slang-piersing-activation.t
@@ -2944,6 +2946,7 @@ t/modules/import-export/use-in-block-binds-operators-lexically.t
 t/modules/import-export/use-in-block-binds-repeat-postfix-lexically.t
 t/modules/import-export/use-in-block-binds-set-operators-lexically.t
 t/modules/import-export/use-in-block-binds-string-operators-lexically.t
+t/modules/import-export/use-in-block-binds-variables-lexically.t
 t/modules/import-export/use-in-block-builtin-operator-candidates.t
 t/modules/import-export/use-in-block-call-shapes.t
 t/modules/import-export/use-in-block-env-scope.t
@@ -3706,6 +3709,7 @@ t/oo/class/class-version-meta-and-default.t
 t/oo/class/class-vmarray-immutable-positional.t
 t/oo/class/class.t
 t/oo/class/classhow-lookup-mro.t
+t/oo/class/classhow-user-how-add-parent-builtin-shadow.t
 t/oo/class/classhow-user-how-add-parent-can.t
 t/oo/class/classify-bucket-itemized.t
 t/oo/class/classify-hash-any-mu-raku.t
@@ -5148,6 +5152,7 @@ t/rakuast/rakuast-var-package.t
 t/rakuast/rakuast-vardecl-scoped.t
 t/rakuast/rakuast-variable-container-traits.t
 t/rakuast/rakuast-variable-does-trait.t
+t/rakuast/rakuast-variable-handles-terms.t
 t/rakuast/rakuast-visit-children-origin.t
 t/rakuast/rakuast-whatever-code.t
 t/rakuast/rakuast-whatever-compound-assign.t
@@ -5712,6 +5717,7 @@ t/routines/builtin-routine-type-identity.t
 t/routines/call/array-literal-capture-element.t
 t/routines/call/assign-expr-captured-array.t
 t/routines/call/bind-rebound-capture-rmw-writes-through.t
+t/routines/call/block-lexical-shadows-captured-file-scope-container.t
 t/routines/call/bound-list-captured-array-assign.t
 t/routines/call/call-arg-slip-prefix-binds-tight.t
 t/routines/call/call-inline-cache.t

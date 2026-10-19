@@ -1399,3 +1399,11 @@ submethod, and lowering restores the parser's internal non-inherited marker
 from the node class. EVAL keeps the declaration on the existing submethod
 method path. The focused regression checks the node name, signature, omitted
 scope, and callable result for all three source forms.
+
+### 6.80 S10: variable-backed attribute and method handles (2026-10-19)
+
+Rakudo represents `handles @names` as `Trait::Handles(Var::Lexical)`. The
+parser already retained the variable term, but its handle-spec reconstruction
+recognized only scalar variables and rejected array and hash variables. Those
+terms now retain the same dynamic expression for attribute and method
+delegation. The regression checks both measured trait nodes and EVAL forwarding.
