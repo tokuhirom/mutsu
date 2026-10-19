@@ -263,6 +263,8 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
             })
             .collect();
         apply_module_exports(&exports);
+        // `Test` exports routines only.
+        exported_vars::record(module, Some(Rc::from([])));
         return;
     }
     // Check for infinite recursion
