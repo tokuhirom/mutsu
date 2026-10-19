@@ -29,9 +29,9 @@ impl Interpreter {
             _ => "Blob[uint8]",
         };
         let bytes = self.encode_with_encoding_and_replacement(input, &encoding, replacement)?;
-        Ok(crate::value::value_buf::make_buf_from_bytes(
+        Ok(crate::value::value_buf::make_buf_from_raw_bytes(
             Symbol::intern(class),
-            &bytes,
+            bytes,
         ))
     }
 
