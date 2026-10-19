@@ -1107,6 +1107,7 @@ mod expr_index_concat_assign;
 mod expr_method;
 mod expr_ops;
 mod expr_postfix;
+mod expr_routine_literal;
 mod expr_unary;
 mod frame_lexical_ast_scan;
 pub(crate) mod frame_lexical_inherit;
