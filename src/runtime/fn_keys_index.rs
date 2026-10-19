@@ -138,7 +138,7 @@ impl Interpreter {
         let evicted = self.dispatch.fn_keys_by_base.remove(&base_sym).is_some();
         if self.dispatch.fn_keys_index.complete {
             self.dispatch.fn_keys_index.dirty.insert(base);
-            if !crate::str_scan::has_double_colon(key.as_str()) {
+            if !crate::qualified::is_qualified(key) {
                 self.dispatch.fn_keys_index.unqualified_keys = true;
             }
         }
@@ -202,7 +202,7 @@ impl Interpreter {
         if self.dispatch.fn_keys_index.unqualified_keys
             || base.is_empty()
             || base.contains('/')
-            || crate::str_scan::has_double_colon(base)
+            || crate::qualified::is_qualified_str(base)
         {
             return None;
         }
@@ -232,7 +232,7 @@ impl Interpreter {
             let registry = self.registry();
             crate::vm::vm_stats::record_fn_keys_base_scan(registry.functions.len());
             for key in registry.functions.keys() {
-                if !crate::str_scan::has_double_colon(key.as_str()) {
+                if !crate::qualified::is_qualified(*key) {
                     unqualified = true;
                 }
                 let base = function_key_base_name(key.as_str());
