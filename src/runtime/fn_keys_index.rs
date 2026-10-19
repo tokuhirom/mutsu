@@ -290,18 +290,28 @@ mod tests {
         assert!(indexed(&i, "gamma"));
         assert!(i.fn_keys_for_base("never-declared").is_empty());
 
-        // Evicting two names marks both dirty; looking up one refills both.
+        // Evicting two names marks both dirty; a plain base name is refilled
+        // on its own from the qualified-name tail index (#9170), the other
+        // one staying dirty until its own lookup.
         let gamma = i.fn_keys_for_base("gamma");
         i.invalidate_fn_resolution_for_keys([gamma[0]]);
         let alpha = i.fn_keys_for_base("alpha");
         i.invalidate_fn_resolution_for_keys([alpha[0]]);
         assert!(!indexed(&i, "alpha") && !indexed(&i, "gamma"));
         assert_eq!(&*i.fn_keys_for_base("alpha"), &*alpha);
-        assert!(
-            indexed(&i, "gamma"),
-            "the other dirty name refilled in the same pass"
-        );
+        assert!(!indexed(&i, "gamma"), "only the looked-up name is refilled");
         assert_eq!(&*i.fn_keys_for_base("gamma"), &*gamma);
+        assert!(i.dispatch.fn_keys_index.dirty.is_empty());
+
+        // A dirty name the tail index cannot list (spelled with `/`) still
+        // refills every dirty name in one pass.
+        i.invalidate_fn_resolution_for_keys([alpha[0], gamma[0]]);
+        i.evict_fn_keys_base(Symbol::intern("GLOBAL::infix:</>"));
+        assert!(i.fn_keys_for_base("infix:</>").is_empty());
+        assert!(
+            indexed(&i, "alpha") && indexed(&i, "gamma"),
+            "the pass refilled the other dirty names too"
+        );
         assert!(i.dispatch.fn_keys_index.dirty.is_empty());
     }
 
