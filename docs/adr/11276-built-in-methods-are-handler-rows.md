@@ -4724,6 +4724,15 @@ type's HOW's (`Metamodel::CoercionHOW.coerce`, an interpreter row). Nothing in m
 and a class's own `coerce` is found before it. The gate is gone, so the call now fails as in
 Rakudo; pinned in `t/types/coercion/type-object-has-no-coerce.t`.
 
+### 9.193 `CArray[T].allocate` is upstream NativeCall's (2026-10-19)
+
+`refactor/11276-carray-allocate-upstream`. A by-name `allocate` gate of
+`call_method_with_values_inner` pre-sized a `CArray[T]` natively (zero-filled storage for a native
+element type, the type's gap value otherwise). Since ADR-11203 `use NativeCall` loads the vendored
+upstream `NativeCall::Types`, whose typed `CArray` roles declare `allocate` (`nqp::create` plus an
+`nqp::bindpos_*` of the last slot), which the VM runs; the gate is gone. Pinned in
+`t/nativecall/carray-allocate-upstream.t`; the 281 `t/nativecall/` and CArray files pass.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
