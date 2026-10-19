@@ -1244,7 +1244,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_export != !export_tags.is_empty(),
                     "method with a bare `is export`",
                 ),
-                (*is_our && *is_submethod, "`our` submethod"),
                 (*our_variable_form, "`our &m = method` form"),
                 (
                     !handles.is_empty() && !super::routine_source::keeps_handles(body),
@@ -1298,7 +1297,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 routine_traits::add_custom(&mut node, &custom, !flags.nodes().is_empty())?;
             }
             // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
-            let scope = if *is_our {
+            // Rakudo's RakuAST does not retain a scope field on Submethod:
+            // `my`, `our`, and unscoped forms all have the same model shape.
+            let scope = if *is_submethod {
+                None
+            } else if *is_our {
                 Some("our")
             } else if declared_my {
                 Some("my")
