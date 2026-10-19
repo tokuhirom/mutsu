@@ -4774,6 +4774,17 @@ impl Interpreter {
         var_name: &str,
         cell_addr: &mut Option<usize>,
     ) -> Option<&mut Value> {
+        // A qualified variable of a package not merged here is mutated in its
+        // own store, never in the module's container (#13942).
+        if let Some(key) = self.unmerged_our_var_key(var_name) {
+            let root = self.env_mut().get_mut_sym(key)? as *mut Value;
+            // SAFETY: `root` points into an env entry, which nothing else
+            // borrows while the returned reference is held (see
+            // `descend_container_ref`).
+            let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
+            // SAFETY: `descended` was derived from `root` just above.
+            return Some(unsafe { &mut *descended });
+        }
         if let Some(root) = self.unit_lexical_slot_mut(var_name, None) {
             let root = root as *mut Value;
             let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };

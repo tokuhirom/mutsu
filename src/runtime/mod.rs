@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 mod complex_real;
 mod package_keyed;
 mod published_outer_package;
+mod unmerged_package_vars;
 mod rw_writeback_slots;
 mod supply_interval;
 mod tolerance;
