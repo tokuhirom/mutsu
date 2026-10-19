@@ -308,6 +308,34 @@ impl Interpreter {
     }
 
     /// The `Block` handle `Variable.block` answers (`.^name` is `Block`).
+    /// `Variable.var` on the `Variable` a variable trait handler receives:
+    /// the variable's container, holding what it holds now. A value the
+    /// handler already assigned through `.var` is what the variable holds
+    /// from then on, though the declaring frame only sees it once the handler
+    /// returns. `None` for a receiver that describes no variable.
+    // Cost: O(1) plus one environment lookup of the variable's name.
+    pub(crate) fn variable_var(&mut self, target: &Value) -> Option<Value> {
+        let source_name = Self::var_target_from_meta_value(target)?;
+        let source_value = self
+            .trait_mod_writeback_value
+            .clone()
+            .filter(|v| !Self::is_mixed_variable_object(v))
+            .filter(|_| self.trait_mod_writeback_key.as_deref() == Some(source_name.as_str()))
+            .or_else(|| self.get_env_with_main_alias(&source_name))
+            .or_else(|| match target.view() {
+                ValueView::Instance { attributes, .. } => {
+                    attributes.as_map().get("__mutsu_var_value").cloned()
+                }
+                _ => None,
+            })
+            .unwrap_or(Value::NIL);
+        Some(Value::varref(
+            crate::symbol::Symbol::intern(&source_name),
+            source_value,
+            None,
+        ))
+    }
+
     pub(crate) fn variable_block_handle() -> Value {
         let mut attrs = HashMap::new();
         attrs.insert(VARIABLE_BLOCK_MARK.to_string(), Value::TRUE);

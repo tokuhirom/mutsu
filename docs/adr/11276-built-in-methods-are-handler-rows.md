@@ -4749,6 +4749,16 @@ now decline too: `Mu.raku` (`mu_render`) for such a container, and the `raku` ro
 source is unpulled (`[$f].Seq`), which the interpreter pulls first. No behaviour change; pinned in
 `t/collections/container-raku-user-elements.t`.
 
+### 9.195 `Variable.block` and `Variable.var` are rows (2026-10-19)
+
+`refactor/11276-variable-rows`. Two by-name gates of `call_method_with_values_inner` answered `block`
+and `var` of the reflective `Variable` a variable trait handler receives. They are now `OWNER_ONLY`
+interpreter rows on a `Variable` owner (`ctors_mop/variable.rs`), reached from the instance dispatch
+by owner as `Attribute`'s are (§9.121); the `var` body is `Interpreter::variable_var`. `Variable`
+joins the type catalogue (`Variable Any Mu`), the row catalogue and the Rakudo method-table
+snapshot. `.var` no longer answers a `.VAR` descriptor, which Rakudo's `Scalar` does not declare
+(`X::Method::NotFound`). Pinned in `t/oo/trait/variable-trait-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

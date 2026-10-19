@@ -488,6 +488,9 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     // (#12875: Method::Protected's `$attribute.get_value(self)`).
     row!("Attribute", mro: ["Attribute", "Any", "Mu"], roles: [], owner: ""),
     row!("Lock", mro: ["Lock", "Any", "Mu"], roles: [], owner: ""),
+    // raku: `Variable.^mro` is `(Variable Any Mu)`; the trait handler's
+    // reflective variable (ADR-11276 §9.195).
+    row!("Variable", mro: ["Variable", "Any", "Mu"], roles: [], owner: ""),
     // ---- Backtrace (ADR-11276 §9.35): the shapes of the method table's rows. ----
     // raku: `Backtrace.^mro` is `(Backtrace Any Mu)`, `Backtrace::Frame.^mro`
     // is `(Frame Any Mu)`; neither does a role.

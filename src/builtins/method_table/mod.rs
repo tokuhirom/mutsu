@@ -75,6 +75,7 @@ pub(crate) use collections::{
     rotate as collection_rotate, terminals,
 };
 pub(crate) use ctors_mop::attribute::owners_of as attribute_owners_of;
+pub(crate) use ctors_mop::variable::owners_of as variable_owners_of;
 pub(crate) use instances::code_methods::method_object_answer;
 pub(crate) use instances::collation::owners_of as collation_owners_of;
 pub(crate) use instances::compunit::owners_of as compunit_owners_of;

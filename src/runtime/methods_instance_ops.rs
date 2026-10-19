@@ -834,9 +834,10 @@ impl Interpreter {
                 return result;
             }
 
-            // `Attribute`'s methods are rows of the method table, found by their
-            // owner (ADR-11276 §9.121).
+            // `Attribute`'s and `Variable`'s methods are rows of the method
+            // table, found by their owner (ADR-11276 §9.121, §9.195).
             if let Some(owners) = crate::builtins::method_table::attribute_owners_of(&target)
+                .or_else(|| crate::builtins::method_table::variable_owners_of(&target))
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,
