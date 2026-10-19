@@ -142,7 +142,9 @@ impl UndeclaredVars<'_> {
     /// env does not hold a lexical declared after the call yet (#10511).
     // Cost: O(|name|).
     fn caller_scope_declares(&self, name: &str) -> bool {
-        if self.interp.current_code == 0 {
+        // The compunit mode runs at CHECK time, outside any `EVAL` call:
+        // `current_code` may still name a chunk of an earlier run.
+        if self.interp.current_code == 0 || self.forward.is_some() {
             return false;
         }
         // SAFETY: `current_code` is the address of the live bytecode frame's
