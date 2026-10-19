@@ -2129,6 +2129,7 @@ t/io/io-spec-instance-repr.t
 t/io/io-spec-method-rows.t
 t/io/io-spec-win32-join.t
 t/io/io-special-method-rows.t
+t/io/io-special-new-class-row.t
 t/io/io-watch.t
 t/io/iopath-win32-separators.t
 t/io/iospec-cygwin-is-absolute.t
@@ -3160,6 +3161,7 @@ t/modules/role-method-trait-package-how.t
 t/modules/role-type-object-package-scope.t
 t/modules/routine-do-bind-same-name-module.t
 t/modules/rw-arg-from-packageless-module-sub.t
+t/modules/same-named-inner-type-publishes-outer-package.t
 t/modules/scalar-trailing-package-separator.t
 t/modules/script-multi-does-not-join-module-family.t
 t/modules/setting-nested-package-visibility.t
@@ -4985,6 +4987,7 @@ t/rakuast/rakuast-loop-label.t
 t/rakuast/rakuast-loop.t
 t/rakuast/rakuast-lowering-semantics.t
 t/rakuast/rakuast-lvalue-expression-assign.t
+t/rakuast/rakuast-match-modifier-aliases.t
 t/rakuast/rakuast-members-traits.t
 t/rakuast/rakuast-meta-assignment-forms.t
 t/rakuast/rakuast-method-call-assign.t
@@ -5477,6 +5480,7 @@ t/regex/regex-ltm.t
 t/regex/regex-m-s.t
 t/regex/regex-make.t
 t/regex/regex-modifier-only.t
+t/regex/regex-modifiers.t
 t/regex/regex-my-decl-once-per-invocation.t
 t/regex/regex-my-embedded-block-persist.t
 t/regex/regex-my-initializer-and-escaping-sub.t
