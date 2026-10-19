@@ -1419,3 +1419,14 @@ parser's existing type spelling, so execution stays on the normal declaration
 path. The focused tests check qualified and parameterized type nodes, EVAL, and
 the existing tied-container and generic-attribute behavior. The frontend
 ratchet now lists 7,939 of 7,984 files.
+
+### 6.82 S10: `:_` attribute declarations (2026-10-19)
+
+Rakudo measures `has Int:_ $.x` as a `VarDeclaration::Simple` with the simple
+`Int` type node; `:_` adds no definedness refinement to a declaration. The
+attribute converter now omits that no-op smiley while preserving `:D` and `:U`
+as `Type::Definedness`. Lowering therefore uses the existing typed-attribute
+path, including its type-object default. The regression checks the measured
+node, EVAL of an undefined default, assignment of a defined value, and the
+existing NativeCall constructor test for the full smiley family. The frontend
+ratchet now lists 7,944 of 7,988 files.

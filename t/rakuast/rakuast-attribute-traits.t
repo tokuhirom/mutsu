@@ -7,7 +7,7 @@ use Test;
 # but the gist omits. This file passes under both mutsu and raku. Distinct
 # class names because `.AST` registers the symbol.
 
-plan 17;
+plan 21;
 
 sub attr(Str $src) {
     $src.AST.statements[0].expression.body.body.statement-list.statements[0].expression
@@ -50,6 +50,13 @@ is attr(Q[class A5 { has $.v }]).traits.elems, 0, 'a plain attribute has no trai
         'including its parameterized type node';
 }
 
+{
+    my $a = attr(Q[class A7 { has Int:_ $.value }]);
+    isa-ok $a.type, RakuAST::Type::Simple,
+        'the :_ attribute smiley uses the measured simple declaration type';
+    is $a.type.name.canonicalize, 'Int', 'and keeps the base type';
+}
+
 # Write direction.
 is EVAL(Q[class B1 { has $.x = 7 }; B1.new.x].AST), 7, 'a default round-trips';
 ok EVAL(Q[class B2 { has $.x is rw = 1 }; B2.^attributes[0].rw].AST), 'is rw round-trips';
@@ -57,3 +64,7 @@ throws-like { EVAL Q[class B3 { has $.x is required }; B3.new].AST },
     X::Attribute::Required, 'is required round-trips';
 is EVAL(Q[class B4 { has Int $.n is required }; B4.new(n => 3).n].AST), 3,
     'and still accepts the argument';
+ok !EVAL(Q[class B5 { has Int:_ $.x }; B5.new.x.defined].AST),
+    'an :_ attribute defaults to the undefined type object';
+is EVAL(Q[class B6 { has Int:_ $.x }; B6.new(x => 3).x].AST), 3,
+    'an :_ attribute accepts a defined value';
