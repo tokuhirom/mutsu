@@ -34,18 +34,19 @@ ADR-11276 §2.3 says `.^can` and `.^methods` read the method table. A row says t
 name and on which owner Rakudo declares it, but not whether Rakudo's `.^methods` lists it, whether
 it is an `only`, or what Rakudo declares that mutsu does not answer. Those facts need a source.
 
-Measured on 2026-10-20 (`main` plus #14031), comparing today's answers with "the snapshot's
-answer, kept only when a method row reaches the name from that owner":
+Measured on 2026-10-20 (`main` plus #14031) with the rule of §2 (the snapshot's answer for the
+owners it lists, the rows' alone for the others, and in both cases only where a row exists):
 
-- `DECLARED`: 235 pairs would turn false, none would turn true. `Blob` 60 (the folded
-  `Buf`/`Blob`/`utf8` owner of ADR-11276 §8.3), `Real` 48, `Enumeration` 20, `Iterator` 12,
-  `Numeric` 10, `Metamodel::EnumHOW` 9, RakuAST nodes 16, `Mu` 5 (`WHAT`/`HOW`/`WHY`, compiler
-  pseudo-methods; `BUILDALL`/`POPULATE`), about 40 single pairs. Each is a method mutsu answers
-  through a row at a different owner (the concrete class instead of the role Rakudo declares it
-  on), through a cascade arm, or through the compiler.
-- `.^methods`: 65 names would go (`Blob` 59, `Mu` 5, `IO::Path.path`) and 99 would appear
-  (`Bool`'s numeric methods, `ACCEPTS`, `Hash.Set` and its kin, `DUMP`): names Rakudo lists that
-  the 2026-08 hand triage missed.
+- `DECLARED` would turn false on 54 pairs: `Blob` 21 (the folded `Buf`/`Blob`/`utf8` owner of
+  ADR-11276 §8.3, whose rows sit at `Buf`), `Enumeration` 7, `Failure` 4, RakuAST nodes 4,
+  `Iterator` 3, `Mu` 3 (`WHAT`/`HOW`/`WHY`, compiler pseudo-methods), the quant hashes'
+  `BIND-KEY` 6, and single pairs (`Cool.Int`, `Junction.Bool`, `IO::Path.path`, ...). Each is a
+  method mutsu answers through a row at a different owner, a cascade arm or the compiler.
+- It would turn true on 84 pairs: `Buf` 57 and `FatRat` 24 (rows at the owner Rakudo uses, which
+  the recognition table folded into `Blob` and `Rat`), and three single pairs.
+- The snapshot has no line for the roles (`Real`, `Numeric`, `Iterator`, `Enumeration`, `Blob`,
+  ...): the generator walks classes. Rows at those owners therefore answer alone until the
+  generator learns roles.
 
 ## 2. Decision
 
@@ -65,8 +66,8 @@ answer, kept only when a method row reaches the name from that owner":
 4. **Language revision** comes from the snapshot's `.e` lines, as `REVISION_E` rows of the method
    table already do.
 5. **The recognition table is deleted once the measured gap is zero,** and the gap is closed by
-   registering rows at the owners Rakudo declares the methods on (roles included: `Real`,
-   `Numeric`, `Iterator`, `Enumeration`, the `Buf`/`Blob` split of ADR-11276 §8.3), or by an
+   registering rows at the owners Rakudo declares the methods on (the `Buf`/`Blob` split of
+   ADR-11276 §8.3, `Enumeration`, `Iterator`), by extending the generator to the roles, or by an
    explicit row for a compiler pseudo-method, never by keeping a second table. The measurement
    becomes a test that lists the pairs whose answer changes; it shrinks to empty, and the switch
    is the commit that deletes the table.
@@ -75,9 +76,10 @@ answer, kept only when a method row reaches the name from that owner":
 
 - One generated file and the method rows answer every introspection question; nothing is
   hand-maintained. A new row makes `.^can` true by itself, so the #11271 drift cannot recur.
-- Introspection moves toward Rakudo: the 99 names `.^methods` gains are names Rakudo lists.
-- Before the switch, the 235 pairs are real work (roughly the 3B/3C remainders and role-owned
-  rows). That work is ADR-11276's anyway: a method answered by a cascade arm is a slice-5 leftover.
+- Introspection moves toward Rakudo: `FatRat.^can` and `Buf.^can` answer at the owners Rakudo
+  uses, and `.^methods` lists names Rakudo lists that the 2026-08 hand triage missed.
+- Before the switch, the 54 pairs are real work (mostly `Blob`/`Buf` and `Enumeration`). That
+  work is ADR-11276's anyway: a method answered by a cascade arm is a slice-5 leftover.
 - `.^lookup(...).package` can name the declaring role (`Str.^lookup('uc').package` is `Cool` in
   Rakudo), because the row's owner is Rakudo's declaring type; today it names the receiver's
   class.
