@@ -1029,17 +1029,6 @@ impl Interpreter {
             self.stack.push(answer?);
             return Ok(());
         }
-        // Lazy `.first` over a gather coroutine: pull incrementally instead of
-        // forcing the (possibly infinite) list to completion.
-        if let ValueView::LazyList(ll) = target.view()
-            && ll.needs_vm_lazy_dispatch()
-            && method == "first"
-            && let Some(result) = self.try_lazy_gather_first(&ll, &args)
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-first");
-            self.stack.push(result?);
-            return Ok(());
-        }
         // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
         // lazy index-pipe stage instead of forcing the (possibly infinite)
         // source. Matches Rakudo where these are `.is-lazy` over a lazy list.
@@ -1059,23 +1048,6 @@ impl Interpreter {
         if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-adaptor");
             self.stack.push(pipe);
-            return Ok(());
-        }
-        // A named-variable receiver reaches CallMethodMut. Its list coercion
-        // must keep a live gather pullable, as the CallMethod path does for an
-        // inline receiver; forcing here runs a later die before `for` can see
-        // the elements already taken.
-        if let ValueView::LazyList(ll) = target.view()
-            && ll.coroutine.is_some()
-            && args.is_empty()
-            && matches!(method, "List" | "list" | "values")
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmut",
-                "gather-list-context",
-            );
-            self.stack
-                .push(Value::lazy_list(crate::gc::Gc::new(ll.with_list_context())));
             return Ok(());
         }
         let target = if let ValueView::LazyList(ll) = target.view()
