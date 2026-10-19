@@ -1695,14 +1695,6 @@ impl Interpreter {
             return result;
         }
 
-        // Type-object coercion
-        if method == "coerce"
-            && args.len() == 1
-            && let ValueView::Package(type_name) = target.view()
-        {
-            return self.try_coerce_value_for_constraint(&type_name.resolve(), args[0].clone());
-        }
-
         // Custom type method dispatch
         if !matches!(
             method,
