@@ -1118,6 +1118,16 @@ impl Interpreter {
                     &target_single,
                     &mut function_entries,
                 );
+                // `GLOBAL::name` is also where the importer's own routine of
+                // the name lives: an export with no routine of its own (a
+                // candidate-less proto, which lives in the proto table) must
+                // not pick that one up as the unit module's (#13994).
+                let importer = self.executing_unit_sym_for_module_load();
+                function_entries.retain(|(_, def)| {
+                    def.source_file.as_deref().is_none_or(|file| {
+                        self.unit_of_source_sym(Some(Symbol::intern(file))) != importer
+                    })
+                });
             }
             // Fallback for a re-import (`use Foo; use Foo :tag`) of a `unit
             // module Foo` sub: the sub is registered under `GLOBAL::name`, not
@@ -1151,6 +1161,30 @@ impl Interpreter {
                     }
                 }
             }
+            let proto_def = self
+                .registry()
+                .proto_functions
+                .get(&source_single_sym)
+                .cloned()
+                .or_else(|| {
+                    (unit_global_subs.contains_key(&name) || bare_file_module)
+                        .then(|| {
+                            self.registry()
+                                .proto_functions
+                                .get(&Symbol::intern(&global_single))
+                                .cloned()
+                        })
+                        .flatten()
+                });
+            // A proto with no candidates whose body answers the call itself is
+            // an ordinary routine (#10696): it imports as one (#13994).
+            let bodied_proto = function_entries.is_empty()
+                && proto_def.as_ref().is_some_and(|proto| {
+                    !crate::runtime::lexical_imports::proto_body_only_dispatches(&proto.body)
+                });
+            if bodied_proto && let Some(proto) = &proto_def {
+                function_entries.push((Symbol::intern(&target_single), Arc::clone(proto)));
+            }
             // A block-scoped `use` binds a plain routine in the block's lexical
             // import set instead of aliasing it into the registry (ADR-8751
             // stage 1): code written outside the block, called from inside it,
@@ -1158,7 +1192,7 @@ impl Interpreter {
             // the same way (stage 2, `lexically_bindable_operator`); a proto, a
             // candidate of a built-in operator and `postcircumfix` keep the alias.
             if (!name.contains(":<") || Self::lexically_bindable_operator(&name))
-                && !imported_proto
+                && (!imported_proto || bodied_proto)
                 && !exported_method_candidates
                 && let [(key, def)] = function_entries.as_slice()
                 && !key.as_str().contains('/')
@@ -1173,25 +1207,7 @@ impl Interpreter {
             let family_bound_lexically = ((!is_operator && !name.contains(":<"))
                 || crate::lexical_builtin_op::binds_lexically(&name))
                 && !exported_method_candidates
-                && {
-                    let proto_def = self
-                        .registry()
-                        .proto_functions
-                        .get(&source_single_sym)
-                        .cloned()
-                        .or_else(|| {
-                            unit_global_subs
-                                .contains_key(&name)
-                                .then(|| {
-                                    self.registry()
-                                        .proto_functions
-                                        .get(&Symbol::intern(&global_single))
-                                        .cloned()
-                                })
-                                .flatten()
-                        });
-                    self.bind_family_lexically(&name, &function_entries, proto_def.as_deref())
-                };
+                && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref());
             if family_bound_lexically {
                 function_entries.clear();
             }
