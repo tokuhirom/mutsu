@@ -120,6 +120,9 @@ impl Interpreter {
             || (matches!(target.view(), ValueView::Str(_))
                 && crate::builtins::method_table::scalars::str_complex_real::NAMES
                     .contains(&method))
+            // An allomorph matched against an object (§9.191).
+            || (method == "ACCEPTS"
+                && matches!(target.view(), ValueView::Mixin(_, m) if m.contains_key("Str")))
         {
             let owner_names = self.late_walk_owners(&target);
             let owners: Vec<&str> = owner_names.iter().map(String::as_str).collect();

@@ -4702,6 +4702,19 @@ five are now late interpreter twins (`scalars/str_complex_real.rs`) reached thro
 walk for a `Str` receiver, and `Cool.UInt` answers the string itself. The gate is gone. No
 behaviour change; pinned in `t/types/string/str-complex-real-coercion.t`.
 
+### 9.191 `Allomorph.ACCEPTS` of an object is a late interpreter twin (2026-10-19)
+
+`refactor/11276-allomorph-accepts`. A by-name gate of `call_method_with_values_inner` matched an
+allomorph receiver against an instance by calling the instance's `.Numeric` and `.Str`. It is now
+the late interpreter twin `Allomorph.ACCEPTS` (`scalars/allomorph_accepts.rs`) with Rakudo's body:
+a `Numeric` argument is matched by the number, a `Str` by the string, anything else by both, each
+through the part's own `ACCEPTS`. `Allomorph` joins the row catalogue and the Rakudo method-table
+snapshot. The pure arm (`methods_narg::allomorph`) still answers every other argument; the gate and
+its `allomorph_numeric_equal` copy are gone. Smartmatch with an allomorph matcher and an object
+topic (`N.new ~~ <42>`, `False` before) now reaches the twin, and an instance of a `Str` subclass
+smartmatches its string payload (`S.new(value => "42") ~~ "42"`, `False` before). Pinned in
+`t/types/coercion/allomorph-accepts-object.t`.
+
 ### 9.192 A type object has no `coerce` (2026-10-19)
 
 `fix/11276-no-type-object-coerce`. A by-name gate of `call_method_with_values_inner` answered

@@ -1,4 +1,3 @@
-use super::methods::allomorph_numeric_equal;
 use super::methods_signature_errors::make_multi_no_match_error;
 use super::*;
 use crate::meta_ns::MetaNs;
@@ -1474,35 +1473,6 @@ impl Interpreter {
             && let Some(rendered) = self.raku_repr_with_dispatch(&target)
         {
             return Ok(Value::str(rendered));
-        }
-
-        // ACCEPTS for allomorphic types with Instance arguments
-        // This handles custom classes with .Numeric/.Str methods that the
-        // pure builtin cannot call.
-        // Allomorph ACCEPTS checks BOTH numeric and string parts match.
-        if method == "ACCEPTS"
-            && matches!(target.view(), ValueView::Mixin(_, m) if m.contains_key("Str"))
-            && args.len() == 1
-            && matches!(args[0].view(), ValueView::Instance { .. })
-            && let ValueView::Mixin(target_inner, target_mixins) = target.view()
-        {
-            // Call .Numeric on the instance to get its numeric value
-            let numeric_val = self.call_method_with_values(args[0].clone(), "Numeric", vec![])?;
-            // Call .Str on the instance to get its string value
-            let str_val = self.call_method_with_values(args[0].clone(), "Str", vec![])?;
-
-            // Compare numeric parts
-            let numeric_match = allomorph_numeric_equal(target_inner, &numeric_val);
-
-            // Compare string parts
-            let target_str = target_mixins
-                .get("Str")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default();
-            let arg_str = str_val.to_string_value();
-            let str_match = target_str == arg_str;
-
-            return Ok(Value::truth(numeric_match && str_match));
         }
 
         if let Some(result) = native_result {

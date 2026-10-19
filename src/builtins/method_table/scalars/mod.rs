@@ -6,6 +6,7 @@
 
 use super::{Handler, MethodRow, Named, RowFlags};
 
+mod allomorph_accepts;
 pub(crate) mod blob;
 mod blob_class;
 pub(crate) mod blob_decode;
@@ -145,4 +146,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     render::ROWS,
     // Late twins of the `Str`/`Cool` real conversions (after their pure rows).
     str_complex_real::ROWS,
+    // A late twin of the allomorph's pure `ACCEPTS` arm (after the pure rows).
+    allomorph_accepts::ROWS,
 ];
