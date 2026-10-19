@@ -4776,6 +4776,27 @@ snapshot. `.var` no longer answers a `.VAR` descriptor, which Rakudo's `Scalar` 
 Pinned in `t/concurrency/supply/supply-interval-class-row.t`. `Raku.version` on the type object and
 `Kernel.name`'s error still differ from Rakudo, as they did (#13952).
 
+### 9.198 `Stash.merge-symbols` and `Raku.legacy` are rows (2026-10-19)
+
+`refactor/11276-more-gates`. Two by-name gates of `methods_instance_ops.rs`:
+
+- `Stash.merge-symbols` is a row of `Stash` (`instances/stash.rs`), found by its owner from the
+  instance dispatch like `Variable`'s (§9.195). The gate answered any `PseudoStash` too; Rakudo's
+  `PseudoStash` (`MY::`) is not a `Stash` and has no such method, and neither does mutsu's now.
+- `Raku.legacy` (`method legacy(Raku:U:)`, ADR-0098) is a `Systemic` row of `Raku` flagged
+  `TYPE_OBJECT_OK`, which §9.196's hook offers the type object. On an instance it raises
+  `X::Parameter::InvalidConcreteness`, as Rakudo does; the gate's arm let the instance fall through
+  to "No such method".
+
+The class-method rows' instance refusal (`type_object_only`) now raises that typed exception
+instead of an `X::AdHoc`, and `RuntimeError::parameter_invalid_concreteness` wraps its invocant
+message at 72 columns as Rakudo's `naive-word-wrapper` does, rather than at a fixed word. Pinned in
+`t/vm/scope/stash-merge-symbols-row.t` and `t/routines/invocant-concreteness-message-wrap.t`.
+
+`IO::Spec::CurUpDir.ACCEPTS` keeps its gate: Rakudo has no such class. `$*SPEC.curupdir` is a
+`Block` (`-> str $dir { $dir ne '.' && $dir ne '..' }`), so the fix is to answer one, not to give a
+class mutsu invented a row.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

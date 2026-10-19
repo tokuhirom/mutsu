@@ -154,6 +154,13 @@ pub(super) static ROWS: &[MethodRow] = &[
     attr!("Raku", "version"),
     attr!("Raku", "signature"),
     row!("Raku", "compiler", 0, Handler::Narrow(compiler)),
+    row!(
+        "Raku",
+        "legacy",
+        0,
+        Handler::Narrow(raku_legacy),
+        RowFlags::TYPE_OBJECT_OK
+    ),
     row!("Raku", "gist", 0, Handler::Narrow(name_and_version)),
     row!("Raku", "Str", 0, Handler::Narrow(name)),
     attr!("Compiler", "name"),
@@ -346,6 +353,21 @@ fn platform_library_name(
 // Cost: O(1).
 fn compiler(_: &Value, _: &[Value]) -> Answer {
     Some(Ok(Interpreter::compiler_instance()))
+}
+
+/// `Raku.legacy` (`method legacy(Raku:U:)`, ADR-0098): which compiler frontend
+/// compiles a module -- `True` under the NQP/`Perl6::World` one, `False` under
+/// RakuAST. mutsu is neither, but the compile-time surface it offers is the
+/// RakuAST-shaped one (a `$*LANG` handle with `define_slang`/`slang_grammar`/
+/// `slang_actions`, ADR-0026, ADR-0091; there is no `$*W` World to mix a role
+/// into), so `False` names the branch a module can honour. The row answers the
+/// type object (§9.196's hook) and refuses an instance, as Rakudo does.
+// Cost: O(1).
+fn raku_legacy(target: &Value, _: &[Value]) -> Answer {
+    if let Some(e) = super::class_methods::type_object_only(target, "legacy") {
+        return Some(Err(e));
+    }
+    Some(Ok(Value::FALSE))
 }
 
 // Cost: O(1).

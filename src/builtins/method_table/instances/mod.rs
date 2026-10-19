@@ -49,6 +49,7 @@ pub(crate) mod regex_match;
 pub(crate) mod routine;
 pub(crate) mod runtime_objects;
 pub(crate) mod signature;
+pub(crate) mod stash;
 pub(crate) mod supply;
 pub(crate) mod temporal;
 pub(crate) mod temporal_class;
@@ -87,6 +88,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     routine::ROWS,
     failure::ROWS,
     signature::ROWS,
+    stash::ROWS,
     supply::ROWS,
     rakuast_node::ROWS,
     compunit::ROWS,
