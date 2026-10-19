@@ -20,6 +20,31 @@
 
 use crate::ast::{Expr, PackageRuntimeDecl, PhaserKind, Stmt};
 
+/// Split top-level package declarations in place, preserving their source
+/// order and leaving each run-time body immediately after its declaration.
+pub(super) fn split_unit_bodies(stmts: &mut Vec<Stmt>) {
+    let mut split = Vec::with_capacity(stmts.len());
+    for stmt in std::mem::take(stmts) {
+        let can_split = match &stmt {
+            Stmt::ClassDecl { body, .. } => !body.iter().any(|member| {
+                matches!(
+                    member,
+                    Stmt::ClassDecl { .. } | Stmt::Package { .. } | Stmt::SyntheticBlock(_)
+                )
+            }),
+            _ => false,
+        };
+        let (declaration, runtime) = if can_split {
+            split_package_decl(stmt)
+        } else {
+            (stmt, None)
+        };
+        split.push(declaration);
+        split.extend(runtime);
+    }
+    *stmts = split;
+}
+
 /// Split a declaration the prologue takes into its BEGIN-time declaration and
 /// its run-time part. A declaration with no run-time part comes back
 /// unchanged, with `None`.
@@ -27,10 +52,9 @@ pub(super) fn split_package_decl(stmt: Stmt) -> (Stmt, Option<Stmt>) {
     match stmt {
         Stmt::ClassDecl {
             name_expr: None,
-            is_unit: false,
             ..
         }
-        | Stmt::Package { is_unit: false, .. } => {
+        | Stmt::Package { .. } => {
             let mut stmt = stmt;
             let (name, body, decl) = match &mut stmt {
                 Stmt::ClassDecl {
@@ -136,6 +160,10 @@ fn split_body_stmt(stmt: Stmt, decls: &mut Vec<Stmt>, runtime: &mut Vec<Stmt>) {
             runtime.push(stmt.clone());
             decls.push(stmt);
         }
+        // An `our` declaration binds its package slot while the class is
+        // registered. Keep the whole declaration in that phase; splitting its
+        // initializer into the re-entered run-time body loses the package slot.
+        Stmt::VarDecl { is_our: true, .. } => decls.push(stmt),
         Stmt::VarDecl { .. } if splittable_var_decl(&stmt) => {
             match crate::runtime::phasers::split_var_decl(&stmt) {
                 Some((static_decl, assign)) => {

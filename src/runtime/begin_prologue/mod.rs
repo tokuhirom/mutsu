@@ -304,6 +304,12 @@ pub(crate) fn order_unit(stmts: &mut Vec<Stmt>) -> usize {
     prologue_len
 }
 
+/// Separate package-body run-time statements from their declarations without
+/// changing the unit's statement order.
+pub(crate) fn split_package_bodies(stmts: &mut Vec<Stmt>) {
+    package_body::split_unit_bodies(stmts);
+}
+
 fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
     let stmt = match stmt {
         Stmt::Use {
@@ -326,6 +332,10 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         other => other,
     };
     if is_begin_time_stmt(&stmt) && !is_positional_pragma(&stmt) {
+        let declared_class = match &stmt {
+            Stmt::ClassDecl { name, .. } => Some(name.to_string()),
+            _ => None,
+        };
         // Carry the line marker with the statement, so an error raised in the
         // prologue still names the statement's own line.
         if let Some(line @ Stmt::SetLine(_)) = rest.last() {
@@ -335,6 +345,11 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         let (stmt, runtime) = package_body::split_package_decl(stmt);
         prologue.push(stmt);
         rest.extend(runtime);
+        // The class declaration's value is its type object. It now runs in
+        // the prologue, so read that value at the declaration's old position.
+        if let Some(name) = declared_class {
+            rest.push(Stmt::Expr(Expr::Var(name)));
+        }
         return;
     }
     if let Some((static_decl, assign)) = crate::runtime::phasers::split_var_decl(&stmt) {

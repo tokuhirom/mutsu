@@ -130,6 +130,9 @@ impl Interpreter {
             if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                 class_def.mro = mro;
             }
+            self.registry_mut()
+                .composed_classes
+                .insert(class_name.clone());
             // This is the native step a custom `compose` hook's
             // `callsame` reaches: from here on the class's auto-generated
             // accessors count as installed (`classes_composing_accessors`).
@@ -141,6 +144,29 @@ impl Interpreter {
             // loses the freshly composed type and turns the following
             // call into an Any dispatch.
             Ok(args[0].clone())
+    }
+
+    /// `ClassHOW.is_composed`: true after a user class reaches its native
+    /// compose step; built-in type objects are already composed by the
+    /// runtime.
+    // Cost: O(1), one registry membership check.
+    pub(crate) fn mop_is_composed(&self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        let Some(target) = args.first() else {
+            return Ok(Value::FALSE);
+        };
+        let class_name = match target.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Str(name) => name.to_string(),
+            _ => return Ok(Value::FALSE),
+        };
+        let composed = {
+            let registry = self.registry();
+            registry.composed_classes.contains(&class_name)
+                || (!registry.classes.contains_key(&class_name)
+                    && Self::is_builtin_type(&class_name))
+        };
+        Ok(if composed { Value::TRUE } else { Value::FALSE })
     }
 
         // `$type.HOW.add_parent($type, $parent)` — the native ClassHOW

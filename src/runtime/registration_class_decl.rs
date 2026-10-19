@@ -263,6 +263,9 @@ impl Interpreter {
         {
             return Ok(Vec::new());
         }
+        if !is_stub_body {
+            self.registry_mut().composed_classes.remove(name);
+        }
 
         // `Metamodel::AttributeContainer`'s `rw` flag: `class C is rw` is
         // the `set_rw` trait, read back by `.^rw`. Recorded in the same

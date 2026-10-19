@@ -405,6 +405,10 @@ pub(crate) struct Registry {
     /// run (so `@!aspects` populated by the trait is visible to `compose`), which
     /// wraps the class's methods (`advent2011-day14` AOP).
     pub(crate) pending_class_compose: Vec<String>,
+    /// User classes whose HOW reached the native compose step. This is kept
+    /// separately from `mro`: the C3 order is available while registration is
+    /// still in progress, before Rakudo's compose protocol has completed.
+    pub(crate) composed_classes: std::collections::HashSet<String>,
     /// Classes whose HOW `compose` hook already ran through an attribute
     /// trait's deferred compose (`run_pending_attr_composes`); consumed by
     /// `queue_trait_how_compose` so the hook is not queued a second time.

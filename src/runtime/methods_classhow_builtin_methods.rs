@@ -68,6 +68,19 @@ impl Interpreter {
         if local {
             // Only methods defined directly on this class
             self.collect_class_methods(&class_name, private, &mut result);
+            // Rakudo's compose protocol installs a class-local POPULATE
+            // candidate even when the class declares no constructor hook.
+            // Keep it in the local method view only once this class has
+            // completed its native compose step.
+            let has_local_populate = self
+                .registry()
+                .user_method_overloads(&class_name, "POPULATE")
+                .is_some();
+            if !has_local_populate
+                && self.registry().composed_classes.contains(&class_name)
+            {
+                self.push_native_method_objects(&["POPULATE"], &class_name, &mut result);
+            }
             // Also include methods from runtime-mixed-in roles
             for role_name in &mixin_role_names {
                 self.collect_role_methods(role_name, private, &mut result);

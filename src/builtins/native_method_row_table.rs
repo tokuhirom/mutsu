@@ -2958,6 +2958,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Metamodel::ClassHOW", "find_private_method", 8, 57),
     ("Metamodel::ClassHOW", "get_attribute_for_usage", 8, 57),
     ("Metamodel::ClassHOW", "isa", 8, 57),
+    ("Metamodel::ClassHOW", "is_composed", 8, 57),
     ("Metamodel::ClassHOW", "language-revision", 8, 57),
     ("Metamodel::ClassHOW", "lookup", 8, 57),
     ("Metamodel::ClassHOW", "method_names", 8, 57),
