@@ -15,12 +15,12 @@ plan 6;
     dies-ok { my $x = %h<foo> }, 'tied AT-KEY throw propagates on read';
 }
 
-# A non-Associative instance with no AT-KEY: `<foo>` subscript stays Nil
-# (the error is only propagated when the class actually has an AT-KEY).
+# A non-Associative instance with no AT-KEY returns a Failure. Sinking the
+# unsupported associative read throws the exception carried by that Failure.
 {
     class Plain { has $.x }
     my $obj = Plain.new(x => 5);
-    lives-ok { my $y = $obj<foo> }, 'plain instance subscript does not die';
+    dies-ok { my $y = $obj<foo> }, 'plain instance associative indexing Failure throws when sunk';
 }
 
 # A real tied hash whose AT-KEY returns Nil for a missing key stays Nil,
