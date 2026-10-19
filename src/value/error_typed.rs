@@ -552,18 +552,16 @@ impl RuntimeError {
         } else {
             format!("${}", param)
         };
+        // Rakudo renders the invocant form through `naive-word-wrapper`
+        // (72 columns), so where the line breaks depends on the names.
         let msg = if param_is_invocant {
-            if should_be_concrete {
-                format!(
-                    "Invocant of method '{}' must be {} of type\n'{}', not {} of type '{}'. Did you forget a '{}'?",
-                    routine, kind, expected, actual_kind, got, hint
-                )
-            } else {
-                format!(
-                    "Invocant of method '{}' must be a type object of type '{}', not an object\ninstance of type '{}'. Did you forget a '{}'?",
-                    routine, expected, got, hint
-                )
-            }
+            crate::word_wrap::naive_word_wrap(
+                &format!(
+                    "Invocant of method '{routine}' must be {kind} of type '{expected}', not \
+                     {actual_kind} of type '{got}'. Did you forget a '{hint}'?"
+                ),
+                72,
+            )
         } else {
             format!(
                 "Parameter '{}' of routine '{}' must be {} of\ntype '{}', not {} of type '{}'. Did you forget a\n'{}'?",

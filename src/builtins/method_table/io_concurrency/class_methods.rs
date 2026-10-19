@@ -139,15 +139,14 @@ fn all_args(args: &[Value], named: Named<'_>) -> Vec<Value> {
 /// Rakudo's refusal of a class method (`method m(Supply:U: ...)`) called on
 /// an instance; `None` for a type object.
 // Cost: O(1).
-fn type_object_only(target: &Value, method: &str) -> Option<RuntimeError> {
+pub(super) fn type_object_only(target: &Value, method: &str) -> Option<RuntimeError> {
     let ValueView::Instance { class_name, .. } = target.view() else {
         return None;
     };
     let class = class_name.resolve();
-    Some(RuntimeError::new(format!(
-        "Invocant of method '{method}' must be a type object of type '{class}', not an object \
-         instance of type '{class}'. Did you forget a 'multi'?"
-    )))
+    Some(RuntimeError::parameter_invalid_concreteness(
+        &class, &class, method, "self", false, true,
+    ))
 }
 
 /// `Supply.from-list(*@values)`.
