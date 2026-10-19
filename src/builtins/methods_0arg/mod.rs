@@ -343,38 +343,6 @@ pub(crate) fn native_method_0arg_cascade(
         {
             return Some(Ok(str_val.clone()));
         }
-        if method == "WHICH"
-            && let Some(allo_name) = crate::value::types::allomorph_type_name(inner, mixins)
-        {
-            let inner_which = match inner.as_ref().view() {
-                ValueView::Int(n) => format!("Int|{}", n),
-                ValueView::BigInt(n) => format!("Int|{}", *n),
-                ValueView::Num(n) => format!("Num|{}", n),
-                ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
-                ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
-                ValueView::BigRat(n, d) => {
-                    let flavour = if inner.as_ref().is_bigfatrat() {
-                        "FatRat"
-                    } else {
-                        "Rat"
-                    };
-                    format!("{}|{}/{}", flavour, n, d)
-                }
-                ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
-                _ => format!("{:?}", inner),
-            };
-            let str_part = mixins
-                .get("Str")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default();
-            let which_str = format!("{}|{}|Str|{}", allo_name, inner_which, str_part);
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("WHICH".to_string(), Value::str(which_str));
-            return Some(Ok(Value::make_instance(
-                crate::symbol::Symbol::intern("ValueObjAt"),
-                attrs,
-            )));
-        }
         // An allomorph's `wordcase` reads the Str part but preserves the
         // allomorph type (see `allomorph_wordcase_result`); its other string
         // methods are `Str`'s and `Cool`'s rows on the Str part (§9.101).
@@ -385,15 +353,6 @@ pub(crate) fn native_method_0arg_cascade(
             return Some(Ok(crate::value::types::allomorph_wordcase_result(
                 inner, wordcased,
             )));
-        }
-        // An allomorph (IntStr/RatStr/NumStr/ComplexStr) renders its `.raku` /
-        // `.perl` as `TypeStr.new(<numeric>, "<string>")`, NOT the bare inner
-        // value's `.raku`. (`.gist`/`.Str` keep the source-string form, handled
-        // above; a general `but`-mixin falls through to the inner delegation.)
-        if matches!(method, "raku")
-            && crate::value::types::allomorph_type_name(inner, mixins).is_some()
-        {
-            return Some(Ok(Value::str(raku_repr::raku_value(target))));
         }
         // A Set/Bag/Mix names its own type in `.raku` and `.gist`, so a
         // `but`-mixed one has to name the role with it (`Set+{R}.new("a")`,

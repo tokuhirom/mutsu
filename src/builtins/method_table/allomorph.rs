@@ -33,14 +33,15 @@ const ALLOMORPH_NUMERIC: [&str; 12] = [
     "narrow",
 ];
 
-/// The names an allomorph answers about itself, which neither part can: its
-/// rendering and identity (`IntStr.new(1, "1")`, `IntStr|Int|1|Str|1`), a
-/// copy, `wordcase`, whose result Rakudo re-allomorphs, and `ACCEPTS`, which
-/// compares a `Str` argument with the string and anything else with the number
-/// (`methods_narg::allomorph`).
-const ALLOMORPH_OWN: [&str; 8] = [
-    "raku", "gist", "WHICH", "clone", "Capture", "wordcase", "VAR", "ACCEPTS",
-];
+/// The names an allomorph answers about itself, which neither part can and
+/// `Allomorph` does not declare: a copy, `wordcase`, whose result Rakudo
+/// re-allomorphs, `Capture` and its container. (`gist` is `Str`'s, on the
+/// string part.)
+const ALLOMORPH_OWN: [&str; 4] = ["clone", "Capture", "wordcase", "VAR"];
+
+/// The names `Allomorph` declares about the allomorph itself, answered by its
+/// own rows with the allomorph as the invocant (`scalars::allomorph_own`).
+const ALLOMORPH_DECLARED: [&str; 3] = ["ACCEPTS", "WHICH", "raku"];
 
 /// The string and the number of a plain allomorph: an `IntStr`, `RatStr`,
 /// `NumStr` or `ComplexStr` carrying no other mixin. `None` for every other
@@ -80,6 +81,10 @@ pub(super) fn redirect(target: &Value, method: Symbol, arity: usize) -> Option<(
     let name = method.as_str();
     if ALLOMORPH_OWN.contains(&name) {
         return None;
+    }
+    if ALLOMORPH_DECLARED.contains(&name) {
+        let id = super::owner_row(Symbol::intern("Allomorph"), method, arity)?;
+        return Some((target.clone(), id));
     }
     // `Str.Stringy` is `self`, and an allomorph is a `Str`: the allomorph itself.
     if name == "Stringy" {

@@ -1,5 +1,3 @@
-use super::allomorph::allomorph_accepts;
-
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -186,11 +184,6 @@ fn native_method_1arg_cascade(
         }
         "EXISTS-POS" => {
             crate::builtins::method_table::positional::exists_pos(target, std::slice::from_ref(arg))
-        }
-        // ACCEPTS for allomorphic types (IntStr, RatStr, NumStr, ComplexStr)
-        "ACCEPTS" if matches!(target.view(), ValueView::Mixin(_, m) if m.contains_key("Str")) => {
-            // Instance args need the interpreter to call .Numeric, so return None
-            allomorph_accepts(target, arg).map(|result| Ok(Value::truth(result)))
         }
         _ => None,
     }
