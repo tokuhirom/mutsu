@@ -1,5 +1,6 @@
 //! Coercion, slip, boolean, string concatenation, and Buf-value ops.
 use super::*;
+use crate::runtime::instance_backing::InstanceBacking;
 use std::sync::Arc;
 
 impl Interpreter {
@@ -512,7 +513,16 @@ impl Interpreter {
             let r = self.try_compiled_method_or_interpret(v, "Stringy", Vec::new())?;
             return Ok(Value::str(r.to_string_value()));
         }
-        if self.has_user_method(&cn, "Str")
+        // A subclass of `Array`/`Hash`/a QuantHash stringifies its backing
+        // storage through the `Str` its built-in ancestor declares (#14016);
+        // the pure stringifier only sees the instance (`A<19>`).
+        let storage_backed = !is_type_object
+            && matches!(v.view(), ValueView::Instance { attributes, .. }
+                if [InstanceBacking::Array, InstanceBacking::Hash, InstanceBacking::Baggy]
+                    .into_iter()
+                    .any(|backing| backing.is_in(&attributes)));
+        if storage_backed
+            || self.has_user_method(&cn, "Str")
             || self.is_native_method(&cn, "Str")
             || (!is_type_object
                 && crate::builtins::method_table::composed_roles::role_declares(
