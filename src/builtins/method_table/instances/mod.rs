@@ -57,6 +57,7 @@ pub(crate) mod temporal_edit;
 pub(crate) mod temporal_shift;
 pub(crate) mod unicode_data;
 mod walk_list;
+pub(crate) mod wrapper_role;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -89,6 +90,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     failure::ROWS,
     signature::ROWS,
     stash::ROWS,
+    wrapper_role::ROWS,
     supply::ROWS,
     rakuast_node::ROWS,
     compunit::ROWS,

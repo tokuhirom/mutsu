@@ -205,14 +205,14 @@ impl Interpreter {
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
-        // `X::Promise::Broken` / `X::React::Died` (composed into the exception
-        // `Promise.result` / a dying `react` rethrows) override `gist` alone. The role carries no method
-        // table, so the native exception-gist arm below would answer with the
-        // bare cause message; intercept before it. This is the VM's fast-path
-        // twin of the same check in `call_method_with_values`.
-        if method_name == "gist"
-            && args.is_empty()
-            && let Some(result) = self.wrapper_role_gist(target)
+        // A wrapper role's `gist` row (ADR-11276, #11276), found by the role
+        // the exception carries, ahead of the native exception-gist arm below
+        // that would answer the bare cause; as in `call_method_with_values`.
+        if let Some(owners) = crate::builtins::method_table::wrapper_role_owners_of(target)
+            && let Some(result) =
+                crate::builtins::method_table::invoke_owner(self, owners, method_name, args, || {
+                    target.clone()
+                })
         {
             return Some(result);
         }
