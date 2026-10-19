@@ -1939,6 +1939,7 @@ impl Interpreter {
                 | ValueView::Num(_)
                 | ValueView::Rat(..)
                 | ValueView::FatRat(..)
+                | ValueView::Complex(..)
                 | ValueView::Enum { .. },
             ) if self.has_user_method(&class_name.resolve(), "Numeric") => {
                 match self.try_compiled_method_or_interpret(left.clone(), "Numeric", Vec::new()) {

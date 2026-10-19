@@ -5,7 +5,7 @@ use Test;
 # `.Str` and `.Numeric` (ADR-11276 §9.191; every answer checked against
 # Rakudo).
 
-plan 13;
+plan 15;
 
 class N { method Numeric { 42 }; method Str { "42" } }
 class M { method Numeric { 42 }; method Str { "x" } }
@@ -27,3 +27,7 @@ nok S.new(value => "4") ~~ "42", '... and not another one';
 
 ok <42>.ACCEPTS("42") && <42>.ACCEPTS(42), 'a Str and an Int argument';
 ok <42>.ACCEPTS(<42>), 'an allomorph argument';
+
+class C { method Numeric { 3+5i }; method Str { "3+5i" } }
+ok (3+5i).ACCEPTS(C.new), 'a Complex matches an object through its .Numeric';
+ok < 3+5i>.ACCEPTS(C.new), 'and so does a ComplexStr';
