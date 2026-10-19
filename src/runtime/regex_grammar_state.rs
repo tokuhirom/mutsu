@@ -49,6 +49,12 @@ pub(crate) struct RegexGrammarState {
     /// outer-lexical-write fallback to exactly this context so ordinary `our`/
     /// package-qualified writes elsewhere are unaffected.
     pub(crate) in_regex_code_block: bool,
+    /// The rule whose program the compiled engine is running a `{ … }` /
+    /// `<?{ … }>` code atom of, when it runs one in a subrule frame: the
+    /// code closes over the scope of the file declaring that rule (#13915,
+    /// `Interpreter::with_rule_def_file`). Set right before the atom runs and
+    /// taken by it.
+    pub(crate) code_atom_rule: Option<crate::symbol::Symbol>,
 }
 
 impl RegexGrammarState {

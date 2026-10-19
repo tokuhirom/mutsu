@@ -73,8 +73,10 @@ impl Interpreter {
         let saved_self = self_cursor
             .as_ref()
             .map(|cursor| self.env.insert("self".to_string(), cursor.clone()));
-        let result = 'run: {
-            let interp = &mut *self;
+        // The rule's code closes over the scope of the file declaring it
+        // (#13915), which is not the running rule's for an inherited one.
+        let rule = self.regex_state.code_atom_rule.take();
+        let result = self.with_rule_def_file(pkg, rule, |interp| 'run: {
             // The text matched up to this atom — becomes `$/.Str` inside the
             // code, so `$/.lc` / `~$/` see the matched-so-far text (e.g. the
             // card grammar's `%*PLAYED{$/.lc}++` dup check).
@@ -142,7 +144,7 @@ impl Interpreter {
             // to the subrule's own node rather than the parent's.
             new_caps.ast = outcome.made;
             Some((pos, new_caps))
-        };
+        });
         if let Some(prev) = saved_self {
             match prev {
                 Some(prev) => self.env.insert("self".to_string(), prev),
