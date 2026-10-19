@@ -618,6 +618,19 @@ impl Interpreter {
                 && matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. });
             let is_lexical_sub_decl = op.kind == crate::opcode::DeferredBodyOpKind::Plain
                 && matches!(op.raw, Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. });
+            // A plain role's body statements run in the role's own package:
+            // its `sub`s are registered there at declaration
+            // (`register_role_body_exported_subs`), and a body statement
+            // that calls one (`my constant H = det()`) finds it there. A
+            // second copy of such a sub under the composer's package was
+            // what a trait applied the second time (#13645).
+            let runs_in_role_package = role_lexical_package.is_none()
+                && op.kind == crate::opcode::DeferredBodyOpKind::Plain
+                && !(is_lexical_sub_decl
+                    && matches!(
+                        op.raw,
+                        Stmt::SubDecl { multi: true, .. } | Stmt::SubDecl { is_export: true, .. }
+                    ));
             let lexical_sub_name = match &op.raw {
                 Stmt::SubDecl {
                     name,
@@ -644,6 +657,8 @@ impl Interpreter {
                 self.set_current_package(cx.name.to_string());
             } else if is_lexical_sub_decl && let Some(package) = role_lexical_package.as_deref() {
                 self.set_current_package(package.to_string());
+            } else if runs_in_role_package {
+                self.set_current_package(base_role_name.to_string());
             }
             let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
                 // The body's `:=` sources are the declaration site's
@@ -686,6 +701,7 @@ impl Interpreter {
                 || is_proto_token_decl
                 || is_use_decl
                 || is_lexical_sub_decl
+                || runs_in_role_package
             {
                 self.set_current_package(saved_body_pkg.clone());
             }

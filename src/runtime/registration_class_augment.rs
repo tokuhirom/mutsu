@@ -1690,7 +1690,21 @@ impl Interpreter {
                 {
                     Some(regex_owner)
                 }
-                crate::opcode::DeferredBodyOpKind::Plain => None,
+                // A multi or exported `sub` registers where the composer can
+                // reach it, as before.
+                crate::opcode::DeferredBodyOpKind::Plain
+                    if matches!(
+                        op.raw,
+                        Stmt::SubDecl { multi: true, .. } | Stmt::SubDecl { is_export: true, .. }
+                    ) =>
+                {
+                    None
+                }
+                // Every other body statement runs in the role's package: its
+                // own plain `sub`s are registered there at declaration, and a
+                // statement that calls one finds it there -- see the twin in
+                // `run_composed_role_deferred_body` (#13645).
+                crate::opcode::DeferredBodyOpKind::Plain => Some(type_owner),
             };
             let is_use_or_need = matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. });
             if let Some(pkg) = body_pkg {
