@@ -41,6 +41,10 @@ pub(crate) struct RankProfile {
     /// are built from declared types, so [`Self::declared_wins`] compares a
     /// pair by these even when an argument is unrelated to one of them.
     declared: [Option<Symbol>; PROFILE_LEN],
+    /// Bit `i` is set when positional slot `i` has a coercion type. Rakudo
+    /// expands coercions into target and accepted-type candidates, affecting
+    /// narrowness across arity mismatches.
+    coercive: u8,
     /// Bit `i` set: slot `i` is an optional positional the call supplies no
     /// argument for. Its score says nothing (there is no argument to measure
     /// a distance from), so such a slot is compared by its declared type in
@@ -58,6 +62,7 @@ impl RankProfile {
         scores: [u16::MAX; PROFILE_LEN],
         nominal: [None; PROFILE_LEN],
         declared: [None; PROFILE_LEN],
+        coercive: 0,
         unreached: 0,
         refined: false,
         unrelated: false,
@@ -75,12 +80,16 @@ impl RankProfile {
         refined: bool,
         nominal: Option<Symbol>,
         declared: Option<Symbol>,
+        coercive: bool,
     ) {
         if slot < PROFILE_LEN {
             let d = delta.min(20_000) as u16;
             self.scores[slot] = d * 2 + u16::from(!refined);
             self.nominal[slot] = nominal;
             self.declared[slot] = declared;
+            if coercive {
+                self.coercive |= 1 << slot;
+            }
             self.refined |= refined;
         }
     }
@@ -111,6 +120,14 @@ impl RankProfile {
     // Cost: O(1).
     pub(crate) fn mark_unrelated(&mut self) {
         self.unrelated = true;
+    }
+
+    /// Whether a coercion parameter appears in the positional prefix shared
+    /// by these two candidates.
+    // Cost: O(1).
+    fn shares_coercion_with(&self, other: &RankProfile, shared: usize) -> bool {
+        let mask = (1u8 << shared.min(PROFILE_LEN)) - 1;
+        (self.coercive | other.coercive) & mask != 0
     }
 
     /// Whether neither candidate is narrower than the other because of a
@@ -435,8 +452,10 @@ impl MultiRank {
     }
 
     /// Whether `self` and `other` differ in both positional count and
-    /// required positional count: rakudo's arity mismatch, under which its
-    /// `is_narrower` compares no parameter types at all.
+    /// required positional count: rakudo's arity mismatch, which normally
+    /// suppresses parameter comparisons. A shared coercion parameter is the
+    /// exception because Rakudo expands it into target and accepted-type
+    /// candidates.
     // Cost: O(1).
     fn arity_mismatch(&self, other: &MultiRank) -> bool {
         self.arity.0 != other.arity.0 && self.arity.1 != other.arity.1
@@ -446,7 +465,11 @@ impl MultiRank {
     /// topological tiers of [`assign_tiers`] are built from. On an arity
     /// mismatch (see [`Self::arity_mismatch`]) a candidate without a slurpy
     /// positional is narrower than one with it, and otherwise neither is
-    /// narrower: `multi m(Any $x, Any $y)` beats `multi m(Int $x, *@r)` for
+    /// narrower unless the shared positional prefix contains a coercion type.
+    /// Rakudo's coercion expansion keeps that prefix's narrowness visible:
+    /// `multi m(Scalar:U, Int() $y = 0)` beats `multi m(Int() $x = 0)` for
+    /// `m(Scalar)`. Without coercion, `multi m(Any $x, Any $y)` beats
+    /// `multi m(Int $x, *@r)` for
     /// `m(1, 2)` whatever their declaration order, while
     /// `multi a(Numeric $g, Numeric $e, $d = '')` and
     /// `multi a(Numeric $g, Numeric $e, Numeric $t, $d = '')` are
@@ -454,18 +477,24 @@ impl MultiRank {
     /// decided by the required-named candidates that sit between them.
     // Cost: O(r), r = the cost of one `conforms` call.
     fn rakudo_narrower(&self, other: &MultiRank, conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
-        if self.arity_mismatch(other) {
+        let coercive_mismatch = self.arity_mismatch(other)
+            && self.profile.shares_coercion_with(&other.profile, self.arity.0.min(other.arity.0));
+        if self.arity_mismatch(other) && !coercive_mismatch {
             return self.non_slurpy && !other.non_slurpy;
         }
-        self.narrower_by_rank(other, conforms)
+        let narrower = self.narrower_by_rank(other, conforms);
+        if narrower || !coercive_mismatch {
+            return narrower;
+        }
+        narrower || (self.rank_cmp(other) == Ordering::Equal && self.decl_order < other.decl_order)
     }
 
     /// Whether `self` is strictly narrower than `other`: in an earlier tier,
     /// or in the same one and ahead of it in the tier order while comparable
     /// with it. Within a tier, an arity mismatch makes the non-slurpy one of
     /// a slurpy/non-slurpy pair narrower and leaves any other pair
-    /// incomparable — except between untiered ranks, which keep the rank
-    /// order.
+    /// incomparable, except when their shared positional prefix contains a
+    /// coercion type. Untiered ranks keep the rank order.
     // Cost: O(r), r = the cost of one `conforms` call.
     pub(crate) fn is_narrower(
         &self,
@@ -475,7 +504,9 @@ impl MultiRank {
         if self.tier != other.tier {
             return self.tier < other.tier;
         }
-        if self.arity_mismatch(other) {
+        if self.arity_mismatch(other)
+            && !self.profile.shares_coercion_with(&other.profile, self.arity.0.min(other.arity.0))
+        {
             if self.non_slurpy != other.non_slurpy {
                 return self.non_slurpy;
             }

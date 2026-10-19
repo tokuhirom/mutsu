@@ -6,7 +6,7 @@ use Test;
 # its target only when the argument already IS a target, and is otherwise as
 # wide open as `F`.
 
-plan 15;
+plan 20;
 
 {
     proto sub f(|) {*}
@@ -76,4 +76,30 @@ plan 15;
     throws-like { n(42) }, X::Multi::Ambiguous,
         'Str() and a bare param both accept Any for a non-Str argument';
     is n('x'), 'coerce', 'Str() out-narrows a bare param for a Str argument';
+}
+
+{
+    class Foo { }
+
+    multi sub coercion-arity-a(Scalar:U, Int() $t = 5) { 'specific' }
+    multi sub coercion-arity-a(Int() $t = 7) { 'coercion' }
+    multi sub coercion-arity-b(Scalar:U, $t = 5) { 'specific' }
+    multi sub coercion-arity-b(Int() $t = 7) { 'coercion' }
+    multi sub coercion-arity-e(Foo:U, Int() $t = 5) { 'specific' }
+    multi sub coercion-arity-e(Int() $t = 7) { 'coercion' }
+    multi sub coercion-arity-f(Foo:U, Int() $t = 5) { 'specific' }
+    multi sub coercion-arity-f(Any $t = 7) { 'any' }
+    multi sub coercion-arity-h(Foo:U, $t = 5) { 'specific' }
+    multi sub coercion-arity-h($t = 7) { 'bare' }
+
+    is coercion-arity-a(Scalar), 'specific',
+        'a specific first parameter outranks an arity-mismatched coercion';
+    is coercion-arity-b(Scalar), 'specific',
+        'an untyped first parameter ties the coercion fallback by declaration order';
+    is coercion-arity-e(Foo), 'specific',
+        'a specific user type outranks an arity-mismatched coercion';
+    throws-like { coercion-arity-f(Foo) }, X::Multi::Ambiguous,
+        'a specific type and explicit Any remain ambiguous across arity mismatch';
+    throws-like { coercion-arity-h(Foo) }, X::Multi::Ambiguous,
+        'a specific type and an untyped parameter remain ambiguous without coercion';
 }

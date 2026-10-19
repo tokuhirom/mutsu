@@ -165,6 +165,7 @@ impl Interpreter {
         // The slot's declared type, independent of the argument
         // ([`RankProfile::declared_wins`]).
         let mut slot_declared: Option<Symbol> = None;
+        let mut slot_coercive = false;
         // The slot is an optional positional this call does not reach; its
         // `slot_nominal` is then the declared type.
         let mut slot_unreached = false;
@@ -201,7 +202,7 @@ impl Interpreter {
                 continue;
             }
             if slot > 0 {
-                profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal, slot_declared);
+                profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal, slot_declared, slot_coercive);
                 if slot_unreached && let Some(declared) = slot_nominal {
                     profile.mark_unreached(slot - 1, declared);
                 }
@@ -209,6 +210,10 @@ impl Interpreter {
             prev_total = total;
             slot_nominal = None;
             slot_declared = None;
+            slot_coercive = pd
+                .type_constraint
+                .as_deref()
+                .is_some_and(crate::runtime::types::is_coercion_constraint);
             slot_unreached = false;
             if slot < PROFILE_LEN {
                 slot_refined = (pd.where_constraint.is_some() && !pd.is_variadic())
@@ -333,7 +338,7 @@ impl Interpreter {
             total += self.arg_type_distance("Any", &arg, var_type.as_deref());
         }
         if slot > 0 {
-            profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal, slot_declared);
+            profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal, slot_declared, slot_coercive);
             if slot_unreached && let Some(declared) = slot_nominal {
                 profile.mark_unreached(slot - 1, declared);
             }
