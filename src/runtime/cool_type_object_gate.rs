@@ -124,15 +124,6 @@ fn string_sub_subject<'a>(name: &str, args: &'a [Value]) -> Option<&'a Value> {
     }
 }
 
-/// Whether a builtin `Cool` type object is admitted for `method` by
-/// [`Interpreter::cool_type_object_string_method`], which answers it (a
-/// stringified empty value or `X::Multi::NoMatch`) ahead of the method table.
-// Cost: O(k), k = the names of `DEFINITE_ONLY`.
-#[cfg(test)]
-pub(crate) fn admits_cool_type_object(method: &str) -> bool {
-    DEFINITE_ONLY.contains(&method)
-}
-
 impl Interpreter {
     /// The sub-form twin of [`Self::cool_type_object_string_method`]:
     /// `substr($undefined, 0, 2)` answers what `$undefined.substr(0, 2)` does

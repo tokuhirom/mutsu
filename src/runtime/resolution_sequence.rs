@@ -66,33 +66,8 @@
 //! for its repro (`t/defer-multi-cross-level-proto-block.t`).
 
 use super::*;
-use crate::builtins::native_method_row::{NativeArityMask, native_row_servable};
 use crate::type_id::TypeId;
 use std::sync::Arc;
-
-/// The E4b-local subset of call-shape facts design decision 4's `Native`
-/// candidate needs to decide whether a native row is actually reachable for
-/// one specific call: the call's own arity, and whether the receiver is a
-/// concrete value (`DEFINITE`) rather than a bare type object. This is
-/// deliberately smaller than the design doc's future E3 cache-key `CallShape`
-/// (`{ arity_bucket, has_named }`, adr0019-e2-e4-resolver-core (#7540))
-/// — see the step-4 scoping note in
-/// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md` for
-/// why the full shape is not needed here.
-#[derive(Clone, Copy)]
-pub(crate) struct NativeCallShape {
-    pub(crate) arity: NativeArityMask,
-    pub(crate) definite: bool,
-}
-
-impl NativeCallShape {
-    pub(crate) fn new(arg_count: usize, definite: bool) -> Self {
-        Self {
-            arity: NativeArityMask::for_arity(arg_count),
-            definite,
-        }
-    }
-}
 
 /// Which visibility tier [`Interpreter::resolve_sequence`] should collect.
 /// Added for ADR-0019 Phase E box E7 step 3 (private-as-sequence-query,
@@ -180,24 +155,12 @@ pub(crate) enum ResolvedCandidate {
     /// trait, or one of the handful of built-in classes whose getters are
     /// implemented by dedicated `native_io_*` dispatch helpers
     /// (`Interpreter::hardcoded_native_method`). This is the E4b decomposition
-    /// note's "category 2": a third candidate kind, distinct from both `User`
-    /// and `Native` below — see
+    /// note's "category 2": a third candidate kind, distinct from `User` — see
     /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`.
     /// At most one appears per sequence: `is_native_method` is a boolean "does
     /// any MRO level bind this name", not a per-level fact, so the sequence
     /// records only that one binds it.
     NativeCallBinding,
-    /// A `native_method_{0,1,2}arg` catalog row (E2's `native_method_row`
-    /// table) that is actually reachable for the call's shape — design
-    /// decision 4's `Native` variant. At most one appears per sequence: rows
-    /// are name-based (not per-level user overloads), so the first MRO level
-    /// (including its `canonical_builtin_owner` fold) with a servable row
-    /// wins, mirroring how the arity cascades themselves are name-dispatched
-    /// rather than per-level. `owner` is the level the row was found at:
-    /// only the tests read it until slice 4 of ADR-11276 makes the candidate
-    /// invocable.
-    #[cfg_attr(not(test), allow(dead_code))]
-    Native { owner: TypeId },
 }
 
 /// The shape-independent ordered candidate universe for one `(receiver chain,
@@ -222,36 +185,6 @@ pub(crate) fn value_is_definite(value: &Value) -> bool {
         value.view(),
         ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..)
     )
-}
-
-/// ADR-0019 E3 (design decision 5, adr0019-e2-e4-resolver-core (#7540)):
-/// the call-shape component of `resolved_seq_cache`'s key
-/// `(TypeId, Symbol, CallShape)`. A [`ResolvedSequence`] only depends on the
-/// receiver's owner chain and the call's arity/named-ness (via
-/// [`NativeCallShape`]'s effect on which `Native` row, if any, is servable) —
-/// not on the concrete argument values — so this is a small, `Copy` hash key
-/// bucketing arity into `0 | 1 | 2 | 3+` and tracking whether any argument is
-/// a named pair.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) struct CallShape {
-    arity_bucket: u8,
-    has_named: bool,
-}
-
-impl CallShape {
-    pub(crate) fn for_args(args: &[Value]) -> CallShape {
-        let has_named = args
-            .iter()
-            .any(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
-        CallShape {
-            arity_bucket: args.len().min(3) as u8,
-            has_named,
-        }
-    }
-
-    fn arg_count_for_native_shape(self) -> usize {
-        self.arity_bucket as usize
-    }
 }
 
 impl Interpreter {
@@ -287,31 +220,25 @@ impl Interpreter {
         // ambiguous outcome" rule) need it reset here too.
         self.dispatch.dispatch_ambiguous = false;
         let owner = TypeId::intern(cn);
-        let shape = CallShape::for_args(args);
         let mro_arc = self.class_mro(cn);
         let mro: Vec<Symbol> = mro_arc.iter().copied().collect();
         let seq = match self
             .caches
             .resolved_seq_cache
-            .get(&(owner, method_sym, shape))
+            .get(&(owner, method_sym))
         {
             Some(cached) => cached.clone(),
             None => {
                 let chain: Vec<TypeId> = mro.iter().map(|s| TypeId::from_symbol(*s)).collect();
-                let native_shape = NativeCallShape::new(
-                    shape.arg_count_for_native_shape(),
-                    value_is_definite(target),
-                );
                 let built = Arc::new(self.resolve_sequence(
                     &chain,
                     method_sym,
-                    native_shape,
                     MethodVisibility::Public,
                     RoleFallback::Disabled,
                 ));
                 self.caches
                     .resolved_seq_cache
-                    .insert((owner, method_sym, shape), built.clone());
+                    .insert((owner, method_sym), built.clone());
                 built
             }
         };
@@ -336,15 +263,13 @@ impl Interpreter {
         &mut self,
         chain: &[TypeId],
         name: Symbol,
-        native_shape: NativeCallShape,
         visibility: MethodVisibility,
         role_fallback: RoleFallback,
     ) -> ResolvedSequence {
         let generation = self.registry().method_generation;
         let mut candidates = Vec::new();
         let mut native_binding_found = false;
-        let mut native_row_found = false;
-        for (level, owner) in chain.iter().enumerate() {
+                for (level, owner) in chain.iter().enumerate() {
             let is_ancestor = level > 0;
             let owner_str = owner.as_str();
             let overloads = match role_fallback {
@@ -402,21 +327,6 @@ impl Interpreter {
                     native_binding_found = true;
                 }
             }
-            // Rows are name-based, not per-level user overloads: the arity
-            // cascades dispatch by name alone, so the first MRO level whose
-            // (possibly folded) owner has a servable row wins, same as
-            // `NativeCallBinding` above.
-            if !native_row_found
-                && native_row_servable(
-                    owner_str,
-                    name.as_str(),
-                    native_shape.arity,
-                    native_shape.definite,
-                )
-            {
-                candidates.push(ResolvedCandidate::Native { owner: *owner });
-                native_row_found = true;
-            }
         }
         Self::drop_flattened_role_duplicate_candidates(&mut candidates);
         ResolvedSequence {
@@ -466,9 +376,7 @@ impl Interpreter {
                     .as_deref()
                     .filter(|ro| *ro != owner.as_str())
                     .map(str::to_string),
-                ResolvedCandidate::NativeCallBinding | ResolvedCandidate::Native { .. } => {
-                    None
-                }
+                ResolvedCandidate::NativeCallBinding => None
             })
             .collect();
         if flattened.is_empty() {
@@ -476,7 +384,7 @@ impl Interpreter {
         }
         candidates.retain(|c| match c {
             ResolvedCandidate::User { owner, .. } => !flattened.contains(owner.as_str()),
-            ResolvedCandidate::NativeCallBinding | ResolvedCandidate::Native { .. } => true,
+            ResolvedCandidate::NativeCallBinding => true,
         });
     }
 
@@ -710,12 +618,9 @@ impl Interpreter {
             return;
         }
         let saved_ambiguous = self.dispatch.dispatch_ambiguous;
-        let definite = invocant.map(value_is_definite).unwrap_or(false);
-        let native_shape = NativeCallShape::new(arg_values.len(), definite);
         let seq = self.resolve_sequence(
             chain,
             method_sym,
-            native_shape,
             visibility,
             RoleFallback::Disabled,
         );
@@ -806,7 +711,6 @@ impl Interpreter {
         receiver_class: &str,
         method: &str,
         arg_values: &[Value],
-        invocant: &Value,
         chosen_fp: Option<u64>,
         real_remaining: &[(Symbol, MethodDef)],
     ) {
@@ -816,7 +720,6 @@ impl Interpreter {
         let method_sym = Symbol::intern(method);
         let mro = self.class_mro(receiver_class);
         let chain: Vec<TypeId> = mro.iter().map(|s| TypeId::from_symbol(*s)).collect();
-        let native_shape = NativeCallShape::new(arg_values.len(), value_is_definite(invocant));
         // RoleFallback::Enabled — the whole point of this ticket's fix: the
         // real deferral walker (`resolve_deferral_expansion`, E9a) consults
         // `Registry::get_method_overloads_with_role_fallback`, so the shadow
@@ -826,7 +729,6 @@ impl Interpreter {
         let seq = self.resolve_sequence(
             &chain,
             method_sym,
-            native_shape,
             MethodVisibility::Public,
             RoleFallback::Enabled,
         );
@@ -898,7 +800,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("greet"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -907,8 +808,7 @@ mod tests {
                 .iter()
                 .filter_map(|c| match c {
                     ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
-                    ResolvedCandidate::NativeCallBinding
-                    | ResolvedCandidate::Native { .. } => None,
+                    ResolvedCandidate::NativeCallBinding => None,
                 })
                 .collect();
         assert_eq!(owners, vec!["Child", "Base"]);
@@ -923,7 +823,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("only-base"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -942,7 +841,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("only-base"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -957,7 +855,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("nope"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -976,7 +873,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("tap"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -985,48 +881,6 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c, ResolvedCandidate::NativeCallBinding)),
             "expected a NativeCallBinding candidate for Supply.tap"
-        );
-    }
-
-    /// ADR-0019 E4b step 4/9: design decision 4's `Native` variant -- a
-    /// catalog row that is actually reachable for the call's shape.
-    /// `Str.chars` is a plain `A0`/`TYPE_OBJECT_OK` row.
-    #[test]
-    fn resolve_sequence_finds_a_servable_native_row() {
-        let mut i = interp();
-        let chain = vec![TypeId::intern("Str")];
-        let seq = i.resolve_sequence(
-            &chain,
-            Symbol::intern("chars"),
-            NativeCallShape::new(0, true),
-            MethodVisibility::Public,
-            RoleFallback::Disabled,
-        );
-        assert!(
-            seq.candidates.iter().any(
-                |c| matches!(c, ResolvedCandidate::Native { owner } if owner.as_str() == "Str")
-            ),
-            "expected a Native candidate for Str.chars at arity 0"
-        );
-    }
-
-    /// The same row is not offered at an arity the call doesn't have.
-    #[test]
-    fn resolve_sequence_omits_a_native_row_at_the_wrong_arity() {
-        let mut i = interp();
-        let chain = vec![TypeId::intern("Str")];
-        let seq = i.resolve_sequence(
-            &chain,
-            Symbol::intern("chars"),
-            NativeCallShape::new(1, true),
-            MethodVisibility::Public,
-            RoleFallback::Disabled,
-        );
-        assert!(
-            !seq.candidates
-                .iter()
-                .any(|c| matches!(c, ResolvedCandidate::Native { .. })),
-            "Str.chars is an A0 row and must not surface for a 1-arg call"
         );
     }
 
@@ -1042,7 +896,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("secret"),
-            default_shape(),
             MethodVisibility::Private,
             RoleFallback::Disabled,
         );
@@ -1051,8 +904,7 @@ mod tests {
                 .iter()
                 .filter_map(|c| match c {
                     ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
-                    ResolvedCandidate::NativeCallBinding
-                    | ResolvedCandidate::Native { .. } => None,
+                    ResolvedCandidate::NativeCallBinding => None,
                 })
                 .collect();
         assert_eq!(owners, vec!["Base"]);
@@ -1068,33 +920,12 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("secret"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
         assert!(
             seq.candidates.is_empty(),
             "a private method must not appear in a Public sequence"
-        );
-    }
-
-    /// `Private` never surfaces a `NativeCallBinding`/`Native` candidate,
-    /// even when the (post-`!`-stripping) name coincides with a public
-    /// builtin/native row name — private dispatch can never reach either.
-    #[test]
-    fn resolve_sequence_private_never_surfaces_a_native_candidate() {
-        let mut i = interp();
-        let chain = vec![TypeId::intern("Str")];
-        let seq = i.resolve_sequence(
-            &chain,
-            Symbol::intern("chars"),
-            NativeCallShape::new(0, true),
-            MethodVisibility::Private,
-            RoleFallback::Disabled,
-        );
-        assert!(
-            seq.candidates.is_empty(),
-            "Private must not surface Str.chars's public Native row"
         );
     }
 
@@ -1109,7 +940,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("chomp"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -1138,7 +968,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("greet"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -1152,8 +981,7 @@ mod tests {
                         stored_idx,
                         ..
                     } => Some((owner.as_str(), *level, *stored_idx)),
-                    ResolvedCandidate::NativeCallBinding
-                    | ResolvedCandidate::Native { .. } => None,
+                    ResolvedCandidate::NativeCallBinding => None,
                 })
                 .collect();
         assert_eq!(
@@ -1183,7 +1011,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("greet"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -1192,8 +1019,7 @@ mod tests {
                 .iter()
                 .filter_map(|c| match c {
                     ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
-                    ResolvedCandidate::NativeCallBinding
-                    | ResolvedCandidate::Native { .. } => None,
+                    ResolvedCandidate::NativeCallBinding => None,
                 })
                 .collect();
         assert_eq!(
@@ -1223,7 +1049,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("greet"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -1254,7 +1079,6 @@ mod tests {
         let seq = i.resolve_sequence(
             &chain,
             Symbol::intern("greet"),
-            default_shape(),
             MethodVisibility::Public,
             RoleFallback::Disabled,
         );
@@ -1276,7 +1100,4 @@ mod tests {
         );
     }
 
-    fn default_shape() -> NativeCallShape {
-        NativeCallShape::new(0, true)
-    }
 }

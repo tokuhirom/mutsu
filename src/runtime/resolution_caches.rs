@@ -247,11 +247,7 @@ pub(crate) struct ResolutionCaches {
     /// Cleared with the other method caches on any registry generation change
     /// ([`refresh_method_caches_for_generation`](crate::runtime::Interpreter::refresh_method_caches_for_generation)).
     pub(crate) resolved_seq_cache: rustc_hash::FxHashMap<
-        (
-            crate::type_id::TypeId,
-            Symbol,
-            resolution_sequence::CallShape,
-        ),
+        (crate::type_id::TypeId, Symbol),
         Arc<resolution_sequence::ResolvedSequence>,
     >,
     /// Registry method generation observed when the method caches were last valid.
