@@ -1714,7 +1714,10 @@ impl Interpreter {
                             .map(Value::to_string_value)
                     }
                     _ => None,
-                });
+                })
+                // `constant VT = Foo::Tree; VT::Node` names a nested type
+                // through the constant's package, just like a bareword does.
+                .or_else(|| self.resolve_constant_package_alias_prefix(&current));
             match next {
                 Some(target) if target != current => current = target,
                 // Settled: either the name is not bound to a type object at
