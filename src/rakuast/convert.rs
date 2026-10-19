@@ -13,7 +13,7 @@ use conditional::*;
 use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
 use super::origin;
-use super::placeholder::{is_placeholder_name, is_placeholder_param, placeholder_node};
+use super::placeholder::{is_placeholder_name, placeholder_node};
 use super::routine_source::return_type_spelling;
 pub(super) use super::routine_source::routine_node;
 use super::{
@@ -4630,7 +4630,6 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             pointy_block_from_lambda(param, *param_sigilless, body)
         }
         Expr::AnonSubParams {
-            params,
             param_defs,
             body,
             is_rw,
@@ -4649,15 +4648,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             // A bare placeholder block is a Block whose body contains
             // placeholder declarations, not a PointyBlock with a signature.
-            // The parser records the implicit parameters on AnonSubParams, so
-            // recover the source-level node only for the ordinary scalar
-            // placeholder subset handled by this regex boundary.
-            if *declarator == crate::ast::RoutineDeclarator::Block
-                && !params.is_empty()
-                && (params.iter().all(|param| is_placeholder_param(param))
-                    || crate::regex_tree::is_array_slurpy_placeholder_block(expr)
-                    || crate::regex_tree::is_hash_slurpy_placeholder_block(expr))
-            {
+            // The declarator and inferred parameters retain this distinction,
+            // including blocks that combine different placeholder kinds.
+            if crate::ast::placeholders::is_implicit_placeholder_block(expr) {
                 return signature_block_node(body);
             }
             if declarator.is_routine() {
@@ -7374,9 +7367,7 @@ fn colonpair_value_node(expr: &Expr, parenthesize: bool) -> Result<RakuAstNode, 
                 | Expr::Block(_)
                 | Expr::Hash(_, crate::ast::HashSpelling::Composer)
         )
-        || crate::regex_tree::is_scalar_placeholder_block(right)
-        || crate::regex_tree::is_array_slurpy_placeholder_block(right)
-        || crate::regex_tree::is_hash_slurpy_placeholder_block(right);
+        || crate::ast::placeholders::is_implicit_placeholder_block(right);
     if is_direct_block || !parenthesize {
         return Ok(RakuAstNode {
             class: RakuAstClass::ColonPairValue,

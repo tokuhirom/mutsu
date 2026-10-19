@@ -3,7 +3,7 @@ use MONKEY-SEE-NO-EVAL;
 use experimental :rakuast;
 use Test;
 
-plan 23;
+plan 27;
 
 sub statements($node) { $node.body.statement-list.statements }
 sub expression($source) { $source.AST.statements[0].expression }
@@ -12,6 +12,14 @@ is expression(Q[-> *%_ { %_.elems }]).^name, 'RakuAST::PointyBlock',
     'an explicit named-slurpy pointy block retains its signature';
 is expression(Q[-> *@_ { @_.elems }]).^name, 'RakuAST::PointyBlock',
     'an explicit positional-slurpy pointy block retains its signature';
+is expression(Q[my &f = { @_.elems + %_.elems }]).initializer.expression.^name,
+    'RakuAST::Block', 'mixed aggregate placeholders retain a bare Block';
+is EVAL(Q[my &f = { @_.elems + %_.elems }; f(1, 2, :a)].AST), 3,
+    'a source block binds positional and named aggregates independently';
+is EVAL(Q[my &f = { $^x + %_.elems }; f(2, :a)].AST), 3,
+    'a scalar placeholder and named aggregate share one implicit signature';
+ok EVAL(Q[/<word(:expected{ @_.elems + %_.elems })>/].AST) ~~ Regex,
+    'a mixed placeholder block survives regex argument source reconstruction';
 
 my $hash = expression(Q[sub f(*%_) { { %_.elems } }]);
 is statements(statements($hash)[0].expression)[0].expression.operand.^name,

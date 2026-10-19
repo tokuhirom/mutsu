@@ -3612,17 +3612,7 @@ pub(super) fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String
                 ..
             } => Some(body),
             Expr::AnonSubParams { body, .. }
-                if crate::regex_tree::is_scalar_placeholder_block(&value) =>
-            {
-                Some(body)
-            }
-            Expr::AnonSubParams { body, .. }
-                if crate::regex_tree::is_array_slurpy_placeholder_block(&value) =>
-            {
-                Some(body)
-            }
-            Expr::AnonSubParams { body, .. }
-                if crate::regex_tree::is_hash_slurpy_placeholder_block(&value) =>
+                if crate::ast::placeholders::is_implicit_placeholder_block(&value) =>
             {
                 Some(body)
             }
