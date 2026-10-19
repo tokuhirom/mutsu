@@ -87,6 +87,13 @@ impl Interpreter {
         if self.name_is_readonly_binding(&source) {
             return value;
         }
+        // The caller's own slot may hold the cell while its env does not
+        // (a light-path frame keeps an `is rw` parameter's shared cell in
+        // its slot only, and the callee's env no longer sees the caller's
+        // names): that cell is the caller's container (#13921).
+        if let Some(cell) = self.caller_slot_cell(&source, raw_arg.varref_slot()) {
+            return cell;
+        }
         let cell = match self.env.get(&source).cloned() {
             Some(existing) if matches!(existing.view(), ValueView::ContainerRef(_)) => existing,
             Some(existing) if matches!(existing.view(), ValueView::Proxy { .. }) => return value,
@@ -110,5 +117,46 @@ impl Interpreter {
         crate::value::name_container_cell(&cell, &source);
         rw_bindings.push((encode_slurpy_rw_param(capture_key, elem_idx, None), source));
         cell
+    }
+
+    /// The shared cell the calling frame's slot of its local `source` holds:
+    /// the frame that issued the call being bound is the innermost suspended
+    /// one. `slot` is the slot the call site's `WrapVarRef` resolved; a
+    /// method call's arguments carry none, and then the caller's only local
+    /// of that name is the one (a name it declares twice is left alone).
+    // Cost: O(1) with `slot`; O(l) without, l = the caller's locals.
+    fn caller_slot_cell(&self, source: &str, slot: Option<u32>) -> Option<Value> {
+        let frame = self.call_frames.last()?;
+        if frame.caller_code == 0 {
+            return None;
+        }
+        // SAFETY: `caller_code` is the address of the `CompiledCode` the
+        // caller was running when it pushed this frame; that caller is
+        // suspended until the frame pops, so its code is alive while the
+        // frame is on `call_frames`.
+        let caller = unsafe { &*(frame.caller_code as *const crate::opcode::CompiledCode) };
+        let slot = match slot.filter(|slot| *slot != u32::MAX) {
+            Some(slot) => {
+                let slot = slot as usize;
+                caller.locals.get(slot).filter(|name| *name == source)?;
+                slot
+            }
+            None => {
+                let mut named = caller
+                    .locals
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, name)| *name == source)
+                    .map(|(i, _)| i);
+                let first = named.next()?;
+                if named.next().is_some() {
+                    return None;
+                }
+                first
+            }
+        };
+        let base = frame.saved_locals_base.as_ref()?.base();
+        let region = self.locals.all_slots().get(base..self.locals.base())?;
+        region.get(slot).filter(|v| v.is_container_ref()).cloned()
     }
 }
