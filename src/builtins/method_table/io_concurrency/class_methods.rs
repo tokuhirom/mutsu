@@ -1,5 +1,5 @@
 //! Class methods of built-in classes, called on the type object (ADR-11276
-//! §9.122): `Supply`'s `from-list` and `on-demand`, `CompUnit::RepositoryRegistry`'s
+//! §9.122): `Supply`'s `from-list`, `on-demand` and `interval` (§9.196), `CompUnit::RepositoryRegistry`'s
 //! `repository-for-name`, `repository-for-spec` and `run-script`,
 //! `Encoding::Registry`'s `find` and `register`, `IO::Socket::INET`'s `connect`
 //! and `listen`, and `IO::Socket::Async`'s `connect`, `listen`, `bind-udp` and
@@ -41,6 +41,7 @@ macro_rules! row {
 pub(super) static ROWS: &[MethodRow] = &[
     row!("Supply", "from-list", 0, supply_from_list),
     row!("Supply", "on-demand", 1, supply_on_demand),
+    row!("Supply", "interval", 0, supply_interval),
     row!(
         "CompUnit::RepositoryRegistry",
         "repository-for-name",
@@ -156,6 +157,15 @@ fn supply_from_list(i: &mut Interpreter, t: &Value, args: &[Value], named: Named
         return Some(Err(e));
     }
     Some(i.dispatch_supply_from_list(&all_args(args, named)))
+}
+
+/// `Supply.interval($seconds, $delay?, :$scheduler)` (§9.196).
+// Cost: see `Interpreter::dispatch_supply_interval`.
+fn supply_interval(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    if let Some(e) = type_object_only(t, "interval") {
+        return Some(Err(e));
+    }
+    Some(i.dispatch_supply_interval(&all_args(args, named)))
 }
 
 /// `Supply.on-demand(&producer, ...)`: the producer must be callable.

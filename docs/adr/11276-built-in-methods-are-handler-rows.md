@@ -4759,6 +4759,23 @@ joins the type catalogue (`Variable Any Mu`), the row catalogue and the Rakudo m
 snapshot. `.var` no longer answers a `.VAR` descriptor, which Rakudo's `Scalar` does not declare
 (`X::Method::NotFound`). Pinned in `t/oo/trait/variable-trait-rows.t`.
 
+### 9.196 `Supply.interval` is a class-method row; the `Systemic` type-object rows are reached by owner (2026-10-19)
+
+`refactor/11276-instance-ops-gates`. Three by-name gates of the `Package` class-method lane in
+`methods_instance_ops.rs`:
+
+- `Supply.interval` is a class-method row (`class_methods.rs`, next to `from-list` and
+  `on-demand`); its body is `Interpreter::dispatch_supply_interval`
+  (`runtime/supply_interval.rs`), and it joins the row catalogue.
+- `Compiler.id`'s gate becomes a hook that offers a `Systemic` class's type object the rows flagged
+  `TYPE_OBJECT_OK` (`Compiler.id` was one already). The `attr!` rows lose that flag: an attribute
+  needs an instance (`Compiler.name` is Rakudo's "Cannot look up attributes in a Compiler type
+  object"), which the hook would otherwise have answered with `Nil`.
+- `X::AdHoc.payload`'s gate is gone: its row (`instances/exception.rs`) already answers it.
+
+Pinned in `t/concurrency/supply/supply-interval-class-row.t`. `Raku.version` on the type object and
+`Kernel.name`'s error still differ from Rakudo, as they did (#13952).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
