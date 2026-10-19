@@ -38,9 +38,27 @@ macro_rules! row {
                 handler
             }),
             flags: RowFlags::OWNER_ONLY.or(RowFlags::SLURPY),
-            named: &[],
+            named: named_of($name),
         }
     };
+}
+
+/// The named arguments Rakudo's `Proc::Async` method `name` declares.
+// Cost: O(1).
+const fn named_of(name: &str) -> &'static [&'static str] {
+    use crate::value::const_str_eq;
+    if const_str_eq(name, "start") {
+        &["ENV", "cwd", "scheduler"]
+    } else if const_str_eq(name, "print") || const_str_eq(name, "write") {
+        &["scheduler"]
+    } else if const_str_eq(name, "stdout")
+        || const_str_eq(name, "stderr")
+        || const_str_eq(name, "Supply")
+    {
+        &["bin", "enc", "translate-nl"]
+    } else {
+        &[]
+    }
 }
 
 pub(super) static ROWS: &[MethodRow] = &[

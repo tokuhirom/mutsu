@@ -339,6 +339,27 @@ pub(crate) fn owner_declares(owner: &str, method: Symbol) -> bool {
     })
 }
 
+/// Whether some row named `method`, of any owner, binds the named argument
+/// `key`: one that lists it, or one that binds every named argument
+/// ([`RowFlags::ANY_NAMED`]). A name no row binds is one the method swallows
+/// through the implicit `*%_` of a Raku method; one some row binds is that
+/// row's (an interpreter twin reading `:as` of `unique`).
+// Cost: O(k * n), k = rows named `method`, n = names each declares.
+pub(crate) fn some_row_binds_named(method: Symbol, key: &str) -> bool {
+    name_index(method).is_some_and(|name| {
+        rows_named(name).iter().any(|&id| {
+            let row = ALL[usize::from(id)];
+            row.flags.contains(RowFlags::ANY_NAMED) || row.named.contains(&key)
+        })
+    })
+}
+
+/// Whether some row is named `method`, at any arity and of any owner.
+// Cost: O(1), a memo read.
+pub(crate) fn names_any_row(method: Symbol) -> bool {
+    name_index(method).is_some()
+}
+
 /// The [`RowFlags::DEFERRAL_BASE`] row `owner` declares for `method`: the base
 /// candidate of a user override's deferral chain. No arity: the receiver comes
 /// first and the rest is the override's own argument list.

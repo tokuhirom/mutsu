@@ -18,6 +18,50 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// one: the adverbs belong to the pattern or the format.
 const ARGS_NAMED: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::ANY_NAMED);
 
+/// The adverbs `subst` reads: its own (`:g`, `:x`, `:nth`, `:samecase`, ...)
+/// and the match controls it forwards to the pattern (`:i`, `:m`, `:s`,
+/// `:ov`, `:ex`, ...), kept even where mutsu does not use them yet so a call
+/// passes them on. Any other is swallowed by the implicit `*%_`.
+const SUBST_NAMED: &[&str] = &[
+    "1st",
+    "2nd",
+    "3rd",
+    "4th",
+    "c",
+    "continue",
+    "ex",
+    "exhaustive",
+    "first",
+    "fourth",
+    "g",
+    "global",
+    "i",
+    "ii",
+    "m",
+    "mm",
+    "nd",
+    "nth",
+    "ov",
+    "overlap",
+    "p",
+    "pos",
+    "rd",
+    "s",
+    "samecase",
+    "samemark",
+    "samespace",
+    "second",
+    "sigspace",
+    "ss",
+    "st",
+    "th",
+    "third",
+    "x",
+];
+
+/// The adverbs `trans` reads, in their short and long spellings.
+const TRANS_NAMED: &[&str] = &["c", "complement", "d", "delete", "s", "squash"];
+
 macro_rules! row {
     ($owner:literal, $name:literal, $arity:literal, $flags:expr, $handler:ident) => {
         row!($owner, $name, $arity, $flags, $handler, &[])
@@ -40,9 +84,16 @@ macro_rules! row {
 macro_rules! shared_rows {
     ($owner:literal, $split:expr) => {
         &[
-            row!($owner, "subst", 1, ARGS_NAMED, subst),
-            row!($owner, "subst", 2, ARGS_NAMED, subst),
-            row!($owner, "trans", 0, ARGS_NAMED.or(RowFlags::SLURPY), trans),
+            row!($owner, "subst", 1, RowFlags::ANY_ARGS, subst, SUBST_NAMED),
+            row!($owner, "subst", 2, RowFlags::ANY_ARGS, subst, SUBST_NAMED),
+            row!(
+                $owner,
+                "trans",
+                0,
+                RowFlags::ANY_ARGS.or(RowFlags::SLURPY),
+                trans,
+                TRANS_NAMED
+            ),
             row!($owner, "indices", 1, ARGS_NAMED, indices),
             row!($owner, "indices", 2, ARGS_NAMED, indices),
             row!(

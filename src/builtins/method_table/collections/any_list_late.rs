@@ -22,6 +22,12 @@ const LATE_ANY: RowFlags = RowFlags::OWNER_ONLY
     .or(RowFlags::SLURPY)
     .or(RowFlags::ANY_NAMED)
     .or(RowFlags::TYPE_OBJECT_OK);
+/// [`LATE_ANY`] for a method that declares no named argument (`tree`): one
+/// the call passes is swallowed by the implicit `*%_`.
+const LATE_SLURPY: RowFlags = RowFlags::OWNER_ONLY
+    .or(RowFlags::ANY_ARGS)
+    .or(RowFlags::SLURPY)
+    .or(RowFlags::TYPE_OBJECT_OK);
 const LATE: RowFlags = RowFlags::OWNER_ONLY
     .or(RowFlags::ANY_ARGS)
     .or(RowFlags::TYPE_OBJECT_OK);
@@ -42,7 +48,7 @@ macro_rules! late {
 pub(super) static ROWS: &[MethodRow] = &[
     late!("Any", "toggle", 0, LATE_ANY, toggle),
     // `tree()` is `Any.tree`'s pure row; a depth spec is the interpreter's.
-    late!("Any", "tree", 1, LATE_ANY, tree),
+    late!("Any", "tree", 1, LATE_SLURPY, tree),
     late!("Mu", "is-lazy", 0, LATE, is_lazy),
     late!("List", "rotate", 0, LATE_ANY, rotate),
     late!("Seq", "rotate", 0, LATE_ANY, rotate),

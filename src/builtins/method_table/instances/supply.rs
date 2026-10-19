@@ -23,39 +23,55 @@ use crate::value::{RuntimeError, Value, ValueView};
 type Answer = Option<Result<Value, RuntimeError>>;
 
 macro_rules! row {
-    ($name:literal, $op:ident) => {
-        row!($name, $op, RowFlags::OWNER_ONLY.or(RowFlags::SLURPY))
+    ($name:literal, $op:ident $(, named: $named:expr)?) => {
+        row!(@row $name, $op, RowFlags::OWNER_ONLY.or(RowFlags::SLURPY) $(, $named)?)
     };
     // `Supply:D:` (`Supply.tap` is `X::Parameter::InvalidConcreteness`).
-    ($name:literal, $op:ident, definite) => {
+    ($name:literal, $op:ident, definite $(, named: $named:expr)?) => {
         row!(
-            $name,
+            @row $name,
             $op,
             RowFlags::OWNER_ONLY
                 .or(RowFlags::SLURPY)
                 .or(RowFlags::DEFINITE)
+            $(, $named)?
         )
     };
     // A `multi` whose every candidate is `Supply:D:` (`X::Multi::NoMatch`).
-    ($name:literal, $op:ident, definite_multi) => {
+    ($name:literal, $op:ident, definite_multi $(, named: $named:expr)?) => {
         row!(
-            $name,
+            @row $name,
             $op,
             RowFlags::OWNER_ONLY
                 .or(RowFlags::SLURPY)
                 .or(RowFlags::DEFINITE_MULTI)
+            $(, $named)?
         )
     };
-    ($name:literal, $op:ident, class) => {
+    ($name:literal, $op:ident, class $(, named: $named:expr)?) => {
         row!(
-            $name,
+            @row $name,
             $op,
             RowFlags::OWNER_ONLY
                 .or(RowFlags::SLURPY)
                 .or(RowFlags::TYPE_OBJECT_OK)
+            $(, $named)?
         )
     };
-    ($name:literal, $op:ident, $flags:expr) => {
+    // Rakudo's `|c` or `*%others`: every named argument is the method's.
+    ($name:literal, $op:ident, any_named) => {
+        row!(
+            @row $name,
+            $op,
+            RowFlags::OWNER_ONLY
+                .or(RowFlags::SLURPY)
+                .or(RowFlags::ANY_NAMED)
+        )
+    };
+    (@row $name:literal, $op:ident, $flags:expr) => {
+        row!(@row $name, $op, $flags, &[])
+    };
+    (@row $name:literal, $op:ident, $flags:expr, $named:expr) => {
         MethodRow {
             owner: "Supply",
             name: $name,
@@ -74,10 +90,14 @@ macro_rules! row {
                 handler
             }),
             flags: $flags,
-            named: &[],
+            named: $named,
         }
     };
 }
+
+/// The named arguments of `unique`, and of `repeated` and `squish` without
+/// `:expires`.
+const AS_WITH: &[&str] = &["as", "with"];
 
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
@@ -90,7 +110,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     row!("map", Map, definite),
     row!("grep", Grep, definite),
-    row!("first", First),
+    row!("first", First, any_named),
     row!("reduce", Reduce, definite),
     row!("produce", Produce, definite),
     row!("elems", Elems),
@@ -101,26 +121,31 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("skip", Skip, definite),
     row!("live", Live),
     row!("collate", Collate),
-    row!("delayed", Delayed, definite),
-    row!("tap", Tap, definite),
-    row!("act", Act),
+    row!("delayed", Delayed, definite, named: &["scheduler"]),
+    row!("tap", Tap, definite, named: &["done", "quit", "tap"]),
+    row!("act", Act, any_named),
     row!("on-close", OnClose),
     row!("serialize", Serialize),
     row!("sanitize", Sanitize),
     row!("merge", Merge, class),
-    row!("zip", Zip, class),
-    row!("zip-latest", ZipLatest, class),
-    row!("rotor", Rotor, definite_multi),
-    row!("squish", Squish),
+    row!("zip", Zip, class, named: &["with"]),
+    row!("zip-latest", ZipLatest, class, named: &["initial", "with"]),
+    row!("rotor", Rotor, definite_multi, named: &["partial"]),
+    row!("squish", Squish, named: AS_WITH),
     row!("sort", Sort),
     row!("head", Head),
     row!("flat", Flat),
-    row!("batch", Batch, definite),
-    row!("throttle", Throttle, definite_multi),
-    row!("comb", Comb, definite_multi),
+    row!("batch", Batch, definite, named: &["elems", "emit-timed", "seconds"]),
+    row!(
+        "throttle",
+        Throttle,
+        definite_multi,
+        named: &["bleed", "control", "scheduler", "status", "vent-at"]
+    ),
+    row!("comb", Comb, definite_multi, named: &["match"]),
     row!("words", Words, definite),
     row!("wait", Wait, definite),
-    row!("stable", Stable),
+    row!("stable", Stable, named: &["scheduler"]),
     row!("rotate", Rotate, definite),
     row!("share", Share),
     row!("migrate", Migrate),
@@ -129,12 +154,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("tail", Tail),
     row!("split", Split),
     row!("reverse", Reverse),
-    row!("repeated", Repeated),
-    row!("unique", Unique),
+    row!("repeated", Repeated, named: AS_WITH),
+    row!("unique", Unique, named: &["as", "expires", "with"]),
     row!("do", Do),
     row!("Promise", Promise),
     row!("schedule-on", ScheduleOn),
-    row!("lines", Lines, definite_multi),
+    row!("lines", Lines, definite_multi, named: &["chomp"]),
     row!("classify", Classify, definite_multi),
     row!("categorize", Categorize),
     row!("Channel", Channel),

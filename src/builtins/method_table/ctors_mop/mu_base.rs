@@ -163,7 +163,10 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Interp(|interp, target, args, _named| {
             interp.native_instance_clone_value(target, &args[1..])
         }),
-        flags: RowFlags::OWNER_ONLY.or(RowFlags::DEFERRAL_BASE),
+        // Rakudo's `*%twiddles`: every named argument sets an attribute.
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::DEFERRAL_BASE)
+            .or(RowFlags::ANY_NAMED),
         named: &[],
     },
     MethodRow {

@@ -63,8 +63,8 @@ macro_rules! rows {
                 name: "map",
                 arity: 0,
                 handler: Handler::Interp(map),
-                flags: OWN.or(RowFlags::SLURPY).or(RowFlags::ANY_NAMED),
-                named: &[],
+                flags: OWN.or(RowFlags::SLURPY),
+                named: crate::builtins::method_table::MAP_NAMED,
             },
             MethodRow {
                 owner: $owner,

@@ -1,7 +1,7 @@
 #!/usr/bin/env raku
 
-# Regenerates the evidence behind `native_method_accepted_nameds`
-# (`src/builtins/accepted_nameds.rs`): for each method name, the set of named
+# Regenerates the evidence behind the `named` lists of the built-in method rows
+# (`src/builtins/method_table/`): for each method name, the set of named
 # parameters Rakudo declares for it, across every owner type that has one.
 #
 # Run with a real `raku` (see .agents/skills/install-raku/):

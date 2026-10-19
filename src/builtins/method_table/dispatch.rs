@@ -449,9 +449,10 @@ fn dispatch(
         .iter()
         .cloned()
         .partition(|arg| arg.is_string_pair_value());
-    if !named.iter().all(|pair| names_declared(row, pair)) || !admits_row(row, &positional) {
+    if !admits_row(row, &positional) {
         return None;
     }
+    let named = bind_named(row, named)?;
     call(row, interp, target, &positional, Named::new(&named))
 }
 
@@ -605,18 +606,19 @@ fn walk_mro(
             {
                 return Some(Err(refusal));
             }
-            if type_refused || !named.iter().all(|pair| names_declared(row, pair)) || !admitted {
-                only_type_refused &=
-                    type_refused && named.iter().all(|pair| names_declared(row, pair)) && admitted;
+            let bound = bind_named(row, named.clone());
+            if type_refused || bound.is_none() || !admitted {
+                only_type_refused &= type_refused && bound.is_some() && admitted;
                 return None;
             }
             only_type_refused = false;
+            let bound = bound.unwrap_or_default();
             call(
                 row,
                 Some(&mut *interp),
                 target,
                 &positional,
-                Named::new(&named),
+                Named::new(&bound),
             )
             .map(|(result, _)| result)
         })
@@ -701,7 +703,7 @@ pub(crate) fn answer_shapeless(
             .iter()
             .cloned()
             .partition(|arg| arg.is_string_pair_value());
-        if named.iter().all(|pair| names_declared(row(id), pair)) {
+        if let Some(named) = bind_named(row(id), named) {
             return call(row(id), None, target, &positional, Named::new(&named))
                 .map(|(result, _)| result);
         }
@@ -1156,6 +1158,35 @@ pub(crate) fn shapeless_row(
             .then(|| super::owner_row(mu_owner, method, arity))
             .flatten()
     })
+}
+
+/// The named arguments `row` is handed for a call passing `named`: the ones it
+/// binds, after dropping every name no row of the method binds (the implicit
+/// `*%_` of a Raku method swallows it: `"abc".chop(:zzz)` is `"ab"`). `None`
+/// when another row of the method binds a name this one does not: that row
+/// (an interpreter twin reading `unique(:as)`) answers the call, so this one
+/// declines.
+// Cost: O(a) for a names the row binds; otherwise O(a * k * n), k = rows named
+// the method, n = names each declares.
+fn bind_named(row: &MethodRow, named: Vec<Value>) -> Option<Vec<Value>> {
+    if named.iter().all(|pair| names_declared(row, pair)) {
+        return Some(named);
+    }
+    let method = Symbol::intern(row.name);
+    let mut bound = Vec::with_capacity(named.len());
+    for pair in named {
+        if names_declared(row, &pair) {
+            bound.push(pair);
+        } else if match pair.view() {
+            crate::value::ValueView::Pair(key, _) => {
+                super::some_row_binds_named(method, key.as_str())
+            }
+            _ => true,
+        } {
+            return None;
+        }
+    }
+    Some(bound)
 }
 
 /// Whether the named argument `pair` is one `row` binds.

@@ -50,8 +50,15 @@ pub(super) static ROWS: &[MethodRow] = &[
     late!("Mu", "Int", 0, LATE, int),
     late!("Mu", "Numeric", 0, LATE, numeric),
     late!("Mu", "Real", 0, LATE, real),
-    late!("Cool", "EVAL", 0, LATE, eval),
-    late!("RakuAST::Node", "EVAL", 0, LATE, eval),
+    // `EVAL(*%opts)`: every named argument is the method's.
+    late!("Cool", "EVAL", 0, LATE.or(RowFlags::ANY_NAMED), eval),
+    late!(
+        "RakuAST::Node",
+        "EVAL",
+        0,
+        LATE.or(RowFlags::ANY_NAMED),
+        eval
+    ),
 ];
 
 // Cost: O(n), n = chars of the rendered string.

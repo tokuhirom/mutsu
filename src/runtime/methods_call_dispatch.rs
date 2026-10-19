@@ -1324,8 +1324,8 @@ impl Interpreter {
         // Named-blind arity cascade -- the interpreter-side twin of the guard in
         // `vm_native_dispatch::try_native_method_raw`. The arity cascade selects
         // its arm by argument *count*, so a named argument the method does not
-        // accept must not be in the list; `builtins::accepted_nameds` states
-        // which names each surveyed method reads. The stripped list is used ONLY
+        // bind must not be in the list; the rows of the method state which
+        // names it binds (`method_table::implicit_named`). The stripped list is used ONLY
         // for this cascade: if it declines, the original `args` (nameds intact)
         // go on to the by-name dispatchers, the constructors and the user
         // method, none of which may lose a named.

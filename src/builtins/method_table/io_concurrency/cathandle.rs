@@ -36,9 +36,26 @@ macro_rules! rows {
                 handler
             }),
             flags: RowFlags::OWNER_ONLY.or(RowFlags::SLURPY),
-            named: &[],
+            named: named_of($name),
         }),*]
     };
+}
+
+/// The named arguments Rakudo's `IO::CatHandle` method `name` declares.
+// Cost: O(1).
+const fn named_of(name: &str) -> &'static [&'static str] {
+    use crate::value::const_str_eq;
+    if const_str_eq(name, "lines") {
+        &["chomp", "close"]
+    } else if const_str_eq(name, "words") {
+        &["close"]
+    } else if const_str_eq(name, "slurp") {
+        &["bin"]
+    } else if const_str_eq(name, "Supply") {
+        &["size"]
+    } else {
+        &[]
+    }
 }
 
 pub(super) static ROWS: &[MethodRow] = rows![

@@ -18,21 +18,24 @@ type Answer = Option<Result<Value, RuntimeError>>;
 
 macro_rules! row {
     ($owner:literal, $name:literal, $arity:literal, $handler:ident) => {
+        row!($owner, $name, $arity, $handler, &[])
+    };
+    ($owner:literal, $name:literal, $arity:literal, $handler:ident, $named:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: $arity,
             handler: Handler::Interp($handler),
             flags: RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK),
-            named: &[],
+            named: $named,
         }
     };
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row!("Date", "today", 0, today),
+    row!("Date", "today", 0, today, &["formatter"]),
     row!("Date", "new-from-daycount", 1, new_from_daycount),
-    row!("DateTime", "now", 0, now),
+    row!("DateTime", "now", 0, now, &["formatter", "timezone"]),
 ];
 
 /// `Date.today`.

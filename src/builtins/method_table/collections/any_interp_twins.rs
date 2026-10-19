@@ -24,6 +24,12 @@ const TWIN: RowFlags = RowFlags::OWNER_ONLY
     .or(RowFlags::SLURPY)
     .or(RowFlags::ANY_NAMED)
     .or(RowFlags::TYPE_OBJECT_OK);
+/// [`TWIN`] for a method whose named arguments are the ones its row lists
+/// (Rakudo's signature); any other is swallowed by the implicit `*%_`.
+const TWIN_DECLARED: RowFlags = RowFlags::OWNER_ONLY
+    .or(RowFlags::ANY_ARGS)
+    .or(RowFlags::SLURPY)
+    .or(RowFlags::TYPE_OBJECT_OK);
 /// `minpairs`/`maxpairs` take no argument.
 const TWIN_NULLARY: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK);
 
@@ -56,9 +62,15 @@ macro_rules! raku_twin {
 
 macro_rules! twin {
     ($name:literal, $flags:expr, |$interp:ident, $target:ident, $args:ident| $body:expr) => {
-        twin!("Any", $name, $flags, |$interp, $target, $args| $body)
+        twin!("Any", $name, $flags, named: &[], |$interp, $target, $args| $body)
+    };
+    ($name:literal, $flags:expr, named: $named:expr, |$interp:ident, $target:ident, $args:ident| $body:expr) => {
+        twin!("Any", $name, $flags, named: $named, |$interp, $target, $args| $body)
     };
     ($owner:literal, $name:literal, $flags:expr, |$interp:ident, $target:ident, $args:ident| $body:expr) => {
+        twin!($owner, $name, $flags, named: &[], |$interp, $target, $args| $body)
+    };
+    ($owner:literal, $name:literal, $flags:expr, named: $named:expr, |$interp:ident, $target:ident, $args:ident| $body:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
@@ -81,7 +93,7 @@ macro_rules! twin {
                 handler
             }),
             flags: $flags,
-            named: &[],
+            named: $named,
         }
     };
 }
@@ -93,7 +105,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     twin!("max", TWIN, |interp, target, args| Some(
         interp.dispatch_min_max_method(target, "max", args)
     )),
-    twin!("minmax", TWIN, |interp, target, args| interp
+    twin!("minmax", TWIN_DECLARED, named: &["by"], |interp, target, args| interp
         .dispatch_minmax_method(target, "minmax", args)),
     twin!("minpairs", TWIN_NULLARY, |interp, target, _args| Some(
         interp.dispatch_minmaxpairs(target, "minpairs")
@@ -130,7 +142,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         TWIN_NULLARY,
         |interp, target, _args| Some(interp.dispatch_minmaxpairs(target, "maxpairs"))
     ),
-    twin!("unique", TWIN, |interp, target, args| Some(
+    twin!("unique", TWIN_DECLARED, named: &["as", "expires", "with"], |interp, target, args| Some(
         interp.dispatch_unique(target, &args)
     )),
     twin!("repeated", TWIN, |interp, target, args| Some(
@@ -141,7 +153,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     // count that is a `Callable` or a `Whatever` (§9.186).
     // `tail` declares no adverb, so a named argument is ignored
     // (`(1, 2, 3).tail(:zzz)` is 3).
-    twin!("tail", TWIN, |interp, target, args| {
+    twin!("tail", TWIN_DECLARED, |interp, target, args| {
         let counts: Vec<Value> = args
             .into_iter()
             .filter(|arg| !arg.is_string_pair_value())
@@ -168,7 +180,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     }),
     // `fmt` with a `Format` object, or over elements whose `.Str`/`.Numeric`
     // is user code, which the pure rows decline (§9.187).
-    twin!("fmt", TWIN, |interp, target, args| interp
+    twin!("fmt", TWIN_DECLARED, |interp, target, args| interp
         .dispatch_fmt_with_format(&target, &args)
         .or_else(
             || interp.dispatch_fmt_with_user_coercion(&target, &args)

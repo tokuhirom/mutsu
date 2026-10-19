@@ -13,21 +13,16 @@ use crate::builtins::method_table::Named;
 use crate::builtins::methods_0arg::temporal;
 use crate::value::{RuntimeError, Value, ValueView};
 
-/// The units `later` and `earlier` bind, as the named arguments Rakudo's
-/// `*%unit` takes.
-const UNITS: &[&str] = &[
-    "second", "seconds", "minute", "minutes", "hour", "hours", "day", "days", "week", "weeks",
-    "month", "months", "year", "years",
-];
-
 const fn row(owner: &'static str, name: &'static str, handler: Handler) -> MethodRow {
     MethodRow {
         owner,
         name,
         arity: 0,
         handler,
-        flags: RowFlags::NONE,
-        named: UNITS,
+        // Rakudo's `*%unit`: every named argument is a unit, and an unknown
+        // one fails in the handler (`:3fortnights`).
+        flags: RowFlags::ANY_NAMED,
+        named: &[],
     }
 }
 
