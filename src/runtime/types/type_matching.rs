@@ -296,7 +296,10 @@ impl Interpreter {
         if bracket_start.is_none() && !constraint.contains('(') {
             let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint);
             if !self.has_type_direct(base)
-                && let Some(resolved) = self.resolve_relative_compound_type(base)
+                && let Some(resolved) = self
+                    .resolve_relative_compound_type(base)
+                    .map(str::to_string)
+                    .or_else(|| self.published_head_type(base))
             {
                 return Some(match smiley {
                     Some(smiley) => format!("{resolved}{smiley}"),

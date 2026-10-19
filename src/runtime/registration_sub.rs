@@ -2659,6 +2659,7 @@ impl Interpreter {
         // protocol all see the role.
         self.compose_roles_onto_enum(enum_type_name, roles)?;
         if !is_anonymous {
+            self.publish_same_named_outer_package(enum_type_name);
             let type_object = Value::package(Symbol::intern(enum_type_name));
             self.env.insert(name.to_string(), type_object.clone());
             // Also register with fully-qualified package name

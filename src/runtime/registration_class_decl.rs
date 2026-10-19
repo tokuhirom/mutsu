@@ -180,6 +180,7 @@ impl Interpreter {
         modifiers: ClassDeclModifiers<'_>,
     ) -> Result<Vec<String>, RuntimeError> {
         self.clear_private_zeroarg_method_cache();
+        self.publish_same_named_outer_package(name);
         // Mark this as a user-declared class so its collected attribute list is
         // authoritative for accessor resolution (undeclared `.name` -> NotFound).
         crate::runtime::cow_table_mut(&mut self.types.user_declared_classes)

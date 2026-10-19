@@ -595,7 +595,8 @@ impl Interpreter {
         if self.has_type_direct(name) {
             return None;
         }
-        self.has_type_direct(target).then(|| target.clone())
+        (self.has_type_direct(target) || self.is_published_outer_package(name, target))
+            .then(|| target.clone())
     }
 
     /// The bare `constant` / sigilless declaration a module made in its own file
