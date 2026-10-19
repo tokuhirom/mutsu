@@ -94,6 +94,55 @@ fn name_bit(name: &str) -> u8 {
     }
 }
 
+/// A statement block is invoked with no arguments. Keep its inlined body,
+/// but declare fresh empty aggregates for its own slurpy placeholders rather
+/// than reading the caller's arguments. Ordinary lexical reads stay captures.
+// Cost: O(n), n = nodes in the block's own placeholder scope.
+pub(super) fn lower_statement_block(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let mut body = super::lower::lower_block(node)?;
+    let mut declared = declarations(super::lower::named_child(node, "body")?, 0)?;
+    if IN_METHOD.get() {
+        declared &= !HASH;
+    }
+    if !super::lower::bool_field(node, "may-have-signature")? {
+        let placeholders = crate::ast::collect_placeholders_shallow(&body);
+        let aggregate = if declared & ARRAY != 0 {
+            Some("@_")
+        } else if declared & HASH != 0 {
+            Some("%_")
+        } else {
+            None
+        };
+        if let Some(name) = aggregate.or_else(|| {
+            placeholders
+                .iter()
+                .find(|name| name_bit(name) == 0 || declared & name_bit(name) != 0)
+                .map(String::as_str)
+        }) {
+            return Err(RuntimeError::from_exception_value(
+                crate::method_signature_shared::placeholder_scope_error("block", name),
+            ));
+        }
+    }
+    let bindings = [(ARRAY, "@_"), (HASH, "%_")]
+        .into_iter()
+        .filter(|(bit, _)| declared & bit != 0)
+        .map(|(_, name)| Stmt::VarDecl {
+            name: name.to_string(),
+            expr: Expr::ArrayLiteral(Vec::new()),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        });
+    body.splice(0..0, bindings);
+    Ok(Stmt::Block(body))
+}
+
 /// True only for the use that introduces the implicit binding in this scope.
 // Cost: O(1).
 pub(super) fn declares_placeholder(array: bool) -> bool {
