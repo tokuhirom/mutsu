@@ -97,6 +97,11 @@ pub(crate) struct ModuleVisibility {
     /// (`module_granted_packages` inverted), so the #7797 qualified gate
     /// can honour a block-level merge.
     pub(crate) package_granting_modules: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
+    /// #11156: the compunit that declared each `my package` (by its
+    /// declared name). The package is lexical to that compunit: another
+    /// compunit's `$P::x` names a GLOBAL package of its own
+    /// (`runtime::unmerged_package_vars`).
+    pub(crate) lexical_package_units: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// #11351: the error (message, exception) of a BEGIN-time preload whose
     /// module body died, by module name, for the in-place `use` to report
     /// (`runtime::module_preload_failure`).

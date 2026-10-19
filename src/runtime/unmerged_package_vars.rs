@@ -12,6 +12,10 @@
 //! loads a block's module at the head of the unit. So a qualified variable
 //! access whose package is not visible here is sent to a separate store: the
 //! same name under [`UNMERGED_ROOT`], a package segment no source can spell.
+//!
+//! A module's `my package P` is lexical to the module in the same way
+//! (#11156): another compunit's `$P::x` names its own GLOBAL `P`, so an
+//! access from outside the declaring compunit takes the separate store too.
 
 use crate::qualified::{package_ancestors, qualified, qualified_var, split_qualified_var};
 use crate::runtime::Interpreter;
@@ -44,6 +48,13 @@ impl Interpreter {
         let pkg =
             crate::qualified::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg));
         let top = package_ancestors(pkg).last()?;
+        // A module's `my package` is lexical to the module (#11156).
+        if let Some(&unit) = self.module.module_visibility.lexical_package_units.get(&top) {
+            if self.unit_is_running(unit) {
+                return None;
+            }
+            return Some(Self::unmerged_store_key(pkg, split.sigil, split.bare));
+        }
         let modules = self
             .module
             .module_visibility
@@ -59,9 +70,44 @@ impl Interpreter {
         if self.qualified_name_visible_here(unsigiled.as_str()) {
             return None;
         }
+        Some(Self::unmerged_store_key(pkg, split.sigil, split.bare))
+    }
+
+    /// The separate store's key for the variable `<sigil><pkg>::<bare>`.
+    // Cost: O(1) amortized (memoized name joins, one intern).
+    fn unmerged_store_key(pkg: Symbol, sigil: &str, bare: &str) -> Symbol {
         let root = Symbol::intern(UNMERGED_ROOT);
-        let bare = Symbol::intern(&[split.sigil, split.bare].concat());
-        Some(qualified_var(qualified(root, pkg), bare))
+        let bare = Symbol::intern(&[sigil, bare].concat());
+        qualified_var(qualified(root, pkg), bare)
+    }
+
+    /// Record that the running compunit declared the `my package` `name`.
+    // Cost: O(1) expected.
+    pub(crate) fn record_lexical_package_unit(&mut self, name: Symbol) {
+        let unit = self.executing_unit_sym_for_module_load();
+        crate::runtime::cow_table_mut(
+            &mut self.module.module_visibility.lexical_package_units,
+        )
+        .insert(name, unit);
+    }
+
+    /// Whether the running code belongs to `unit` (or to an `EVAL` of it),
+    /// by the same two anchors `module_merged_in_anchor_units` reads.
+    // Cost: O(d), d = EVAL nesting of the anchor units (at most 64), twice.
+    fn unit_is_running(&self, unit: Symbol) -> bool {
+        [self.executing_unit_sym_for_module_load(), self.current_unit]
+            .into_iter()
+            .any(|anchor| {
+                let mut at = Some(anchor);
+                for _ in 0..64 {
+                    let Some(sym) = at else { return false };
+                    if sym == unit {
+                        return true;
+                    }
+                    at = crate::runtime::eval_unit_parent(sym);
+                }
+                false
+            })
     }
 
     /// The value of the unmerged-package variable `key`
@@ -83,11 +129,9 @@ impl Interpreter {
     // otherwise one intern plus `unmerged_package_var_key`.
     #[inline]
     pub(crate) fn unmerged_our_var_key(&self, key: &str) -> Option<Symbol> {
-        if self
-            .module
-            .module_visibility
-            .package_granting_modules
-            .is_empty()
+        let visibility = &self.module.module_visibility;
+        if (visibility.package_granting_modules.is_empty()
+            && visibility.lexical_package_units.is_empty())
             || !crate::qualified::is_qualified_str(key)
         {
             return None;
