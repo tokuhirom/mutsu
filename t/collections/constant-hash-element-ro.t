@@ -6,8 +6,9 @@ plan 14;
 # A `constant %M` is an immutable Map: element assignment must die with
 # X::Assignment::RO, mirroring raku. Previously mutsu treated every readonly
 # `%`-var as a `:=`-bound (writable) hash and silently mutated the constant.
-# The `:=` desugar records a dedicated `__mutsu_bound::%name` marker (#3255),
-# which now distinguishes a writable bound hash from an immutable constant.
+# A `:=` bind no longer marks the name readonly at all (ADR-0097), so only a
+# constant's readonly mark remains: a bound hash stays writable, and a bound
+# immutable value (a Map, a Mix) refuses a store by its own type.
 
 # --- constant hash element assignment dies ---
 {
