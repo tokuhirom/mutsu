@@ -766,8 +766,15 @@ impl Interpreter {
 
     pub(super) fn exec_str_bit_neg_op(&mut self) {
         let val = self.stack.pop().unwrap();
-        if Self::is_buf_value(&val) {
-            let bytes = Self::extract_buf_bytes(&val);
+        self.stack.push(Self::str_bit_neg(&val));
+    }
+
+    /// `~^`: the bytes of a Buf, or of a string's UTF-8 encoding, inverted.
+    /// The op and the prefix's core candidate (`core_prefix_op`) share it.
+    // Cost: O(n), n = chars (or bytes of a Buf) of the operand.
+    pub(crate) fn str_bit_neg(val: &Value) -> Value {
+        if Self::is_buf_value(val) {
+            let bytes = Self::extract_buf_bytes(val);
             let negated: Vec<Value> = bytes.iter().map(|b| Value::int((!b) as i64)).collect();
             // Determine result type: if input is utf8, result is utf8; otherwise Buf
             let result_type = if let ValueView::Instance { class_name, .. } = val.view() {
@@ -775,15 +782,11 @@ impl Interpreter {
             } else {
                 "Buf".to_string()
             };
-            self.stack.push(crate::value::value_buf::make_buf(
-                Symbol::intern(&result_type),
-                negated,
-            ));
+            crate::value::value_buf::make_buf(Symbol::intern(&result_type), negated)
         } else {
-            let s = crate::runtime::utils::coerce_to_str(&val);
+            let s = crate::runtime::utils::coerce_to_str(val);
             let negated: Vec<u8> = s.as_bytes().iter().map(|b| !b).collect();
-            let result = String::from_utf8_lossy(&negated).into_owned();
-            self.stack.push(Value::str(result));
+            Value::str(String::from_utf8_lossy(&negated).into_owned())
         }
     }
 }

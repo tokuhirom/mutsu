@@ -3,6 +3,20 @@ use crate::ast::{LvaluePeel, LvalueRoot};
 use crate::value::ValueView;
 
 impl Compiler {
+    /// Emit the op a `key => value` builds its result with: `MakeNamedArg`
+    /// for a bareword-keyed argument written directly in an argument list
+    /// (or a colonpair, which parses to the same shape; ADR-0021 I2/I3),
+    /// which keeps the named marker, else `MakePair`, which an imported
+    /// `infix:<=>>` candidate may replace (ADR-8751 stage 2).
+    fn emit_make_pair(&mut self, mint_named_pair: bool) {
+        if mint_named_pair {
+            self.code.emit(OpCode::MakeNamedArg);
+        } else {
+            self.emit_lex_import_builtin_op(&OpCode::MakePair);
+            self.code.emit(OpCode::MakePair);
+        }
+    }
+
     /// Whether a smartmatch RHS is a plain `Regex` literal (a bare `/…/`
     /// or adverb-less `m/…/`). This is the *compile-time* half of the Slice 6.3
     /// step 2 gate that lets the smartmatch op skip its conservative post-match
@@ -882,11 +896,7 @@ impl Compiler {
             self.compile_expr(left);
             self.compile_expr(right);
             self.emit_wrap_var_ref(&name);
-            self.code.emit(if mint_named_pair {
-                OpCode::MakeNamedArg
-            } else {
-                OpCode::MakePair
-            });
+            self.emit_make_pair(mint_named_pair);
             return;
         }
 
@@ -900,11 +910,7 @@ impl Compiler {
             self.anon_scalar_as_cell = true;
             self.compile_expr(right);
             self.anon_scalar_as_cell = false;
-            self.code.emit(if mint_named_pair {
-                OpCode::MakeNamedArg
-            } else {
-                OpCode::MakePair
-            });
+            self.emit_make_pair(mint_named_pair);
             return;
         }
 
@@ -930,11 +936,7 @@ impl Compiler {
             self.compile_expr(right);
             self.scalar_bind_autovivify = saved_av;
             self.bind_terminal = saved_term;
-            self.code.emit(if mint_named_pair {
-                OpCode::MakeNamedArg
-            } else {
-                OpCode::MakePair
-            });
+            self.emit_make_pair(mint_named_pair);
             return;
         }
         if let Some(opcode) = Self::binary_opcode(op) {
@@ -978,11 +980,8 @@ impl Compiler {
                     self.emit_lex_import_builtin_op(&opcode);
                     self.code.emit(opcode);
                 }
-            } else if matches!(opcode, OpCode::MakePair) && mint_named_pair {
-                // ADR-0021 I2/I3: this fat-arrow is a bareword-keyed argument
-                // written directly in an argument list (or a colonpair,
-                // which parses to the same shape) — keep the named marker.
-                self.code.emit(OpCode::MakeNamedArg);
+            } else if matches!(opcode, OpCode::MakePair) {
+                self.emit_make_pair(mint_named_pair);
             } else if let Some(unsigned) = native_unsigned {
                 let op = match opcode {
                     OpCode::Add => crate::opcode::CompoundBaseOp::Add,
@@ -1003,6 +1002,7 @@ impl Compiler {
         {
             self.compile_expr(left);
             self.compile_expr(right);
+            self.emit_lex_import_infix(name);
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::InfixFunc {
                 name_idx,

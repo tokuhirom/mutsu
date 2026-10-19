@@ -212,6 +212,7 @@ impl Interpreter {
             "infix" => {
                 (!is_builtin_infix(op) && !crate::lexical_builtin_op::binds_lexically(name))
                     || crate::lexical_builtin_op::is_call_spelled_infix(op)
+                    || crate::lexical_builtin_op::is_replaced_infix(op)
             }
             "prefix" => !is_builtin_prefix(op),
             "postfix" => {

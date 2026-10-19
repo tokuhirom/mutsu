@@ -1173,7 +1173,6 @@ impl Interpreter {
             let family_bound_lexically = ((!is_operator && !name.contains(":<"))
                 || crate::lexical_builtin_op::binds_lexically(&name))
                 && !exported_method_candidates
-                && !bare_file_module
                 && {
                     let proto_def = self
                         .registry()
