@@ -474,7 +474,7 @@ pub(super) use given_when::{default_stmt, given_stmt, when_stmt};
 pub(super) use labeled_loop::labeled_loop_stmt;
 pub(super) use loop_repeat::{loop_stmt, repeat_stmt};
 pub(super) use pointy_param::parse_pointy_param;
-pub(super) use react::react_stmt;
+pub(crate) use react::react_stmt;
 pub(crate) use react::whenever_stmt;
 pub(crate) use while_until::loop_pointy_clause;
 pub(super) use while_until::{until_stmt, while_stmt};

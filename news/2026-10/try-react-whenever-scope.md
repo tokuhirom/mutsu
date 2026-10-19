@@ -1,0 +1,1 @@
+`try react { ... }` now keeps its `whenever` blocks inside the lexical react scope, matching Rakudo. The parser had treated `react` as an expression under `try`, losing the statement node used by the scope check.
