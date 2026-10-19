@@ -4733,6 +4733,20 @@ upstream `NativeCall::Types`, whose typed `CArray` roles declare `allocate` (`nq
 `nqp::bindpos_*` of the last slot), which the VM runs; the gate is gone. Pinned in
 `t/nativecall/carray-allocate-upstream.t`; the 281 `t/nativecall/` and CArray files pass.
 
+### 9.194 `raku` of a collection with user-rendered elements is the collections' twin (2026-10-19)
+
+`refactor/11276-call-me-gate`. The `raku` counterpart of §9.188: a by-name `raku` gate after the
+native cascade of `call_method_with_values_inner` rendered a container holding a value whose
+`raku` is user code (an instance, a built-in object type) through
+`Interpreter::raku_repr_with_dispatch`, over whatever the rows had answered. The pure `raku` row
+(`render_names::raku_row`) already declines such a container (`container_needs_raku_dispatch`);
+the renderer is now the late interpreter twin of `raku` on every collection owner Rakudo declares it
+on (`List`, `Map`, `Seq`, `Pair`, `Capture`, `Set`/`SetHash`, `Bag`/`BagHash`, `Mix`/`MixHash`),
+reached through the late MRO walk for such a container only. Unlike the `gist` twins they keep the
+receiver's itemization, which is part of the text (`$(F!, 1)`). The gate is gone; the itemized
+instance gates (`raku_scalar_itemized`) stay. No behaviour change; pinned in
+`t/collections/container-raku-user-elements.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
