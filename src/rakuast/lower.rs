@@ -161,7 +161,7 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     .iter()
                     .any(|f| matches!(f.name, Some("loop-modifier" | "condition-modifier")))
             {
-                return Ok(Stmt::Block(lower_block(expression)?));
+                return super::underscore_bindings::lower_statement_block(expression);
             }
             // `anon sub f { }` written as a statement is still an expression:
             // the parser keeps it a `DoStmt`, which declares nothing.
@@ -642,22 +642,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementNeed => super::use_stmt::lower_need(node),
         RakuAstClass::StatementImport => super::use_stmt::lower_import(node),
         RakuAstClass::StatementLanguageVersion => super::use_stmt::lower_language_version(node),
-        // A bare block in statement position runs once, here and now: it is
-        // the parser's `Stmt::Block`, not a closure value. One that takes
-        // arguments (placeholders, `@_`, `%_`) is a closure value even in
-        // statement position, so it keeps the expression path -- unless the
-        // statement is exactly the block (`lower_stmt`).
-        RakuAstClass::Block => {
-            let body = lower_block(node)?;
-            if crate::ast::collect_placeholders_shallow(&body).is_empty()
-                && !crate::ast::body_reads_args_array(&body)
-                && !crate::ast::body_reads_args_hash(&body)
-            {
-                Ok(Stmt::Block(body))
-            } else {
-                Ok(Stmt::Expr(lower_expr(node)?))
-            }
-        }
+        // Root and statement blocks share the zero-argument invocation rule.
+        RakuAstClass::Block => super::underscore_bindings::lower_statement_block(node),
         // A named `sub f { … }` is a declaration; a nameless one (`sub ($x) { … }`,
         // `sub { … }`) is a closure *value*, so it lowers through the expression
         // path instead.
@@ -4456,8 +4442,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::DoStmt(Box::new(declaration)))
         }
         // A `Block` in expression position (e.g. the `{ … }` argument to `.map`) is
-        // a bare-block closure value. (raku itself EVALs a `Block` node to a
-        // Callable, so a hash-shaped `{a => 1}` also lands here as a block.)
+        // a bare-block closure value. Root and statement blocks instead go
+        // through the zero-argument statement lowering above.
         // Placeholder declarations are represented in the execution AST as
         // caret-prefixed variables, so let the existing closure builder
         // recover the implicit signature when this is a constructed tree.

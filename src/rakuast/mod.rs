@@ -3072,6 +3072,13 @@ pub fn construct(
     // the class's schema order (`ApplyInfix.new(left => …, infix => …, right => …)`).
     if let Some((class, schema)) = multi_field_schema(class_name, method) {
         let mut fields = Vec::with_capacity(schema.len());
+        if class == RakuAstClass::Block {
+            for name in ["topic", "exception", "may-have-signature"] {
+                if named_arg(args, name).is_some_and(|value| value.truthy()) {
+                    fields.push(convert::true_field(name));
+                }
+            }
+        }
         if class == RakuAstClass::StatementExpression
             && let Some(labels) = named_arg(args, "labels")
         {
@@ -3466,6 +3473,11 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         if f.name == Some(method) {
             return Some(field_to_value(&f.value));
         }
+    }
+    // This inherited Block capability defaults to false and is not one of
+    // the class's local model fields reported by reflection.
+    if node.class == RakuAstClass::Block && method == "may-have-signature" {
+        return Some(Value::truth(false));
     }
     if (method == "statements"
         && matches!(

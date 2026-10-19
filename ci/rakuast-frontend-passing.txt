@@ -5115,6 +5115,7 @@ t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
 t/rakuast/rakuast-smiley-pragma.t
 t/rakuast/rakuast-source-forms.t
+t/rakuast/rakuast-statement-block-bindings.t
 t/rakuast/rakuast-statement-origin.t
 t/rakuast/rakuast-statement-prefix-binding.t
 t/rakuast/rakuast-statement-prefix-blorst.t
