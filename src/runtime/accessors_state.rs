@@ -373,15 +373,23 @@ impl Interpreter {
         self.dispatch.wrap_name_to_sub.get(name).cloned()
     }
 
+    /// A package variable by its qualified key. A key of a package not
+    /// merged here reads the unmerged-package store (#13942).
     pub(crate) fn get_our_var(&self, key: &str) -> Option<&Value> {
-        self.lexicals.our_vars.get(key)
+        match self.unmerged_our_var_key(key) {
+            Some(redirected) => self.lexicals.our_vars.get(redirected.as_str()),
+            None => self.lexicals.our_vars.get(key),
+        }
     }
 
     /// Mutable counterpart of [`Self::get_our_var`], for the container
     /// write chokepoint (`env_root_descended_mut`): a package's `our @a`/`our
     /// %h` is mutated in place through its stored `Gc`, not replaced.
     pub(crate) fn get_our_var_mut(&mut self, key: &str) -> Option<&mut Value> {
-        self.lexicals.our_vars.get_mut(key)
+        match self.unmerged_our_var_key(key) {
+            Some(redirected) => self.lexicals.our_vars.get_mut(redirected.as_str()),
+            None => self.lexicals.our_vars.get_mut(key),
+        }
     }
 
     pub(crate) fn our_vars_iter(&self) -> impl Iterator<Item = (&String, &Value)> {
@@ -393,6 +401,10 @@ impl Interpreter {
     }
 
     pub(crate) fn set_our_var(&mut self, key: String, value: Value) {
+        let key = match self.unmerged_our_var_key(&key) {
+            Some(redirected) => redirected.as_str().to_string(),
+            None => key,
+        };
         self.lexicals
             .our_var_unqualified
             .insert(crate::qualified::unqualified_part(Symbol::intern(&key)));

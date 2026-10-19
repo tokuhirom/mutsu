@@ -1618,6 +1618,11 @@ impl Interpreter {
         {
             return Some(v);
         }
+        // A qualified variable of a package not merged here is its own,
+        // autovivified store, never the module's variable (#13942).
+        if let Some(key) = self.unmerged_package_var_key(sym) {
+            return Some(self.unmerged_package_var(key));
+        }
         if let Some(v) = self.unit_scope_lexical(name, Some(sym)) {
             return Some(v.into_deref());
         }
@@ -1914,6 +1919,13 @@ impl Interpreter {
         // `set_env_plain_lexical` deliberately does NOT redirect — a routine's own
         // plain `my` shadowing a compunit lexical is a distinct variable.
         if self.unit_scope_lexical_write(name, name_sym, &value) {
+            return;
+        }
+        // Write companion of the unmerged-package redirect (#13942).
+        if let Some(key) =
+            self.unmerged_package_var_key(name_sym.unwrap_or_else(|| Symbol::intern(name)))
+        {
+            self.env_mut().insert_sym(key, value);
             return;
         }
         // `$PROCESS::OUT` maps to the sigilless `*OUT`: a write to the process
