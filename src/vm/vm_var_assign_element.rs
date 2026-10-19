@@ -847,7 +847,7 @@ impl Interpreter {
         let var_name_for_cell = Self::const_str(code, name_idx);
         let mut owner_slots: Vec<(usize, Value)> = Vec::new();
         let unit_cell = self
-            .unit_lexical_container_cell(var_name_for_cell)
+            .unit_lexical_container_cell_at(var_name_for_cell, target_slot)
             .or_else(|| self.capture_cell_for_element_store(code, var_sym, &mut owner_slots));
         let seeded_inner = unit_cell.as_ref().map(|cell| cell.load());
         let saved_env_entry = seeded_inner.as_ref().map(|inner| {

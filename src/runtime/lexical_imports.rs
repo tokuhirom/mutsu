@@ -30,6 +30,28 @@ pub(crate) enum LexicalImport {
 /// the importing block declares itself (`Compiler::with_block_multis`).
 pub(crate) const BLOCK_MULTIS_MARK: &str = "\u{1}multis:";
 
+/// Separates a lexical import set id's import list from the variables the
+/// compiler declares in the importing block for it
+/// (`Compiler::bind_block_imported_vars`): the import writes no env alias
+/// for those.
+pub(crate) const BLOCK_VARS_MARK: &str = "\u{1}vars:";
+
+/// The names listed after `mark` in the set id `id`, up to the next mark.
+// Cost: O(n), n = length of `id`.
+fn id_section(id: &str, mark: &str) -> HashSet<Symbol> {
+    id.split_once(mark)
+        .map(|(_, rest)| {
+            rest.split('\u{1}')
+                .next()
+                .unwrap_or_default()
+                .split(',')
+                .filter(|name| !name.is_empty())
+                .map(Symbol::intern)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// What a `use` that fills a lexical import set imported, collected while
 /// it runs.
 pub(crate) struct LexicalImportCapture {
@@ -55,6 +77,10 @@ pub(crate) struct LexicalImportCapture {
     /// The proto of each family in `multi_defs` whose body does more than
     /// dispatch: the family's dispatcher value runs it.
     protos: HashMap<Symbol, std::sync::Arc<crate::ast::FunctionDef>>,
+    /// The variables (in their declaration spelling, `x` / `@a`) the importing
+    /// block declares itself, bound to the module's package variables: the
+    /// import writes no env alias for them.
+    block_vars: HashSet<Symbol>,
 }
 
 impl Interpreter {
@@ -67,13 +93,12 @@ impl Interpreter {
         &mut self,
         id: Symbol,
     ) -> Option<LexicalImportCapture> {
-        let block_multis = id
-            .resolve()
-            .split_once(BLOCK_MULTIS_MARK)
-            .map(|(_, names)| names.split(',').map(Symbol::intern).collect())
-            .unwrap_or_default();
+        let text = id.resolve();
+        let block_multis = id_section(&text, BLOCK_MULTIS_MARK);
+        let block_vars = id_section(&text, BLOCK_VARS_MARK);
         let capture = LexicalImportCapture {
             block_multis,
+            block_vars,
             unit: self.executing_unit_sym_for_module_load(),
             routines: Vec::new(),
             amp_env_keys: HashSet::new(),
@@ -106,6 +131,19 @@ impl Interpreter {
             .lexical_defs
             .insert(Symbol::intern(name), std::sync::Arc::clone(def));
         true
+    }
+
+    /// Whether the importing block declares the variable `name` (its
+    /// declaration spelling) itself, bound to the module's package variable,
+    /// so the running import writes no env alias for it (ADR-8751).
+    // Cost: O(1).
+    pub(crate) fn block_binds_imported_var(&self, name: &str) -> bool {
+        let Some(capture) = self.module.lexical_import_capture.as_ref() else {
+            return false;
+        };
+        !capture.block_vars.is_empty()
+            && capture.unit == self.executing_unit_sym_for_module_load()
+            && capture.block_vars.contains(&Symbol::intern(name))
     }
 
     /// Whether the running import binds the multi family `name` (its

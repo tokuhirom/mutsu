@@ -19,15 +19,46 @@ impl Compiler {
     /// the package variable exists when the binding reads it.
     // Cost: O(v), v = the module's exported variables.
     pub(super) fn bind_block_imported_vars(&mut self, module: &str, tags: &[String]) {
-        let Some(vars) = crate::parser::scanned_exported_vars(module) else {
-            return;
-        };
-        for var in vars.iter().filter(|var| var.imported_by(tags)) {
-            let Some(decl) = Self::imported_var_binding(var) else {
-                continue;
-            };
+        for decl in Self::block_imported_var_bindings(module, tags) {
             self.compile_stmt(&crate::ast::bind_decl::expand(decl));
         }
+    }
+
+    /// The suffix of a lexical import set id that names the variables the
+    /// block declares for the `use` of `module` with `tags`, so the run-time
+    /// import writes no env alias for them
+    /// (`runtime::lexical_imports::BLOCK_VARS_MARK`); empty when there are
+    /// none.
+    // Cost: O(v), v = the module's exported variables.
+    pub(super) fn block_imported_vars_id_suffix(module: &str, tags: &[String]) -> String {
+        let names: Vec<String> = Self::block_imported_var_bindings(module, tags)
+            .into_iter()
+            .filter_map(|decl| match decl {
+                Stmt::VarDecl { name, .. } => Some(name),
+                _ => None,
+            })
+            .collect();
+        if names.is_empty() {
+            return String::new();
+        }
+        format!(
+            "{}{}",
+            crate::runtime::lexical_imports::BLOCK_VARS_MARK,
+            names.join(",")
+        )
+    }
+
+    /// The binding declaration of each variable the `use` of `module` with
+    /// `tags` imports, by the parse-time scan of the module.
+    // Cost: O(v), v = the module's exported variables.
+    fn block_imported_var_bindings(module: &str, tags: &[String]) -> Vec<Stmt> {
+        let Some(vars) = crate::parser::scanned_exported_vars(module) else {
+            return Vec::new();
+        };
+        vars.iter()
+            .filter(|var| var.imported_by(tags))
+            .filter_map(Self::imported_var_binding)
+            .collect()
     }
 
     /// `my <name> := <sigil><package>::<name>` for the exported variable
