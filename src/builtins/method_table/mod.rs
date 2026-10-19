@@ -139,8 +139,8 @@ pub(crate) use row::{Handler, MethodRow, Named, NamedFn, NarrowFn, RowFlags};
 use table::all_rows;
 pub(crate) use table::names_a_mut_row;
 pub(crate) use table::{
-    Receiver, RowId, base_row, max_row_arity, names_a_row, owner_declares, owner_row,
-    owner_rows_at, resolve, row, shape_has_row,
+    Receiver, RowId, base_row, max_row_arity, names_a_row, names_any_row, owner_declares,
+    owner_row, owner_rows_at, resolve, row, shape_has_row, some_row_binds_named,
 };
 pub(crate) use unadmitted::invoke_unadmitted;
 

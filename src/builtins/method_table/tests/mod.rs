@@ -625,6 +625,9 @@ fn dump_rows() {
         if row.flags.contains(RowFlags::ANY_ARGS) {
             flags.push("ANY_ARGS");
         }
+        if row.flags.contains(RowFlags::ANY_NAMED) {
+            flags.push("ANY_NAMED");
+        }
         println!(
             "ROW\t{}\t{}\t{}\t{}\t{}\t{}",
             row.owner,
