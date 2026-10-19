@@ -28,6 +28,18 @@
 use super::*;
 
 impl Interpreter {
+    /// Whether a call of `data` publishes an `@_` of its own. A block owns one
+    /// only when its body reads it (the implicit `*@_`); otherwise an `@_` its
+    /// nested code reads is the enclosing routine's, which a fresh empty one
+    /// in this frame would hide (#14024). The general binder applies the same
+    /// rule (`FunctionBindingOptions::is_block`).
+    // Cost: O(1).
+    pub(super) fn call_owns_args_array(data: &crate::value::SubData) -> bool {
+        data.compiled_code
+            .as_ref()
+            .is_none_or(|cc| cc.is_routine || cc.reads_args_array)
+    }
+
     /// Bind `args` to `data`'s parameters without the general signature binder,
     /// when both the signature and the arguments make that faithful.
     ///
@@ -91,10 +103,12 @@ impl Interpreter {
         // fresh, empty array in this frame's overlay), so a body that reaches
         // for `@_` sees its own empty aggregate rather than the caller's
         // through the scope chain.
-        self.env_mut().insert_sym(
-            crate::symbol::wk::positional_slurpy(),
-            Value::array(Vec::new()),
-        );
+        if Self::call_owns_args_array(data) {
+            self.env_mut().insert_sym(
+                crate::symbol::wk::positional_slurpy(),
+                Value::array(Vec::new()),
+            );
+        }
 
         for (i, sym) in param_syms.params.iter().enumerate() {
             // A plain `$` parameter is an item binding: the legacy path runs

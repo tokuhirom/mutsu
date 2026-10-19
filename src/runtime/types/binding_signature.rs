@@ -93,12 +93,27 @@ fn legacy_has_plain_positional_param(params: &[String]) -> bool {
     })
 }
 
+/// What a callee's body does with the legacy argument containers, as far as
+/// its caller can tell: whether it reads `@_` and `%_` (`None`: unknown), and
+/// whether it is a block rather than a routine (see
+/// `FunctionBindingOptions::is_block`).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct CalleeArgsUsage {
+    pub(crate) reads: Option<(bool, bool)>,
+    pub(crate) is_block: bool,
+}
+
 struct FunctionBindingOptions<'a> {
     reads_args_array: Option<bool>,
     reads_args_hash: Option<bool>,
     param_name_syms: &'a [Symbol],
     params_syms: &'a [Symbol],
     bind_self_lexical: bool,
+    /// The callee is a block, not a routine. A block owns an `@_` only when
+    /// its signature declares one or its body reads it (the implicit `*@_`);
+    /// otherwise the call writes none, and an `@_` its nested code reads is
+    /// the enclosing routine's (#14024).
+    is_block: bool,
 }
 
 impl Interpreter {
@@ -851,7 +866,14 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        self.bind_function_args_values_with_syms(param_defs, params, args, None, &[], &[])
+        self.bind_function_args_values_with_syms(
+            param_defs,
+            params,
+            args,
+            CalleeArgsUsage::default(),
+            &[],
+            &[],
+        )
     }
 
     /// Whether `data`'s body reads the legacy argument array `@_`, or `None`
@@ -913,7 +935,10 @@ impl Interpreter {
             param_defs,
             params,
             args,
-            reads_args_array.zip(reads_args_hash),
+            CalleeArgsUsage {
+                reads: reads_args_array.zip(reads_args_hash),
+                is_block: false,
+            },
             &[],
             &[],
         )
@@ -936,17 +961,9 @@ impl Interpreter {
         params: &[String],
         params_syms: &[Symbol],
         args: &[Value],
-        reads_args_array: Option<bool>,
-        reads_args_hash: Option<bool>,
+        usage: CalleeArgsUsage,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        self.bind_function_args_values_with_syms(
-            param_defs,
-            params,
-            args,
-            reads_args_array.zip(reads_args_hash),
-            &[],
-            params_syms,
-        )
+        self.bind_function_args_values_with_syms(param_defs, params, args, usage, &[], params_syms)
     }
 
     /// [`Interpreter::bind_function_args_values_with_argspec`] plus the callee's
@@ -971,10 +988,14 @@ impl Interpreter {
         param_defs: &[ParamDef],
         params: &[String],
         args: &[Value],
-        args_usage: Option<(bool, bool)>,
+        usage: CalleeArgsUsage,
         param_name_syms: &[Symbol],
         params_syms: &[Symbol],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
+        let CalleeArgsUsage {
+            reads: args_usage,
+            is_block,
+        } = usage;
         let result = self.bind_function_args_values_inner(
             param_defs,
             params,
@@ -985,6 +1006,7 @@ impl Interpreter {
                 param_name_syms,
                 params_syms,
                 bind_self_lexical: false,
+                is_block,
             },
         );
         let declares_self = crate::ast::signature_declares_self_lexical(param_defs)
@@ -1017,6 +1039,7 @@ impl Interpreter {
                 param_name_syms: &[],
                 params_syms: &[],
                 bind_self_lexical: true,
+                is_block: false,
             },
         )
     }
@@ -1058,7 +1081,12 @@ impl Interpreter {
             param_name_syms,
             params_syms,
             bind_self_lexical,
+            is_block,
         } = options;
+        let owns_args_array = !is_block
+            || reads_args_array != Some(false)
+            || params.iter().any(|p| p == "@_")
+            || param_defs.iter().any(|pd| pd.name == "@_");
         // Index-parallel or nothing, exactly as for `param_name_syms` below:
         // the legacy path indexes this by the `params` position it is binding,
         // so a slice that does not describe THIS signature would bind a
@@ -1109,8 +1137,9 @@ impl Interpreter {
         // Only the running frame's own `@_` counts: a caller's empty `@_` is
         // another routine's variable (ADR-12529 phase 3).
         let args_key = crate::symbol::wk::positional_slurpy();
-        let skip_at_underscore = plain_args.is_empty()
-            && self.env.get_sym_in_frame(args_key).is_some_and(
+        let skip_at_underscore = !owns_args_array
+            || plain_args.is_empty()
+                && self.env.get_sym_in_frame(args_key).is_some_and(
                 |v| matches!(v.view(), ValueView::Array(elems, _) if elems.is_empty()),
             );
         if !skip_at_underscore {
@@ -1506,10 +1535,12 @@ impl Interpreter {
             // Pre-interned key (#7736 / #8302): this is the legacy binding path
             // EVERY pointy-block and placeholder call takes, so a by-name insert
             // re-hashed `"@_"` -- and allocated a `String` for it -- per call.
-            self.env.insert_sym(
-                crate::symbol::wk::positional_slurpy(),
-                Value::array(positional_args[positional_idx..].to_vec()),
-            );
+            if owns_args_array {
+                self.env.insert_sym(
+                    crate::symbol::wk::positional_slurpy(),
+                    Value::array(positional_args[positional_idx..].to_vec()),
+                );
+            }
             // An implicit placeholder signature has a named slurpy only when
             // its body reads `%_`. A named placeholder consumes its own key,
             // but does not accept other names by itself.
