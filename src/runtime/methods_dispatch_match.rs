@@ -116,6 +116,11 @@ impl Interpreter {
                         | ValueView::ValuePair(..)
                 ))
             || (matches!(method, "say" | "put") && !args.is_empty())
+            // A collection's `raku` twin (§9.194), for a collection holding a
+            // value whose rendering is user code.
+            || (method == "raku"
+                && args.is_empty()
+                && crate::runtime::container_needs_raku_dispatch(&target))
             // A string that spells a `Complex` converts as it (§9.190).
             || (matches!(target.view(), ValueView::Str(_))
                 && crate::builtins::method_table::scalars::str_complex_real::NAMES
