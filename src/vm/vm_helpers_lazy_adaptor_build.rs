@@ -157,107 +157,123 @@ impl Interpreter {
         )))
     }
 
-    /// Whether a method call on `target` should stream through an adaptor
-    /// stage instead of forcing it: an infinite Range, or a lazy list that
-    /// is genuinely lazy.
-    fn streams_through_adaptor(target: &Value) -> bool {
-        match target.view() {
-            ValueView::LazyList(ll) => {
-                (ll.lazy_pipe.is_some() || ll.needs_vm_lazy_dispatch()) && ll.is_genuinely_lazy()
-            }
-            _ => Self::is_lazy_pipe_source(target),
-        }
-    }
-
-    /// `.skip` / `.rotor` / `.batch` / `.unique` / `.repeated` / `.squish` /
-    /// `.produce` / `.flat` on a lazy invocant: build the lazy stage that
-    /// streams it (#9159). `Ok(None)` when the call is not one of those, the
-    /// invocant is not lazy, or the arguments take a form only the eager
-    /// implementation understands (which then reports on it as before).
-    // Cost: O(a), a = arguments.
-    pub(crate) fn try_lazy_adaptor_method(
-        &mut self,
-        target: &Value,
-        method: &str,
-        args: &[Value],
-    ) -> Result<Option<Value>, RuntimeError> {
-        if !matches!(
-            method,
-            "skip" | "rotor" | "batch" | "unique" | "repeated" | "squish" | "produce" | "flat"
-        ) || !Self::streams_through_adaptor(target)
-        {
-            return Ok(None);
-        }
-        let adaptor = match method {
-            "skip" => match args {
-                [] => PipeAdaptor::Skip { remaining: 1 },
-                [n] => match n.view() {
-                    ValueView::Int(n) => PipeAdaptor::Skip {
-                        remaining: n.max(0) as usize,
-                    },
-                    _ => return Ok(None),
-                },
-                _ => return Ok(None),
+    /// `.skip` / `.skip($n)` streamed over an unbounded receiver: the stream
+    /// of `Any.skip` (`method_table::lazy_stream`, #9159). `None` for an
+    /// argument only the eager implementation understands.
+    // Cost: O(1).
+    pub(crate) fn stream_skip(&mut self, target: &Value, args: &[Value]) -> Option<Value> {
+        let remaining = match args {
+            [] => 1,
+            [n] => match n.view() {
+                ValueView::Int(n) => n.max(0) as usize,
+                _ => return None,
             },
-            "rotor" => match Self::lazy_rotor_specs(args) {
-                Some((specs, partial)) => PipeAdaptor::Chunk {
-                    specs,
-                    next_spec: 0,
-                    partial,
-                    emitted: false,
-                },
-                None => return Ok(None),
-            },
-            "batch" => {
-                let n = match args {
-                    [n] => match n.view() {
-                        ValueView::Int(n) => n,
-                        ValueView::Pair(k, v) if k == "elems" => crate::runtime::to_int(v),
-                        _ => return Ok(None),
-                    },
-                    _ => return Ok(None),
-                };
-                if n < 1 {
-                    return Ok(None);
-                }
-                PipeAdaptor::Chunk {
-                    specs: vec![(n as usize, 0)],
-                    next_spec: 0,
-                    partial: true,
-                    emitted: false,
-                }
-            }
-            "unique" | "repeated" | "squish" => {
-                let mode = match method {
-                    "unique" => DistinctMode::Unique,
-                    "repeated" => DistinctMode::Repeated,
-                    _ => DistinctMode::Squish,
-                };
-                let (as_fn, with_fn) =
-                    crate::runtime::methods_collection_ops::distinct_adverbs(args);
-                PipeAdaptor::Distinct(Box::new(DistinctState::new(mode, as_fn, with_fn)))
-            }
-            "produce" => match args {
-                [op] if self.produce_streams(op) => PipeAdaptor::Produce {
-                    op: op.clone(),
-                    acc: None,
-                },
-                _ => return Ok(None),
-            },
-            // "flat"
-            _ => {
-                if !args.is_empty() || !matches!(target.view(), ValueView::LazyList(_)) {
-                    return Ok(None);
-                }
-                return Ok(Some(Value::lazy_list(crate::gc::Gc::new(
-                    LazyList::new_index_pipe(target.clone(), IndexTransform::Flat),
-                ))));
-            }
+            _ => return None,
         };
-        Ok(Some(Self::adaptor_pipe_value(
+        Some(Self::adaptor_pipe_value(
             target.clone(),
             Value::NIL,
-            adaptor,
+            PipeAdaptor::Skip { remaining },
+        ))
+    }
+
+    /// `.rotor(...)` streamed: the stream of `Any.rotor`.
+    // Cost: O(a), a = arguments.
+    pub(crate) fn stream_rotor(&mut self, target: &Value, args: &[Value]) -> Option<Value> {
+        let (specs, partial) = Self::lazy_rotor_specs(args)?;
+        Some(Self::adaptor_pipe_value(
+            target.clone(),
+            Value::NIL,
+            PipeAdaptor::Chunk {
+                specs,
+                next_spec: 0,
+                partial,
+                emitted: false,
+            },
+        ))
+    }
+
+    /// `.batch($n)` / `.batch(:elems($n))` streamed: the stream of `Any.batch`.
+    // Cost: O(1).
+    pub(crate) fn stream_batch(&mut self, target: &Value, args: &[Value]) -> Option<Value> {
+        let n = match args {
+            [n] => match n.view() {
+                ValueView::Int(n) => n,
+                ValueView::Pair(k, v) if k == "elems" => crate::runtime::to_int(v),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        if n < 1 {
+            return None;
+        }
+        Some(Self::adaptor_pipe_value(
+            target.clone(),
+            Value::NIL,
+            PipeAdaptor::Chunk {
+                specs: vec![(n as usize, 0)],
+                next_spec: 0,
+                partial: true,
+                emitted: false,
+            },
+        ))
+    }
+
+    /// `.unique` streamed, with its `:as`/`:with` adverbs.
+    // Cost: O(a), a = arguments.
+    pub(crate) fn stream_unique(&mut self, target: &Value, args: &[Value]) -> Option<Value> {
+        Some(Self::distinct_pipe(target, DistinctMode::Unique, args))
+    }
+
+    /// `.repeated` streamed, with its `:as`/`:with` adverbs.
+    // Cost: O(a), a = arguments.
+    pub(crate) fn stream_repeated(&mut self, target: &Value, args: &[Value]) -> Option<Value> {
+        Some(Self::distinct_pipe(target, DistinctMode::Repeated, args))
+    }
+
+    /// `.squish` streamed, with its `:as`/`:with` adverbs.
+    // Cost: O(a), a = arguments.
+    pub(crate) fn stream_squish(&mut self, target: &Value, args: &[Value]) -> Option<Value> {
+        Some(Self::distinct_pipe(target, DistinctMode::Squish, args))
+    }
+
+    fn distinct_pipe(target: &Value, mode: DistinctMode, args: &[Value]) -> Value {
+        let (as_fn, with_fn) = crate::runtime::methods_collection_ops::distinct_adverbs(args);
+        Self::adaptor_pipe_value(
+            target.clone(),
+            Value::NIL,
+            PipeAdaptor::Distinct(Box::new(DistinctState::new(mode, as_fn, with_fn))),
+        )
+    }
+
+    /// `.produce(&op)` streamed, for a left-associative infix of two
+    /// arguments; any other callable takes the eager implementation.
+    // Cost: O(1).
+    pub(crate) fn stream_produce(&mut self, target: &Value, args: &[Value]) -> Option<Value> {
+        let [op] = args else {
+            return None;
+        };
+        if !self.produce_streams(op) {
+            return None;
+        }
+        Some(Self::adaptor_pipe_value(
+            target.clone(),
+            Value::NIL,
+            PipeAdaptor::Produce {
+                op: op.clone(),
+                acc: None,
+            },
+        ))
+    }
+
+    /// `.flat` with no argument streamed, as an index pipe over the receiver.
+    // Cost: O(1).
+    pub(crate) fn stream_flat(&mut self, target: &Value, args: &[Value]) -> Option<Value> {
+        if !args.is_empty() {
+            return None;
+        }
+        Some(Value::lazy_list(crate::gc::Gc::new(
+            LazyList::new_index_pipe(target.clone(), IndexTransform::Flat),
         )))
     }
 

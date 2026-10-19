@@ -1060,7 +1060,7 @@ impl Interpreter {
     /// the VM's lanes share. On an infinite pipe/sequence the caller throws
     /// X::Cannot::Lazy instead. `skip`, `rotor`, `batch`, `unique`,
     /// `repeated`, `squish`, `flat` and `produce` over an infinite list never
-    /// get here: `try_lazy_adaptor_method` streams them first (#9159).
+    /// get here: `lazy_stream` streams them first (#9159).
     // Cost: O(n), n = names in the table; the force itself is O(p) for p
     // elements the source produces.
     /// Whether a VM method lane reifies the lazy receiver `list` (`target`)

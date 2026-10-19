@@ -1,41 +1,9 @@
 //! Driving a `LazyList` from the builtin layer: forcing a scan reduction
-//! (`[\+] 1..*`) with the builtin arithmetic, and the zero-argument
-//! `.pairs`/`.antipairs`/`.kv`/`.keys` index-pipe stage over a lazy invocant. Both
-//! need the operator and range primitives above `Value`, so they live here
-//! rather than as `LazyList` methods (issue #10779).
+//! (`[\+] 1..*`) with the builtin arithmetic. It needs the operator and range
+//! primitives above `Value`, so it lives here rather than as a `LazyList`
+//! method (issue #10779).
 
-use crate::value::{IndexTransform, LazyList, Value, ValueView};
-
-/// A zero-argument `.pairs`/`.antipairs`/`.kv`/`.keys` over a lazy invocant, as a
-/// lazy index-pipe stage instead of a forced (possibly infinite) source;
-/// `None` for any other method or a non-lazy invocant. The invocant is a
-/// genuinely-lazy `LazyList` (also `needs_vm_lazy_dispatch` when
-/// `vm_dispatch`), or an unbounded range of any element type (`1..*`,
-/// `^Inf`, `1.5..*`, `"a"..*`), which Rakudo also reports `.is-lazy`
-/// through these methods.
-///
-/// Cost: O(1) — builds the stage only; elements are pulled on demand.
-pub(crate) fn index_pipe_method(target: &Value, method: &str, vm_dispatch: bool) -> Option<Value> {
-    let transform = match method {
-        "pairs" => IndexTransform::Pairs,
-        "antipairs" => IndexTransform::AntiPairs,
-        "kv" => IndexTransform::Kv,
-        "keys" => IndexTransform::Keys,
-        _ => return None,
-    };
-    let source = match target.view() {
-        ValueView::LazyList(ll)
-            if ll.is_genuinely_lazy() && (!vm_dispatch || ll.needs_vm_lazy_dispatch()) =>
-        {
-            target.clone()
-        }
-        _ if crate::runtime::unbounded_range::first(target).is_some() => target.clone(),
-        _ => return None,
-    };
-    Some(Value::lazy_list(crate::gc::Gc::new(
-        LazyList::new_index_pipe(source, transform),
-    )))
-}
+use crate::value::{LazyList, Value, ValueView};
 
 /// Force a scan-based lazy list to compute up to `needed` elements.
 /// Uses builtin arithmetic for common operators. Returns the cached elements.

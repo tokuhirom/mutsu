@@ -1191,8 +1191,7 @@ impl Interpreter {
                 .as_ref()
                 .map(Value::view)
             && skip >= 0
-            && let Some(rest) =
-                self.try_lazy_adaptor_method(&target, "skip", &[Value::int(skip)])?
+            && let Some(rest) = self.lazy_stream(&target, "skip", &[Value::int(skip)])
         {
             self.stack.push(rest);
             return Ok(());

@@ -55,6 +55,7 @@ mod instances;
 mod io_concurrency;
 pub(crate) mod lazy_pull;
 mod lazy_refusal;
+pub(crate) mod lazy_stream;
 mod mutating;
 mod place;
 mod row;

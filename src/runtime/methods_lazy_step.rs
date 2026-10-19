@@ -11,10 +11,31 @@
 //!    reified and the call re-dispatched on a settled `Seq` of its elements,
 //!    whose rows answer it.
 //! 3. Neither: the call goes on to the later steps unchanged.
+//!
+//! Ahead of it, [`Interpreter::lazy_stream`] answers the streaming methods
+//! (`skip`, `rotor`, `pairs`, ...) with a lazy stage, for a lazy `LazyList`
+//! and for an unbounded `Range` alike (`method_table::lazy_stream`).
 
 use super::*;
 
 impl Interpreter {
+    /// The stream `method` has on `target`, run: a lazy stage over a
+    /// receiver that may not end (`method_table::lazy_stream`). `None` when
+    /// the receiver is not one streams serve, the method has no stream on
+    /// it, or the stream declines its arguments. Every method entry (this
+    /// interpreter's and the VM's two lanes) asks it first.
+    // Cost: O(s) to find the stream, s = registered streams, plus O(a) to
+    // build the stage, a = arguments.
+    pub(crate) fn lazy_stream(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Value> {
+        let stream = crate::builtins::method_table::lazy_stream::stream_of(target, method)?;
+        stream(self, target, args)
+    }
+
     /// Run the lazy step for `method` on the lazy receiver `target` (whose
     /// list is `list`). `None` when the call goes on unchanged (step 3).
     // Cost: O(p) to find the pull, p = registered pulls; then the pull's own

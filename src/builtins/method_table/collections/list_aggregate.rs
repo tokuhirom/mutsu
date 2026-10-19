@@ -284,6 +284,27 @@ pub(crate) fn minmax(target: &Value, args: &[Value]) -> Option<Result<Value, Run
     }
 }
 
+/// The sum of the Int range `start..end` (both inclusive; `None` past the
+/// `i64` limits, which only an exclusive end at `i64::MIN` or start at
+/// `i64::MAX` reaches, an empty range). `raw_end` is the range's stored end:
+/// `i64::MAX` is an unbounded one (`1..*`), whose sum is `Inf` as in Rakudo.
+/// Computed in big integers, so a range whose sum exceeds `i64` is exact.
+// Cost: O(1) (fixed-width big-integer arithmetic on two `i64` bounds).
+fn int_range_sum(start: Option<i64>, end: Option<i64>, raw_end: i64) -> Value {
+    let (Some(start), Some(end)) = (start, end) else {
+        return Value::int(0);
+    };
+    if raw_end == i64::MAX {
+        return Value::num(f64::INFINITY);
+    }
+    if start > end {
+        return Value::int(0);
+    }
+    let (start, end) = (NumBigInt::from(start), NumBigInt::from(end));
+    let n = &end - &start + 1;
+    Value::from_bigint((start + end) * n / 2)
+}
+
 /// Sum values in an Any receiver's list, preserving numeric promotion and Junctions.
 // Cost: O(e + t + b), e = elements, t = numeric string bytes parsed, b = arithmetic digit growth.
 pub(crate) fn sum(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
@@ -325,61 +346,12 @@ pub(crate) fn sum(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
                     .try_fold(Value::int(0), crate::builtins::arith_add),
             )
         }
-        ValueView::Range(a, b) => {
-            if a > b {
-                Some(Ok(Value::int(0)))
-            } else {
-                let n = b - a + 1;
-                let sum = if (a + b) % 2 == 0 {
-                    ((a + b) / 2) * n
-                } else {
-                    (a + b) * (n / 2)
-                };
-                Some(Ok(Value::int(sum)))
-            }
-        }
-        ValueView::RangeExcl(a, b) => {
-            if a >= b {
-                Some(Ok(Value::int(0)))
-            } else {
-                let end = b - 1;
-                let n = end - a + 1;
-                let sum = if (a + end) % 2 == 0 {
-                    ((a + end) / 2) * n
-                } else {
-                    (a + end) * (n / 2)
-                };
-                Some(Ok(Value::int(sum)))
-            }
-        }
-        ValueView::RangeExclStart(a, b) => {
-            let start = a + 1;
-            if start > b {
-                Some(Ok(Value::int(0)))
-            } else {
-                let n = b - start + 1;
-                let sum = if (start + b) % 2 == 0 {
-                    ((start + b) / 2) * n
-                } else {
-                    (start + b) * (n / 2)
-                };
-                Some(Ok(Value::int(sum)))
-            }
-        }
+        // An Int range's sum is closed-form; an end of `i64::MAX` is `*`/`Inf`.
+        ValueView::Range(a, b) => Some(Ok(int_range_sum(Some(a), Some(b), b))),
+        ValueView::RangeExcl(a, b) => Some(Ok(int_range_sum(Some(a), b.checked_sub(1), b))),
+        ValueView::RangeExclStart(a, b) => Some(Ok(int_range_sum(a.checked_add(1), Some(b), b))),
         ValueView::RangeExclBoth(a, b) => {
-            let start = a + 1;
-            let end = b - 1;
-            if start > end {
-                Some(Ok(Value::int(0)))
-            } else {
-                let n = end - start + 1;
-                let sum = if (start + end) % 2 == 0 {
-                    ((start + end) / 2) * n
-                } else {
-                    (start + end) * (n / 2)
-                };
-                Some(Ok(Value::int(sum)))
-            }
+            Some(Ok(int_range_sum(a.checked_add(1), b.checked_sub(1), b)))
         }
         ValueView::GenericRange {
             start,
@@ -387,6 +359,16 @@ pub(crate) fn sum(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
             excl_start,
             excl_end,
         } => {
+            // An unbounded range (`1..^Inf`, `^Inf`) sums to `Inf`, as `1..*`.
+            if crate::builtins::is_infinite_range(target)
+                && match start.view() {
+                    ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Rat(..) => true,
+                    ValueView::Num(n) => n.is_finite(),
+                    _ => false,
+                }
+            {
+                return Some(Ok(Value::num(f64::INFINITY)));
+            }
             let start_bi = value_as_bigint(start);
             let end_bi = value_as_bigint(end);
             if let (Some(a), Some(b)) = (start_bi, end_bi) {
