@@ -1961,12 +1961,15 @@ impl Interpreter {
                 for (short, qualified) in &aliases {
                     own.entry(short.clone()).or_insert(qualified.clone());
                 }
-                let entry = table.entry(importer_package).or_default();
+                let entry = table.entry(importer_package.clone()).or_default();
                 for (short, qualified) in aliases {
                     entry.entry(short).or_insert(qualified);
                 }
             }
         }
+        // The nested packages the module published under their short name
+        // (#13940).
+        self.copy_published_outer_packages(module, &importer_package);
         // Record the module's distribution for every class/role it just declared,
         // so an OTF compile of one of their methods resolves `$?DISTRIBUTION`, and
         // its own file-scope bare names (imported type aliases, `constant`s)

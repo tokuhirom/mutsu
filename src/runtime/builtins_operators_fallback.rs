@@ -1364,7 +1364,12 @@ impl Interpreter {
                 let target = self
                     .lookup_in_running_package(&self.types.package_type_aliases, head.as_str())?;
                 let is_enum = self.registry().enum_types.contains_key(target.as_str());
-                if !is_enum && (constants_only || !self.is_declared_package(target)) {
+                // A package a same-named inner type published (#13940) is
+                // the head's meaning on the bareword path too.
+                if !is_enum
+                    && (constants_only || !self.is_declared_package(target))
+                    && !self.is_published_outer_package(head.as_str(), target)
+                {
                     return None;
                 }
                 Symbol::intern(target)

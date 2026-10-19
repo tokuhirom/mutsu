@@ -844,6 +844,8 @@ impl Interpreter {
                     }
                 }
             }
+            let importer_package = self.import_target_package_for_load();
+            self.copy_published_outer_packages(module, &importer_package);
             // #7797: same gap as the aliasing copy just above, for package-
             // qualified-name visibility instead of bare short-name aliasing.
             self.replay_module_visibility_grant(module);
