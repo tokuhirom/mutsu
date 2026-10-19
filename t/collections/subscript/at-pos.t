@@ -19,7 +19,7 @@ is-deeply $obj[7, 3, 9]:!exists, (False, True, False), ':!exists negates EXISTS-
 
 # Bench 0.2.1 indexes the Bench::Time returned by timethis as `[0]`. An
 # ordinary object inherits Any.AT-POS, which exposes the object as a one-element
-# positional value when it defines neither AT-POS nor AT-KEY.
+# positional value when it defines no AT-POS.
 class PlainObject { }
 my $plain = PlainObject.new;
 is-deeply $plain[0], $plain, 'an ordinary instance is a one-element positional value';
@@ -29,7 +29,8 @@ is-deeply $plain.AT-POS(0), $plain, 'explicit AT-POS uses the inherited Any beha
 class KeyedObject {
     method AT-KEY($key) { "key:$key" }
 }
-is KeyedObject.new[0], 'key:0', 'AT-KEY remains authoritative for positional object subscripts';
+my $keyed = KeyedObject.new;
+is-deeply $keyed[0], $keyed, 'AT-KEY does not replace the positional item default';
 
 class PositionalWithoutATPOS does Positional {
     method elems { 2 }

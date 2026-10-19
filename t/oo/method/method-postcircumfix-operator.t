@@ -12,8 +12,8 @@ class A2 {
     has %!attrs;
     method postcircumfix:<{ }>($key) { %!attrs{$key} }
 }
-A2.new(:attrs({ foo => "bar" }))<foo>;
-], "postcircumfix method name parses in class and can be invoked with <...>";
+A2.new(:attrs({ foo => "bar" })).'postcircumfix:<{ }>'("foo");
+], "postcircumfix method name parses in class and can be called explicitly";
 
 eval-lives-ok q[
 class B {

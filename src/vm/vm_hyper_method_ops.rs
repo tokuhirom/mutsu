@@ -175,10 +175,8 @@ fn rebuild_quanthash_hyper(kind: QuantHashHyper, elems: &[Value], results: &[Val
 }
 
 /// Whether a hyper subscript index is a *slice* (a Range or multi-element list),
-/// as opposed to a single scalar key/position. `@a>>.[0..2]` / `%h>>.{1,2}`
-/// desugar to `AT-POS`/`AT-KEY`, but a slice index must apply the postcircumfix
-/// subscript (which slices) to each element, not the single-element accessor
-/// method (which would return Nil). A scalar index keeps the plain method path.
+/// as opposed to a single scalar key/position. Shared with ordinary subscript
+/// dispatch; an itemized list remains a single key.
 pub(super) fn hyper_subscript_index_is_slice(v: &Value) -> bool {
     match v.view() {
         ValueView::Range(..)
@@ -301,6 +299,8 @@ fn is_nodal_list_method(name: &str) -> bool {
             | "list"
             | "AT-POS"
             | "AT-KEY"
+            | "postcircumfix:<[ ]>"
+            | "postcircumfix:<{ }>"
             | "EXISTS-POS"
             | "EXISTS-KEY"
             | "DELETE-POS"
@@ -940,18 +940,18 @@ impl Interpreter {
                 }
                 _ if modifier.is_none()
                     && item_args.len() == 1
-                    && matches!(method.as_str(), "AT-POS" | "AT-KEY")
-                    && hyper_subscript_index_is_slice(&item_args[0]) =>
+                    && matches!(
+                        method.as_str(),
+                        "postcircumfix:<[ ]>" | "postcircumfix:<{ }>"
+                    ) =>
                 {
-                    // Hyper subscript with a slice index (`@a>>.[0..2]`,
-                    // `%h>>.{1,2}`): apply the postcircumfix subscript to each
-                    // element (which slices) rather than the single-key accessor
-                    // method (which returns Nil for a Range/list key).
+                    // Apply the subscript operator to each element, including
+                    // user candidates. Explicit AT-POS/AT-KEY calls stay methods.
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "hypermethodcall",
-                        "subscript-slice",
+                        "subscript",
                     );
-                    let is_positional = method == "AT-POS";
+                    let is_positional = method == "postcircumfix:<[ ]>";
                     self.stack.push(item.clone());
                     self.stack.push(item_args[0].clone());
                     self.exec_index_op_with_positional(is_positional)?;

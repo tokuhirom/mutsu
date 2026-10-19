@@ -46,6 +46,7 @@ pub(crate) mod frontend;
 mod hash_literal;
 mod hyper_dotty_writeback;
 mod hyper_prefix;
+mod hyper_subscript;
 mod immediate_call;
 mod infix_func;
 mod inherited_fields;

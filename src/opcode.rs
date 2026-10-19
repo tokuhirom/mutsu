@@ -3986,7 +3986,7 @@ pub(crate) enum OpCode {
     /// the same keys, or a rebuilt QuantHash when the target is a
     /// Set/Bag/Mix (hypered over its weights). A Seq target is consumed.
     /// Hyper postfix forms arrive here as method names too: `@a»++` is
-    /// `postfix:<++>`, `@a>>[0]` is `AT-POS`, and `@a>>[]` is the internal
+    /// `postfix:<++>`, `@a>>[0]` is `postcircumfix:<[ ]>`, and `@a>>[]` is the internal
     /// `__mutsu_hyper_zen`. Per element, a native method is tried first,
     /// then the interpreter's method dispatch (`call_method_*_with_temp_target`);
     /// target-level introspectors (`.WHAT`, `.HOW`, ...) run once on the whole
