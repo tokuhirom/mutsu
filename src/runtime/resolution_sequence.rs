@@ -1019,10 +1019,9 @@ mod tests {
             RoleFallback::Disabled,
         );
         assert!(
-            seq.candidates.iter().any(
-                |c| matches!(c, ResolvedCandidate::NativeCallBinding { owner }
-                    if owner.as_str() == "Supply")
-            ),
+            seq.candidates
+                .iter()
+                .any(|c| matches!(c, ResolvedCandidate::NativeCallBinding)),
             "expected a NativeCallBinding candidate for Supply.tap"
         );
     }
