@@ -34,7 +34,7 @@ nothing. The settled defaults:
 | Should I claim it? | Yes — the comment protocol below, every time. The `working` label is derived from it; never set it by hand. |
 | Add a test? Write `news/`? `Closes #NNNN`? | Yes to all three, on every code fix. |
 | May I open the PR / enable auto-merge? | Yes. The request already said so; use the merge method, then watch CI and fix forward. |
-| Shall I continue to the next ticket? | Yes, straight on, up to the five-ticket run cap below. |
+| Shall I continue to the next ticket? | Yes, straight on; there is no ticket-count cap (see below). |
 | This `todo:ticket` turns out to be deep / already fixed — is that OK? | Yes. Re-triage to `todo:deep` or close it with the evidence; both are legitimate outcomes. |
 | This issue is *already* `todo:deep` and looks too hard — may I skip it? | **No.** Work one remainder or write the design and implement it; see "'It is too hard' is not an outcome". |
 
@@ -86,21 +86,18 @@ got wrong on [#7543](https://github.com/tokuhirom/mutsu/issues/7543): three slic
 no claim at all, on the reasoning that the issue was not being "taken". That reasoning is wrong — the
 lock is over the *work*, not over the issue's lifetime.)
 
-Process at most **five tickets in one user-triggered run**, and only continue beyond the first
-when the user explicitly asks to process multiple tickets or the queue. Any request that names a
-*set* — "the `tier:N` tickets", "the ones with no tier", "the queue", "one after another", "keep the
-PRs coming" — **is** that explicit ask; do not treat it as a single-ticket request and do not ask
-for confirmation before the second one. Count a ticket when its
-re-triage or implementation PR has merged, and count **one slice of a campaign issue as one ticket**
-(see the next section). For a single-ticket request, report the next actionable
-issue number after its verified merge but do not start it. After the fifth verified merge, report
-the next actionable issue number but do not start it. A later user request starts a new run and
-resets this limit.
+There is **no ticket-count cap**. Continue beyond the first ticket only when the user explicitly
+asks to process multiple tickets or the queue. Any request that names a *set* — "the `tier:N`
+tickets", "the ones with no tier", "the queue", "one after another", "keep the PRs coming" — **is**
+that explicit ask; do not treat it as a single-ticket request and do not ask for confirmation before
+the second one. After each verified merge, take the lane's (or queue's) next issue and keep going
+until the queue/campaign has no workable slice left, the user stops the session, or a genuine
+blocker occurs. For a single-ticket request, report the next actionable issue number after its
+verified merge but do not start it.
 
-**The cap bounds the session's context length, not its output.** A long session degrades however
-much it has shipped, which is why a slice that merged no `src/` change at all still spends one of
-the five: it cost the same reading, measuring and reporting as any other. Do not argue your way past
-the cap on the grounds that a slice was "small" — start a fresh run instead.
+**Do not stop on a context estimate.** A session cannot see its own token use, and context
+exhaustion is handled by auto-compaction; stopping early only forces a costly restart (cold builds,
+re-reading ADRs, lost context).
 
 ## Triage before implementation
 
@@ -204,7 +201,7 @@ issue comment so they are not lost.
 ### Stopping mid-campaign: leave a short status note
 
 A campaign issue, or a single deep problem that needs more than one slice, is often still open when
-the session stops — the run cap is reached, the context is used up, or the user ends the session.
+the session stops — the queue has no workable slice left, a genuine blocker occurs, or the user ends the session.
 That is expected. Composing a full handoff prompt for the next session costs more than it saves
 (user decision, 2026-10-14, superseding 2026-10-11): the next session reads the issue, its ADR and
 `git log` itself. So whenever you stop with work remaining on such an issue:

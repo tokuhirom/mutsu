@@ -50,9 +50,10 @@ environment, `AGENTS.md` and the skills, so the prompt only needs the lane-speci
 2. Post `Claiming: <branch>` (branch named `<type>/<issue>-<slug>` first), fix with a regression
    test and a `news/` entry, `scripts/dev gate`, PR, auto-merge (merge), `subscribe_pr_activity`.
 3. `Releasing: <branch>` when merged, stopped or blocked.
-4. **Keep going**: after the PR merges, take the lane's next issue, **up to 5 tickets** (the
-   `mutsu-ticket-flow` run cap), then post a short status note on the issue and stop; the child
-   never starts its own successor (`mutsu-ticket-flow`, "Stopping mid-campaign"). **Do not stop
+4. **Keep going**: after the PR merges, take the lane's next issue, with **no ticket-count cap**,
+   until the lane has no workable slice left, the user stops it or a genuine blocker occurs; when
+   it does stop it posts a short status note on the issue, and the child never starts its own
+   successor (`mutsu-ticket-flow`, "Stopping mid-campaign"). **Do not stop
    on a context estimate**: a session cannot see its own token use, and children that tried
    stopped at 16-35% (2026-10-14). Say in the prompt that the window is 1,000,000 tokens and
    that the parent watches `context_usage`; the parent sends "wrap up" (`send_message`) when a
