@@ -277,12 +277,11 @@ fn skip_interp_block(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
             }
             // An apostrophe inside an identifier (`don't`, allowed between
             // two letters) opens no string (#13928).
-            '\''
-                if before.is_some_and(char::is_alphanumeric)
-                    && chars
-                        .clone()
-                        .next()
-                        .is_some_and(|(_, next)| next.is_alphabetic()) => {}
+            '\'' if before.is_some_and(char::is_alphanumeric)
+                && chars
+                    .clone()
+                    .next()
+                    .is_some_and(|(_, next)| next.is_alphabetic()) => {}
             '\'' | '"' => {
                 let quote = ch;
                 loop {
