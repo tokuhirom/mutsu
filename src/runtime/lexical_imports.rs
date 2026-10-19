@@ -159,6 +159,15 @@ impl Interpreter {
         entries: &[(Symbol, std::sync::Arc<crate::ast::FunctionDef>)],
         proto: Option<&crate::ast::FunctionDef>,
     ) -> bool {
+        // An only-star proto with no candidates (a bodied one imports as a
+        // plain routine) has nothing to dispatch to, but binding it keeps the
+        // import out of the registry, where it would hide the importer's
+        // routine of the name from callees outside the block (#13994).
+        if entries.is_empty()
+            && let Some(proto) = proto
+        {
+            return self.bind_routine_lexically(name, &std::sync::Arc::new(proto.clone()));
+        }
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
             || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
