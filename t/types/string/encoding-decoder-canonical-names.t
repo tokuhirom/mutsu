@@ -5,8 +5,8 @@ for <utf8 UTF-8 utf16 utf-16 utf16le utf-16le utf16be utf-16be> -> $label {
     is $encoding.name, $label.lc.subst('-', ''), "$label has the canonical UTF name";
     ok $encoding.alternative-names.grep(* eq $encoding.name).elems == 0,
         'alternative names exclude the canonical name';
-    is $encoding.encoder.encode-chars('AB').decode($label), 'AB',
-        "$label registry encoder round trips";
+    is 'AB'.encode($encoding.name).decode($label), 'AB',
+        "$label canonical name round trips";
 }
 is Encoding::Registry.find('latin-1').name, 'iso-8859-1', 'Latin-1 canonical name';
 is Encoding::Registry.find('ascii').name, 'ascii', 'ASCII canonical name';
