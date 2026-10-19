@@ -22,6 +22,7 @@ mod mu_rakuseen;
 mod mu_render;
 mod mu_str;
 mod mu_walk_return;
+pub(crate) mod variable;
 
 /// The HOW classes whose rows answer a metamethod call, in lookup order.
 pub(crate) static MOP_OWNERS: &[&str] = &[
@@ -41,6 +42,7 @@ pub(crate) static ENUM_HOW_OWNERS: &[&str] = &["Metamodel::EnumHOW"];
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     attribute::ROWS,
+    variable::ROWS,
     class_how::ROWS,
     ctor_late::ROWS,
     enum_how::ROWS,

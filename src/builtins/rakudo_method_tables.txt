@@ -258,6 +258,9 @@ only	Uni	Int	NFC	NFD	NFKC	NFKD	Numeric	Uni	codes	encode	list	of
 declared	Unicode	NFG	version
 methods	Unicode	NFG	POPULATE	version
 only	Unicode
+declared	Variable	block	implicit-lexical-usage	name	scope	slash	var
+methods	Variable	POPULATE	block	implicit-lexical-usage	name	native	scope	slash	throw	var	willdo
+only	Variable	block	implicit-lexical-usage	name	scope	slash	var
 declared	Version	ACCEPTS	Capture	Str	Version	WHICH	gist	minus	new	parts	plus	raku	whatever
 methods	Version	ACCEPTS	Capture	POPULATE	Str	Version	WHICH	gist	minus	new	parts	plus	raku	whatever
 only	Version	Capture	Version	minus	parts	plus	whatever

@@ -3254,4 +3254,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Pod::Block::Declarator", "_add_leading", 2, 16),
     ("Pod::Block::Declarator", "_add_trailing", 2, 16),
     ("Allomorph", "ACCEPTS", 8, 28),
+    ("Variable", "block", 8, 60),
+    ("Variable", "var", 8, 60),
 ];

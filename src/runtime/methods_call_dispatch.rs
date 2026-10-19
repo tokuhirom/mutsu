@@ -1517,47 +1517,6 @@ impl Interpreter {
             return self.call_method_mut_with_values(&source_name, inner, "VAR", vec![]);
         }
 
-        // `$v.block` on the `Variable` a `trait_mod:<is>(Variable:D ...)`
-        // handler receives: the block that owns the declaration
-        // (`runtime::attach_target`).
-        if method == "block"
-            && args.is_empty()
-            && matches!(
-                target.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Variable"
-            )
-        {
-            return Ok(Self::variable_block_handle());
-        }
-
-        // .var on meta value
-        if method == "var"
-            && args.is_empty()
-            && let Some(source_name) = Self::var_target_from_meta_value(&target)
-        {
-            // A value a trait handler already assigned through `.var` is what
-            // the variable holds from then on, though the declaring frame only
-            // sees it once the handler returns.
-            let source_value = self
-                .trait_mod_writeback_value
-                .clone()
-                .filter(|v| !Self::is_mixed_variable_object(v))
-                .filter(|_| self.trait_mod_writeback_key.as_deref() == Some(source_name.as_str()))
-                .or_else(|| self.get_env_with_main_alias(&source_name))
-                .or_else(|| match target.view() {
-                    ValueView::Instance { attributes, .. } => {
-                        attributes.as_map().get("__mutsu_var_value").cloned()
-                    }
-                    _ => None,
-                })
-                .unwrap_or(Value::NIL);
-            return Ok(Value::varref(
-                Symbol::intern(&source_name),
-                source_value,
-                None,
-            ));
-        }
-
         // ^meta_method dispatch (except ^name)
         if let Some(meta_method) = method.strip_prefix('^')
             && meta_method != "name"
