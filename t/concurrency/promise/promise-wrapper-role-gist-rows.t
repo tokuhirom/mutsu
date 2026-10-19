@@ -3,7 +3,7 @@ use Test;
 # The `gist` of `X::Promise::Broken`, `X::React::Died` and `X::Await::Died`,
 # the roles mixed into an exception that `Promise.result`, a dying `react` or
 # `await` rethrows, is a row of the role, however the call is made; every
-# other method still answers the wrapped exception (ADR-11276 §9.199; checked
+# other method still answers the wrapped exception (ADR-11276, #11276; checked
 # against Rakudo).
 
 plan 11;

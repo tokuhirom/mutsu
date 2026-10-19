@@ -1,4 +1,4 @@
-//! The wrapper roles' `gist` rows (ADR-11276 §9.199): `X::Promise::Broken`,
+//! The wrapper roles' `gist` rows (ADR-11276, #11276): `X::Promise::Broken`,
 //! `X::React::Died` and `X::Await::Died`.
 //!
 //! Rakudo mixes one of these roles into the exception `Promise.result`, a

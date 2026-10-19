@@ -205,7 +205,7 @@ impl Interpreter {
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
-        // A wrapper role's `gist` row (ADR-11276 §9.199), found by the role
+        // A wrapper role's `gist` row (ADR-11276, #11276), found by the role
         // the exception carries, ahead of the native exception-gist arm below
         // that would answer the bare cause; as in `call_method_with_values`.
         if let Some(owners) = crate::builtins::method_table::wrapper_role_owners_of(target)

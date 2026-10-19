@@ -206,7 +206,7 @@ impl Interpreter {
         // `X::Promise::Broken`, `X::React::Died` and `X::Await::Died` are
         // composed into the exception `Promise.result`, a dying `react` or
         // `await` rethrows; the role's `gist` is a row, found by the role
-        // (ADR-11276 §9.199). Asked here, ahead of the native `.gist` arms
+        // (ADR-11276, #11276). Asked here, ahead of the native `.gist` arms
         // downstream that would answer the bare exception.
         if let Some(owners) = crate::builtins::method_table::wrapper_role_owners_of(&target)
             && let Some(result) = crate::builtins::method_table::invoke_owner(
