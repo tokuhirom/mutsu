@@ -498,6 +498,17 @@ impl Interpreter {
                     }
                 }
             }
+            // An instance of a user subclass of a built-in type with a native
+            // payload (`class Q is Range`, `class I is Int`) accepts through the
+            // payload's `ACCEPTS`, which it inherits (#14015).
+            (_, ValueView::Instance { .. })
+                if !matches!(left.view(), ValueView::Junction { .. })
+                    && crate::builtins::native_base::redirect(right, "ACCEPTS").is_some() =>
+            {
+                let payload = crate::builtins::native_base::redirect(right, "ACCEPTS")
+                    .expect("checked by the guard");
+                self.smart_match_inner(left, &payload, err)
+            }
             // A Match/cursor on the RHS accepts by its own success, regardless
             // of the LHS (rakudo: `$str ~~ G.new.tok` is the cursor's Bool —
             // URI's missing-components smartmatches strings against the

@@ -106,9 +106,14 @@ fn subclass_payload(target: &Value) -> Option<Value> {
     };
     let map = attributes.as_map();
     map.get("__mutsu_pair_value")
+        .or_else(|| map.get(RANGE_PAYLOAD))
         .or_else(|| map.get("__baggy_data__"))
         .cloned()
 }
+
+/// The reserved attribute an instance of a user subclass of `Range` carries
+/// its range in (#14015).
+pub(crate) const RANGE_PAYLOAD: &str = "__mutsu_range_value";
 
 /// Whether `target` is an instance of an `is Pair` or quant-hash subclass:
 /// its base's methods (`Pair.Hash`, inherited from `Any`) answer on the
@@ -142,16 +147,25 @@ pub(crate) fn redirect(target: &Value, method: &str) -> Option<Value> {
     (!returns_the_instance(&payload, method)).then_some(payload)
 }
 
-/// Whether `method` is a string coercion an `is Pair` subclass answers with
-/// its `Pair`'s (`P.new(:key<a>, :value(3)).Str` is `a\t3`, Rakudo's
-/// `Pair.Str`). A scalar subclass renders itself through the value renderers.
+/// Whether `method` is a string coercion an `is Pair` or `is Range` subclass
+/// answers with its payload's (`P.new(:key<a>, :value(3)).Str` is `a\t3`,
+/// Rakudo's `Pair.Str`; a `Range` subclass also renders as its range). A
+/// scalar subclass renders itself through the value renderers.
 // Cost: O(1).
 fn stringifies_as_payload(payload: &Value, method: &str) -> bool {
-    matches!(method, "Str" | "Stringy")
-        && matches!(
-            payload.view(),
-            ValueView::Pair(..) | ValueView::ValuePair(..)
-        )
+    match method {
+        "Str" | "Stringy" => {
+            payload.is_range()
+                || matches!(
+                    payload.view(),
+                    ValueView::Pair(..) | ValueView::ValuePair(..)
+                )
+        }
+        // An `is Range` subclass renders as its range (`Q.new(1,5).raku` is
+        // `1..5` in Rakudo, #14015).
+        "gist" | "raku" => payload.is_range(),
+        _ => false,
+    }
 }
 
 /// Answer a native method called on an instance with a native base, in the
