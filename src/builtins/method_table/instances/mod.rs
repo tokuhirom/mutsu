@@ -84,6 +84,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     iterator::ROWS,
     collation::ROWS,
     code::ROWS,
+    code::BLOCK_ROWS,
     code_accepts::ROWS,
     code_methods::ROWS,
     routine::ROWS,

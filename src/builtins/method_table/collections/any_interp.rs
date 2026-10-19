@@ -274,6 +274,88 @@ macro_rules! handler {
     };
 }
 
+/// The owners Rakudo declares `iterator` on besides `Any`: their own method
+/// tables carry the name, but the answer is `Any`'s (`dispatch_iterator_method`
+/// builds the one `Iterator` instance over a copy of the elements). Found by
+/// owner only, so the shape lookup still reaches `Any`'s row first.
+macro_rules! iterator_rows {
+    ($($owner:literal),*) => {
+        &[$(any_row!($owner, "iterator", 0, TYPE_OK.or(RowFlags::OWNER_ONLY), iterator)),*]
+    };
+}
+
+pub(super) static ITERATOR_ROWS: &[MethodRow] = iterator_rows!(
+    "Array", "Bag", "BagHash", "List", "Map", "Mix", "MixHash", "Pair", "Range", "Seq", "Set",
+    "SetHash"
+);
+
+/// `deepmap`, `eager`, `first` and `map` where Rakudo declares them on a
+/// class other than `Any` (the quant hashes, `Seq`, `Range`, `Backtrace`): the
+/// owner's row runs `Any`'s handler.
+pub(super) static DECLARED_ELSEWHERE_ROWS: &[MethodRow] = &[
+    any_row!(
+        "Bag",
+        "deepmap",
+        1,
+        ARGS_TYPE.or(RowFlags::OWNER_ONLY),
+        deepmap
+    ),
+    any_row!(
+        "BagHash",
+        "deepmap",
+        1,
+        ARGS_TYPE.or(RowFlags::OWNER_ONLY),
+        deepmap
+    ),
+    any_row!(
+        "Mix",
+        "deepmap",
+        1,
+        ARGS_TYPE.or(RowFlags::OWNER_ONLY),
+        deepmap
+    ),
+    any_row!(
+        "MixHash",
+        "deepmap",
+        1,
+        ARGS_TYPE.or(RowFlags::OWNER_ONLY),
+        deepmap
+    ),
+    any_row!(
+        "Set",
+        "deepmap",
+        1,
+        ARGS_TYPE.or(RowFlags::OWNER_ONLY),
+        deepmap
+    ),
+    any_row!(
+        "SetHash",
+        "deepmap",
+        1,
+        ARGS_TYPE.or(RowFlags::OWNER_ONLY),
+        deepmap
+    ),
+    any_row!("Seq", "eager", 0, TYPE_OK.or(RowFlags::OWNER_ONLY), eager),
+    any_row!("Range", "first", 0, MU_ARGS.or(RowFlags::OWNER_ONLY), first),
+    any_row!(
+        "Backtrace",
+        "first",
+        0,
+        MU_ARGS.or(RowFlags::OWNER_ONLY),
+        first
+    ),
+    any_row!(
+        "Backtrace",
+        "map",
+        0,
+        ARGS_TYPE.or(RowFlags::SLURPY).or(RowFlags::OWNER_ONLY),
+        map,
+        &[
+            "batch", "deep", "degree", "duck", "flat", "item", "label", "node"
+        ]
+    ),
+];
+
 /// `Any.collate`: sort by Unicode collation order under the dynamic
 /// `$*COLLATION`, which only the interpreter can read. The native cascade's
 /// `collate` arm calls the same `dispatch_collate` for the receivers the

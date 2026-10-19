@@ -50,6 +50,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     mu_base::ROWS,
     mu_answers::ROWS,
     mu_identity::ROWS,
+    mu_identity::MAP_ROWS,
     mu_emit::ROWS,
     mu_rakuseen::ROWS,
     mu_walk_return::ROWS,
@@ -57,6 +58,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     mu_numeric::ROWS,
     mu_render::ROWS,
     mu_str::ROWS,
+    mu_str::MAP_ROWS,
 ];
 
 /// Whether a `Metamodel::*HOW` owner has a row named `method` at any arity a

@@ -101,6 +101,15 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::NONE,
         named: &[],
     },
+    // `Cool` declares it too (`self.list.chrs`).
+    MethodRow {
+        owner: "Cool",
+        name: "chrs",
+        arity: 0,
+        handler: Handler::Pure(chrs),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     MethodRow {
         owner: "List",
         name: "chrs",

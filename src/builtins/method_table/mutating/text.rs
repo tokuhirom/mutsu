@@ -35,6 +35,15 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::SLURPY,
         named: &[],
     },
+    // `Cool` declares `substr-rw` too; a `Str` receiver reaches `Str`'s row first.
+    MethodRow {
+        owner: "Cool",
+        name: "substr-rw",
+        arity: 0,
+        handler: Handler::Mut(substr_rw_row),
+        flags: RowFlags::SLURPY,
+        named: &[],
+    },
 ];
 
 /// `$s.subst-mutate(pattern, replacement, ...)` substitutes in place (like

@@ -104,6 +104,32 @@ pub(super) static ROWS: &[MethodRow] = &[
     twin!("sort", TWIN, |interp, target, args| Some(
         interp.dispatch_sort_method(target, args)
     )),
+    // Rakudo declares `sort` on `Map` and `Seq` besides `List`, and the
+    // `minpairs`/`maxpairs` of a `Setty`, with the same answer.
+    twin!("Map", "sort", TWIN, |interp, target, args| Some(
+        interp.dispatch_sort_method(target, args)
+    )),
+    twin!("Seq", "sort", TWIN, |interp, target, args| Some(
+        interp.dispatch_sort_method(target, args)
+    )),
+    twin!("Set", "minpairs", TWIN_NULLARY, |interp, target, _args| {
+        Some(interp.dispatch_minmaxpairs(target, "minpairs"))
+    }),
+    twin!(
+        "SetHash",
+        "minpairs",
+        TWIN_NULLARY,
+        |interp, target, _args| Some(interp.dispatch_minmaxpairs(target, "minpairs"))
+    ),
+    twin!("Set", "maxpairs", TWIN_NULLARY, |interp, target, _args| {
+        Some(interp.dispatch_minmaxpairs(target, "maxpairs"))
+    }),
+    twin!(
+        "SetHash",
+        "maxpairs",
+        TWIN_NULLARY,
+        |interp, target, _args| Some(interp.dispatch_minmaxpairs(target, "maxpairs"))
+    ),
     twin!("unique", TWIN, |interp, target, args| Some(
         interp.dispatch_unique(target, &args)
     )),

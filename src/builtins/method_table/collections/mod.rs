@@ -19,6 +19,7 @@ mod any_list_late;
 mod any_pos_late;
 mod composed_dateish;
 pub(crate) mod composed_real;
+mod declared_scalars;
 mod match1_late;
 mod match3_late;
 mod mu_late;
@@ -85,6 +86,9 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     clone::ROWS,
     descriptor::ROWS,
     any_interp::ROWS,
+    declared_scalars::ROWS,
+    any_interp::ITERATOR_ROWS,
+    any_interp::DECLARED_ELSEWHERE_ROWS,
     any_list_hash::ROWS,
     any_misc::ROWS,
     lazy::ROWS,

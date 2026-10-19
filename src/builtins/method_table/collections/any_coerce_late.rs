@@ -53,6 +53,15 @@ pub(super) static ROWS: &[MethodRow] = &[
             .or(RowFlags::SLURPY),
         slice
     ),
+    late!(
+        "Seq",
+        "slice",
+        0,
+        RowFlags::OWNER_ONLY
+            .or(RowFlags::ANY_ARGS)
+            .or(RowFlags::SLURPY),
+        slice
+    ),
     late!("Mu", "take", 0, LATE, take),
     late!(
         "Bag",
