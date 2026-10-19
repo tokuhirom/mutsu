@@ -3256,4 +3256,5 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Allomorph", "ACCEPTS", 8, 28),
     ("Variable", "block", 8, 60),
     ("Variable", "var", 8, 60),
+    ("Supply", "interval", 8, 60),
 ];
