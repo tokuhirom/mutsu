@@ -878,7 +878,8 @@ impl Interpreter {
                     &param_name_syms.params,
                     &args,
                     Some(cc.reads_args_array),
-                    Some(cc.reads_args_hash)
+                    Some(cc.reads_args_hash),
+                    !cc.is_routine
                 )
             ) {
                 Ok(bindings) => bindings,

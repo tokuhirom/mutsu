@@ -7,7 +7,7 @@ use Test;
 # implicit `@_` the parser gives a block that reads it still belongs to the
 # innermost such block (roast S04-statements/if.t's `if 1, 2 { @_ }`).
 
-plan 7;
+plan 9;
 
 sub direct(*@_) { { @_.elems }() }
 is direct(1, 2, 3), 3, 'a directly called block reads the routine @_';
@@ -21,12 +21,16 @@ is mapped(1, 2, 3), 3, 'and one called by .map';
 sub with-placeholder(*@_) { { $^a + @_.elems }(10) }
 is with-placeholder(1, 2, 3), 13, 'a block with its own placeholder still reads the outer @_';
 
-# TODO: the inner block's capture takes the middle block's frame, where the
-# middle block's own call left an empty `@_`; the routine's `@_` behind it is
-# flattened away (#14024; ADR-12529 phase 4 retires that capture).
-todo 'a block two levels down still reads the middle block call\'s @_';
+# A block's call writes no `@_` unless the block owns one, so the middle
+# block's call does not hide the routine's (#14024).
 sub nested(*@_) { { { @_.join(',') }() }() }
 is nested(1, 2), '1,2', 'a block nested in a block reads it too';
+
+sub nested-outer(*@_) { { { OUTER::OUTER::<@_>.join(',') }() }() }
+is nested-outer(3, 4), '3,4', '... and so does OUTER::OUTER::<@_>';
+
+sub nested-stored(*@_) { my &b = { my &c = { @_.elems }; c() }; b() }
+is nested-stored(5, 6, 7), 3, '... and a stored block in a stored block';
 
 sub own(*@_) { -> *@_ { @_.elems }(9) }
 is own(1, 2, 3), 1, 'a block that declares *@_ reads its own';

@@ -133,10 +133,12 @@ impl Interpreter {
 
         // The real path publishes every positional argument as `@_` (the
         // legacy path, by contrast, publishes only the unconsumed ones).
-        self.env_mut().insert_sym(
-            crate::symbol::wk::positional_slurpy(),
-            Value::array(args.to_vec()),
-        );
+        if Self::call_owns_args_array(data) {
+            self.env_mut().insert_sym(
+                crate::symbol::wk::positional_slurpy(),
+                Value::array(args.to_vec()),
+            );
+        }
 
         for ((param, arg), pd) in params.iter().zip(args).zip(data.param_defs.iter()) {
             let val = Self::apply_scalar_param_bind(param.bind, arg.clone());

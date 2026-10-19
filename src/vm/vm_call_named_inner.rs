@@ -250,7 +250,8 @@ impl Interpreter {
                         &args,
                         Some((true, cf.code.reads_args_hash)),
                         &cf.param_name_syms,
-                        &[]
+                        &[],
+                        false
                     )
                 )
             });
