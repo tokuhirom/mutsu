@@ -642,7 +642,16 @@ impl Interpreter {
                 }
             } else if is_regex_decl || is_proto_token_decl {
                 self.set_current_package(cx.name.to_string());
-            } else if is_lexical_sub_decl && let Some(package) = role_lexical_package.as_deref() {
+            } else if is_lexical_sub_decl
+                && let Some(package) = role_lexical_package.as_deref().or_else(|| {
+                    // A plain role's own `sub` runs in the role's package,
+                    // where its declaration registered it
+                    // (`register_role_body_exported_subs`), not in the
+                    // composer's: a second copy there was what a trait
+                    // applied the second time (#13645).
+                    lexical_sub_name.is_some().then_some(base_role_name)
+                })
+            {
                 self.set_current_package(package.to_string());
             }
             let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
