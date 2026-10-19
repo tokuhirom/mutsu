@@ -417,6 +417,7 @@ impl ParamDef {
     /// of `String::clone` in a `JSON::Fast` decode (#8898).
     pub(crate) fn assignment_type_constraint(&self) -> Option<&str> {
         if self.sigilless
+            || (self.name.starts_with(['@', '%']) && self.traits.iter().any(|t| t == "copy"))
             || (self.binds_caller_container() && !self.name.starts_with(['@', '%', '&']))
         {
             return None;
