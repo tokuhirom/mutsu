@@ -3001,7 +3001,11 @@ fn postfix_expr_loop_from(
                 };
                 expr = Expr::HyperMethodCall {
                     target: Box::new(expr),
-                    name: Symbol::intern("AT-POS"),
+                    name: Symbol::intern(if args.len() == 1 {
+                        "postcircumfix:<[ ]>"
+                    } else {
+                        "AT-POS"
+                    }),
                     args,
                     modifier: None,
                     quoted: false,
@@ -3030,7 +3034,11 @@ fn postfix_expr_loop_from(
                 };
                 expr = Expr::HyperMethodCall {
                     target: Box::new(expr),
-                    name: Symbol::intern("AT-KEY"),
+                    name: Symbol::intern(if args.len() == 1 {
+                        "postcircumfix:<{ }>"
+                    } else {
+                        "AT-KEY"
+                    }),
                     args,
                     modifier: None,
                     quoted: false,

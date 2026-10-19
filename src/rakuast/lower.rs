@@ -5352,6 +5352,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 // method-call postfix.
                 RakuAstClass::MetaPostfixHyper => {
                     let inner = named_child_or_positional(postfix)?;
+                    if super::hyper_subscript::is_subscript(inner) {
+                        return super::hyper_subscript::lower(operand, inner);
+                    }
                     if super::dynamic_method::is_dynamic(inner) {
                         return super::dynamic_method::lower_hyper(operand, inner);
                     }

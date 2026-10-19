@@ -2057,12 +2057,16 @@ impl Interpreter {
                     // If the class actually has an AT-KEY method, an error it
                     // raises (e.g. Hash::Agnostic's stub that throws
                     // X::Hash::NoImplementation) must propagate. Only swallow the
-                    // error for a non-Associative instance that has no AT-KEY,
-                    // where `$obj<foo>` yields Nil.
+                    // error for an instance with no AT-KEY, which yields a Failure.
                     Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
-                    Err(_) => Value::NIL,
+                    Err(_) => Self::make_assoc_indexing_failure(&cn),
                 };
-                if result.is_nil() {
+                if result.is_nil()
+                    && !self.has_user_method_including_role(&cn, "AT-KEY")
+                    && !self.type_matches_value("Associative", &target)
+                {
+                    Self::make_assoc_indexing_failure(&cn)
+                } else if result.is_nil() {
                     self.typed_container_default(&target)
                 } else {
                     result
@@ -2190,16 +2194,14 @@ impl Interpreter {
                     && !has_user_at_pos
                     && !has_user_at_key
                     && self.container_type_metadata(&target).is_some();
-                let result = if is_positional && !has_user_at_pos && has_user_at_key {
-                    // For an Associative object, `[...]` falls back to AT-KEY
-                    // when the class has no positional protocol of its own.
-                    // An exception the user's AT-KEY throws propagates.
+                let result = if !is_positional && has_user_at_key {
+                    // Curly subscripts use AT-KEY regardless of the key's type.
                     self.try_compiled_method_or_interpret(
                         target.clone(),
                         "AT-KEY",
                         vec![Value::int(i)],
                     )?
-                } else if has_user_at_pos {
+                } else if is_positional && has_user_at_pos {
                     // The class's own AT-POS answers, and an exception it
                     // throws (an out-of-range index, `Rake`'s
                     // `X::OutOfRange.new(...).throw`) propagates to the
@@ -2219,22 +2221,14 @@ impl Interpreter {
                     Value::NIL
                 } else if !is_positional && !has_user_at_key {
                     // The inherited Any.AT-POS is only a positional default;
-                    // `{...}` on an object without AT-KEY remains undefined.
-                    Value::NIL
+                    // `{...}` on an object without AT-KEY produces a Failure.
+                    Self::make_assoc_indexing_failure(&class_name)
                 } else {
-                    let fallback = target.clone();
                     self.try_compiled_method_or_interpret(
                         target.clone(),
                         "AT-POS",
                         vec![Value::int(i)],
                     )
-                    .or_else(|_| {
-                        self.try_compiled_method_or_interpret(
-                            fallback,
-                            "AT-KEY",
-                            vec![Value::int(i)],
-                        )
-                    })
                     .unwrap_or(Value::NIL)
                 };
                 if result.is_nil() {

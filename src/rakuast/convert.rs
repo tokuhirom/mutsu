@@ -4320,7 +4320,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             modifier,
             quoted,
         } => {
-            let inner = method_call_postfix(name.as_str(), args, *modifier, *quoted)?;
+            let inner = if !quoted
+                && modifier.is_none()
+                && let Some(result) = super::hyper_subscript::convert(name.as_str(), args)
+            {
+                result?
+            } else {
+                method_call_postfix(name.as_str(), args, *modifier, *quoted)?
+            };
             let hyper = RakuAstNode {
                 class: RakuAstClass::MetaPostfixHyper,
                 fields: vec![node_field(None, inner)],
