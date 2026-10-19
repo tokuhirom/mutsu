@@ -48,8 +48,12 @@ impl Interpreter {
         let pkg =
             crate::qualified::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg));
         let top = package_ancestors(pkg).last()?;
-        // A module's `my package` is lexical to the module (#11156).
-        if let Some(&unit) = self.module.module_visibility.lexical_package_units.get(&top) {
+        // A module's `my package` is lexical to the module (#11156). The
+        // two the import protocol itself reads from the module (`EXPORT`,
+        // `EXPORTHOW`) are read here on the importer's behalf.
+        if let Some(&unit) = self.module.module_visibility.lexical_package_units.get(&top)
+            && !matches!(top.as_str(), "EXPORT" | "EXPORTHOW")
+        {
             if self.unit_is_running(unit) {
                 return None;
             }
