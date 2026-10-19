@@ -125,6 +125,12 @@ impl Interpreter {
                 // common example), it may still carry that scalar holder's
                 // itemization flag; retain the Hash data but make the
                 // attribute itself iterable as `%attr`, not as `$attr`.
+                ValueView::Hash(hash) if hash.declared_type.as_deref() == Some("Map") => {
+                    // `Map` uses HashData internally but `%` initialization is
+                    // Hash.STORE into the attribute's own plain Hash. Keep the
+                    // entries and discard Map's immutable container tag.
+                    Value::hash(hash.map.clone())
+                }
                 ValueView::Hash(_) => val.clone().with_hash_itemized(false),
                 ValueView::Pair(k, v) => {
                     // A single Pair coerces to a one-element hash
