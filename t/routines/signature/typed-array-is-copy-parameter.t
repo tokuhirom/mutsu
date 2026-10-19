@@ -16,6 +16,8 @@ is-deeply named(values => @source), [1, 2, 's'], 'named copy stays untyped';
 class C {
     method copied(Int @values is copy) { @values.push('s'); @values }
 }
+throws-like { C.copied([1, 2]) }, X::TypeCheck::Binding::Parameter,
+    'method copy rejects an untyped argument';
 is-deeply C.copied(@source), [1, 2, 's'], 'method copies follow the same order';
 sub hash-copy(Int %values is copy) { %values<x> = 's'; %values<x> }
 my Int %source = x => 1;
