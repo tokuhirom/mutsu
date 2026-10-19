@@ -23,6 +23,12 @@ use crate::ast::ParamDef;
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::regex_tree::RegexNode;
 
+mod forward;
+mod refs;
+use refs::{VarRefs, later_param_in_where};
+pub(super) use forward::first_var_used_before_unit_declares;
+use forward::ForwardUses;
+
 pub(super) type Undeclared = (&'static str, String, Vec<String>);
 
 /// The first variable used without a declaration in scope, as
@@ -48,6 +54,7 @@ pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Opti
         scopes: vec![HashSet::new()],
         strict: true,
         judged_stmt: true,
+        forward: None,
         found: None,
     };
     walk_stmts(&mut scan, stmts);
@@ -100,6 +107,8 @@ struct UndeclaredVars<'a> {
     /// `no strict` is in effect: an assignment declares its target and no
     /// use is judged.
     strict: bool,
+    /// The narrow compunit mode ([`first_var_used_before_unit_declares`]).
+    forward: Option<ForwardUses>,
     /// The statement being visited is a statement of a statement list (not
     /// one embedded in an expression): its assignment target is judged.
     judged_stmt: bool,
@@ -133,7 +142,9 @@ impl UndeclaredVars<'_> {
     /// env does not hold a lexical declared after the call yet (#10511).
     // Cost: O(|name|).
     fn caller_scope_declares(&self, name: &str) -> bool {
-        if self.interp.current_code == 0 {
+        // The compunit mode runs at CHECK time, outside any `EVAL` call:
+        // `current_code` may still name a chunk of an earlier run.
+        if self.interp.current_code == 0 || self.forward.is_some() {
             return false;
         }
         // SAFETY: `current_code` is the address of the live bytecode frame's
@@ -165,12 +176,16 @@ impl UndeclaredVars<'_> {
         if self.found.is_some() || !self.strict {
             return;
         }
-        self.found = match expr {
+        let found = match expr {
             Expr::Var(name) => self.undeclared_scalar(name),
             Expr::ArrayVar(name) => self.undeclared_container("@", name),
             Expr::HashVar(name) => self.undeclared_container("%", name),
             _ => None,
         };
+        if self.forward_ignores(found.as_ref()) {
+            return;
+        }
+        self.found = found;
     }
 
     fn undeclared_scalar(&self, name: &str) -> Option<Undeclared> {
@@ -308,6 +323,13 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         match stmt {
             Stmt::No { module, .. } if module == "strict" => self.strict = false,
             Stmt::Use { module, .. } if module == "strict" => self.strict = true,
+            Stmt::Use { module, tags, .. }
+                if !crate::runtime::begin_prologue::is_known_pragma_name(module)
+                    && module != "lib"
+                    && !module.starts_with("MONKEY") =>
+            {
+                self.forward_use(module, tags)
+            }
             Stmt::Import { module, .. } => {
                 if let Some(names) = self.package_exports.get(module).cloned() {
                     for name in &names {
@@ -465,46 +487,5 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         if matches!(kind, NameKind::Param | NameKind::BlockParam) {
             self.declare(name);
         }
-    }
-}
-
-/// A parameter's `where` constraint is checked left-to-right: it may name
-/// the parameter it constrains and any *earlier* parameter, but referencing a
-/// *later* parameter is `X::Undeclared` (that param is not in scope yet).
-/// Matches `sub foo($x where { $x == $y }, $y) {}` → X::Undeclared.
-/// (subtypes.t 77)
-fn later_param_in_where(param_defs: &[ParamDef]) -> Option<Undeclared> {
-    let named: Vec<&ParamDef> = param_defs.iter().filter(|pd| !pd.name.is_empty()).collect();
-    for (i, pd) in named.iter().enumerate() {
-        let Some(where_expr) = &pd.where_constraint else {
-            continue;
-        };
-        let mut refs = VarRefs::default();
-        refs.visit_expr(where_expr);
-        let earlier = |r: &str| named[..=i].iter().any(|p| bare_var_name(&p.name) == r);
-        if let Some(r) = refs.names.iter().find(|r| {
-            named[i + 1..]
-                .iter()
-                .any(|p| bare_var_name(&p.name) == r.as_str())
-                && !earlier(r)
-        }) {
-            return Some(("$", r.clone(), Vec::new()));
-        }
-    }
-    None
-}
-
-/// The names of the variables (`$`, `@`, `%`, `&`) an expression refers to.
-#[derive(Default)]
-struct VarRefs {
-    names: Vec<String>,
-}
-
-impl<'ast> Visit<'ast> for VarRefs {
-    fn visit_expr(&mut self, expr: &'ast Expr) {
-        if let Expr::Var(n) | Expr::ArrayVar(n) | Expr::HashVar(n) | Expr::CodeVar(n) = expr {
-            self.names.push(n.clone());
-        }
-        walk_expr(self, expr);
     }
 }

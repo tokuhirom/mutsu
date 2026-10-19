@@ -50,11 +50,32 @@ impl Interpreter {
     /// compile time (X::Undeclared, with "Did you mean" suggestions).
     // Cost: see `eval_var_scan::first_undeclared_var`.
     pub(crate) fn check_eval_undeclared_vars(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        let Some((sigil, var_name, suggestions)) =
-            super::eval_var_scan::first_undeclared_var(self, stmts)
-        else {
-            return Ok(());
-        };
+        match super::eval_var_scan::first_undeclared_var(self, stmts) {
+            Some(found) => Err(Self::undeclared_var_error(found)),
+            None => Ok(()),
+        }
+    }
+
+    /// Reject, at CHECK time, a variable the unit uses before its top level
+    /// declares it (`sub f { $zz = 42 }; my $zz = 1`), as rakudo does
+    /// (#12800). Without it a routine resolved the name at run time and
+    /// wrote its caller's same-named lexical.
+    // Cost: see `eval_var_scan::first_var_used_before_unit_declares`.
+    pub(crate) fn check_routine_forward_vars(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        match super::eval_var_scan::first_var_used_before_unit_declares(self, stmts) {
+            Some(found) => {
+                let mut err = Self::undeclared_var_error(found);
+                err.set_code(Some(crate::value::RuntimeErrorCode::ParseGeneric));
+                Err(err)
+            }
+            None => Ok(()),
+        }
+    }
+
+    /// The `X::Undeclared` for the variable `(sigil, name, suggestions)`.
+    fn undeclared_var_error(
+        (sigil, var_name, suggestions): super::eval_var_scan::Undeclared,
+    ) -> RuntimeError {
         let symbol = format!("{}{}", sigil, var_name);
         let mut attrs = ValueMap::default();
         attrs.insert("name".to_string(), Value::str(symbol.clone()));
@@ -81,6 +102,6 @@ impl Interpreter {
             Value::array(suggestions.into_iter().map(Value::str).collect()),
         );
         attrs.insert("message".to_string(), Value::str(message));
-        Err(RuntimeError::typed("X::Undeclared", attrs))
+        RuntimeError::typed("X::Undeclared", attrs)
     }
 }
