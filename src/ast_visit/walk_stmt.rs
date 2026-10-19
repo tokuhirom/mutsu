@@ -44,7 +44,6 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         // the expansion makes (see `ast::signature_decl`).
         Stmt::SourceForm(form) => v.visit_source_form(form),
         Stmt::MarkReadonly(name, _) => v.visit_name(name, NameKind::MarkReadonly),
-        Stmt::MarkBoundContainer(name) => v.visit_name(name, NameKind::MarkBoundContainer),
         Stmt::MarkBind
         | Stmt::Proceed
         | Stmt::Succeed

@@ -57,22 +57,10 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     if is_array || is_hash {
         let mut stmts = Vec::new();
         if is_hash {
-            // Record a dedicated bound-container marker so a later whole
-            // reassignment (`%a = (...)`) is allowed (it propagates to the bound
-            // source), while a `constant %M` — also readonly — stays immutable.
-            stmts.push(Stmt::MarkBoundContainer(bound_name.clone()));
             stmts.push(Stmt::MarkBind);
         }
         stmts.push(decl);
         if is_hash {
-            // AFTER the declaration: the declaration resets this bare name's
-            // readonly state (so a stale marking from an earlier same-named
-            // binding cannot poison it), which would erase a marking emitted
-            // before it. See `vm_var_assign_set_local.rs`'s `is_vardecl` block.
-            stmts.push(Stmt::MarkReadonly(
-                bound_name.clone(),
-                ReadonlyKind::ImmutableValue,
-            ));
             // A `SyntheticBlock` yields its LAST statement's value, so re-read
             // the now-bound hash to keep `my %h := %src` usable in expression
             // position (mirrors the array branch's trailing read below).

@@ -180,7 +180,10 @@ also proceeds in the order "chokepoints first (behavior-preserving) → escape-a
        `my %a := %b; %a = (z=>9)` died with "Cannot assign to a readonly variable (%a)" (raku also replaces %b with (z)).
        Root cause: **`readonly_vars` conflated 3 concepts**: ① the `:=` bind signal ② the immutability of `constant %M`
        ③ `is readonly` params.
-       **Proper fix (adopted) = plant a dedicated marker `__mutsu_bound::%a`, separate from readonly, on `:=` bound
+       **Superseded (2026-10-20, ADR-0097):** the `:=` bind no longer marks the name readonly at all, so the
+       marker below and `Stmt::MarkBoundContainer` are gone; a bound immutable value (Map/Set/Bag/Mix) refuses a
+       whole assignment by its own type (`immutable_associative_assignment`).
+       **Earlier fix = plant a dedicated marker `__mutsu_bound::%a`, separate from readonly, on `:=` bound
        containers** (new `Stmt::MarkBoundContainer`; the hash-bind desugar emits it; `compiler/stmt.rs` turns it into
        an env key at `SetGlobal`), and branch the readonly paths on that marker:
        - **Whole-reassign (#3255)**: the slot-path `CheckReadOnly` opcode (`vm.rs`) exempts marker-bearing vars.

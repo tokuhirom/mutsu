@@ -2024,11 +2024,6 @@ pub(crate) enum Stmt {
     /// The [`ReadonlyKind`] records *why* it is readonly, which decides the
     /// exception Rakudo reports for an assignment through it.
     MarkReadonly(String, ReadonlyKind),
-    /// Mark a container variable as `:=`-bound via `__mutsu_bound::NAME` env key.
-    /// Distinguishes a bound container (writable as a whole, propagating to the
-    /// bound source) from a genuinely readonly `constant` container — both end
-    /// up in `readonly_vars`, so a separate marker is needed.
-    MarkBoundContainer(String),
     /// Flag that the next VarDecl in this SyntheticBlock uses `:=` binding.
     MarkBind,
     /// The site of a `method` declared in a nested block of a package body

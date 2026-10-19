@@ -1694,30 +1694,6 @@ impl Interpreter {
                 // declarations — the constant will be re-marked readonly after this.
                 // Also skip during a `:=` bind: an `our` container bind (`our %g := %h`)
                 // marks the var readonly as a bind signal, not a true RO restriction.
-                // Likewise skip for a `:=`-bound container reached by name (e.g. a
-                // captured `%b` whole-reassigned inside a closure): it carries the
-                // `__mutsu_bound::` marker and writes through to the bound source,
-                // unlike a genuinely immutable `constant`. The slot-based path uses
-                // CheckReadOnly for the same exemption (vm.rs CheckReadOnly).
-                // Note: an immutable Set/Bag/Mix bound via `:=` (`my %m := mix <a b>`)
-                // is genuinely read-only — whole-reassignment must still throw
-                // X::Assignment::RO — so the exemption applies only to mutable
-                // Hash/Array bound containers.
-                let is_bound_container = name.starts_with(['@', '%'])
-                    && matches!(
-                        self.env()
-                            .get_sym(crate::meta_ns::MetaNs::Bound.key_for_str(&name))
-                            .map(Value::view),
-                        Some(ValueView::Bool(true))
-                    )
-                    && !matches!(
-                        self.env().get(&name).map(Value::view),
-                        Some(
-                            ValueView::Mix(_, false)
-                                | ValueView::Set(_, false)
-                                | ValueView::Bag(_, false)
-                        )
-                    );
                 // A store with `vardecl_context` set IS a declaration (an
                 // expression-position `my` — `if (my $str = ...)` — compiles to
                 // MarkVarDeclContext + SetGlobal): it creates a FRESH variable,
@@ -1743,7 +1719,7 @@ impl Interpreter {
                                 | crate::ast::ReadonlyKind::TypeObject
                         )
                     );
-                if !raw_mode && !is_bind_ctx && !rebind_of_immutable && !is_bound_container {
+                if !raw_mode && !is_bind_ctx && !rebind_of_immutable {
                     if self.vardecl_context().get() {
                         self.unmark_readonly_sym(name_sym);
                     } else {
@@ -1779,35 +1755,19 @@ impl Interpreter {
                         .trim_start_matches(['$', '@', '%', '&']);
                     self.unmark_readonly(bare);
                 }
-                // Prevent re-assignment of immutable containers (Mix, Set, Bag)
-                // Only when the variable has an explicit immutable type constraint
-                // (e.g., `my %h is Mix`), not for regular scalar variables holding
-                // an immutable value.
-                if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym)) {
-                    let base = constraint.split('[').next().unwrap_or(&constraint);
-                    // Read through a capture cell: an escaping closure's
-                    // `%h is Bag` is a shared `ContainerRef` (#9488).
-                    if matches!(base, "Mix" | "Set" | "Bag")
-                        && let Some(existing) = self.env().get(&name).map(|v| v.deref_container())
-                        && matches!(
-                            existing.view(),
-                            ValueView::Mix(_, false)
-                                | ValueView::Set(_, false)
-                                | ValueView::Bag(_, false)
-                        )
-                    {
-                        let type_name = match existing.view() {
-                            ValueView::Mix(..) => "Mix",
-                            ValueView::Set(..) => "Set",
-                            ValueView::Bag(..) => "Bag",
-                            _ => unreachable!(),
-                        };
-                        return Err(RuntimeError::new(format!(
-                            "Cannot modify an immutable {} ({})",
-                            type_name,
-                            existing.to_string_value()
-                        )));
-                    }
+                // An immutable associative (Map, Set, Bag, Mix) a `:=` bind or
+                // an `is Map`/`is Bag` declaration put in a `%` variable is not
+                // reassigned. Read through a capture cell: an escaping
+                // closure's `%h is Bag` is a shared `ContainerRef` (#9488).
+                if !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !self.vardecl_context().get()
+                    && name.starts_with('%')
+                    && let Some(existing) = self.env().get(&name).cloned()
+                    && let Some(err) = Self::immutable_associative_assignment(&name, &existing)
+                {
+                    return Err(err);
                 }
                 // Reject assignment to immutable type objects (e.g., `Foo .= new`),
                 // the bare `Nil` term, and an enum value (`enum Fo <A B>; A = 3`).

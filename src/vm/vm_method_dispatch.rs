@@ -565,7 +565,7 @@ impl Interpreter {
         // symbols (`symbol::wk`), so a method entry no longer allocates a
         // `String` per key just to hand it to `Symbol::intern`. None of them is
         // a `note_env_key`-tracked metadata name (a `^` placeholder or one of
-        // the `__mutsu_bound::`-style families), so skipping that latch — which
+        // the `__mutsu_bound_array_slice::`-style families), so skipping that latch — which
         // `insert_sym` does not run — is sound here.
         self.env_mut()
             .insert_sym(crate::symbol::wk::self_(), base.clone());

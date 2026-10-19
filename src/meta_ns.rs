@@ -113,9 +113,6 @@ pub(crate) enum MetaNs {
     /// `__mutsu_state_key::<name>` — the shared cell a `state` variable
     /// resolves to.
     State,
-    /// `__mutsu_bound::<name>` — the name was installed by `:=`, which makes a
-    /// readonly container mutable in place (as against a `constant`).
-    Bound,
     /// `__mutsu_bound_index::<name>` — an element of this container is itself
     /// `:=`-bound, so an element store must not replace the container.
     BoundIndex,
@@ -285,7 +282,6 @@ impl MetaNs {
         MetaNs::Type,
         MetaNs::HashKeyType,
         MetaNs::State,
-        MetaNs::Bound,
         MetaNs::BoundIndex,
         MetaNs::ShapedArrayDims,
         MetaNs::AtomicArr,
@@ -348,7 +344,6 @@ impl MetaNs {
             MetaNs::Type => crate::symbol::TYPE_META_PREFIX,
             MetaNs::HashKeyType => crate::symbol::HASH_KEY_META_PREFIX,
             MetaNs::State => "__mutsu_state_key::",
-            MetaNs::Bound => "__mutsu_bound::",
             MetaNs::BoundIndex => "__mutsu_bound_index::",
             MetaNs::ShapedArrayDims => "__mutsu_shaped_array_dims::",
             MetaNs::AtomicArr => "__mutsu_atomic_arr::",
@@ -591,12 +586,12 @@ mod tests {
     #[test]
     fn the_memo_returns_the_same_symbol_and_namespaces_do_not_collide() {
         let name = Symbol::intern("%h");
-        assert_eq!(MetaNs::Bound.key(name), MetaNs::Bound.key(name));
+        assert_eq!(MetaNs::BoundIndex.key(name), MetaNs::BoundIndex.key(name));
         assert_ne!(
-            MetaNs::Bound.key(name),
             MetaNs::BoundIndex.key(name),
+            MetaNs::BoundArrayLen.key(name),
             "the memo is keyed by (namespace, name); a name-only key would \
-             hand `__mutsu_bound_index::` the `__mutsu_bound::` entry"
+             hand `__mutsu_bound_array_len::` the `__mutsu_bound_index::` entry"
         );
     }
 
@@ -617,7 +612,6 @@ mod tests {
             (MetaNs::Type, "__mutsu_type::@a"),
             (MetaNs::HashKeyType, "__mutsu_hash_key_type::@a"),
             (MetaNs::State, "__mutsu_state_key::@a"),
-            (MetaNs::Bound, "__mutsu_bound::@a"),
             (MetaNs::BoundIndex, "__mutsu_bound_index::@a"),
             (MetaNs::ShapedArrayDims, "__mutsu_shaped_array_dims::@a"),
             (MetaNs::AtomicArr, "__mutsu_atomic_arr::@a"),
@@ -785,8 +779,8 @@ mod tests {
             );
             assert!(seen.insert(p), "{ns:?} duplicates another prefix");
         }
-        // No prefix may be a prefix of another: `__mutsu_bound::` vs
-        // `__mutsu_bound_index::`, `__mutsu_role__` vs `__mutsu_role_seq__`,
+        // No prefix may be a prefix of another: `__mutsu_bound_array_len::` vs
+        // `__mutsu_bound_array_slice::`, `__mutsu_role__` vs `__mutsu_role_seq__`,
         // `__mutsu_attr__` vs `__mutsu_attr_trait__` all come within one
         // character of colliding. `MixinOverrides::seed_missing_attributes`
         // really does enumerate the registry with `strip_prefix`, so an

@@ -32,7 +32,6 @@ impl TailSkip {
             Stmt::SetLine(_)
             | Stmt::Trace { .. }
             | Stmt::MarkBind
-            | Stmt::MarkBoundContainer(_)
             | Stmt::MarkReadonly(..)
             | Stmt::MarkSigilless(_)
             | Stmt::MarkSigillessReadonly(_) => true,

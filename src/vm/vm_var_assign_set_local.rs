@@ -1845,24 +1845,12 @@ impl Interpreter {
                     &Value::NIL,
                 ));
             }
-            // Prevent re-initialization of immutable containers (Mix, Set, Bag)
+            // An immutable associative (Map, Set, Bag, Mix) is not reassigned.
             if !is_vardecl
                 && !is_bind
-                && matches!(
-                    self.locals[idx].view(),
-                    ValueView::Mix(_, false) | ValueView::Set(_, false) | ValueView::Bag(_, false)
-                )
+                && let Some(err) = Self::immutable_associative_assignment(name, &self.locals[idx])
             {
-                let type_name = match self.locals[idx].view() {
-                    ValueView::Mix(..) => "Mix",
-                    ValueView::Set(..) => "Set",
-                    ValueView::Bag(..) => "Bag",
-                    _ => unreachable!(),
-                };
-                return Err(RuntimeError::assignment_ro_typename(
-                    type_name,
-                    &self.locals[idx].to_string_value(),
-                ));
+                return Err(err);
             }
             if is_bind {
                 // A `%`-sigil bind takes the Associative itself, not an

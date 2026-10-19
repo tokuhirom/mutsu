@@ -248,7 +248,6 @@ fn stmt_name(stmt: &Stmt) -> Option<&str> {
         Stmt::VarDecl { name, .. }
         | Stmt::Assign { name, .. }
         | Stmt::MarkReadonly(name, _)
-        | Stmt::MarkBoundContainer(name)
         | Stmt::MarkSigillessReadonly(name)
         | Stmt::MarkSigilless(name) => Some(name),
         _ => None,
@@ -282,7 +281,6 @@ impl Compiler {
             Stmt::VarDecl { name: n, .. }
             | Stmt::Assign { name: n, .. }
             | Stmt::MarkReadonly(n, _)
-            | Stmt::MarkBoundContainer(n)
             | Stmt::MarkSigillessReadonly(n)
             | Stmt::MarkSigilless(n) => *n = name,
             _ => {}

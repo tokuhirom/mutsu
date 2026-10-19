@@ -140,7 +140,6 @@ impl<'ast> Visit<'ast> for AstScan {
                 // A scalar or sigilless variable of the same name (`$name`
                 // is `name` in the AST): a different symbol than `&name`.
                 NameKind::Var
-                | NameKind::MarkBoundContainer
                 | NameKind::VarDecl
                 | NameKind::AssignTarget
                 | NameKind::MarkReadonly

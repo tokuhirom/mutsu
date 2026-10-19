@@ -9,6 +9,34 @@ use super::*;
 const MAX_BINDING_CHAIN: usize = 8;
 
 impl Interpreter {
+    /// The `X::Assignment::RO` a whole assignment to the `%` variable `name`
+    /// raises when it holds an immutable associative (a `Map`, or a `Set`,
+    /// `Bag` or `Mix`). Assignment coerces to a `Hash`, so such a value is one
+    /// a `:=` bind or an `is Map` declaration put there, and rakudo refuses to
+    /// reassign it. The value decides, not a by-name readonly mark: a bind to
+    /// a mutable `Hash` stays assignable, writing through to its source.
+    // Cost: O(1), plus the value's text on the error path.
+    pub(super) fn immutable_associative_assignment(
+        name: &str,
+        current: &Value,
+    ) -> Option<RuntimeError> {
+        if !name.starts_with('%') {
+            return None;
+        }
+        let current = current.deref_container();
+        let type_name = match current.view() {
+            ValueView::Mix(_, false) => "Mix",
+            ValueView::Set(_, false) => "Set",
+            ValueView::Bag(_, false) => "Bag",
+            _ if current.is_immutable_map() => "Map",
+            _ => return None,
+        };
+        Some(RuntimeError::assignment_ro_typename(
+            type_name,
+            &current.to_string_value(),
+        ))
+    }
+
     /// Refuse an assignment to the readonly variable `code.constants[name_idx]`,
     /// or let it through. A sigilless/`constant` term bound to an object with a
     /// user `STORE` is let through with `pending_sigilless_store` set, so the
@@ -23,24 +51,6 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
-        // A `:=`-bound container (`my %a := %b`) is marked readonly as a
-        // bind signal, but a whole reassignment (`%a = (...)`) is allowed
-        // — it writes through to the bound source. The `__mutsu_bound::`
-        // marker distinguishes it from a genuinely immutable `constant`.
-        // Both marker probes are gated on their process-global
-        // "ever created" flags: the common program never creates either
-        // marker — skipping the two `format!` allocations plus env lookups
-        // entirely.
-        if crate::env::bound_marker_possible() {
-            let name = Self::const_str(code, name_idx);
-            let bound_key = crate::meta_ns::MetaNs::Bound.key_for_str(name);
-            if matches!(
-                self.env().get_sym(bound_key).map(Value::view),
-                Some(ValueView::Bool(true))
-            ) {
-                return Ok(());
-            }
-        }
         // A free variable (not a local of this code) resolves to a binding in
         // another frame. When that binding is a readonly binding cell, the
         // cell's kind is the answer: the registry below is keyed by name and
