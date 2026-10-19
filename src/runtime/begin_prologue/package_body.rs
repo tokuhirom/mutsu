@@ -29,7 +29,10 @@ pub(super) fn split_unit_bodies(stmts: &mut Vec<Stmt>) {
             Stmt::ClassDecl { body, .. } => !body.iter().any(|member| {
                 matches!(
                     member,
-                    Stmt::ClassDecl { .. } | Stmt::Package { .. } | Stmt::SyntheticBlock(_)
+                    Stmt::VarDecl { .. }
+                        | Stmt::ClassDecl { .. }
+                        | Stmt::Package { .. }
+                        | Stmt::SyntheticBlock(_)
                 )
             }),
             _ => false,
@@ -160,10 +163,6 @@ fn split_body_stmt(stmt: Stmt, decls: &mut Vec<Stmt>, runtime: &mut Vec<Stmt>) {
             runtime.push(stmt.clone());
             decls.push(stmt);
         }
-        // An `our` declaration binds its package slot while the class is
-        // registered. Keep the whole declaration in that phase; splitting its
-        // initializer into the re-entered run-time body loses the package slot.
-        Stmt::VarDecl { is_our: true, .. } => decls.push(stmt),
         Stmt::VarDecl { .. } if splittable_var_decl(&stmt) => {
             match crate::runtime::phasers::split_var_decl(&stmt) {
                 Some((static_decl, assign)) => {
