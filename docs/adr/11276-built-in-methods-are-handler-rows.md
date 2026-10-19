@@ -4775,6 +4775,7 @@ snapshot. `.var` no longer answers a `.VAR` descriptor, which Rakudo's `Scalar` 
 
 Pinned in `t/concurrency/supply/supply-interval-class-row.t`. `Raku.version` on the type object and
 `Kernel.name`'s error still differ from Rakudo, as they did (#13952).
+
 ### 9.197 `IO::Special.new` is a class-method row (2026-10-19)
 
 `refactor/11276-leave-io-special`. A by-name gate of `call_method_with_values_inner` built the
