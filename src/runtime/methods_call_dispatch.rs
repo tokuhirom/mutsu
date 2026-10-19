@@ -1018,36 +1018,6 @@ impl Interpreter {
         {
             return result;
         }
-        // `Blob.allocate` is a row (ADR-11276 §9.163).
-        if method == "allocate"
-            && let ValueView::Package(name) = target.view()
-        {
-            let cn = name.resolve();
-            // `CArray[T].allocate(n)` pre-sizes the array to `n` elements
-            // instead of growing it one out-of-range index assignment at a
-            // time (the mechanism the pre-2018.05 idiom documented in
-            // `Language/nativecall.rakudoc` relied on: `$arr[n - 1] = 0`).
-            // A native numeric element type shares `Buf.allocate`'s own
-            // zero-fill storage (`buf_allocate`/`value_buf::make_buf`); a
-            // reference element type (`CArray[Str]`, `CArray[Pointer]`, a
-            // CStruct element) fills with that type's gap value, the same
-            // `native_fill_for_constraint` an ordinary out-of-bounds
-            // `$carray[n] = v` autovivifies through.
-            if let Some(elem) = crate::value::value_carray::carray_elem_type_name(&cn) {
-                if crate::value::value_carray::is_native_carray_class(&cn) {
-                    return Self::buf_allocate(name, &args);
-                }
-                let size = args.first().map(super::to_int).unwrap_or(0).max(0) as usize;
-                let mut items = Vec::new();
-                items.try_reserve(size).map_err(|_| {
-                    RuntimeError::new(format!(
-                        "Cannot allocate CArray of {size} elements: memory allocation failed"
-                    ))
-                })?;
-                items.resize(size, Self::native_fill_for_constraint(Some(elem)));
-                return Ok(Value::real_array(items));
-            }
-        }
         // Private method call on non-Instance
         if let Some(result) = self.dispatch_private_method_on_non_instance(&target, method) {
             return result;
