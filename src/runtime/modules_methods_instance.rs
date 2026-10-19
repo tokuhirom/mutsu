@@ -16,7 +16,6 @@ mod methods_mut_wildcard_delegate;
 mod methods_lazy_step;
 mod methods_native_bypass;
 mod builtin_shadow;
-pub(crate) use builtin_shadow::is_mop_pseudo_method;
 mod method_perl_alias;
 mod methods_object;
 mod methods_object_attr_constraints;

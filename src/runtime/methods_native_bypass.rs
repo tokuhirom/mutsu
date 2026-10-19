@@ -1,4 +1,3 @@
-use super::resolution_sequence::ResolvedCandidate;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::types::is_stash_class_name;

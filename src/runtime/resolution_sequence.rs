@@ -185,8 +185,8 @@ pub(crate) enum ResolvedCandidate {
     /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`.
     /// At most one appears per sequence: `is_native_method` is a boolean "does
     /// any MRO level bind this name", not a per-level fact, so the sequence
-    /// records only the first (most-derived) owner that has it.
-    NativeCallBinding { owner: TypeId },
+    /// records only that one binds it.
+    NativeCallBinding,
     /// A `native_method_{0,1,2}arg` catalog row (E2's `native_method_row`
     /// table) that is actually reachable for the call's shape — design
     /// decision 4's `Native` variant. At most one appears per sequence: rows
@@ -395,7 +395,7 @@ impl Interpreter {
                     .get(owner_str)
                     .is_some_and(|cd| cd.native_methods.contains(name.as_str()));
                 if hardcoded || registered {
-                    candidates.push(ResolvedCandidate::NativeCallBinding { owner: *owner });
+                    candidates.push(ResolvedCandidate::NativeCallBinding);
                     native_binding_found = true;
                 }
             }
@@ -463,7 +463,7 @@ impl Interpreter {
                     .as_deref()
                     .filter(|ro| *ro != owner.as_str())
                     .map(str::to_string),
-                ResolvedCandidate::NativeCallBinding { .. } | ResolvedCandidate::Native { .. } => {
+                ResolvedCandidate::NativeCallBinding | ResolvedCandidate::Native { .. } => {
                     None
                 }
             })
@@ -473,7 +473,7 @@ impl Interpreter {
         }
         candidates.retain(|c| match c {
             ResolvedCandidate::User { owner, .. } => !flattened.contains(owner.as_str()),
-            ResolvedCandidate::NativeCallBinding { .. } | ResolvedCandidate::Native { .. } => true,
+            ResolvedCandidate::NativeCallBinding | ResolvedCandidate::Native { .. } => true,
         });
     }
 
@@ -782,7 +782,7 @@ impl Interpreter {
         );
         let native_row_owner = seq.candidates.iter().find_map(|c| match c {
             ResolvedCandidate::Native { owner } => Some(owner.as_str()),
-            ResolvedCandidate::User { .. } | ResolvedCandidate::NativeCallBinding { .. } => None,
+            ResolvedCandidate::User { .. } | ResolvedCandidate::NativeCallBinding => None,
         });
         let shadow_served = native_row_owner.is_some();
         crate::vm::vm_stats::record_native_row_shadow_check(real_served == shadow_served, || {
@@ -945,7 +945,7 @@ mod tests {
                 .iter()
                 .filter_map(|c| match c {
                     ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
-                    ResolvedCandidate::NativeCallBinding { .. }
+                    ResolvedCandidate::NativeCallBinding
                     | ResolvedCandidate::Native { .. } => None,
                 })
                 .collect();
@@ -1090,7 +1090,7 @@ mod tests {
                 .iter()
                 .filter_map(|c| match c {
                     ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
-                    ResolvedCandidate::NativeCallBinding { .. }
+                    ResolvedCandidate::NativeCallBinding
                     | ResolvedCandidate::Native { .. } => None,
                 })
                 .collect();
@@ -1191,7 +1191,7 @@ mod tests {
                         stored_idx,
                         ..
                     } => Some((owner.as_str(), *level, *stored_idx)),
-                    ResolvedCandidate::NativeCallBinding { .. }
+                    ResolvedCandidate::NativeCallBinding
                     | ResolvedCandidate::Native { .. } => None,
                 })
                 .collect();
@@ -1231,7 +1231,7 @@ mod tests {
                 .iter()
                 .filter_map(|c| match c {
                     ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
-                    ResolvedCandidate::NativeCallBinding { .. }
+                    ResolvedCandidate::NativeCallBinding
                     | ResolvedCandidate::Native { .. } => None,
                 })
                 .collect();
