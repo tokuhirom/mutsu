@@ -601,6 +601,7 @@ impl Interpreter {
             .check_undeclared_routines_with_guards(&body_main)
             .and_then(|guards| {
                 self.check_undeclared_names_mainline(&body_main)?;
+                self.check_routine_forward_vars(&body_main)?;
                 Ok(guards)
             });
         let begin_prologue = match checked {
