@@ -220,6 +220,18 @@ impl Compiler {
                     self.emit_outer_var_access(format!("@{bare}"), depth);
                     return;
                 }
+                // A block reads the `@_` of the routine around it (`sub f(*@_) {
+                // { @_.elems }() }`): a block has no `@_` of its own unless its
+                // signature declares one, so it never reads the per-call
+                // argument list its own call writes under that name (#13990).
+                if name == "_"
+                    && !self.local_map.contains_key("@_")
+                    && self.enclosing_local_names.contains("@_")
+                    && !self.enclosing_underscore_implicit
+                {
+                    self.emit_outers_var_access("@_".to_string());
+                    return;
+                }
                 let sigiled = format!("@{}", name);
                 // ADR-0039 slice 2: a plain lexical container read resolves
                 // through its slot, exactly as a scalar read does.

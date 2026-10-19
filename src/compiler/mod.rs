@@ -1811,6 +1811,14 @@ pub(crate) struct Compiler {
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
     enclosing_local_names: std::collections::HashSet<String>,
+    /// This code's `@_` is the implicit slurpy the parser synthesized for a
+    /// block that reads it (a `block_param`), not a declared one.
+    implicit_underscore: bool,
+    /// The nearest enclosing code that declares `@_` got it implicitly
+    /// ([`Self::implicit_underscore`]): a nested block's own `@_` read is then
+    /// not that code's (#13990), as rakudo gives the implicit `@_` to the
+    /// innermost block that reads it.
+    enclosing_underscore_implicit: bool,
     /// Parameters of the `for` loops whose bodies are being compiled, innermost
     /// last. A loop parameter without a local slot lives in `env` under its bare
     /// name, so [`Compiler::qualify_variable_name`] must not package-qualify it
@@ -2130,6 +2138,8 @@ impl Compiler {
             enclosing_sigilless: std::collections::HashSet::new(),
             decl_is_term: false,
             enclosing_local_names: std::collections::HashSet::new(),
+            implicit_underscore: false,
+            enclosing_underscore_implicit: false,
             for_param_names: Vec::new(),
             by_name_for_params: Vec::new(),
             lexical_sub_free_vars: Default::default(),
@@ -2828,6 +2838,11 @@ impl Compiler {
             .extend(self.enclosing_sigilless.iter().cloned());
         sub.enclosing_local_names
             .extend(self.local_map.keys().cloned());
+        sub.enclosing_underscore_implicit = if self.local_map.contains_key("@_") {
+            self.implicit_underscore
+        } else {
+            self.enclosing_underscore_implicit
+        };
         // A routine hoisted to its scope's entry is compiled before the
         // scope's own `my`s are, so the names the enclosing scopes declare
         // later count too (#13377): a nested block's same-named `my` in the
