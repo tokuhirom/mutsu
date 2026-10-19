@@ -1470,9 +1470,34 @@ impl Interpreter {
                 // Shared with the VM's native class-method fast path.
                 return result;
             }
-            // `Compiler.id` is callable on the bare type object (it identifies the
-            // build, not an instance), matching Rakudo. Other Compiler methods are
-            // attribute accessors that legitimately need an instance.
+            // A `Systemic` class's rows that answer its type object (`Compiler.id`
+            // identifies the build, not an instance) are reached here, by owner
+            // (ADR-11276 §9.196). Its other methods are attribute accessors that
+            // legitimately need an instance, and keep that error.
+            if let Some(owners) =
+                crate::builtins::method_table::systemic_owners_of(name.resolve().as_str())
+                && owners.iter().any(|owner| {
+                    crate::builtins::method_table::owner_row(
+                        Symbol::intern(owner),
+                        Symbol::intern(method),
+                        args.len(),
+                    )
+                    .is_some_and(|id| {
+                        crate::builtins::method_table::row(id)
+                            .flags
+                            .contains(crate::builtins::method_table::RowFlags::TYPE_OBJECT_OK)
+                    })
+                })
+                && let Some(result) = crate::builtins::method_table::invoke_owner(
+                    self,
+                    owners,
+                    method,
+                    &args,
+                    || target.clone(),
+                )
+            {
+                return result;
+            }
             // `IO::Notification.watch-path` -- shared with the VM's native
             // class-method lane.
             if let Some(result) = self.try_io_notification_class_method(name, method, &args) {
