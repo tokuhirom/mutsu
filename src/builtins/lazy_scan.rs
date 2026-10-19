@@ -1,12 +1,12 @@
 //! Driving a `LazyList` from the builtin layer: forcing a scan reduction
 //! (`[\+] 1..*`) with the builtin arithmetic, and the zero-argument
-//! `.pairs`/`.antipairs`/`.kv` index-pipe stage over a lazy invocant. Both
+//! `.pairs`/`.antipairs`/`.kv`/`.keys` index-pipe stage over a lazy invocant. Both
 //! need the operator and range primitives above `Value`, so they live here
 //! rather than as `LazyList` methods (issue #10779).
 
 use crate::value::{IndexTransform, LazyList, Value, ValueView};
 
-/// A zero-argument `.pairs`/`.antipairs`/`.kv` over a lazy invocant, as a
+/// A zero-argument `.pairs`/`.antipairs`/`.kv`/`.keys` over a lazy invocant, as a
 /// lazy index-pipe stage instead of a forced (possibly infinite) source;
 /// `None` for any other method or a non-lazy invocant. The invocant is a
 /// genuinely-lazy `LazyList` (also `needs_vm_lazy_dispatch` when
@@ -20,6 +20,7 @@ pub(crate) fn index_pipe_method(target: &Value, method: &str, vm_dispatch: bool)
         "pairs" => IndexTransform::Pairs,
         "antipairs" => IndexTransform::AntiPairs,
         "kv" => IndexTransform::Kv,
+        "keys" => IndexTransform::Keys,
         _ => return None,
     };
     let source = match target.view() {

@@ -7,73 +7,12 @@
 //! 1. The method has a *pull* on the type the receiver reports
 //!    (`method_table::lazy_pull`): it answers from what it pulls (`AT-POS`,
 //!    `cache`, the placeholders of `gist`/`Str`/`raku`/`join`).
-//! 2. The method needs every element ([`reifies_lazy_receiver`]): the receiver is
+//! 2. The method needs every element (`method_table::lazy_pull::reifies`): the receiver is
 //!    reified and the call re-dispatched on a settled `Seq` of its elements,
 //!    whose rows answer it.
 //! 3. Neither: the call goes on to the later steps unchanged.
 
 use super::*;
-
-/// The methods that reify a lazy receiver whole before they run (step 2).
-///
-/// It is a table, not "every method `Seq` has a row for", until each name has
-/// been audited on an infinite sequence: Rakudo answers `Bool`, `is-lazy` and
-/// `lazy` without reifying and throws `X::Cannot::Lazy` from `elems`, which a
-/// blanket reify would hang on (ADR-13891 §3).
-// Cost: O(n), n = names in the table.
-fn reifies_lazy_receiver(method: &str) -> bool {
-    matches!(
-        method,
-        "list"
-            | "Array"
-            | "Numeric"
-            | "Int"
-            | "elems"
-            | "end"
-            | "hyper"
-            | "race"
-            | "first"
-            | "grep"
-            | "map"
-            | "sort"
-            | "reverse"
-            | "join"
-            | "head"
-            | "tail"
-            | "min"
-            | "max"
-            | "minmax"
-            | "sum"
-            | "flat"
-            | "unique"
-            | "repeated"
-            | "squish"
-            | "classify"
-            | "categorize"
-            | "produce"
-            | "rotor"
-            | "batch"
-            | "reduce"
-            | "combinations"
-            | "permutations"
-            | "values"
-            | "List"
-            | "Str"
-            | "Stringy"
-            | "gist"
-            | "raku"
-            | "Seq"
-            | "item"
-            | "cache"
-            | "pick"
-            | "roll"
-            | "keys"
-            | "kv"
-            | "pairs"
-            | "antipairs"
-            | "sink"
-    )
-}
 
 impl Interpreter {
     /// Run the lazy step for `method` on the lazy receiver `target` (whose
@@ -93,7 +32,7 @@ impl Interpreter {
         {
             return Some(answer);
         }
-        if !reifies_lazy_receiver(method)
+        if !crate::builtins::method_table::lazy_pull::reifies(method)
             // A `.map`/`.grep` on a lazy map/grep pipeline, an infinite
             // sequence/closure spec, OR a gather coroutine appends another lazy
             // stage (`dispatch_map_method`/`dispatch_grep` via

@@ -988,6 +988,16 @@ impl Interpreter {
                 {
                     inner.clone()
                 }
+                // An itemized lazy sequence (`$seq.item`) answers through the
+                // lazy step like the bare one.
+                ValueView::Scalar(_)
+                    if let Some(inner) =
+                        crate::builtins::method_table::lazy_pull::itemized_lazy_receiver(
+                            &target, method,
+                        ) =>
+                {
+                    inner
+                }
                 _ => target,
             }
         } else {

@@ -826,6 +826,11 @@ impl Interpreter {
         // `compile_expr_method_on_var`), so `@a.gist` and `$l.raku` arrive here
         // and nowhere else. Placed with the other receiver-deciding steps above,
         // and after them, so it sees the receiver they settled on.
+        // An itemized lazy sequence (`$i = $seq.item; $i.head(2)`) answers
+        // through the lazy step like the bare one, as on `CallMethod`.
+        let target =
+            crate::builtins::method_table::lazy_pull::itemized_lazy_receiver(&target, method)
+                .unwrap_or(target);
         let target = Self::gist_receiver(method, target);
         let target = if Self::renders_receiver_elements(method) && Self::holds_nested_proxy(&target)
         {

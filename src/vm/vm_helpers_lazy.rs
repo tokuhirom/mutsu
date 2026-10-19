@@ -1055,64 +1055,19 @@ impl Interpreter {
         self.locals_set_by_name(code, name, restored);
     }
 
-    /// Cost: a method listed here forces the LazyList whole first, O(p) for p
-    /// elements the source produces; on an infinite pipe/sequence the caller
-    /// throws X::Cannot::Lazy instead. `skip`, `rotor`, `batch`, `unique`,
+    /// Whether `method` forces the LazyList whole first: the lazy step's
+    /// reify table (`method_table::lazy_pull::reifies`, ADR-13891 §3), which
+    /// the VM's lanes share. On an infinite pipe/sequence the caller throws
+    /// X::Cannot::Lazy instead. `skip`, `rotor`, `batch`, `unique`,
     /// `repeated`, `squish`, `flat` and `produce` over an infinite list never
     /// get here: `try_lazy_adaptor_method` streams them first (#9159).
+    // Cost: O(n), n = names in the table; the force itself is O(p) for p
+    // elements the source produces.
     pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {
-        matches!(
-            method,
-            "list"
-                | "Array"
-                | "Numeric"
-                | "Int"
-                | "elems"
-                | "end"
-                | "hyper"
-                | "race"
-                | "first"
-                | "grep"
-                | "map"
-                | "sort"
-                | "reverse"
-                | "join"
-                | "head"
-                | "tail"
-                | "min"
-                | "max"
-                | "minmax"
-                | "sum"
-                | "flat"
-                | "unique"
-                | "repeated"
-                | "squish"
-                | "classify"
-                | "categorize"
-                | "produce"
-                | "skip"
-                | "rotor"
-                | "batch"
-                | "reduce"
-                | "Supply"
-                | "combinations"
-                | "permutations"
-                | "values"
-                | "List"
-                | "Str"
-                | "Stringy"
-                | "gist"
-                | "raku"
-                | "Seq"
-                | "item"
-                | "cache"
-                | "pick"
-                | "roll"
-                | "keys"
-                | "kv"
-                | "pairs"
-                | "antipairs"
-        )
+        // `sink` reifies in the lazy step, which also marks a sunk gather
+        // consumed (`reify_lazy_receiver`); this lane's force does not, so
+        // it leaves `sink` to the step.
+        method != "sink" && crate::builtins::method_table::lazy_pull::reifies(method)
     }
 
     /// `.AT-POS($i)` / `.EXISTS-POS($i)` on a plain gather pull only the

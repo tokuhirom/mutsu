@@ -498,6 +498,7 @@ impl Interpreter {
                             vec![Value::value_pair(elem, idx)]
                         }
                         crate::value::IndexTransform::Kv => vec![idx, elem],
+                        crate::value::IndexTransform::Keys => vec![idx],
                         crate::value::IndexTransform::Identity => vec![elem],
                         crate::value::IndexTransform::Flat => {
                             // `flat_val` is pure and sees a deferred Seq (a

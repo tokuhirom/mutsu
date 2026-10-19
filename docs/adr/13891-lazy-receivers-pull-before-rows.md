@@ -89,3 +89,24 @@ check `pulls_are_declared_by_rakudo` holds every pull to an owner Rakudo declare
   constant folding, the call-site lane's pure rows).
 - **A second `lazy` handler field on `MethodRow`.** Every row literal would change for the
   dozen rows that need one; a side table keyed by the declared owner says the same.
+
+## 6. Amendment 2026-10-19: the reify-table audit
+
+The audit §3 announced ran every name of the reify table on `(1..*).map(*+0)` under Rakudo and
+mutsu. Outcome:
+
+- **One table.** The runtime step's `reifies_lazy_receiver` and the VM's
+  `lazy_list_needs_forcing` were two copies of the list (the VM's also named `skip` and `Supply`);
+  both now read `method_table::lazy_pull::reifies`, whose doc comment records the audit.
+- **`item` gets a pull** (`Mu.item`): Rakudo itemizes the receiver as it is, so an infinite
+  sequence no longer throws `X::Cannot::Lazy` from the force.
+- **`keys` joins the index pipes** (`IndexTransform::Keys`, next to `pairs`/`antipairs`/`kv`):
+  the indices of an infinite sequence are a lazy sequence too.
+- **Kept, with a difference left open:** `hyper` and `race` still reify, so an infinite sequence
+  throws where Rakudo hyperizes it lazily; mutsu's `HyperSeq` holds a settled list, which is a
+  separate change. The counting, ordering and sampling methods throw `X::Cannot::Lazy` where
+  Rakudo answers some of them with a `Failure` of it; the streaming and coercing names are
+  answered before the table, as §4 says.
+
+The table stays a list of names rather than "every method with a row": the names it leaves out
+(`Bool`, `is-lazy`, `lazy`, `item`, ...) are exactly the ones that must not reify.

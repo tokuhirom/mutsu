@@ -4680,6 +4680,17 @@ wrong element count it had hidden: `my @b = (1, 2, 3) but R` held one element, r
 its parentheses by the gate (`roast/S02-types/list.t`); `coerce_to_array` now flattens a mixin over
 a list as Rakudo does, pinned in `t/oo/mixin-list-array-assign.t`.
 
+### 9.189 The lazy step's reify table is audited and shared with the VM (2026-10-19)
+
+`refactor/11276-lazy-reify-audit`. The reify-table audit of ADR-13891 §3 (its §6 amendment): the
+runtime step's table and the VM's `lazy_list_needs_forcing` were two copies of one list and are
+now `method_table::lazy_pull::reifies`; `Mu.item` is a pull (an infinite sequence itemizes as it
+is) and `keys` is an index pipe like `kv`/`pairs`, both answering Rakudo where mutsu threw
+`X::Cannot::Lazy`. The itemized sequence `.item` now returns (`Scalar(LazyList)`) reaches the
+lazy step on both VM lanes (`lazy_pull::itemized_lazy_receiver`), and its `raku` is the sequence's
+own inside `$( )`. `sink` stays off the VM's forcing lane, whose force does not mark a sunk gather
+consumed. Pinned in `t/collections/lazy-seq/lazy-receiver-reify-audit.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

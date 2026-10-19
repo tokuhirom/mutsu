@@ -246,6 +246,11 @@ pub(crate) fn native_method_0arg_cascade(
             return Some(Ok(Value::package(crate::symbol::Symbol::intern("Scalar"))));
         }
         if method == "raku" {
+            // An itemized lazy sequence renders the prefix it pulls, which
+            // only the interpreter can (its `Scalar` branch).
+            if matches!(inner.view(), ValueView::LazyList(_)) {
+                return None;
+            }
             return Some(Ok(Value::str(raku_repr::raku_value(target))));
         }
         let inner = if inner.is_container_ref() {
