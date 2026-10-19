@@ -92,8 +92,9 @@ fn returns_the_instance(payload: &Value, method: &str) -> bool {
 
 /// The built-in value an instance of a user class deriving from a built-in
 /// type carries: a scalar payload ([`native_base_payload`]), the `Pair` of an
-/// `is Pair` subclass (`__mutsu_pair_value`, see `dispatch_new_unallocated`)
-/// or the `Bag`/`Set`/`Mix` of a quant-hash subclass (`__baggy_data__`).
+/// `is Pair` subclass (`__mutsu_pair_value`, see `dispatch_new_unallocated`),
+/// the `Range` or `Version` of an `is Range` or `is Version` subclass, or the
+/// `Bag`/`Set`/`Mix` of a quant-hash subclass (`__baggy_data__`).
 ///
 /// [`native_base_payload`]: crate::value::numeric_payload::native_base_payload
 // Cost: O(1) (at most seven attribute-map lookups).
@@ -107,6 +108,7 @@ fn subclass_payload(target: &Value) -> Option<Value> {
     let map = attributes.as_map();
     map.get("__mutsu_pair_value")
         .or_else(|| map.get(RANGE_PAYLOAD))
+        .or_else(|| map.get(VERSION_PAYLOAD))
         .or_else(|| map.get("__baggy_data__"))
         .cloned()
 }
@@ -114,6 +116,10 @@ fn subclass_payload(target: &Value) -> Option<Value> {
 /// The reserved attribute an instance of a user subclass of `Range` carries
 /// its range in (#14015).
 pub(crate) const RANGE_PAYLOAD: &str = "__mutsu_range_value";
+
+/// The reserved attribute an instance of a user subclass of `Version` carries
+/// its version in (#8070).
+pub(crate) const VERSION_PAYLOAD: &str = "__mutsu_version_value";
 
 /// Whether `target` is an instance of an `is Pair` or quant-hash subclass:
 /// its base's methods (`Pair.Hash`, inherited from `Any`) answer on the

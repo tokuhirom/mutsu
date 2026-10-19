@@ -33,7 +33,9 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "ACCEPTS",
         arity: 1,
         handler: Handler::Narrow(accepts),
-        flags: RowFlags::NONE,
+        // A `Version` argument, or an instance of a `Version` subclass,
+        // which the handler reads through its payload.
+        flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
         named: &[],
     },
 ];
@@ -134,13 +136,17 @@ pub(crate) fn accepts(target: &Value, args: &[Value]) -> Option<Result<Value, Ru
         return None;
     };
     let candidate = args.first()?;
-    // An instance of a `Version` subclass carries its version in an attribute;
-    // the cascade reads it.
-    if matches!(candidate.view(), ValueView::Instance { .. }) {
-        return None;
-    }
+    // An instance of a `Version` subclass is matched by the version it
+    // carries; any other instance is the interpreter's.
+    let candidate = match candidate.view() {
+        ValueView::Instance { attributes, .. } => attributes
+            .as_map()
+            .get(crate::builtins::native_base::VERSION_PAYLOAD)?
+            .clone(),
+        _ => candidate.clone(),
+    };
     Some(Ok(Value::truth(
-        crate::runtime::Interpreter::version_smart_match(candidate, parts, plus, minus),
+        crate::runtime::Interpreter::version_smart_match(&candidate, parts, plus, minus),
     )))
 }
 

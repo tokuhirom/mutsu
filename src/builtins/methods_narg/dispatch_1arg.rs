@@ -1,4 +1,3 @@
-use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -91,46 +90,6 @@ fn native_method_1arg_cascade(
         crate::builtins::method_table::backtrace::answer(target, method, std::slice::from_ref(arg))
     {
         return Some(answer);
-    }
-    // Cost: O(p), p = number of parts in the Version matcher.
-    // Version subclasses carry the native matcher in an instance payload, so
-    // expose the same ACCEPTS semantics as a native Version to their methods.
-    if method == "ACCEPTS" {
-        let version_value = |value: &Value| match value.view() {
-            ValueView::Version { .. } => Some(value.clone()),
-            ValueView::Instance { attributes, .. } => {
-                attributes.as_map().get("__mutsu_version_value").cloned()
-            }
-            _ => None,
-        };
-        if let Some(matcher) = version_value(target)
-            && let ValueView::Version {
-                parts, plus, minus, ..
-            } = matcher.view()
-        {
-            let candidate = version_value(arg).unwrap_or_else(|| arg.clone());
-            return Some(Ok(Value::truth(runtime::Interpreter::version_smart_match(
-                &candidate, parts, plus, minus,
-            ))));
-        }
-    }
-    // A `Str` argument of `base` and `polymod` numifies first (`10.base("2")`).
-    // The other numeric methods are rows of `builtins::method_table`, which
-    // numify their receiver and argument themselves (`Cool.round`, the math
-    // rows).
-    if matches!(method, "base" | "polymod")
-        && let ValueView::Str(s) = arg.view()
-    {
-        let coerced = if let Ok(i) = s.parse::<i64>() {
-            Some(Value::int(i))
-        } else if let Ok(f) = s.parse::<f64>() {
-            Some(Value::num(f))
-        } else {
-            None
-        };
-        if let Some(coerced) = coerced {
-            return native_method_1arg(target, method_sym, &coerced);
-        }
     }
     // A call the method table answers has no arm below this point: the row is
     // the method's only implementation (ADR-11276 §9.88). `native_method_1arg`
