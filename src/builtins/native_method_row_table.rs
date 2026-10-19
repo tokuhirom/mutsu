@@ -505,7 +505,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "gist", 1, 24),
     ("Blob", "raku", 1, 24),
     // ADR-0019 E2b (sixth slice, 2026-08-10): `Blob`/`Buf`-family extra rows
-    // found once the `record_native_row_coverage` `canonical_builtin_owner`
+    // found once the `e2_native_method_exists` `canonical_builtin_owner`
     // fold (`receiver_class.rs`) started routing `Buf`/`utf8`/`Buf[uint8]`
     // receivers to this table's `Blob` rows -- `values`/`List`/the
     // `read-*`/`write-*` native-endian accessor family
@@ -558,7 +558,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `native_call_unmodeled` sweep breakdown instead of the usual
     // probe-every-catalog-name pass. `so`/`not`/`defined` are deliberately
     // absent here: they are already covered by the `Any` rows above via the
-    // chain-walk in `Interpreter::record_native_row_coverage`. Verified by
+    // chain-walk in `Interpreter::e2_native_method_exists`. Verified by
     // `pair_seq_rows_are_backed_by_the_cascade` in `native_method_row.rs`.
     ("Pair", "antipair", 1, 48),
     ("Pair", "Array", 1, 0),
@@ -643,7 +643,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // receiver). `so`/`not`/`defined` are deliberately absent here too: a
     // Match's `dispatch_owner_chain` includes `Any`, so they are already
     // covered by the `Any` rows above via the chain-walk in
-    // `Interpreter::record_native_row_coverage`, same as `Pair`/`Seq`.
+    // `Interpreter::e2_native_method_exists`, same as `Pair`/`Seq`.
     // Verified by `match_rows_are_backed_by_the_cascade` in
     // `native_method_row.rs`.
     ("Match", "pos", 1, 48),
@@ -2262,7 +2262,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // (see the `try_dispatch!` chain in `methods_0arg/mod.rs`), so one row
     // per name at the owner that actually declares it (`Any`) is correct and
     // complete once the coverage check walks the MRO chain to find it (see
-    // `Interpreter::record_native_row_coverage`) rather than doing a flat
+    // `Interpreter::e2_native_method_exists`) rather than doing a flat
     // point lookup at the receiver's own concrete owner.
     ("Any", "so", 1, 0),
     ("Any", "not", 1, 0),

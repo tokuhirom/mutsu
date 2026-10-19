@@ -21,8 +21,8 @@
 //! flag. A pair recognized at NO arity is conservatively classified
 //! `N`/`SPECIAL` (or `MUTATES_RECEIVER` when the name also appears in the
 //! Tier-A mutable-method dispatch, `vm/vm_call_method_mut_ops.rs`) --
-//! exactly mirroring what `native_call_unmodeled` (`vm/vm_stats.rs`) would
-//! flag as unrecognized if a real call reached that (owner, name) pair. Per
+//! exactly mirroring what the retired `native_call_unmodeled` counter flagged
+//! as unrecognized when a real call reached that (owner, name) pair. Per
 //! the doc comment on `builtin_type_methods`, row *generation* must stay
 //! static (no native-method invocation during real `Interpreter`
 //! construction); the probing that produced
@@ -36,7 +36,8 @@
 //!
 //! E2b drove the gap between this conservative table and the cascades'
 //! actual behavior to zero (see the design doc's classification table and the
-//! `native_call_unmodeled` counter that box wired up).
+//! `native_call_unmodeled` counter that box wired up; ADR-11276 slice 5
+//! retired it with the cascades it measured).
 //!
 //! The one-off baking left nothing keeping the `DECLARED` / `INTROSPECTABLE`
 //! bits in step with methods added to the cascades later, and `.^can` denied
@@ -149,13 +150,12 @@ impl NativeRowFlags {
 /// not just "does some row exist", but "does it exist at the call's own
 /// arity, on a cascade path a `Native` resolver candidate may stand for".
 /// `SPECIAL` and `MUTATES_RECEIVER` rows never qualify (both bypass the pure
-/// arity cascade, matching how `runtime::receiver_class`'s
-/// `record_native_row_coverage` treats them as unmodeled/mutator paths, not
-/// as "the plain cascade would serve this"); an indefinite (type-object)
+/// arity cascade, so they are not "the plain cascade would serve this"); an
+/// indefinite (type-object)
 /// receiver additionally needs `TYPE_OBJECT_OK`. `owner` is retried through
 /// [`super::builtin_type_methods::canonical_builtin_owner`]'s folding
 /// (`Buf`/`Blob`/... -> `Blob`, `Sub`/`Method`/... -> `Code`, etc.) the same
-/// way `record_native_row_coverage` does, since the row catalog is generated
+/// way `runtime::receiver_class`'s `e2_native_method_exists` does, since the row catalog is generated
 /// keyed by the folded owner and a plain lookup at the unfolded name would
 /// otherwise never find it.
 pub(crate) fn native_row_servable(
@@ -182,7 +182,7 @@ pub(crate) fn native_row_servable(
 /// doc comment. Mirrors [`super::builtin_type_methods::BuiltinMethodEntry`]'s
 /// `owner`/`name`/`order` and adds the arity/flags recognition metadata.
 /// `#[cfg(test)]`: E2a's only reader is the inverse probe below;
-/// [`native_method_row`] (the point lookup `record_native_row_coverage` uses)
+/// [`native_method_row`] (the point lookup `e2_native_method_exists` uses)
 /// is the production entry point until E4a builds a resolver sequence from
 /// the full per-owner catalog.
 #[cfg(test)]
@@ -494,7 +494,7 @@ mod tests {
     /// -- unlike the per-type rows above, they claim to be recognized by the
     /// shared arity-0 cascade arms (`dispatch_core_str`/`dispatch_core_coerce`)
     /// for EVERY receiver, which is exactly why the coverage check must walk
-    /// the dispatch chain to find them (`Interpreter::record_native_row_coverage`).
+    /// the dispatch chain to find them (`Interpreter::e2_native_method_exists`).
     /// Verify that claim directly against two structurally different sample
     /// receivers.
     #[test]
@@ -597,7 +597,7 @@ mod tests {
 
     /// The `Buf`/`Blob` family is catalogued under the folded owner `Blob`
     /// (`canonical_builtin_owner`); a lookup at the unfolded owner name must
-    /// still find it, mirroring `record_native_row_coverage`'s own fold.
+    /// still find it, mirroring `e2_native_method_exists`'s own fold.
     #[test]
     fn native_row_servable_follows_the_canonical_owner_fold() {
         assert_eq!(
@@ -1093,7 +1093,7 @@ mod tests {
     /// type-agnostic `_ => ...` fallback arm in `dispatch_core_coerce.rs` /
     /// `dispatch_core_math.rs` (confirmed by reading every arm, 2026-08-10),
     /// so one row per name at `Any` is correct and complete once the coverage
-    /// check walks the MRO chain (`Interpreter::record_native_row_coverage`),
+    /// check walks the MRO chain (`Interpreter::e2_native_method_exists`),
     /// same reasoning as `so`/`not`/`defined`. Verified against three
     /// structurally different receivers here, the same discipline as
     /// `any_mu_universal_rows_are_backed_by_the_cascade_for_multiple_receiver_types`.

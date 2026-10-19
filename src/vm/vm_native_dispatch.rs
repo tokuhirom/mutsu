@@ -115,12 +115,6 @@ impl Interpreter {
             method_sym,
             args,
         ) {
-            self.record_native_row_coverage(
-                "vm_native_dispatch::method_table",
-                target,
-                method_sym.as_str(),
-                args.len(),
-            );
             return Some(self.settle_native_warning(result));
         }
         // `Any` is not a `Cool` (#7773): the cascades below recognize a `Cool`
@@ -618,14 +612,6 @@ impl Interpreter {
             } else {
                 return None;
             };
-        if result.is_some() {
-            self.record_native_row_coverage(
-                "vm_native_dispatch::try_native_method_raw",
-                target,
-                method_sym.as_str(),
-                args.len(),
-            );
-        }
 
         // For gather-based LazyList, .List and .values preserve laziness
         // by returning the LazyList itself (which can be forced on demand).

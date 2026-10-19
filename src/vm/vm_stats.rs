@@ -636,39 +636,6 @@ pub(crate) fn record_owner_shadow_check(
     }
 }
 
-// ADR-0019 Phase E box E2a: coverage gap between the native-method-row catalog
-// (`crate::builtins::native_method_row`) and what the real `native_method_{0,1,2}arg`
-// cascades actually recognize. Bumped whenever a cascade call returns `Some(..)`
-// for an `(owner, name)` pair whose row does not admit that call's arity (an
-// absent row, per `native_method_row`'s conservative default, counts as "does
-// not admit any arity"). Every hit is a missing/wrong row for E2b to add —
-// see adr0019-e2-e4-resolver-core (#7540) decision 2's counter-to-zero
-// discipline. `native_call_unmodeled_by_site` breaks hits down by
-// `"<owner>x<name> [<call site>]"` so E2b can work through them file-by-file.
-// Nothing reads this counter to make a dispatch decision: shadow-only, zero
-// behavior change.
-static NATIVE_CALL_UNMODELED: AtomicU64 = AtomicU64::new(0);
-
-fn native_call_unmodeled_by_key() -> &'static Mutex<HashMap<String, u64>> {
-    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
-    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Record one E2a native-call recognition check at `site`: `owner`/`name` are
-/// the receiver's dispatch owner and the resolved method name, `covered` is
-/// whether the catalog row admits the arity the cascade just recognized the
-/// call at.
-#[inline]
-pub(crate) fn record_native_call_recognition(site: &str, owner: &str, name: &str, covered: bool) {
-    if !enabled() || covered {
-        return;
-    }
-    NATIVE_CALL_UNMODELED.fetch_add(1, Ordering::Relaxed);
-    if let Ok(mut map) = native_call_unmodeled_by_key().lock() {
-        *map.entry(format!("{owner}x{name} [{site}]")).or_insert(0) += 1;
-    }
-}
-
 // ADR-0019 Phase E box E4a: shadow comparison between
 // `resolution_sequence::resolve_sequence`'s user-candidate winner and the existing
 // `resolve_method_with_owner_impl` answer, at the two `resolve_method_cached`
@@ -705,40 +672,6 @@ pub(crate) fn record_resolver_shadow_check(
         RESOLVER_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut map) = resolver_shadow_mismatch_by_site().lock() {
             *map.entry(format!("{site} [{}]", detail())).or_insert(0) += 1;
-        }
-    }
-}
-
-// ADR-0019 Phase E box E4b (step 4/9, design decision 4's `Native` row-catalog
-// candidate): shadow comparison between `resolve_sequence`'s new `Native`
-// candidate presence and whether `native_method_{0,1,2}arg` actually served
-// the call -- a real, already-computed production result (`call_method_with_values`
-// only calls this when the cascade was actually consulted, i.e.
-// `!bypass_native_fastpath`), not a second invocation, so this carries no
-// double-invocation side-effect risk even for a mutating row.
-// `NATIVE_ROW_SHADOW_CHECKS`/`_MISMATCHES` are the totals; `native_row_shadow_mismatch_by_key`
-// breaks mismatches down by `"method=... arity=... real=... shadow=... native_row_owner=..."`.
-// Nothing reads these counters to make a dispatch decision: shadow-only, zero behavior change.
-static NATIVE_ROW_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
-static NATIVE_ROW_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
-
-fn native_row_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
-    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
-    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Record one E4b step-4/9 shadow comparison. `detail` is only evaluated on a
-/// mismatch, mirroring [`record_resolver_shadow_check`].
-#[inline]
-pub(crate) fn record_native_row_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
-    if !enabled() {
-        return;
-    }
-    NATIVE_ROW_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
-    if !matched {
-        NATIVE_ROW_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
-        if let Ok(mut map) = native_row_shadow_mismatch_by_key().lock() {
-            *map.entry(detail()).or_insert(0) += 1;
         }
     }
 }
@@ -1351,24 +1284,6 @@ pub(crate) fn dump() {
             top.join(" ")
         );
     }
-    let native_call_unmodeled = NATIVE_CALL_UNMODELED.load(Ordering::Relaxed);
-    eprintln!("[mutsu vm-stats] adr0019-e2a: native_call_unmodeled={native_call_unmodeled}");
-    if let Ok(map) = native_call_unmodeled_by_key().lock()
-        && !map.is_empty()
-    {
-        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
-        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-        let top: Vec<String> = entries
-            .iter()
-            .take(25)
-            .map(|(name, count)| format!("{name}={count}"))
-            .collect();
-        eprintln!(
-            "[mutsu vm-stats] adr0019-e2a native_call_unmodeled by (owner x name [site]) (top {}): {}",
-            top.len(),
-            top.join(" ")
-        );
-    }
     let resolver_shadow_checks = RESOLVER_SHADOW_CHECKS.load(Ordering::Relaxed);
     let resolver_shadow_mismatches = RESOLVER_SHADOW_MISMATCHES.load(Ordering::Relaxed);
     eprintln!(
@@ -1386,27 +1301,6 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e4a resolver-shadow mismatches by site (top {}): {}",
-            top.len(),
-            top.join(" ")
-        );
-    }
-    let native_row_shadow_checks = NATIVE_ROW_SHADOW_CHECKS.load(Ordering::Relaxed);
-    let native_row_shadow_mismatches = NATIVE_ROW_SHADOW_MISMATCHES.load(Ordering::Relaxed);
-    eprintln!(
-        "[mutsu vm-stats] adr0019-e4b: native_row_shadow_checks={native_row_shadow_checks} native_row_shadow_mismatches={native_row_shadow_mismatches}"
-    );
-    if let Ok(map) = native_row_shadow_mismatch_by_key().lock()
-        && !map.is_empty()
-    {
-        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
-        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-        let top: Vec<String> = entries
-            .iter()
-            .take(25)
-            .map(|(name, count)| format!("{name}={count}"))
-            .collect();
-        eprintln!(
-            "[mutsu vm-stats] adr0019-e4b native-row-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );

@@ -1400,23 +1400,6 @@ impl Interpreter {
                 }
             }
         };
-        if native_result.is_some() {
-            self.record_native_row_coverage(
-                "methods_call_dispatch::call_method_with_values",
-                &target,
-                method_sym.as_str(),
-                cascade_args.len(),
-            );
-        }
-        if !bypass_native_fastpath {
-            self.shadow_check_native_row_candidate(
-                &target,
-                method,
-                method_sym,
-                args.len(),
-                native_result.is_some(),
-            );
-        }
         if let Some(result) = native_result {
             return result;
         }

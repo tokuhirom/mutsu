@@ -270,19 +270,8 @@ impl Interpreter {
     /// The `MUTSU_VM_STATS` counters the full path's native completion records.
     #[cold]
     #[cfg_attr(debug_assertions, allow(dead_code))]
-    fn record_method_site_lane_stats(&mut self, row: RowId) {
+    fn record_method_site_lane_stats(&mut self, _row: RowId) {
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-        let arity = usize::from(method_table::row(row).arity);
-        let Some(target) = self
-            .stack
-            .len()
-            .checked_sub(arity + 1)
-            .map(|base| self.stack[base].clone())
-        else {
-            return;
-        };
-        let name = method_table::row(row).name;
-        self.record_native_row_coverage("vm_method_site_lane", &target, name, arity);
     }
 
     /// Debug builds: run the full path for the `CallMethodMut` at
