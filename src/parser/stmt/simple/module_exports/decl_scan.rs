@@ -365,15 +365,16 @@ impl<'ast> Visit<'ast> for DeclScan {
                 ..
             } => {
                 // An exported variable is the package variable of the package
-                // it is declared in. Only one on the package spine is known to
-                // be declared when the module loads.
+                // it is declared in; an exported constant may be `my`-scoped.
+                // Only one on the package spine is known to be declared when
+                // the module loads.
+                let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
                 if *is_export
-                    && *is_our
+                    && (*is_our || is_constant)
                     && self.spine
                     && !self.prefix.is_empty()
                     && !name.is_empty()
                     && !name.starts_with('&')
-                    && !custom_traits.iter().any(|(t, _)| t == "__constant")
                 {
                     self.out
                         .exported_vars
@@ -381,6 +382,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                             name: name.clone(),
                             package: self.prefix.clone(),
                             tags: export_tags.clone(),
+                            term: crate::term_names::is_term_constant_decl(name, custom_traits),
                         });
                 }
                 // Sigiled constants (`constant $x = 1`) are not barewords.

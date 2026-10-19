@@ -20,13 +20,32 @@ impl Interpreter {
     /// [`crate::env::Env::mark_outer_is_unit`] for `code`, the program-scope
     /// names `code`'s lexical outer does not declare: the compile-time set of
     /// block-only lexicals (`CompiledCode::unit_hidden_lexicals`) plus the
-    /// variables the open block-scoped `use`s imported. A no-op for any code
-    /// that is not a top-level routine naming lexicals by string.
-    // Cost: O(1) when no block-scoped `use` is open; otherwise O(h + i),
-    // h = the block-only lexicals, i = the names the open block imports bound.
+    /// variables the open block-scoped `use`s imported. A no-op for a
+    /// top-level routine that names no lexical by string while no block's
+    /// `use` is open.
+    // Cost: O(s) when no open block-scoped `use` bound a name, s = open import
+    // scopes; otherwise O(s + h + i), h = the block-only lexicals, i = the
+    // names the open block imports bound.
     pub(crate) fn hide_unit_names_from_frame(&mut self, code: &CompiledCode) {
-        let Some(hidden) = &code.unit_hidden_lexicals else {
-            return;
+        // Any top-level routine hides the open block imports (ADR-8751): a
+        // routine that names no lexical by string has no block-only
+        // lexicals to hide, but it still reads an imported constant or type
+        // name through the program scope.
+        let empty;
+        let hidden = match &code.unit_hidden_lexicals {
+            Some(hidden) => hidden,
+            None => {
+                if !self
+                    .module
+                    .import_scope_stack
+                    .iter()
+                    .any(|scope| scope.scope_classes && !scope.imported_env_keys.is_empty())
+                {
+                    return;
+                }
+                empty = Arc::new(rustc_hash::FxHashSet::default());
+                &empty
+            }
         };
         // A block's import scope (`scope_classes`; a BEGIN preload is not
         // one). An import over a name an enclosing import already bound

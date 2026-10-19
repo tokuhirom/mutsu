@@ -24,13 +24,10 @@ impl Compiler {
     // Cost: O(v), v = the module's exported variables.
     pub(super) fn bind_block_imported_vars(&mut self, module: &str, tags: &[String]) {
         let module_idx = self.code.add_constant(Value::str(module.to_string()));
-        for decl in Self::block_imported_var_bindings(module, tags) {
-            let Stmt::VarDecl { name, .. } = &decl else {
-                continue;
-            };
-            let name_idx = self.code.add_constant(Value::str(name.clone()));
+        for (key, stmt) in Self::block_imported_var_bindings(module, tags) {
+            let name_idx = self.code.add_constant(Value::str(key));
             self.imported_var_source = Some((module_idx, name_idx));
-            self.compile_stmt(&crate::ast::bind_decl::expand(decl));
+            self.compile_stmt(&stmt);
             self.imported_var_source = None;
         }
     }
@@ -43,10 +40,7 @@ impl Compiler {
     pub(super) fn block_imported_vars_id_suffix(module: &str, tags: &[String]) -> String {
         let names: Vec<String> = Self::block_imported_var_bindings(module, tags)
             .into_iter()
-            .filter_map(|decl| match decl {
-                Stmt::VarDecl { name, .. } => Some(name),
-                _ => None,
-            })
+            .map(|(key, _)| key)
             .collect();
         if names.is_empty() {
             return String::new();
@@ -58,23 +52,24 @@ impl Compiler {
         )
     }
 
-    /// The binding declaration of each variable the `use` of `module` with
-    /// `tags` imports, by the parse-time scan of the module.
+    /// The export key and the binding declaration of each variable the `use`
+    /// of `module` with `tags` imports, by the parse-time scan of the module.
     // Cost: O(v), v = the module's exported variables.
-    fn block_imported_var_bindings(module: &str, tags: &[String]) -> Vec<Stmt> {
+    fn block_imported_var_bindings(module: &str, tags: &[String]) -> Vec<(String, Stmt)> {
         let Some(vars) = crate::parser::scanned_exported_vars(module) else {
             return Vec::new();
         };
         vars.iter()
             .filter(|var| var.imported_by(tags))
-            .filter_map(Self::imported_var_binding)
+            .filter_map(|var| Some((var.export_key(), Self::imported_var_binding(var)?)))
             .collect()
     }
 
     /// `my <name> := <sigil><package>::<name>` for the exported variable
-    /// `var`, or `None` for a name with a twigil, which names no plain
-    /// package variable. The right-hand side only selects the bind shape:
-    /// its value comes from `GetImportedVar`.
+    /// `var` (`my \NAME := ...` for a sigil-less constant), expanded as the
+    /// parser expands a binding declaration, or `None` for a name with a
+    /// twigil, which names no plain package variable. The right-hand side
+    /// only selects the bind shape: its value comes from `GetImportedVar`.
     // Cost: O(n), n = length of the qualified name.
     fn imported_var_binding(var: &crate::parser::ExportedVar) -> Option<Stmt> {
         let (sigil, bare) = match var.name.chars().next()? {
@@ -85,6 +80,31 @@ impl Compiler {
             return None;
         }
         let qualified = format!("{}::{bare}", var.package);
+        if var.term {
+            let decl = Stmt::VarDecl {
+                name: var.name.clone(),
+                expr: Expr::BareWord(qualified),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: vec![
+                    ("__has_initializer".to_string(), None),
+                    (
+                        crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
+                        Some(Expr::Literal(Value::FALSE)),
+                    ),
+                ],
+                where_constraint: None,
+            };
+            return Some(Stmt::SyntheticBlock(vec![
+                Stmt::MarkBind,
+                decl,
+                Stmt::MarkSigilless(var.name.clone()),
+            ]));
+        }
         let (expr, custom_traits) = match sigil {
             Some('@') => (Expr::ArrayVar(qualified), Vec::new()),
             Some(_) => (Expr::HashVar(qualified), Vec::new()),
@@ -93,7 +113,7 @@ impl Compiler {
                 vec![(crate::ast::bind_decl::SCALAR_BIND.to_string(), None)],
             ),
         };
-        Some(Stmt::VarDecl {
+        Some(crate::ast::bind_decl::expand(Stmt::VarDecl {
             name: var.name.clone(),
             expr,
             type_constraint: None,
@@ -104,6 +124,6 @@ impl Compiler {
             export_tags: Vec::new(),
             custom_traits,
             where_constraint: None,
-        })
+        }))
     }
 }
