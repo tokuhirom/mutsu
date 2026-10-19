@@ -1865,6 +1865,22 @@ impl Interpreter {
                     return Ok(callee);
                 }
             }
+            // The built-in method a subclass of a built-in type inherits: its
+            // method object, which runs the built-in on the invocant it is
+            // given without re-dispatching to the override (ADR-11276 slice 4).
+            if let Some(frame) = self.dispatch.method_dispatch_stack.last_mut()
+                && let Some(DeferralEntry::Native {
+                    name,
+                    base: NativeBase::BuiltinAncestor,
+                }) = frame.remaining.first().cloned()
+            {
+                frame.remaining.remove(0);
+                let receiver_class = frame.receiver_class.clone();
+                let mro = self.class_mro(&receiver_class);
+                if let Some(owner) = Self::builtin_method_level(&mro, &name).map(|i| mro[i]) {
+                    return Ok(self.make_native_method_object(&name, owner.as_str()));
+                }
+            }
             // MRO exhausted: the native base candidate. For the subscript
             // protocol on a container subclass that is an element `Proxy` —
             // see `runtime::container_element_proxy` for why it must be one.

@@ -5,7 +5,7 @@ use Test;
 # `callsame`/`nextsame` out of the override reaches it (ADR-11276 slice 4).
 # These answered Nil before the built-in became the last deferral candidate.
 
-plan 14;
+plan 16;
 
 class S is Str { method uc { '[' ~ callsame() ~ ']' } }
 is S.new(value => 'ab').uc, '[AB]', 'callsame into Str.uc';
@@ -50,3 +50,8 @@ is U.new.elems, 1, 'callsame from a plain class reaches Any.elems';
 
 class K is Str { method lc { my $r = callsame; $r ~ $r } }
 is K.new(value => 'Ab').lc, 'abab', 'callsame returns the value, not a container';
+
+class W is Str { method chars { nextcallee()(self) * 10 } }
+is W.new(value => 'abc').chars, 30, 'nextcallee hands back the built-in method';
+class V is Int { method abs { my &next = nextcallee; next(self) + 1 } }
+is V.new(-3).abs, 4, 'nextcallee into Int.abs';
