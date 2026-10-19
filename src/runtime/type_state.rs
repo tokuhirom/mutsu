@@ -95,8 +95,9 @@ pub(crate) struct TypeState {
     /// class rollback (`pop_import_scope`) must keep them: a loaded module's
     /// own un-namespaced class (`unit class RS3Base;` -- the rollback already
     /// keeps every `A::B`-qualified one) and every type a
-    /// `Metamodel::*HOW.new_type` minted at run time. Like `loaded_modules`,
-    /// never rolled back.
+    /// `Metamodel::*HOW.new_type` minted at run time, and every `our` class a
+    /// block that imports something declares. Like `loaded_modules`, never
+    /// rolled back.
     pub(crate) persistent_classes: std::sync::Arc<HashSet<String>>,
     /// Classes/roles hidden from package stash lookups (e.g. `Example2::.keys`).
     /// Populated when a `use X::Y` loads modules whose dependency chain neither
