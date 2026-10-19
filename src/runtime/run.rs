@@ -578,6 +578,11 @@ impl Interpreter {
         // Reorder phasers. The unit's BEGIN-time effects move to its head, in
         // source order, as the BEGIN prologue (ADR-0134); CHECK (reverse) and
         // INIT (forward) run before the rest of the mainline.
+        // The undeclared-variable check reads the unit in source order: the
+        // reorder below moves BEGIN-time declarations (a `sub`, a `class`)
+        // to the head, ahead of the lexicals they use. Its verdict is
+        // reported with the other CHECK-time ones below.
+        let forward_vars = self.check_routine_forward_vars(&body_main);
         let prologue_len = crate::runtime::phasers::reorder_phasers(&mut body_main);
         self.update_raku_version_from_parser();
         self.check_eval_param_type_constraints(&body_main)?;
@@ -601,7 +606,7 @@ impl Interpreter {
             .check_undeclared_routines_with_guards(&body_main)
             .and_then(|guards| {
                 self.check_undeclared_names_mainline(&body_main)?;
-                self.check_routine_forward_vars(&body_main)?;
+                forward_vars?;
                 Ok(guards)
             });
         let begin_prologue = match checked {

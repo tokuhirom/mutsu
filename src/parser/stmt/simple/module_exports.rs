@@ -90,6 +90,11 @@ struct ModuleScanResult {
     /// `declares_export_hook`.
     #[serde(default)]
     exported_vars: Vec<exported_vars::ExportedVar>,
+    /// Whether the module exports a variable `exported_vars` does not list
+    /// (`ModuleDecls::unlisted_exported_vars`). Defaulted for the same
+    /// cache-compatibility reason as `declares_export_hook`.
+    #[serde(default)]
+    unlisted_exported_vars: bool,
     /// `module Foo { sub bar is export }` blocks declared *inside* the scanned
     /// module. The nested parse registers these in the process-wide inline
     /// export table, which — unlike the scopes — the scan does not restore, so
@@ -252,6 +257,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
     record_use_scan_outcome(module, false);
     // Unknown until a scan below says otherwise.
     exported_vars::record(module, None);
+    exported_vars::clear_incomplete(module);
     if module == "Test" {
         let exports: Vec<InlineModuleExport> = TEST_EXPORTS
             .iter()
@@ -292,6 +298,9 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
             (!scan.declares_export_hook && !scan.dynamic_export_stash)
                 .then(|| scan.exported_vars.as_slice().into()),
         );
+        if scan.unlisted_exported_vars {
+            exported_vars::record_incomplete(module);
+        }
         apply_scan_types(&scan, import_tags);
         note_nested_import_exports(&scan.exports);
         apply_module_exports(&scan.exports);
@@ -979,6 +988,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         declares_export_hook,
         dynamic_export_stash: decls.dynamic_export_stash,
         exported_vars: decls.exported_vars,
+        unlisted_exported_vars: decls.unlisted_exported_vars,
         inline_module_exports,
         // Filled in by `find_and_scan_module`, which owns the dependency frame
         // and the file stamp.

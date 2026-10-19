@@ -66,6 +66,11 @@ pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Opti
 /// form a `$x` use is looked up by), any other container with its sigil, so
 /// `my @barf` does not declare `$barf`.
 fn declared_var_name(name: &str) -> &str {
+    // A `$self` lexical keeps its reserved key (ADR-0061), the form its uses
+    // name too.
+    if name == crate::env::LEX_SELF {
+        return name;
+    }
     let name = name.trim_start_matches(['\\', '*', '|', ':']);
     name.strip_prefix('$').unwrap_or(name)
 }
@@ -118,6 +123,10 @@ struct UndeclaredVars<'a> {
 impl UndeclaredVars<'_> {
     fn declare(&mut self, name: &str) {
         let scope = self.scopes.last_mut().expect("the unit scope");
+        // A sigiled term (`constant term:<$box>`) is used by its whole name.
+        if name.starts_with('$') {
+            scope.insert(name.to_string());
+        }
         scope.insert(declared_var_name(name).to_string());
     }
 
@@ -266,7 +275,19 @@ impl UndeclaredVars<'_> {
         // A sigil-less target naming an in-scope constant is the term, not an
         // undeclared `$name` (#9962); the store itself reports the immutable
         // value.
-        if !self.judged_stmt || target_is_sigilless && self.interp.term_binding(name).is_some() {
+        // A sigil-less target naming an in-scope constant is the term, not an
+        // undeclared `$name` (#9962), and so is a type-like one (`Nil = 5`);
+        // the store itself reports the immutable value.
+        if !self.judged_stmt
+            || target_is_sigilless
+                && (self.interp.term_binding(name).is_some()
+                    || name.starts_with(|c: char| c.is_uppercase()))
+        {
+            return;
+        }
+        // A code variable or code attribute (`&f = ...`, `&!cb = ...`) is not
+        // a variable this scan judges.
+        if name.starts_with('&') {
             return;
         }
         let lhs = if let Some(base) = name.strip_prefix('@') {
@@ -485,6 +506,11 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         if matches!(kind, NameKind::Param | NameKind::BlockParam) {
+            // A parameter spelled `$self` is reported by its bare name; its
+            // uses name the reserved `$self` key (ADR-0061).
+            if name == "self" {
+                self.declare(crate::env::LEX_SELF);
+            }
             self.declare(name);
         }
     }

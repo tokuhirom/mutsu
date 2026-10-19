@@ -73,6 +73,31 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
+thread_local! {
+    /// The modules whose `SCANNED_EXPORTED_VARS` entry lists only some of the
+    /// variables they export (`ModuleDecls::unlisted_exported_vars`): enough
+    /// for the block-scoped `use` to declare those, not for a check that
+    /// needs every name a `use` brings in.
+    static INCOMPLETE_EXPORTED_VARS: RefCell<std::collections::HashSet<String>> =
+        RefCell::new(std::collections::HashSet::new());
+}
+
+/// Record that `module` exports variables its scan entry does not list.
+// Cost: O(n), n = length of `module`.
+pub(super) fn record_incomplete(module: &str) {
+    INCOMPLETE_EXPORTED_VARS.with(|m| {
+        m.borrow_mut().insert(module.to_string());
+    });
+}
+
+/// Forget an earlier [`record_incomplete`] for a rescan of `module`.
+// Cost: O(n), n = length of `module`.
+pub(super) fn clear_incomplete(module: &str) {
+    INCOMPLETE_EXPORTED_VARS.with(|m| {
+        m.borrow_mut().remove(module);
+    });
+}
+
 /// Record what the scan of `module` learned about its exported variables.
 // Cost: O(n), n = length of `module`.
 pub(super) fn record(module: &str, vars: Option<Rc<[ExportedVar]>>) {
@@ -86,6 +111,16 @@ pub(super) fn record(module: &str, vars: Option<Rc<[ExportedVar]>>) {
 // Cost: O(n), n = length of `module`.
 pub(crate) fn scanned_exported_vars(module: &str) -> Option<Rc<[ExportedVar]>> {
     SCANNED_EXPORTED_VARS.with(|m| m.borrow().get(module).cloned().flatten())
+}
+
+/// [`scanned_exported_vars`] when the list is every variable `module`
+/// exports, for a check that must know them all (#12800).
+// Cost: O(n), n = length of `module`.
+pub(crate) fn scanned_exported_vars_complete(module: &str) -> Option<Rc<[ExportedVar]>> {
+    if INCOMPLETE_EXPORTED_VARS.with(|m| m.borrow().contains(module)) {
+        return None;
+    }
+    scanned_exported_vars(module)
 }
 
 #[cfg(test)]
