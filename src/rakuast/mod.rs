@@ -96,6 +96,7 @@ mod type_call;
 mod type_capture_indirect;
 mod type_ctor;
 mod type_lower;
+mod underscore_bindings;
 mod use_stmt;
 mod var_decl_constructor;
 mod var_does;

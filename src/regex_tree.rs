@@ -1613,7 +1613,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             is_rw: false,
             is_raw: false,
             is_whatever_code: false,
-            declarator: crate::ast::RoutineDeclarator::Block,
+            declarator: crate::ast::RoutineDeclarator::Block | crate::ast::RoutineDeclarator::PointyBlock,
             ..
         } if params.is_empty() && param_defs.is_empty() => {
             Some(format!("-> {}", closure_body_source(body)?))

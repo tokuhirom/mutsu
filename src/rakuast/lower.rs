@@ -29,6 +29,7 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 /// (e.g. `EVAL(RakuAST::IntLiteral.new(42))`) becomes a single expression
 /// statement.
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan(node);
     super::declared_routines::scan(node);
     super::infix_func::reset();
@@ -1921,6 +1922,7 @@ pub(super) fn multiness(node: &RakuAstNode) -> Result<bool, RuntimeError> {
 }
 
 fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let _method_scope = super::underscore_bindings::MethodScope::enter(true);
     let (name, name_expr) = super::routine_lower::declarator_name(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = super::routine_traits::IsTraits::default();
@@ -2588,6 +2590,7 @@ pub(super) fn with_block_scope<T>(
 /// parser, so a signature naming one stays the boundary.
 // Cost: O(n), n = size of the node.
 fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let _method_scope = super::underscore_bindings::MethodScope::enter(true);
     let (_, mut param_defs) = signature_positional_params(node)?;
     // A leading `invocant` parameter is the declared invocant, which the parser
     // folds into the receiver (`parser::anon_method_expr_declared`).
@@ -3597,7 +3600,7 @@ pub(super) fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String
                 is_raw: false,
                 is_whatever_code: false,
                 return_type: None,
-                declarator: crate::ast::RoutineDeclarator::Block,
+                declarator: crate::ast::RoutineDeclarator::PointyBlock,
                 ..
             } if !params.is_empty() => pointy_block_source(param_defs, body),
             _ => None,
@@ -4470,27 +4473,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // recover the implicit signature when this is a constructed tree.
         RakuAstClass::Block => {
             let body = lower_block(node)?;
-            if crate::ast::collect_placeholders_shallow(&body).is_empty() {
-                if crate::ast::body_reads_args_array(&body)
-                    || crate::ast::body_reads_args_hash(&body)
-                {
-                    if crate::ast::body_reads_args_hash(&body) {
-                        Ok(crate::ast::make_rakuast_anon_sub(body))
-                    } else {
-                        Ok(crate::ast::make_anon_sub(body))
-                    }
-                } else {
-                    Ok(Expr::AnonSub {
-                        body,
-                        is_rw: false,
-                        is_raw: false,
-                        is_block: true,
-                        doc: super::declarator_docs::slot(node).unwrap_or_default(),
-                    })
-                }
-            } else {
-                Ok(crate::ast::make_anon_sub(body))
-            }
+            super::underscore_bindings::closure(node, body)
         }
         // A nameless `RakuAST::Sub` in expression position is an anonymous
         // routine (`sub { … }`, `sub ($a, $b) { … }`). Unlike a pointy block it

@@ -57,7 +57,7 @@ pub(crate) fn given_pointy_body(pd: crate::ast::ParamDef, body: Vec<Stmt>) -> Ve
                 is_raw: false,
                 custom_traits: Default::default(),
                 is_whatever_code: false,
-                declarator: crate::ast::RoutineDeclarator::Block,
+                declarator: crate::ast::RoutineDeclarator::PointyBlock,
             }),
             args: vec![Expr::Var("_".to_string())],
         })];

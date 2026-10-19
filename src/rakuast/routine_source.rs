@@ -230,6 +230,7 @@ pub(super) fn routine_node(
     body: &[Stmt],
     return_type: Option<(&str, ReturnSpelling)>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     let name_node = name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name));
     let mut fields = vec![node_field(Some("name"), name_node)];
     let arrow_returns = match return_type {

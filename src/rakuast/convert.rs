@@ -50,6 +50,7 @@ pub(super) fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstFie
 
 /// Top-level: a parsed program becomes a `RakuAST::StatementList`.
 pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _scope = bareword::DeclaredNames::collect(stmts);
     statement_list_inner(stmts)
 }
@@ -71,6 +72,7 @@ pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, Runti
 }
 
 fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::block(stmts);
     let _block = bareword::BlockScope::enter(stmts);
     let mut fields = Vec::new();
     // The line of the statement about to be converted: the `SetLine` marker
@@ -3940,7 +3942,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if is_desugar_marker(name) && !crate::ast::anon_state::is_array(name) {
                 return Err(desugared(name));
             }
-            if name == "_" {
+            if name == "_" && super::underscore_bindings::declares_placeholder(true) {
                 return Ok(RakuAstNode {
                     class: RakuAstClass::VarDeclarationPlaceholderSlurpyArray,
                     fields: Vec::new(),
@@ -3970,7 +3972,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if is_desugar_marker(name) && !crate::ast::anon_state::is_hash(name) {
                 return Err(desugared(name));
             }
-            if name == "_" {
+            if name == "_" && super::underscore_bindings::declares_placeholder(false) {
                 return Ok(RakuAstNode {
                     class: RakuAstClass::VarDeclarationPlaceholderSlurpyHash,
                     fields: Vec::new(),
@@ -5215,6 +5217,7 @@ fn regex_declaration(
     param_defs: &[ParamDef],
     export_trait: Option<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     regex_declaration_with_body(
         class,
         Some(name),
@@ -5430,6 +5433,7 @@ pub(super) fn pointy_block(
     body: &[Stmt],
     returns: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     let mut fields = Vec::new();
     if !param_defs.is_empty() || returns.is_some() {
         fields.push(node_field(
@@ -5455,6 +5459,7 @@ fn anon_routine_node(
     body: &[Stmt],
     returns: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     let mut fields = Vec::new();
     if !param_defs.is_empty() || returns.is_some() {
         fields.push(node_field(
@@ -5492,6 +5497,7 @@ fn method_literal_node(
     body: &[Stmt],
     returns: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
     let [receiver, rest @ ..] = param_defs else {
         return Err(unsupported("method literal without a receiver"));
     };
