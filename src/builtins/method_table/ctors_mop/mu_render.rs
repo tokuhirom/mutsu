@@ -65,6 +65,11 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     {
         return answer;
     }
+    // A collection holding a value whose `raku` is user code is its own
+    // owner's late twin's (§9.194).
+    if method == "raku" && crate::runtime::container_needs_raku_dispatch(target) {
+        return None;
+    }
     match target.view() {
         // A mixin renders through the value it wraps or the roles mixed into
         // it, which the cascade's mixin step and the interpreter resolve.

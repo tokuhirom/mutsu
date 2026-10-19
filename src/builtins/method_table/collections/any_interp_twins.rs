@@ -27,6 +27,33 @@ const TWIN: RowFlags = RowFlags::OWNER_ONLY
 /// `minpairs`/`maxpairs` take no argument.
 const TWIN_NULLARY: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK);
 
+/// The `raku` twin of a collection owner: the receiver as it is (its
+/// itemization is part of the text), rendered with each leaf's own `raku`.
+macro_rules! raku_twin {
+    ($owner:literal) => {
+        MethodRow {
+            owner: $owner,
+            name: "raku",
+            arity: 0,
+            handler: Handler::Interp({
+                fn handler(
+                    interp: &mut Interpreter,
+                    target: &Value,
+                    _args: &[Value],
+                    _named: Named<'_>,
+                ) -> Option<Result<Value, RuntimeError>> {
+                    interp
+                        .raku_repr_with_dispatch(target)
+                        .map(|text| Ok(Value::str(text)))
+                }
+                handler
+            }),
+            flags: TWIN_NULLARY,
+            named: &[],
+        }
+    };
+}
+
 macro_rules! twin {
     ($name:literal, $flags:expr, |$interp:ident, $target:ident, $args:ident| $body:expr) => {
         twin!("Any", $name, $flags, |$interp, $target, $args| $body)
@@ -137,4 +164,18 @@ pub(super) static ROWS: &[MethodRow] = &[
         .collection_gist_with_dispatch(&target)),
     twin!("Pair", "gist", TWIN_NULLARY, |interp, target, _args| interp
         .collection_gist_with_dispatch(&target)),
+    // `raku` of a collection holding a value whose rendering is user code,
+    // which the pure `raku` rows decline (§9.194). The receiver keeps its
+    // itemization: `$(...)` is part of the text.
+    raku_twin!("List"),
+    raku_twin!("Map"),
+    raku_twin!("Seq"),
+    raku_twin!("Pair"),
+    raku_twin!("Capture"),
+    raku_twin!("Set"),
+    raku_twin!("SetHash"),
+    raku_twin!("Bag"),
+    raku_twin!("BagHash"),
+    raku_twin!("Mix"),
+    raku_twin!("MixHash"),
 ];

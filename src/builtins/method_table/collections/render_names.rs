@@ -71,7 +71,11 @@ fn raku_row(
     if let Some(typed) = interp.typed_container_raku(target) {
         return Some(typed);
     }
-    if crate::runtime::container_needs_raku_dispatch(target) {
+    // A `Seq` whose source has not been pulled cannot be probed for a
+    // dispatch leaf: the interpreter pulls it, and its twin renders it.
+    if crate::runtime::container_needs_raku_dispatch(target)
+        || super::terminals::unpulled_seq(target)
+    {
         return None;
     }
     raku(target, args)
