@@ -174,7 +174,12 @@ pub(crate) fn values(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
         // A List over a gather still being pulled is its own `.values`
         // (ADR-11678): it reifies from the coroutine as it is read.
         ValueView::Seq(body) if body.is_gather_source() => Some(Ok(target.clone())),
-        _ => Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target)))),
+        _ => Some(Ok(Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(
+                crate::runtime::utils::value_to_list(target),
+            )),
+            crate::value::ArrayKind::List,
+        ))),
     }
 }
 

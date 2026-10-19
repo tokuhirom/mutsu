@@ -527,6 +527,8 @@ impl LazyList {
             } else {
                 list
             }
+        } else if self.is_itemized() {
+            Value::seq(items).item()
         } else {
             Value::seq(items)
         }

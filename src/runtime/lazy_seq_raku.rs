@@ -20,7 +20,7 @@ impl Interpreter {
     }
 
     /// The `.raku` text of a lazy bare `Seq`: its first 100 elements, `...`
-    /// when more remain, then `.lazy.Seq` (a finite one renders every element,
+    /// when more remain, then `.lazy.Seq` (`.lazy` for a `List` view; a finite one renders every element,
     /// a single one without a trailing comma: `(5).lazy.Seq`).
     // Cost: O(p) plus the cost of pulling the prefix, p = LAZY_SEQ_RAKU_PREFIX
     // (a constant 100) elements; the whole sequence is never reified.
@@ -36,7 +36,14 @@ impl Interpreter {
             .map(|item| self.raku_element_repr(item))
             .collect::<Vec<_>>()
             .join(", ");
-        let text = format!("({body}{}).lazy.Seq", if more { "..." } else { "" });
+        let dots = if more { "..." } else { "" };
+        // A lazy `List` (`.List`, `.list`, `.cache` of a lazy Seq) is not a
+        // `Seq`: Rakudo renders `(1, 2, 3).lazy`, itemized as `$(1, 2, 3).lazy`.
+        if ll.in_list_context() {
+            let item = if ll.is_itemized() { "$" } else { "" };
+            return Ok(format!("{item}({body}{dots}).lazy"));
+        }
+        let text = format!("({body}{dots}).lazy.Seq");
         // A `$`-held Seq renders itemized, as a non-lazy one does:
         // `my $s = (1, 2).lazy; $s.raku` is `$((1, 2).lazy.Seq)`.
         Ok(if ll.is_itemized() {
