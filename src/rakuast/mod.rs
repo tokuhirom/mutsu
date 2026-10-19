@@ -3103,9 +3103,16 @@ pub fn construct(
         for &fname in schema {
             let value = match named_arg(args, fname) {
                 Some(value) => value,
+                // An omitted pointy signature is a defined empty Signature
+                // through its accessor, but is absent from constructor text.
+                None if fname == "signature" && class == RakuAstClass::PointyBlock => continue,
                 // A block's `body` defaults to an empty blockoid in raku:
                 // `RakuAST::Block.new` is a complete (empty) block.
-                None if fname == "body" && class == RakuAstClass::Block => empty_blockoid(),
+                None if fname == "body"
+                    && matches!(class, RakuAstClass::Block | RakuAstClass::PointyBlock) =>
+                {
+                    empty_blockoid()
+                }
                 None => {
                     return Err(RuntimeError::new(format!(
                         "{class_name}.{method} requires a `{fname}` argument"

@@ -269,6 +269,15 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || node.class == RakuAstClass::Parameter && field.name == Some("array-shape")
                 || super::regex_code::is_source(node, field)
                 || super::phaser_condition::is_source(node, field)
+                || node.class == RakuAstClass::PointyBlock
+                    && field.name == Some("signature")
+                    && matches!(&field.value, RakuAstFieldValue::Node(value)
+                        if matches!(value.view(), ValueView::RakuAst(signature)
+                            if signature.class == RakuAstClass::Signature
+                                && signature.fields.iter().all(|part|
+                                    part.name == Some("parameters")
+                                        && matches!(&part.value, RakuAstFieldValue::List(parameters)
+                                            if parameters.is_empty()))))
                 || node.class == RakuAstClass::RegexAssertionNamedRegexArg
                     && field.name == Some("capturing"))
         })

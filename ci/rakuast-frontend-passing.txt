@@ -5038,6 +5038,7 @@ t/rakuast/rakuast-phaser.t
 t/rakuast/rakuast-placeholder-blocks.t
 t/rakuast/rakuast-placeholder-modifiers.t
 t/rakuast/rakuast-placeholders.t
+t/rakuast/rakuast-pointy-constructor-defaults.t
 t/rakuast/rakuast-pointy-slurpy-params.t
 t/rakuast/rakuast-postfix-frozen-whatever.t
 t/rakuast/rakuast-postfix-grouping.t
