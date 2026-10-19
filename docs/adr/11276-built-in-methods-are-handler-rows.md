@@ -4795,7 +4795,7 @@ message at 72 columns as Rakudo's `naive-word-wrapper` does, rather than at a fi
 
 `IO::Spec::CurUpDir.ACCEPTS` keeps its gate: Rakudo has no such class. `$*SPEC.curupdir` is a
 `Block` (`-> str $dir { $dir ne '.' && $dir ne '..' }`), so the fix is to answer one, not to give a
-class mutsu invented a row.
+class mutsu invented a row (#13959).
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
