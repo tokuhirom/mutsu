@@ -2196,6 +2196,14 @@ impl Interpreter {
                 self.call_method_with_values(left.clone(), method, vec![])
                     .is_ok_and(|v| *s == v.to_string_value())
             }
+            // An instance of a `Str` subclass (`class S is Str`) stringifies
+            // as its string payload, which `Str.ACCEPTS(Any:D)` compares.
+            (ValueView::Instance { .. }, ValueView::Str(s))
+                if let Some(payload) = crate::value::numeric_payload::native_base_payload(left)
+                    && let ValueView::Str(text) = payload.view() =>
+            {
+                **s == **text
+            }
             // Attribute ~~ Str: `Str.ACCEPTS(Any:D)` compares `.Str`, which is
             // the attribute's name (`.^attributes.first('$!parent')`).
             (ValueView::Instance { class_name, attributes, .. }, ValueView::Str(s))
