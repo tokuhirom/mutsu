@@ -68,8 +68,10 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
     "Any"."roll" => super::lazy_refusal::roll,
     "Any"."elems" => super::lazy_refusal::elems,
     "Any"."end" => super::lazy_refusal::end,
-    "Any"."Numeric" => super::lazy_refusal::elems,
-    "Any"."Int" => super::lazy_refusal::elems,
+    "Seq"."Numeric" => super::lazy_refusal::elems,
+    "Seq"."Int" => super::lazy_refusal::elems,
+    "Mu"."Numeric" => super::lazy_refusal::elems,
+    "Mu"."Int" => super::lazy_refusal::elems,
     "Any"."tail" => super::lazy_refusal::tail,
 ];
 
