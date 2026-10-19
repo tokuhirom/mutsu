@@ -5,10 +5,14 @@
 //! holds the `use`: it hides an outer `$x` there, a closure taken in the block
 //! keeps it, and a routine written outside the block never sees it. An
 //! exported variable is always `our`-scoped, so the import is a binding of
-//! the package variable: the compiler compiles `use M` as if the block went on
-//! with `my $x := $M::x;`, for each variable the parse-time scan found the
-//! `use` importing (`parser::scanned_exported_vars`). A module whose export
-//! set the scan cannot know (a `sub EXPORT` hook) keeps the run-time import.
+//! the module's package variable: the compiler compiles `use M` as if the
+//! block went on with `my $x := $M::x;`, for each variable the parse-time
+//! scan found the `use` importing (`parser::scanned_exported_vars`). The
+//! binding's source is the module's own container (`OpCode::GetImportedVar`),
+//! not a by-name read of `$M::x`. The run-time import writes no env alias for
+//! such a variable (`runtime::lexical_imports::BLOCK_VARS_MARK`). A module
+//! whose export set the scan cannot know (a `sub EXPORT` hook) keeps the
+//! run-time import.
 
 use super::*;
 
@@ -19,14 +23,20 @@ impl Compiler {
     /// the package variable exists when the binding reads it.
     // Cost: O(v), v = the module's exported variables.
     pub(super) fn bind_block_imported_vars(&mut self, module: &str, tags: &[String]) {
+        let module_idx = self.code.add_constant(Value::str(module.to_string()));
         for decl in Self::block_imported_var_bindings(module, tags) {
+            let Stmt::VarDecl { name, .. } = &decl else {
+                continue;
+            };
+            let name_idx = self.code.add_constant(Value::str(name.clone()));
+            self.imported_var_source = Some((module_idx, name_idx));
             self.compile_stmt(&crate::ast::bind_decl::expand(decl));
+            self.imported_var_source = None;
         }
     }
 
     /// The suffix of a lexical import set id that names the variables the
-    /// block declares for the `use` of `module` with `tags`, so the run-time
-    /// import writes no env alias for them
+    /// block declares for the `use` of `module` with `tags`
     /// (`runtime::lexical_imports::BLOCK_VARS_MARK`); empty when there are
     /// none.
     // Cost: O(v), v = the module's exported variables.
@@ -63,7 +73,8 @@ impl Compiler {
 
     /// `my <name> := <sigil><package>::<name>` for the exported variable
     /// `var`, or `None` for a name with a twigil, which names no plain
-    /// package variable.
+    /// package variable. The right-hand side only selects the bind shape:
+    /// its value comes from `GetImportedVar`.
     // Cost: O(n), n = length of the qualified name.
     fn imported_var_binding(var: &crate::parser::ExportedVar) -> Option<Stmt> {
         let (sigil, bare) = match var.name.chars().next()? {

@@ -99,6 +99,26 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `OpCode::GetImportedVar`: the module's own container of an exported
+    /// `our` variable, as a block's import declaration binds it (ADR-8751).
+    /// The raw container, not a `VarRef`: the binding needs no source name,
+    /// whose by-name resolution can reach a same-named lexical of a caller.
+    /// A variable the module does not export after all binds a fresh `Any`.
+    // Cost: O(1): one exported-variable lookup.
+    pub(super) fn exec_get_imported_var_op(
+        &mut self,
+        code: &CompiledCode,
+        module_idx: u32,
+        name_idx: u32,
+    ) {
+        let module = Self::const_str(code, module_idx);
+        let name = Self::const_str(code, name_idx);
+        let value = self
+            .exported_var_value(module, name)
+            .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
+        self.stack.push(value);
+    }
+
     pub(super) fn exec_import_module_op(
         &mut self,
         code: &CompiledCode,

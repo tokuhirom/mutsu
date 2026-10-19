@@ -1728,7 +1728,14 @@ impl Compiler {
                     // the whole container and keep the promotion too.)
                     self.raw_list_elem_terminal = sigilless_bind_vardecl || scalar_bind_decont;
                     self.bind_target_direct = true;
-                    self.compile_call_arg(expr);
+                    if let Some((module_idx, name_idx)) = self.imported_var_source.take() {
+                        self.code.emit(OpCode::GetImportedVar {
+                            module_idx,
+                            name_idx,
+                        });
+                    } else {
+                        self.compile_call_arg(expr);
+                    }
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
                     self.raw_list_elem_terminal = false;

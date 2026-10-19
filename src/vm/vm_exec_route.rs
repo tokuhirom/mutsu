@@ -385,7 +385,8 @@ impl Interpreter {
             | OpCode::SucceedBarrier { .. }
             | OpCode::ThrowUndeclaredRoutine(..)
             | OpCode::UseLibPath
-            | OpCode::UseModule { .. } => self.exec_ops_group_14(code, ip, compiled_fns),
+            | OpCode::UseModule { .. }
+            | OpCode::GetImportedVar { .. } => self.exec_ops_group_14(code, ip, compiled_fns),
             OpCode::ApplyVarTrait { .. }
             | OpCode::AssignExprLocal(..)
             | OpCode::AssignReadOnly
