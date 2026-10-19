@@ -539,8 +539,8 @@ release targets (Linux/macOS × x64/arm64) are required; do not weaken one to pa
   one issue per PR; selection is the named filter in `scripts/next-issue` order, skipping claimed issues (a missing
   `tier:*` is workable); claim and release every issue; every fix has a regression test, a `news/`
   entry and `Closes #NNNN`; open the PR, enable auto-merge, watch CI, fix forward ("PR を出して" *is*
-  the permission); go straight on to the next issue after each verified merge, up to the run cap in
-  `mutsu-ticket-flow`; re-triaging to `todo:deep` or closing as already fixed are legitimate
+  the permission); go straight on to the next issue after each verified merge, with no ticket-count cap
+  (`mutsu-ticket-flow`); re-triaging to `todo:deep` or closing as already fixed are legitimate
   outcomes. Ask only for a decision genuinely the user's (a rung-3 provider, a new or superseding
   ADR, weakening a CI gate, dropping a whitelisted test, or two materially different readings the
   issue cannot settle) — and even then park that one issue, continue the batch, and raise it in the
