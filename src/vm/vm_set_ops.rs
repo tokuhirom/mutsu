@@ -329,13 +329,16 @@ impl Interpreter {
     /// operator first (ADR-0071), then the one body every form of the
     /// operator shares, `runtime::set_op_values`.
     // Cost: O(l + r), l/r = elements of the operands.
-    pub(super) fn exec_set_binary_op(&mut self, op: runtime::SetOp) -> Result<(), RuntimeError> {
+    pub(super) fn exec_set_binary_op(
+        &mut self,
+        op: runtime::SetOp,
+        unicode: bool,
+    ) -> Result<(), RuntimeError> {
         let (left, right) = self.pop_set_operands()?;
-        for name in op.routine_names() {
-            if let Some(result) = self.try_user_infix(name, &left, &right)? {
-                self.stack.push(result);
-                return Ok(());
-            }
+        let name = op.routine_names()[usize::from(unicode)];
+        if let Some(result) = self.try_user_infix(name, &left, &right)? {
+            self.stack.push(result);
+            return Ok(());
         }
         self.stack.push(runtime::set_op_values(op, &left, &right)?);
         Ok(())

@@ -33,27 +33,27 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
     } else if input.starts_with("(|)") {
         Some((TokenKind::SetUnion, 3))
     } else if input.starts_with('∪') {
-        Some((TokenKind::SetUnion, '∪'.len_utf8()))
+        Some((TokenKind::Ident("∪".to_string()), '∪'.len_utf8()))
     } else if input.starts_with("(&)") {
         Some((TokenKind::SetIntersect, 3))
     } else if input.starts_with('∩') {
-        Some((TokenKind::SetIntersect, '∩'.len_utf8()))
+        Some((TokenKind::Ident("∩".to_string()), '∩'.len_utf8()))
     } else if input.starts_with("(.)") {
         Some((TokenKind::SetMultiply, 3))
     } else if input.starts_with('⊍') {
-        Some((TokenKind::SetMultiply, '⊍'.len_utf8()))
+        Some((TokenKind::Ident("⊍".to_string()), '⊍'.len_utf8()))
     } else if input.starts_with("(+)") {
         Some((TokenKind::SetAddition, 3))
     } else if input.starts_with('⊎') {
-        Some((TokenKind::SetAddition, '⊎'.len_utf8()))
+        Some((TokenKind::Ident("⊎".to_string()), '⊎'.len_utf8()))
     } else if input.starts_with("(-)") {
         Some((TokenKind::SetDiff, 3))
     } else if input.starts_with('∖') {
-        Some((TokenKind::SetDiff, '∖'.len_utf8()))
+        Some((TokenKind::Ident("∖".to_string()), '∖'.len_utf8()))
     } else if input.starts_with("(^)") {
         Some((TokenKind::SetSymDiff, 3))
     } else if input.starts_with('⊖') {
-        Some((TokenKind::SetSymDiff, '⊖'.len_utf8()))
+        Some((TokenKind::Ident("⊖".to_string()), '⊖'.len_utf8()))
     } else if input.starts_with("(<=)") {
         Some((TokenKind::SetSubset, 4))
     } else if input.starts_with('⊆') {
@@ -270,7 +270,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
             // Stop here so the assignment handler parses the whole statement;
             // otherwise the infix branch consumes `∪` and chokes on `=`.
             let after_op = &r[len..];
-            if matches!(
+            let algebra = matches!(
                 tok,
                 TokenKind::SetUnion
                     | TokenKind::SetIntersect
@@ -278,7 +278,9 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                     | TokenKind::SetDiff
                     | TokenKind::SetSymDiff
                     | TokenKind::SetAddition
-            ) && after_op.starts_with('=')
+            ) || matches!(&tok, TokenKind::Ident(name) if matches!(name.as_str(), "∪" | "∩" | "⊎" | "⊍" | "∖" | "⊖"));
+            if algebra
+                && after_op.starts_with('=')
                 && !after_op.starts_with("==")
                 && !after_op.starts_with("=>")
             {

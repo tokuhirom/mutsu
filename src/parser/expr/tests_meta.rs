@@ -247,9 +247,9 @@ fn parse_unicode_set_union_infix() {
     assert!(matches!(
         expr,
         Expr::Binary {
-            op: TokenKind::SetUnion,
+            op: TokenKind::Ident(ref op),
             ..
-        }
+        } if op == "∪"
     ));
 }
 
@@ -266,8 +266,8 @@ fn parse_whatever_with_unicode_set_union_infix() {
         Expr::WhateverCurry(body)
             if matches!(
                 body.as_ref(),
-                Expr::Binary { op: TokenKind::SetUnion, left, right, .. }
-                    if matches!(left.as_ref(), Expr::Whatever)
+                Expr::Binary { op: TokenKind::Ident(op), left, right, .. }
+                    if op == "∪" && matches!(left.as_ref(), Expr::Whatever)
                         && matches!(right.as_ref(), Expr::Whatever)
             )
     ));

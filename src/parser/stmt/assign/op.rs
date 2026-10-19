@@ -198,6 +198,12 @@ pub(crate) fn autoviv_set_compound_lhs(lhs: Expr, op: &TokenKind) -> Expr {
         | TokenKind::SetDiff
         | TokenKind::SetSymDiff => MetaAssignIdentity::EmptySet,
         TokenKind::SetAddition | TokenKind::SetMultiply => MetaAssignIdentity::EmptyBag,
+        TokenKind::Ident(name) if matches!(name.as_str(), "∪" | "∩" | "∖" | "⊖") => {
+            MetaAssignIdentity::EmptySet
+        }
+        TokenKind::Ident(name) if matches!(name.as_str(), "⊎" | "⊍") => {
+            MetaAssignIdentity::EmptyBag
+        }
         _ => return lhs,
     };
     Expr::Unary {

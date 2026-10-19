@@ -6710,7 +6710,7 @@ fn is_list_infix(op: &crate::token_kind::TokenKind) -> bool {
             | TokenKind::SetMultiply
             | TokenKind::SetDiff
             | TokenKind::SetSymDiff
-    ) || matches!(op, TokenKind::Ident(name) if name == "min" || name == "max")
+    ) || matches!(op, TokenKind::Ident(name) if matches!(name.as_str(), "min" | "max" | "∪" | "∩" | "⊎" | "⊍" | "∖" | "⊖"))
 }
 
 /// `Postfix` — a single NAMED `operator` string (e.g. `Postfix.new(operator => "++")`).

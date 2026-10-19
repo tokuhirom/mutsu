@@ -22,19 +22,29 @@ pub(crate) fn set_op_from_spelling(spelling: &str) -> Option<TokenKind> {
     SET_COMPOUND_OPS
         .iter()
         .find(|(candidate, _)| *candidate == spelling)
-        .map(|(_, tok)| tok.clone())
+        .map(|(_, tok)| {
+            if spelling.is_ascii() {
+                tok.clone()
+            } else {
+                TokenKind::Ident(spelling.to_string())
+            }
+        })
 }
 
 /// Parse set operator compound assignment: `(|)=`, `(&)=`, `(-)=`, `(^)=`, `(.)=`, `(+)=`
 /// and their Unicode variants: `\u{222A}=`, `\u{2229}=`, etc.
 /// Returns (rest_after_equals, TokenKind for the set operator, the operator as written).
 pub(crate) fn parse_set_compound_assign_op(input: &str) -> Option<(&str, TokenKind, &str)> {
-    let (spelling, tok) = SET_COMPOUND_OPS
+    let (spelling, _) = SET_COMPOUND_OPS
         .iter()
         .find(|(spelling, _)| input.starts_with(spelling))?;
     let after_op = &input[spelling.len()..];
     if after_op.starts_with('=') && !after_op.starts_with("==") {
-        Some((&after_op[1..], tok.clone(), &input[..spelling.len()]))
+        Some((
+            &after_op[1..],
+            set_op_from_spelling(spelling)?,
+            &input[..spelling.len()],
+        ))
     } else {
         None
     }

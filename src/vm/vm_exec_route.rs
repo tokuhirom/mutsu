@@ -180,18 +180,18 @@ impl Interpreter {
             | OpCode::JunctionOneN(..)
             | OpCode::Label(..)
             | OpCode::Sequence { .. }
-            | OpCode::SetAddition
+            | OpCode::SetAddition(..)
             | OpCode::SetCont
-            | OpCode::SetDiff
+            | OpCode::SetDiff(..)
             | OpCode::SetElem
-            | OpCode::SetIntersect
-            | OpCode::SetMultiply
+            | OpCode::SetIntersect(..)
+            | OpCode::SetMultiply(..)
             | OpCode::SetStrictSubset
             | OpCode::SetStrictSuperset
             | OpCode::SetSubset
             | OpCode::SetSuperset
-            | OpCode::SetSymDiff
-            | OpCode::SetUnion
+            | OpCode::SetSymDiff(..)
+            | OpCode::SetUnion(..)
             | OpCode::StrBitAnd
             | OpCode::StrBitOr
             | OpCode::StrBitXor

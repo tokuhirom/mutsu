@@ -2207,65 +2207,71 @@ pub(crate) enum OpCode {
     /// The six binary set operators share one body,
     /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
     /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
-    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// candidate under the source spelling is tried first (ADR-0071). The
+    /// payload is true for Unicode, false for ASCII. Both
     /// operands are promoted to the higher of their levels, `Set` < `Bag` <
     /// `Mix`, and the result takes that level and the left operand's
     /// mutability (a `SetHash` operand gives a `SetHash`).
-    SetUnion,
+    SetUnion(bool),
     /// Infix `⊎` / `(+)` (baggy addition: the sum of the weights). Stack: `[left, right] → [QuantHash]` (right on top).
     ///
     /// The six binary set operators share one body,
     /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
     /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
-    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// candidate under the source spelling is tried first (ADR-0071). The
+    /// payload is true for Unicode, false for ASCII. Both
     /// operands are promoted to the higher of their levels, `Set` < `Bag` <
     /// `Mix`, and the result takes that level and the left operand's
     /// mutability (a `SetHash` operand gives a `SetHash`). `(+)` starts at `Bag`, so two `Set`s give a `Bag`.
-    SetAddition,
+    SetAddition(bool),
     /// Infix `∩` / `(&)` (intersection: the smaller weight of each key both
     /// sides hold). Stack: `[left, right] → [QuantHash]` (right on top).
     ///
     /// The six binary set operators share one body,
     /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
     /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
-    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// candidate under the source spelling is tried first (ADR-0071). The
+    /// payload is true for Unicode, false for ASCII. Both
     /// operands are promoted to the higher of their levels, `Set` < `Bag` <
     /// `Mix`, and the result takes that level and the left operand's
     /// mutability (a `SetHash` operand gives a `SetHash`).
-    SetIntersect,
+    SetIntersect(bool),
     /// Infix `⊍` / `(.)` (baggy multiplication: the product of the weights
     /// of each key both sides hold). Stack: `[left, right] → [QuantHash]` (right on top).
     ///
     /// The six binary set operators share one body,
     /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
     /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
-    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// candidate under the source spelling is tried first (ADR-0071). The
+    /// payload is true for Unicode, false for ASCII. Both
     /// operands are promoted to the higher of their levels, `Set` < `Bag` <
     /// `Mix`, and the result takes that level and the left operand's
     /// mutability (a `SetHash` operand gives a `SetHash`). `(.)` starts at `Bag`, like `(+)`.
-    SetMultiply,
+    SetMultiply(bool),
     /// Infix `∖` / `(-)` (set difference: the left weight less the right
     /// one). Stack: `[left, right] → [QuantHash]` (right on top).
     ///
     /// The six binary set operators share one body,
     /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
     /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
-    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// candidate under the source spelling is tried first (ADR-0071). The
+    /// payload is true for Unicode, false for ASCII. Both
     /// operands are promoted to the higher of their levels, `Set` < `Bag` <
     /// `Mix`, and the result takes that level and the left operand's
     /// mutability (a `SetHash` operand gives a `SetHash`).
-    SetDiff,
+    SetDiff(bool),
     /// Infix `⊖` / `(^)` (symmetric difference: the distance between the
     /// weights). Stack: `[left, right] → [QuantHash]` (right on top).
     ///
     /// The six binary set operators share one body,
     /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
     /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
-    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// candidate under the source spelling is tried first (ADR-0071). The
+    /// payload is true for Unicode, false for ASCII. Both
     /// operands are promoted to the higher of their levels, `Set` < `Bag` <
     /// `Mix`, and the result takes that level and the left operand's
     /// mutability (a `SetHash` operand gives a `SetHash`).
-    SetSymDiff,
+    SetSymDiff(bool),
     /// Infix `⊆` / `(<=)` (subset or equal). Stack: `[left, right] → [Bool]` (right on top).
     ///
     /// Both operands are read as QuantHashes (`quant_hash_subset`), weights

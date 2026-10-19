@@ -16,13 +16,6 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn canonical_infix_lookup_name(name: &str) -> std::borrow::Cow<'_, str> {
-        if name == "(+)" {
-            return std::borrow::Cow::Borrowed("+");
-        }
-        std::borrow::Cow::Borrowed(name)
-    }
-
     pub(super) fn should_retry_with_canonical_infix_name(name: &str) -> bool {
         matches!(
             name,
