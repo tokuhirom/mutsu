@@ -41,9 +41,8 @@ impl Interpreter {
     pub(crate) fn unmerged_package_var_key(&self, name: Symbol) -> Option<Symbol> {
         let split = split_qualified_var(name)?;
         // `$GLOBAL::V::x` names the same unit-GLOBAL variable as `$V::x`.
-        let pkg = crate::qualified::known_symbol(
-            split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg),
-        );
+        let pkg =
+            crate::qualified::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg));
         let top = package_ancestors(pkg).last()?;
         let modules = self
             .module

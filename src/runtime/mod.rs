@@ -5,10 +5,10 @@ use std::collections::{HashMap, HashSet};
 mod complex_real;
 mod package_keyed;
 mod published_outer_package;
-mod unmerged_package_vars;
 mod rw_writeback_slots;
 mod supply_interval;
 mod tolerance;
+mod unmerged_package_vars;
 /// A per-package table of per-name entries: `package -> name -> V`, carrying
 /// the name filter that lets a failed package-chain walk cost one hash probe
 /// instead of one per tier per candidate. See the module.
