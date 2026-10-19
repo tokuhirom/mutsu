@@ -20,13 +20,15 @@ The role of an ADR is to preserve the *context of the judgment* — something th
   approval) / `Accepted` (final) / `Superseded by ADR-XXXX` (updated). That line is the only
   place the status lives.
 - When a decision changes, **do not rewrite the existing ADR** — supersede it with a new ADR and update the old ADR's Status.
-- **Record implementation progress inside the ADR that owns the decision** — a Status suffix
-  for a short state, or an "Outcome" / "Implementation status" section for a phased one.
-  `news/` and PLAN.md are where the *work* is reported; they are not a substitute. An ADR
-  whose recorded state has drifted from what shipped defeats its own purpose: a reader who
-  starts from the ADR either re-litigates a decision that is already executed, or cannot tell
-  which of its phases are done. (The 2026-08-02 ledger review in
-  [ANALYSIS.md §8](../../ANALYSIS.md) found this drift on six of seventeen ADRs.)
+- **An ADR records the decision, not implementation progress** (user decision, 2026-10-19):
+  context, decision, consequences, alternatives, open questions. Progress goes in the PR body,
+  a `news/YYYY-MM/<slug>.md` entry, git history and the campaign issue's Status comment. The
+  only progress-like thing an ADR keeps is its one-line `- **Status**:`, optionally with a short
+  suffix (e.g. "Accepted; slices 1-3 landed") updated only when the overall state changes, never
+  per PR. Touch an ADR only when the decision itself changes (a new ADR, or supersede). Parallel
+  PRs appending progress to one ADR made it a conflict hotspot and buried its decisions
+  (ADR-11276 reached ~5,800 lines). Existing "Implementation status" / "Outcome" sections are
+  frozen history: do not extend them.
 - Written in English (repo-wide English-only documentation rule).
 
 ## Index
