@@ -198,7 +198,7 @@ fn decoder(_: &mut Interpreter, target: &Value, _: &[Value], named: Named<'_>) -
 }
 
 /// `Encoding::Encoder::Builtin.encode-chars($str)`.
-    // Cost: O(n + p + r), n = input bytes, p = replacement bytes, r = output bytes.
+// Cost: O(n + p + r), n = input bytes, p = replacement bytes, r = output bytes.
 fn encode_chars(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_>) -> Answer {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
