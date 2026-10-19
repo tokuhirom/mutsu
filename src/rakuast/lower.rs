@@ -1940,7 +1940,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     // `scope => "my"` / `"our"`; a plain method has none.
     let (is_our, is_my) = match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => (false, false),
+        None => (false, node.class == RakuAstClass::Submethod),
         Some(_) => match (leaf_str(node, "scope")?.as_str(), node.class) {
             ("our", RakuAstClass::Method) => (true, false),
             ("my", RakuAstClass::Method) => (false, true),

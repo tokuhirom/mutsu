@@ -3,10 +3,10 @@ use Test;
 # The MUTSU_RAKUAST round-trip frontend mode (ADR-10723 Stage 0,
 # src/rakuast/frontend.rs). mutsu-only: the variable means nothing to raku.
 #
-# The refusal cases use method delegation, which the converter does not model
-# yet. When it starts to round-trip, swap in another construct the converter
-# refuses: what is pinned here is that a refusal is an error in the mode, never
-# a silent fallback.
+# The refusal cases use a variable declaration trait on a qualified type,
+# which the converter does not model yet. When it starts to round-trip, swap in
+# another construct the converter refuses: what is pinned here is that a
+# refusal is an error in the mode, never a silent fallback.
 
 plan 8;
 
@@ -26,7 +26,7 @@ my $plain = q[{ say "blk" }; say 1 + 2; sub f($x) { $x * 2 }; say f(21)];
     is $out, "blk\n3\n42\n", 'and prints what it prints without the mode';
 }
 
-my $refused = q[class C { our submethod s { } }; say 1];
+my $refused = q[class My::C {}; my %h is My::C; say 1];
 {
     my ($rc, $out, $err) = run-mutsu('1', '-e', $refused);
     isnt $rc, 0, 'a construct the converter refuses fails the program';
@@ -40,7 +40,7 @@ my $refused = q[class C { our submethod s { } }; say 1];
 }
 
 {
-    my ($rc, $out, $err) = run-mutsu('1', '-e', 'say EVAL q[class D { our submethod s { } }; 1]');
+    my ($rc, $out, $err) = run-mutsu('1', '-e', 'say EVAL q[class My::D {}; my %h is My::D; 1]');
     like $err, /'MUTSU_RAKUAST'/, 'an EVAL string is a unit the mode covers';
 }
 

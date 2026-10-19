@@ -1390,3 +1390,12 @@ declaration flags, and lowering maps them back to the existing export
 registration. The declaration constructors also retain a `traits` list, so
 hand-built nodes follow the same path. The regression checks the measured node
 shape, tagged export metadata, EVAL, and hand-built trait lowering.
+
+### 6.79 S10: named submethod declarations (2026-10-19)
+
+Rakudo renders named `my`, `our`, and unscoped submethods as the same
+`RakuAST::Submethod`, with no scope field. Conversion now omits scope for every
+submethod, and lowering restores the parser's internal non-inherited marker
+from the node class. EVAL keeps the declaration on the existing submethod
+method path. The focused regression checks the node name, signature, omitted
+scope, and callable result for all three source forms.
