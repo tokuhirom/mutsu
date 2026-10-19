@@ -209,13 +209,10 @@ impl Interpreter {
         // the exception carries, ahead of the native exception-gist arm below
         // that would answer the bare cause; as in `call_method_with_values`.
         if let Some(owners) = crate::builtins::method_table::wrapper_role_owners_of(target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method_name,
-                args,
-                || target.clone(),
-            )
+            && let Some(result) =
+                crate::builtins::method_table::invoke_owner(self, owners, method_name, args, || {
+                    target.clone()
+                })
         {
             return Some(result);
         }
