@@ -51,7 +51,11 @@ impl Interpreter {
         // A module's `my package` is lexical to the module (#11156). The
         // two the import protocol itself reads from the module (`EXPORT`,
         // `EXPORTHOW`) are read here on the importer's behalf.
-        if let Some(&unit) = self.module.module_visibility.lexical_package_units.get(&top)
+        if let Some(&unit) = self
+            .module
+            .module_visibility
+            .lexical_package_units
+            .get(&top)
             && !matches!(top.as_str(), "EXPORT" | "EXPORTHOW")
         {
             if self.unit_is_running(unit) {
@@ -89,10 +93,8 @@ impl Interpreter {
     // Cost: O(1) expected.
     pub(crate) fn record_lexical_package_unit(&mut self, name: Symbol) {
         let unit = self.executing_unit_sym_for_module_load();
-        crate::runtime::cow_table_mut(
-            &mut self.module.module_visibility.lexical_package_units,
-        )
-        .insert(name, unit);
+        crate::runtime::cow_table_mut(&mut self.module.module_visibility.lexical_package_units)
+            .insert(name, unit);
     }
 
     /// Whether the running code belongs to `unit` (or to an `EVAL` of it),
