@@ -39,6 +39,17 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
 ];
 
+/// `Map` declares `Str` itself: `Mu.Str`'s answer for a map value (the pairs,
+/// one per line). Found by owner only.
+pub(super) static MAP_ROWS: &[MethodRow] = &[MethodRow {
+    owner: "Map",
+    name: "Str",
+    arity: 0,
+    handler: Handler::Narrow(str_),
+    flags: RowFlags::OWNER_ONLY,
+    named: &[],
+}];
+
 /// `Mu.Str`.
 // Cost: O(1) for a type object or a `Failure`; O(n) otherwise, n = chars of
 // the rendered string (plus O(e) to probe a list's elements, e = elements).

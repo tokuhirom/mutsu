@@ -65,6 +65,36 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
 ];
 
+/// `Block` declares `of`, `returns` and `clone` itself: `Code`'s answers, found
+/// by owner only (a callable's owner list is `Code`, so these are the table's
+/// statement of Rakudo's declaration, not a second path).
+pub(super) static BLOCK_ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "Block",
+        name: "of",
+        arity: 0,
+        handler: Handler::Interp(of),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Block",
+        name: "returns",
+        arity: 0,
+        handler: Handler::Interp(of),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Block",
+        name: "clone",
+        arity: 0,
+        handler: Handler::Narrow(clone),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+];
+
 /// The answer of the `Code` row for `method`, or `None` when `target` is not a
 /// code object or `Code` declares no such row.
 // Cost: O(1) to find the row, plus the handler's own cost.

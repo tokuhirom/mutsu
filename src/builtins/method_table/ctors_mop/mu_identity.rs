@@ -42,6 +42,17 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("clone", Handler::Narrow(clone)),
 ];
 
+/// `Map` declares `clone` itself: `Mu.clone`'s answer for a map value. Found by
+/// owner only; a `Hash` receiver reaches `Mu`'s row.
+pub(super) static MAP_ROWS: &[MethodRow] = &[MethodRow {
+    owner: "Map",
+    name: "clone",
+    arity: 0,
+    handler: Handler::Narrow(clone),
+    flags: RowFlags::OWNER_ONLY,
+    named: &[],
+}];
+
 /// The exception an unhandled `Failure` carries, which `.self` and `.Bool`
 /// of the `Failure` must not hide.
 // Cost: O(1).

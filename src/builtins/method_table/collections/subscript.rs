@@ -29,8 +29,19 @@ macro_rules! row {
 
 pub(super) static ROWS: &[MethodRow] = &[
     row!("Hash", "AT-KEY", at_key),
-    // `Map.AT-KEY` has no row of its own: a Map value is a Hash value, and
-    // `Hash` declares `AT-KEY` itself, so no shape would reach it.
+    // A Map value is a Hash value and `Hash` declares `AT-KEY` itself, so no
+    // shape reaches `Map`'s row: it is the table's statement of Rakudo's
+    // declaration, found by owner only.
+    MethodRow {
+        owner: "Map",
+        name: "AT-KEY",
+        arity: 1,
+        handler: Handler::Narrow(at_key),
+        flags: RowFlags::ANY_ARGS
+            .or(RowFlags::OBJECT_ARGS)
+            .or(RowFlags::OWNER_ONLY),
+        named: &[],
+    },
     row!("Set", "AT-KEY", at_key),
     row!("SetHash", "AT-KEY", at_key),
     row!("Bag", "AT-KEY", at_key),
