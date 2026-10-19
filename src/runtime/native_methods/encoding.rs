@@ -1,5 +1,4 @@
 use crate::runtime::*;
-use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -22,54 +21,14 @@ impl Interpreter {
     /// `Encoding::Encoder::Builtin.encode-chars`: `input` in the encoding
     /// `encoding`, a character it cannot represent replaced by `replacement`
     /// (`True` is `?`) or, without one, an error.
-    // Cost: O(n), n = bytes of the encoding.
+    // Cost: O(n + p + r), n = input bytes, p = replacement bytes, r = output bytes.
     pub(crate) fn encode_chars(
+        &self,
         encoding: &str,
         replacement: Option<&Value>,
         input: &str,
     ) -> Result<Value, RuntimeError> {
-        let enc_lower = encoding.to_lowercase();
-        let mut bytes: Vec<Value> = Vec::new();
-        match enc_lower.as_str() {
-            "utf8-c8" => {
-                for b in crate::runtime::utf8_c8::encode_utf8_c8(input) {
-                    bytes.push(Value::int(b as i64));
-                }
-            }
-            "ascii" | "us-ascii" => {
-                for ch in input.chars() {
-                    if ch as u32 <= 127 {
-                        bytes.push(Value::int(ch as u32 as i64));
-                        continue;
-                    }
-                    let Some(repl) = replacement else {
-                        return Err(RuntimeError::new(format!(
-                            "Cannot encode character '{}' (U+{:04X}) in ASCII",
-                            ch, ch as u32
-                        )));
-                    };
-                    let repl_str = if matches!(repl.view(), ValueView::Bool(true)) {
-                        "?".to_string()
-                    } else {
-                        repl.to_string_value()
-                    };
-                    for b in repl_str.bytes() {
-                        bytes.push(Value::int(b as i64));
-                    }
-                }
-            }
-            _ => {
-                for b in input.as_bytes() {
-                    bytes.push(Value::int(*b as i64));
-                }
-            }
-        }
-        // A UTF-8 encoder answers a `utf8` buffer, as Rakudo's does.
-        let class = if matches!(enc_lower.as_str(), "utf8" | "utf-8") {
-            "utf8"
-        } else {
-            "Blob[uint8]"
-        };
-        Ok(crate::value::value_buf::make_buf(Symbol::intern(class), bytes))
+        let replacement = Self::encoding_replacement(replacement);
+        self.encode_string_buffer(input, encoding, replacement.as_deref())
     }
 }
