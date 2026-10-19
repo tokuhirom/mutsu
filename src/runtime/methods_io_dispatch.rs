@@ -322,7 +322,7 @@ impl Interpreter {
             }
             let bytes = if is_wide {
                 with_buf_elems(&attributes, |items| {
-                    let use_be = normalized_encoding == "utf-16be";
+                    let use_be = matches!(normalized_encoding.as_str(), "utf16be" | "utf-16be");
                     let mut out = Vec::with_capacity(items.len() * 2);
                     for item in items.iter() {
                         let unit = match item.view() {
