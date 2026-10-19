@@ -26,8 +26,8 @@ impl Interpreter {
             if modifier.as_deref() == Some("R") && call_args.len() == 2 {
                 call_args.swap(0, 1);
             }
-            let lookup_name = Self::canonical_infix_lookup_name(&name);
-            let infix_name = format!("infix:<{}>", lookup_name.as_ref());
+            let lookup_name = name.as_str();
+            let infix_name = format!("infix:<{lookup_name}>");
             // A lexical `&infix:<op>` binding (e.g. a `&infix:<@@>` parameter)
             // shadows the package-level operator of the same name. Guarded by the
             // shadow-name set so the common case (no operator param) is free.
@@ -67,7 +67,7 @@ impl Interpreter {
                             v
                         } else {
                             self.call_infix_fallback(
-                                lookup_name.as_ref(),
+                                lookup_name,
                                 Some(&infix_name),
                                 vec![left, right],
                                 compiled_fns,
@@ -126,7 +126,7 @@ impl Interpreter {
                         result
                     } else {
                         self.call_infix_fallback(
-                            lookup_name.as_ref(),
+                            lookup_name,
                             Some(&infix_name),
                             call_args,
                             compiled_fns,
@@ -151,7 +151,7 @@ impl Interpreter {
                     self.compile_and_call_function_def(&def, call_args.clone(), compiled_fns)?
                 } else {
                     self.call_infix_fallback(
-                        lookup_name.as_ref(),
+                        lookup_name,
                         Some(&infix_name),
                         call_args,
                         compiled_fns,
@@ -230,8 +230,8 @@ impl Interpreter {
             }
             return Ok(Value::junction(kind, out));
         }
-        let lookup_name = Self::canonical_infix_lookup_name(name);
-        let infix_name = format!("infix:<{}>", lookup_name.as_ref());
+        let lookup_name = name;
+        let infix_name = format!("infix:<{lookup_name}>");
         let mut call_args = vec![left.clone(), right.clone()];
         if modifier == Some("R") {
             call_args.swap(0, 1);
@@ -239,12 +239,7 @@ impl Interpreter {
         if let Some(v) = self.try_user_infix(&infix_name, &call_args[0], &call_args[1])? {
             return Ok(v);
         }
-        self.call_infix_fallback(
-            lookup_name.as_ref(),
-            Some(&infix_name),
-            call_args,
-            compiled_fns,
-        )
+        self.call_infix_fallback(lookup_name, Some(&infix_name), call_args, compiled_fns)
     }
 
     fn flip_flop_scope_key(&self) -> String {

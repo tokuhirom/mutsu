@@ -4385,33 +4385,33 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
-            OpCode::SetUnion => {
-                self.exec_set_binary_op(crate::runtime::SetOp::Union)?;
+            OpCode::SetUnion(unicode) => {
+                self.exec_set_binary_op(crate::runtime::SetOp::Union, *unicode)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
-            OpCode::SetAddition => {
-                self.exec_set_binary_op(crate::runtime::SetOp::Addition)?;
+            OpCode::SetAddition(unicode) => {
+                self.exec_set_binary_op(crate::runtime::SetOp::Addition, *unicode)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand (both coerced).
-            OpCode::SetIntersect => {
-                self.exec_set_binary_op(crate::runtime::SetOp::Intersect)?;
+            OpCode::SetIntersect(unicode) => {
+                self.exec_set_binary_op(crate::runtime::SetOp::Intersect, *unicode)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
-            OpCode::SetMultiply => {
-                self.exec_set_binary_op(crate::runtime::SetOp::Multiply)?;
+            OpCode::SetMultiply(unicode) => {
+                self.exec_set_binary_op(crate::runtime::SetOp::Multiply, *unicode)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
-            OpCode::SetDiff => {
-                self.exec_set_binary_op(crate::runtime::SetOp::Diff)?;
+            OpCode::SetDiff(unicode) => {
+                self.exec_set_binary_op(crate::runtime::SetOp::Diff, *unicode)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
-            OpCode::SetSymDiff => {
-                self.exec_set_binary_op(crate::runtime::SetOp::SymDiff)?;
+            OpCode::SetSymDiff(unicode) => {
+                self.exec_set_binary_op(crate::runtime::SetOp::SymDiff, *unicode)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
