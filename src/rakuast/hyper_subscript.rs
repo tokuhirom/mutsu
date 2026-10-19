@@ -1,5 +1,5 @@
 //! Hyper subscripts retain their operator identity instead of becoming an
-//! explicit AT-POS/AT-KEY method call. Measured against Rakudo 2026.09.
+//! explicit AT-POS/AT-KEY method call. Measured against Rakudo 2026.07.
 use super::convert::{convert_expr, node_field};
 use super::lower::{lower_expr, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
