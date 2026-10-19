@@ -123,6 +123,23 @@ macro_rules! real_math_rows {
     };
 }
 
+/// The rows `Instant` and `Duration` declare (they `do Real`): the unary family
+/// plus `cis`, `atan2` and the one-argument `exp` and `log`. The receiver is
+/// read through [`numify`], which answers an instance's seconds.
+macro_rules! seconds_math_rows {
+    ($owner:literal) => {
+        math_rows!($owner, RowFlags::DEFINITE_MULTI;
+            pure!($owner, "cis", cis),
+            pure!($owner, "atan2", atan2),
+            numeric_args!(narrow!($owner, "atan2", 1, atan2_1)),
+            numeric_args!(narrow!($owner, "exp", 1, exp_1)),
+            numeric_args!(narrow!($owner, "log", 1, log_1)),
+        )
+    };
+}
+
+pub(super) static INSTANT_ROWS: &[MethodRow] = seconds_math_rows!("Instant");
+pub(super) static DURATION_ROWS: &[MethodRow] = seconds_math_rows!("Duration");
 pub(super) static INT_ROWS: &[MethodRow] = real_math_rows!("Int", RowFlags::DEFINITE_MULTI; MethodRow {
     flags: RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
     ..narrow!("Int", "expmod", 2, expmod)

@@ -41,6 +41,30 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
     },
 ];
 
+/// The rounding rows `Instant` and `Duration` declare (they `do Real`).
+macro_rules! seconds_rows {
+    ($owner:literal) => {
+        &[
+            row!($owner, "sign", sign),
+            row!($owner, "floor", floor),
+            row!($owner, "ceiling", ceiling),
+            row!($owner, "truncate", truncate),
+            row!($owner, "round", round),
+            MethodRow {
+                owner: $owner,
+                name: "round",
+                arity: 1,
+                handler: Handler::Narrow(round_to),
+                flags: RowFlags::ANY_ARGS,
+                named: &[],
+            },
+        ]
+    };
+}
+
+pub(super) static INSTANT_ROWS: &[MethodRow] = seconds_rows!("Instant");
+pub(super) static DURATION_ROWS: &[MethodRow] = seconds_rows!("Duration");
+
 /// `Bool` declares `succ` and `pred` itself: `True` and `False`, for the type
 /// object too (`Bool.succ` is `True`).
 pub(super) static BOOL_ROWS: &[MethodRow] = &[
