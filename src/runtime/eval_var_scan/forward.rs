@@ -44,6 +44,8 @@ pub(in crate::runtime) fn first_var_used_before_unit_declares(
         forward: Some(ForwardUses {
             top_names,
             all_names: all_names.0,
+            type_names: all_names.1,
+            moved: false,
             bail: false,
         }),
         found: None,
@@ -77,6 +79,11 @@ pub(super) struct ForwardUses {
     pub(super) top_names: HashMap<String, usize>,
     /// What any scope of the unit declares, with the number of declarations.
     pub(super) all_names: HashMap<String, usize>,
+    /// The types and packages the unit declares.
+    pub(super) type_names: HashSet<String>,
+    /// Inside code the AST moved from its source position (a phaser body):
+    /// a use of a name the top level declares is not judged there.
+    pub(super) moved: bool,
     /// A `use` whose exported variables are unknown was seen: nothing is
     /// reported from here on.
     pub(super) bail: bool,
@@ -84,6 +91,15 @@ pub(super) struct ForwardUses {
 
 
 impl UndeclaredVars<'_> {
+    /// Runs `f` over code the AST moved from its source position.
+    pub(super) fn in_moved_code(&mut self, f: impl FnOnce(&mut Self)) {
+        let saved = self.forward.as_mut().map(|forward| std::mem::replace(&mut forward.moved, true));
+        f(self);
+        if let (Some(forward), Some(saved)) = (self.forward.as_mut(), saved) {
+            forward.moved = saved;
+        }
+    }
+
     /// In the compunit mode, a `use` declares the variables its module
     /// exports, when the parse-time scan knows them; otherwise nothing after
     /// it is reported.
@@ -130,6 +146,8 @@ impl UndeclaredVars<'_> {
         // scope (a method declared in a nested block of a class body).
         forward.bail
             || (all > 0 && all > top)
+            || (forward.moved && top > 0)
+            || forward.type_names.contains(&key)
             // An extended identifier (`$foo:bar<42>`) may name one a
             // declaration spells with an interpolated adverb, which only the
             // compiler resolves.
@@ -139,9 +157,10 @@ impl UndeclaredVars<'_> {
 
 /// Every variable name any scope of a unit declares, in `declared_var_name`
 /// form: its `my`/`our`/`state` declarations, parameters and attribute
-/// aliases, wherever the AST holds them.
+/// aliases, wherever the AST holds them; and the types and packages it
+/// declares (`RT .= new` assigns to a type, not to an undeclared `$RT`).
 #[derive(Default)]
-struct DeclaredNames(HashMap<String, usize>);
+struct DeclaredNames(HashMap<String, usize>, HashSet<String>);
 
 impl<'ast> Visit<'ast> for DeclaredNames {
     // A pointy `given`'s parameters live only in its source form: the
@@ -160,6 +179,9 @@ impl<'ast> Visit<'ast> for DeclaredNames {
                     *self.0.entry(name.to_string()).or_default() += 1;
                 }
                 *self.0.entry(declared_var_name(name).to_string()).or_default() += 1;
+            }
+            NameKind::Decl => {
+                self.1.insert(name.to_string());
             }
             _ => {}
         }
