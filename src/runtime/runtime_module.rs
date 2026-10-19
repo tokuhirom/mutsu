@@ -149,6 +149,23 @@ impl Interpreter {
         if self.types.package_type_aliases.get(&importer) == aliases {
             return;
         }
+        // When the importer's entry is all that changed (the module itself
+        // was loaded before the scope opened), put the very `before` table
+        // back: a replayed block `use` finds its tables by identity
+        // (`lexical_import_replay`).
+        let current = &self.types.package_type_aliases;
+        let others = |table: &crate::runtime::package_keyed::PackageKeyed<String>| {
+            table.len() - usize::from(table.contains_key(&importer))
+        };
+        if others(current) == others(&before)
+            && current
+                .iter()
+                .filter(|(pkg, _)| **pkg != importer)
+                .all(|(pkg, entries)| before.get(pkg) == Some(entries))
+        {
+            self.types.package_type_aliases = before;
+            return;
+        }
         let aliases = aliases.cloned();
         let table = crate::runtime::cow_table_mut(&mut self.types.package_type_aliases);
         match aliases {
