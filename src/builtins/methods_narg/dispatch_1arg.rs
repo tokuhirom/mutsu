@@ -1,5 +1,5 @@
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 /// A built-in method call with one argument: the row of the built-in method
 /// table (ADR-11276), then the cascade, then the row a receiver with no shape
@@ -81,10 +81,6 @@ fn native_method_1arg_cascade(
     ) {
         return None;
     }
-    // The `Match.replace-with` row's implementation (`method_table::regex_match`).
-    if method == "replace-with" && target.is_match_instance() {
-        return crate::builtins::method_table::regex_match::replace_with(target, arg).map(Ok);
-    }
     // `Backtrace` and `Backtrace::Frame`: the rows' handlers (ADR-11276 §9.35).
     if let Some(answer) =
         crate::builtins::method_table::backtrace::answer(target, method, std::slice::from_ref(arg))
@@ -122,28 +118,16 @@ fn native_method_1arg_cascade(
     {
         return None;
     }
-    match method {
-        // A list with no settled shape (a lazy or unreified `Seq`, a
-        // `LazyList`) reads its element through the `AT-POS`/`EXISTS-POS`
-        // rows' implementation (`method_table::positional`); any other
-        // receiver with no shape is `answer_shapeless`'s (§9.154).
-        "AT-POS" => {
-            // Any other index is bound through its `.Int` (`index_arg`).
-            if !matches!(
-                arg.view(),
-                ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..) | ValueView::Str(_)
-            ) {
-                return None;
-            }
-            let idx = match crate::builtins::method_table::positional::at_pos_index(arg) {
-                Ok(idx) => idx,
-                Err(answer) => return answer,
-            };
-            crate::builtins::method_table::positional::at_pos_of(target, idx)
-        }
-        "EXISTS-POS" => {
-            crate::builtins::method_table::positional::exists_pos(target, std::slice::from_ref(arg))
-        }
-        _ => None,
+    // A list with no settled shape (a lazy or unreified `Seq`, a `LazyList`)
+    // reads its element through `Seq`'s `AT-POS`/`EXISTS-POS` rows; any other
+    // receiver with no shape is `answer_shapeless`'s (§9.154).
+    if matches!(method, "AT-POS" | "EXISTS-POS") {
+        return crate::builtins::method_table::answer_as(
+            crate::value::DispatchShape::Seq,
+            target,
+            method_sym,
+            std::slice::from_ref(arg),
+        );
     }
+    None
 }
