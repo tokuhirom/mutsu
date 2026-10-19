@@ -12,8 +12,8 @@ impl Interpreter {
         predicate_verified: bool,
     ) -> Result<Value, RuntimeError> {
         let value = self.check_and_coerce_param_type(pd, value, None, None, predicate_verified)?;
-        Ok(if pd.name.starts_with('@') {
-            value.deitemize_for_sigil_bind().into_param_copy('@')
+        Ok(if pd.name.starts_with(['@', '%']) {
+            value.deitemize_for_sigil_bind().into_param_copy(pd.name.chars().next().unwrap())
         } else {
             value.detach_shared_container()
         })
