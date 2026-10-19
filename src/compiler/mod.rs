@@ -3597,6 +3597,13 @@ impl Compiler {
                     None
                 }
             }
+            // An assignment evaluates to its target's container (`f($x -= 2)`
+            // binds an `is rw` parameter to `$x`), so it names that target
+            // like the plain variable would; a method call's arguments carry
+            // no `WrapVarRef` tag to say so otherwise (#13934).
+            Expr::AssignExpr { is_bind: false, .. } | Expr::CompoundAssign { .. } => {
+                self.lvalue_root_key(expr, crate::ast::LvaluePeel::ASSIGN)
+            }
             other => other.var_key(),
         }
     }
