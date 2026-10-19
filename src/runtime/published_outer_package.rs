@@ -61,7 +61,8 @@ impl Interpreter {
         use crate::qualified::{package_ancestors, package_parent, qualified_text};
         let sym = Symbol::intern(qualified);
         let head = package_ancestors(package_parent(sym)?).last()?;
-        let target = self.lookup_in_running_package(&self.types.package_type_aliases, head.as_str())?;
+        let target =
+            self.lookup_in_running_package(&self.types.package_type_aliases, head.as_str())?;
         if !self.is_published_outer_package(head.as_str(), target) {
             return None;
         }
