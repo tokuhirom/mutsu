@@ -899,7 +899,12 @@ impl Interpreter {
                 let pkg = args.first().cloned().unwrap_or(Value::NIL);
                 return Ok(self.merge_global_symbols(&pkg));
             }
-            if method == "can" {
+            // A user ClassHOW subclass inherits the metamodel's `can`, whose
+            // first argument is the type being introspected. Let it reach the
+            // ClassHOW fallback below; treating that argument as an ordinary
+            // instance `.can` method name loses the requested MRO lookup
+            // (`Foo.^can('hello')`, #13919).
+            if method == "can" && !self.is_metamodel_how_class(&class_name.resolve()) {
                 let method_name = args
                     .first()
                     .map(|v| v.to_string_value())
