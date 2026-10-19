@@ -589,6 +589,12 @@ pub(crate) struct Registry {
     /// version stamp, so that repeating a write the program has made before
     /// names the state it produced before. See `runtime::function_table`.
     pub(crate) fn_transitions: FunctionTableTransitions,
+    /// How many times [`Registry::functions`] was written or replaced: every
+    /// `functions_mut` borrow, `install_function` and wholesale restore counts
+    /// one. Never decreases, so an import scope that logged its own writes can
+    /// tell at its pop whether anything else wrote the map meanwhile
+    /// (`ImportScopeSnapshot::logged_function_writes`, #9170).
+    pub(crate) function_writes: u64,
     /// `our`-scoped subs that persist across block boundaries. Held behind `Arc`
     /// (like `functions`) so block-scope restore and whole-registry clones
     /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
@@ -1781,6 +1787,7 @@ impl Registry {
     /// answerable without every mutating site having to say so (#8314).
     #[inline]
     pub(crate) fn functions_mut(&mut self) -> &mut HashMap<Symbol, std::sync::Arc<FunctionDef>> {
+        self.function_writes += 1;
         crate::runtime::cow_table_mut(&mut self.functions).map_mut()
     }
 
@@ -1800,6 +1807,7 @@ impl Registry {
     pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
         // `functions` and `fn_transitions` are disjoint fields; the split
         // borrow is what lets the memo drive the table (and its stamp).
+        self.function_writes += 1;
         let transitions = &mut self.fn_transitions;
         transitions.install(&mut self.functions, key, def);
     }

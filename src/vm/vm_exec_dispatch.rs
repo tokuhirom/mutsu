@@ -7221,9 +7221,11 @@ impl Interpreter {
                 )?;
             }
             // Cost: O(1) to open (the scope holds the copy-on-write registry tables) plus the
-            // body; the close is O(1) for a table the body did not write and O(F) / O(C) for
-            // the routine / class table it did, F/C = registered routines/classes (the rollback
-            // filter). Rakudo: O(1) -- see #9170.
+            // body; the close is O(1) for a table the body did not write. For the routine table
+            // it did, the close is O(x), x = keys its imports installed, when only those imports
+            // wrote it, else O(F), F = registered routines (the rollback filter); either way the
+            // first write in the body copies the shared table, O(F). A written class table is
+            // O(C), C = registered classes. Rakudo: O(1) -- see #9170.
             OpCode::ImportScope { body_end } => {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }

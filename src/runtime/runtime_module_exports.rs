@@ -520,10 +520,13 @@ impl Interpreter {
         };
         let mut shadowed_functions = HashMap::new();
         for key in keys {
-            if let Some(def) = self.registry_mut().functions_mut().remove(&key) {
+            let removed = self.registry_mut().functions_mut().remove(&key);
+            self.log_import_scope_function_write(None);
+            if let Some(def) = removed {
                 shadowed_functions.insert(key, def);
             }
         }
+        let removed_keys: Vec<Symbol> = shadowed_functions.keys().copied().collect();
         let proto_key = Symbol::intern(target_single);
         let proto_was_visible = self
             .module
@@ -568,7 +571,8 @@ impl Interpreter {
             self.registry_mut()
                 .proto_subs_retain(|key| key != target_single);
         }
-        self.invalidate_fn_resolution();
+        // Only the shadowed family's keys left the functions map (#9170).
+        self.invalidate_fn_resolution_changing_keys(removed_keys);
     }
 
     pub(crate) fn record_exported_sub_value(&mut self, package: String, name: String, val: Value) {
@@ -1236,6 +1240,7 @@ impl Interpreter {
                 function_entries.iter().map(|(_, def)| def),
                 is_operator,
             );
+            let mut installed_keys: Vec<Symbol> = Vec::with_capacity(function_entries.len());
             for (k, v) in function_entries {
                 let ks = k.resolve();
                 if ks.contains('/') {
@@ -1248,14 +1253,19 @@ impl Interpreter {
                     // instead, and skip candidates already installed (a
                     // re-import of the same module must stay idempotent).
                     self.note_lexical_import_candidate(&name, &v);
-                    self.import_multi_candidate_merged(&ks, v);
+                    let key = self.import_multi_candidate_merged(&ks, v);
+                    self.log_import_scope_function_write(Some(key));
+                    installed_keys.push(key);
                 } else {
                     self.registry_mut().functions_mut().insert(k, v);
+                    self.log_import_scope_function_write(Some(k));
+                    installed_keys.push(k);
                 }
             }
             // Function set changed: invalidate the name-keyed resolution caches
-            // (multi_candidates_cache / fn_keys_by_base).
-            self.invalidate_fn_resolution();
+            // (multi_candidates_cache), and evict the installed keys' base
+            // names from `fn_keys_by_base` (#9170).
+            self.invalidate_fn_resolution_changing_keys(installed_keys);
 
             // Interned once, not per `proto_functions` entry: that table grows
             // as this loop imports each export (in hash order), so a per-entry

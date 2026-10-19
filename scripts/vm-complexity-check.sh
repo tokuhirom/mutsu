@@ -14,6 +14,7 @@
 #   LOCALS  NN generated `my $lvI = I;` declarations (a big frame)
 #   CLASSES a linear chain of NN classes C0..C<NN> (C0 has `method m {1}`)
 #   STMTS   NN copies of `$s++;` (a big block that declares no locals)
+#   SUBS    NN generated `sub rsI { I }` declarations (a big routine registry)
 #
 # The cases back the `Rakudo: O(..) -- see #NNNN` annotations on the
 # `exec_one_dispatch` arms (src/vm/vm_exec_dispatch.rs) and their handlers;
@@ -51,6 +52,7 @@ CASES=(
     # them with MUTSU_JIT=off, since the JIT's one-time O(size) compile of the
     # loop body otherwise lands in the timed region (the control case shows it).
     'bare block { my } vs routine registry|500|1|use MONKEY-SEE-NO-EVAL; EVAL (^NN).map({ "our sub rs$_ \{ $_ \}" }).join(";"); my $t = 0;|for ^5000 { { my $y = 1; $t += $y } }'
+    'routine-scoped use vs routine registry|2000|1|SUBS sub ru { use Test; 1 }; my $t = 0;|for ^1000 { $t += ru() }'
     'bare block { my } vs grammar tokens|500|1|use MONKEY-SEE-NO-EVAL; EVAL "grammar GG \{ " ~ (^NN).map({ "token t$_ \{ a \}" }).join(";") ~ " \}"; my $t = 0;|for ^5000 { { my $y = 1; $t += $y } }'
     'bare block { my } vs block size|500|1|my $never = 0; my $s = 0; my $t = 0;|for ^5000 { { my $y = 1; $t += $y; if $never { STMTS } } }'
     'loop body vs untaken-branch size (control)|500|1|my $never = 0; my $s = 0; my $t = 0;|for ^5000 { $t += 1; if $never { STMTS } }'
@@ -113,6 +115,12 @@ gen_stmts() {
     printf '%s' "$out"
 }
 
+gen_subs() {
+    local n=$1 i out=""
+    for ((i = 0; i < n; i++)); do out+="sub rs$i { $i }; "; done
+    printf '%s' "$out"
+}
+
 gen_classes() {
     local n=$1 i out="class C0 { method m { 1 } }; "
     for ((i = 1; i <= n; i++)); do out+="class C$i is C$((i - 1)) { }; "; done
@@ -123,6 +131,7 @@ time_case() {
     local setup=$1 body=$2 n=$3 f="$TMPDIR_CX/case.raku"
     setup=${setup//LOCALS/$(gen_locals "$n")}
     setup=${setup//CLASSES/$(gen_classes "$n")}
+    setup=${setup//SUBS/$(gen_subs "$n")}
     setup=${setup//NN/$n}
     body=${body//STMTS/$(gen_stmts "$n")}
     body=${body//NN/$n}

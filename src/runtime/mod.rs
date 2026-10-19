@@ -2656,6 +2656,15 @@ pub(crate) struct ImportScopeSnapshot {
     /// ordinary key snapshot cannot restore an enclosing candidate that the
     /// import intentionally shadowed.
     pub(crate) shadowed_functions: HashMap<Symbol, Arc<FunctionDef>>,
+    /// `Registry::function_writes` as the scope opened.
+    pub(crate) function_writes_at_open: u64,
+    /// The functions-map writes this scope's imports made and logged while it
+    /// was the innermost scope, and the keys they installed. When the
+    /// registry counted no other write since the scope opened, these keys are
+    /// every key the pop may have to take away, so it need not filter the
+    /// whole map (#9170).
+    pub(crate) logged_function_writes: u64,
+    pub(crate) installed_function_keys: Vec<Symbol>,
     /// Proto definitions hidden by an imported proto in this scope.
     pub(crate) shadowed_proto_functions: HashMap<Symbol, Arc<FunctionDef>>,
     /// Fully-qualified imported proto names already given shadowing semantics

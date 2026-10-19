@@ -44,6 +44,10 @@ pub(crate) struct FnKeysIndexState {
     /// Base names evicted since the index became complete: entries unknown.
     /// Spelled as slices of interned keys, so they are `'static`.
     dirty: rustc_hash::FxHashSet<&'static str>,
+    /// Some registry key the index has seen since it became complete is not
+    /// package-qualified, so the qualified-name tail index does not list
+    /// every key of a base name and a dirty one is refilled by a pass.
+    unqualified_keys: bool,
     /// Debug-only: what [`Interpreter::audit_fn_keys_base`] has already compared
     /// against a fresh scan, per base name — the functions-map version it was
     /// compared under and the very index entry that was compared. Empty (and
@@ -134,6 +138,9 @@ impl Interpreter {
         let evicted = self.dispatch.fn_keys_by_base.remove(&base_sym).is_some();
         if self.dispatch.fn_keys_index.complete {
             self.dispatch.fn_keys_index.dirty.insert(base);
+            if !crate::qualified::is_qualified(key) {
+                self.dispatch.fn_keys_index.unqualified_keys = true;
+            }
         }
         evicted
     }
@@ -159,6 +166,11 @@ impl Interpreter {
             }
             self.build_fn_keys_index(None);
         } else if self.dispatch.fn_keys_index.dirty.contains(base) {
+            if let Some(keys) = self.fn_keys_from_tail_index(base) {
+                self.dispatch.fn_keys_index.dirty.remove(base);
+                self.dispatch.fn_keys_by_base.insert(base_sym, keys.clone());
+                return keys;
+            }
             let dirty = std::mem::take(&mut self.dispatch.fn_keys_index.dirty);
             if dirty.len() == 1 {
                 // The per-call `my sub` re-install cycle (#8314) dirties one
@@ -177,12 +189,40 @@ impl Interpreter {
             .clone()
     }
 
+    /// `base`'s registry keys read from the qualified-name tail index
+    /// (`qualified_tail_index::names_ending_in`) rather than a pass over the
+    /// functions map, or `None` when the tail index cannot be trusted to list
+    /// them all: a base name spelled with `/` or `::` (the tail index cuts a
+    /// member at its first `/` and records no member holding `::`), or a map
+    /// that held an unqualified key since the index became complete (the tail
+    /// index lists qualified names only).
+    // Cost: O(k), k = interned qualified names ending in `base` (each probed
+    // once in the functions map), independent of the registry's size.
+    fn fn_keys_from_tail_index(&self, base: &str) -> Option<Arc<[Symbol]>> {
+        if self.dispatch.fn_keys_index.unqualified_keys
+            || base.is_empty()
+            || base.contains('/')
+            || crate::qualified::is_qualified_str(base)
+        {
+            return None;
+        }
+        let registry = self.registry();
+        let keys: Vec<Symbol> = crate::qualified_tail_index::names_ending_in(base)
+            .into_iter()
+            .filter(|key| {
+                registry.functions.contains_key(key) && function_key_base_name(key.as_str()) == base
+            })
+            .collect();
+        Some(Arc::from(keys))
+    }
+
     /// One pass over the functions map, (re)indexing every base name in `only`
     /// — or every base name, when `only` is `None` — and marking the index
     /// complete. A base name in `only` with no keys gets an empty entry.
     // Cost: O(r), r = registered functions.
     fn build_fn_keys_index(&mut self, only: Option<&rustc_hash::FxHashSet<&'static str>>) {
         let mut by_base: rustc_hash::FxHashMap<&'static str, Vec<Symbol>> = Default::default();
+        let mut unqualified = false;
         if let Some(only) = only {
             for base in only {
                 by_base.insert(base, Vec::new());
@@ -192,6 +232,9 @@ impl Interpreter {
             let registry = self.registry();
             crate::vm::vm_stats::record_fn_keys_base_scan(registry.functions.len());
             for key in registry.functions.keys() {
+                if !crate::qualified::is_qualified(*key) {
+                    unqualified = true;
+                }
                 let base = function_key_base_name(key.as_str());
                 match only {
                     Some(_) => {
@@ -208,7 +251,10 @@ impl Interpreter {
                 .fn_keys_by_base
                 .insert(Symbol::intern(base), Arc::from(keys));
         }
+        // A partial pass (`only`) still visits every key, so it re-derives
+        // the flag for the whole map too.
         self.dispatch.fn_keys_index.complete = true;
+        self.dispatch.fn_keys_index.unqualified_keys = unqualified;
         self.dispatch.fn_keys_index.dirty.clear();
     }
 }
@@ -244,18 +290,28 @@ mod tests {
         assert!(indexed(&i, "gamma"));
         assert!(i.fn_keys_for_base("never-declared").is_empty());
 
-        // Evicting two names marks both dirty; looking up one refills both.
+        // Evicting two names marks both dirty; a plain base name is refilled
+        // on its own from the qualified-name tail index (#9170), the other
+        // one staying dirty until its own lookup.
         let gamma = i.fn_keys_for_base("gamma");
         i.invalidate_fn_resolution_for_keys([gamma[0]]);
         let alpha = i.fn_keys_for_base("alpha");
         i.invalidate_fn_resolution_for_keys([alpha[0]]);
         assert!(!indexed(&i, "alpha") && !indexed(&i, "gamma"));
         assert_eq!(&*i.fn_keys_for_base("alpha"), &*alpha);
-        assert!(
-            indexed(&i, "gamma"),
-            "the other dirty name refilled in the same pass"
-        );
+        assert!(!indexed(&i, "gamma"), "only the looked-up name is refilled");
         assert_eq!(&*i.fn_keys_for_base("gamma"), &*gamma);
+        assert!(i.dispatch.fn_keys_index.dirty.is_empty());
+
+        // A dirty name the tail index cannot list (spelled with `/`) still
+        // refills every dirty name in one pass.
+        i.invalidate_fn_resolution_for_keys([alpha[0], gamma[0]]);
+        i.evict_fn_keys_base(Symbol::intern("GLOBAL::infix:</>"));
+        assert!(i.fn_keys_for_base("infix:</>").is_empty());
+        assert!(
+            indexed(&i, "alpha") && indexed(&i, "gamma"),
+            "the pass refilled the other dirty names too"
+        );
         assert!(i.dispatch.fn_keys_index.dirty.is_empty());
     }
 
