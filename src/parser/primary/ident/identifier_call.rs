@@ -788,6 +788,23 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r, body) = parse_tracked_block_body(r)?;
                 return Ok((r, Expr::Try { body, catch: None }));
             }
+            // `try` accepts a statement. Keep `react` in statement position so
+            // its body remains a `Stmt::React` for the lexical `whenever`
+            // scope check; parsing it as an expression loses that enclosure.
+            if keyword("react", r).is_some()
+                && let Ok((r, stmt)) = crate::parser::stmt::control::react_stmt(r)
+            {
+                return Ok((
+                    r,
+                    Expr::spelled(
+                        Expr::Try {
+                            body: vec![stmt],
+                            catch: None,
+                        },
+                        || Spelling::BareStatement,
+                    ),
+                ));
+            }
             // try STMT — wrap the following statement in try.
             // Check if it's a binding statement ($a := expr) which the
             // expression parser can't handle. Only try assign_stmt when
