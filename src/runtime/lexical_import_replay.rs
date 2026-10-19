@@ -25,6 +25,9 @@ use std::sync::Arc;
 /// `ModuleState::imported_env_aliases`.
 type EnvAliases = Arc<HashMap<Symbol, Symbol>>;
 
+/// `TypeState::package_type_aliases`.
+type TypeAliases = Arc<crate::runtime::package_keyed::PackageKeyed<String>>;
+
 /// What a block-scoped `use` wrote that its scope's exit removes again.
 pub(crate) struct LexicalImportReplay {
     /// The module-merge env keys, the values the import bound them to and
@@ -40,6 +43,10 @@ pub(crate) struct LexicalImportReplay {
     aliases_memo: (Arc<HashSet<Symbol>>, Arc<HashSet<Symbol>>),
     /// The same for the env-alias display names.
     env_aliases_memo: (EnvAliases, EnvAliases),
+    /// The same for the package type aliases an imported type name adds
+    /// (`Foo` -> `M::Foo` for the importing package). A replay that finds
+    /// any other table imports for real instead.
+    type_aliases_memo: (TypeAliases, TypeAliases),
 }
 
 /// The state a block-scoped `use` must leave unchanged to be replayable.
@@ -49,7 +56,7 @@ pub(crate) struct ImportEffectProbe {
     proto_subs: usize,
     classes_shared: crate::runtime::registry::ClassTable,
     env_aliases: EnvAliases,
-    type_aliases: usize,
+    type_aliases: TypeAliases,
     pragmas: (bool, bool, bool, bool),
     aliases_before: Arc<HashSet<Symbol>>,
     env_keys_before: rustc_hash::FxHashSet<Symbol>,
@@ -69,7 +76,7 @@ impl Interpreter {
             proto_subs: std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize,
             classes_shared: reg.classes.clone(),
             env_aliases: Arc::clone(&self.module.imported_env_aliases),
-            type_aliases: std::sync::Arc::as_ptr(&self.types.package_type_aliases) as usize,
+            type_aliases: Arc::clone(&self.types.package_type_aliases),
             pragmas: (
                 self.module.strict_mode,
                 self.module.fatal_mode,
@@ -113,21 +120,22 @@ impl Interpreter {
 
     fn replayable_effects(&self, id: Symbol, probe: &ImportEffectProbe) -> Option<LexicalImportReplay> {
         let reg = self.registry();
-        let unchanged = !probe.had_export_args
+        let routines_same = !probe.had_export_args
             && reg.functions.len() == probe.functions
             && std::sync::Arc::as_ptr(&reg.proto_functions) as usize == probe.proto_functions
-            && std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize == probe.proto_subs
-            && probe.classes_shared.shares_with(&reg.classes)
-            && self.module.imported_env_aliases.len() == probe.env_aliases.len()
-            && std::sync::Arc::as_ptr(&self.types.package_type_aliases) as usize
-                == probe.type_aliases
-            && probe.pragmas
-                == (
-                    self.module.strict_mode,
-                    self.module.fatal_mode,
-                    self.module.lexical_fatal_mode,
-                    self.module.monkey_typing,
-                );
+            && std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize == probe.proto_subs;
+        let classes_same = probe.classes_shared.shares_with(&reg.classes);
+        let pragmas_same = probe.pragmas
+            == (
+                self.module.strict_mode,
+                self.module.fatal_mode,
+                self.module.lexical_fatal_mode,
+                self.module.monkey_typing,
+            );
+        // The env-alias and type-alias tables may change: the scope's exit
+        // puts the very `before` tables back, and the replay installs the
+        // `after` ones (`env_aliases_memo`, `type_aliases_memo`).
+        let unchanged = routines_same && classes_same && pragmas_same;
         if !unchanged {
             return None;
         }
@@ -139,13 +147,16 @@ impl Interpreter {
         let merge = crate::meta_ns::MetaNs::ModuleMerge.prefix();
         let mut env_keys = Vec::new();
         for key in top.imported_env_keys.difference(&probe.env_keys_before) {
-            // An env alias the import wrote (an exported variable, a term,
-            // a `&name` hook value) is not replayed.
-            if !key.with_str(|k| k.starts_with(merge)) {
+            let value = self.env.get_sym(*key)?;
+            // Besides the module-merge grants, an imported type name or enum
+            // value is the same object on every run. Any other env alias the
+            // import wrote (an exported variable, a term, a `&name` hook
+            // value) is not replayed.
+            if !key.with_str(|k| k.starts_with(merge)) && !Self::replayable_import_value(value) {
                 return None;
             }
             let display = self.module.imported_env_aliases.get(key).copied();
-            env_keys.push((*key, self.env.get_sym(*key)?.clone(), display));
+            env_keys.push((*key, value.clone(), display));
         }
         let routine_aliases = self
             .module
@@ -170,7 +181,22 @@ impl Interpreter {
                 Arc::clone(&probe.env_aliases),
                 Arc::clone(&self.module.imported_env_aliases),
             ),
+            type_aliases_memo: (
+                Arc::clone(&probe.type_aliases),
+                Arc::clone(&self.types.package_type_aliases),
+            ),
         })
+    }
+
+    /// Whether an imported env binding to `value` is the same on every run
+    /// of the `use`: a type object (a class, role, subset or package), a
+    /// parametric role or an enum value.
+    // Cost: O(1).
+    fn replayable_import_value(value: &Value) -> bool {
+        matches!(
+            value.view(),
+            ValueView::Package(_) | ValueView::Enum { .. } | ValueView::ParametricRole { .. }
+        )
     }
 
     /// Replay the recorded effects of the `use` filling set `id` instead of
@@ -186,12 +212,27 @@ impl Interpreter {
         let Some(replay) = self.module.lexical_import_replays.get(&id).map(Arc::clone) else {
             return false;
         };
+        let (types_before, types_after) = &replay.type_aliases_memo;
+        if !Arc::ptr_eq(types_before, types_after) {
+            if !Arc::ptr_eq(&self.types.package_type_aliases, types_before) {
+                return false;
+            }
+            self.types.package_type_aliases = Arc::clone(types_after);
+        }
         // What `record_import_env_key` records for a key no enclosing import
         // bound, without re-deriving the display name.
-        let top = self.module.import_scope_stack.last_mut();
-        if let Some(top) = top {
-            top.imported_env_keys
-                .extend(replay.env_keys.iter().map(|(key, ..)| *key));
+        // A key an import visible when the scope opened already bound is
+        // shadowed, and the scope's exit puts that binding back, as
+        // `record_import_env_key` arranges on a real import.
+        if let Some(top) = self.module.import_scope_stack.last_mut() {
+            for (key, ..) in &replay.env_keys {
+                if top.imported_env_keys.insert(*key)
+                    && top.imported_env_aliases.contains_key(key)
+                    && let Some(previous) = self.env.get_sym(*key)
+                {
+                    top.shadowed_env_values.insert(*key, previous.clone());
+                }
+            }
             top.own_routine_imports
                 .extend(replay.own_routine_imports.iter().copied());
         }
