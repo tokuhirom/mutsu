@@ -39,9 +39,26 @@ macro_rules! row {
             arity: $arity,
             handler: Handler::Interp($handler),
             flags: $flags,
-            named: &[],
+            named: named_of($name),
         }
     };
+}
+
+/// The named arguments Rakudo's repository method `name` declares.
+// Cost: O(1).
+const fn named_of(name: &str) -> &'static [&'static str] {
+    use crate::value::const_str_eq;
+    if const_str_eq(name, "candidates") {
+        &["api", "auth", "ver"]
+    } else if const_str_eq(name, "files") {
+        &["api", "auth", "name", "ver"]
+    } else if const_str_eq(name, "install") {
+        &["force", "precompile"]
+    } else if const_str_eq(name, "need") {
+        &["precomp-stores"]
+    } else {
+        &[]
+    }
 }
 
 pub(super) static ROWS: &[MethodRow] = &[

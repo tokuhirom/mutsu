@@ -15,6 +15,11 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 const ARGS: RowFlags = RowFlags::ANY_ARGS;
 /// `match` binds the regex adverbs (`:g`, `:ov`, `:x`, ...), which are open-ended.
+/// The named arguments `map` binds: `Any.map`'s six and the `:batch` and
+/// `:degree` a `HyperSeq`/`RaceSeq` reads from its `*%options`.
+pub(crate) const MAP_NAMED: &[&str] = &[
+    "batch", "deep", "degree", "duck", "flat", "item", "label", "node",
+];
 const ARGS_NAMED: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::ANY_NAMED);
 /// `Any`'s iteration methods take a type object as a one-item list
 /// (`Int.map(...)`, `Int.first`); `rotor` does not (Rakudo's candidates are
@@ -55,13 +60,11 @@ pub(super) static ROWS: &[MethodRow] = &[
         0,
         ARGS_TYPE.or(RowFlags::SLURPY),
         map,
-        &[
-            "batch", "deep", "degree", "duck", "flat", "item", "label", "node"
-        ]
+        MAP_NAMED
     ),
     any_row!("Any", "grep", 0, MU_ARGS, grep),
     any_row!("Any", "first", 0, MU_ARGS, first),
-    any_row!("Any", "flatmap", 1, ARGS_TYPE, flatmap),
+    any_row!("Any", "flatmap", 1, ARGS_TYPE, flatmap, &["label"]),
     any_row!("Any", "deepmap", 1, ARGS_TYPE, deepmap),
     any_row!("Any", "duckmap", 1, ARGS_TYPE, duckmap),
     any_row!("Any", "nodemap", 1, ARGS_TYPE, nodemap),
@@ -350,9 +353,7 @@ pub(super) static DECLARED_ELSEWHERE_ROWS: &[MethodRow] = &[
         0,
         ARGS_TYPE.or(RowFlags::SLURPY).or(RowFlags::OWNER_ONLY),
         map,
-        &[
-            "batch", "deep", "degree", "duck", "flat", "item", "label", "node"
-        ]
+        MAP_NAMED
     ),
 ];
 

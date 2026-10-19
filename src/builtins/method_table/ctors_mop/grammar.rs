@@ -22,7 +22,12 @@ macro_rules! row {
             handler: Handler::Interp(|interp, target, args, _named| {
                 grammar_parse(interp, target, $name, args)
             }),
-            flags: RowFlags::OWNER_ONLY.or(RowFlags::SLURPY),
+            // Besides `:rule`, `:args` and `:actions` (`:enc` of `parsefile`),
+            // the methods hand `%_` to the cursor they start (`:pos`), so
+            // every named argument is theirs.
+            flags: RowFlags::OWNER_ONLY
+                .or(RowFlags::SLURPY)
+                .or(RowFlags::ANY_NAMED),
             named: &[],
         }
     };

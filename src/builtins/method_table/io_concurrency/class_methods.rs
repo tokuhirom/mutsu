@@ -25,6 +25,12 @@ type Answer = Option<Result<Value, RuntimeError>>;
 /// more.
 macro_rules! row {
     ($owner:literal, $name:literal, $arity:literal, $handler:ident) => {
+        row!($owner, $name, $arity, $handler, named: &[])
+    };
+    ($owner:literal, $name:literal, $arity:literal, $handler:ident, named: $named:expr) => {
+        row!($owner, $name, $arity, $handler, RowFlags::NONE, $named)
+    };
+    ($owner:literal, $name:literal, $arity:literal, $handler:ident, $extra:expr, $named:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
@@ -32,16 +38,22 @@ macro_rules! row {
             handler: Handler::Interp($handler),
             flags: RowFlags::OWNER_ONLY
                 .or(RowFlags::TYPE_OBJECT_OK)
-                .or(RowFlags::SLURPY),
-            named: &[],
+                .or(RowFlags::SLURPY)
+                .or($extra),
+            named: $named,
         }
     };
 }
 
+/// The named arguments of `IO::Socket::Async`'s connecting class methods.
+const ASYNC_SOCKET_NAMED: &[&str] = &["enc", "scheduler"];
+/// ... and of its UDP ones.
+const ASYNC_UDP_NAMED: &[&str] = &["broadcast", "enc", "scheduler"];
+
 pub(super) static ROWS: &[MethodRow] = &[
-    row!("Supply", "from-list", 0, supply_from_list),
-    row!("Supply", "on-demand", 1, supply_on_demand),
-    row!("Supply", "interval", 0, supply_interval),
+    row!("Supply", "from-list", 0, supply_from_list, named: &["scheduler"]),
+    row!("Supply", "on-demand", 1, supply_on_demand, named: &["closing", "scheduler"]),
+    row!("Supply", "interval", 0, supply_interval, named: &["scheduler"]),
     row!(
         "CompUnit::RepositoryRegistry",
         "repository-for-name",
@@ -52,22 +64,25 @@ pub(super) static ROWS: &[MethodRow] = &[
         "CompUnit::RepositoryRegistry",
         "repository-for-spec",
         1,
-        repository_for_spec
+        repository_for_spec,
+        named: &["next-repo"]
     ),
     row!("CompUnit::RepositoryRegistry", "run-script", 1, run_script),
     row!("Encoding::Registry", "find", 1, encoding_find),
     row!("Encoding::Registry", "register", 1, encoding_register),
-    row!("IO::Socket::INET", "connect", 0, inet_connect),
-    row!("IO::Socket::INET", "listen", 0, inet_listen),
-    row!("IO::Socket::Async", "connect", 0, async_connect),
-    row!("IO::Socket::Async", "listen", 0, async_listen),
-    row!("IO::Socket::Async", "bind-udp", 0, async_bind_udp),
-    row!("IO::Socket::Async", "udp", 0, async_udp),
-    row!("Seq", "from-loop", 0, seq_from_loop),
+    row!("IO::Socket::INET", "connect", 0, inet_connect, named: &["family"]),
+    row!("IO::Socket::INET", "listen", 0, inet_listen, named: &["family"]),
+    row!("IO::Socket::Async", "connect", 0, async_connect, named: ASYNC_SOCKET_NAMED),
+    row!("IO::Socket::Async", "listen", 0, async_listen, named: ASYNC_SOCKET_NAMED),
+    row!("IO::Socket::Async", "bind-udp", 0, async_bind_udp, named: ASYNC_UDP_NAMED),
+    row!("IO::Socket::Async", "udp", 0, async_udp, named: ASYNC_UDP_NAMED),
+    row!("Seq", "from-loop", 0, seq_from_loop, named: &["fire-last", "label", "repeat"]),
     row!("X::AdHoc", "from-slurpy", 0, adhoc_from_slurpy),
-    row!("Thread", "start", 1, thread_start),
+    // `Thread.start(&code, *%adverbs)`: `:name`, `:app_lifetime`, and the
+    // rest passed on to `Thread.new`.
+    row!("Thread", "start", 1, thread_start, RowFlags::ANY_NAMED, &[]),
     row!("Thread", "yield", 0, thread_yield),
-    row!("Rakudo::Internals", "REGISTER-DYNAMIC", 0, register_dynamic),
+    row!("Rakudo::Internals", "REGISTER-DYNAMIC", 0, register_dynamic, named: &["override"]),
     row!("Deprecation", "report", 0, deprecation_report),
     row!("CompUnit::Loader", "load-source", 0, load_source),
     row!("CompUnit::Loader", "load-source-file", 0, load_source_file),

@@ -23,8 +23,8 @@ macro_rules! str_rows {
             name: "Str",
             arity: 0,
             handler: Handler::Named(str_named),
-            flags: RowFlags::ANY_NAMED,
-            named: &[],
+            flags: RowFlags::NONE,
+            named: STR_NAMED,
         }),*]
     };
 }
@@ -37,9 +37,13 @@ pub(super) static INT_ROWS: &[MethodRow] = &[MethodRow {
     name: "Str",
     arity: 0,
     handler: Handler::Named(str_named),
-    flags: RowFlags::ANY_NAMED,
-    named: &["superscript", "subscript"],
+    flags: RowFlags::NONE,
+    named: STR_NAMED,
 }];
+
+/// The named arguments Rakudo's numeric `Str` candidates declare; every other
+/// one is swallowed by the implicit `*%_`.
+const STR_NAMED: &[&str] = &["subscript", "superscript"];
 
 /// `.Str` with its named arguments: an `Int` reads `:superscript` and
 /// `:subscript`, every receiver ignores the rest.

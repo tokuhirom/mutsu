@@ -227,9 +227,10 @@ pub(crate) struct MethodRow {
     pub(crate) arity: u8,
     pub(crate) handler: Handler,
     pub(crate) flags: RowFlags,
-    /// The named arguments the row binds. A call passing a name that is not
-    /// listed takes the cascades, which apply the implicit `*%_` of a
-    /// method (`accepted_nameds`).
+    /// The named arguments the row binds. A call passing a name no row of the
+    /// method binds has it swallowed (the implicit `*%_` of a method); one
+    /// that another row of the method binds is that row's, so this one
+    /// declines (`dispatch::bind_named`).
     pub(crate) named: &'static [&'static str],
 }
 

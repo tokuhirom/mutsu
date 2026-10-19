@@ -20,6 +20,9 @@ type Answer = Option<Result<Value, RuntimeError>>;
 
 macro_rules! row {
     ($owner:literal, $name:literal, $arity:literal, $flags:expr, $mutating:literal) => {
+        row!($owner, $name, $arity, $flags, $mutating, named: &[])
+    };
+    ($owner:literal, $name:literal, $arity:literal, $flags:expr, $mutating:literal, named: $named:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
@@ -38,10 +41,13 @@ macro_rules! row {
                 handler
             }),
             flags: $flags,
-            named: &[],
+            named: $named,
         }
     };
 }
+
+/// The named arguments of a scheduler's `cue`.
+const CUE_NAMED: &[&str] = &["at", "catch", "every", "in", "stop", "times"];
 
 const SLURPY: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::SLURPY);
 const ONE: RowFlags = RowFlags::OWNER_ONLY;
@@ -51,14 +57,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Supplier", "done", 0, SLURPY, true),
     row!("Supplier", "quit", 0, SLURPY, true),
     row!("Supplier", "Supply", 0, ONE, false),
-    row!("ThreadPoolScheduler", "cue", 0, SLURPY, false),
+    row!("ThreadPoolScheduler", "cue", 0, SLURPY, false, named: CUE_NAMED),
     row!("ThreadPoolScheduler", "loads", 0, ONE, false),
     row!("ThreadPoolScheduler", "max_threads", 0, ONE, false),
     row!("ThreadPoolScheduler", "usage", 0, ONE, false),
     // The getter reads the handler; the setter (one argument) installs it.
     row!("ThreadPoolScheduler", "uncaught_handler", 0, ONE, false),
     row!("ThreadPoolScheduler", "uncaught_handler", 1, ONE, true),
-    row!("CurrentThreadScheduler", "cue", 0, SLURPY, false),
+    row!("CurrentThreadScheduler", "cue", 0, SLURPY, false, named: CUE_NAMED),
     row!("CurrentThreadScheduler", "loads", 0, ONE, false),
     row!("CurrentThreadScheduler", "uncaught_handler", 0, ONE, false),
     row!("CurrentThreadScheduler", "uncaught_handler", 1, ONE, true),

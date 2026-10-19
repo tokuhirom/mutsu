@@ -253,7 +253,7 @@ impl Compiler {
             // `@a.push(:zzz)` is a no-op in raku. This opcode stores whatever
             // single value it is handed, with no notion of named-ness, so a
             // named call site has to take the general dispatch path (which
-            // consults `builtins::accepted_nameds` and drops the adverb).
+            // swallows the adverb no row of the method binds).
             && !Self::is_named_arg_expr(&args[0])
             && matches!(target, Expr::ArrayVar(_))
             && self.code.locals.contains(&target_name)

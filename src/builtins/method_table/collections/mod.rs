@@ -13,7 +13,7 @@ pub(crate) mod any_coerce;
 mod any_coerce_late;
 pub(crate) mod any_collection;
 pub(crate) mod any_enum_views;
-mod any_interp;
+pub(crate) mod any_interp;
 mod any_interp_twins;
 mod any_list_late;
 mod any_pos_late;

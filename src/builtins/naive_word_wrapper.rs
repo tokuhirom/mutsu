@@ -80,8 +80,8 @@ pub(crate) fn naive_word_wrapper(text: &str, max: i64, indent: &str) -> String {
 }
 
 /// The method form: a defined `Str` invocant plus the named arguments
-/// `:max` and `:indent` (any other named argument is dropped before dispatch by
-/// `accepted_nameds`). `None` for anything else, which leaves the call to
+/// `:max` and `:indent` (any other named argument is swallowed, as no row of
+/// the method binds it). `None` for anything else, which leaves the call to
 /// ordinary dispatch and its error.
 // Cost: O(n), n = bytes of the invocant.
 pub(crate) fn native_naive_word_wrapper(

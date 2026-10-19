@@ -40,21 +40,28 @@ macro_rules! row {
         )
     };
     ($name:literal, $arity:literal, $handler:ident, $flags:expr) => {
+        row!($name, $arity, $handler, $flags, &[])
+    };
+    ($name:literal, $arity:literal, $handler:ident, $flags:expr, $named:expr) => {
         MethodRow {
             owner: "Promise",
             name: $name,
             arity: $arity,
             handler: Handler::Interp($handler),
             flags: $flags,
-            named: &[],
+            named: $named,
         }
     };
 }
 
+const CLASS: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK);
+
 pub(super) static ROWS: &[MethodRow] = &[
-    row!("start", 1, start),
-    row!("in", 1, in_row),
-    row!("at", 1, at),
+    // `start(&code, :&catch, :$scheduler, |c)`: `|c` takes every other named
+    // argument.
+    row!("start", 1, start, CLASS.or(RowFlags::ANY_NAMED)),
+    row!("in", 1, in_row, CLASS, &["scheduler"]),
+    row!("at", 1, at, CLASS, &["scheduler"]),
     row!("kept", 0, kept),
     row!("kept", 1, kept),
     row!("broken", 0, broken),

@@ -492,9 +492,8 @@ impl Interpreter {
         // or consumed as data (`"abc".chop(:zzz)` -> a 0 character count). Every
         // native that genuinely reads an adverb is either lifted out as an
         // interceptor above (`contains` / `starts-with` / `ends-with` /
-        // `substr-eq`) or declared in `builtins::accepted_nameds`; for anything
-        // it declares, the cascade is named-blind. See that module for why the
-        // declaration is partial and why `None` is the safe default.
+        // `substr-eq`) or declared on the method's rows; a name no row binds is
+        // dropped (`method_table::implicit_named`).
         let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
         // The table was asked with the named argument it does not declare
         // (`255.fmt(:zzz)`), so it is asked again without it, behind the same

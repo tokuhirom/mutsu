@@ -23,22 +23,33 @@ const LATE: RowFlags = RowFlags::OWNER_ONLY
     .or(RowFlags::ANY_NAMED)
     .or(RowFlags::JUNCTION_ARGS);
 
+/// `AT-POS` and `EXISTS-POS` declare no named argument: one the call passes
+/// is swallowed by the implicit `*%_`, never counted as an index
+/// (`(1, 2, 3).AT-POS("a", :zzz)` dies on the "a" index, as in Rakudo).
+const LATE_READ: RowFlags = RowFlags::OWNER_ONLY
+    .or(RowFlags::ANY_ARGS)
+    .or(RowFlags::SLURPY)
+    .or(RowFlags::JUNCTION_ARGS);
+
 macro_rules! late {
     ($name:literal, $arity:literal, $handler:ident) => {
+        late!($name, $arity, LATE, $handler)
+    };
+    ($name:literal, $arity:literal, $flags:expr, $handler:ident) => {
         MethodRow {
             owner: "Any",
             name: $name,
             arity: $arity,
             handler: Handler::Interp($handler),
-            flags: LATE,
+            flags: $flags,
             named: &[],
         }
     };
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    late!("AT-POS", 1, at_pos),
-    late!("EXISTS-POS", 1, exists_pos),
+    late!("AT-POS", 1, LATE_READ, at_pos),
+    late!("EXISTS-POS", 1, LATE_READ, exists_pos),
     late!("ASSIGN-POS", 2, assign_pos),
     late!("BIND-POS", 2, bind_pos),
     late!("DELETE-POS", 0, delete_pos),

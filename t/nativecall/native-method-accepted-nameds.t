@@ -3,9 +3,9 @@ use Test;
 # A Raku *method* carries an implicit `*%_`, so a named argument the method does
 # not declare is swallowed and cannot change the answer. mutsu's builtin methods
 # are dispatched by arity, so an undeclared named used to occupy a positional
-# slot and be numified or consumed as data. `src/builtins/accepted_nameds.rs`
-# states which names each surveyed method accepts; this file pins both halves of
-# that declaration:
+# slot and be numified or consumed as data. The `named` lists of the method's
+# rows (`src/builtins/method_table/`) state which names each method binds; this
+# file pins both halves of that declaration:
 #
 #   * an UNDECLARED named is invisible -- `M(..., :zzz)` eqv `M(...)`;
 #   * every DECLARED adverb still reaches the implementation.
@@ -141,7 +141,7 @@ is (1,2,3).map({ $_ * 2 }).join("-", :foo), "2-4-6", 'a Seq body is consumed exa
 # --- slurpy readers: subst / trans -----------------------------------------
 #
 # The signature survey can only report a lower bound for these methods. Their
-# accepted sets are recorded manually in accepted_nameds.rs from the Raku docs
+# accepted sets are recorded manually on their rows from the Raku docs
 # and the adverbs read by the native implementations.
 
 is "aaa".subst(/a/, "x", :g), "xxx", 'subst keeps :g';

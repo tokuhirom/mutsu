@@ -1,4 +1,3 @@
-pub(crate) mod accepted_nameds;
 pub(crate) mod arith;
 pub(crate) mod backtrace_methods;
 pub(crate) mod buf_bits;
@@ -104,7 +103,6 @@ pub(crate) fn chomp_value(v: &Value) -> Value {
 }
 
 pub(crate) use crate::value::flat::is_infinite_range;
-pub(crate) use accepted_nameds::strip_undeclared_nameds;
 pub(crate) use arith::{
     BitOp, arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub, int_abs,
     int_abs_value, int_bitneg, int_bitop, int_cmp, int_div, int_gcd, int_lcm, int_operand,
@@ -117,6 +115,7 @@ pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::process_rusage;
 pub(crate) use functions::{deitemize_flat_operand, flat_val, thread_junctions_in_items};
+pub(crate) use method_table::strip_undeclared_nameds;
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{
     buf_get_int_items, fmt_joinable_target, fmt_native, is_buf_like, list_item_pair_split,

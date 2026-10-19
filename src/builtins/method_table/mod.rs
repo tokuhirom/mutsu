@@ -50,6 +50,7 @@ pub(crate) mod allomorph;
 mod collections;
 mod ctors_mop;
 mod dispatch;
+mod implicit_named;
 pub(crate) mod index_arg;
 mod instances;
 mod io_concurrency;
@@ -66,6 +67,7 @@ mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
+pub(crate) use collections::any_interp::MAP_NAMED;
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
 pub(crate) use collections::from_iterator::owners_of as from_iterator_owners_of;
@@ -131,6 +133,7 @@ pub(crate) use dispatch::{
 };
 #[cfg(test)]
 pub(crate) use dispatch::{shapeless_row, try_dispatch};
+pub(crate) use implicit_named::strip_undeclared_nameds;
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use mutating::type_object_owners as mut_type_object_owners;
 pub(crate) use place::ReceiverPlace;
@@ -138,9 +141,10 @@ pub(crate) use row::{Handler, MethodRow, Named, NamedFn, NarrowFn, RowFlags};
 #[cfg(test)]
 use table::all_rows;
 pub(crate) use table::names_a_mut_row;
+use table::names_any_row;
 pub(crate) use table::{
-    Receiver, RowId, base_row, max_row_arity, names_a_row, names_any_row, owner_declares,
-    owner_row, owner_rows_at, resolve, row, shape_has_row, some_row_binds_named,
+    Receiver, RowId, base_row, max_row_arity, names_a_row, owner_declares, owner_row,
+    owner_rows_at, resolve, row, shape_has_row, some_row_binds_named,
 };
 pub(crate) use unadmitted::invoke_unadmitted;
 
