@@ -66,8 +66,33 @@ pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Opti
 /// form a `$x` use is looked up by), any other container with its sigil, so
 /// `my @barf` does not declare `$barf`.
 fn declared_var_name(name: &str) -> &str {
+    // A `$self` lexical keeps its reserved key (ADR-0061), the form its uses
+    // name too.
+    if name == crate::env::LEX_SELF {
+        return name;
+    }
     let name = name.trim_start_matches(['\\', '*', '|', ':']);
     name.strip_prefix('$').unwrap_or(name)
+}
+
+/// The variables (`$x`, `@a`) a `require`'s literal import list names.
+// Cost: O(a), a = arguments.
+fn require_imported_vars(args: &[Expr]) -> impl Iterator<Item = String> + '_ {
+    args.iter()
+        .filter_map(|arg| match arg {
+            Expr::ArrayLiteral(items) => Some(items.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|item| match item {
+            Expr::Literal(value) => match value.view() {
+                crate::value::ValueView::Str(s) if s.starts_with(['$', '@', '%']) => {
+                    Some(s.to_string())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
 }
 
 /// A parameter name without its sigil, for comparing `where` references.
@@ -86,7 +111,9 @@ fn is_exempt(name: &str) -> bool {
         || name.starts_with("CALLER")
         || name.starts_with("DYNAMIC")
         || name.starts_with("__")
-        || name.chars().next().is_some_and(|c| c.is_ascii_digit())
+        || name.chars().next().is_some_and(char::is_numeric)
+        // A code attribute or variable in its scalar spelling (`$&!x`).
+        || name.starts_with('&')
         // An extended identifier whose adverb value still awaits BEGIN-time
         // evaluation (`$a:foo«$c»`) does not yet spell the name it will look
         // up -- only the compiler knows the `constant` environment that
@@ -118,6 +145,10 @@ struct UndeclaredVars<'a> {
 impl UndeclaredVars<'_> {
     fn declare(&mut self, name: &str) {
         let scope = self.scopes.last_mut().expect("the unit scope");
+        // A sigiled term (`constant term:<$box>`) is used by its whole name.
+        if name.starts_with('$') {
+            scope.insert(name.to_string());
+        }
         scope.insert(declared_var_name(name).to_string());
     }
 
@@ -266,7 +297,19 @@ impl UndeclaredVars<'_> {
         // A sigil-less target naming an in-scope constant is the term, not an
         // undeclared `$name` (#9962); the store itself reports the immutable
         // value.
-        if !self.judged_stmt || target_is_sigilless && self.interp.term_binding(name).is_some() {
+        // A sigil-less target naming an in-scope constant is the term, not an
+        // undeclared `$name` (#9962), and so is a type-like one (`Nil = 5`);
+        // the store itself reports the immutable value.
+        if !self.judged_stmt
+            || target_is_sigilless
+                && (self.interp.term_binding(name).is_some()
+                    || name.starts_with(|c: char| c.is_uppercase()))
+        {
+            return;
+        }
+        // A code variable or code attribute (`&f = ...`, `&!cb = ...`) is not
+        // a variable this scan judges.
+        if name.starts_with('&') {
             return;
         }
         let lhs = if let Some(base) = name.strip_prefix('@') {
@@ -295,19 +338,24 @@ impl UndeclaredVars<'_> {
     /// which every method of the body sees, wherever they are declared.
     fn type_body(&mut self, body: &[Stmt], stmt: &Stmt) {
         self.in_scope(|v| {
-            for s in body {
-                match s {
-                    Stmt::HasDecl { name, is_alias, .. } => {
-                        let attr = name.resolve();
-                        // Rakudo's "did you mean" for a bare `$name` that
-                        // refers to an attribute suggests `$!name`.
-                        v.declare(&format!("!{}", attr));
-                        if *is_alias {
-                            v.declare(&attr);
+            // `has ($a, $b)` arrives as a synthetic block of declarations.
+            let mut pending = vec![body];
+            while let Some(list) = pending.pop() {
+                for s in list {
+                    match s {
+                        Stmt::HasDecl { name, is_alias, .. } => {
+                            let attr = name.resolve();
+                            // Rakudo's "did you mean" for a bare `$name` that
+                            // refers to an attribute suggests `$!name`.
+                            v.declare(&format!("!{}", attr));
+                            if *is_alias {
+                                v.declare(&attr);
+                            }
                         }
+                        Stmt::VarDecl { name, .. } => v.declare(name),
+                        Stmt::SyntheticBlock(inner) => pending.push(inner),
+                        _ => {}
                     }
-                    Stmt::VarDecl { name, .. } => v.declare(name),
-                    _ => {}
                 }
             }
             v.judging(true, |v| walk_stmt(v, stmt));
@@ -431,13 +479,19 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             Stmt::SyntheticBlock(_) => self.judging(true, |v| walk_stmt(v, stmt)),
             // Every other statement with a body opens a scope for it (its
             // parameters, reported as names, are declared there).
+            // A phaser's body is moved away from where the source wrote it
+            // (the mainline's ENTER, BEGIN and `our` declarations go to the
+            // unit's head), so in the compunit mode it is no evidence of a
+            // use before a declaration.
+            Stmt::Phaser { .. } => self.in_scope(|v| {
+                v.in_moved_code(|v| v.judging(true, |v| walk_stmt(v, stmt)))
+            }),
             Stmt::For { .. }
             | Stmt::Given { .. }
             | Stmt::When { .. }
             | Stmt::Default(_)
             | Stmt::Catch(_)
             | Stmt::Control(_)
-            | Stmt::Phaser { .. }
             | Stmt::Whenever { .. }
             | Stmt::React { .. }
             | Stmt::TokenDecl { .. }
@@ -457,6 +511,13 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         }
         match expr {
             Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => self.check_var(expr),
+            // `require M <$x>` declares the variables its import list names.
+            Expr::Call { name, args, .. } if name.as_str() == "require" => {
+                for var in require_imported_vars(args) {
+                    self.declare(&var);
+                }
+                self.judging(false, |v| walk_expr(v, expr));
+            }
             // A desugaring's block is no scope: `(my $a, my $b) »=» (1, 2)`
             // declares `$a` and `$b` where it is written.
             Expr::DoBlock {
@@ -485,6 +546,11 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         if matches!(kind, NameKind::Param | NameKind::BlockParam) {
+            // A parameter spelled `$self` is reported by its bare name; its
+            // uses name the reserved `$self` key (ADR-0061).
+            if name == "self" {
+                self.declare(crate::env::LEX_SELF);
+            }
             self.declare(name);
         }
     }

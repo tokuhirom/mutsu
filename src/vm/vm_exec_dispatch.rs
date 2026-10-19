@@ -1932,9 +1932,14 @@ impl Interpreter {
                     // over the `Red` constant" (a spurious X::Assignment::RO in
                     // `roast/S12-enums/misc.t`). Keyed by the enum key itself,
                     // the namespace cannot confuse the two — the guard is kept
-                    // only as a cheap assertion of that invariant.
-                    if let Some(ValueView::Enum { enum_type, key, .. }) =
-                        self.enum_bare_value(&name).map(Value::view)
+                    // only as a cheap assertion of that invariant. The target
+                    // must also be SPELLED as a bareword: the compiler keys a
+                    // sigilless target `\Red`, while `$red = 5` (or `(my $red)`)
+                    // stores under the bare `red`, which an enum key `red` of
+                    // the package must not make immutable (#14019).
+                    if name_str.starts_with('\\')
+                        && let Some(ValueView::Enum { enum_type, key, .. }) =
+                            self.enum_bare_value(&name).map(Value::view)
                         && name == key.resolve()
                     {
                         return Err(RuntimeError::assignment_ro_typename(

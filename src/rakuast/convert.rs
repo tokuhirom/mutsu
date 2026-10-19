@@ -880,8 +880,18 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 let cond = cond
                     .as_ref()
                     .ok_or_else(|| unsupported("repeat loop without condition"))?;
+                // `repeat while C -> $p { }`: the parser keeps the parameter as
+                // the loop's `init` declaration (`parser::repeat_param_clause`);
+                // raku spells it as the body's signature.
+                let body_node = match init.as_deref() {
+                    Some(Stmt::VarDecl { name, .. }) => {
+                        pointy_block(&[ParamDef::plain_positional(name)], body, None)?
+                    }
+                    Some(_) => return Err(unsupported("repeat loop with a setup statement")),
+                    None => signature_block_node(body)?,
+                };
                 let mut fields = label_fields(label);
-                fields.push(node_field(Some("body"), signature_block_node(body)?));
+                fields.push(node_field(Some("body"), body_node));
                 fields.push(node_field(
                     Some("condition"),
                     convert_expr(if *is_until {

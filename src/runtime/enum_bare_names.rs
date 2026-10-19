@@ -124,6 +124,31 @@ impl Interpreter {
         self.env.insert(key, value);
     }
 
+    /// Record an `our` enum key the running code declared below its unit's top
+    /// level (in a block or routine body) as a symbol of the declaring package
+    /// too, as rakudo installs it there. The env binding stays the lexical one
+    /// and wins while it is in scope; after the block, a bare use of the key
+    /// finds the package's (#14019), unless a lexical of the name shadows it
+    /// (#11412's outer `Normal`).
+    // Cost: O(|name|), plus one amortized O(1) insert (a copy-on-write table
+    // clone, O(t), only while a spawned thread still shares the table).
+    pub(crate) fn record_package_enum_key(&mut self, name: &str, value: Value) {
+        let owner = if self.current_package_is_global() {
+            GLOBAL_OWNER.to_string()
+        } else {
+            self.current_package_str().to_string()
+        };
+        // A key the package already holds keeps its value: a module's
+        // top-level key the program imported is a lexical of the program's
+        // top level in rakudo, which a block's same-named enum shadows only
+        // inside the block.
+        let table = crate::runtime::cow_table_mut(&mut self.module.module_toplevel.enum_keys);
+        let keys = table.entry(owner).or_default();
+        if !keys.contains_key(name) {
+            keys.insert(name.to_string(), value);
+        }
+    }
+
     /// Look an enum key up in the bare-name namespace.
     ///
     /// This is the ONLY way the value is reachable by its bare spelling — a plain

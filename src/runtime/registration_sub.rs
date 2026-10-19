@@ -2712,6 +2712,9 @@ impl Interpreter {
             // plain env key: `$s` is stored sigil-stripped as `"s"`, so a plain
             // insert here would make an enum key and a same-named scalar one
             // symbol (#7914). See `runtime::enum_bare_names`.
+            if !is_my && !is_anonymous && !self.at_module_toplevel() {
+                self.record_package_enum_key(key, enum_val.clone());
+            }
             self.insert_enum_bare_value(key, enum_val);
         }
         // Register exports if `is export`
