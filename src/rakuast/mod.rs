@@ -2852,24 +2852,47 @@ pub fn construct(
         let body = named_arg(args, "body")
             .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `body`")))?;
         require_regex_node(&body, class_name)?;
+        let traits = named_arg(args, "traits")
+            .map(|value| {
+                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
+                    RuntimeError::new(format!("{class_name}.new expects `traits` to be a list"))
+                })
+            })
+            .transpose()?;
+        if let Some(traits) = &traits {
+            for trait_node in traits {
+                require_rakuast_class(
+                    trait_node,
+                    RakuAstClass::TraitIs,
+                    "RakuAST regex declaration",
+                )?;
+            }
+        }
         let class = match class_name {
             "RakuAST::RegexDeclaration" => RakuAstClass::RegexDeclaration,
             "RakuAST::TokenDeclaration" => RakuAstClass::TokenDeclaration,
             _ => RakuAstClass::RuleDeclaration,
         };
+        let mut fields: Vec<_> = name
+            .map(|name| RakuAstField {
+                name: Some("name"),
+                value: RakuAstFieldValue::Node(name),
+            })
+            .into_iter()
+            .collect();
+        if let Some(traits) = traits {
+            fields.push(RakuAstField {
+                name: Some("traits"),
+                value: RakuAstFieldValue::List(traits),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("body"),
+            value: RakuAstFieldValue::Node(body),
+        });
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class,
-            fields: name
-                .map(|name| RakuAstField {
-                    name: Some("name"),
-                    value: RakuAstFieldValue::Node(name),
-                })
-                .into_iter()
-                .chain([RakuAstField {
-                    name: Some("body"),
-                    value: RakuAstFieldValue::Node(body),
-                }])
-                .collect(),
+            fields,
         }))));
     }
     if class_name == "RakuAST::Grammar" && method == "new" {

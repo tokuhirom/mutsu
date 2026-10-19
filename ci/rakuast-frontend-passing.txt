@@ -2004,6 +2004,7 @@ t/grammar/splice-arg-flatten-rule.t
 t/grammar/stub-satisfied-by-token-or-proto.t
 t/grammar/subset-where-class-scoped-grammar.t
 t/grammar/token-declarative-prefix-statements.t
+t/grammar/token-declarator-is-export.t
 t/grammar/token-dynamic-param-visible-to-action.t
 t/grammar/token-my-closure-outlives-defining-frame.t
 t/grammar/token-my-two-instances-same-name.t
@@ -2979,6 +2980,7 @@ t/modules/module-file-var-and-callframe.t
 t/modules/module-finish-data-section.t
 t/modules/module-first-loaded-in-eval-keeps-own-package-name.t
 t/modules/module-global-merge-is-lexical.t
+t/modules/module-group-declaration-stays-unit-lexical.t
 t/modules/module-import-alias-scope-paths.t
 t/modules/module-import-alias-scope.t
 t/modules/module-lexical-rw-arg.t
@@ -3027,6 +3029,7 @@ t/modules/module-toplevel-package-names-off-frame-env.t
 t/modules/module-toplevel-qualified-names-off-frame-env.t
 t/modules/module-toplevel-routine-state-outlives-loader.t
 t/modules/module-transitive-use-does-not-leak-types.t
+t/modules/module-type-beats-importer-constant.t
 t/modules/module-warning-location-misattributed.t
 t/modules/multi-method-where-module-scope.t
 t/modules/multi-rank-resolves-type-in-declaring-package.t
@@ -4195,6 +4198,7 @@ t/oo/method/rotate-splice-name-method-rows.t
 t/oo/method/routine-code-method-rows.t
 t/oo/method/routine-submethod-routine-name-wrong.t
 t/oo/method/rw-fallback-method-assignment.t
+t/oo/method/rw-method-capture-forward-writeback.t
 t/oo/method/rw-method-conditional-tail-container.t
 t/oo/method/rw-method-indexed-element.t
 t/oo/method/rw-method-missing-entry-index-store.t
@@ -4291,6 +4295,7 @@ t/oo/mop/can-returns-mixed-in-method-object.t
 t/oo/mop/core-class-own-constructor-introspection.t
 t/oo/mop/how-metaobject-identity.t
 t/oo/mop/how-mutation-persists.t
+t/oo/mop/hyper-seq-mu-introspection.t
 t/oo/mop/introspection-capture-cando.t
 t/oo/mop/isa-parameterized-buf-name.t
 t/oo/mop/isa-parameterized-container-type.t
@@ -5015,6 +5020,7 @@ t/rakuast/rakuast-regex-conjunction-interpolation.t
 t/rakuast/rakuast-regex-decl-scope-params.t
 t/rakuast/rakuast-regex-decl-trivia-and-modifiers.t
 t/rakuast/rakuast-regex-declaration-code-blocks.t
+t/rakuast/rakuast-regex-declaration-export-traits.t
 t/rakuast/rakuast-regex-dynamic-arguments.t
 t/rakuast/rakuast-regex-internal-modifier.t
 t/rakuast/rakuast-regex-literal-hash-index.t
@@ -7820,6 +7826,7 @@ t/vm/writeback/container-lexical-declarator-matrix.t
 t/vm/writeback/container-rebuild-preserves-identity.t
 t/vm/writeback/container-ref-tag-frame-leak.t
 t/vm/writeback/container-slot-read-repairs.t
+t/vm/writeback/container-store-rows.t
 t/vm/writeback/custom-how-type-check-writeback-coherence.t
 t/vm/writeback/delete-slot-writeback.t
 t/vm/writeback/dualstore-slot-local-gate.t

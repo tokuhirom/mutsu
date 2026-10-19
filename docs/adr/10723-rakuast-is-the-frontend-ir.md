@@ -1380,3 +1380,13 @@ arguments into the same parameterized type node used by declaration headers.
 Lowering already rebuilds the `DoesDecl` with its argument expressions, so role
 composition continues through the existing compiled declaration path. The
 focused regression checks the node shape, EVAL, and the composed role's value.
+
+### 6.78 S10: export traits on regex declarations (2026-10-18)
+
+Rakudo represents `is export` on token, rule, and regex declarations as a
+`Trait::Is(name => "export")`, with tagged exports carrying the tag list as
+the trait argument. Conversion now preserves those traits from the parser's
+declaration flags, and lowering maps them back to the existing export
+registration. The declaration constructors also retain a `traits` list, so
+hand-built nodes follow the same path. The regression checks the measured node
+shape, tagged export metadata, EVAL, and hand-built trait lowering.

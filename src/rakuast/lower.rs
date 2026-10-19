@@ -1640,6 +1640,22 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if !node.fields.iter().any(|f| f.name == Some("name")) {
         return Ok(Stmt::Expr(lower_anon_regex_declaration(node)?));
     }
+    let (node_without_header, header) = super::package_header::strip(node, true)?;
+    if !header.adverbs.is_empty() {
+        return Err(unsupported(node));
+    }
+    let (is_export, export_tags) = match header.export_tags {
+        None => (false, Vec::new()),
+        Some(tags) if tags == ["DEFAULT"] => (true, Vec::new()),
+        Some(tags) => (true, tags),
+    };
+    let node = &node_without_header;
+    if node.fields.iter().any(|field| {
+        field.name == Some("traits")
+            && matches!(&field.value, RakuAstFieldValue::List(items) if !items.is_empty())
+    }) {
+        return Err(unsupported(node));
+    }
     let name = call_name_str(node)?;
     let body = named_child(node, "body")?;
     let declaration_kind = match node.class {
@@ -1711,8 +1727,8 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             multi,
             is_my,
             is_our,
-            is_export: false,
-            export_tags: Vec::new(),
+            is_export,
+            export_tags,
         }),
         RakuAstClass::RuleDeclaration => Ok(Stmt::RuleDecl {
             name: crate::symbol::Symbol::intern(&name),
@@ -1721,8 +1737,8 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             body,
             source_regex,
             multi,
-            is_export: false,
-            export_tags: Vec::new(),
+            is_export,
+            export_tags,
         }),
         _ => Err(unsupported(node)),
     }
