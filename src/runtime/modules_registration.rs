@@ -52,5 +52,5 @@ mod signature_type_canon;
 pub(crate) mod stream_decoder_object;
 pub(crate) mod sys_resources;
 pub(crate) mod value_call_compile_cache;
-mod wrapper_role_gist;
+pub(crate) mod wrapper_role_gist;
 pub(crate) use resolution_sequence::value_is_definite;

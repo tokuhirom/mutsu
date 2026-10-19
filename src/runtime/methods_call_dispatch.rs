@@ -203,16 +203,19 @@ impl Interpreter {
         {
             return result;
         }
-        // `X::Promise::Broken` / `X::React::Died` are composed into the
-        // exception `Promise.result` / a dying `react` rethrows, and the role
-        // overrides `gist` (only `gist` — see `wrapper_role_gist`). mutsu
-        // registers the role with no method
-        // table, so intercept here rather than at one of the several native
-        // `.gist` arms downstream: this is the single point both `$ex.gist`
-        // and `say $ex` funnel through.
-        if method == "gist"
-            && args.is_empty()
-            && let Some(result) = self.wrapper_role_gist(&target)
+        // `X::Promise::Broken`, `X::React::Died` and `X::Await::Died` are
+        // composed into the exception `Promise.result`, a dying `react` or
+        // `await` rethrows; the role's `gist` is a row, found by the role
+        // (ADR-11276 §9.199). Asked here, ahead of the native `.gist` arms
+        // downstream that would answer the bare exception.
+        if let Some(owners) = crate::builtins::method_table::wrapper_role_owners_of(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
         {
             return result;
         }
