@@ -259,7 +259,7 @@ impl Interpreter {
                 ..
             } if class_name == "utf16" => {
                 if let Some(items) = crate::value::value_buf::buf_elems(&attributes) {
-                    let use_be = normalized == "utf-16be";
+                    let use_be = matches!(normalized.as_str(), "utf16be" | "utf-16be");
                     let mut bytes = Vec::with_capacity(items.len() * 2);
                     for item in items.iter() {
                         let unit = match item.view() {

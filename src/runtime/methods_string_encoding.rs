@@ -101,6 +101,7 @@ impl Interpreter {
         ))
     }
 
+    // Cost: O(n + e), n = input bytes, e = encoding registry name bytes.
     pub(super) fn encode_with_encoding(
         &self,
         input: &str,
@@ -130,10 +131,10 @@ impl Interpreter {
                 }
                 Ok(input.chars().map(|c| c as u8).collect())
             }
-            "utf-16" | "utf-16le" => {
+            "utf16" | "utf16le" | "utf-16" | "utf-16le" => {
                 Ok(input.encode_utf16().flat_map(|u| u.to_le_bytes()).collect())
             }
-            "utf-16be" => Ok(input.encode_utf16().flat_map(|u| u.to_be_bytes()).collect()),
+            "utf16be" | "utf-16be" => Ok(input.encode_utf16().flat_map(|u| u.to_be_bytes()).collect()),
             _ => {
                 if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
                     for ch in input.chars() {

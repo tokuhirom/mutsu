@@ -22,8 +22,8 @@ impl Interpreter {
     pub(crate) fn builtin_encodings() -> Vec<EncodingEntry> {
         vec![
             EncodingEntry {
-                name: "utf-8".to_string(),
-                alternative_names: vec!["utf8".to_string()],
+                name: "utf8".to_string(),
+                alternative_names: vec!["utf-8".to_string()],
                 user_type: None,
             },
             EncodingEntry {
@@ -48,23 +48,23 @@ impl Interpreter {
                 user_type: None,
             },
             EncodingEntry {
-                name: "utf-16".to_string(),
-                alternative_names: vec!["utf16".to_string()],
+                name: "utf16".to_string(),
+                alternative_names: vec!["utf-16".to_string()],
                 user_type: None,
             },
             EncodingEntry {
-                name: "utf-16le".to_string(),
+                name: "utf16le".to_string(),
                 alternative_names: vec![
-                    "utf16le".to_string(),
+                    "utf-16le".to_string(),
                     "utf16-le".to_string(),
                     "utf-16-le".to_string(),
                 ],
                 user_type: None,
             },
             EncodingEntry {
-                name: "utf-16be".to_string(),
+                name: "utf16be".to_string(),
                 alternative_names: vec![
-                    "utf16be".to_string(),
+                    "utf-16be".to_string(),
                     "utf16-be".to_string(),
                     "utf-16-be".to_string(),
                 ],
