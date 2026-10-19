@@ -449,9 +449,15 @@ fn dispatch(
         .iter()
         .cloned()
         .partition(|arg| arg.is_string_pair_value());
-    if !named.iter().all(|pair| names_declared(row, pair)) || !admits_row(row, &positional) {
+    if !admits_row(row, &positional) {
         return None;
     }
+    // Every method carries an implicit `*%_`: a named argument the row does not
+    // bind is swallowed, not a reason to take the cascades.
+    let named: Vec<Value> = named
+        .into_iter()
+        .filter(|pair| names_declared(row, pair))
+        .collect();
     call(row, interp, target, &positional, Named::new(&named))
 }
 
@@ -605,18 +611,22 @@ fn walk_mro(
             {
                 return Some(Err(refusal));
             }
-            if type_refused || !named.iter().all(|pair| names_declared(row, pair)) || !admitted {
-                only_type_refused &=
-                    type_refused && named.iter().all(|pair| names_declared(row, pair)) && admitted;
+            if type_refused || !admitted {
+                only_type_refused &= type_refused && admitted;
                 return None;
             }
             only_type_refused = false;
+            let bound: Vec<Value> = named
+                .iter()
+                .filter(|pair| names_declared(row, pair))
+                .cloned()
+                .collect();
             call(
                 row,
                 Some(&mut *interp),
                 target,
                 &positional,
-                Named::new(&named),
+                Named::new(&bound),
             )
             .map(|(result, _)| result)
         })
@@ -701,10 +711,12 @@ pub(crate) fn answer_shapeless(
             .iter()
             .cloned()
             .partition(|arg| arg.is_string_pair_value());
-        if named.iter().all(|pair| names_declared(row(id), pair)) {
-            return call(row(id), None, target, &positional, Named::new(&named))
-                .map(|(result, _)| result);
-        }
+        let named: Vec<Value> = named
+            .into_iter()
+            .filter(|pair| names_declared(row(id), pair))
+            .collect();
+        return call(row(id), None, target, &positional, Named::new(&named))
+            .map(|(result, _)| result);
     }
     let id = shapeless_row(interp.as_deref_mut(), target, method, args.len())?;
     // `Cool`'s text methods are `self.Str.METHOD`: an instance with a `Str`
