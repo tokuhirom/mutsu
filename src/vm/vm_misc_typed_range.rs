@@ -288,7 +288,7 @@ impl Interpreter {
         Ok(result)
     }
 
-    fn build_range_excl_value(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn build_range_excl_value(left: Value, right: Value) -> Result<Value, RuntimeError> {
         let right = Self::scalarize_range_endpoint(right);
         let left = Self::scalarize_range_endpoint(left);
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {

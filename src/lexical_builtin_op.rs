@@ -45,8 +45,14 @@
 //! their dispatcher ranks a candidate against the native increment's core
 //! candidates (`Interpreter::core_increment_wins_over`) and falls back to it.
 //!
+//! The built-in infixes whose op asks no user candidate at all (the bitwise
+//! operators, the ranges, `=>`, `===`, the junction constructors, ...) are a
+//! fourth kind ([`is_replaced_infix`]): the imported dispatcher replaces the
+//! op through `OpCode::LexImportInfix`, and falls back to the built-in.
+//!
 //! Every other built-in operator keeps its imported candidates in the
-//! registry: its uses reach them by name (`postcircumfix:<< >>`).
+//! registry: its uses reach them by name (`postcircumfix:<< >>`, the thunky
+//! operators, `does`).
 
 use crate::opcode::{CompoundBaseOp, OpCode};
 
@@ -61,7 +67,7 @@ pub(crate) fn binds_lexically(name: &str) -> bool {
         return false;
     };
     match category {
-        "infix" => is_lexical_infix(op) || is_call_spelled_infix(op),
+        "infix" => is_lexical_infix(op) || is_call_spelled_infix(op) || is_replaced_infix(op),
         "prefix" => is_lexical_prefix(op),
         "postfix" => is_lexical_postfix(op),
         "postcircumfix" => is_lexical_postcircumfix(op),
@@ -147,6 +153,103 @@ pub(crate) fn is_call_spelled_infix(op: &str) -> bool {
     )
 }
 
+/// The built-in infixes whose op asks no user candidate, and which an
+/// imported dispatcher therefore *replaces* in a block that imports a
+/// candidate of them: the compiler prefixes the op with
+/// `OpCode::LexImportInfix` ([`replaced_infix_of_opcode`]), or the parser
+/// already spells the use as a call (`~^`, `minmax`), and on a hit the bound
+/// dispatcher takes both operands and the op is skipped. The dispatcher falls
+/// back to the built-in (`Interpreter::call_builtin_operator`), so a call
+/// none of the candidates accepts is the operator's own. A thunky operator
+/// (`&&`, `//`, `andthen`, ...), an assignment, `~~`, `,`, `=:=` and `does`
+/// (whose variable form rebinds the variable) are not listed: their operands
+/// or their operation are not a plain two-argument call.
+// Cost: O(1).
+pub(crate) fn is_replaced_infix(op: &str) -> bool {
+    matches!(
+        op,
+        "%%" | "+&"
+            | "+|"
+            | "+^"
+            | "+<"
+            | "+>"
+            | "~&"
+            | "~|"
+            | "~^"
+            | "~<"
+            | "~>"
+            | "?&"
+            | "?|"
+            | "?^"
+            | ".."
+            | "..^"
+            | "^.."
+            | "^..^"
+            | "..."
+            | "...^"
+            | "…"
+            | "…^"
+            | "<=>"
+            | "==="
+            | "=~="
+            | "≅"
+            | "=>"
+            | "|"
+            | "&"
+            | "^"
+            | "before"
+            | "after"
+            | "but"
+            | "coll"
+            | "unicmp"
+            | "minmax"
+            | "o"
+            | "∘"
+    )
+}
+
+/// The `infix:<op>` routine of the [`is_replaced_infix`] operator the binary
+/// opcode `op` applies.
+// Cost: O(1).
+pub(crate) fn replaced_infix_of_opcode(op: &OpCode) -> Option<&'static str> {
+    Some(match op {
+        OpCode::DivisibleBy => "infix:<%%>",
+        OpCode::BitAnd => "infix:<+&>",
+        OpCode::BitOr => "infix:<+|>",
+        OpCode::BitXor => "infix:<+^>",
+        OpCode::BitShiftLeft => "infix:<+<>",
+        OpCode::BitShiftRight => "infix:<+>>",
+        OpCode::StrBitAnd => "infix:<~&>",
+        OpCode::StrBitOr => "infix:<~|>",
+        OpCode::StrBitXor => "infix:<~^>",
+        OpCode::StrShiftLeft => "infix:<~<>",
+        OpCode::StrShiftRight => "infix:<~>>",
+        OpCode::BoolBitAnd => "infix:<?&>",
+        OpCode::BoolBitOr => "infix:<?|>",
+        OpCode::BoolBitXor => "infix:<?^>",
+        OpCode::MakeRange => "infix:<..>",
+        OpCode::MakeRangeExcl => "infix:<..^>",
+        OpCode::MakeRangeExclStart => "infix:<^..>",
+        OpCode::MakeRangeExclBoth => "infix:<^..^>",
+        OpCode::Sequence { exclude_end: false } => "infix:<...>",
+        OpCode::Sequence { exclude_end: true } => "infix:<...^>",
+        OpCode::Spaceship => "infix:<<=>>",
+        OpCode::StrictEq => "infix:<===>",
+        OpCode::ApproxEq => "infix:<=~=>",
+        OpCode::MakePair => "infix:<=>>",
+        OpCode::JunctionAny => "infix:<|>",
+        OpCode::JunctionAll => "infix:<&>",
+        OpCode::JunctionOne => "infix:<^>",
+        OpCode::Before => "infix:<before>",
+        OpCode::After => "infix:<after>",
+        OpCode::ButMixin => "infix:<but>",
+        OpCode::Coll => "infix:<coll>",
+        OpCode::Unicmp => "infix:<unicmp>",
+        OpCode::FunctionCompose => "infix:<o>",
+        _ => return None,
+    })
+}
+
 /// Whether a reduction, triangle reduction or hyper over the built-in `op`
 /// in a block that imports candidates of it runs the bound dispatcher
 /// (`OpCode::LexImportMeta`), rather than the built-in with the candidates in
@@ -155,7 +258,7 @@ pub(crate) fn is_call_spelled_infix(op: &str) -> bool {
 /// applies the dispatcher pair by pair.
 // Cost: O(1).
 pub(crate) fn meta_runs_bound_dispatcher(op: &str) -> bool {
-    is_call_spelled_infix(op) || matches!(op, "(elem)" | "(cont)")
+    is_call_spelled_infix(op) || is_replaced_infix(op) || matches!(op, "(elem)" | "(cont)")
 }
 
 /// The built-in postfixes whose uses in a block that imports a candidate are
@@ -192,7 +295,7 @@ pub(crate) fn postcircumfix_of_subscript(is_positional: bool) -> &'static str {
 fn is_lexical_prefix(op: &str) -> bool {
     matches!(
         op,
-        "!" | "+" | "-" | "−" | "~" | "?" | "so" | "not" | "++" | "--"
+        "!" | "+" | "-" | "−" | "~" | "?" | "so" | "not" | "++" | "--" | "^" | "+^" | "~^" | "?^"
     )
 }
 
