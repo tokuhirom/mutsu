@@ -8,9 +8,16 @@ impl Interpreter {
     /// object operand numifies through its user `.Numeric` first -- the way
     /// the prefix `+^` already did -- so `C.new +> 2` shifts what
     /// `C.new.Numeric` returns instead of the object's 0 (#9566).
-    fn pop_int_bitop_operands(&mut self) -> Result<(Value, Value), RuntimeError> {
+    fn pop_int_bitop_operands(
+        &mut self,
+        name: &str,
+    ) -> Result<Option<(Value, Value)>, RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        if let Some(value) = self.try_user_infix(name, &left, &right)? {
+            self.stack.push(value);
+            return Ok(None);
+        }
         Self::throw_if_failure(&left)?;
         Self::throw_if_failure(&right)?;
         let left = if Self::value_needs_numeric_bridge(&left) {
@@ -23,39 +30,54 @@ impl Interpreter {
         } else {
             right
         };
-        Ok((left, right))
+        Ok(Some((left, right)))
     }
 
+    // Cost: O(b + c), b = operand bits, c = operator dispatch and any user call.
     pub(super) fn exec_bit_and_op(&mut self) -> Result<(), RuntimeError> {
-        let (left, right) = self.pop_int_bitop_operands()?;
+        let Some((left, right)) = self.pop_int_bitop_operands("infix:<+&>")? else {
+            return Ok(());
+        };
         let result = crate::builtins::int_bitop(&left, &right, crate::builtins::BitOp::And);
         self.stack.push(result);
         Ok(())
     }
 
+    // Cost: O(b + c), b = operand bits, c = operator dispatch and any user call.
     pub(super) fn exec_bit_or_op(&mut self) -> Result<(), RuntimeError> {
-        let (left, right) = self.pop_int_bitop_operands()?;
+        let Some((left, right)) = self.pop_int_bitop_operands("infix:<+|>")? else {
+            return Ok(());
+        };
         let result = crate::builtins::int_bitop(&left, &right, crate::builtins::BitOp::Or);
         self.stack.push(result);
         Ok(())
     }
 
+    // Cost: O(b + c), b = operand bits, c = operator dispatch and any user call.
     pub(super) fn exec_bit_xor_op(&mut self) -> Result<(), RuntimeError> {
-        let (left, right) = self.pop_int_bitop_operands()?;
+        let Some((left, right)) = self.pop_int_bitop_operands("infix:<+^>")? else {
+            return Ok(());
+        };
         let result = crate::builtins::int_bitop(&left, &right, crate::builtins::BitOp::Xor);
         self.stack.push(result);
         Ok(())
     }
 
+    // Cost: O(b + s + c), b = operand bits, s = shift, c = dispatch and any user call.
     pub(super) fn exec_bit_shift_left_op(&mut self) -> Result<(), RuntimeError> {
-        let (left, right) = self.pop_int_bitop_operands()?;
+        let Some((left, right)) = self.pop_int_bitop_operands("infix:<+<>")? else {
+            return Ok(());
+        };
         let result = crate::builtins::int_shift_left(&left, &right);
         self.stack.push(result);
         Ok(())
     }
 
+    // Cost: O(b + c), b = operand bits, c = operator dispatch and any user call.
     pub(super) fn exec_bit_shift_right_op(&mut self) -> Result<(), RuntimeError> {
-        let (left, right) = self.pop_int_bitop_operands()?;
+        let Some((left, right)) = self.pop_int_bitop_operands("infix:<+>>")? else {
+            return Ok(());
+        };
         let result = crate::builtins::int_shift_right(&left, &right);
         self.stack.push(result);
         Ok(())
