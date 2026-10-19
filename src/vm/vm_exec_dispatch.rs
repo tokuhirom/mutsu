@@ -3524,31 +3524,11 @@ impl Interpreter {
             // Cost: O(1).
             OpCode::DeitemizeZen => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
-                let deitemized = match val.view() {
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if class_name.as_str() == "IO::Path::Parts" => {
-                        let attrs = attributes.as_map();
-                        // ADR-0021 I2: a data-minted pair defaults positional.
-                        Value::array(
-                            crate::runtime::utils::io_path_parts_keys()
-                                .iter()
-                                .map(|key| {
-                                    Value::value_pair(
-                                        Value::str((*key).to_string()),
-                                        attrs.get(*key).cloned().unwrap_or(Value::NIL),
-                                    )
-                                })
-                                .collect(),
-                        )
-                    }
-                    ValueView::Array(items, kind) if kind.is_itemized() => {
-                        Value::array_with_kind(items.clone(), kind.decontainerize())
-                    }
-                    ValueView::Scalar(inner) => (*inner).clone(),
-                    _ => val,
+                // A lazy match is itself (`$/<>`); its `view()` would build it.
+                let deitemized = if val.is_lazy_match_value() {
+                    val
+                } else {
+                    Self::deitemize_zen(val)
                 };
                 self.stack.push(deitemized);
                 *ip += 1;

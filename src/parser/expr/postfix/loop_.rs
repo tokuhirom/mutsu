@@ -823,18 +823,12 @@ fn brace_is_postcircumfix(expr: &Expr, term_ends_with_ws: bool) -> bool {
 ///
 /// All three spellings are zen slices when their contents contain no words.
 /// The adverbs are postfixes on the resulting collection, so consume them here
-/// together with the synthetic `__mutsu_zen_angle` call.
+/// together with the zen slice. A zen slice is the same operation whatever its
+/// brackets (`$x<>` is `$x[]`): it decontainerizes the value.
 fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
     let indexed_expr = match &expr {
         Expr::HashVar(_) => expr,
-        _ => Expr::MethodCall {
-            target: Box::new(expr),
-            name: Symbol::intern("__mutsu_zen_angle"),
-            args: Vec::new(),
-            modifier: None,
-            quoted: false,
-            sugar: false,
-        },
+        _ => Expr::ZenSlice(Box::new(expr)),
     };
     let zen_adverb = [
         (":kv", "kv"),

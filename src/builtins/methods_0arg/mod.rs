@@ -216,15 +216,10 @@ pub(crate) fn native_method_0arg_cascade(
     // gauntlet in between (each a `view()`, which would materialize the Match)
     // never runs for the scalar accessors (`from`, `to`, `pos`, `Str`, ...).
     // Cost: O(k) to find the row, k = rows named `method`, plus the row's own.
-    if target.is_lazy_match_value() {
-        if let Some(result) = match_owner_row(target, method_sym, &[]) {
-            return Some(result);
-        }
-        // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
-        // Cost: O(1).
-        if method == "__mutsu_zen_angle" {
-            return Some(Ok(target.clone()));
-        }
+    if target.is_lazy_match_value()
+        && let Some(result) = match_owner_row(target, method_sym, &[])
+    {
+        return Some(result);
     }
 
     // ADR-0064: a `.VAR` container descriptor answers only its own properties

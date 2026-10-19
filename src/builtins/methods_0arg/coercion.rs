@@ -4,7 +4,7 @@ use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
-/// The `<>` zen slice (`__mutsu_zen_angle`) and the plain positionals' `list`/`List`/`Array`.
+/// The plain positionals' `list`/`List`/`Array`.
 /// The coercions are rows (`method_table::collections::any_coerce`, ADR-11276 §9.110).
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     if matches!(method, "list" | "List" | "Array")
@@ -15,66 +15,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
     {
         return crate::builtins::method_table::positional::dispatch(target, method);
     }
-    match method {
-        "__mutsu_zen_angle" => match target.view() {
-            ValueView::Range(a, b) => {
-                if b == i64::MAX || a == i64::MIN {
-                    Some(Ok(target.clone()))
-                } else {
-                    Some(Ok(Value::array((a..=b).map(Value::int).collect())))
-                }
-            }
-            ValueView::RangeExcl(a, b) => {
-                if b == i64::MAX || a == i64::MIN {
-                    Some(Ok(target.clone()))
-                } else {
-                    Some(Ok(Value::array((a..b).map(Value::int).collect())))
-                }
-            }
-            ValueView::RangeExclStart(a, b) => {
-                if b == i64::MAX || a == i64::MIN {
-                    Some(Ok(target.clone()))
-                } else {
-                    Some(Ok(Value::array((a + 1..=b).map(Value::int).collect())))
-                }
-            }
-            ValueView::RangeExclBoth(a, b) => {
-                if b == i64::MAX || a == i64::MIN {
-                    Some(Ok(target.clone()))
-                } else {
-                    Some(Ok(Value::array((a + 1..b).map(Value::int).collect())))
-                }
-            }
-            ValueView::GenericRange { .. } => {
-                let items = crate::runtime::utils::value_to_list(target);
-                Some(Ok(Value::array(items)))
-            }
-            // `$x<>` decontainerizes: an itemized Array/List drops its Scalar
-            // container (same backing data), matching rakudo's `postcircumfix:«< >»`.
-            ValueView::Array(items, kind) if kind.is_itemized() => Some(Ok(
-                Value::array_with_kind(items.clone(), kind.decontainerize()),
-            )),
-            // ADR-0040: a Hash carries its itemization as a flag on the value
-            // rather than as a `Scalar` wrapper, so `$%h<>` has to clear that
-            // flag the same way the `ArrayKind` arm above clears the array's
-            // (`my %h; ($%h)<>.raku` is `{}`, not `${}`).
-            ValueView::Hash(_) if target.hash_is_itemized() => {
-                Some(Ok(target.clone().with_hash_itemized(false)))
-            }
-            // A Slip carries its itemization the same way (a second kind tag),
-            // so `$x<>` clears it too: `my $x = slip(5, 6); $x<>.raku` is
-            // `slip(5, 6)`, not `$(slip(5, 6))`.
-            ValueView::Slip(_) if target.slip_is_itemized() => {
-                Some(Ok(target.clone().with_slip_itemized(false)))
-            }
-            ValueView::Scalar(inner) => Some(Ok((*inner).clone())),
-            ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..) => {
-                Some(Ok(target.clone()))
-            }
-            _ => Some(Ok(target.clone())),
-        },
-        _ => None,
-    }
+    None
 }
 
 /// Implement is-prime for any Value, with type coercion.
