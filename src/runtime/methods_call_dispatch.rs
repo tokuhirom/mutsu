@@ -1380,17 +1380,8 @@ impl Interpreter {
                             )
                         },
                     ),
-                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b)
-                        .or_else(|| {
-                            crate::builtins::method_table::answer_shapeless(
-                                Some(self),
-                                &target,
-                                method_sym,
-                                cascade_args,
-                            )
-                        }),
-                    // No cascade takes more; a slurpy row (`Mu.WALK` with its
-                    // adverbs) may.
+                    // No cascade takes two arguments or more; a row with no
+                    // shape (`Mu.WALK` with its adverbs) may.
                     _ => crate::builtins::method_table::answer_shapeless(
                         Some(self),
                         &target,

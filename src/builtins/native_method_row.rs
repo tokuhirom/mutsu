@@ -1,6 +1,6 @@
 //! ADR-0019 Phase E, box E2a: recognition metadata for native method dispatch.
 //!
-//! `native_method_0arg`/`native_method_1arg`/`native_method_2arg`
+//! `native_method_0arg`/`native_method_1arg` (and, until ADR-11276 slice 5, `native_method_2arg`)
 //! (`builtins/methods_0arg/`, `builtins/methods_narg/`) decide by matching on the
 //! method-name string whether a call is served by the pure native layer. Phase
 //! E's resolver needs to ask the same question ("does (owner, name) admit a

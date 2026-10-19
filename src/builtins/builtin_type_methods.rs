@@ -193,7 +193,7 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
             }
         }
     }
-    // A few 1/2-arg native methods inspect the argument type before recognizing
+    // A few 1-arg native methods inspect the argument type before recognizing
     // the call (e.g. `index`/`indices` want a Str), so a single dummy can miss
     // them. Try a small spread of representative arguments — recognition just
     // needs ONE arity/arg shape to return `Some`.
@@ -203,12 +203,6 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
         .any(|a| crate::builtins::native_method_1arg(value, sym, a).is_some())
     {
         arities |= 1 << 1;
-    }
-    if dummies
-        .iter()
-        .any(|a| crate::builtins::native_method_2arg(value, sym, a, a).is_some())
-    {
-        arities |= 1 << 2;
     }
     arities
 }
