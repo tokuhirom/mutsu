@@ -23,7 +23,9 @@ macro_rules! attr {
             name: $name,
             arity: 0,
             handler: Handler::Narrow(|target, _| attribute(target, $name)),
-            flags: RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK),
+            // An attribute needs an instance: the type object's call raises
+            // Rakudo's "Cannot look up attributes in a ... type object".
+            flags: RowFlags::OWNER_ONLY,
             named: &[],
         }
     };
