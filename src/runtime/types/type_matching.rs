@@ -297,8 +297,8 @@ impl Interpreter {
             let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint);
             if !self.has_type_direct(base)
                 && let Some(resolved) = self
-                    .resolve_relative_compound_type(base)
-                    .map(str::to_string)
+                    .resolve_type_alias_chain(base)
+                    .or_else(|| self.resolve_relative_compound_type(base).map(str::to_string))
                     .or_else(|| self.published_head_type(base))
             {
                 return Some(match smiley {
