@@ -1019,28 +1019,14 @@ impl Interpreter {
             self.stack.push(out);
             return Ok(());
         }
-        // gist/Str/raku/perl of a genuinely-lazy list renders raku's placeholder
-        // (`[...]` in `@` array context, `(...)` for a bare Seq, `...` for Str)
-        // rather than forcing the (possibly infinite) sequence. Must run before
-        // the gather-coroutine force below, which would hang on an infinite list.
+        // A lazy receiver's pull answers first, as in the `CallMethod` lane
+        // (the lazy step, ADR-13891). It runs before the gather-coroutine
+        // force below, which would hang on an infinite list.
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method, "gist" | "Str" | "Stringy" | "raku")
-            && ll.renders_lazy_placeholder()
+            && let Some(answer) = self.lazy_receiver_pull(&target, &ll, method, &args)
         {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmut",
-                "lazy-placeholder",
-            );
-            if matches!(method, "raku") && Interpreter::lazy_seq_raku_applies(&ll) {
-                let text = self.lazy_seq_raku(&ll)?;
-                self.stack.push(Value::str(text));
-                return Ok(());
-            }
-            self.stack
-                .push(Value::str(crate::value::lazy_list_placeholder(
-                    method,
-                    ll.in_array_context(),
-                )));
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-pull");
+            self.stack.push(answer?);
             return Ok(());
         }
         // Lazy `.first` over a gather coroutine: pull incrementally instead of
@@ -1073,16 +1059,6 @@ impl Interpreter {
         if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-adaptor");
             self.stack.push(pipe);
-            return Ok(());
-        }
-        // `.cache` on a genuinely-lazy list stays lazy (caches on demand); see
-        // the matching note in the non-mut dispatch path.
-        if let ValueView::LazyList(ll) = target.view()
-            && method == "cache"
-            && let Some(result) = ll.cache_lazy_view()
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-cache");
-            self.stack.push(result);
             return Ok(());
         }
         // A named-variable receiver reaches CallMethodMut. Its list coercion

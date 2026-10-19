@@ -60,6 +60,17 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
     "Seq"."join" => join,
     "List"."join" => join,
     "Mu"."item" => item,
+    "Mu"."Stringy" => stringy,
+    "Any"."values" => values,
+    "Any"."sum" => super::lazy_refusal::sum,
+    "Any"."reverse" => super::lazy_refusal::reverse,
+    "Any"."pick" => super::lazy_refusal::pick,
+    "Any"."roll" => super::lazy_refusal::roll,
+    "Any"."elems" => super::lazy_refusal::elems,
+    "Any"."end" => super::lazy_refusal::end,
+    "Any"."Numeric" => super::lazy_refusal::elems,
+    "Any"."Int" => super::lazy_refusal::elems,
+    "Any"."tail" => super::lazy_refusal::tail,
 ];
 
 /// The methods that reify a lazy receiver whole before they run, when no
@@ -276,6 +287,16 @@ fn str(
 }
 
 // Cost: as [`render`].
+fn stringy(
+    interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    render(interp, "Stringy", list, args)
+}
+
+// Cost: as [`render`].
 fn raku(
     interp: &mut Interpreter,
     _target: &Value,
@@ -308,6 +329,21 @@ fn item(
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     args.is_empty().then(|| Ok(target.clone().item()))
+}
+
+/// `Any.values` is `self.list` (Rakudo's `method values() { self.list }`):
+/// the list view of the sequence, which stays lazy. Without the pull an
+/// infinite sequence spec (`1, 2 ... *`) went on to a view that read only the
+/// elements already pulled, and answered `()`.
+// Cost: that of the receiver's `.list`.
+fn values(
+    interp: &mut Interpreter,
+    target: &Value,
+    _list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    args.is_empty()
+        .then(|| interp.call_method_with_values(target.clone(), "list", Vec::new()))
 }
 
 /// The lazy sequence an itemized receiver (`$seq.item`, a `Scalar` around a
