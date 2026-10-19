@@ -410,6 +410,11 @@ pub(crate) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         return Some((meta.to_string(), op, 1 + len));
     }
 
+    // A declared symbolic infix may extend a built-in prefix (`+%`, `+++`,
+    // `<>`). Let it win when it is the longer token. Equal-length spellings
+    // stay with the built-in operator, matching the ordinary infix parser.
+    let user_sym = crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r);
+
     // Try symbolic operators first (multi-char then single-char)
     let ops: &[&str] = &[
         // Sequence (`...`/`...^`) and range (`..`/`..^`/`^..`/`^..^`) operators must
@@ -426,6 +431,17 @@ pub(crate) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
         "=:=", "!=", "<=", ">=", "~~", "%%", "//", "&&", "||", "^^", "+&", "+|", "+^", "+<", "+>",
         "~&", "~|", "~^", "~", "+", "-", "*", "/", "%", "^", "<", ">", ",",
     ];
+    let builtin_len = ops
+        .iter()
+        .filter(|op| r.starts_with(**op))
+        .map(|op| op.len())
+        .max()
+        .unwrap_or(0);
+    if let Some((op, len)) = user_sym.as_ref()
+        && *len > builtin_len
+    {
+        return Some((meta.to_string(), op.clone(), 1 + len));
+    }
     for op in ops {
         if r.starts_with(op) {
             return Some((meta.to_string(), op.to_string(), 1 + op.len()));
@@ -462,7 +478,6 @@ pub(crate) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
     // Try this before word ops since declared symbols may start with a letter
     // but extend with non-word chars (e.g. T* should match the declared infix,
     // not just the word portion "T").
-    let user_sym = match_user_declared_infix_symbol_op(r);
     // Custom word operators: Xwtf, Zfoo-bar, Rcustom-op
     let word_op = parse_meta_word_op(r);
     // Prefer the longer match between user-declared symbol and word ops
