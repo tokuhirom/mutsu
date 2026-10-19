@@ -3259,4 +3259,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Supply", "interval", 8, 60),
     ("Stash", "merge-symbols", 8, 60),
     ("Raku", "legacy", 8, 60),
+    ("X::Promise::Broken", "gist", 8, 28),
+    ("X::React::Died", "gist", 8, 28),
+    ("X::Await::Died", "gist", 8, 28),
 ];
