@@ -186,18 +186,18 @@ fn updir_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErr
     Some(Ok(Value::str_from("..")))
 }
 
-/// `curupdir`: the test object that matches `.` and `..`. Every call makes a
-/// new object, an effect the debug cross-check cannot re-run and compare, so
-/// the row is an interpreter row though it reads nothing of it.
+/// `curupdir`: a `Block` that rejects `.` and `..`. Every call makes a new
+/// closure, an effect the debug cross-check cannot re-run and compare, so the
+/// row is an interpreter row.
 // Cost: O(1).
 fn curupdir_row(
-    _interp: &mut Interpreter,
+    interp: &mut Interpreter,
     target: &Value,
     _args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     SpecKind::of(target)?;
-    Some(Interpreter::io_spec_curupdir())
+    Some(interp.io_spec_curupdir())
 }
 
 /// `canonpath($path, :parent)`: the path with its redundant separators and `.`

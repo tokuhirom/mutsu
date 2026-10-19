@@ -851,17 +851,6 @@ impl Interpreter {
                 return result;
             }
 
-            // IO::Spec::CurUpDir ACCEPTS
-            if class_name.resolve() == "IO::Spec::CurUpDir" && method == "ACCEPTS" {
-                let arg = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                // curupdir rejects "." and "..", accepts everything else
-                let result = arg != "." && arg != "..";
-                return Ok(Value::truth(result));
-            }
-
             // IO::Spec methods — delegate to the Package-based handler (the
             // path methods are class methods). Repr methods stay on the
             // instance: `IO::Spec::Unix.new.gist` is `IO::Spec::Unix.new`

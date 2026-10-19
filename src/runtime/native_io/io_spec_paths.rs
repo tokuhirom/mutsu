@@ -98,13 +98,20 @@ impl Interpreter {
         Ok(Value::str(result))
     }
 
-    /// `IO::Spec::*.curupdir`: the `IO::Spec::CurUpDir` test object that matches `.` and `..`.
-    // Cost: O(1).
-    pub(crate) fn io_spec_curupdir() -> Result<Value, RuntimeError> {
-        Ok(Value::make_instance(
-            crate::symbol::Symbol::intern("IO::Spec::CurUpDir"),
-            std::collections::HashMap::new(),
-        ))
+    /// `IO::Spec::*.curupdir`: a real `Block` that rejects `.` and `..`, as
+    /// Rakudo's `-> str $dir { $dir ne '.' && $dir ne '..' }`. The source is
+    /// parsed once; each call builds a fresh closure from it.
+    // Cost: O(1) after the first call (one closure creation).
+    pub(crate) fn io_spec_curupdir(&mut self) -> Result<Value, RuntimeError> {
+        use std::sync::OnceLock;
+        static BODY: OnceLock<Vec<crate::ast::Stmt>> = OnceLock::new();
+        if BODY.get().is_none() {
+            let (stmts, _) =
+                crate::parser::parse_program("-> str $dir { $dir ne '.' && $dir ne '..' }")?;
+            let _ = BODY.set(stmts);
+        }
+        let stmts = BODY.get().expect("curupdir source parsed above");
+        self.eval_block_value(stmts)
     }
 
     /// `IO::Spec::*.abs2rel($path, $base)`: the path relative to the base (the current directory by default).
