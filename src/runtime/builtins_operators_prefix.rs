@@ -57,17 +57,17 @@ impl Interpreter {
 
     // Cost: O(m) plus Numeric coercion, m = an instance's MRO depth.
     fn core_postfix_i(&mut self, arg: &Value) -> Result<Value, RuntimeError> {
+        if !self.type_matches_value("Numeric", arg) && !self.type_matches_value("Cool", arg) {
+            return Err(RuntimeError::typed_msg("X::Multi::NoMatch", format!(
+                "Cannot resolve caller postfix:<i>({}); none of these signatures matches",
+                crate::value::types::what_type_name(arg)
+            )));
+        }
         // An instance or type object coerces through its `.Numeric` first.
         let coerced = if matches!(
             arg.view(),
             ValueView::Instance { .. } | ValueView::Package(..)
         ) {
-            if !self.type_matches_value("Numeric", arg) && !self.type_matches_value("Cool", arg) {
-                return Err(RuntimeError::typed_msg("X::Multi::NoMatch", format!(
-                    "Cannot resolve caller postfix:<i>({}); none of these signatures matches",
-                    crate::value::types::what_type_name(arg)
-                )));
-            }
             self.call_method_with_values(arg.clone(), "Numeric", vec![])
                 ?
         } else {

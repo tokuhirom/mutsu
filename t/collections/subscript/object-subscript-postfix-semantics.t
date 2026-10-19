@@ -8,6 +8,9 @@ is $keyed{0}, 'key-0', 'associative integer index uses AT-KEY';
 is Plain.new<k>.^name, 'Failure', 'unsupported associative indexing returns Failure';
 is Plain.new{0}.^name, 'Failure', 'unsupported associative integer indexing returns Failure';
 throws-like { Plain.new\i }, X::Multi::NoMatch, 'a plain object has no postfix i candidate';
+role Marker { }
+my $mixed = Plain.new but Marker;
+throws-like { $mixed\i }, X::Multi::NoMatch, 'a mixed-in plain object also has no postfix i candidate';
 class Pretender { method Numeric { 3 } }
 throws-like { Pretender.new\i }, X::Multi::NoMatch,
     'declaring Numeric alone does not satisfy the postfix i signatures';
