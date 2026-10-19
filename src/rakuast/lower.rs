@@ -4473,7 +4473,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // recover the implicit signature when this is a constructed tree.
         RakuAstClass::Block => {
             let body = lower_block(node)?;
-            super::underscore_bindings::closure(node, body)
+            super::underscore_bindings::lower_block_value(node, body)
         }
         // A nameless `RakuAST::Sub` in expression position is an anonymous
         // routine (`sub { … }`, `sub ($a, $b) { … }`). Unlike a pointy block it

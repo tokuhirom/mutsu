@@ -108,7 +108,7 @@ pub(super) fn declares_placeholder(array: bool) -> bool {
 /// an unbound placeholder declaration binds a fresh parameter. A method already
 /// supplies an implicit named slurpy, so its unresolved hash reads capture it.
 // Cost: O(n), n = nodes in the block's own placeholder scope.
-pub(super) fn closure(node: &RakuAstNode, body: Vec<Stmt>) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_block_value(node: &RakuAstNode, body: Vec<Stmt>) -> Result<Expr, RuntimeError> {
     let mut declarations = declarations(super::lower::named_child(node, "body")?, 0)?;
     if IN_METHOD.get() {
         declarations &= !HASH;
