@@ -752,7 +752,13 @@ impl Interpreter {
                 self.has_user_method(&class_name, "ACCEPTS")
                     && self.user_accepts_applies(&class_name, right, left)
             }
-            ValueView::Mixin(..) => self.mixin_composes_method(right, "ACCEPTS"),
+            // An allomorph matcher reads an object through its `.Str` and
+            // `.Numeric` (`Allomorph.ACCEPTS`, §9.191).
+            ValueView::Mixin(_, mixins) => {
+                self.mixin_composes_method(right, "ACCEPTS")
+                    || (mixins.contains_key("Str")
+                        && matches!(left.view(), ValueView::Instance { .. }))
+            }
             ValueView::Enum { .. } | ValueView::Package(_) => {
                 self.enum_composes_role_method(right, "ACCEPTS")
             }

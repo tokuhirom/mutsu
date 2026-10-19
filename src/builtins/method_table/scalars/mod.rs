@@ -6,6 +6,7 @@
 
 use super::{Handler, MethodRow, Named, RowFlags};
 
+mod allomorph_accepts;
 pub(crate) mod blob;
 mod blob_class;
 pub(crate) mod blob_decode;

@@ -1,7 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
-use num_traits::ToPrimitive;
 
 /// Parse a non-negative integer index, returning None for negative or non-numeric.
 fn pos_index(v: &Value) -> Option<usize> {
@@ -279,38 +278,3 @@ pub(crate) fn multidim_delete_pos(
     multidim_delete_pos(&child, &indices[1..])
 }
 
-/// Compare two values numerically (like Raku's == operator) for allomorph ACCEPTS.
-pub(crate) fn allomorph_numeric_equal(a: &Value, b: &Value) -> bool {
-    let a_f = allomorph_val_to_f64(a);
-    let b_f = allomorph_val_to_f64(b);
-    match (a_f, b_f) {
-        (Some(af), Some(bf)) => {
-            // Handle Complex: both real and imaginary must match
-            if let (ValueView::Complex(ar, ai), ValueView::Complex(br, bi)) = (a.view(), b.view()) {
-                return (ar - br).abs() < 1e-15 && (ai - bi).abs() < 1e-15;
-            }
-            if let ValueView::Complex(ar, ai) = a.view() {
-                return (ar - bf).abs() < 1e-15 && ai.abs() < 1e-15;
-            }
-            if let ValueView::Complex(br, bi) = b.view() {
-                return (af - br).abs() < 1e-15 && bi.abs() < 1e-15;
-            }
-            (af - bf).abs() < 1e-15
-        }
-        _ => false,
-    }
-}
-
-fn allomorph_val_to_f64(v: &Value) -> Option<f64> {
-    match v.view() {
-        ValueView::Int(i) => Some(i as f64),
-        ValueView::BigInt(n) => n.to_f64(),
-        ValueView::Num(f) => Some(f),
-        ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-        ValueView::FatRat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-        ValueView::Complex(r, _) => Some(r),
-        ValueView::Bool(b) => Some(if b { 1.0 } else { 0.0 }),
-        ValueView::Mixin(inner, _) => allomorph_val_to_f64(inner),
-        _ => None,
-    }
-}
