@@ -550,11 +550,25 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementLoopRepeatWhile | RakuAstClass::StatementLoopRepeatUntil => {
             let is_until = node.class == RakuAstClass::StatementLoopRepeatUntil;
             let cond = lower_expr(named_child(node, "condition")?)?;
+            let block = named_child(node, "body")?;
+            // `repeat while C -> $p { }`: the pointy parameter goes back to the
+            // `init`/`step` pair the parser keeps it in.
+            let param = if block.class == RakuAstClass::PointyBlock {
+                let defs = super::control_signature::params(block)?;
+                match defs.as_slice() {
+                    [] => None,
+                    [def] => Some(def.name.clone()),
+                    _ => return Err(unsupported(node)),
+                }
+            } else {
+                None
+            };
+            let (init, step) = crate::parser::repeat_param_clause(param);
             Ok(Stmt::Loop {
-                init: None,
+                init,
                 cond: Some(negate_if(cond, is_until)),
-                step: None,
-                body: lower_block(named_child(node, "body")?)?,
+                step,
+                body: lower_block(block)?,
                 repeat: true,
                 label: node_label(node)?,
                 is_until,

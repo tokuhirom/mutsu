@@ -330,6 +330,7 @@ pub(crate) use stmt::assign::callable_lvalue_assign_expr;
 pub(crate) use stmt::assign::paren_list_assign_expr;
 pub(crate) use stmt::control::else_pointy_clause;
 pub(crate) use stmt::control::loop_pointy_clause;
+pub(crate) use stmt::control::repeat_param_clause;
 pub(crate) use stmt::control::{
     given_pointy_body, if_pointy_clause, unless_clause, with_then_branch,
 };

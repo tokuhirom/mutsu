@@ -472,6 +472,7 @@ pub(super) use for_params::parse_for_params;
 pub(crate) use given_when::given_pointy_body;
 pub(super) use given_when::{default_stmt, given_stmt, when_stmt};
 pub(super) use labeled_loop::labeled_loop_stmt;
+pub(crate) use loop_repeat::repeat_param_clause;
 pub(super) use loop_repeat::{loop_stmt, repeat_stmt};
 pub(super) use pointy_param::parse_pointy_param;
 pub(crate) use react::react_stmt;
