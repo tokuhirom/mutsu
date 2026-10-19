@@ -25,7 +25,15 @@ pub(super) fn rakuast_regex_adverbs(
                 && name == base
                 && matches!(
                     base,
-                    "i" | "ignorecase" | "m" | "ignoremark" | "s" | "sigspace" | "r" | "ratchet"
+                    "i" | "ignorecase"
+                        | "ii"
+                        | "m"
+                        | "ignoremark"
+                        | "s"
+                        | "sigspace"
+                        | "ss"
+                        | "r"
+                        | "ratchet"
                 );
             let match_adverb = match_time
                 && matches!(
