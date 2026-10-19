@@ -71,6 +71,15 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Deprecation", "report", 0, deprecation_report),
     row!("CompUnit::Loader", "load-source", 0, load_source),
     row!("CompUnit::Loader", "load-source-file", 0, load_source_file),
+    // `IO::Special.new($what)`: the stand-in for a standard stream (§9.197).
+    MethodRow {
+        owner: "IO::Special",
+        name: "new",
+        arity: 1,
+        handler: Handler::Narrow(io_special_new),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK),
+        named: &[],
+    },
     // `Supply.start` is an instance method: a supply of the block's results.
     MethodRow {
         owner: "Supply",
@@ -103,6 +112,7 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
         "Rakudo::Internals" => &["Rakudo::Internals"],
         "Deprecation" => &["Deprecation"],
         "CompUnit::Loader" => &["CompUnit::Loader"],
+        "IO::Special" => &["IO::Special"],
         // `Kernel.hostname` and the other `Systemic` rows that answer the type
         // object (`systemic.rs`).
         "Kernel" => &["Kernel"],
@@ -147,6 +157,21 @@ pub(super) fn type_object_only(target: &Value, method: &str) -> Option<RuntimeEr
     Some(RuntimeError::parameter_invalid_concreteness(
         &class, &class, method, "self", false, true,
     ))
+}
+
+/// `IO::Special.new($what)`: an `IO::Special` standing for the stream `$what`
+/// names (`<STDOUT>`).
+// Cost: O(w), w = chars of the name.
+fn io_special_new(_target: &Value, args: &[Value]) -> Answer {
+    let [what] = args else {
+        return None;
+    };
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("what".to_string(), Value::str(what.to_string_value()));
+    Some(Ok(Value::make_instance(
+        crate::symbol::Symbol::intern("IO::Special"),
+        attrs,
+    )))
 }
 
 /// `Supply.from-list(*@values)`.
