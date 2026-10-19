@@ -23,6 +23,9 @@ impl Value {
             return self;
         }
         let mut copy = self.copy_for_list_assignment();
+        if sigil == '%' {
+            copy.with_hash_mut(|data| Gc::make_mut(data).value_type = None);
+        }
         if sigil != '@' {
             return copy;
         }

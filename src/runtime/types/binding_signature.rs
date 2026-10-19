@@ -544,7 +544,7 @@ impl Interpreter {
     /// candidate (`pending_skip_constraint_recheck`): a user `subset`
     /// constraint is then trusted instead of running its predicate a second
     /// time (#10986).
-    fn check_and_coerce_param_type(
+    pub(super) fn check_and_coerce_param_type(
         &mut self,
         pd: &ParamDef,
         mut value: Value,
@@ -3382,6 +3382,14 @@ impl Interpreter {
                     if pd.name.starts_with('%') && !pd.slurpy && !pd.double_slurpy {
                         value = value.deitemize_for_sigil_bind();
                     }
+                    // Check the argument before `is copy` removes its container type.
+                    value = self.check_and_coerce_param_type(
+                        pd,
+                        value,
+                        source_name.as_deref(),
+                        source_type_constraint.as_deref(),
+                        skip_constraint_recheck,
+                    )?;
                     // Container identity (§3): an `is copy` container param owns
                     // a DISTINCT container. Mutations now write through the
                     // shared backing node (no COW detach), so the copy must
@@ -3576,13 +3584,6 @@ impl Interpreter {
                             self.env.insert_sym_noting(readonly_key, Value::TRUE);
                         }
                     }
-                    value = self.check_and_coerce_param_type(
-                        pd,
-                        value,
-                        source_name.as_deref(),
-                        source_type_constraint.as_deref(),
-                        skip_constraint_recheck,
-                    )?;
                     // A literal-value parameter (`sub f("a") {}`, `-> 'about' {}`)
                     // constrains the argument to equal that literal exactly, not
                     // merely share its type -- the type_constraint check above

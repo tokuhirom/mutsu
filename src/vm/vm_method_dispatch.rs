@@ -2227,18 +2227,23 @@ impl Interpreter {
                     arg_idx += 1;
                     continue;
                 }
-                // `is copy` container param owns a DISTINCT container: element
-                // mutations write through the shared backing node (container
-                // identity §3), so an undetached copy would leak `@a.push`
-                // back to the caller's array.
+                // Validate the original argument before detaching its copy.
                 if let Some(pd) = pd.filter(|pd| pd.traits.iter().any(|t| t == "copy")) {
-                    val = if pd.name.starts_with('@') {
-                        // An itemized holder (`$[1]`) copies its Positional, not the
-                        // Scalar wrapper, as the general binder does.
-                        val.deitemize_for_sigil_bind().into_param_copy('@')
-                    } else {
-                        val.detach_shared_container()
+                    let val = match self.checked_method_param_copy(pd, val, skip_constraint_recheck)
+                    {
+                        Ok(val) => val,
+                        Err(error) => {
+                            unwind_fast_bind!();
+                            return Err(error);
+                        }
                     };
+                    param_values.push((
+                        binding_name,
+                        binding_sym,
+                        Self::itemize_fast_method_arg(Some(pd), val),
+                    ));
+                    arg_idx += 1;
+                    continue;
                 }
                 // An untyped parameter is implicitly `Any` (#10878): a
                 // `Mu`-only argument takes the typed check below, which fails.
