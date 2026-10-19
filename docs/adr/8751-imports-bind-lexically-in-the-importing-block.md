@@ -160,6 +160,50 @@ Consequences that pin the design:
   does not bind (multis, protos, operators, classes, variables), so
   `ImportScope` and `imported_env_aliases` stay; a `use` in a method body
   opens no set yet.
+
+  **Slice 3 done** (`fix/8751-block-imported-vars-lexical`, 2026-10-19):
+  the variables a block-scoped `use` imports are pad declarations of the
+  block.
+  - **The scan knows them.** An exported variable is always `our`-scoped,
+    so it is the package variable of the package it is declared in. The
+    parse-time module scan records each one on the package spine with its
+    package and export tags (`ExportedVar`, `parser::scanned_exported_vars`).
+    A module whose export set the scan cannot know (a `sub EXPORT` hook, an
+    export stash under a computed key) has no entry, and its variables keep
+    the run-time import.
+  - **The compiler declares them.** Right after the `UseModule` of a `use`
+    below the unit's top level, the compiler compiles `my $x := $M::x` for
+    each variable the `use` imports, by the run-time rule for tags
+    (`DEFAULT` without tags, `ALL`, `MANDATORY`;
+    `Compiler::bind_block_imported_vars`). The binding's source is
+    `OpCode::GetImportedVar`: the module's own container (a scalar's
+    `ContainerRef` cell, the array or hash itself), pushed raw. A by-name
+    read of `$M::x` wrapped in a `VarRef` would record a by-name source
+    alias, whose resolution reached a caller's same-named lexical (#13941).
+  - **The import writes no env alias for them.** The set id carries the
+    declared names after `BLOCK_VARS_MARK`, and `import_module` skips them
+    (`block_binds_imported_var`). Before, the alias in the block's env was
+    what a callee written outside the block found through the caller
+    chain, and the deferred env-to-slot pull wrote it into the first slot
+    of that name: an outer `my $x` took the import's value for good after
+    a loop body's `use`.
+  - Fixed: inside the block the import hides an outer variable of the same
+    name, a closure taken there keeps it, a routine written outside the
+    block reads its own outer variable, and a write through the import is
+    the module's. Pinned by
+    `t/modules/import-export/use-in-block-binds-variables-lexically.t`.
+  - Two bugs this exposed. A mainline block's own `my %h` stored elements
+    and deleted keys in a file-scope `%h` that a named sub captured: the
+    store found the captured cell by name (`unit_lexical_container_cell_at`
+    now declines when the store's slot holds another variable). And a
+    replayed `use` (#13906) left its module merge behind once its routine
+    ran through the light call path in the caller's frame: the scope's exit
+    skipped the `MetaNs::ModuleMerge` key as a module-owned qualified name.
+  - Left: exported constants, sigilless terms and types keep the env alias
+    and the `ImportScope` rollback, so `ImportScope` and
+    `imported_env_aliases` stay. A package-qualified read of an imported
+    variable after the block (`$M::x`) still finds the module's variable
+    (#13942).
 - **Stage 2 (phase 2, dispatcher values).** Imported multis, protos and
   operators.
 

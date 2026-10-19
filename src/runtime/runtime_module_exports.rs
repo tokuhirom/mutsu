@@ -1314,6 +1314,10 @@ impl Interpreter {
             {
                 continue;
             }
+            // The importing block declares it itself (ADR-8751).
+            if self.block_binds_imported_var(&name) {
+                continue;
+            }
             let target = name.clone();
             if let Some(value) = self.exported_var_value(module, &name) {
                 // An imported ENUM KEY is a package symbol/term, not a `$`-scalar,

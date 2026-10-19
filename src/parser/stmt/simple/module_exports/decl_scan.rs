@@ -57,6 +57,9 @@ pub(super) struct ModuleDecls {
     /// Whether the module binds into an export stash under a key that is not
     /// a literal (`dynamic_stash.rs`, #9500).
     pub(super) dynamic_export_stash: bool,
+    /// The `our` variables the module exports from its package spine
+    /// (`exported_vars.rs`).
+    pub(super) exported_vars: Vec<super::exported_vars::ExportedVar>,
 }
 
 /// Walk a module's parsed statements once and collect what the importer's
@@ -357,9 +360,29 @@ impl<'ast> Visit<'ast> for DeclScan {
                 name,
                 is_export,
                 is_our,
+                export_tags,
                 custom_traits,
                 ..
             } => {
+                // An exported variable is the package variable of the package
+                // it is declared in. Only one on the package spine is known to
+                // be declared when the module loads.
+                if *is_export
+                    && *is_our
+                    && self.spine
+                    && !self.prefix.is_empty()
+                    && !name.is_empty()
+                    && !name.starts_with('&')
+                    && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                {
+                    self.out
+                        .exported_vars
+                        .push(super::exported_vars::ExportedVar {
+                            name: name.clone(),
+                            package: self.prefix.clone(),
+                            tags: export_tags.clone(),
+                        });
+                }
                 // Sigiled constants (`constant $x = 1`) are not barewords.
                 if custom_traits.iter().any(|(t, _)| t == "__constant")
                     && !name.is_empty()

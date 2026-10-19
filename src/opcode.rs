@@ -4453,6 +4453,14 @@ pub(crate) enum OpCode {
     /// and skips the `CallFunc`; otherwise it falls through to it. Stack: as
     /// the `CallFunc`.
     LexImportCall { chain_idx: u32 },
+    /// The binding source of the declaration a block-scoped `use` makes for
+    /// an exported `our` variable (`Compiler::bind_block_imported_vars`,
+    /// ADR-8751): module `module_idx`'s export `name_idx` (its declaration
+    /// spelling, `x` / `@a`): the module's own container (a scalar's
+    /// `ContainerRef` cell, an array or hash itself), pushed raw so the
+    /// declaration binds it with no by-name source alias. Stack:
+    /// `[] → [container]`.
+    GetImportedVar { module_idx: u32, name_idx: u32 },
     /// Prefix of the binary [`Self::InfixFunc`] at `ip + 1` (one right
     /// operand, no meta-operator) inside a block that `use`s a module
     /// (ADR-8751 stage 2): as [`Self::LexImportCall`], for an operator.

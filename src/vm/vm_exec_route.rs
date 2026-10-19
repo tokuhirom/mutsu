@@ -363,6 +363,7 @@ impl Interpreter {
             | OpCode::DoGivenExpr { .. }
             | OpCode::Eager
             | OpCode::EndBeginPrologue
+            | OpCode::GetImportedVar { .. }
             | OpCode::ImportModule { .. }
             | OpCode::ImportScope { .. }
             | OpCode::IndexAssignGeneric { .. }

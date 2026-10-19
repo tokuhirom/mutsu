@@ -7456,6 +7456,14 @@ impl Interpreter {
                 self.exec_use_module_op(code, *name_idx, *tags_idx, *arg_count, *lexical_set_idx)?;
                 *ip += 1;
             }
+            // Cost: O(1): one exported-variable lookup.
+            OpCode::GetImportedVar {
+                module_idx,
+                name_idx,
+            } => {
+                self.exec_get_imported_var_op(code, *module_idx, *name_idx);
+                *ip += 1;
+            }
             // Cost: O(x), x = exported symbols re-aliased per execution. Rakudo: O(1) at run time -- see #9170.
             OpCode::ImportModule { name_idx, tags_idx } => {
                 self.sync_source_line(code, *ip);

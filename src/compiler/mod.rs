@@ -1077,6 +1077,7 @@ mod atomic_elem_forms;
 mod atomic_target;
 mod begin_use;
 mod bind_ternary;
+mod block_imported_vars;
 mod block_lexsubs;
 mod body_scans;
 mod call_arg_index_assign;
@@ -1599,6 +1600,10 @@ pub(crate) struct Compiler {
     /// Index.  Set only during scalar `:=` bind VarDecl compilation so that
     /// `my $b := %h<foo><baz>` creates a HashEntryRef.
     scalar_bind_autovivify: bool,
+    /// Set while a block-scoped `use` declares an imported variable
+    /// (`bind_block_imported_vars`): the `GetImportedVar` operands its bind
+    /// source compiles to.
+    imported_var_source: Option<(u32, u32)>,
     /// When true (alongside `scalar_bind_autovivify`), the next Index compiled is
     /// the TERMINAL element of the bind RHS (outermost subscript whose value is
     /// bound). A terminal index promotes even a container-valued (Array/Hash) leaf
@@ -2095,6 +2100,7 @@ impl Compiler {
             raw_list_elem_terminal: false,
             do_stmt_yields_value: false,
             scalar_bind_autovivify: false,
+            imported_var_source: None,
             bind_terminal: false,
             rw_return_operand: false,
             rw_tail: false,

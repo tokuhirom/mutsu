@@ -205,9 +205,14 @@ impl Compiler {
         if tags.iter().any(|t| t == "from") {
             return None;
         }
+        let vars = if arg.is_none() {
+            Self::block_imported_vars_id_suffix(module, tags)
+        } else {
+            String::new()
+        };
         let arg = arg.as_ref().map(|a| format!("{a:?}")).unwrap_or_default();
         Some(Symbol::intern(&format!(
-            "{module}\u{1}{}\u{1}{arg}",
+            "{module}\u{1}{}\u{1}{arg}{vars}",
             tags.join(",")
         )))
     }

@@ -285,7 +285,7 @@ impl Interpreter {
         // env here would wrongly make this name resolve to the module's
         // container from outside the module too, undoing the isolation this
         // ADR establishes.
-        let unit_cell = self.unit_lexical_container_cell(&var_name);
+        let unit_cell = self.unit_lexical_container_cell_at(&var_name, slot);
         let saved_env_entry = unit_cell.as_ref().map(|cell| {
             let saved = self.env().get(&var_name).cloned();
             let inner = cell.load();

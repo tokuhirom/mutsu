@@ -5,7 +5,7 @@ use Test;
 # the import wrote instead of importing again (#13906); every run must still
 # see the same names, and none of them may outlive the routine. Checked
 # against rakudo.
-plan 10;
+plan 12;
 
 use lib 't/lib';
 
@@ -38,3 +38,9 @@ sub own-after { use UseInBlockRerun; uibr-inc(1) }
 own-after() for ^3;
 is own-after(), 2, 'inside the routine the import wins over the unit\'s routine';
 is uibr-inc(1), 'own 1', 'outside it the unit\'s routine answers';
+
+# A replayed run that took the light call path ran in its caller's frame,
+# where the scope's exit did not remove the module merge it wrote.
+sub plain-of($x) { use UseInBlockRerunPlain; uibrp-inc($x) }
+is (^4).map({ plain-of($_) }).join(','), '1,2,3,4', 'a routines-only module imports on every call';
+dies-ok { EVAL 'UseInBlockRerunPlain::uibrp-qualified(1)' }, 'and its package is not visible after the calls';
