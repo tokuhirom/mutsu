@@ -890,6 +890,8 @@ impl Interpreter {
     }
 
     /// Increment a value, calling .succ() on Instance values with custom methods.
+    // Cost: O(n), n = numeric digits or string characters for a primitive;
+    // otherwise the receiver's method dispatch and succ implementation.
     pub(crate) fn increment_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(_)) {
             return Err(crate::runtime::did_you_mean::method_not_found(
@@ -901,22 +903,10 @@ impl Interpreter {
         // dispatch (same entry point `.Str` interpolation already uses) instead
         // of a raw interpreter tree-walk — one method-dispatch path, not two.
         //
-        // A prior version pre-checked `class_has_method(class_name, "succ")`
-        // before calling, to tell "no such method" (fall through to a plain
-        // numeric increment) apart from "the method threw" (must propagate,
-        // e.g. Net::Netmask's `.next` overflowing past 255.255.255.255 via a
-        // `die` inside its `dec2ip` helper). That check is too narrow: a
-        // built-in type's `.succ` (e.g. `Date`) is dispatched natively by
-        // `try_compiled_method_or_interpret` without ever being registered in
-        // the class registry `class_has_method` reads, so the pre-check found
-        // nothing and silently fell back to a bare numeric increment,
-        // discarding the Date and answering `1` (`t/types/succ-pred-instance.t`
-        // pinned the die-propagation half; a `Date++` regression in
-        // `roast/integration/advent2010-day16.t` caught this half). Try the
-        // call unconditionally instead, and use the returned error's shape to
-        // tell the two cases apart: `is_method_not_found_for("succ")` is
-        // specifically "the invocant has no succ method at all", not some
-        // other failure the method body raised.
+        // Native methods such as Date.succ also use this entry, without a
+        // class-registry user method. Both a missing method and an exception
+        // from its body propagate: Mu:D's increment candidate calls succ,
+        // rather than silently retaining an object that cannot step.
         // An `Int` subclass takes `Int`'s own `postfix:<++>` candidate, as in
         // Rakudo: its payload steps, and a user `.succ` on the subclass is not
         // consulted (`builtins::native_base`).
@@ -927,11 +917,7 @@ impl Interpreter {
             || self.mixin_inner_instance_has_user_method(val, "succ")
             || self.mixin_role_has_method(val, "succ")
         {
-            match self.try_compiled_method_or_interpret(val.clone(), "succ", Vec::new()) {
-                Ok(result) => return Ok(result),
-                Err(err) if !err.is_method_not_found_for("succ") => return Err(err),
-                Err(_) => {}
-            }
+            return self.try_compiled_method_or_interpret(val.clone(), "succ", Vec::new());
         }
         Ok(Self::increment_value(val))
     }
@@ -1032,6 +1018,8 @@ impl Interpreter {
     }
 
     /// Decrement a value, calling .pred() on Instance values with custom methods.
+    // Cost: O(n), n = numeric digits or string characters for a primitive;
+    // otherwise the receiver's method dispatch and pred implementation.
     pub(crate) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(_)) {
             return Err(crate::runtime::did_you_mean::method_not_found(
@@ -1040,10 +1028,7 @@ impl Interpreter {
             ));
         }
         // Route user-defined `.pred` through the Interpreter's unified compiled-first
-        // dispatch (see increment_value_smart's comment on why the call is
-        // tried unconditionally and the returned error's shape decides
-        // fall-through vs propagation) instead of a raw interpreter
-        // tree-walk — one method-dispatch path, not two.
+        // dispatch; missing methods and body exceptions both propagate.
         // An `Int` subclass takes `Int`'s own `postfix:<-->` candidate, as in
         // Rakudo: its payload steps, and a user `.pred` on the subclass is not
         // consulted (`builtins::native_base`).
@@ -1054,11 +1039,7 @@ impl Interpreter {
             || self.mixin_inner_instance_has_user_method(val, "pred")
             || self.mixin_role_has_method(val, "pred")
         {
-            match self.try_compiled_method_or_interpret(val.clone(), "pred", Vec::new()) {
-                Ok(result) => return Ok(result),
-                Err(err) if !err.is_method_not_found_for("pred") => return Err(err),
-                Err(_) => {}
-            }
+            return self.try_compiled_method_or_interpret(val.clone(), "pred", Vec::new());
         }
         Ok(Self::decrement_value(val))
     }
