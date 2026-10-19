@@ -23,6 +23,12 @@ use crate::ast::ParamDef;
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::regex_tree::RegexNode;
 
+mod forward;
+mod refs;
+use refs::{VarRefs, later_param_in_where};
+pub(super) use forward::first_var_used_before_unit_declares;
+use forward::ForwardUses;
+
 pub(super) type Undeclared = (&'static str, String, Vec<String>);
 
 /// The first variable used without a declaration in scope, as
@@ -53,72 +59,6 @@ pub(super) fn first_undeclared_var(interp: &Interpreter, stmts: &[Stmt]) -> Opti
     };
     walk_stmts(&mut scan, stmts);
     scan.found
-}
-
-/// The first variable the unit uses before its top level declares it
-/// (#12800): `sub f { $zz = 42 }; my $zz = 1;` is `X::Undeclared` at
-/// compile time in rakudo, as is `say $x; my $x`. A narrow form of
-/// [`first_undeclared_var`] over a whole compunit: a use is reported only
-/// when nothing in scope there declares it and the unit's top level declares
-/// that name later. Any other undeclared use is left to run time, as are
-/// names a `use` of a module whose exported variables the parse-time scan
-/// does not know may provide.
-// Cost: O(n * d), n = size of the unit's AST, d = depth of the scope stack.
-pub(super) fn first_var_used_before_unit_declares(
-    interp: &Interpreter,
-    stmts: &[Stmt],
-) -> Option<Undeclared> {
-    let mut top_names = HashSet::new();
-    collect_top_level_decls(stmts, &mut top_names);
-    if top_names.is_empty() {
-        return None;
-    }
-    let mut refs = VarRefs::default();
-    walk_stmts(&mut refs, stmts);
-    let placeholder_names = refs
-        .names
-        .iter()
-        .filter_map(|n| n.strip_prefix(['^', ':']).map(str::to_string))
-        .collect();
-    let mut scan = UndeclaredVars {
-        interp,
-        placeholder_names,
-        package_exports: super::eval_package_exports::package_exported_vars(stmts),
-        scopes: vec![HashSet::new()],
-        strict: true,
-        judged_stmt: true,
-        forward: Some(ForwardUses {
-            top_names,
-            bail: false,
-        }),
-        found: None,
-    };
-    walk_stmts(&mut scan, stmts);
-    scan.found
-}
-
-/// The variable names the unit's top level declares, in `declared_var_name`
-/// form, including those of a desugared multi-declaration.
-// Cost: O(t), t = top-level statements.
-fn collect_top_level_decls(stmts: &[Stmt], out: &mut HashSet<String>) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::VarDecl { name, .. } => {
-                out.insert(declared_var_name(name).to_string());
-            }
-            Stmt::SyntheticBlock(inner) => collect_top_level_decls(inner, out),
-            _ => {}
-        }
-    }
-}
-
-/// [`first_var_used_before_unit_declares`]'s mode of the scan.
-struct ForwardUses {
-    /// What the unit's top level declares.
-    top_names: HashSet<String>,
-    /// A `use` whose exported variables are unknown was seen: nothing is
-    /// reported from here on.
-    bail: bool,
 }
 
 /// The name a declaration (variable, parameter, attribute alias) puts in
@@ -240,17 +180,8 @@ impl UndeclaredVars<'_> {
             Expr::HashVar(name) => self.undeclared_container("%", name),
             _ => None,
         };
-        if let Some(forward) = &self.forward
-            && let Some((sigil, name, _)) = &found
-        {
-            let key = if *sigil == "$" {
-                name.clone()
-            } else {
-                format!("{sigil}{name}")
-            };
-            if forward.bail || !forward.top_names.contains(&key) {
-                return;
-            }
+        if self.forward_ignores(found.as_ref()) {
+            return;
         }
         self.found = found;
     }
@@ -355,30 +286,6 @@ impl UndeclaredVars<'_> {
             return;
         }
         self.in_scope(|v| v.judging(true, |v| walk_stmt(v, stmt)));
-    }
-
-    /// In the compunit mode, a `use` declares the variables its module
-    /// exports, when the parse-time scan knows them; otherwise nothing after
-    /// it is reported.
-    fn forward_use(&mut self, module: &str, tags: &[String]) {
-        let Some(forward) = &self.forward else {
-            return;
-        };
-        if forward.bail {
-            return;
-        }
-        match crate::parser::scanned_exported_vars(module) {
-            Some(vars) => {
-                for var in vars.iter().filter(|var| var.imported_by(tags)) {
-                    self.declare(&var.name);
-                }
-            }
-            None => {
-                if let Some(forward) = &mut self.forward {
-                    forward.bail = true;
-                }
-            }
-        }
     }
 
     /// A class or role body's scope: its attributes (`has $.x` makes `$!x`
@@ -578,46 +485,5 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         if matches!(kind, NameKind::Param | NameKind::BlockParam) {
             self.declare(name);
         }
-    }
-}
-
-/// A parameter's `where` constraint is checked left-to-right: it may name
-/// the parameter it constrains and any *earlier* parameter, but referencing a
-/// *later* parameter is `X::Undeclared` (that param is not in scope yet).
-/// Matches `sub foo($x where { $x == $y }, $y) {}` → X::Undeclared.
-/// (subtypes.t 77)
-fn later_param_in_where(param_defs: &[ParamDef]) -> Option<Undeclared> {
-    let named: Vec<&ParamDef> = param_defs.iter().filter(|pd| !pd.name.is_empty()).collect();
-    for (i, pd) in named.iter().enumerate() {
-        let Some(where_expr) = &pd.where_constraint else {
-            continue;
-        };
-        let mut refs = VarRefs::default();
-        refs.visit_expr(where_expr);
-        let earlier = |r: &str| named[..=i].iter().any(|p| bare_var_name(&p.name) == r);
-        if let Some(r) = refs.names.iter().find(|r| {
-            named[i + 1..]
-                .iter()
-                .any(|p| bare_var_name(&p.name) == r.as_str())
-                && !earlier(r)
-        }) {
-            return Some(("$", r.clone(), Vec::new()));
-        }
-    }
-    None
-}
-
-/// The names of the variables (`$`, `@`, `%`, `&`) an expression refers to.
-#[derive(Default)]
-struct VarRefs {
-    names: Vec<String>,
-}
-
-impl<'ast> Visit<'ast> for VarRefs {
-    fn visit_expr(&mut self, expr: &'ast Expr) {
-        if let Expr::Var(n) | Expr::ArrayVar(n) | Expr::HashVar(n) | Expr::CodeVar(n) = expr {
-            self.names.push(n.clone());
-        }
-        walk_expr(self, expr);
     }
 }
