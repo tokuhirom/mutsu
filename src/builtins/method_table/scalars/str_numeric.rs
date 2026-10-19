@@ -317,6 +317,9 @@ fn cool_uint(
     if let ValueView::Complex(re, im) = target.view() {
         return Some(interp.dispatch_complex_to_real("UInt", re, im, target, &[]));
     }
+    if let Some(answer) = super::str_complex_real::complex_string_as_real(interp, "UInt", target) {
+        return Some(answer);
+    }
     // A lazy list cannot count itself (`X::Cannot::Lazy`).
     if crate::builtins::methods_0arg::is_lazy_count_source(target) {
         return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));

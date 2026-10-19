@@ -116,6 +116,10 @@ impl Interpreter {
                         | ValueView::ValuePair(..)
                 ))
             || (matches!(method, "say" | "put") && !args.is_empty())
+            // A string that spells a `Complex` converts as it (§9.190).
+            || (matches!(target.view(), ValueView::Str(_))
+                && crate::builtins::method_table::scalars::str_complex_real::NAMES
+                    .contains(&method))
         {
             let owner_names = self.late_walk_owners(&target);
             let owners: Vec<&str> = owner_names.iter().map(String::as_str).collect();

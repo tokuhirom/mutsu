@@ -33,6 +33,7 @@ pub(crate) mod render;
 mod revision_e;
 pub(crate) mod str;
 pub(crate) mod str_args;
+pub(crate) mod str_complex_real;
 pub(crate) mod str_interp;
 pub(crate) mod str_iter;
 pub(crate) mod str_numeric;
@@ -142,4 +143,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     unicode::UNI_ROWS,
     uni::ROWS,
     render::ROWS,
+    // Late twins of the `Str`/`Cool` real conversions (after their pure rows).
+    str_complex_real::ROWS,
 ];
