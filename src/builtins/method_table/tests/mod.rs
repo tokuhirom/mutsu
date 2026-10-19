@@ -521,10 +521,10 @@ fn the_shape_test_knows_the_receiver() {
 }
 
 /// A named argument is split from the positionals and handed to the row that
-/// declares it. A name no row binds takes the cascades, and so does a false
-/// `:hammer`, which the row's signature does not bind.
+/// declares it. A false `:hammer`, which the row's signature does not bind,
+/// takes the cascades; a name no row of the method binds is swallowed.
 #[test]
-fn a_named_argument_reaches_only_the_row_that_declares_it() {
+fn a_named_argument_reaches_only_a_row_that_declares_it() {
     let flat = Symbol::intern("flat");
     let nested = Value::array(vec![
         Value::int(1),
@@ -536,19 +536,26 @@ fn a_named_argument_reaches_only_the_row_that_declares_it() {
         matches!(result, Some(Ok(_))),
         "flat(:hammer) is a Named row"
     );
-    for pair in [
-        Value::pair("zzz".to_string(), Value::TRUE),
-        Value::pair("hammer".to_string(), Value::FALSE),
-    ] {
-        assert!(
-            try_dispatch(&nested, flat, &[pair]).is_none(),
-            "an undeclared named argument must take the cascades"
-        );
-    }
-    // A row that declares no named argument refuses every one: `elems` has
-    // no `:hammer`.
+    // `:hammer(False)` is the row's, and its handler leaves it to the cascades.
+    let unhammered = Value::pair("hammer".to_string(), Value::FALSE);
+    assert!(try_dispatch(&nested, flat, &[unhammered]).is_none());
+    // A name no row of the method binds is swallowed by the implicit `*%_`:
+    // the row answers as if it were not passed (`flat(:zzz)`, `elems(:hammer)`).
+    let render = |result: Option<Result<Value, crate::value::RuntimeError>>| match result {
+        Some(Ok(value)) => value.to_string_value(),
+        _ => panic!("the row must answer"),
+    };
+    let zzz = Value::pair("zzz".to_string(), Value::TRUE);
+    assert_eq!(
+        render(try_dispatch(&nested, flat, &[zzz])),
+        render(try_dispatch(&nested, flat, &[]))
+    );
+    let elems = Symbol::intern("elems");
     let hammer = Value::pair("hammer".to_string(), Value::TRUE);
-    assert!(try_dispatch(&nested, Symbol::intern("elems"), &[hammer]).is_none());
+    assert_eq!(
+        render(try_dispatch(&nested, elems, &[hammer])),
+        render(try_dispatch(&nested, elems, &[]))
+    );
 }
 
 /// A positional `Pair` (`ValuePair`) is not a named argument: ADR-0021.
