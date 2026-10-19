@@ -879,58 +879,24 @@ impl Interpreter {
         None
     }
 
+    /// The byte index of the `}` closing the code block whose `{` is at byte
+    /// `open_idx` of `text`.
+    // Cost: O(n), n = chars after `open_idx`.
     pub(super) fn find_matching_brace_end(text: &str, open_idx: usize) -> Option<usize> {
-        Self::matching_brace_end(text.char_indices().skip_while(|(i, _)| *i < open_idx))
+        let rest: Vec<(usize, char)> = text[open_idx..].char_indices().skip(1).collect();
+        let chars: Vec<char> = rest.iter().map(|(_, c)| *c).collect();
+        let end = crate::regex_code_nested::code_block_body_len(&chars)?;
+        Some(open_idx + rest[end].0)
     }
 
     /// [`Self::find_matching_brace_end`] for a caller that already holds the
     /// text as a `char` slice and counts in chars rather than bytes.
+    // Cost: O(n), n = chars after `open_idx`.
     pub(super) fn find_matching_brace_end_in_chars(
         chars: &[char],
         open_idx: usize,
     ) -> Option<usize> {
-        Self::matching_brace_end(chars.iter().copied().enumerate().skip(open_idx))
-    }
-
-    /// The rule both spellings above share: the index of the `}` closing the
-    /// `{` the iterator starts on, with braces inside `'…'` / `"…"` string
-    /// literals ignored.
-    ///
-    /// The quote awareness is the point. A naive depth count reads the `}` in
-    /// `{ say "a}b" }` as the end of the code block, slicing the body in the
-    /// middle of a string literal — and the baking pass then rewrites what is
-    /// left of it as if it were pattern text.
-    fn matching_brace_end(it: impl Iterator<Item = (usize, char)>) -> Option<usize> {
-        let mut depth = 0usize;
-        let mut quote: Option<char> = None;
-        let mut escaped = false;
-        for (idx, ch) in it {
-            if let Some(q) = quote {
-                if escaped {
-                    escaped = false;
-                    continue;
-                }
-                if ch == '\\' {
-                    escaped = true;
-                    continue;
-                }
-                if ch == q {
-                    quote = None;
-                }
-                continue;
-            }
-            match ch {
-                '\'' | '"' => quote = Some(ch),
-                '{' => depth += 1,
-                '}' => {
-                    depth = depth.saturating_sub(1);
-                    if depth == 0 {
-                        return Some(idx);
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
+        let end = crate::regex_code_nested::code_block_body_len(chars.get(open_idx + 1..)?)?;
+        Some(open_idx + 1 + end)
     }
 }
