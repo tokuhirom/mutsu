@@ -248,10 +248,12 @@ impl Interpreter {
                         &cf.param_defs,
                         &cf.params,
                         &args,
-                        Some((true, cf.code.reads_args_hash)),
+                        crate::runtime::types::CalleeArgsUsage {
+                            reads: Some((true, cf.code.reads_args_hash)),
+                            is_block: false,
+                        },
                         &cf.param_name_syms,
-                        &[],
-                        false
+                        &[]
                     )
                 )
             });

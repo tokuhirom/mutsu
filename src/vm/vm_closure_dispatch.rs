@@ -877,9 +877,10 @@ impl Interpreter {
                     &data.params,
                     &param_name_syms.params,
                     &args,
-                    Some(cc.reads_args_array),
-                    Some(cc.reads_args_hash),
-                    !cc.is_routine
+                    crate::runtime::types::CalleeArgsUsage {
+                        reads: Some((cc.reads_args_array, cc.reads_args_hash)),
+                        is_block: !cc.is_routine,
+                    }
                 )
             ) {
                 Ok(bindings) => bindings,

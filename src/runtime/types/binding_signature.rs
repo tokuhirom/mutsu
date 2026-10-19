@@ -93,6 +93,16 @@ fn legacy_has_plain_positional_param(params: &[String]) -> bool {
     })
 }
 
+/// What a callee's body does with the legacy argument containers, as far as
+/// its caller can tell: whether it reads `@_` and `%_` (`None`: unknown), and
+/// whether it is a block rather than a routine (see
+/// `FunctionBindingOptions::is_block`).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct CalleeArgsUsage {
+    pub(crate) reads: Option<(bool, bool)>,
+    pub(crate) is_block: bool,
+}
+
 struct FunctionBindingOptions<'a> {
     reads_args_array: Option<bool>,
     reads_args_hash: Option<bool>,
@@ -856,7 +866,14 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        self.bind_function_args_values_with_syms(param_defs, params, args, None, &[], &[], false)
+        self.bind_function_args_values_with_syms(
+            param_defs,
+            params,
+            args,
+            CalleeArgsUsage::default(),
+            &[],
+            &[],
+        )
     }
 
     /// Whether `data`'s body reads the legacy argument array `@_`, or `None`
@@ -918,10 +935,12 @@ impl Interpreter {
             param_defs,
             params,
             args,
-            reads_args_array.zip(reads_args_hash),
+            CalleeArgsUsage {
+                reads: reads_args_array.zip(reads_args_hash),
+                is_block: false,
+            },
             &[],
             &[],
-            false,
         )
     }
 
@@ -942,19 +961,9 @@ impl Interpreter {
         params: &[String],
         params_syms: &[Symbol],
         args: &[Value],
-        reads_args_array: Option<bool>,
-        reads_args_hash: Option<bool>,
-        is_block: bool,
+        usage: CalleeArgsUsage,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        self.bind_function_args_values_with_syms(
-            param_defs,
-            params,
-            args,
-            reads_args_array.zip(reads_args_hash),
-            &[],
-            params_syms,
-            is_block,
-        )
+        self.bind_function_args_values_with_syms(param_defs, params, args, usage, &[], params_syms)
     }
 
     /// [`Interpreter::bind_function_args_values_with_argspec`] plus the callee's
@@ -979,11 +988,14 @@ impl Interpreter {
         param_defs: &[ParamDef],
         params: &[String],
         args: &[Value],
-        args_usage: Option<(bool, bool)>,
+        usage: CalleeArgsUsage,
         param_name_syms: &[Symbol],
         params_syms: &[Symbol],
-        is_block: bool,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
+        let CalleeArgsUsage {
+            reads: args_usage,
+            is_block,
+        } = usage;
         let result = self.bind_function_args_values_inner(
             param_defs,
             params,
