@@ -759,11 +759,6 @@ pub(crate) fn with_buf_bytes<R>(attrs: &InstanceAttrs, f: impl FnOnce(&[u8]) -> 
     Some(f(&node_bytes(&node)))
 }
 
-/// Store raw bytes into a map being built or updated, one byte per element.
-pub(crate) fn set_buf_bytes(map: &mut AttrMap, class_name: Symbol, bytes: &[u8]) {
-    set_buf_elems(map, class_name, bytes_to_elems(bytes));
-}
-
 /// The buffer's storage exactly as the node holds it: `elems * width` bytes,
 /// little-endian within each element.
 ///
@@ -793,7 +788,7 @@ pub(crate) fn buf_raw_bytes_or_empty(attrs: &InstanceAttrs) -> Vec<u8> {
 
 /// Store raw storage bytes — already at `class_name`'s element width — into a
 /// map being built or updated. The counterpart of [`buf_raw_bytes`]; use
-/// [`set_buf_bytes`] when the bytes are meant as one element each instead.
+/// [`set_buf_elems`] with [`bytes_to_elems`] when each byte is one element instead.
 ///
 /// A trailing partial element is zero-padded out to a whole one, so a caller
 /// that grew the storage by a byte count that is not a multiple of the width
@@ -968,7 +963,7 @@ mod tests {
     fn bytes_round_trip_through_the_write_side() {
         let buf = Symbol::intern("Buf");
         let mut map = AttrMap::new();
-        set_buf_bytes(&mut map, buf, &[1, 2, 3]);
+        set_buf_elems(&mut map, buf, bytes_to_elems(&[1, 2, 3]));
         let b = Value::make_instance(buf, map);
         assert_eq!(buf_bytes(&attrs_of(&b)), Some(vec![1, 2, 3]));
 

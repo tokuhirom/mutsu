@@ -1,9 +1,6 @@
 use super::*;
-use crate::symbol::Symbol;
 use crate::value::ValueView;
-use crate::value::value_buf::{
-    buf_bytes_or_empty, set_buf_bytes, set_buf_elems, with_buf_elems,
-};
+use crate::value::value_buf::{buf_bytes_or_empty, with_buf_elems};
 
 impl Interpreter {
     /// Interpreter-native `.encode` (a `Cool` scalar -> `Buf`) and `.decode`
