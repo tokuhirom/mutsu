@@ -22,4 +22,34 @@ is ($a (-) $a), 'ascii', '(-) selects its own candidate';
 is ($a ∖ $a).^name, 'Set', '∖ ignores the ASCII candidate';
 is ($a (^) $a), 'ascii', '(^) selects its own candidate';
 is ($a ⊖ $a).^name, 'Set', '⊖ ignores the ASCII candidate';
+{
+    my $copy = $a;
+    $copy ∪= $a;
+    is $copy.^name, 'Set', '∪= ignores the ASCII candidate';
+}
+{
+    my $copy = $a;
+    $copy ∩= $a;
+    is $copy.^name, 'Set', '∩= ignores the ASCII candidate';
+}
+{
+    my $copy = $a;
+    $copy ⊎= $a;
+    is $copy.^name, 'Bag', '⊎= ignores the ASCII candidate';
+}
+{
+    my $copy = $a;
+    $copy ⊍= $a;
+    is $copy.^name, 'Bag', '⊍= ignores the ASCII candidate';
+}
+{
+    my $copy = $a;
+    $copy ∖= $a;
+    is $copy.^name, 'Set', '∖= ignores the ASCII candidate';
+}
+{
+    my $copy = $a;
+    $copy ⊖= $a;
+    is $copy.^name, 'Set', '⊖= ignores the ASCII candidate';
+}
 done-testing;

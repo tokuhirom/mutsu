@@ -20,4 +20,34 @@ is ($u ∖ $u), 'unicode', '∖ selects its own candidate';
 is ($u (-) $u).^name, 'Set', '(-) ignores the Unicode candidate';
 is ($u ⊖ $u), 'unicode', '⊖ selects its own candidate';
 is ($u (^) $u).^name, 'Set', '(^) ignores the Unicode candidate';
+{
+    my $copy = $u;
+    $copy ∪= $u;
+    is $copy, 'unicode', '∪= selects the Unicode candidate';
+}
+{
+    my $copy = $u;
+    $copy ∩= $u;
+    is $copy, 'unicode', '∩= selects the Unicode candidate';
+}
+{
+    my $copy = $u;
+    $copy ⊎= $u;
+    is $copy, 'unicode', '⊎= selects the Unicode candidate';
+}
+{
+    my $copy = $u;
+    $copy ⊍= $u;
+    is $copy, 'unicode', '⊍= selects the Unicode candidate';
+}
+{
+    my $copy = $u;
+    $copy ∖= $u;
+    is $copy, 'unicode', '∖= selects the Unicode candidate';
+}
+{
+    my $copy = $u;
+    $copy ⊖= $u;
+    is $copy, 'unicode', '⊖= selects the Unicode candidate';
+}
 done-testing;
