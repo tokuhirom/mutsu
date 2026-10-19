@@ -55,11 +55,19 @@ fn is_custom_name(name: &str) -> bool {
 
 /// Whether a bare `is NAME` entry is a container type (`is SetHash`).
 pub(super) fn is_container_type(name: &str) -> bool {
-    !name.starts_with("__")
-        && super::name_parts::identifier_segments(name)
-            .nth(1)
-            .is_none()
-        && super::bareword::names_type(name)
+    let base = name.split_once('[').map_or(name, |(base, _)| base);
+    !base.starts_with("__") && super::bareword::names_type(base)
+}
+
+/// The type node for an `is NAME` declaration trait. Bracketed applications
+/// keep their type arguments instead of being treated as a custom trait name.
+// Cost: O(n), n = type spelling length plus type argument nodes.
+pub(super) fn type_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
+    if name.contains('[') {
+        super::type_args::parameterized_type_node(name, None)
+    } else {
+        Ok(super::bareword::simple_type_node(name))
+    }
 }
 
 /// The `traits` items for a declaration's rendered custom traits, in source
@@ -77,7 +85,7 @@ pub(super) fn convert(
             // `is NAME`: a type when it names one at parse time, else a trait
             // name.
             let field = if is_container_type(name) {
-                node_field(Some("type"), super::bareword::simple_type_node(name))
+                node_field(Some("type"), type_node(name)?)
             } else {
                 node_field(Some("name"), name_from_identifier(name))
             };
@@ -160,7 +168,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<(CustomTraits, bool), RuntimeE
             && field.name == Some("type")
         {
             let type_node = named_child(t, "type")?;
-            if type_node.class != RakuAstClass::TypeSimple {
+            if !matches!(
+                type_node.class,
+                RakuAstClass::TypeSimple | RakuAstClass::TypeParameterized
+            ) {
                 return Err(refuse());
             }
             let name = super::type_lower::type_constraint(t, type_node)?;

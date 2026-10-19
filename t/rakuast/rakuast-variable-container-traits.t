@@ -5,7 +5,7 @@ use Test;
 # `Trait::Is(type => Type::Simple)`; `is dynamic` is a named trait and leaves
 # the variable without a `*` twigil.
 
-plan 12;
+plan 17;
 
 sub decl($src) { $src.AST.statements.head.expression }
 
@@ -16,6 +16,18 @@ ok $set.traits.head.type.raku.contains('from-identifier("SetHash")'), 'naming th
 
 my $own-decl = Q[class Foo is Hash { }; my %f is Foo].AST.statements[1].expression;
 isa-ok $own-decl.traits.head.type, RakuAST::Type::Simple, 'a type the unit declares is a container type too';
+
+my $qualified = Q[class My::TraitType is Hash { }; my %h is My::TraitType].AST.statements[1].expression;
+isa-ok $qualified.traits.head.type, RakuAST::Type::Simple,
+    'a qualified declared type is type-valued';
+like $qualified.traits.head.type.raku, /'from-identifier-parts("My","TraitType")'/,
+    'with its package name retained';
+
+my $parameterized = decl(Q[my @a is Array[Int]]);
+isa-ok $parameterized.traits.head.type, RakuAST::Type::Parameterized,
+    'a parameterized container type stays type-valued';
+like $parameterized.traits.head.type.gist, /'Type::Parameterized'/,
+    'with its parameterized type node';
 
 my $dyn = decl(Q[my $x is dynamic]);
 ok $dyn.traits.head.raku.contains('name => RakuAST::Name.from-identifier("dynamic")'),
@@ -32,5 +44,7 @@ is EVAL(Q[my %m is Map = a => 1; %m.^name].AST),
     'Map', 'and a Map';
 is EVAL(Q[class Foo2 is Hash { }; my %f is Foo2; %f<k> = 1; %f.^name].AST),
     'Foo2', 'and a container class the unit declares';
+is EVAL(Q[my @typed is Array[Int] = 1, 2; @typed.^name].AST),
+    'Array[Int]', 'and a parameterized container type';
 is EVAL(Q[my $x is dynamic = 5; $x + 1].AST),
     6, '`is dynamic` survives it';
