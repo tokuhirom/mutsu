@@ -1147,6 +1147,7 @@ t/concurrency/supply/supply-first-live.t
 t/concurrency/supply/supply-grep.t
 t/concurrency/supply/supply-head-channel-backed.t
 t/concurrency/supply/supply-infinite-range.t
+t/concurrency/supply/supply-interval-class-row.t
 t/concurrency/supply/supply-interval-dynamic-scheduler.t
 t/concurrency/supply/supply-interval-scheduler.t
 t/concurrency/supply/supply-interval.t
@@ -3274,6 +3275,7 @@ t/nativecall/native-concurrency-ctor.t
 t/nativecall/native-ctor-array-attrs.t
 t/nativecall/native-ctor-plan-invalidation.t
 t/nativecall/native-ctor-required-attrs.t
+t/nativecall/native-ctor-smiley-attrs.t
 t/nativecall/native-ctor-typed-attrs.t
 t/nativecall/native-ctor-typed-container-attrs.t
 t/nativecall/native-cunion-construct.t
@@ -4529,6 +4531,7 @@ t/oo/role/role-body-sees-composing-class-attributes.t
 t/oo/role/role-body-sibling-lexical-role.t
 t/oo/role/role-body-statement-keeps-qualified-concretization.t
 t/oo/role/role-body-statics-only-declared.t
+t/oo/role/role-body-sub-keeps-its-trait.t
 t/oo/role/role-body-sub-proto.t
 t/oo/role/role-body-use-at-declaration.t
 t/oo/role/role-body-use-flat-role-name.t
@@ -6233,6 +6236,7 @@ t/routines/infix-routine-lone-list-arg.t
 t/routines/init-check-class-in-routine.t
 t/routines/init-check-routine-lexicals.t
 t/routines/inner-sub-same-name-across-routines.t
+t/routines/invocant-concreteness-message-wrap.t
 t/routines/keyword-as-function.t
 t/routines/keyword-named-subs.t
 t/routines/kill-routine-without-path.t
@@ -7777,6 +7781,7 @@ t/vm/scope/stash-bind-key.t
 t/vm/scope/stash-exists-key.t
 t/vm/scope/stash-literal-key-assign.t
 t/vm/scope/stash-literal-key-bind.t
+t/vm/scope/stash-merge-symbols-row.t
 t/vm/scope/stash-missing-key-default.t
 t/vm/scope/stash-slip-pairs.t
 t/vm/scope/stash-values.t

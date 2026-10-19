@@ -59,9 +59,12 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
     let explicit_default = default
         .as_ref()
         .filter(|_| !*default_is_seed && !*default_is_trait);
+    // Rakudo's RakuAST represents `Int:_` on a declaration as the plain
+    // `Int` type: the smiley adds no refinement beyond the default type.
     let smiley_type = match (type_constraint, type_smiley.as_deref()) {
         (_, None) => None,
         (Some(base), Some(smiley @ ("D" | "U"))) => Some(format!("{base}:{smiley}")),
+        (Some(_), Some("_")) => None,
         _ => return Err(unsupported_source("attribute with a `:_` smiley")),
     };
     if !handles.is_empty() && handles_terms.is_empty() {
