@@ -9,16 +9,15 @@
 //! records. See adr0019-e2-e4-resolver-core (#7540) decision 1.
 //!
 //! Invocation stays in the arity cascades until Phase F retires them.
-//! [`native_row_servable`] (E4b's dispatch-admission resolver,
-//! `runtime/resolution_sequence.rs`) and, since ADR-0019 Phase F box F3 step
-//! 3, `builtin_type_methods::builtin_type_method_names` (`.^methods`
-//! enumeration, via [`introspectable_names_for_owner`]) are the two
-//! production readers. E2a's rows are a deliberately conservative first
+//! `.^can` (via [`native_method_row_exists`] and [`native_method_declared`]) and,
+//! since ADR-0019 Phase F box F3 step 3,
+//! `builtin_type_methods::builtin_type_method_names` (`.^methods`
+//! enumeration, via [`introspectable_names_for_owner`]) are the production
+//! readers (the arity reader and the resolver's `Native` candidate are gone). E2a's rows are a deliberately conservative first
 //! pass, generated once (2026-08-10) by probing every (owner, name) pair
 //! from the (now-retired) 14 built-in-method name slices against the real
 //! native dispatch cascades with a representative sample value per owner,
-//! plus a type-object probe for the [`TYPE_OBJECT_OK`](NativeRowFlags::TYPE_OBJECT_OK)
-//! flag. A pair recognized at NO arity is conservatively classified
+//! plus a type-object probe for the `TYPE_OBJECT_OK` flag. A pair recognized at NO arity is conservatively classified
 //! `N`/`SPECIAL` (or `MUTATES_RECEIVER` when the name also appears in the
 //! Tier-A mutable-method dispatch, `vm/vm_call_method_mut_ops.rs`) --
 //! exactly mirroring what the retired `native_call_unmodeled` counter flagged
@@ -144,7 +143,7 @@ fn entry(owner: &str, name: &str) -> Option<RowValue> {
 /// `owner`, at some arity, via some path. ADR-0019 Phase E box E7 step 4
 /// (`.^can`, `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 4") is the
 /// first production reader, and needs exactly this "does this method exist
-/// at all" question -- which [`native_method_row`]'s *return value* cannot
+/// at all" question -- which the arity/flags a row used to answer cannot
 /// answer by itself: a missing key falls back to the same `(N, SPECIAL)` bit
 /// pattern a genuinely-probed "exists, but only via a special/mutating path
 /// outside the pure arity cascades" row also carries (e.g. `Str.match`,

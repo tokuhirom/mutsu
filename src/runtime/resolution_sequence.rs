@@ -177,8 +177,7 @@ pub(crate) struct ResolvedSequence {
 
 /// Whether `value` is a concrete instance rather than a bare type object —
 /// the same "DEFINITE" primitive `dispatch_core_coerce.rs`'s `.DEFINITE` arm
-/// implements, needed here to decide whether a `Native` candidate's row
-/// requires [`crate::builtins::native_method_row::NativeRowFlags::TYPE_OBJECT_OK`].
+/// implements.
 pub(crate) fn value_is_definite(value: &Value) -> bool {
     // `Empty` is a concrete Slip too (`.defined` is False for it).
     !matches!(
