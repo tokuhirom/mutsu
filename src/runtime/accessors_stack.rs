@@ -23,6 +23,35 @@ impl Interpreter {
     /// generation *change* to its source location, so a new one is visible.
     #[track_caller]
     pub(crate) fn invalidate_fn_resolution(&mut self) {
+        self.clear_fn_resolution_memos();
+        crate::vm::vm_stats::record_fn_keys_base_invalidation(self.dispatch.fn_keys_by_base.len());
+        self.clear_fn_keys_index();
+        self.renew_fn_resolution_version();
+    }
+
+    /// [`Self::invalidate_fn_resolution`] for a caller that knows every
+    /// registry key whose presence it changed (an import scope's pop names the
+    /// keys its rollback removed or put back): every memo goes as there, but
+    /// the base-name key index keeps its entries for the other names, so the
+    /// next lookup does not rescan the whole registry (#9170).
+    // Cost: O(c + k), c = cached resolutions dropped, k = `keys`.
+    #[track_caller]
+    pub(crate) fn invalidate_fn_resolution_changing_keys(
+        &mut self,
+        keys: impl IntoIterator<Item = Symbol>,
+    ) {
+        self.clear_fn_resolution_memos();
+        let mut evicted = 0usize;
+        for key in keys {
+            if self.evict_fn_keys_base(key) {
+                evicted += 1;
+            }
+        }
+        crate::vm::vm_stats::record_fn_keys_base_invalidation(evicted);
+        self.renew_fn_resolution_version();
+    }
+
+    fn clear_fn_resolution_memos(&mut self) {
         // Drop the generation-tagged memos outright. Retiring them by version
         // movement would not be enough here: the functions map may well be
         // about to travel back to a version these entries are tagged with (a
@@ -47,8 +76,10 @@ impl Interpreter {
         self.caches.light_call_cache.clear();
         self.caches.pos_light_call_cache.clear();
         self.caches.otf_call_cache.clear();
-        crate::vm::vm_stats::record_fn_keys_base_invalidation(self.dispatch.fn_keys_by_base.len());
-        self.clear_fn_keys_index();
+    }
+
+    #[track_caller]
+    fn renew_fn_resolution_version(&mut self) {
         // ...and give the map a version it has never had, so that the caches
         // which self-refresh off the generation rather than being cleared here
         // -- the ADR-0066 callsite inline-cache epoch -- see the change too. Mirroring the unchanged version instead left a

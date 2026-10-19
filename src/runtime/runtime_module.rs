@@ -428,12 +428,12 @@ impl Interpreter {
     /// they were registered before it opened (see `pop_import_scope`).
     // Cost: O(k + m), k = interned `GLOBAL::MAIN/…` names, m = symbols interned
     // since the family index last caught up.
-    fn drop_foreign_global_main_candidates(&mut self, program_path: Option<Symbol>) {
+    fn drop_foreign_global_main_candidates(&mut self, program_path: Option<Symbol>) -> Vec<Symbol> {
         // The routine table this check last found clean is still the one
         // installed: versions are never reused, so nothing was added since.
         let version = self.registry().functions.version();
         if self.module.foreign_main_clean_version == Some(version) {
-            return;
+            return Vec::new();
         }
         let main = crate::symbol::wk::global_main();
         let mut keys = crate::qualified_tail_index::names_in_family("GLOBAL::MAIN");
@@ -454,12 +454,60 @@ impl Interpreter {
         if !foreign.is_empty() {
             let mut reg = self.registry_mut();
             let functions = reg.functions_mut();
-            for key in foreign {
-                functions.remove(&key);
+            for key in &foreign {
+                functions.remove(key);
             }
         }
         let version = self.registry().functions.version();
         self.module.foreign_main_clean_version = Some(version);
+        foreign
+    }
+
+    /// Whether an import scope's rollback keeps the registry function `key`
+    /// (see `pop_import_scope`).
+    // Cost: O(|key|).
+    fn import_scope_keeps_function(
+        key: &Symbol,
+        def: &Arc<FunctionDef>,
+        func_snapshot: &crate::runtime::function_table::FunctionTable,
+        program_path: Option<Symbol>,
+        module_keys: &HashSet<Symbol>,
+        scope_aliases: &HashSet<Symbol>,
+    ) -> bool {
+        // A `GLOBAL::MAIN` candidate a module declared is lexical to the
+        // block that imported it even when a parse-time `use` already
+        // registered it before the block opened (and so into
+        // `func_snapshot`): only the program's own `MAIN` stays.
+        if let Some(file) = def.source_file.as_deref().map(Symbol::intern)
+            && Some(file) != program_path
+            && Self::is_global_main_key(key.as_str())
+        {
+            return false;
+        }
+        if func_snapshot.contains_key(key) {
+            return true;
+        }
+        let ks = key.resolve();
+        // A `MAIN` the block imported (`{ use CLI::Ecosystem; }` -- the
+        // idiom for loading a MAIN-exporting module without running
+        // it) is lexical to the block, so the program's own MAIN
+        // dispatch must not find it once the block is gone. The
+        // module's load keeps it in `module_keys`, which protects
+        // other routines but is not an owner of the importing scope's
+        // MAIN.
+        if Self::is_global_main_key(&ks) {
+            return false;
+        }
+        if module_keys.contains(key) {
+            return true;
+        }
+        if !scope_aliases.is_empty() {
+            let base = ks.split_once('/').map_or(ks.as_str(), |(base, _)| base);
+            if Symbol::lookup(base).is_some_and(|sym| scope_aliases.contains(&sym)) {
+                return false;
+            }
+        }
+        crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
     }
 
     // Cost: O(1) per registry table the scope did not write (the snapshot is the
@@ -544,8 +592,12 @@ impl Interpreter {
             // scope opened still goes (the first rule below).
             let functions_unchanged =
                 std::sync::Arc::ptr_eq(&func_snapshot, &self.registry().functions);
+            // Every key whose presence the rollback changes, so the
+            // invalidation below can evict just those base names from the
+            // key index instead of dropping all of it (#9170).
+            let mut changed_keys: Vec<Symbol> = Vec::new();
             if functions_unchanged {
-                self.drop_foreign_global_main_candidates(program_path);
+                changed_keys = self.drop_foreign_global_main_candidates(program_path);
             } else {
                 let scope_aliases: HashSet<Symbol> = self
                     .module
@@ -554,41 +606,20 @@ impl Interpreter {
                     .copied()
                     .collect();
                 let module_keys = std::sync::Arc::clone(&self.module.module_registered_functions);
+                let removed = &mut changed_keys;
                 self.registry_mut().functions_mut().retain(|key, def| {
-                    // A `GLOBAL::MAIN` candidate a module declared is lexical to the
-                    // block that imported it even when a parse-time `use` already
-                    // registered it before the block opened (and so into
-                    // `func_snapshot`): only the program's own `MAIN` stays.
-                    if let Some(file) = def.source_file.as_deref().map(Symbol::intern)
-                        && Some(file) != program_path
-                        && Self::is_global_main_key(key.as_str())
-                    {
-                        return false;
+                    let keep = Self::import_scope_keeps_function(
+                        key,
+                        def,
+                        &func_snapshot,
+                        program_path,
+                        &module_keys,
+                        &scope_aliases,
+                    );
+                    if !keep {
+                        removed.push(*key);
                     }
-                    if func_snapshot.contains_key(key) {
-                        return true;
-                    }
-                    let ks = key.resolve();
-                    // A `MAIN` the block imported (`{ use CLI::Ecosystem; }` -- the
-                    // idiom for loading a MAIN-exporting module without running
-                    // it) is lexical to the block, so the program's own MAIN
-                    // dispatch must not find it once the block is gone. The
-                    // module's load keeps it in `module_keys`, which protects
-                    // other routines but is not an owner of the importing scope's
-                    // MAIN.
-                    if Self::is_global_main_key(&ks) {
-                        return false;
-                    }
-                    if module_keys.contains(key) {
-                        return true;
-                    }
-                    if !scope_aliases.is_empty() {
-                        let base = ks.split_once('/').map_or(ks.as_str(), |(base, _)| base);
-                        if Symbol::lookup(base).is_some_and(|sym| scope_aliases.contains(&sym)) {
-                            return false;
-                        }
-                    }
-                    crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
+                    keep
                 });
             }
             // An imported proto/multi family has lexical shadowing semantics,
@@ -598,6 +629,7 @@ impl Interpreter {
             // Only when the import hid something: `functions_mut` copies the
             // table while the snapshot still shares it.
             if !shadowed_functions.is_empty() {
+                changed_keys.extend(shadowed_functions.keys().copied());
                 self.registry_mut()
                     .functions_mut()
                     .extend(shadowed_functions.into_iter().filter(|(key, def)| {
@@ -676,8 +708,10 @@ impl Interpreter {
             // scope exits — e.g. `{ use Foo } EVAL('foo()')` must die, not hit
             // the stale cache (roast/S11-modules/lexical.t). Registration bumps
             // fn_resolve_gen; the matching un-registration here must too.
+            // Only the base names of the keys the rollback removed or put back
+            // leave the key index; the rest of it still describes the map.
             if !tables_untouched {
-                self.invalidate_fn_resolution();
+                self.invalidate_fn_resolution_changing_keys(changed_keys);
             }
         }
     }
