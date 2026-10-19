@@ -935,6 +935,31 @@ impl Interpreter {
             .push(Value::varref_resolved(sym, value, Some(slot), declared));
     }
 
+    /// `OpCode::WrapPackageVarRef`: the bind source of `my $x := $Pkg::y` is
+    /// the package variable's own cell when it has one (#13941). A `VarRef`
+    /// would make the bind resolve its source by name, which a same-named
+    /// lexical of the frame chain can answer instead.
+    // Cost: O(1) amortized: one env probe and one package-store probe.
+    pub(super) fn exec_wrap_package_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let sym = code.const_sym(name_idx);
+        let cell = self
+            .env()
+            .get_sym(sym)
+            .filter(|v| v.is_container_ref())
+            .or_else(|| {
+                self.get_our_var(sym.as_str())
+                    .filter(|v| v.is_container_ref())
+            })
+            .cloned();
+        match cell {
+            Some(cell) => {
+                self.stack.pop();
+                self.stack.push(cell);
+            }
+            None => self.exec_wrap_var_ref_op(code, name_idx, u32::MAX),
+        }
+    }
+
     /// Resolve a `WrapVarRef` tag to the named variable's shared `ContainerRef`
     /// cell (ADR-0059 Slice 2), so a `return-rw $v` operand hands the caller
     /// `$v`'s container rather than a decontainerized snapshot.
