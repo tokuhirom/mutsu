@@ -1063,6 +1063,34 @@ impl Interpreter {
     /// get here: `try_lazy_adaptor_method` streams them first (#9159).
     // Cost: O(n), n = names in the table; the force itself is O(p) for p
     // elements the source produces.
+    /// Whether a VM method lane reifies the lazy receiver `list` (`target`)
+    /// before it dispatches `method` natively on the elements: the one
+    /// decision both `CallMethod` and `CallMethodMut` read, so an expression
+    /// receiver and a variable receiver answer alike. The pulls ran first
+    /// (`lazy_receiver_pull`), so a refused count or a placeholder never
+    /// gets here.
+    ///
+    /// A `.map`/`.grep` on a pipe, an infinite spec or a gather appends a
+    /// lazy stage instead (`gather { … }.grep(…)[^3]` must not run the whole
+    /// body); a laziness-preserving coercion (`.List`, `.Array`, `.cache`, …)
+    /// keeps a pipe that must stay lazy unchanged, but an unmarked finite
+    /// pipe (over a `gather` or a finite source) reifies, or `.List` would
+    /// answer its unpulled cache.
+    // Cost: O(n), n = names in the reify table.
+    pub(super) fn lazy_lane_reifies(
+        list: &crate::value::LazyList,
+        target: &Value,
+        method: &str,
+    ) -> bool {
+        list.needs_vm_lazy_dispatch()
+            && Self::lazy_list_needs_forcing(method)
+            && !(method == "join" && crate::builtins::is_join_lazy(target))
+            && !(matches!(method, "map" | "grep") && list.map_grep_appends_stage())
+            && !((list.lazy_pipe.is_some() || list.is_infinite_spec())
+                && Self::lazy_pipe_preserving_coercion(method)
+                && list.coercion_keeps_pipe_lazy())
+    }
+
     pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {
         // `sink` reifies in the lazy step, which also marks a sunk gather
         // consumed (`reify_lazy_receiver`); this lane's force does not, so

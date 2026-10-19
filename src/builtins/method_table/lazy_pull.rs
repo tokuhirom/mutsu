@@ -375,15 +375,18 @@ fn first(
 /// `Any.values` is `self.list` (Rakudo's `method values() { self.list }`):
 /// the list view of the sequence, which stays lazy. Without the pull an
 /// infinite sequence spec (`1, 2 ... *`) went on to a view that read only the
-/// elements already pulled, and answered `()`.
+/// elements already pulled, and answered `()`. A receiver that is not lazy
+/// declines, and is reified.
 // Cost: that of the receiver's `.list`.
 fn values(
     interp: &mut Interpreter,
     target: &Value,
-    _list: &LazyList,
+    list: &LazyList,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    args.is_empty()
+    // A sequence that will end reifies like any other method, and answers
+    // from its elements.
+    (args.is_empty() && list.is_genuinely_lazy())
         .then(|| interp.call_method_with_values(target.clone(), "list", Vec::new()))
 }
 

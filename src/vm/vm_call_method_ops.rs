@@ -1566,33 +1566,7 @@ impl Interpreter {
             return Ok(());
         }
         let target = if let ValueView::LazyList(ll) = target.view()
-            && ll.needs_vm_lazy_dispatch()
-            && Self::lazy_list_needs_forcing(method)
-            && !(method == "join" && crate::builtins::is_join_lazy(&target))
-            && !(ll.coroutine.is_some() && matches!(method, "List" | "list" | "values"))
-            // A `.map`/`.grep` on a lazy pipeline, an infinite sequence/closure
-            // spec, OR a gather coroutine appends another lazy stage (interpreter
-            // dispatch via `is_lazy_pipe_source`) — it must not force the source
-            // here, or a `gather { … }.grep(…)[^3]` would run the whole gather body
-            // (and its trailing side effects) instead of pulling on demand.
-            // Laziness-preserving coercions return the list unchanged (native
-            // dispatch) — neither forces.
-            && !(matches!(method, "map" | "grep") && ll.map_grep_appends_stage())
-            // A laziness-preserving coercion (`.List`/`.list`/`.Array`/`.values`/
-            // `.cache`) returns an infinite or `lazy`-marked pipe unchanged, but
-            // an unmarked FINITE pipe (one bottoming out in a `gather`/finite
-            // source) must reify — else `gather { … }.grep(…).List` yields an
-            // unforced `(...)` and `.flat`/`for` see nothing.
-            && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
-                && Self::lazy_pipe_preserving_coercion(method)
-                && ll.coercion_keeps_pipe_lazy())
-            // On an infinite sequence/closure spec — OR an explicitly `lazy`-marked
-            // (`lazy gather {…}`) list — the count/numeric coercions produce a
-            // *soft* X::Cannot::Lazy Failure (recoverable with `//`), emitted by
-            // the 0-arg native dispatch — they must not be hard-forced/reified.
-            // A plain (non-`lazy`) finite gather stays forceable and reifies.
-            && !((ll.is_infinite_spec() || ll.is_lazy_marked())
-                && matches!(method, "elems" | "Int" | "Numeric"))
+            && Self::lazy_lane_reifies(&ll, &target, method)
         {
             let saved_env = self.env().clone();
             // `.head(n)` only needs the first `n` elements: pull them lazily so
