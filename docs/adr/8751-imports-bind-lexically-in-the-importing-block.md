@@ -204,6 +204,30 @@ Consequences that pin the design:
     `imported_env_aliases` stay. A package-qualified read of an imported
     variable after the block (`$M::x`) still finds the module's variable
     (#13942).
+
+  **Slice 4 done** (`fix/8751-block-imported-constants`, 2026-10-19):
+  exported constants are pad declarations too, and every top-level routine
+  hides a block's imports.
+  - **Constants.** The scan records an exported `constant`, `our` or `my`
+    scoped, with the variables (`ExportedVar::term` for a sigil-less one,
+    whose export key is its term key). The block binds a sigil-less
+    constant as a term (`my \K := ...`, the parser's sigilless bind
+    expansion) and a sigiled one as a readonly scalar bind; both take the
+    module's value from `GetImportedVar`. Inside the block the import hides
+    an outer constant of the same name, and a closure keeps it.
+  - **Callees.** `hide_unit_names_from_frame` used to hide a block's
+    imports only from a top-level routine that names lexicals by string
+    (#13604). Every top-level routine now hides the env keys the open
+    block imports bound, so an imported type, which still binds through
+    the env alias, no longer reaches a routine written outside the block
+    (`sub f { Foo.new }; { use M; f() }` gets the program's `Foo`). The
+    check is one walk of the open import scopes per call, and nothing when
+    none bound a name.
+  - Pinned by `t/modules/import-export/use-in-block-binds-constants-lexically.t`.
+  - Left: an imported type is still the env alias plus the class-table
+    rollback of `ImportScope`; making it a pad declaration needs type-name
+    resolution to read the block's binding (signatures, `is` traits, type
+    constraints), which resolve through the registry.
 - **Stage 2 (phase 2, dispatcher values).** Imported multis, protos and
   operators.
 

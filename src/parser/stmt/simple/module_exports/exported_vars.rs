@@ -1,5 +1,5 @@
-//! The `our` variables a `use`d module exports, for a block-scoped `use`
-//! (ADR-8751 stage 1).
+//! The `our` variables and constants a `use`d module exports, for a
+//! block-scoped `use` (ADR-8751 stage 1).
 //!
 //! Rakudo installs a `use`'s symbols in the lexical pad of the block that
 //! holds it, so an imported `$x` hides an outer `$x` there, and a routine
@@ -7,8 +7,8 @@
 //! so the compiler cannot ask the module what it exports. The parse-time scan
 //! can, for a module whose exports are its `is export` traits: an exported
 //! variable is always `our`-scoped, so it is the package variable
-//! `$Pkg::name`, and the compiler declares the import as the block's own
-//! binding of it (`Compiler::bind_block_imported_vars`).
+//! `$Pkg::name`, and an exported constant is a value; the compiler declares
+//! the import as the block's own binding of it (`Compiler::bind_block_imported_vars`).
 //!
 //! The scan cannot tell for a module that computes its export set (a
 //! `sub EXPORT` hook, an export stash under a computed key); such a module
@@ -28,9 +28,24 @@ pub(crate) struct ExportedVar {
     pub(crate) package: String,
     /// The tags of its `is export` trait.
     pub(crate) tags: Vec<String>,
+    /// A sigil-less constant (`constant K is export`): a term, imported
+    /// under its term key (`term_names::term_key`).
+    #[serde(default)]
+    pub(crate) term: bool,
 }
 
 impl ExportedVar {
+    /// The name the run-time import knows the export by: the term key of a
+    /// sigil-less constant, the declaration spelling otherwise.
+    // Cost: O(n), n = length of the name.
+    pub(crate) fn export_key(&self) -> String {
+        if self.term {
+            crate::term_names::term_key(&self.name)
+        } else {
+            self.name.clone()
+        }
+    }
+
     /// Whether a `use` naming `import_tags` imports this variable, by the
     /// rule the run-time import applies (`import_module`): no tags requests
     /// `DEFAULT`, `ALL` requests everything, and `MANDATORY` is always taken.
@@ -82,6 +97,7 @@ mod tests {
             name: "x".to_string(),
             package: "M".to_string(),
             tags: tags.iter().map(|s| s.to_string()).collect(),
+            term: false,
         }
     }
 
