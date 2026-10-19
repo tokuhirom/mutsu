@@ -96,7 +96,7 @@ fn parse_hyper_index_without_dot() {
         Expr::HyperMethodCall {
             target, name, args, ..
         } => {
-            assert_eq!(name, "AT-POS");
+            assert_eq!(name, "postcircumfix:<[ ]>");
             assert_eq!(args.len(), 1);
             assert!(matches!(*target, Expr::Index { .. }));
         }
@@ -112,7 +112,7 @@ fn parse_hyper_index_with_dot() {
         Expr::HyperMethodCall {
             target, name, args, ..
         } => {
-            assert_eq!(name, "AT-POS");
+            assert_eq!(name, "postcircumfix:<[ ]>");
             assert_eq!(args.len(), 1);
             assert!(matches!(*target, Expr::Index { .. }));
         }
