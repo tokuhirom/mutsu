@@ -4744,7 +4744,9 @@ the renderer is now the late interpreter twin of `raku` on every collection owne
 on (`List`, `Map`, `Seq`, `Pair`, `Capture`, `Set`/`SetHash`, `Bag`/`BagHash`, `Mix`/`MixHash`),
 reached through the late MRO walk for such a container only. Unlike the `gist` twins they keep the
 receiver's itemization, which is part of the text (`$(F!, 1)`). The gate is gone; the itemized
-instance gates (`raku_scalar_itemized`) stay. No behaviour change; pinned in
+instance gates (`raku_scalar_itemized`) stay. Two pure answers had been hidden behind the gate and
+now decline too: `Mu.raku` (`mu_render`) for such a container, and the `raku` row for a `Seq` whose
+source is unpulled (`[$f].Seq`), which the interpreter pulls first. No behaviour change; pinned in
 `t/collections/container-raku-user-elements.t`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
