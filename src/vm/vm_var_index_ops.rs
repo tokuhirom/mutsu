@@ -2057,9 +2057,11 @@ impl Interpreter {
                     // If the class actually has an AT-KEY method, an error it
                     // raises (e.g. Hash::Agnostic's stub that throws
                     // X::Hash::NoImplementation) must propagate. Only swallow the
-                    // error for an instance with no AT-KEY, which yields a Failure.
+                    // error for an instance with no AT-KEY. The protocol check
+                    // below distinguishes a native typed Hash default from an
+                    // unsupported associative read.
                     Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
-                    Err(_) => Self::make_assoc_indexing_failure(&cn),
+                    Err(_) => Value::NIL,
                 };
                 if result.is_nil()
                     && !self.has_user_method_including_role(&cn, "AT-KEY")

@@ -7,6 +7,11 @@ is $keyed[0].WHICH, $keyed.WHICH, 'positional zero on an ordinary item is the it
 is $keyed{0}, 'key-0', 'associative integer index uses AT-KEY';
 is Plain.new<k>.^name, 'Failure', 'unsupported associative indexing returns Failure';
 is Plain.new{0}.^name, 'Failure', 'unsupported associative integer indexing returns Failure';
+class TypedHash is Hash { }
+ok TypedHash[Int].new<missing>.WHAT === Int,
+    'a typed Hash subclass retains its missing-key default';
+ok TypedHash[Int,Str].new<missing>.WHAT === Int,
+    'an object Hash subclass retains its missing-key default';
 throws-like { Plain.new\i }, X::Multi::NoMatch, 'a plain object has no postfix i candidate';
 role Marker { }
 my $mixed = Plain.new but Marker;
