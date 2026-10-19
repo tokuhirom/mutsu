@@ -696,7 +696,7 @@ fn methods_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
 }
 
 /// Record one E7 step-6 `.^methods` chain-shadow comparison. `detail` is only
-/// evaluated on a mismatch, mirroring [`record_native_row_shadow_check`].
+/// evaluated on a mismatch, mirroring [`record_resolver_shadow_check`].
 #[inline]
 pub(crate) fn record_methods_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
     if !enabled() {
