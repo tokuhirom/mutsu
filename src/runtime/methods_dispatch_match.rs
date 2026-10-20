@@ -49,19 +49,13 @@ impl Interpreter {
         if quoted_pseudo {
             self.dispatch.skip_pseudo_method_native = None;
         }
-        // The class methods of `Promise` (`start`, `in`, `at`, `kept`, `broken`,
-        // `allof`, `anyof`; ADR-11276 §9.120), `Seq.from-loop`, `Thread.start`,
-        // `Thread.is-initial-thread` and `X::AdHoc.from-slurpy` (§9.124) are
-        // rows of the method table, found by their owner for the type object.
-        if let Some(owners) = crate::builtins::method_table::early_class_method_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
+        // The class methods of the built-in types (`Promise.start`,
+        // `Seq.from-loop`, `Thread.start`, `Supply.from-list`,
+        // `List.from-iterator`, ...) are rows of the method table, found for
+        // the type object of the owner or of a subclass of it. Asked ahead of
+        // the generic paths: `Promise.start` and `Thread.start` would
+        // otherwise be taken by `Any`'s or `Mu`'s rows.
+        if let Some(result) = self.type_object_class_method(&target, method, &args) {
             return Some(result);
         }
         // Supply.classify / Supply.categorize are instance methods (declared

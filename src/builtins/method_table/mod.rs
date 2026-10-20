@@ -73,7 +73,6 @@ pub(crate) use carried_state::owners_of as carried_state_owners_of;
 pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
-pub(crate) use collections::from_iterator::owners_of as from_iterator_owners_of;
 pub(crate) use collections::sampling::callable_count as sampling_callable_count;
 pub(crate) use collections::{
     any_enum_views, clone as collection_clone, lazy, list, list_aggregate, positional, quanthash,
@@ -90,9 +89,6 @@ pub(crate) use instances::rakuast_node::origin_value;
 pub(crate) use instances::routine::owners_of as routine_owners_of;
 pub(crate) use instances::stash::owners_of as stash_owners_of;
 pub(crate) use instances::{backtrace, code, exception, failure, regex_match, signature, supply};
-pub(crate) use io_concurrency::class_methods::{
-    early_owners_of as early_class_method_owners_of, owners_of as class_method_owners_of,
-};
 pub(crate) use io_concurrency::encoding::{
     DECODER_OWNERS as ENCODING_DECODER_OWNERS, names as encoding_names,
 };
@@ -135,6 +131,7 @@ pub(crate) use table::{
     Receiver, RowId, base_row, max_row_arity, names_a_row, owner_declares, owner_has_row,
     owner_row, owner_row_names, owner_rows_at, resolve, row, shape_has_row, some_row_binds_named,
 };
+pub(crate) use table::{class_method_named, class_method_owner};
 pub(crate) use unadmitted::invoke_unadmitted;
 
 /// The owners an instance or the type object of an opaque shape (`DispatchShape::is_opaque`: a

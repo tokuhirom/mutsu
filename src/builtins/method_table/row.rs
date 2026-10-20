@@ -194,6 +194,12 @@ impl RowFlags {
     /// call a second time, and the call-site lane treats it as it treats an
     /// interpreter row.
     pub(crate) const EFFECTS: RowFlags = RowFlags(1 << 18);
+    /// The row is a class method of a built-in type, called on the type object
+    /// of the owner or of a user subclass of it (`Promise.start`,
+    /// `Supply.from-list`, `List.from-iterator`). Every owner with such a row
+    /// is a class-method owner ([`class_method_owner`](super::class_method_owner)),
+    /// which the by-name dispatch asks once for a type object.
+    pub(crate) const CLASS_METHOD: RowFlags = RowFlags(1 << 19);
 
     /// The flags of both.
     // Cost: O(1).

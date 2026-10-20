@@ -124,6 +124,16 @@ impl UndeclaredVars<'_> {
     /// it is reported.
     pub(super) fn forward_use(&mut self, module: &str, tags: &[String]) {
         let Some(forward) = &self.forward else {
+            // An `EVAL`'d snippet: the `use` declares the variables the scan
+            // knows its module exports, a `sub EXPORT` hook's literal keys
+            // included (ADR-8751); whatever else it exports is the env's.
+            for var in crate::parser::scanned_exported_vars(module)
+                .iter()
+                .flat_map(|vars| vars.iter())
+                .filter(|var| !var.term && var.imported_by(tags))
+            {
+                self.declare(&var.name);
+            }
             return;
         };
         if forward.bail {

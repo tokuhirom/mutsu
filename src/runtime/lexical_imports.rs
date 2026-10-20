@@ -36,6 +36,12 @@ pub(crate) const BLOCK_MULTIS_MARK: &str = "\u{1}multis:";
 /// for those.
 pub(crate) const BLOCK_VARS_MARK: &str = "\u{1}vars:";
 
+/// Marks the id of a lexical import set an `EVAL`'d unit's top-level `use`
+/// fills (`Compiler::enter_eval_unit_lexical_uses`). Each `EVAL` is a
+/// compilation of its own, so such a `use` is never replayed
+/// (`lexical_import_replay`): its module's `sub EXPORT` runs every time.
+pub(crate) const EVAL_UNIT_MARK: &str = "\u{1}eval";
+
 /// The names listed after `mark` in the set id `id`, up to the next mark.
 // Cost: O(n), n = length of `id`.
 pub(super) fn id_section(id: &str, mark: &str) -> HashSet<Symbol> {

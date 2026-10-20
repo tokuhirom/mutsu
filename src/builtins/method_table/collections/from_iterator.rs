@@ -2,7 +2,7 @@
 //! object's constructor from an `Iterator` (`List:U: Iterator $iter`).
 //!
 //! A `Slip` inherits `List`'s and builds a `Slip`. The type objects reach the
-//! rows through their owner ([`owners_of`]); the handler is
+//! rows through the class-method lookup (`RowFlags::CLASS_METHOD`); the handler is
 //! `Interpreter::list_from_iterator`. `Seq` declares none (Rakudo builds a
 //! `Seq` with `Seq.new($iterator)`).
 
@@ -20,6 +20,7 @@ macro_rules! row {
             handler: Handler::Interp(from_iterator),
             flags: RowFlags::OWNER_ONLY
                 .or(RowFlags::TYPE_OBJECT_OK)
+                .or(RowFlags::CLASS_METHOD)
                 .or(RowFlags::ANY_ARGS)
                 .or(RowFlags::OBJECT_ARGS),
             named: &[],
@@ -28,20 +29,6 @@ macro_rules! row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[row!("List"), row!("Array")];
-
-/// The owners whose `from-iterator` row answers the type object `target`, or
-/// `None` when it is not `List`, `Array` or `Slip`.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let ValueView::Package(name) = target.view() else {
-        return None;
-    };
-    match name.as_str() {
-        "List" | "Slip" => Some(&["List"]),
-        "Array" => Some(&["Array", "List"]),
-        _ => None,
-    }
-}
 
 // Cost: as `Interpreter::list_from_iterator`.
 fn from_iterator(

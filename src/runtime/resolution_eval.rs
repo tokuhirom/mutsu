@@ -289,6 +289,9 @@ impl Interpreter {
             // block imported (ADR-8751): its bareword calls read the sets of
             // the blocks running around it.
             compiler.seed_lexical_import_chain(self.active_lexical_import_chain());
+            // An `EVAL`'s own top-level `use` is lexical to the EVAL'd unit,
+            // as a block's is to the block: it binds in an import set too.
+            compiler.enter_eval_unit_lexical_uses(body);
             if let Some(code) = self.running_code() {
                 compiler.seed_eval_caller_code_vars(code.eval_scope_names.iter().map(String::as_str));
             }
