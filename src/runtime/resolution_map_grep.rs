@@ -1,7 +1,7 @@
 use super::*;
 use crate::env::Env;
 use crate::runtime::map_grep_plan::{InlineLoopKind, MapGrepPlanSlot};
-use crate::value::SubData;
+use crate::value::{PullOut, SubData};
 
 /// A matcher callback runs in a nested register scope, but a regex match is
 /// visible through the caller's routine-scoped `$/.`  The shared env mirror is
@@ -519,6 +519,26 @@ impl Interpreter {
         list_items: Vec<Value>,
         slot: &mut MapGrepPlanSlot,
     ) -> Result<Value, RuntimeError> {
+        let mut out = PullOut::default();
+        self.eval_map_over_items_into(func, list_items, slot, &mut out)?;
+        Ok(Value::array(out.produced))
+    }
+
+    /// [`Self::eval_map_over_items_planned`] into `out`: each element the
+    /// callback produces is pushed as it is produced, and `out.consumed` counts
+    /// the source elements taken, the one in flight included. When the
+    /// callback dies the caller still holds both, so a deferred `.map` keeps
+    /// them and resumes after the failing element (#12048, #12401).
+    // Cost: one callback call per element (per `arity` elements for a
+    // multi-parameter block).
+    pub(crate) fn eval_map_over_items_into(
+        &mut self,
+        func: Option<Value>,
+        list_items: Vec<Value>,
+        slot: &mut MapGrepPlanSlot,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
+        let consumed_base = out.consumed;
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -605,11 +625,11 @@ impl Interpreter {
                 } else {
                     positional.len().saturating_sub(assumed).max(1)
                 };
-                let mut result = Vec::new();
                 let mut last_call_args: Option<Vec<Value>> = None;
                 let mut i = 0usize;
                 while i < list_items.len() {
                     let end = (i + batch).min(list_items.len());
+                    out.consumed = consumed_base + end;
                     let chunk: Vec<Value> = list_items[i..end].to_vec();
                     // A short final chunk of a required-arity block raises
                     // "Too few positionals" (matching raku); an optional trailing
@@ -627,10 +647,7 @@ impl Interpreter {
                         self.call_sub_value(callable, chunk, false)?
                     };
                     let value = self.reify_finite_pipe_value(value)?;
-                    match value.view() {
-                        ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
-                        _ => result.push(value),
-                    }
+                    push_map_value(&mut out.produced, value);
                     i = end;
                 }
                 // A LAST phaser in a signature-bearing map block cannot use the
@@ -659,14 +676,13 @@ impl Interpreter {
                         self.call_sub_value(phaser, last_args.clone(), false)?;
                     }
                 }
-                return Ok(Value::array(result));
+                return Ok(());
             }
             // Account for assumed positional args (from .assuming).
             let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
             // Carrier Subs (.assuming wrapper, composed callable, multi-candidate
             // dispatcher) — delegate to call_sub_value which resolves the markers.
             if cached_plan.is_none() && sub_is_call_carrier(&data) {
-                let mut result = Vec::new();
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
@@ -677,18 +693,15 @@ impl Interpreter {
                     } else {
                         list_items[i..i + arity].to_vec()
                     };
+                    out.consumed = consumed_base + i + arity;
                     let value =
                         self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
                     let value = self.reify_finite_pipe_value(value)?;
-                    match value.view() {
-                        ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
-                        _ => result.push(value),
-                    }
+                    push_map_value(&mut out.produced, value);
                     i += arity;
                 }
-                return Ok(Value::array(result));
+                return Ok(());
             }
-            let mut result = Vec::new();
 
             // Extract LAST phaser bodies so they can be run after the map loop
             let mut last_phaser_bodies: Vec<Vec<crate::ast::Stmt>> = Vec::new();
@@ -743,10 +756,9 @@ impl Interpreter {
             // per iteration alongside `block_authoritative` — see
             // `Interpreter::frame_owned`.
             let block_owned = &data.owned_captures;
-            // Source elements consumed so far, the one in flight included: if
-            // the callback dies, the Seq resumes after it (#12048).
-            let mut consumed = 0usize;
-            let mut loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
+            let produced = &mut out.produced;
+            let consumed = &mut out.consumed;
+            let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope this block's `state` variables to the closure instance
                 // (`$n@<ip>#c{id}`): the body was re-compiled fresh above, so
                 // the compile-time `$var@<ip>` key alone is IDENTICAL for two
@@ -763,7 +775,10 @@ impl Interpreter {
                     if arity > 1 && i + arity > list_items.len() {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
-                    consumed = (i + arity).min(list_items.len());
+                    // The source elements consumed, the one in flight
+                    // included: if the callback dies, the Seq resumes after it
+                    // (#12048).
+                    *consumed = consumed_base + (i + arity).min(list_items.len());
                     vm.frame_authoritative = block_authoritative.clone();
                     vm.frame_owned = block_owned.clone();
                     {
@@ -858,23 +873,20 @@ impl Interpreter {
                             {
                                 return Err(err);
                             }
-                            match val.view() {
-                                ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
-                                _ => result.push(val),
-                            }
+                            push_map_value(produced, val);
                         }
                         // v6.e `next VALUE` / `last VALUE`: the value is the
                         // item's contribution to the map's result.
                         Err(e) if e.is_next() => {
                             if let Some(val) = e.return_value {
-                                push_map_value(&mut result, val);
+                                push_map_value(produced, val);
                             }
                         }
                         Err(e) if e.is_last() => {
                             vm.async_state.map_grep_last_depth =
                                 Some(crate::runtime::loop_handler_depth::loop_handler_depth());
                             if let Some(val) = e.return_value {
-                                push_map_value(&mut result, val);
+                                push_map_value(produced, val);
                             }
                             break;
                         }
@@ -889,10 +901,7 @@ impl Interpreter {
                             vm.set_when_matched(saved_when_matched);
                             let val = e.return_value.unwrap_or(Value::NIL);
                             let val = vm.reify_finite_pipe_value(val)?;
-                            match val.view() {
-                                ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
-                                _ => result.push(val),
-                            }
+                            push_map_value(produced, val);
                         }
                         Err(mut e) => {
                             // A `return` inside the map block targets the routine
@@ -930,17 +939,8 @@ impl Interpreter {
                     }
                 }
 
-                Ok(Value::array(std::mem::take(&mut result)))
+                Ok(())
             });
-            if let Err(e) = &mut loop_result
-                && !e.has_seq_pull_progress()
-                && consumed > 0
-            {
-                e.set_seq_pull_progress(crate::value::SeqPullProgress {
-                    produced: std::mem::take(&mut result),
-                    consumed,
-                });
-            }
 
             // Restore original values (was done on every exit of the old loop).
             self.leave_inline_loop_env(saved);
@@ -950,8 +950,8 @@ impl Interpreter {
             return loop_result;
         }
         if let Some(func) = func {
-            let mut result = Vec::new();
-            for item in list_items {
+            for (i, item) in list_items.into_iter().enumerate() {
+                out.consumed = consumed_base + i + 1;
                 let value = if let ValueView::Sub(data) = func.view()
                     && (!data.assumed_positional.is_empty() || !data.assumed_named.is_empty())
                 {
@@ -960,14 +960,13 @@ impl Interpreter {
                     self.call_sub_value(func.clone(), vec![item], false)?
                 };
                 let value = self.reify_finite_pipe_value(value)?;
-                match value.view() {
-                    ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
-                    _ => result.push(value),
-                }
+                push_map_value(&mut out.produced, value);
             }
-            return Ok(Value::array(result));
+            return Ok(());
         }
-        Ok(Value::array(list_items))
+        out.consumed = consumed_base + list_items.len();
+        out.produced.extend(list_items);
+        Ok(())
     }
 
     /// Like `eval_map_over_items` but writes back `$_` mutations to the source

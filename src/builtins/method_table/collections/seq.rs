@@ -200,6 +200,6 @@ fn sink(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
         return None;
     };
     // No pull to run: a settled body is reified, so `sink`'s closure is unreachable.
-    let _ = body.sink_explicit(|_| unreachable!("a settled Seq has no source to pull"));
+    let _ = body.sink_explicit(|_, _| unreachable!("a settled Seq has no source to pull"));
     Some(Ok(Value::NIL))
 }

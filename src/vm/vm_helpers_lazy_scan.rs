@@ -78,8 +78,8 @@ impl Interpreter {
             // (ADR-11678): the Seq is cached and stays readable.
             ValueView::Seq(body) => {
                 if idx >= body.len() && body.unpulled_iterator().is_some() {
-                    body.extend_from_iterator(idx + 1, |iterator, count| {
-                        self.pull_iterator_prefix_to_vec(iterator, count)
+                    body.extend_from_iterator(idx + 1, |iterator, count, out| {
+                        self.pull_iterator_prefix_into(iterator, count, out)
                     })?;
                 } else if idx >= body.len() && body.is_gather_source() {
                     body.extend_gather_prefix(idx + 1, |list, n| self.pull_gather_prefix(list, n))?;
