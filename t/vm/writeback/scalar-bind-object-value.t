@@ -1,5 +1,5 @@
 use Test;
-plan 25;
+plan 52;
 
 class BoundObject {
     has $.value is rw = 1;
@@ -69,4 +69,15 @@ class BoundObject {
     my $o := BoundObject.new;
     $o := BoundObject.new(value => 14);
     is $o.value, 14, 'an immutable object binding can be rebound to another object';
+}
+
+# Container identity follows the same value-binding decision for built-in
+# values too; retiring the separate marker must not manufacture Scalars here.
+for { sub { 42 } }, { /a/ }, { Buf.new(1,2) }, { v1.2.3 },
+    { \(:a(1)) }, { 1.FatRat }, { set(1,2) },
+    { Promise.kept(1) }, { Channel.new } -> &produce {
+    my $value := produce();
+    is $value.VAR.^name, $value.^name, 'a bare built-in value keeps its own container identity';
+    dies-ok { $value = 0 }, 'a bare built-in value cannot be replaced through its bound name';
+    ok $value.self =:= $value, 'a value bind compares with its own decontainerized value';
 }

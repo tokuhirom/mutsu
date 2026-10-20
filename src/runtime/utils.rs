@@ -47,18 +47,6 @@ pub(crate) fn twigil_dynamic_alias(name: &str) -> Option<String> {
     None
 }
 
-/// The env key recording that a `$` name was `:=`-bound straight to a value and
-/// so owns no Scalar container (`my $i := 42`). Written at the declaration's
-/// store and speculatively cleared on every other scalar declaration, so — like
-/// the four keys above — a hot path pre-interns it per local rather than
-/// rebuilding it per store (`CompiledCode::scalar_no_container_sym`).
-///
-/// The `$` is trimmed because the compiler stores scalars under their bare name,
-/// but a caller that still holds the sigiled spelling must land on the same key.
-pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
-    MetaNs::ScalarBindNoContainer.owned_key_for_str(name.trim_start_matches('$'))
-}
-
 /// Build the `Failure` value raku yields when a count/numeric coercion is
 /// attempted on a lazy iterable (e.g. `(1..*).elems` / `.Int` / `+@a`):
 /// `X::Cannot::Lazy` with the message `Cannot .<action> a lazy list`.

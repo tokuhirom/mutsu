@@ -129,7 +129,8 @@ pub(crate) fn interpreter_version() -> String {
     // 29: `BindingDesc` lost `deleted_index_sym` (ADR-0097).
     // 30: `BindingDesc` lost `bound_slice_sym` (ADR-0097).
     // 31: `CompiledCode` lost `names_var_method` (ADR-0097).
-    // 32: named method calls carry their resolved receiver slot.
+    // 32: named method calls carry their resolved receiver slot; BindingDesc
+    // lost scalar_no_container_sym, replaced by the binding's readonly kind.
     const CACHE_FORMAT_VERSION: u32 = 32;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.

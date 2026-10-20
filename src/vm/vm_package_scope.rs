@@ -232,13 +232,11 @@ impl Interpreter {
     /// the block, but it describes a binding that does not survive the block,
     /// and it stayed behind in every frame env of the program — 20 of them
     /// after `use JSON::Fast` (ADR-0084 §7.7, #7817).
-    // Cost: O(|key|), two prefix comparisons and a scan of the subject.
+    // Cost: O(|key|), a prefix comparison and a scan of the subject.
     fn is_block_binding_shape_marker(key: crate::symbol::Symbol) -> bool {
         use crate::meta_ns::MetaNs;
         key.with_str(|k| {
-            [MetaNs::BoundDecont, MetaNs::ScalarBindNoContainer]
-                .iter()
-                .find_map(|kind| k.strip_prefix(kind.prefix()))
+            k.strip_prefix(MetaNs::BoundDecont.prefix())
                 .is_some_and(|subject| !crate::qualified::is_qualified_str(subject))
         })
     }

@@ -9,3 +9,7 @@ the outer binding's `.VAR` identity.
 Named method calls carry the receiver slot resolved by the compiler. Both
 literal and dynamic `.VAR` calls publish that binding before the call's
 writeback boundary, rather than selecting the first same-named local slot.
+
+The separate scalar-bind container-identity namespace, its global latch and
+its per-slot key memo are retired. Value binds use their readonly binding kind;
+Proxy bindings retain their assignable container semantics.

@@ -14,14 +14,17 @@ impl Interpreter {
         if name.starts_with(['@', '%', '&']) {
             return false;
         }
-        let own_kind = if crate::value::readonly_binding_cells_possible() {
+        let bare = name.trim_start_matches('$');
+        let own_kind = if crate::value::readonly_binding_cells_possible()
+            || crate::value::readonly_cells_possible()
+        {
             self.env()
-                .get(name)
+                .get(bare)
                 .and_then(Self::binding_chain_readonly_kind)
         } else {
             None
         };
-        let kind = own_kind.unwrap_or_else(|| self.readonly_kind(name.trim_start_matches('$')));
+        let kind = own_kind.unwrap_or_else(|| self.readonly_kind(bare));
         matches!(
             kind,
             Some(

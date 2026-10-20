@@ -409,6 +409,7 @@ mod vm_var_assign_ops;
 mod vm_var_assign_package_stash;
 mod vm_var_assign_post_incdec;
 mod vm_var_assign_set_local;
+mod vm_value_binding;
 mod vm_var_assign_typed;
 mod vm_var_bind_container;
 mod vm_var_deferred_token;

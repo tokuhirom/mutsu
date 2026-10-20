@@ -1082,3 +1082,17 @@ its container where the container is made:
   supplied at initialization.
 
 Any `@`/`%` container without a name reports `element`.
+
+## 17. Retire the scalar no-container name marker (#14059, 2026-10-20)
+
+`ScalarBindNoContainer` duplicated the binding's readonly kind. Bare objects,
+code and buffers now receive the same immutable binding cells as other scalar
+values. Reflection and container identity read the binding's own decision;
+slot-less declarations record the same kind as local declarations. The marker,
+its environment latch and its baked `BindingDesc` key are removed.
+
+Named method sites carry their compiler-selected receiver slot. This lets
+`.VAR` reflect on the actual lexical binding when an inner declaration shadows
+a same-named immutable binding, including dynamically named method calls.
+List-like bare bindings still use the readonly registry where adding a cell
+would change iteration semantics; this does not retire that registry.
