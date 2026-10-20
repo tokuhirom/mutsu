@@ -88,7 +88,10 @@ fn role_mixin_keys(role: &str) -> [String; 3] {
 
 impl Interpreter {
     /// The wrapper role composed into `target` most recently (the outermost
-    /// rethrow), or `None` when it carries none of them.
+    /// rethrow), or `None` when it carries none of them. The `gist` row that
+    /// reaches [`Self::wrapper_role_gist`] was found like any mixed-in
+    /// role's (`method_table::mixin_role_owners_of`); this picks the wrapper
+    /// among the roles for the header and the peeled-back base.
     fn outermost_wrapper_role(target: &Value) -> Option<&'static WrapperRole> {
         let ValueView::Mixin(_, mixins) = target.view() else {
             return None;
