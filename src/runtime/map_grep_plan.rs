@@ -1,6 +1,6 @@
 //! The loop-invariant half of an inline `.map`/`.grep` loop (#10187).
 //!
-//! The inline loops (`eval_map_over_items`, `eval_map_over_items_rw`,
+//! The inline loops (`eval_map_over_items`, `eval_map_over_items_rw_into`,
 //! `eval_grep_over_items_with_mutated`) run a callback's body through
 //! `run_reuse` instead of a full closure call. Before the first element they
 //! compile the body, classify every captured name (does the capture overwrite
@@ -231,7 +231,7 @@ impl Interpreter {
         }
         // An `is rw`/`is raw` scalar param shares its bare name with a live
         // enclosing sigilless `\x`; the loop drops that marker for the param's
-        // own scope (`eval_map_over_items_rw`), so it is restored on exit
+        // own scope (`eval_map_over_items_rw_into`), so it is restored on exit
         // (#11700).
         for pd in data.param_defs.iter() {
             if pd.traits.iter().any(|t| t == "rw" || t == "raw") {

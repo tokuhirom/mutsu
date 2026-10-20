@@ -149,8 +149,17 @@ impl Interpreter {
         let consumed_base = out.consumed;
         let produced_base = out.produced.len();
         if !plan.prefix_pullable(|| map_grep_pullable_by_prefix(func.as_ref(), mode)) {
-            let pulled =
-                self.run_map_grep_chunk(func, *fatal, mode, plan, items, *pos, items.len(), None, out);
+            let pulled = self.run_map_grep_chunk(
+                func,
+                *fatal,
+                mode,
+                plan,
+                items,
+                *pos,
+                items.len(),
+                None,
+                out,
+            );
             *pos = start_pos + (out.consumed - consumed_base);
             pulled?;
             *pos = items.len();

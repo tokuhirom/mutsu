@@ -802,7 +802,7 @@ impl Interpreter {
         // Persist anonymous state variable (`$`) across closure calls.
         self.sync_anon_state_value(&name, &val);
         // Track topic mutations for map rw writeback: when `$_` (= "_") is
-        // explicitly assigned, record the value so `eval_map_over_items_rw` can
+        // explicitly assigned, record the value so `eval_map_over_items_rw_into` can
         // read it back even after the block return value overwrites `_`.
         if name == "_" {
             self.env_mut()

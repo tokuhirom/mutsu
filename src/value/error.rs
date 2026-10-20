@@ -445,7 +445,6 @@ impl RuntimeError {
         self.cold_mut().failure_original_backtrace = v;
     }
 
-
     /// See `RuntimeErrorCold::take_suspend_site`.
     pub(crate) fn take_suspend_site(&self) -> Option<(usize, usize)> {
         self.cold.as_ref().and_then(|c| c.take_suspend_site)

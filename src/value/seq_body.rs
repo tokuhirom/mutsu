@@ -48,7 +48,7 @@ pub(crate) enum MapGrepMode {
     /// A map over a real Array (`@a.map({ $_++ })`, or an Array reached through
     /// `@a.list`/a scalar) rw-binds `$_` to the source element, so the callback's
     /// writes have to reach the container. The pull runs
-    /// `eval_map_over_items_rw` and publishes the write-back by mutating this
+    /// `eval_map_over_items_rw_into` and publishes the write-back by mutating this
     /// container's `ArrayData` IN PLACE, which is frame-independent — the pull
     /// happens wherever the Seq is consumed, long after the frame whose `env`
     /// held the source's name is gone.
@@ -617,7 +617,9 @@ impl SeqBody {
         // (`pull_map_grep_prefix`), so the next read resumes there (#12401).
         let exhausted = match &pulled {
             Ok(exhausted) => *exhausted,
-            Err(_) => matches!(&source, SeqSource::MapGrep { items, pos, .. } if *pos >= items.len()),
+            Err(_) => {
+                matches!(&source, SeqSource::MapGrep { items, pos, .. } if *pos >= items.len())
+            }
         };
         self.lock_state().source = if exhausted {
             SeqSource::Reified

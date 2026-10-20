@@ -4,8 +4,13 @@ use crate::runtime::resolution_map_grep::bind_loop_topic;
 use crate::value::{PullOut, ValueView};
 
 impl Interpreter {
-    /// Returns the mapped result and whether any element of `list_items` was
-    /// actually written back (Raku's rw binding of `$_` / an `is rw` param).
+    /// Maps `list_items` into `out` (see `eval_map_over_items_into`),
+    /// recording in `wrote_back` whether an element was actually written back
+    /// (Raku's rw binding of `$_` / an `is rw` param), also when the callback
+    /// dies part way: a deferred rw `.map` then publishes the elements written
+    /// so far, keeps what was produced and resumes after the failing element
+    /// (#12401).
+    ///
     /// The caller must only refresh the source array when that flag is set: a
     /// read-only block leaves the source untouched, and rebuilding it anyway
     /// would drop the container's per-slot metadata — most visibly the
@@ -16,25 +21,6 @@ impl Interpreter {
     /// `slot` keeps the callback's loop plan across calls: a deferred `.map`
     /// pulled a chunk at a time reuses it on every pull
     /// (`runtime/map_grep_plan.rs`).
-    // Cost: one callback call per element (per `arity` elements for a
-    // multi-parameter block).
-    pub(crate) fn eval_map_over_items_rw(
-        &mut self,
-        func: Option<Value>,
-        list_items: &mut [Value],
-        slot: &mut MapGrepPlanSlot,
-    ) -> Result<(Value, bool), RuntimeError> {
-        let mut out = PullOut::default();
-        let wrote_back = std::cell::Cell::new(false);
-        self.eval_map_over_items_rw_into(func, list_items, slot, &mut out, &wrote_back)?;
-        Ok((Value::array(out.produced), wrote_back.get()))
-    }
-
-    /// [`Self::eval_map_over_items_rw`] into `out` (see
-    /// `eval_map_over_items_into`), recording in `wrote_back` whether an
-    /// element was written back, also when the callback dies part way: a
-    /// deferred rw `.map` then publishes the elements written so far, keeps
-    /// what was produced and resumes after the failing element (#12401).
     // Cost: one callback call per element (per `arity` elements for a
     // multi-parameter block).
     pub(crate) fn eval_map_over_items_rw_into(

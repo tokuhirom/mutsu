@@ -78,8 +78,17 @@ impl Interpreter {
             || !plan.prefix_pullable(|| map_grep_pullable_by_prefix(func.as_ref(), mode))
         {
             while chain.extend(|source| self.pull_map_grep_prefix(source, usize::MAX))? > 0 {}
-            let pulled =
-                self.run_map_grep_chunk(func, fatal, mode, plan, items, *pos, items.len(), None, out);
+            let pulled = self.run_map_grep_chunk(
+                func,
+                fatal,
+                mode,
+                plan,
+                items,
+                *pos,
+                items.len(),
+                None,
+                out,
+            );
             *pos = start_pos + (out.consumed - consumed_base);
             pulled?;
             *pos = items.len();

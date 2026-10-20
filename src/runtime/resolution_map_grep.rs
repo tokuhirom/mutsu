@@ -270,7 +270,7 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
 /// The map/grep loops merge the block's captured env into the running frame
 /// with caller priority by default; this is the exception list, and it is
 /// shared by the plain and the rw loops (`eval_map_over_items` /
-/// `eval_map_over_items_rw`) so they cannot drift apart. See the long comment
+/// `eval_map_over_items_rw_into`) so they cannot drift apart. See the long comment
 /// at the plain loop's merge for the reasoning: a shared `ContainerRef` cell
 /// is the single source of truth for its lexical, and a value captured for one
 /// of the block's own FREE VARIABLES is lexical by definition, so the binding
