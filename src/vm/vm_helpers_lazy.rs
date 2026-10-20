@@ -239,7 +239,9 @@ impl Interpreter {
         // TODO: close the handle when its Seq is dropped, then pull a
         // bounded prefix here too.
         if body.is_gather_source() {
-            return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
+            return body.extend_gather_prefix(needed, |list, from, n| {
+                self.pull_gather_window(list, from, n)
+            });
         }
         // A deferred `.map`/`.grep` runs its callback over only as much of
         // its source as the subscript reaches (`$s[5]` runs it six times).
@@ -388,7 +390,9 @@ impl Interpreter {
             && body.is_gather_source()
         {
             let body = Arc::clone(&body);
-            return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
+            return body.extend_gather_prefix(needed, |list, from, n| {
+                self.pull_gather_window(list, from, n)
+            });
         }
         if let ValueView::Seq(body) = value.view()
             && body.is_map_grep_source()
@@ -859,7 +863,7 @@ impl Interpreter {
         // only, as Rakudo's do (and as `?$g` does).
         if matches!(method, "Bool" | "so" | "not") && body.is_gather_source() {
             let body = Arc::clone(&body);
-            body.extend_gather_prefix(1, |list, n| self.pull_gather_prefix(list, n))?;
+            body.extend_gather_prefix(1, |list, from, n| self.pull_gather_window(list, from, n))?;
             return Ok(target);
         }
         // Rakudo's `Seq.values` is `.list`.

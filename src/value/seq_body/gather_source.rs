@@ -90,22 +90,28 @@ impl SeqBody {
     }
 
     /// A non-consuming prefix pull of a not-yet-finished gather (`$g[i]`,
-    /// `?$g`): `pull` drives the coroutine until it has taken `needed`
-    /// elements (or finished) and answers the first `needed` of everything it
-    /// has taken. That prefix becomes the body's live generation; the source
-    /// stays in place unless the coroutine ran out, and the body is cached
-    /// (Rakudo's `[i]` and `Bool` cache a Seq). A no-op for every other
+    /// `?$g`): `pull(list, from, needed)` drives the coroutine until it has
+    /// taken `needed` elements (or finished) and answers elements
+    /// `from..needed` of everything it has taken, where `from` is how many the
+    /// body already holds. Those are appended to the body's live generation;
+    /// the source stays in place unless the coroutine ran out, and the body is
+    /// cached (Rakudo's `[i]` and `Bool` cache a Seq). A no-op for every other
     /// source or when the body already holds `needed` elements.
+    ///
+    /// Only the new elements are copied, so a consumer reading a gather one
+    /// element at a time (`pull_source_element`) is linear overall, not
+    /// quadratic (ADR-11678 §8.5).
     ///
     /// The state lock is not held across `pull`, which runs the gather body
     /// (invariant 3).
-    // Cost: `pull`'s cost, plus a copy of the prefix.
+    // Cost: `pull`'s cost, plus O(needed - from) amortized for the append.
     pub(crate) fn extend_gather_prefix(
         &self,
         needed: usize,
-        pull: impl FnOnce(&Value, usize) -> Result<Vec<Value>, RuntimeError>,
+        pull: impl FnOnce(&Value, usize, usize) -> Result<Vec<Value>, RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        if self.live_generation().len() >= needed {
+        let from = self.live_generation().len();
+        if from >= needed {
             return Ok(());
         }
         let list = {
@@ -120,16 +126,22 @@ impl SeqBody {
             state.cache_requested = true;
             list
         };
-        let prefix = pull(&list, needed)?;
-        let exhausted = prefix.len() < needed;
+        let window = pull(&list, from, needed)?;
+        let exhausted = from + window.len() < needed;
         // A re-entrant pull may have finished (or stolen) the source while
-        // `pull` ran; only a body still on this gather takes the prefix.
+        // `pull` ran; only a body still on this gather takes the window.
         let mut state = self.lock_state();
         if !matches!(&state.source, SeqSource::Gather(current) if same_list(current, &list)) {
             return Ok(());
         }
-        if prefix.len() > self.live_generation().len() {
-            self.core.gens.publish(prefix);
+        // A re-entrant pull of the same body may already have appended part
+        // of the window (both read the same coroutine cache, so the elements
+        // agree); append only what the body does not hold yet.
+        let have = self.live_generation().len();
+        if have >= from && have < from + window.len() {
+            self.core
+                .gens
+                .append(window.into_iter().skip(have - from).collect());
         }
         if exhausted {
             state.source = SeqSource::Reified;
@@ -145,5 +157,45 @@ fn same_list(a: &Value, b: &Value) -> bool {
     match (a.view(), b.view()) {
         (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A gather read one element at a time asks its coroutine only for the
+    /// new element and appends it, so n reads copy O(n) elements, not O(n^2).
+    #[test]
+    fn a_gather_prefix_pull_appends_only_the_new_window() {
+        let pipe = crate::value::LazyList::new_index_pipe(
+            Value::int(0),
+            crate::value::IndexTransform::Flat,
+        );
+        let list = Value::lazy_list(crate::gc::Gc::new(pipe));
+        let body = SeqBody::deferred(SeqSource::Gather(list));
+        let mut requested = 0;
+        for needed in 1..=1000 {
+            body.extend_gather_prefix(needed, |_, from, needed| {
+                requested += needed - from;
+                Ok((from..needed).map(|i| Value::int(i as i64)).collect())
+            })
+            .unwrap();
+        }
+        assert_eq!(requested, 1000, "each read pulls only its new element");
+        let live = body.live_generation();
+        assert_eq!(live.len(), 1000);
+        assert!(
+            live.iter()
+                .enumerate()
+                .all(|(i, v)| *v == Value::int(i as i64))
+        );
+        assert!(body.is_gather_source(), "the gather is not exhausted yet");
+
+        // A short window means the coroutine finished.
+        body.extend_gather_prefix(1002, |_, from, _| Ok(vec![Value::int(from as i64)]))
+            .unwrap();
+        assert_eq!(body.live_generation().len(), 1001);
+        assert!(!body.is_gather_source());
     }
 }

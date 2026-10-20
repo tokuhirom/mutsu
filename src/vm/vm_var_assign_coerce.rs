@@ -839,7 +839,9 @@ impl Interpreter {
             && body.is_gather_source()
         {
             let body = std::sync::Arc::clone(&body);
-            body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n))?;
+            body.extend_gather_prefix(needed, |list, from, n| {
+                self.pull_gather_window(list, from, n)
+            })?;
         }
         Ok(match val.view() {
             ValueView::Array(v, ..) => v.as_ref().clone().into_items(),
