@@ -26,7 +26,7 @@ class B does H {
 {
     my $*seen;
     B.new.set(ip => 5);
-    is $*seen, "ip 5", "role's :$ip multi survives the class's :$source multi";
+    is $*seen, "ip 5", "role's :\$ip multi survives the class's :\$source multi";
     B.new.set("x");
     is $*seen, "src x", "positional multi still reaches the class's named one";
 }
@@ -48,6 +48,6 @@ class C does H {
     is B.new.set(source => "z").^name, "B", "role proto body returns self with a class multi";
 }
 
-role P { proto method f(|) { {*}; self }  multi method f(Int $x) { 42 } }
+role P { proto method f(|) { {*}; self }; multi method f(Int $x) { 42 } }
 class Q does P { }
 is Q.new.f(5).^name, "Q", "positional role multi under a role proto";

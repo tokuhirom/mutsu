@@ -1,6 +1,5 @@
 use super::*;
 use crate::value::container_lock::ContainerStructGuard;
-use crate::value::ArrayKind;
 
 impl Interpreter {
     pub(crate) fn sub_call_args_from_value(arg: Option<&Value>) -> Vec<Value> {
@@ -966,36 +965,5 @@ impl Interpreter {
             ));
         }
         Ok(args[1].clone())
-    }
-
-    pub(super) fn builtin_record_shaped_array_dims(
-        &mut self,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        if args.len() != 1 {
-            return Err(RuntimeError::new(
-                "__mutsu_record_shaped_array_dims expects target name",
-            ));
-        }
-        let target_name = args[0].to_string_value();
-        if !target_name.starts_with('@') {
-            return Ok(Value::NIL);
-        }
-        let key = crate::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&target_name);
-        let dims = self
-            .env
-            .get(&target_name)
-            .and_then(Self::infer_array_shape)
-            .filter(|shape| shape.len() > 1);
-        if let Some(shape) = dims {
-            let dims_val = Value::array_with_kind(
-                crate::gc::Gc::new(shape.into_iter().map(|n| Value::int(n as i64)).collect()),
-                ArrayKind::List,
-            );
-            self.env.insert_sym_noting(key, dims_val);
-        } else {
-            self.env.remove_sym(key);
-        }
-        Ok(Value::NIL)
     }
 }

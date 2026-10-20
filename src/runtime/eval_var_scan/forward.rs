@@ -46,6 +46,7 @@ pub(in crate::runtime) fn first_var_used_before_unit_declares(
             all_names: all_names.0,
             type_names: all_names.1,
             moved: false,
+            lenient: false,
             bail: false,
         }),
         found: None,
@@ -84,6 +85,11 @@ pub(super) struct ForwardUses {
     /// Inside code the AST moved from its source position (a phaser body):
     /// a use of a name the top level declares is not judged there.
     pub(super) moved: bool,
+    /// Inside a type or package body, or a phaser: the AST moves some
+    /// declarations there away from their source scope (a method declared in
+    /// a nested block of a class body, a package body's statements), so a
+    /// name some other scope declares is not judged there.
+    pub(super) lenient: bool,
     /// A `use` whose exported variables are unknown was seen: nothing is
     /// reported from here on.
     pub(super) bail: bool,
@@ -97,6 +103,19 @@ impl UndeclaredVars<'_> {
         f(self);
         if let (Some(forward), Some(saved)) = (self.forward.as_mut(), saved) {
             forward.moved = saved;
+        }
+    }
+
+    /// Runs `f` over a type or package body, or a phaser body, where a name
+    /// some other scope declares is not judged.
+    pub(super) fn in_lenient_code(&mut self, f: impl FnOnce(&mut Self)) {
+        let saved = self
+            .forward
+            .as_mut()
+            .map(|forward| std::mem::replace(&mut forward.lenient, true));
+        f(self);
+        if let (Some(forward), Some(saved)) = (self.forward.as_mut(), saved) {
+            forward.lenient = saved;
         }
     }
 
@@ -140,12 +159,14 @@ impl UndeclaredVars<'_> {
         };
         let top = forward.top_names.get(&key).copied().unwrap_or(0);
         let all = forward.all_names.get(&key).copied().unwrap_or(0);
-        // Reported: a name declared nowhere, and one only the unit's top
-        // level declares (later). A name some inner scope declares as well is
-        // left alone: the AST moves some declarations away from their source
-        // scope (a method declared in a nested block of a class body).
+        // Reported: a name declared nowhere, one only the unit's top level
+        // declares (later), and one only a scope that does not enclose the
+        // use declares (`sub f { $x }; { my $x }`). Inside a type or package
+        // body or a phaser, a name some other scope declares is left alone:
+        // the AST moves some declarations there away from their source scope
+        // (a method declared in a nested block of a class body).
         forward.bail
-            || (all > 0 && all > top)
+            || (forward.lenient && all > top)
             || (forward.moved && top > 0)
             || forward.type_names.contains(&key)
             // An extended identifier (`$foo:bar<42>`) may name one a

@@ -257,12 +257,11 @@ impl Interpreter {
         if crate::value::container_lock::multi_mutator_threads_live() {
             return None;
         }
-        // Both latches are false for the overwhelming majority of programs, and
-        // each one being true means a *name-keyed* side table may describe this
-        // element (`__mutsu_bound_index::`, `__mutsu_elem_share::`,
-        // `__mutsu_deleted_index::`, or a declared shape).
+        // The latch is false for the overwhelming majority of programs, and
+        // its being true means a *name-keyed* side table may describe this
+        // element (`__mutsu_bound_index::`, `__mutsu_elem_share::`).
         // This lane deliberately knows nothing about those: it declines instead.
-        if crate::env::elem_index_meta_possible() || crate::env::shaped_array_dims_possible() {
+        if crate::env::elem_index_meta_possible() {
             return None;
         }
         let var_name = Self::const_str(code, name_idx);

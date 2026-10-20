@@ -7,11 +7,12 @@ use std::sync::OnceLock;
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-pub(super) fn instance_shapes() -> &'static [(Symbol, DispatchShape); 37] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 37]> = OnceLock::new();
+pub(super) fn instance_shapes() -> &'static [(Symbol, DispatchShape); 38] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 38]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
+            (Symbol::intern("Label"), DispatchShape::Label),
             (Symbol::intern("Format"), DispatchShape::Format),
             (
                 Symbol::intern("CompUnit::DependencySpecification"),

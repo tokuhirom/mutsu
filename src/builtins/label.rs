@@ -13,7 +13,7 @@
 //! labelled loop. The signal matches the loop by label name, exactly as the
 //! static form does.
 
-use crate::value::label::{LABEL_CLASS, attr_str, label_gist, label_name, label_str};
+use crate::value::label::{attr_str, label_name};
 use crate::value::{AttrMap, Control, RuntimeError, Value, ValueView};
 
 /// `Label.raku`: `Label.new(name => "FOO", file => "FILE", line => LINE)`.
@@ -26,47 +26,6 @@ pub(crate) fn label_raku(attributes: &AttrMap) -> String {
         quote(attr_str(attributes, "file")),
         attr_str(attributes, "line")
     )
-}
-
-/// The zero-argument methods of a `Label` instance; `None` for any other
-/// receiver or method. `.next` / `.last` / `.redo` raise the labelled loop
-/// control signal (or `X::ControlFlow` with no loop to act on).
-// Cost: O(n) for the rendering methods, n = rendered length; O(1) otherwise.
-pub(crate) fn label_method_0arg(
-    target: &Value,
-    method: &str,
-) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-    else {
-        return None;
-    };
-    if class_name != LABEL_CLASS {
-        return None;
-    }
-    let attributes = attributes.as_map();
-    let control = |c: Control| {
-        Some(Err(
-            crate::runtime::loop_handler_depth::loop_control_signal(
-                c,
-                Some(attr_str(&attributes, "name")),
-            ),
-        ))
-    };
-    match method {
-        "name" | "file" => Some(Ok(Value::str(attr_str(&attributes, method)))),
-        "line" => Some(Ok(attributes.get("line").cloned().unwrap_or(Value::int(0)))),
-        "Str" => Some(Ok(Value::str(label_str(&attributes)))),
-        "gist" => Some(Ok(Value::str(label_gist(&attributes)))),
-        "raku" => Some(Ok(Value::str(label_raku(&attributes)))),
-        "next" => control(Control::Next),
-        "last" => control(Control::Last),
-        "redo" => control(Control::Redo),
-        _ => None,
-    }
 }
 
 /// v6.e's `last VALUE` / `next VALUE` (`OpCode::LastValue` / `NextValue`): the

@@ -67,7 +67,8 @@ plan 23;
     is $elem, 30, 'the binding survives a later plain element store';
 }
 
-# __mutsu_shaped_array_dims:: -- the declared dimensions of a shaped array.
+# A shaped array's dimensions live on the array itself (ArrayData.shape);
+# the retired __mutsu_shaped_array_dims:: key only ever came from `:=`.
 {
     my @s[2;2];
     @s[1;1] = 9;

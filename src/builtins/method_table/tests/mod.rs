@@ -137,7 +137,10 @@ fn sample(shape: DispatchShape) -> Value {
         ),
         DispatchShape::Format => crate::runtime::Interpreter::make_format("%d-%s".to_string()),
         DispatchShape::Formatter => type_sample("Formatter"),
+        DispatchShape::RakudoInternals => type_sample("Rakudo::Internals"),
+        DispatchShape::RakudoSorting => type_sample("Rakudo::Sorting"),
         DispatchShape::BacktraceFrame => backtrace_frame_sample(),
+        DispatchShape::Label => crate::value::label::make_label("FOO", "x.raku", 3, "", ""),
         DispatchShape::Backtrace => {
             let mut attributes = crate::value::AttrMap::new();
             attributes.insert(
@@ -429,6 +432,10 @@ fn rows_are_declared_by_rakudo() {
     // A `REVISION_E` row is checked against what Rakudo declares under 6.e.
     let _revision = RevisionE::enter();
     let undeclared: Vec<String> = rows()
+        // Rakudo declares no `raku` on `Label`; the rendering is mutsu's own.
+        .filter(|row| !(row.owner == "Label" && row.name == "raku"))
+        // `IS-MACOS` is the companion mutsu gives `IS-WIN`; Rakudo declares none.
+        .filter(|row| !(row.owner == "Rakudo::Internals" && row.name == "IS-MACOS"))
         // `DESTROY` is a submethod: Rakudo's `.^method_table` does not list it.
         .filter(|row| row.name != "DESTROY")
         // Roast pins `NFC.chars`/`NFC.comb` (`S15-string-types/NF-types.t`),

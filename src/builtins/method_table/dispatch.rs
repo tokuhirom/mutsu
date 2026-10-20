@@ -355,6 +355,9 @@ fn admits_row(row: &MethodRow, args: &[Value]) -> bool {
         // Any other index is bound through its `.Int` (`index_arg`).
         args.iter()
             .all(|arg| arg.dispatch_shape() == Some(DispatchShape::Int))
+    } else if row.flags.contains(RowFlags::VM_ARRAY_ARGS) {
+        args.iter()
+            .all(|arg| arg.is_vm_array() || arg.is_plain_argument())
     } else if row.flags.contains(RowFlags::ANY_ARGS) {
         args.iter().all(Value::is_plain_argument)
     } else {

@@ -183,6 +183,10 @@ impl RowFlags {
     /// `Real` and its `Numeric` otherwise, and the row is handed the number
     /// (`invoke_unadmitted`; `Num.log($real-object)`, ADR-11276 §9.184).
     pub(crate) const NUMERIC_ARGS: RowFlags = RowFlags(1 << 16);
+    /// A positional argument may be a raw VM array (`nqp::list_s(...)`, a
+    /// `BOOTStrArray`), which is not a plain argument by default. The handler
+    /// reads its elements as the array they are (`Rakudo::Sorting.MERGESORT-str`).
+    pub(crate) const VM_ARRAY_ARGS: RowFlags = RowFlags(1 << 17);
 
     /// The flags of both.
     // Cost: O(1).

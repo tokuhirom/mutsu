@@ -3,6 +3,23 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// The owners whose rows answer an instance of the I/O and concurrency
+    /// classes found by owner rather than by shape: `Proc::Async`, `Supply`,
+    /// `IO::CatHandle`, `Supplier` and the schedulers, the encoding objects and
+    /// the handle subclasses (ADR-11276 §9.128, §9.130, §9.132, §9.133, §9.157).
+    // Cost: O(1) for each class probed; O(d) for another instance, d = MRO depth.
+    pub(crate) fn io_concurrency_owners_of(
+        &mut self,
+        target: &Value,
+    ) -> Option<&'static [&'static str]> {
+        crate::builtins::method_table::proc_async_owners_of(target)
+            .or_else(|| crate::builtins::method_table::supply_owners_of(target))
+            .or_else(|| crate::builtins::method_table::cathandle_owners_of(target))
+            .or_else(|| crate::builtins::method_table::supplier_scheduler_owners_of(target))
+            .or_else(|| self.encoding_owners_of(target))
+            .or_else(|| crate::builtins::method_table::handle_owners_of_instance(target))
+    }
+
     /// The owners whose rows answer an encoding object (ADR-11276 §9.156):
     /// `Encoding::Builtin`, its encoder and its decoder, and the decoder for a
     /// user subclass of it.

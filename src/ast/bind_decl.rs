@@ -16,8 +16,6 @@
 use std::hash::{Hash, Hasher};
 
 use super::{Expr, ReadonlyKind, Stmt};
-use crate::symbol::Symbol;
-use crate::value::Value;
 
 /// The internal trait marking a `$` declaration as bound (`:=`) rather than
 /// assigned; the compiler reads it to bind instead of storing into a Scalar.
@@ -67,11 +65,6 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
             stmts.push(Stmt::Expr(Expr::Var(bound_name.clone())));
         }
         if is_array {
-            stmts.push(Stmt::Expr(Expr::Call {
-                name: Symbol::intern("__mutsu_record_shaped_array_dims"),
-                args: vec![Expr::Literal(Value::str(bound_name.clone()))],
-                listop: false,
-            }));
             // Return the bound variable so the expression evaluates to the
             // bound value (important for `+my @a := ...` which expects the
             // list count).
@@ -171,6 +164,7 @@ fn structural_hash(stmt: &Stmt) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::value::Value;
 
     fn decl(name: &str, expr: Expr, traits: &[&str]) -> Stmt {
         Stmt::VarDecl {

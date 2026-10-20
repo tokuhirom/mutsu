@@ -57,7 +57,7 @@ plan 14;
 {
     my $leaked = 'unset';
     for 1..3 -> $i { }
-    $leaked = (try { $i } // 'gone');
+    $leaked = ((try EVAL q[$i]) // 'gone');
     is $leaked, 'gone', 'loop variable does not leak past the loop';
 }
 
