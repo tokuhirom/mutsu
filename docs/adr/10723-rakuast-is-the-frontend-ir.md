@@ -1475,3 +1475,8 @@ anonymous-state spellings, repeated `my` and `state` calls, actual anonymous
 declarations and implicit state, and a hand-built named declaration. This is
 declaration metadata on the existing lowered representation, not a new
 execution path or a converter reconstruction from a name.
+
+The tested tree passes 8,036 / 8,079 frontend files; all 8,036 listed files
+and 83,177 assertions pass the release ratchet. The 51 added list entries
+include refreshed-main coverage. The remaining survey has 27 DIFF and
+16 REFUSE files.
