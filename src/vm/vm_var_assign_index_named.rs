@@ -1911,8 +1911,7 @@ impl Interpreter {
                 if let Some(container) = self.env_root_descended_mut(&var_name)
                     && matches!(container.view(), ValueView::Array(..))
                 {
-                    let is_shaped =
-                        crate::runtime::utils::is_shaped_array(container);
+                    let is_shaped = crate::runtime::utils::is_shaped_array(container);
                     let mut initialized_marks: Vec<String> = Vec::new();
                     let mut nested_result: Option<Value> = None;
                     // The values a flat slice assignment actually stored, in slot
