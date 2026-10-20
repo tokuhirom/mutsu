@@ -3294,6 +3294,18 @@ impl Interpreter {
                     {
                         rw_bindings.push((storage_name.to_string(), source_name.clone()));
                     }
+                    // ADR-14144: a readonly scalar parameter the body applies
+                    // `does` to hands the composed `Mixin` back to the caller's
+                    // container at return, as Rakudo's rebless of the shared
+                    // object does. `$v = ...` stays an X::Assignment::RO.
+                    if pd.is_does_target()
+                        && !is_rw
+                        && !is_raw
+                        && !is_copy
+                        && let Some(source_name) = &source_name
+                    {
+                        rw_bindings.push((storage_name.to_string(), source_name.clone()));
+                    }
                     // Slice 2d: a readonly scalar `$` param receiving an array/hash
                     // *variable* argument binds the same (mutable) container in
                     // Raku — `$n.push` / `$n[0]=` / `my @a := @$n` all mutate one

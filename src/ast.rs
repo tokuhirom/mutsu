@@ -2939,6 +2939,7 @@ mod chains;
 pub(crate) mod decl_compound_assign;
 pub(crate) mod decl_modifier;
 pub(crate) mod decl_tail;
+pub(crate) mod does_target;
 pub(crate) mod dotty_assign;
 pub(crate) mod immediate_call;
 pub(crate) mod inline_subset_term;

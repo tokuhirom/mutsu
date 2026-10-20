@@ -59,14 +59,14 @@ fn method_positional_params(def: &MethodDef) -> impl Iterator<Item = &crate::ast
 pub(crate) fn method_def_binds_container_at(def: &MethodDef, positional: usize) -> bool {
     method_positional_params(def)
         .nth(positional)
-        .is_some_and(|p| p.binds_caller_container())
+        .is_some_and(|p| p.binds_caller_container() || p.is_does_target())
 }
 
 /// Whether `def` binds *any* positional parameter to the caller's container —
 /// the registration-time half of the same question, feeding
 /// [`Registry::any_container_binding_method_param`].
 pub(crate) fn method_def_binds_container_positionally(def: &MethodDef) -> bool {
-    method_positional_params(def).any(|p| p.binds_caller_container())
+    method_positional_params(def).any(|p| p.binds_caller_container() || p.is_does_target())
 }
 
 impl Registry {

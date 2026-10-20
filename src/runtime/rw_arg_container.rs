@@ -109,9 +109,9 @@ pub(crate) fn positional_binds_container_at<'a>(
     positional: usize,
 ) -> bool {
     if positional == crate::opcode::RWARG_POSITIONAL_UNKNOWN as usize {
-        return params.any(|p| p.binds_caller_container());
+        return params.any(|p| p.binds_caller_container() || p.is_does_target());
     }
     params
         .nth(positional)
-        .is_some_and(|p| p.binds_caller_container())
+        .is_some_and(|p| p.binds_caller_container() || p.is_does_target())
 }
