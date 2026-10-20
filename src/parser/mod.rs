@@ -2,6 +2,7 @@ pub(crate) mod core_type_fold;
 pub(crate) mod decl_doc;
 mod expr;
 mod type_qualify;
+pub(crate) use type_qualify::qualify_program as qualify_type_names;
 // ADR-0033: `crate::whatever_curry::build_closure` (the WhateverCode closure
 // construction that moved out of the parser) needs these priming-scope
 // predicates, so re-export them at crate visibility without making the whole
