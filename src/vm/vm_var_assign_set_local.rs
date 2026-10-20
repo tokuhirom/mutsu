@@ -4,132 +4,6 @@ use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {
-    /// True when a `$`-sigil `:=` bind SOURCE has no assignable container
-    /// behind it, so a later `$x = v` through the bound name is rakudo's
-    /// X::AdHoc "Cannot assign to an immutable value".
-    ///
-    /// Deliberately an ALLOWLIST, and the conservative direction is to mark
-    /// LESS: anything container-like or written-through (`ContainerRef`,
-    /// `Proxy` STORE, a deferred `HashEntryRef` bind, an `is raw` result, a
-    /// real `Array`/`Hash`, an instance with rw attributes) must stay writable,
-    /// and an overlooked kind here turns into a hard runtime error.
-    ///
-    /// Two families qualify. A pure immutable SCALAR is bound to the value
-    /// itself (`my $r := $obj.ro-attr`, `my $x := 5`). An immutable
-    /// POSITIONAL — a `List`/`ItemList` literal, a `Range`, a `Seq`, a lazy
-    /// list, a `Slip` — is a container, but not a *Scalar* container, and
-    /// rakudo's scalar assignment needs one: `my $x := (1, 2, 3); $x = 5` dies
-    /// exactly like `my $x := 5` does. (`@`/`%` targets never reach here; they
-    /// alias the whole container and `@a = ...` is a STORE, not an assignment
-    /// into a Scalar.) The `IterationEnd` sentinel is a third, singleton case.
-    fn bind_source_has_no_container(v: &Value) -> bool {
-        match v.view() {
-            ValueView::Int(_)
-            | ValueView::BigInt(_)
-            | ValueView::Num(_)
-            | ValueView::Str(_)
-            | ValueView::Bool(_)
-            | ValueView::Rat(..)
-            | ValueView::Complex(..)
-            | ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. }
-            | ValueView::Seq(_)
-            | ValueView::HyperSeq(_)
-            | ValueView::RaceSeq(_)
-            | ValueView::LazyList(_)
-            | ValueView::Slip(_) => true,
-            ValueView::Array(_, kind) => kind.is_immutable_list(),
-            // The `IterationEnd` sentinel is an attribute-less `Mu` object:
-            // `$p := IterationEnd` binds the object itself, so `$p =:=
-            // IterationEnd` holds and `$p = 5` dies as in rakudo.
-            ValueView::Instance { id, .. } => id == crate::value::ITERATION_END_ID,
-            _ => false,
-        }
-    }
-
-    /// True when a `$`-sigil `:=` bind SOURCE is a container that is not a
-    /// **Scalar** container, so a later whole-value `$x = v` through the bound
-    /// name is rakudo's X::AdHoc "Cannot assign to an immutable value".
-    ///
-    /// rakudo's rule is sharper than "immutable": `$x = v` needs `$x` bound to a
-    /// Scalar, and no other container qualifies — a real `Array`, a `Hash`, a
-    /// `Map` and a `Pair` all refuse it, though each is mutable through its own
-    /// interface. `my $x := @a; $x = 5` is a hard error there and used to
-    /// overwrite `@a` here.
-    ///
-    /// Separate from [`Self::bind_source_has_no_container`] because the two say
-    /// different things and are gated differently. That one is about
-    /// immutability and applies to any `:=`; this one is about *which kind of
-    /// container the name owns*, and its caller restricts it to a DECLARATION —
-    /// a parameter bind reaches the same store, and an `is raw` / `\x`
-    /// parameter bound to an array must stay assignable.
-    ///
-    /// The aliasing these binds exist for is untouched: only the whole-value
-    /// `=` is refused, so `$x.push(9)`, `$x<k> = 2` and `$x[0]` keep working.
-    /// True when a `$`-sigil `:=` bind SOURCE is an itemized aggregate
-    /// (`$(%h)`, `$(@a)`, `(1, 2).item`): the value sits in a `Scalar`, so the
-    /// name binds that Scalar -- `.VAR.^name` is `Scalar` and `=:=` sees a
-    /// container -- but the Scalar is readonly, and an assignment is rakudo's
-    /// "Cannot assign to a readonly variable or a value" (#11129).
-    // Cost: O(1).
-    pub(super) fn bind_source_is_itemized_aggregate(v: &Value) -> bool {
-        match v.view() {
-            ValueView::Hash(_) => v.hash_is_itemized(),
-            ValueView::Array(_, kind) => kind.is_itemized(),
-            ValueView::Scalar(inner) => {
-                matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(_))
-            }
-            _ => false,
-        }
-    }
-
-    fn bind_source_is_non_scalar_container(v: &Value) -> bool {
-        matches!(
-            v.view(),
-            ValueView::Array(..)
-                | ValueView::Hash(_)
-                | ValueView::Pair(..)
-                | ValueView::ValuePair(..)
-        )
-    }
-
-    /// True when a `$`-sigil `:=` bind SOURCE is a bare TYPE OBJECT (`$s :=
-    /// IB`, `$s := Int`) — no Scalar container at all, so a later `$s = v` is
-    /// rakudo's own "assign requires a concrete object (got a IB type object
-    /// instead)", not the generic immutable-value wording.
-    ///
-    /// Kept apart from [`Self::bind_source_has_no_container`]'s allowlist —
-    /// which deliberately excludes `Package` — because the two shapes raise
-    /// DIFFERENT exceptions ([`crate::ast::ReadonlyKind::TypeObject`] vs.
-    /// `::Immutable`) even though both leave the name with no container.
-    fn bind_source_is_type_object(v: &Value) -> bool {
-        matches!(v.view(), ValueView::Package(_))
-    }
-
-    /// True when `v` reads the same through a binding cell as it does bare.
-    /// A cell itemizes what it holds, so a list-like value (`my $r := 1..3`,
-    /// a `Seq`, an immutable `List`) iterates as one item behind one, while
-    /// rakudo iterates the value a container-less `$r` is bound to. Those
-    /// keep a bare slot and only the readonly registry's mark.
-    // Cost: O(1).
-    fn binding_cell_keeps_value_semantics(v: &Value) -> bool {
-        match v.view() {
-            ValueView::Int(_)
-            | ValueView::BigInt(_)
-            | ValueView::Num(_)
-            | ValueView::Str(_)
-            | ValueView::Bool(_)
-            | ValueView::Rat(..)
-            | ValueView::Complex(..)
-            | ValueView::Package(_) => true,
-            ValueView::Instance { id, .. } => id == crate::value::ITERATION_END_ID,
-            _ => false,
-        }
-    }
-
     /// If `name` is a raw `\target` bound to a multi-dim slice lvalue (marked at
     /// bind time by `is_multidim_slice_cells`) whose current value `holder` is a
     /// non-empty list of `ContainerRef` cells, distribute `rhs` element-wise
@@ -1157,21 +1031,6 @@ impl Interpreter {
         }
     }
 
-    /// The readonly kind a `$` variable `:=`-bound straight to the value `v`
-    /// has: `TypeObject` for a type object, `Immutable` for a value with no
-    /// container of its own (the shapes `bind_marks_type_object` and
-    /// `bind_marks_immutable` mark at a declaration), else none.
-    // Cost: O(1).
-    fn rebound_value_kind(v: &Value) -> Option<crate::ast::ReadonlyKind> {
-        if Self::bind_source_is_type_object(v) {
-            Some(crate::ast::ReadonlyKind::TypeObject)
-        } else if Self::bind_source_has_no_container(v) {
-            Some(crate::ast::ReadonlyKind::Immutable)
-        } else {
-            None
-        }
-    }
-
     /// Peel binding cells off `v` (see `binding_cell_of`), returning the
     /// container at the end of the chain.
     pub(super) fn innermost_container(mut v: Value) -> Value {
@@ -1457,17 +1316,6 @@ impl Interpreter {
                 || bind_source
                     .as_deref()
                     .is_some_and(|n| n.starts_with(['@', '%'])));
-        // The same "a `:=` bind to a VALUE, not to another name" test as
-        // `bind_marks_immutable`, minus the immutability allowlist: `my $o :=
-        // C.new` binds `$o` straight to the object, so `$o` owns no Scalar
-        // container of its own even though the object it holds is mutable.
-        // Recorded separately because it is not a writability fact (mutsu still
-        // lets `$o = 5` through, unlike raku) — it is only the container-identity
-        // fact `=:=` needs, so `$o.self =:= $o` stays True as in raku.
-        // Scoped to a declaration: a parameter bind reaches this store too, and
-        // a non-`is rw` parameter DOES own a container (rakudo reports `Scalar`).
-        let bind_marks_no_container =
-            is_vardecl && scalar_bind && unnamed_bind_source && !bind_marks_itemized_scalar;
         // The kind a binding cell carries for this bind, if it gets one (see
         // the store below).
         let readonly_binding_kind = if !code.locals[idx].starts_with(['@', '%', '&'])
@@ -1686,27 +1534,6 @@ impl Interpreter {
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Alias);
             record_on_own_binding(self, &bare, crate::ast::ReadonlyKind::Alias);
-        }
-        // The container-identity half of the same decision (see
-        // `bind_marks_no_container`). Set/cleared per declaration so a later
-        // `my $o = 5` of the same name goes back to owning a Scalar.
-        if is_vardecl && !code.locals[idx].starts_with(['@', '%', '&']) {
-            if bind_marks_no_container {
-                // `insert_sym_noting`, not `insert_sym`: this is the only site
-                // that creates the key, so it is what arms
-                // `scalar_bind_no_container_possible` for the clear below.
-                if let Some(sym) = code.scalar_no_container_sym(idx) {
-                    self.env_mut().insert_sym_noting(sym, Value::TRUE);
-                }
-            } else if crate::env::scalar_bind_no_container_possible()
-                && let Some(sym) = code.scalar_no_container_sym(idx)
-            {
-                // Speculative clear, so a redeclaration cannot inherit an
-                // earlier same-named variable's "owns no container" state.
-                // Skipped entirely — no `env_mut()`, so no CoW deep clone — in
-                // the common program that never made such a binding.
-                self.env_mut().remove_sym(sym);
-            }
         }
 
         // Lazily convert pending alias bind names into local_bind_pairs.
@@ -3536,9 +3363,7 @@ impl Interpreter {
         // whatever the readonly registry holds under the name there
         // (ADR-11142 §2.3, #11142).
         if let Some(kind) = readonly_binding_kind {
-            self.locals[idx] = Value::container_ref(crate::gc::Gc::new(
-                crate::value::ContainerCell::new_readonly_binding(self.locals[idx].clone(), kind),
-            ));
+            self.locals[idx] = Self::readonly_value_binding(self.locals[idx].clone(), kind);
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();

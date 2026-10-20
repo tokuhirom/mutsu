@@ -3,6 +3,7 @@ use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 mod args_matching;
+mod readonly_reflection;
 mod args_matching_simple;
 pub(crate) use args_matching_simple::unwrap_varref_value_for_dispatch;
 mod binding_helpers;
@@ -333,34 +334,6 @@ impl Interpreter {
     #[inline]
     pub(crate) fn readonly_kind_sym(&self, sym: Symbol) -> Option<ReadonlyKind> {
         self.lexicals.readonly_vars.borrow().get(&sym).copied()
-    }
-
-    /// True when the `$`-sigil (or sigilless) name `name` is bound **directly
-    /// to a value**, with no Scalar container behind it — `my $b := 1`,
-    /// `my \x = 1`, `my constant $PI = 3.14`, a topic aliased to a literal.
-    /// Raku reports `.VAR` as the *value's* type for these (`Int`, `Array`,
-    /// ...) rather than `Scalar`, and `=:=` against a decontainerized
-    /// expression can still be True for them.
-    ///
-    /// A readonly *alias* that does own a container ([`ReadonlyKind::Alias`]:
-    /// a non-`is rw` parameter, a `for @a -> $v` alias) is NOT one of these —
-    /// it still reports `Scalar`.
-    ///
-    /// `@`/`%`/`&` names always answer `false`: an aggregate is its own
-    /// container, so the question does not arise for them. Callers that need
-    /// "does this name denote a Scalar container" must therefore exclude those
-    /// sigils themselves rather than negating this predicate.
-    pub(crate) fn scalar_name_has_no_container(&self, name: &str) -> bool {
-        !name.starts_with(['@', '%', '&'])
-            && matches!(
-                self.readonly_kind(name.trim_start_matches('$')),
-                Some(
-                    ReadonlyKind::Immutable
-                        | ReadonlyKind::ImmutableValue
-                        | ReadonlyKind::ImmutableDeep
-                        | ReadonlyKind::TypeObject
-                )
-            )
     }
 
     /// Mark a variable as readonly *as a binding alias* — a non-`is rw`

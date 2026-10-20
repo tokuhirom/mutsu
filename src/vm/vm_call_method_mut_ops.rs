@@ -93,7 +93,7 @@ impl Interpreter {
     /// `$obj."&f"`-style Sub values); the value is then returned in `Err`.
     ///
     /// Cost: O(a), a = arguments (the name slot is removed from under them).
-    fn take_dynamic_method_name(
+    pub(super) fn take_dynamic_method_name(
         &mut self,
         arity: usize,
         quoted: bool,
@@ -120,7 +120,7 @@ impl Interpreter {
     /// `$obj.$code(args)` / `$obj.&code(args)`: call `callable` with the
     /// receiver as its first positional argument. Stack: `[.., target,
     /// args...]`. The `.+`/`.*` modifiers wrap the single result in an Array.
-    fn exec_dynamic_callable_method(
+    pub(super) fn exec_dynamic_callable_method(
         &mut self,
         code: &CompiledCode,
         callable: Value,
@@ -180,42 +180,6 @@ impl Interpreter {
                 code,
                 MethodName::dynamic(&method),
                 arity,
-                modifier_idx,
-                arg_sources_idx,
-            ),
-        }
-    }
-
-    /// `OpCode::CallMethodDynamicMut` (`$var."$name"(...)` on a named
-    /// receiver): as [`Self::exec_call_method_dynamic_op`], delegating a method
-    /// name to the `CallMethodMut` body.
-    pub(super) fn exec_call_method_dynamic_mut_op(
-        &mut self,
-        code: &CompiledCode,
-        arity: u32,
-        target_name_idx: u32,
-        modifier_idx: Option<u32>,
-        quoted: bool,
-        arg_sources_idx: Option<u32>,
-    ) -> Result<(), RuntimeError> {
-        match self.take_dynamic_method_name(arity as usize, quoted, "CallMethodDynamicMut")? {
-            Err(callable) => {
-                // A code-object "name" is not an accessor read: drop any
-                // accessor-ref request so it cannot leak to a later dispatch.
-                self.accessor_ref_pending = false;
-                self.exec_dynamic_callable_method(
-                    code,
-                    callable,
-                    arity as usize,
-                    modifier_idx,
-                    arg_sources_idx,
-                )
-            }
-            Ok(method) => self.exec_call_method_mut_named_op(
-                code,
-                MethodName::dynamic(&method),
-                arity,
-                target_name_idx,
                 modifier_idx,
                 arg_sources_idx,
             ),
@@ -593,29 +557,6 @@ impl Interpreter {
         } else {
             target
         };
-        // `.VAR` reflects the variable's container. When the slot holds a
-        // shared cell (an `is rw` / `is raw` parameter aliasing the caller's
-        // variable), the reflector must see that cell -- it carries the
-        // container's descriptor name (#11196) and identity -- so publish the
-        // slot to the by-name mirror the reflector reads.
-        if method == "VAR" && arity == 0 && !target_name.is_empty() {
-            self.seed_env_from_scalar_slot(code, None, target_name);
-            // A slot that holds a plain value is authoritative over a shared
-            // cell the by-name mirror still holds from an earlier binding of
-            // the same name (a light call reuses its caller's env), so the
-            // reflector must not read that cell's descriptor.
-            if !target_name.starts_with(['@', '%'])
-                && let Some(slot) = self.resolve_local_slot(code, None, target_name)
-                && !self.locals[slot].is_container_ref()
-                && self
-                    .env()
-                    .get(target_name)
-                    .is_some_and(|v| v.is_container_ref())
-            {
-                let current = self.locals[slot].clone();
-                self.set_env_with_main_alias(target_name, current);
-            }
-        }
         // A user `method ^find_method` answers every call on its type
         // (`find_method_intercept`). `.+`/`.*` keep the candidate walk.
         // A raw invocant (`multi method handler(Object::Trampoline:D \SELF:

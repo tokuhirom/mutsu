@@ -197,20 +197,26 @@ impl Interpreter {
                 name_idx,
                 arity,
                 target_name_idx,
+                target_slot,
                 modifier_idx,
                 quoted,
                 arg_sources_idx,
-            } => self.call_method_mut_site_around(code, ip, *arity, *target_name_idx, |vm| {
-                vm.exec_call_method_mut_op(
-                    code,
-                    *name_idx,
-                    *arity,
-                    *target_name_idx,
-                    *modifier_idx,
-                    *quoted,
-                    *arg_sources_idx,
-                )
-            }),
+            } => {
+                if *arity == 0 && Self::const_str(code, *name_idx) == "VAR" {
+                    self.publish_reflected_binding(code, *target_name_idx, *target_slot);
+                }
+                self.call_method_mut_site_around(code, ip, *arity, *target_name_idx, |vm| {
+                    vm.exec_call_method_mut_op(
+                        code,
+                        *name_idx,
+                        *arity,
+                        *target_name_idx,
+                        *modifier_idx,
+                        *quoted,
+                        *arg_sources_idx,
+                    )
+                })
+            }
             // The run-time-named spelling (`$var."$name"(...)`) shares every
             // step around the dispatch -- above all the rebound-receiver
             // writeback, without which a delegated `push` on an `is Array`
@@ -218,26 +224,27 @@ impl Interpreter {
             OpCode::CallMethodDynamicMut {
                 arity,
                 target_name_idx,
+                target_slot,
                 modifier_idx,
                 quoted,
                 arg_sources_idx,
-            } => self.call_method_mut_site_around(code, ip, *arity, *target_name_idx, |vm| {
-                vm.exec_call_method_dynamic_mut_op(
-                    code,
-                    *arity,
-                    *target_name_idx,
-                    *modifier_idx,
-                    *quoted,
-                    *arg_sources_idx,
-                )
-            }),
+            } => self.exec_call_method_dynamic_mut_op(
+                code,
+                ip,
+                *arity,
+                *target_name_idx,
+                *target_slot,
+                *modifier_idx,
+                *quoted,
+                *arg_sources_idx,
+            ),
             _ => unreachable!("exec_call_method_mut_site on a non-CallMethodMut opcode"),
         }
     }
 
     /// Everything a mutating method call on a named receiver does around its
     /// dispatch `f`: see `exec_call_method_mut_site`.
-    fn call_method_mut_site_around(
+    pub(super) fn call_method_mut_site_around(
         &mut self,
         code: &CompiledCode,
         ip: usize,

@@ -206,40 +206,13 @@ impl Interpreter {
         if self.scalar_name_has_no_container(name) {
             return false;
         }
-        // The store-side half of the same decision. Gated on the monotonic
-        // key-family latch, so a program that never made such a binding spends
-        // neither the `format!` nor the env lookup.
-        if !crate::env::scalar_bind_no_container_possible() {
-            return true;
-        }
+        // A Proxy is an assignable container of its own, rather than a
+        // Scalar. A scalar assignment has already FETCHed a Proxy, so this
+        // shape belongs to a direct Proxy binding or its aliases.
         !self
             .env()
-            .contains_key(&Self::scalar_bind_no_container_key(name))
-    }
-
-    /// Env key recording that a `$` name was `:=`-bound straight to a value and
-    /// so owns no Scalar container. Written at the declaration's store; see
-    /// `bind_marks_no_container` in `vm_var_assign_set_local.rs`.
-    pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
-        crate::runtime::scalar_bind_no_container_key(name)
-    }
-
-    /// The by-name store's half of `bind_marks_no_container` (the SetLocal
-    /// path keys it by a precomputed slot symbol): a slot-less `$` declaration
-    /// records whether it was `:=`-bound straight to a value, and clears a
-    /// stale mark otherwise so a redeclaration owns a Scalar again.
-    // Cost: O(1).
-    pub(crate) fn record_scalar_decl_container_by_name(&mut self, name: &str, marks: bool) {
-        if name.starts_with(['@', '%', '&']) {
-            return;
-        }
-        if marks {
-            let sym = crate::symbol::Symbol::intern(&Self::scalar_bind_no_container_key(name));
-            self.env_mut().insert_sym_noting(sym, Value::TRUE);
-        } else if crate::env::scalar_bind_no_container_possible() {
-            let sym = crate::symbol::Symbol::intern(&Self::scalar_bind_no_container_key(name));
-            self.env_mut().remove_sym(sym);
-        }
+            .get(name.trim_start_matches('$'))
+            .is_some_and(|value| value.deref_container().is_proxy_value())
     }
 
     /// Walk the `__mutsu_sigilless_alias::` chain to find the ultimate

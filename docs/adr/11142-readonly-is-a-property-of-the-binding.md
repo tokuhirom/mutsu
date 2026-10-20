@@ -305,3 +305,17 @@ value's container, so seating a later rebind of `$a` in it would rebind `$f`
 too (`t/vm/binding/bind-rebind-leaves-earlier-alias.t`). A captured and
 rebound `$a` gets the usual binding cell wrapped around it instead.
 `t/routines/rebind-in-routine-decides-writability.t` pins the cases.
+
+### 7.4 Value bindings and reflection use the same decision (#14059, 2026-10-20)
+
+Binding a bare object, routine or buffer does not manufacture a writable
+Scalar. Its immutable binding cell refuses whole-value assignment while
+retaining the value's own mutable operations. `.VAR` and container identity
+read the binding chain before consulting the readonly registry, so a caller's
+same-named parameter cannot change the captured binding's reflected kind.
+
+Static and dynamic named-method bytecode records the receiver's lexical slot
+and publishes that binding before reflection. An inner writable declaration
+therefore remains writable after `.VAR`, even when the outer binding is
+immutable. The old `ScalarBindNoContainer` marker is retired (ADR-0097 §17);
+list-like values retain their existing bare representation and registry kind.

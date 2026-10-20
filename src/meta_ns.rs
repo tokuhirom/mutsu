@@ -162,9 +162,6 @@ pub(crate) enum MetaNs {
     /// [`MetaNs::owned_key_from_parts`], including the prefix-scan form that
     /// leaves the fingerprint empty.
     InlinePackageSub,
-    /// `__mutsu_scalar_bind_no_container::<name>` — a `$x := 42` bound straight
-    /// to a value, with no container to write through.
-    ScalarBindNoContainer,
     /// `__mutsu_shared_state::<state-key>` — the cross-thread cell a `state`
     /// variable's value lives in once any thread has touched it. Its name half
     /// carries the routine's clone id, so it is built with
@@ -275,7 +272,6 @@ impl MetaNs {
         MetaNs::GatherSelfRef,
         MetaNs::InlinePackageProto,
         MetaNs::InlinePackageSub,
-        MetaNs::ScalarBindNoContainer,
         MetaNs::SharedState,
         MetaNs::MethodValue,
         MetaNs::Outer,
@@ -330,7 +326,6 @@ impl MetaNs {
             MetaNs::GatherSelfRef => "__mutsu_gather_self_ref::",
             MetaNs::InlinePackageProto => "__mutsu_inline_package_proto_preregistered::",
             MetaNs::InlinePackageSub => "__mutsu_inline_package_sub_preregistered::",
-            MetaNs::ScalarBindNoContainer => "__mutsu_scalar_bind_no_container::",
             MetaNs::SharedState => "__mutsu_shared_state::",
             MetaNs::MethodValue => "__mutsu_method_value::",
             MetaNs::Outer => "__mutsu_outer::",
@@ -587,10 +582,6 @@ mod tests {
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),
             (MetaNs::GatherSelfRef, "__mutsu_gather_self_ref::@a"),
             (MetaNs::MethodValue, "__mutsu_method_value::@a"),
-            (
-                MetaNs::ScalarBindNoContainer,
-                "__mutsu_scalar_bind_no_container::@a",
-            ),
             (MetaNs::SharedState, "__mutsu_shared_state::@a"),
             (MetaNs::Outer, "__mutsu_outer::@a"),
             (MetaNs::PredictiveSeqIter, "__mutsu_predictive_seq_iter::@a"),

@@ -88,6 +88,7 @@ impl Interpreter {
             modifier_idx: None,
             quoted: false,
             arg_sources_idx,
+            ..
         } = code.ops[ip]
         else {
             return None;

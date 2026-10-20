@@ -2661,6 +2661,8 @@ pub(crate) enum OpCode {
         name_idx: u32,
         arity: u32,
         target_name_idx: u32,
+        /// The receiver binding resolved at this call site; None for a free name.
+        target_slot: Option<u32>,
         modifier_idx: Option<u32>,
         /// When true, the method name was quoted (e.g. `."DEFINITE"()`),
         /// bypassing pseudo-method macros.
@@ -2683,6 +2685,8 @@ pub(crate) enum OpCode {
     CallMethodDynamicMut {
         arity: u32,
         target_name_idx: u32,
+        /// The receiver binding resolved at this call site; None for a free name.
+        target_slot: Option<u32>,
         modifier_idx: Option<u32>,
         quoted: bool,
         /// ADR-0054 S3: `|EXPR` positions (and, incidentally, rw-arg source
@@ -6599,7 +6603,6 @@ pub(crate) struct CompiledCode {
     /// One [`crate::binding_desc::BindingDesc`] per entry of `locals`, same
     /// index: the pre-interned `__mutsu_sigilless_alias::<name>` /
     /// `__mutsu_sigilless_readonly::<name>` / `__mutsu_deleted_index::<name>`
-    /// / `__mutsu_scalar_bind_no_container::<name>`
     /// env keys, and the two name-derived bitmap facts `plain_local` /
     /// `simple_scalar_local` used by the scalar store fast path.
     ///
@@ -8923,22 +8926,6 @@ impl CompiledCode {
         }
     }
 
-    /// The interned `__mutsu_scalar_bind_no_container::<name>` env key of local
-    /// `idx`. See [`CompiledCode::alias_sym`].
-    pub(crate) fn scalar_no_container_sym(&self, idx: usize) -> Option<Symbol> {
-        match self
-            .binding_descs
-            .get(idx)
-            .and_then(|d| d.scalar_no_container_sym)
-        {
-            Some(sym) => Some(sym),
-            None => self
-                .locals
-                .get(idx)
-                .map(|n| Symbol::intern(&crate::runtime::scalar_bind_no_container_key(n))),
-        }
-    }
-
     /// True if `local[idx]` is a *plain lexical* name. Was
     /// `plain_locals[idx]`; see [`crate::binding_desc::BindingFlags::plain_local`].
     #[inline]
@@ -9102,9 +9089,6 @@ impl CompiledCode {
         for (desc, name) in self.binding_descs.iter_mut().zip(self.locals.iter()) {
             desc.alias_sym = Some(crate::runtime::sigilless_alias_key(name));
             desc.readonly_sym = Some(crate::runtime::sigilless_readonly_key(name));
-            desc.scalar_no_container_sym = Some(Symbol::intern(
-                &crate::runtime::scalar_bind_no_container_key(name),
-            ));
         }
     }
 

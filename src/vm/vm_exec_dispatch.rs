@@ -1952,14 +1952,16 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                // `bind_marks_no_container` of the SetLocal path: a slot-less
-                // `(my $l := EXPR)` declaration binds `$l` straight to the value,
-                // so `$l =:= IterationEnd` must hold.
-                let decl_marks_no_container = self.vardecl_context().get().then(|| {
-                    was_scalar_bind
-                        && bind_source.is_none()
-                        && !Self::bind_source_is_itemized_aggregate(&raw_val)
-                });
+                // A slot-less declaration records the same binding kind as
+                // SetLocal, rather than a second container-identity marker.
+                let decl_readonly_kind = if self.vardecl_context().get()
+                    && was_scalar_bind
+                    && !name.starts_with(['@', '%', '&'])
+                {
+                    Self::value_declaration_readonly_kind(&raw_val, bind_source.as_deref())
+                } else {
+                    None
+                };
                 if is_rebind && name_str.starts_with("&OUR::") {
                     self.register_our_code_alias(name_str, &raw_val);
                 }
@@ -2180,15 +2182,16 @@ impl Interpreter {
                 // which none of the name-keyed lookups above can see.
                 val =
                     self.apply_attr_container_element_type(&name, val, is_bind_ctx || is_rebind)?;
+                if let Some(kind) = decl_readonly_kind {
+                    self.mark_readonly_sym_with(name_sym, kind);
+                    val = Self::readonly_value_binding(val, kind);
+                }
                 // Record/clear the `:=`-bound decont marker exactly as the
                 // SetLocal path does: an expression-position bind with no local
                 // slot (`(my $p := (1,2))` in the mainline) lands here, and
                 // without the marker `@a = $p` itemized it (#9262).
                 if !is_internal_temp {
                     self.update_bound_decont_marker(&name, was_scalar_bind || is_bind_ctx, &val);
-                    if let Some(marks) = decl_marks_no_container {
-                        self.record_scalar_decl_container_by_name(&name, marks);
-                    }
                 }
                 // SetGlobal is also used for an attribute assignment inside a
                 // nested `given`/`when` body.  The by-name env mirror can then

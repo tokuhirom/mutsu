@@ -302,6 +302,18 @@ impl Interpreter {
         Self::binding_chain_decision(binding.clone())
     }
 
+    /// The binding's own kind for consumers that do not need an error value.
+    /// `Some(None)` means the binding was explicitly decided writable.
+    // Cost: O(c), c = cells on the chain, bounded by `MAX_BINDING_CHAIN`.
+    pub(crate) fn binding_chain_readonly_kind(
+        binding: &Value,
+    ) -> Option<Option<crate::ast::ReadonlyKind>> {
+        match Self::binding_chain_decision(binding.clone())? {
+            FreeVarBinding::Readonly(kind, _) => Some(Some(kind)),
+            FreeVarBinding::Writable => Some(None),
+        }
+    }
+
     /// The decision recorded along the binding-cell chain starting at
     /// `binding`: a readonly kind anywhere on it wins, else a writable
     /// decision, else `None`.
