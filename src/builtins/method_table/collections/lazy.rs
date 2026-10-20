@@ -37,11 +37,26 @@ macro_rules! row1 {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row1!("List", "lazy-if", lazy_if, RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)),
-    row1!("Map", "lazy-if", lazy_if, RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)),
+    row1!(
+        "List",
+        "lazy-if",
+        lazy_if,
+        RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)
+    ),
+    row1!(
+        "Map",
+        "lazy-if",
+        lazy_if,
+        RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)
+    ),
     row1!("Range", "lazy-if", lazy_if, RowFlags::ANY_ARGS),
     // `Any.lazy-if` ignores the flag: only an `Iterable` can be made lazy.
-    row1!("Any", "lazy-if", any_lazy_if, RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)),
+    row1!(
+        "Any",
+        "lazy-if",
+        any_lazy_if,
+        RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)
+    ),
     row!("List", "hyper", hyper),
     row!("Map", "hyper", hyper),
     row!("Range", "hyper", hyper),
