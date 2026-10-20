@@ -40,7 +40,12 @@ impl ParamDef {
 /// Mark each positional scalar parameter of `params` that `body` applies `does`
 /// to (statement, expression or nested-closure form).
 // Cost: O(b + p), b = size of the body, p = parameter count.
-pub(crate) fn mark_does_targets(params: &mut [ParamDef], body: &[Stmt]) {
+pub(crate) fn mark_does_targets(name: &str, params: &mut [ParamDef], body: &[Stmt]) {
+    // A `trait_mod:<...>` routine is called by the declarator machinery with the
+    // declared object itself, which its own `does` already reaches by reference.
+    if name.starts_with("trait_mod:") {
+        return;
+    }
     if params
         .iter()
         .all(|p| p.named || p.slurpy || p.double_slurpy)
