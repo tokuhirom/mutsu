@@ -37,6 +37,8 @@ pub(crate) enum Spelling {
     /// A parenthesized package declarator adverb, including when its expression
     /// normalizes to the same value as an angle adverb.
     ParenthesizedDeclaratorAdverb,
+    /// An attribute trait's direct `[ ... ]` argument, not `([ ... ])`.
+    BracketTraitArgument,
     /// `q:to/END/`: the terminator line as written, indentation and newline
     /// included (`    END\n`).
     Heredoc { stop: Box<str> },

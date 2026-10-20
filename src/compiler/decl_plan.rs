@@ -5,6 +5,7 @@
 //! trait (`is native(LIB)`). They are compiled here, once, into child chunks the
 //! VM runs through its normal re-entrant bytecode entry at registration time.
 use super::*;
+mod attribute_chunks;
 
 impl Compiler {
     /// Lower a declaration-time expression to its own bytecode chunk (ADR-0019 C5).
@@ -701,10 +702,7 @@ impl Compiler {
         let reads = self.attr_decl_free_var_syms(attr_decls);
         let mut writes: Vec<Symbol> = Vec::new();
         for (_, decl) in attr_decls {
-            for arg in [decl.default.as_ref(), decl.where_constraint.as_ref()]
-                .into_iter()
-                .flatten()
-            {
+            for arg in decl.declaration_args() {
                 let crate::opcode::DeclTraitArg::Compiled(chunk) = arg else {
                     continue;
                 };
@@ -754,10 +752,7 @@ impl Compiler {
     ) -> Vec<Symbol> {
         let mut out: Vec<Symbol> = Vec::new();
         for (_, decl) in attr_decls {
-            for arg in [decl.default.as_ref(), decl.where_constraint.as_ref()]
-                .into_iter()
-                .flatten()
-            {
+            for arg in decl.declaration_args() {
                 let syms: Vec<Symbol> = match arg {
                     crate::opcode::DeclTraitArg::Compiled(chunk) => chunk
                         .code
@@ -782,32 +777,11 @@ impl Compiler {
     }
 
     /// Build one attribute's typed descriptor, precompiling its `is
-    /// default(...)`, `default`, and `where_constraint` trait/expr arguments
+    /// default(...)`, defaults, constraints and custom trait arguments
     /// (ADR-0019 D2c-1/D2c-4) inline instead of leaving them as raw `Expr`s
     /// for a registration-time `eval_block_value`/`.as_expr()` call.
     fn compile_class_attr_decl(&self, stmt: &Stmt) -> crate::opcode::CompiledAttrDecl {
         crate::opcode::CompiledAttrDecl::from_stmt(stmt, self.compile_attr_decl_chunks(stmt))
-    }
-
-    /// Build the `AttrDeclChunks` override for one `Stmt::HasDecl`, shared by
-    /// the class and role attribute-descriptor collectors.
-    fn compile_attr_decl_chunks(&self, stmt: &Stmt) -> crate::opcode::AttrDeclChunks {
-        let Stmt::HasDecl {
-            default,
-            where_constraint,
-            is_default,
-            ..
-        } = stmt
-        else {
-            unreachable!("compile_attr_decl_chunks called on a non-HasDecl statement");
-        };
-        crate::opcode::AttrDeclChunks {
-            is_default: is_default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
-            default: default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
-            where_constraint: where_constraint
-                .as_deref()
-                .map(|e| self.compile_decl_trait_arg(e)),
-        }
     }
 
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is
