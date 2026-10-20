@@ -222,13 +222,21 @@ fn at_pos(
     index(interp, "AT-POS", list, args)
 }
 
-// Cost: as [`index`].
+// Cost: as [`index`]; O(1) for a negative index.
 fn exists_pos(
     interp: &mut Interpreter,
     _target: &Value,
     list: &LazyList,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
+    // A negative index never exists: `List.EXISTS-POS(Int:D $pos)` checks
+    // `$pos >= 0` first, so an infinite list is not reified for it (#14039).
+    if let [index] = args
+        && let crate::value::ValueView::Int(n) = index.view()
+        && n < 0
+    {
+        return Some(Ok(Value::FALSE));
+    }
     index(interp, "EXISTS-POS", list, args)
 }
 
