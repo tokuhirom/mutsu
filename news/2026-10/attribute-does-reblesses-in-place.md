@@ -23,7 +23,7 @@ in (`&trait_mod:<is>($attr, :mooish)` inside AttrX::Mooish's
 - The attribute-trait machinery records a reblessed meta-object the same way
   it recorded a `Mixin`, and runs its `compose` hook.
 
-Two general bugs this exposed are fixed along the way:
+Three general bugs this exposed are fixed along the way:
 
 - A role stub such as `method abs {...}` is satisfied by a built-in parent's
   method (`class Y is Int does S`). Before, the stub check rejected the
@@ -31,3 +31,9 @@ Two general bugs this exposed are fixed along the way:
 - The roles a mixin type composes rank one step below the object, next to its
   base class. Before, they ranked after `Mu`, so `multi f(CX $, $)` lost to
   `multi f(P $, Mu $)` for a `P` that `does CX`.
+- A role method called on a mixin-type object (`C+{M::R}`) runs in the
+  role's package `M::R`, as it does when the role is composed into a declared
+  class. Before, the `::` inside the braces made the method run in the mixin
+  type's own package. So a `multi sub` the method declares was registered
+  where a `samewith` could not find it ("Unknown function", AttrX::Mooish's
+  `set-option` once the attribute was reblessed).

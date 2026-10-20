@@ -5,7 +5,7 @@ use Test;
 # that hands its `$attr` to another trait handler (AttrX::Mooish's
 # `is custom-attr` calling `&trait_mod:<is>($attr, :mooish)`), #13263.
 
-plan 13;
+plan 15;
 
 role R { has $.base-name = self.name.substr(2); }
 multi trait_mod:<is>(Attribute:D $attr, :$inner!) { $attr does R; }
@@ -48,3 +48,23 @@ multi sub rank(P $, Mu $) { 'class' }
 my $p = P.new;
 $p does CX;
 is rank($p, 1), 'role', 'a reblessed object ranks its mixed-in role beside its class';
+
+# A mixin type's role method runs in the role's package: a `samewith` in a
+# multi sub the method declares finds it (AttrX::Mooish's `set-option`).
+module M {
+    role Opts {
+        method go(@l) {
+            my @out;
+            proto sub opt(|) {*}
+            multi sub opt(Pair:D $o) { samewith($o.key, $o.value) }
+            multi sub opt(Str:D $n, Mu $v) { @out.push: "$n=$v" }
+            opt($_) for @l;
+            @out
+        }
+        method pkg { $?PACKAGE.^name }
+    }
+}
+my $q = P.new;
+$q does M::Opts;
+is-deeply $q.go([a => 1]), ['a=1'], 'samewith in a role method\'s sub after a run-time mixin';
+is $q.pkg, 'M::Opts', 'the role method runs in the role\'s package';

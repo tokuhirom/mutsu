@@ -153,7 +153,9 @@ impl Interpreter {
                 .class_attribute_trait_objects
                 .insert((owner, attr_name), mixed.clone());
         }
-        if self.trait_mod_writeback_key.is_some() && crate::value::attribute_class::is_composed_meta_object(&mixed) {
+        if self.trait_mod_writeback_key.is_some()
+            && crate::value::attribute_class::is_composed_meta_object(&mixed)
+        {
             self.trait_mod_writeback_value = Some(mixed.clone());
             if Self::how_target_from_value(&mixed).is_none() {
                 self.trait_mod_attr_writeback_value = Some(mixed.clone());

@@ -507,7 +507,9 @@ impl Interpreter {
         // LazyAttributeContainerHOW`, and it's the HOW-mixin's `compose` that
         // installs the lazy accessor). See `apply_attribute_traits` for the
         // other half: it must NOT assume this value is $attr's own mixin.
-        if crate::value::attribute_class::is_composed_meta_object(&result) && self.trait_mod_writeback_key.is_some() {
+        if crate::value::attribute_class::is_composed_meta_object(&result)
+            && self.trait_mod_writeback_key.is_some()
+        {
             self.trait_mod_writeback_value = Some(result.clone());
             // Separately: capture this specific `does`'s result as the
             // ATTRIBUTE's own value only when it is not itself a `$class.HOW`
