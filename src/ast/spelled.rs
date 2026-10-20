@@ -121,6 +121,9 @@ impl Expr {
     /// bare sigil and helpers synthesized by a keyword parser.
     // Cost: O(k), k = identifier length.
     pub(crate) fn source_identifier(expr: Expr, written: &str) -> Expr {
+        if !KEEPING.with(Cell::get) {
+            return expr;
+        }
         let source_name = match &expr {
             Expr::Var(name) => written.strip_prefix('$').map(|rest| (name.as_str(), rest)),
             Expr::ArrayVar(name) => written.strip_prefix('@').map(|rest| (name.as_str(), rest)),

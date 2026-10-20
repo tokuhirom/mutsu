@@ -16,6 +16,7 @@ use super::origin;
 use super::placeholder::{is_placeholder_name, placeholder_node};
 use super::routine_source::return_type_spelling;
 pub(super) use super::routine_source::routine_node;
+use super::source_identifier::{named_routine_call, written_identifier, written_variable};
 use super::{
     RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, bareword, decl_traits,
     hash_literal, name_parts, routine_traits, subscript_adverb,
@@ -3123,38 +3124,6 @@ fn signature_bind_node(signature: &Expr, rhs: &Expr) -> Result<RakuAstNode, Runt
             node_field(Some("right"), convert_expr(rhs)?),
         ],
     })
-}
-
-/// Source provenance applies to this identifier only. Arguments still pass
-/// through ordinary conversion, including its generated-construct guards.
-// Cost: O(n), n = identifier length and converted argument nodes.
-fn written_identifier(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    match expr {
-        Expr::Var(name) => Ok(written_variable("$", name)),
-        Expr::ArrayVar(name) => Ok(written_variable("@", name)),
-        Expr::HashVar(name) => Ok(written_variable("%", name)),
-        Expr::CodeVar(name) => Ok(written_variable("&", name)),
-        Expr::Call { name, args, listop } | Expr::UserRoutineCall { name, args, listop } => {
-            named_routine_call(expr, name.as_str(), args, *listop)
-        }
-        _ => Err(unsupported(
-            "source identifier without an identifier expression",
-        )),
-    }
-}
-
-fn named_routine_call(
-    expr: &Expr,
-    name: &str,
-    args: &[Expr],
-    listop: bool,
-) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = call_name(name, args, listop)?;
-    if matches!(expr, Expr::UserRoutineCall { .. }) {
-        node.fields
-            .push(super::declared_routines::user_call_field());
-    }
-    Ok(node)
 }
 
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
@@ -6632,48 +6601,6 @@ pub(super) fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
     written_variable(sigil, name)
 }
 
-/// A source-written name is never an anonymous parser temporary.
-// Cost: O(n), n = identifier length.
-fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
-    // A `$!x` private attribute is a `Var::Attribute` of the whole spelling; a
-    // `$.x` public one a `Var::Attribute::Public` whose `name` is the whole
-    // spelling too (measured on 2026.09).
-    if name.len() > 1 && name.starts_with('!') {
-        return RakuAstNode {
-            class: RakuAstClass::VarAttribute,
-            fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
-        };
-    }
-    if name.len() > 1 && name.starts_with('.') {
-        return RakuAstNode {
-            class: RakuAstClass::VarAttributePublic,
-            fields: vec![leaf_field(
-                Some("name"),
-                Value::str(format!("{sigil}{name}")),
-            )],
-        };
-    }
-    if name.len() > 1 && name.starts_with('*') {
-        return RakuAstNode {
-            class: RakuAstClass::VarDynamic,
-            fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
-        };
-    }
-    if name_parts::is_qualified_identifier(name) {
-        return RakuAstNode {
-            class: RakuAstClass::VarPackage,
-            fields: vec![
-                node_field(Some("name"), name_parts::qualified_name(name)),
-                leaf_field(Some("sigil"), Value::str(sigil.to_string())),
-            ],
-        };
-    }
-    RakuAstNode {
-        class: RakuAstClass::VarLexical,
-        fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
-    }
-}
-
 /// `Infix`/`Prefix` — a single positional operator string (e.g. `Infix.new("+")`).
 fn operator_node(class: RakuAstClass, op: &crate::token_kind::TokenKind) -> RakuAstNode {
     RakuAstNode {
@@ -7053,7 +6980,7 @@ fn listop_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, Runtime
     call_name(name, args, true)
 }
 
-fn call_name(
+pub(super) fn call_name(
     name: &str,
     args: &[Expr],
     without_parentheses: bool,
