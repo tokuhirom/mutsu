@@ -513,12 +513,10 @@ impl LazyList {
     ) -> Self {
         let mut cloned = self.with_array_context();
         if default.is_some() || value_type.is_some() {
-            cloned.descriptor = Some(std::sync::Arc::new(
-                crate::value::LazyArrayDescriptor {
-                    default,
-                    value_type,
-                },
-            ));
+            cloned.descriptor = Some(std::sync::Arc::new(crate::value::LazyArrayDescriptor {
+                default,
+                value_type,
+            }));
         }
         cloned
     }

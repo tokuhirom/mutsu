@@ -272,7 +272,9 @@ fn of(
         .as_deref()
         .and_then(|d| d.value_type.as_deref())
         .unwrap_or("Mu");
-    Some(Ok(Value::package(crate::symbol::Symbol::intern(value_type))))
+    Some(Ok(Value::package(crate::symbol::Symbol::intern(
+        value_type,
+    ))))
 }
 
 /// `cache`: Rakudo's `.cache` caches elements as they are pulled, it does not
