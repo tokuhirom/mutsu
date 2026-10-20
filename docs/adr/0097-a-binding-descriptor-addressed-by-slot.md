@@ -1052,3 +1052,33 @@ once nothing read them. `rebound_slots` (§14) is a separate record and stays.
 The per-interpreter word for `atomic_var_seen` and `sigilless_attrs_active`
 (§15.6, "Not done") is still not done. Neither source fires in any measured
 workload.
+
+## 16. `var_source_name` needed no runtime half: the name is the container's (#8087, 2026-10-20)
+
+§13.2 grouped `var_source_name` with the properties that need a frame-lifetime
+store, because the binder wrote it once per call. That record held the
+caller's *variable* name. Rakudo's `.VAR.name`, however, is the name on the
+*container's* descriptor, and mutsu already stamps that name on the
+container's data (`ArrayData`/`HashData::descriptor_name`, a cell's
+`descriptor_name`). The per-call record was therefore a second copy of a
+per-container fact. It was also wrong wherever the two differ:
+`my @b := [1, 2]` and a parameter passed on (`sub h(@kh) { f(@kh) }; h([1])`)
+reported a variable name where rakudo reports `element`.
+
+The namespace is retired, together with its shadow-metadata prefix and the
+`CompiledCode::names_var_method` gate. Each of the record's cases now names
+its container where the container is made:
+
+- `state @s` / `%s` stamps its fresh container, as `my` already did.
+- A boxed declaration cell (`my $*OUT`) is named by its declaration.
+- An `is rw` / raw parameter bound to a dynamic variable holds its own cell
+  carrying the variable's name. It does not share the declaration's cell:
+  installing a cell under a dynamic name in the callee leaked past `temp`
+  (`roast/S32-io/indir.t`).
+- An attribute's container is named after the attribute the first time
+  `.VAR` reflects on it or a parameter receives it
+  (`Value::name_attribute_container`). Attributes reach storage through
+  several construction paths, so this is a `TODO` until the name is
+  supplied at initialization.
+
+Any `@`/`%` container without a name reports `element`.

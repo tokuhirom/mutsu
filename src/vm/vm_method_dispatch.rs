@@ -2429,9 +2429,9 @@ impl Interpreter {
         // scope, which exists only now.
         for (i, source) in &light_aggregate_binds {
             let (name, sym, ref val) = param_values[*i];
-            let val = val.clone();
+            let mut val = val.clone();
             self.bind_light_aggregate_constraint(name, sym, &val);
-            self.bind_light_aggregate_source(sym, source.as_deref());
+            val.name_attribute_container(source.as_deref());
         }
         // A typed scalar `is copy` parameter is the method's own writable
         // variable: a store into it checks its declared type, which the

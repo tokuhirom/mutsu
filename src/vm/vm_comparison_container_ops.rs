@@ -158,15 +158,13 @@ impl Interpreter {
     // Cost: O(l), l = local slots of the chunk (the by-name slot probe).
     fn sigilless_denotes_scalar_container(&self, code: &CompiledCode, name: &str) -> bool {
         let is_cell = |v: &Value| matches!(v.view(), ValueView::ContainerRef(_));
-        self.env()
-            .get(crate::meta_ns::MetaNs::VarSourceName.str_key_for_str(name))
-            .is_some()
-            || match self.find_local_slot(code, name) {
-                Some(slot) => self.locals.get(slot).is_some_and(is_cell),
-                None => self.env().get(name).is_some_and(is_cell),
-            }
-            // A raw parameter aliasing a caller's `$` variable: that variable's
-            // cell is the container.
+        let own_cell = match self.find_local_slot(code, name) {
+            Some(slot) => self.locals.get(slot).is_some_and(is_cell),
+            None => self.env().get(name).is_some_and(is_cell),
+        };
+        // A raw parameter aliasing a caller's `$` variable: that variable's
+        // cell is the container.
+        own_cell
             || self
                 .env()
                 .get_sym(crate::runtime::sigilless_alias_key(name))

@@ -714,7 +714,7 @@ impl Interpreter {
                         .filter(|(_, _, index)| index.is_none())
                         .map(|(name, _, _)| name);
                     let val = crate::runtime::types::unwrap_varref_value(val);
-                    let val = val.deitemize_for_sigil_bind();
+                    let mut val = val.deitemize_for_sigil_bind();
                     let name = &cf.param_defs[param_idx].name;
                     // Read when a thread spawns from a block this frame made
                     // (`clone_for_thread_for_block`, even the first spawn,
@@ -731,10 +731,7 @@ impl Interpreter {
                         None => Symbol::intern(name),
                     };
                     self.bind_light_aggregate_constraint(name, sym, &val);
-                    // `.VAR.name` is the record's only reader (#12526).
-                    if cf.code.names_var_method || write_all_params {
-                        self.bind_light_aggregate_source(sym, source.map(|s| s.as_str()));
-                    }
+                    val.name_attribute_container(source.map(|s| s.as_str()));
                     val
                 } else {
                     let val = crate::runtime::types::unwrap_varref_value(val);

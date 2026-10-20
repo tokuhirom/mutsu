@@ -138,17 +138,19 @@ impl Interpreter {
             {
                 return Ok(target);
             }
-            // A `@`/`%` parameter's container descriptor carries its BINDING
-            // source name, not the param's syntactic name: "element" for the
-            // fresh anonymous container an unsupplied param binds (tagged in
-            // its own data by `missing_optional_param_value`, so it survives
-            // every bind path), or the caller's variable recorded by the slow
-            // binder as `__mutsu_var_source_name::` env metadata. Text::CSV's
-            // `method CSV` gates on `@kh.VAR.name ne "element"`.
+            // A `@`/`%` variable's `.VAR.name` is its container's descriptor
+            // name, not the variable's syntactic one: the declaration that
+            // named the container (`my @x`, `state @x`, an attribute), however
+            // many parameters it was passed through, else "element" (a literal,
+            // slurpy, `is copy` or `:=`-bound container is anonymous in
+            // rakudo). Text::CSV's `method CSV` gates on
+            // `@kh.VAR.name ne "element"`.
             let container_source_name = (target_var.starts_with('@')
                 || target_var.starts_with('%'))
             .then(|| {
-                target
+                let mut named = target.clone();
+                named.name_attribute_container(Some(target_var));
+                named
                     .with_deref(|v| match v.view() {
                         ValueView::Array(data, _) => {
                             data.descriptor_name.as_ref().map(|s| s.to_string())
@@ -158,11 +160,7 @@ impl Interpreter {
                         }
                         _ => None,
                     })
-                    .or_else(|| {
-                        self.env
-                            .get(MetaNs::VarSourceName.str_key_for_str(target_var))
-                            .map(Value::to_string_value)
-                    })
+                    .or_else(|| Some("element".to_string()))
             })
             .flatten();
             // A `$` name bound directly to an immutable value has no container
@@ -235,22 +233,13 @@ impl Interpreter {
             // rakudo's container descriptor does (#11196).
             let cell_name = (!target_var.starts_with(['@', '%', '&']))
                 .then(|| {
-                    // The binder's record of the caller's variable, made in
-                    // this very frame (a dynamic `f(my $*OUT)` gets no shared
-                    // cell), first; then the descriptor of the shared cell the
-                    // name holds.
-                    self.env
-                        .get(MetaNs::VarSourceName.str_key_for_str(target_var))
-                        .map(Value::to_string_value)
-                        .or_else(|| {
-                            self.env
-                                .get(target_var)
-                                .and_then(|v| match v.view() {
-                                    ValueView::ContainerRef(cell) => cell.descriptor_name(),
-                                    _ => None,
-                                })
-                                .map(|s| s.resolve())
-                        })
+                    let named = |v: &Value| match v.view() {
+                        ValueView::ContainerRef(cell) => cell.descriptor_name(),
+                        _ => None,
+                    };
+                    named(&target)
+                        .or_else(|| self.env.get(target_var).and_then(named))
+                        .map(|s| s.resolve())
                 })
                 .flatten();
             let display_name = if let Some(src) = container_source_name.clone().or(cell_name) {

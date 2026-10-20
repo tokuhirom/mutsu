@@ -242,6 +242,17 @@ impl Interpreter {
         self.set_our_var(qualified, cell);
     }
 
+    /// A `state @s`/`%s` declaration names its fresh container, as `my`
+    /// does (`@s.VAR.name` is "@s" through any later pass-by-binding chain).
+    /// The caller detached the container, so stamping touches no other holder.
+    // Cost: O(1).
+    fn named_state_container(name: &str, mut container: Value) -> Value {
+        if !crate::runtime::utils::has_anon_marker(name) {
+            container.stamp_descriptor_name(name);
+        }
+        container
+    }
+
     pub(super) fn exec_state_var_init_op(
         &mut self,
         code: &CompiledCode,
@@ -294,11 +305,17 @@ impl Interpreter {
                 let arr = runtime::coerce_to_array(init_val);
                 // A `Nil` item of the initializer list decays to the
                 // container's default, as for `my @a = ...` (ADR-0049).
-                self.decay_nil_elements_for_var_assign(name, arr)
-                    .detach_shared_container()
+                Self::named_state_container(
+                    name,
+                    self.decay_nil_elements_for_var_assign(name, arr)
+                        .detach_shared_container(),
+                )
             } else if name.starts_with('%') {
-                self.coerce_object_to_hash(init_val)
-                    .detach_shared_container()
+                Self::named_state_container(
+                    name,
+                    self.coerce_object_to_hash(init_val)
+                        .detach_shared_container(),
+                )
             } else {
                 Self::itemize_scalar_store(name, init_val)
             };
@@ -352,11 +369,17 @@ impl Interpreter {
             let mut coerced = if name.starts_with('@') {
                 let arr = runtime::coerce_to_array(init_val);
                 // Same Nil-item decay as `SetLocal`'s `@` store (ADR-0049).
-                self.decay_nil_elements_for_var_assign(name, arr)
-                    .detach_shared_container()
+                Self::named_state_container(
+                    name,
+                    self.decay_nil_elements_for_var_assign(name, arr)
+                        .detach_shared_container(),
+                )
             } else if name.starts_with('%') {
-                self.coerce_object_to_hash(init_val)
-                    .detach_shared_container()
+                Self::named_state_container(
+                    name,
+                    self.coerce_object_to_hash(init_val)
+                        .detach_shared_container(),
+                )
             } else if matches!(init_val.view(), ValueView::Nil)
                 && let Some(tc) = &scalar_type_constraint
             {
