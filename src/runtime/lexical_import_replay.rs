@@ -119,6 +119,9 @@ impl Interpreter {
     }
 
     fn replayable_effects(&self, id: Symbol, probe: &ImportEffectProbe) -> Option<LexicalImportReplay> {
+        if id.resolve().contains(crate::runtime::lexical_imports::EVAL_UNIT_MARK) {
+            return None;
+        }
         let reg = self.registry();
         let routines_same = !probe.had_export_args
             && reg.functions.len() == probe.functions
