@@ -559,7 +559,12 @@ impl Interpreter {
         }
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();
-        let Some(declared) = self.var_type_constraint_value_for(name, name_sym) else {
+        let declared = if code.declares_slot(idx) {
+            self.own_var_type_constraint_value_sym(name_sym.unwrap_or_else(|| Symbol::intern(name)))
+        } else {
+            self.var_type_constraint_value_for(name, name_sym)
+        };
+        let Some(declared) = declared else {
             // The per-name latch is a "maybe": no constraint is actually
             // registered, so there is nothing for the typed branch to do.
             return true;
@@ -3234,7 +3239,7 @@ impl Interpreter {
                 },
                 value_type,
                 key_type: if name.starts_with('%') {
-                    loan_env!(self, var_hash_key_constraint(name))
+                    self.slot_hash_key_constraint(code, idx, name, name_sym)
                 } else {
                     None
                 },

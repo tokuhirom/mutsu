@@ -909,6 +909,23 @@ impl Interpreter {
         self.attr_hash_key_constraint(name)
     }
 
+    /// [`Self::var_hash_key_constraint_sym`] for a variable the running code
+    /// declares: its record was written in the running frame (or is the
+    /// unit's own lane), so the lookup does not continue into the frames that
+    /// called it and find a caller's same-named hash.
+    // Cost: O(1) expected.
+    pub(crate) fn own_var_hash_key_constraint_sym(&self, name_sym: Symbol) -> Option<String> {
+        let meta_key = Self::hash_key_meta_key_for_sym(name_sym);
+        let stored = self
+            .env()
+            .get_record_in_frame(meta_key)
+            .or_else(|| self.unit_lexical_meta_lane(meta_key))?;
+        match stored.view() {
+            ValueView::Str(tc) => Some(tc.as_str().to_owned()),
+            _ => None,
+        }
+    }
+
     /// The key type of an object-hash *attribute* (`has Callable %!Conv{Mu:U}`)
     /// referenced as `%!Conv` / `%.Conv` inside a method. The lexical
     /// `__mutsu_hash_key_type::` lane cannot carry this — an attribute is not
