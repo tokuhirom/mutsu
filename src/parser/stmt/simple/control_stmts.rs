@@ -769,6 +769,15 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     if !is_known_call(&name) {
         return Err(PError::expected("known function call"));
     }
+    // A sigilless term in scope (`sub g(\dimension) { dimension }`, `my \x`)
+    // names the term, not an imported routine of the same name: only
+    // `name(...)` calls the routine, so this statement is an expression.
+    if !rest.starts_with('(')
+        && match_user_declared_term_symbol(input)
+            .is_some_and(|(term, len, callable)| !callable && len == name.len() && term == name)
+    {
+        return Err(PError::expected("known function call"));
+    }
     let had_ws = rest.starts_with(' ') || rest.starts_with('\t') || rest.starts_with('\n');
     // A `<` glued to the name is a key subscript on the call result
     // (`T<cpu>` is `T()<cpu>`), left to the expression parser.
