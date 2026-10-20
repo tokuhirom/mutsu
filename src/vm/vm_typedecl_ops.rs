@@ -1382,8 +1382,9 @@ impl Interpreter {
                 deferred_body_ops,
                 type_params,
             );
-            self.register_role_body_exported_subs(&qualified_name, deferred_body_ops)?;
             self.register_role_body_lexical_types(&qualified_name, deferred_body_ops, type_params)?;
+            self.resolve_role_signature_types(&qualified_name, *role_id)?;
+            self.register_role_body_exported_subs(&qualified_name, deferred_body_ops)?;
             // A role declared in a CLASS body (`unit class UA; role Connection
             // { … }`) is scoped to that class, like a nested `my class`. Record
             // the short name so `resolve_suppressed_type` resolves it through the

@@ -402,6 +402,7 @@ impl Interpreter {
                 }
             }
         }
+        let saved_types = self.save_role_type_bindings(base_role_name, &role.deferred_body);
         let result = match trait_err {
             Some(err) => Err(err),
             None => self.run_composed_role_deferred_body_inner(
@@ -412,6 +413,7 @@ impl Interpreter {
                 role_arg_values,
             ),
         };
+        self.restore_role_type_bindings(saved_types);
         for k in &borrowed {
             self.env.remove_sym(*k);
         }

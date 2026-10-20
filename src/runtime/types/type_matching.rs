@@ -121,9 +121,6 @@ impl Interpreter {
     /// that is already a type name in its own right, so an ordinary
     /// parameterization such as `CArray[uint64]` is left untouched.
     fn type_alias_target(&self, name: &str) -> Option<String> {
-        if let Some(target) = self.lexical_type_alias_target(name) {
-            return Some(target);
-        }
         // A definiteness smiley (`Int:D`, `Str:U`) never names an alias: an
         // alias is declared under a plain identifier, so the env walk below
         // could only miss -- and it ran on every `Int:D` check in a program
@@ -694,11 +691,6 @@ impl Interpreter {
     ) -> bool {
         if crate::runtime::attribute_identity::is_bootstrapattr(value) {
             return matches!(constraint, "Mu" | "NQPMu" | "BOOTSTRAPATTR");
-        }
-        // A role body's type-only binding survives composition independently
-        // of its same-named scalar and takes precedence over a global type.
-        if let Some(target) = self.lexical_type_alias_target(constraint) {
-            return self.type_matches_value_why(&target, value, why);
         }
         // A nested type declared with a compound name is referenced by its
         // leaf inside the declaring package. Resolve that package-scoped alias

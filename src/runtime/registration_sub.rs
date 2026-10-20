@@ -1159,16 +1159,10 @@ impl Interpreter {
                 } else {
                     tc.clone()
                 };
-                // Multi candidates use their parameter spellings as part of
-                // the dispatch key. Keep their existing names here: the
-                // ordinary-sub path is the one whose stored signature must
-                // survive a module-scope teardown, while changing a multi's
-                // key also perturbs operator dispatch in EVAL.
-                let resolved = if multi {
-                    resolved
-                } else {
-                    self.resolve_method_type_name(&current_package, &resolved)
-                };
+                // A candidate's nominal constraint belongs to its declaring
+                // package too. Its dispatch key must retain that identity
+                // after the declaring scope has gone away.
+                let resolved = self.resolve_method_type_name(&current_package, &resolved);
                 if resolved != *tc {
                     pd.type_constraint = Some(resolved);
                 }

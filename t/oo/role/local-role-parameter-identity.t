@@ -1,7 +1,9 @@
 use Test;
-plan 18;
+plan 22;
 
 role Local { }
+class T { }
+sub outer-only(Local $value) { 'outer' }
 role Owner[Str :$name] {
     my role Local { method greeting { 'hello' } }
     my $Local = 'scalar';
@@ -16,6 +18,7 @@ role Owner[Str :$name] {
     method local-type { Local }
     method scalar { $Local }
     method set-scalar($value) { $Local = $value }
+    method outer-only($value) { outer-only($value) }
 }
 class A does Owner[name => 'a'] { }
 class B does Owner[name => 'b'] { }
@@ -37,12 +40,15 @@ $a.set-scalar('changed');
 is $a.scalar, 'changed', 'the same-named scalar remains a writable container';
 is $a.checked($wrapped), 'hello', 'changing the scalar does not change a signature type';
 dies-ok { $a.checked(Element.new) }, 'a bare object is rejected by the role constraint';
+is $a.outer-only(Element.new but Local), 'outer', 'a global callee keeps its own role constraint';
+dies-ok { $a.outer-only($wrapped) }, 'a caller local role does not retarget a global signature';
 
 role Other[::T] {
     my role Local { method greeting { 'other' } }
     method wrap($value) { $value does Local }
     method checked(Local $value) { $value.greeting }
     method local-type { Local }
+    method picked(T $value) { $value }
 }
 class C does Other[Int] { }
 my $c = C.new;
@@ -53,3 +59,5 @@ dies-ok { $c.checked($wrapped) }, 'the other declaration rejects the first role'
 dies-ok { $a.checked($other) }, 'the first declaration rejects the other role';
 is $a.checked($wrapped), 'hello', 'later role declarations do not retarget the first signature';
 ok $other ~~ $c.local-type, 'the other role also agrees with smartmatch';
+is $c.picked(5), 5, 'a role type parameter still shadows a global same-named class';
+dies-ok { $c.picked('bad') }, 'the composed role type parameter retains its constraint';

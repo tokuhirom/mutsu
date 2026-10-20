@@ -1710,7 +1710,6 @@ impl Interpreter {
             // same-named `$Foo` holding a type object is not an alias.
             let next = self
                 .term_binding(&current)
-                .or_else(|| self.lexical_type_binding_sym(Symbol::intern(&current)))
                 .or_else(|| self.get_env_with_main_alias(&current))
                 .and_then(|value| match value.view() {
                     crate::value::ValueView::Package(target) => Some(target.resolve()),

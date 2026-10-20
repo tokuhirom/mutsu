@@ -561,7 +561,7 @@ impl Env {
     /// unless the chain bottoms out at a flattened frame, whose record names
     /// it.
     // Cost: O(d), d = chain tiers.
-    fn program_scope_from(&self) -> &Env {
+    pub(super) fn program_scope_from(&self) -> &Env {
         let mut seg = self;
         let mut cur = self;
         loop {

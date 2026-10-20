@@ -74,9 +74,8 @@ impl Interpreter {
     }
 
     /// What a bare `name` written where a TYPE goes is bound to: a sigil-less
-    /// constant ([`Self::term_binding`]) first, then a lexical type's own key,
-    /// else a plain `env` binding (an imported short type name, a `::T`
-    /// capture). A constant used as a type
+    /// constant ([`Self::term_binding`]) first, else a plain `env` binding (an
+    /// imported short type name, a `::T` capture). A constant used as a type
     /// alias or a value constraint is found here even when a same-named
     /// `$`-scalar is in scope (#9962).
     // Cost: O(1) expected, plus [`Self::term_binding`]'s module-scope probe on a miss.
@@ -89,7 +88,6 @@ impl Interpreter {
             return self.env().get_sym(name_sym).cloned();
         }
         self.term_binding_sym(name_sym)
-            .or_else(|| self.lexical_type_binding_sym(name_sym))
             .or_else(|| self.env().get_sym(name_sym).cloned())
     }
 
@@ -99,24 +97,10 @@ impl Interpreter {
         if crate::qualified::is_qualified(name) {
             return None;
         }
-        self.env().get_sym(lexical_type_key_sym(name)).cloned()
-    }
-
-    /// Resolve an explicit lexical type binding before a global same-named type.
-    // Cost: O(n), n = constraint length; the namespace key is memoized.
-    pub(crate) fn lexical_type_alias_target(&self, constraint: &str) -> Option<String> {
-        let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint);
-        let name = Symbol::lookup(base)?;
-        let value = self.lexical_type_binding_sym(name)?;
-        let crate::value::ValueView::Package(target) = value.view() else {
-            return None;
-        };
-        if target.as_str() == base {
-            return None;
-        }
-        Some(match smiley {
-            Some(smiley) => format!("{}{smiley}", target.as_str()),
-            None => target.resolve(),
-        })
+        let key = lexical_type_key_sym(name);
+        self.env()
+            .get_lexical_type_binding(key, name)
+            .cloned()
+            .or_else(|| self.package_chain_var_fallback(key))
     }
 }
