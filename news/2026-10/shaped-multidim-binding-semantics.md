@@ -6,3 +6,7 @@ Chained bracket subscripts retain their container-sharing semantics.
 A one-dimensional shaped element rebind now replaces its old container with
 the new source container. Reads and writes follow the new source, including
 when the shaped array or source scalar is already shared.
+
+Two-level chained binds now share the existing cell-preserving deep bind
+walk instead of copying away the source container. Chained element stores
+also honor the readonly state of the slot's bound cell.

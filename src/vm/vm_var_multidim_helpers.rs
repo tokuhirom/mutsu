@@ -12,11 +12,11 @@ impl Interpreter {
         index: &Value,
         value: &Value,
         binding: bool,
-        source: Option<&(Option<String>, crate::gc::Gc<crate::value::ContainerCell>)>,
+        source: Option<&crate::gc::Gc<crate::value::ContainerCell>>,
     ) -> Result<(), RuntimeError> {
         if binding {
             let bound = source
-                .map(|(_, cell)| Value::container_ref(cell.clone()))
+                .map(|cell| Value::container_ref(cell.clone()))
                 .unwrap_or_else(|| Value::bound_element(value.clone()));
             Self::bind_array_multidim(target, std::slice::from_ref(index), bound)
         } else {

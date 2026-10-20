@@ -1036,8 +1036,12 @@ impl Compiler {
                 concat_append: false,
                 element_share: share_value.is_some(),
             });
-        } else if let Some((name, chain)) = self.index_assign_deep_nested_target(target) {
-            // Deep nested index assignment (3+ levels): @a[i][j][k]... = val
+        } else if let Some((name, chain)) = self
+            .index_assign_deep_nested_target(target)
+            .or_else(|| binding.then(|| self.index_chain_target(target)).flatten())
+        {
+            // All chained binds use the cell-preserving walk. Ordinary
+            // assignments use it for three or more subscript levels.
             // chain contains (index_expr, is_positional) from innermost to outermost
             // We also have the IndexAssign's own (index, outer_positional) as the final level.
             let depth = (chain.len() + 1) as u32; // +1 for the outermost from IndexAssign

@@ -2857,7 +2857,7 @@ impl Interpreter {
                                 &idx,
                                 &val,
                                 bind_mode,
-                                bind_cell.as_ref(),
+                                bind_cell.as_ref().map(|(_, cell)| cell),
                             )?;
                             if bind_mode && let Some((source_install, cell)) = &bind_cell {
                                 stored_bind_cell = true;
