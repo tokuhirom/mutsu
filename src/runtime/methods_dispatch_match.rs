@@ -82,7 +82,8 @@ impl Interpreter {
         // `Mu.say`/`put` with arguments for a class acting as `$*OUT`,
         // `Junction.THREAD`, `Cool.encode`, `Blob.unpack`,
         // `Enumeration.enums`, `Mu.set_why` and the methods revision 6.e adds
-        // (`snip`, `snitch`, `nomark`, `stem`) are late rows of the receiver's
+        // (`snip`, `snitch`, `nomark`, `stem`, `Callable`, and `Grammar`'s
+        // `locprepost`, `typed_exception`, `SETFAIL`) are late rows of the receiver's
         // MRO and roles (§9.142, §9.143, §9.145, §9.146); `Mu`'s other late
         // rows are the cascade's last resort.
         if matches!(
@@ -96,6 +97,10 @@ impl Interpreter {
                 | "snitch"
                 | "nomark"
                 | "stem"
+                | "Callable"
+                | "locprepost"
+                | "typed_exception"
+                | "SETFAIL"
                 | "head"
                 | "tail"
                 | "fmt"

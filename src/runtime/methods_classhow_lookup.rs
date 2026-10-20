@@ -718,7 +718,7 @@ impl Interpreter {
         chain
     }
 
-    pub(super) fn classhow_find_method(
+    pub(crate) fn classhow_find_method(
         &mut self,
         invocant: &Value,
         method_name: &str,
