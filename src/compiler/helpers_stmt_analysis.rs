@@ -186,9 +186,7 @@ impl Compiler {
                             .resolve()
                             .strip_prefix(base_text.as_str())
                             .is_some_and(|rest| {
-                                rest.starts_with(
-                                    crate::runtime::lexical_imports::BLOCK_MULTIS_MARK,
-                                )
+                                rest.starts_with(crate::runtime::lexical_imports::BLOCK_MULTIS_MARK)
                             })
                 })
             })
