@@ -645,6 +645,16 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // Any other wrapped method of a built-in class, as the non-mutating
+        // call runs it (`vm_call_method_ops`): a class method on the type
+        // object (`DateTime.now`, #13626) reaches the native path otherwise.
+        if matches!(modifier, None | Some("?"))
+            && self.has_any_wrap_chains()
+            && let Some(result) = self.try_builtin_value_method_wrap(&target, method_sym, &args)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
         {
