@@ -10,7 +10,9 @@ impl Interpreter {
     // adds O(w + k + s), w = names it wrote by name (its block tier), k = names it
     // declares, s = the chunk's special/internal local slots (saved and reverted);
     // a source block (`DoBlockIsolation::Lexical`) adds O(w + k);
-    // `scope_routines` adds O(R), R = routine-registry entries. Rakudo: O(1) -- see #9170.
+    // `scope_routines` adds O(1) in the steady state of a repeated run and O(R) on
+    // a first run or a memo miss, R = routine-registry entries (see
+    // `restore_routine_registry_impl`). Rakudo: O(1) -- see #9170.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_do_block_expr_op(
         &mut self,

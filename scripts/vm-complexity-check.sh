@@ -52,6 +52,11 @@ CASES=(
     # them with MUTSU_JIT=off, since the JIT's one-time O(size) compile of the
     # loop body otherwise lands in the timed region (the control case shows it).
     'bare block { my } vs routine registry|500|1|use MONKEY-SEE-NO-EVAL; EVAL (^NN).map({ "our sub rs$_ \{ $_ \}" }).join(";"); my $t = 0;|for ^5000 { { my $y = 1; $t += $y } }'
+    # A routine body or a `do` block that declares a routine restores the
+    # registry on exit: O(1) when the transition memo names what it installed
+    # (#9170).
+    'routine { my sub } vs routine registry|1000|1|SUBS sub rf { my sub h { 1 }; h() }; my $t = 0;|for ^3000 { $t += rf() }'
+    'do { sub } vs routine registry|1000|1|SUBS my $t = 0;|for ^3000 { $t += do { sub h { 1 }; h() } }'
     'routine-scoped use vs routine registry|2000|1|SUBS sub ru { use Test; 1 }; my $t = 0;|for ^1000 { $t += ru() }'
     # A block sub is re-installed per iteration; its name's key list is
     # refilled from the tail index, not a registry pass (#9170).

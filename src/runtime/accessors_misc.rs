@@ -93,9 +93,13 @@ impl Interpreter {
     }
 
     // Cost: O(1) when the scope changed none of the snapshotted tables (the
-    // common bare block, which declares no routine); otherwise O(R), R =
-    // routine-registry entries (our-scoped subs, tokens, and the function-table
-    // diff when the transition memo cannot name the installed keys).
+    // common bare block, which declares no routine). A scope that declared a
+    // routine is O(1) too in the steady state of a loop or a repeated call: the
+    // transition memo names the keys it installed, and the our-scoped and
+    // module-routine checks are memoized while their tables are untouched. A
+    // first run, an install the memo cannot name, or a written our-scoped or
+    // token table is O(R), R = routine-registry entries. Rakudo: O(1) -- see
+    // #9170.
     fn restore_routine_registry_impl(&mut self, snapshot: RoutineRegistrySnapshot, is_eval: bool) {
         // Nothing to put back: skip the diff and, above all, the token/method
         // generation bumps below, which would otherwise retire every
