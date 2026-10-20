@@ -240,6 +240,16 @@ impl Interpreter {
         wanted: impl Fn(&Stmt) -> bool,
     ) -> Result<(), RuntimeError> {
         let parameterized = !type_params.is_empty();
+        // The routines the body declares: they are registered after this
+        // pass (or only at composition), so a constant that calls one waits
+        // for composition, as before.
+        let body_routines: Vec<String> = deferred_body_ops
+            .iter()
+            .filter_map(|op| match &op.raw {
+                Stmt::SubDecl { name, .. } | Stmt::ProtoDecl { name, .. } => Some(name.resolve()),
+                _ => None,
+            })
+            .collect();
         let saved_package = self.current_package().to_string();
         let saved_types = self.save_role_type_bindings(role_name, deferred_body_ops);
         let mut declared_types = HashSet::new();
@@ -265,7 +275,8 @@ impl Interpreter {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
                 Stmt::VarDecl { custom_traits, .. } if is_constant_decl(custom_traits) => {
-                    !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
+                    (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
+                        && !stmt_mentions_role_params(&op.raw, &body_routines)
                 }
                 // A sigilless or bind declaration arrives as the group
                 // `role_body_plan` keeps whole.
@@ -276,7 +287,11 @@ impl Interpreter {
                                 is_export,
                                 custom_traits,
                                 ..
-                            } => *is_export || is_constant_decl(custom_traits),
+                            } => {
+                                *is_export
+                                    || (is_constant_decl(custom_traits)
+                                        && !stmt_mentions_role_params(s, &body_routines))
+                            }
                             _ => false,
                         }
                     }) =>

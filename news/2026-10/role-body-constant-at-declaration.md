@@ -11,6 +11,8 @@ the constant included. An imported `dimension('pt')` answered `Any`, and
 resolve its units (`Unknown units: pt` in CSS::Properties' measuring code).
 
 The eager declaration pass that already registered a role body's exported
-variables, types and subsets now runs its `constant`s as well. In a
-parameterized role, a constant that mentions a role parameter still waits for
-composition, where the parameter has a value.
+variables, types and subsets now runs its `constant`s as well. Two kinds of
+constant still wait for composition. In a parameterized role, a constant that
+mentions a role parameter waits, because the parameter has a value only then.
+A constant that calls a `sub` of the same body (`my constant H = det()`) waits
+too, because those subs are registered after this pass.
