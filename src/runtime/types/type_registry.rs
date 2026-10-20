@@ -1708,9 +1708,22 @@ impl Interpreter {
         for _ in 0..16 {
             // A sigil-less `constant Foo = Int` is a term (#9962); a
             // same-named `$Foo` holding a type object is not an alias.
+            // A qualified name whose top package a loaded module granted reads
+            // as that package's autovivified *variable* (`(Any)`) through
+            // `get_env_with_main_alias`; a type name never is one, so it must
+            // not read as an alias to `Any` (`also is CSS::Module::CSS3::X`
+            // once `use CSS::Module` ran).
+            let is_unmerged_var = crate::symbol::Symbol::lookup(&current)
+                .is_some_and(|sym| self.unmerged_package_var_key(sym).is_some());
             let next = self
                 .term_binding(&current)
-                .or_else(|| self.get_env_with_main_alias(&current))
+                .or_else(|| {
+                    if is_unmerged_var {
+                        None
+                    } else {
+                        self.get_env_with_main_alias(&current)
+                    }
+                })
                 .and_then(|value| match value.view() {
                     crate::value::ValueView::Package(target) => Some(target.resolve()),
                     // `constant OidArray = CArray[Oid]`: a parameterization is
