@@ -48,11 +48,8 @@ impl Compiler {
     pub(super) fn compile_for_construct(&mut self, parts: ForParts<'_>) {
         let rewritten;
         let parts = if parts.is_statement_modifier
-            && let Some(stmt) = self.hoist_feed_sinks(&Stmt::SyntheticBlock(parts.body.to_vec()))
+            && let Some(body) = self.hoist_feed_body(parts.body)
         {
-            let Stmt::SyntheticBlock(body) = stmt else {
-                unreachable!()
-            };
             rewritten = body;
             ForParts {
                 body: &rewritten,

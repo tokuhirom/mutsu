@@ -53,17 +53,13 @@ impl Compiler {
         position: IfPosition,
     ) {
         let rewritten;
-        let then_branch = if is_statement_modifier
-            && let Some(stmt) = self.hoist_feed_sinks(&Stmt::SyntheticBlock(then_branch.to_vec()))
-        {
-            let Stmt::SyntheticBlock(body) = stmt else {
-                unreachable!()
+        let then_branch =
+            if is_statement_modifier && let Some(body) = self.hoist_feed_body(then_branch) {
+                rewritten = body;
+                &rewritten[..]
+            } else {
+                then_branch
             };
-            rewritten = body;
-            &rewritten[..]
-        } else {
-            then_branch
-        };
         self.compile_if_construct_inner(
             cond,
             then_branch,

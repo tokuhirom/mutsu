@@ -26,7 +26,7 @@ src/parser/decl_doc.rs                               1  # stmt_ident: spine to t
 src/parser/expr/mod.rs                               1  # reassociate_fat_arrow_operand: parser rewrite along the right spine of a loose-logical chain
 src/parser/expr/precedence/assign.rs                 3  # 3 parser lowerings/lvalue spines: grouped-lvalue unwrap, assignment-target lowering, compound-assignment lowering
 src/parser/expr/precedence/comparison.rs             1  # comparison_tail: recursive-descent parse function (the Expr is its accumulator), not a walk
-src/parser/expr/precedence/feed.rs                   2  # lower_feed_node: feed lowering; feed_leftmost_operand_mut: spine to a feed chain's leftmost operand
+src/parser/expr/precedence/feed.rs                   1  # feed_leftmost_operand_mut: spine to a feed chain's leftmost operand
 src/parser/expr/precedence_meta_ops/arith.rs         1  # autoincrement_expr: recursive-descent parse function, not a walk
 src/parser/expr/precedence_meta_ops/hyper_concat.rs  2  # 2 lowerings of a hyper-assignment target list (shape and per-element assignment)
 src/parser/expr/whatever.rs                          2  # contains_whatever/contains_xx_with_bare_whatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled

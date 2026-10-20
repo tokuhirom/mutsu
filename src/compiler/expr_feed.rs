@@ -1,6 +1,13 @@
 use super::*;
 
 impl Compiler {
+    pub(super) fn hoist_feed_body(&mut self, body: &[Stmt]) -> Option<Vec<Stmt>> {
+        match self.hoist_feed_sinks(&Stmt::SyntheticBlock(body.to_vec()))? {
+            Stmt::SyntheticBlock(body) => Some(body),
+            _ => unreachable!("a feed-sink rewrite preserves its statement wrapper"),
+        }
+    }
+
     pub(super) fn is_feed_modifier(stmt: &Stmt) -> bool {
         matches!(
             stmt,
@@ -68,12 +75,10 @@ impl Compiler {
             fn visit_expr_mut(&mut self, expr: &mut Expr) {
                 match expr {
                     Expr::Feed {
-                        source,
                         sink,
                         append: false,
                         ..
                     } => {
-                        self.visit_expr_mut(source);
                         if let Expr::DoStmt(stmt) = sink.as_mut()
                             && let Stmt::VarDecl {
                                 name,
@@ -88,13 +93,12 @@ impl Compiler {
                             let target = feed_variable(name);
                             self.declarations.push((**stmt).clone());
                             **sink = target;
-                        } else {
-                            self.visit_expr_mut(sink);
                         }
+                        crate::ast_visit::walk_expr_mut(self, expr);
                     }
-                    Expr::Grouped(inner) => self.visit_expr_mut(inner),
+                    Expr::Grouped(_) => crate::ast_visit::walk_expr_mut(self, expr),
                     Expr::DoStmt(stmt) if Compiler::is_feed_modifier(stmt) => {
-                        self.visit_stmt_mut(stmt)
+                        crate::ast_visit::walk_expr_mut(self, expr)
                     }
                     _ => {}
                 }

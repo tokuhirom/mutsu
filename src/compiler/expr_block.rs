@@ -2,12 +2,10 @@ use super::*;
 
 impl Compiler {
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
-        if Self::is_feed_modifier(stmt)
-            && let Some(rewritten) = self.hoist_feed_sinks(stmt)
-        {
-            self.compile_expr_do_stmt(&rewritten);
-            return;
-        }
+        let rewritten = Self::is_feed_modifier(stmt)
+            .then(|| self.hoist_feed_sinks(stmt))
+            .flatten();
+        let stmt = rewritten.as_ref().unwrap_or(stmt);
         match stmt {
             // `proto method NAME(...) {*}` as a term (`my constant
             // &proto-handler = proto method handler(|) {*}`,
