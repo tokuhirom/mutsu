@@ -4664,9 +4664,9 @@ impl Compiler {
                 // A `use` below the unit's top level binds its routines in the
                 // enclosing block (ADR-8751): the call sites the block encloses
                 // read them from its lexical import set.
-                let lexical_set_idx = self
-                    .open_lexical_use_set(stmt)
-                    .map(|id| self.code.add_constant(Value::str(id.resolve())));
+                let lexical_set_id = self.open_lexical_use_set(stmt);
+                let lexical_set_idx =
+                    lexical_set_id.map(|id| self.code.add_constant(Value::str(id.resolve())));
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
                 let tags_idx = if entries.is_empty() {
@@ -4711,6 +4711,10 @@ impl Compiler {
                     // (ADR-8751).
                     if let Some(set_idx) = lexical_set_idx
                         && arg.is_none()
+                        && lexical_set_id.is_some_and(|id| {
+                            id.resolve()
+                                .contains(crate::runtime::lexical_imports::BLOCK_VARS_MARK)
+                        })
                     {
                         self.bind_block_imported_vars(module, tags, set_idx);
                     }
