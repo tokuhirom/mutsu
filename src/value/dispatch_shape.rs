@@ -177,13 +177,17 @@ pub(crate) enum DispatchShape {
     /// The `Formatter` class (closed), a type object only: `CODE` and `AST`
     /// compile a format string.
     Formatter,
+    /// A loop `Label` (closed): a handler reads its `name`, `file` and `line`
+    /// attributes, and `next`/`last`/`redo` raise the labelled loop-control
+    /// signal.
+    Label,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 42] = [
+    pub(crate) const ALL: [DispatchShape; 43] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -226,6 +230,7 @@ impl DispatchShape {
         DispatchShape::IoPathParts,
         DispatchShape::Format,
         DispatchShape::Formatter,
+        DispatchShape::Label,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -275,6 +280,7 @@ impl DispatchShape {
             DispatchShape::IoPathParts => "IO::Path::Parts",
             DispatchShape::Format => "Format",
             DispatchShape::Formatter => "Formatter",
+            DispatchShape::Label => "Label",
         }
     }
 

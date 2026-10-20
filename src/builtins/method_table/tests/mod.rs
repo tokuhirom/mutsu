@@ -138,6 +138,7 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::Format => crate::runtime::Interpreter::make_format("%d-%s".to_string()),
         DispatchShape::Formatter => type_sample("Formatter"),
         DispatchShape::BacktraceFrame => backtrace_frame_sample(),
+        DispatchShape::Label => crate::value::label::make_label("FOO", "x.raku", 3, "", ""),
         DispatchShape::Backtrace => {
             let mut attributes = crate::value::AttrMap::new();
             attributes.insert(
