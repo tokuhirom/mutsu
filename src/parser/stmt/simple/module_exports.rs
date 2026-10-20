@@ -7,6 +7,7 @@ mod decl_scan;
 mod dynamic_stash;
 mod enum_values;
 mod export_hook;
+pub(crate) mod exported_types;
 pub(crate) mod exported_vars;
 mod import_tags;
 mod installed_repo;
@@ -90,6 +91,10 @@ struct ModuleScanResult {
     /// `declares_export_hook`.
     #[serde(default)]
     exported_vars: Vec<exported_vars::ExportedVar>,
+    /// The types the module exports (`exported_types.rs`). Defaulted for the
+    /// same cache-compatibility reason as `declares_export_hook`.
+    #[serde(default)]
+    exported_types: Vec<exported_types::ExportedType>,
     /// Whether the module exports a variable `exported_vars` does not list
     /// (`ModuleDecls::unlisted_exported_vars`). Defaulted for the same
     /// cache-compatibility reason as `declares_export_hook`.
@@ -258,6 +263,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
     // Unknown until a scan below says otherwise.
     exported_vars::record(module, None);
     exported_vars::clear_incomplete(module);
+    exported_types::record(module, None);
     if module == "Test" {
         let exports: Vec<InlineModuleExport> = TEST_EXPORTS
             .iter()
@@ -271,6 +277,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         apply_module_exports(&exports);
         // `Test` exports routines only.
         exported_vars::record(module, Some(Rc::from([])));
+        exported_types::record(module, Some(Rc::from([])));
         return;
     }
     // Check for infinite recursion
@@ -301,6 +308,11 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         if scan.unlisted_exported_vars {
             exported_vars::record_incomplete(module);
         }
+        exported_types::record(
+            module,
+            (!scan.declares_export_hook && !scan.dynamic_export_stash)
+                .then(|| scan.exported_types.as_slice().into()),
+        );
         apply_scan_types(&scan, import_tags);
         note_nested_import_exports(&scan.exports);
         apply_module_exports(&scan.exports);
@@ -988,6 +1000,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         declares_export_hook,
         dynamic_export_stash: decls.dynamic_export_stash,
         exported_vars: decls.exported_vars,
+        exported_types: decls.exported_types,
         unlisted_exported_vars: decls.unlisted_exported_vars,
         inline_module_exports,
         // Filled in by `find_and_scan_module`, which owns the dependency frame
