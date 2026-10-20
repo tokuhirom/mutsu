@@ -618,7 +618,11 @@ impl Compiler {
         }
         let mut hoisted = Vec::new();
         let mut rest = stmts.to_vec();
-        let extracted = super::enter_phaser_exprs::extract_enter_exprs(&mut rest, embedded);
+        let mut extracted = super::enter_phaser_exprs::extract_enter_exprs(&mut rest, embedded);
+        // A block body carries line markers; they are no statements here.
+        for (_, body) in &mut extracted {
+            body.retain(|s| !matches!(s, Stmt::SetLine(_)));
+        }
         // A block-bodied `ENTER { ...; value }` keeps its in-place evaluation:
         // only single-expression phasers have a value we can store at entry.
         if extracted
@@ -668,7 +672,12 @@ impl Compiler {
         stmts: &[Stmt],
     ) -> (Vec<Stmt>, Vec<(String, Vec<Stmt>)>) {
         let mut rewritten = stmts.to_vec();
-        let extracted = super::enter_phaser_exprs::extract_enter_exprs(&mut rewritten, |_| true);
+        let mut extracted =
+            super::enter_phaser_exprs::extract_enter_exprs(&mut rewritten, |_| true);
+        // A block body carries line markers; they are no statements here.
+        for (_, body) in &mut extracted {
+            body.retain(|s| !matches!(s, Stmt::SetLine(_)));
+        }
         (rewritten, extracted)
     }
 }
