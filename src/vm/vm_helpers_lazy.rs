@@ -1011,6 +1011,15 @@ impl Interpreter {
         // (`my @a is default(99) = 1,2,3; @a[1] = Any; @a[1]` is `Any`, not
         // `99`, while `@a[1]:delete; @a[1]` IS `99`).
         let initialized = items.initialized.clone();
+        // The prefix's holes are what `:delete` emptied, and they stay with
+        // the list for `:exists` (`LazyList::deleted_indices`).
+        for i in 0..items.len() {
+            if items.hole_at(i) {
+                source.mark_deleted_index(i);
+            } else {
+                source.clear_deleted_index(i);
+            }
+        }
         // `typed_container_default` only reads the embedded `container_default`
         // (plus type metadata); fall back to the name-keyed `var_default`
         // table too, matching `exec_delete_index_named_op_inner`'s own
@@ -1031,15 +1040,6 @@ impl Interpreter {
                     ValueView::Package(_) => !initialized.as_ref().is_some_and(|s| s.contains(&i)),
                     _ => false,
                 };
-                // The prefix's holes are what `:delete` emptied, and they
-                // stay with the list for `:exists` (`LazyList::deleted_indices`).
-                // An `initialized` set exists once an element was written or
-                // deleted; without one every slot is present.
-                if is_hole && initialized.is_some() {
-                    source.mark_deleted_index(i);
-                } else {
-                    source.clear_deleted_index(i);
-                }
                 if is_hole { default.clone() } else { v.clone() }
             })
             .collect();

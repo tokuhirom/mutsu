@@ -5,7 +5,7 @@ use Test;
 # name-keyed `__mutsu_deleted_index::` env key): a fresh array of the same
 # name starts without holes, and every holder of the array sees them.
 
-plan 8;
+plan 10;
 
 my @a = 1, 2, 4 ... Inf;
 @a[2]:delete;
@@ -30,3 +30,8 @@ nok @w[1]:exists, 'a bound alias sees the hole';
 my @c = 1, 2, 3;
 @c[1]:delete;
 nok @c[1]:exists, 'a reified array keeps its own hole';
+
+my @d is default(99) = 1 ... *;
+@d[2]:delete;
+nok @d[2]:exists, 'a deleted index of a lazy array with a default does not exist';
+is @d[2], 99, '... and reads as the default';
