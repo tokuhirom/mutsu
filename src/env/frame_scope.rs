@@ -14,7 +14,7 @@ impl Env {
     /// A type namespace binding in this frame or its lexical outer, never
     /// in an intervening caller. Parameter binding uses this even while
     /// ordinary parameter/default lookups temporarily ignore static links.
-    // Cost: O(d + l), d = frame tiers, l = lexical capture layers.
+    // Cost: O(d + l), d = frame/static-outer tiers, l = lexical capture layers.
     pub(crate) fn get_lexical_type_binding(&self, key: Symbol, name: Symbol) -> Option<&Value> {
         if crate::symbol::env_key_probe(key) == crate::symbol::EnvKeyProbe::Absent {
             return None;
@@ -60,7 +60,7 @@ impl Env {
                 }
                 return current
                     .outer_is_unit
-                    .then(|| current.parent.as_deref())
+                    .then_some(current.parent.as_deref())
                     .flatten()
                     .and_then(|parent| Self::program_scope_from(parent).get_sym(key));
             }

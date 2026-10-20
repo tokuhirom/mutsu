@@ -1,5 +1,5 @@
 use Test;
-plan 25;
+plan 27;
 
 role Local { }
 class T { }
@@ -73,3 +73,9 @@ role WithParent[::T] {
 }
 class D does WithParent[Int] { }
 is D.new.parent-answer, 7, 'a role parent resolves its local declaration after alias restoration';
+
+my $native = 1;
+$native does Owner[name => 'native'];
+my $native-child = Element.new but $native.local-type;
+is $native.checked($native-child), 'hello', 'a runtime mixin retains its local signature type';
+nok $native.local-type === Local, 'a runtime mixin does not replace the outer role binding';
