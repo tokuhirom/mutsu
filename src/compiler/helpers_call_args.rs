@@ -1138,7 +1138,7 @@ impl Compiler {
     ) {
         let callee = callee.filter(|callee| {
             matches!(arg, Expr::Index { .. })
-                && !Self::index_arg_is_static_slice(arg)
+                && !Self::index_arg_is_whatever_slice(arg)
                 && !Self::is_named_arg_expr(arg)
                 // A `__mutsu_*` helper is not a user routine and has no
                 // registered signature, so the gate could only answer "no".
@@ -1329,34 +1329,19 @@ impl Compiler {
         }
     }
 
-    /// True when `arg` is a subscript whose index is *statically* a slice — a
-    /// range (`@a[1..*]`, `@a[0..^2]`), a sequence (`@a[1...*]`), a bare
-    /// `*`/`**`, or a literal index list (`@a[0,1]`, `%h<a b>`).
-    ///
-    /// Such a subscript yields a list of values rather than one element's
-    /// container, so it can never bind to an `is rw` parameter (rakudo:
-    /// `X::Parameter::RW`), and the named-call emitter leaves it a plain
-    /// `Index` instead of an `IndexArgRef` whose gate could only decline it.
-    /// Only the shapes visible in the AST are recognized: a subscript whose
-    /// index only turns out to be a Range at runtime (`@a[$r]`) reaches the
-    /// producer, which declines any non-integer index at run time.
-    pub(super) fn index_arg_is_static_slice(arg: &Expr) -> bool {
+    /// True when `arg` is a subscript selecting by a bare `*` / `**`
+    /// (`@a[*]`, `%h{*}`): a whole-container selection the argument producer
+    /// does not hand out as element locations, so the named-call emitter
+    /// leaves it a plain `Index`. A literal index list or a range (`@a[0, 2]`,
+    /// `%h<a c>`, `@a[0..1]`) does reach the producer, which hands a callee
+    /// that binds its argument's location the selected elements' locations
+    /// (#13786) and declines every other shape at run time.
+    // Cost: O(1).
+    pub(super) fn index_arg_is_whatever_slice(arg: &Expr) -> bool {
         let Expr::Index { index, .. } = arg else {
             return false;
         };
-        match index.as_ref() {
-            Expr::Binary { op, .. } => matches!(
-                op,
-                TokenKind::DotDot
-                    | TokenKind::DotDotCaret
-                    | TokenKind::CaretDotDot
-                    | TokenKind::CaretDotDotCaret
-                    | TokenKind::DotDotDot
-                    | TokenKind::DotDotDotCaret
-            ),
-            Expr::Whatever | Expr::HyperWhatever | Expr::ArrayLiteral(_) => true,
-            _ => false,
-        }
+        matches!(index.as_ref(), Expr::Whatever | Expr::HyperWhatever)
     }
 
     /// Check for placeholder variable conflicts in a block/sub body.
