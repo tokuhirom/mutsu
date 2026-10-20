@@ -186,6 +186,8 @@ fn method_decl_body_with_my(
     } else {
         (params, param_defs)
     };
+    let mut param_defs = param_defs;
+    crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     Ok((
         rest,

@@ -178,6 +178,7 @@ pub(crate) fn is_builtin_param_trait(trait_name: &str) -> bool {
     VALID_PARAM_TRAITS.contains(&trait_name)
         || trait_name == "invocant"
         || trait_name == crate::ast::IMPLICIT_INVOCANT_TRAIT
+        || trait_name == crate::ast::does_target::DOES_TARGET_TRAIT
 }
 
 /// Parse-time handling of a parameter trait name. An unknown name is NOT a parse

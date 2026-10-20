@@ -5913,7 +5913,12 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         .traits
         .iter()
         .map(String::as_str)
-        .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
+        .filter(|t| {
+            !matches!(
+                *t,
+                "invocant" | IMPLICIT_INVOCANT_TRAIT | crate::ast::does_target::DOES_TARGET_TRAIT
+            )
+        })
         .collect();
     let refusal = if pd.literal_value.is_some()
         && (pd.named
@@ -6176,7 +6181,12 @@ pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, Ru
         .traits
         .iter()
         .map(String::as_str)
-        .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
+        .filter(|t| {
+            !matches!(
+                *t,
+                "invocant" | IMPLICIT_INVOCANT_TRAIT | crate::ast::does_target::DOES_TARGET_TRAIT
+            )
+        })
         .collect();
     if traits.is_empty() {
         return Ok(None);

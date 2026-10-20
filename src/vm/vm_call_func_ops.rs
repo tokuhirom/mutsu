@@ -3389,7 +3389,7 @@ impl Interpreter {
                 matches!(
                     t.as_str(),
                     "copy" | "rw" | "raw" | "readonly" | "required" | "encoded"
-                )
+                ) || t == crate::ast::does_target::DOES_TARGET_TRAIT
             })
         })
     }
