@@ -19,6 +19,10 @@
 //! frame env after `use Cro::HTTP2::RequestParser`, each one copied by every
 //! copy-on-write deep copy of that env.
 //!
+//! The program's own mainline is the same: it runs once, and `run_unit` runs
+//! it under [`Interpreter::run_module_mainline`] too, so its top-level
+//! routines' ids leave the program's frame env as well.
+//!
 //! So such a registration goes to [`ModuleToplevel::callable_ids`]
 //! instead, a per-interpreter table that frames neither clone nor capture, and
 //! every reader asks [`Interpreter::registration_callable_id`], which consults
@@ -159,5 +163,24 @@ impl Interpreter {
             None => self.module.module_toplevel.callable_ids.get(&key).copied(),
         }
         .filter(|id| *id != 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A routine the program's own mainline declares at its top level keeps
+    /// its clone id in the table, not in the frame env; one declared inside a
+    /// block keeps its lexical env marker (#7817).
+    #[test]
+    fn a_program_toplevel_routine_keeps_its_id_off_the_env() {
+        let mut i = Interpreter::new();
+        i.run("sub top-level-cid { 1 }\n{ sub in-block-cid { 2 }; our $seen = in-block-cid() }\n")
+            .expect("program runs");
+        let top = MetaNs::CallableId.key_pair_for_strs("GLOBAL", "top-level-cid");
+        assert!(!i.env.contains_key_sym(top), "no env marker at the top level");
+        assert!(i.module.module_toplevel.callable_ids.contains_key(&top));
+        assert!(i.registration_callable_id(top).is_some());
     }
 }
