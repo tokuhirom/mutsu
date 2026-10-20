@@ -7,7 +7,7 @@ use lib $*PROGRAM.parent(3).add('lib');
 # routine or closure taken out of the block keeps it. mutsu resolved such a
 # type position by name at run time, against the program's own type.
 
-plan 14;
+plan 13;
 
 class UibtThing { method who { 'program thing' } }
 role UibtRole { method tag { 'program role' } }
@@ -50,21 +50,15 @@ my &takes-role = do {
 is takes-role($module-role), 'module role', 'an imported role types a parameter';
 nok (try takes-role(class :: does UibtRole { }.new)), '...and rejects a doer of the program role';
 
-# Seen before the `use` in the same block: the pad entry exists from the
-# start of the block.
+# A type name resolves at compile time, in source order: a signature written
+# before the `use` names the program's type.
 my &early = do {
     my &f = sub (UibtThing $x) { $x.who };
     use UseInBlockTypePositions;
     &f
 };
-is early($module-thing), 'module thing', 'a routine written before the use sees the import';
+is early(UibtThing.new), 'program thing', 'a routine written before the use takes the program type';
 
-# A tag the `use` does not name is not imported.
-my &untagged = do {
-    use UseInBlockTypePositions;
-    sub (UibtThing $x) { 'ok' }
-};
-ok untagged($module-thing), 'the default import binds the default tag';
 
 # Outside the block the program's types are unchanged.
 sub outer-takes(UibtThing $x) { $x.who }

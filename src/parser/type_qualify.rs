@@ -40,7 +40,7 @@ pub(crate) fn qualify_program(stmts: &mut [Stmt]) {
         packages: Vec::new(),
         scopes: Vec::new(),
     };
-    pass.in_scope(stmts, false, |pass, stmts| {
+    pass.in_scope(stmts, |pass, stmts| {
         for stmt in stmts.iter_mut() {
             pass.visit_stmt_mut(stmt);
         }
@@ -209,31 +209,9 @@ impl Qualify<'_> {
     fn in_scope<B: ?Sized + AsRef<[Stmt]>>(
         &mut self,
         body: &mut B,
-        block: bool,
         f: impl FnOnce(&mut Self, &mut B),
     ) {
         let mut scope = HashMap::new();
-        // A `use` in a block binds the types it imports in the block's pad,
-        // the statements before it included (ADR-8751); the unit's own top
-        // level is no block, and its imports stay the run time's.
-        if block {
-            for stmt in body.as_ref() {
-                if let Stmt::Use {
-                    module,
-                    arg: None,
-                    tags,
-                    ..
-                } = stmt
-                    && let Some(types) = super::stmt::simple::scanned_exported_types(module)
-                {
-                    for ty in types.iter().filter(|ty| ty.imported_by(tags)) {
-                        scope
-                            .entry(ty.name.clone())
-                            .or_insert_with(|| ty.qualified.clone());
-                    }
-                }
-            }
-        }
         if let Some(prefix) = prefix(&self.packages) {
             let mut pending: Vec<&Stmt> = body.as_ref().iter().collect();
             while let Some(stmt) = pending.pop() {
@@ -262,6 +240,30 @@ impl Qualify<'_> {
         self.scopes.push(scope);
         f(self, body);
         self.scopes.pop();
+    }
+
+    /// A `use` in a block binds the types it imports in the block's pad, for
+    /// the statements after it (ADR-8751): a type name resolves at compile
+    /// time, in source order. The unit's own top level is no block, and its
+    /// imports stay the run time's.
+    // Cost: O(t), t = the module's exported types.
+    fn note_block_use(&mut self, stmt: &Stmt) {
+        let Stmt::Use {
+            module,
+            arg: None,
+            tags,
+            ..
+        } = stmt
+        else {
+            return;
+        };
+        let Some(types) = super::stmt::simple::scanned_exported_types(module) else {
+            return;
+        };
+        let scope = self.scopes.last_mut().expect("an open scope");
+        for ty in types.iter().filter(|ty| ty.imported_by(tags)) {
+            scope.insert(ty.name.clone(), ty.qualified.clone());
+        }
     }
 
     /// The innermost declared `P::name` for the bare `name`, from the open
@@ -356,8 +358,11 @@ impl Qualify<'_> {
 
 impl VisitMut for Qualify<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        self.in_scope(body, true, |pass, body| {
-            crate::ast_visit::walk_stmts_mut(pass, body)
+        self.in_scope(body, |pass, body| {
+            for stmt in body.iter_mut() {
+                pass.note_block_use(stmt);
+                pass.visit_stmt_mut(stmt);
+            }
         });
     }
 

@@ -496,8 +496,13 @@ impl<'ast> Visit<'ast> for DeclScan {
                     if let Some((_, short)) = name.rsplit_once("::") {
                         self.out.type_names.push(short.to_string());
                     }
-                    let lexical = matches!(decl, Stmt::ClassDecl { is_lexical: true, .. })
-                        || matches!(decl, Stmt::Package { is_my: true, .. });
+                    let lexical = matches!(
+                        decl,
+                        Stmt::ClassDecl {
+                            is_lexical: true,
+                            ..
+                        }
+                    ) || matches!(decl, Stmt::Package { is_my: true, .. });
                     if !lexical {
                         self.export_type(&name, tags);
                     }
