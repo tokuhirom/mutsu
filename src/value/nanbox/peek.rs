@@ -739,9 +739,7 @@ impl NanBox {
                 // its attributes (`dispatch_shape/iterator_kind.rs`).
                 if class == "Iterator" {
                     let map = attrs.as_map();
-                    return Some(crate::value::iterator_shape_of(|key| {
-                        map.get(key)
-                    }));
+                    return Some(crate::value::iterator_shape_of(|key| map.get(key)));
                 }
                 DispatchShape::from_instance_class(class)
             }

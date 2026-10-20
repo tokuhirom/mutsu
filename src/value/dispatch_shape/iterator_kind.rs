@@ -20,9 +20,7 @@ pub(crate) const MAP_GREP_STREAM_ATTR: &str = "map_grep_stream";
 /// `squish` scan (`Any::Squish-With`) and an iterator over a lazy source with
 /// no known count (a `gather`, an unending range).
 // Cost: O(1), four attribute probes.
-pub(crate) fn shape_of<'a>(
-    mut attribute: impl FnMut(&str) -> Option<&'a Value>,
-) -> DispatchShape {
+pub(crate) fn shape_of<'a>(mut attribute: impl FnMut(&str) -> Option<&'a Value>) -> DispatchShape {
     let array_backed = matches!(
         attribute("items").map(Value::view),
         Some(ValueView::Array(..))
