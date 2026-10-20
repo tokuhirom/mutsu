@@ -85,6 +85,9 @@ pub(crate) struct LexicalImportCapture {
     /// (their declaration keys), which the block's bindings read
     /// (`ModuleState::lexical_import_hook_values`).
     hook_values: HashMap<Symbol, Value>,
+    /// The plain routines a `sub EXPORT` hook returned, by name: bound in
+    /// the set as they are, with no env alias.
+    hook_routines: HashMap<Symbol, Value>,
 }
 
 impl Interpreter {
@@ -110,6 +113,7 @@ impl Interpreter {
             multi_defs: HashMap::new(),
             protos: HashMap::new(),
             hook_values: HashMap::new(),
+            hook_routines: HashMap::new(),
         };
         self.module.lexical_import_capture.replace(capture)
     }
@@ -171,6 +175,30 @@ impl Interpreter {
                 .hook_values
                 .insert(Symbol::intern(&decl_key), value.clone());
         }
+        true
+    }
+
+    /// Whether the running import binds the routine `name` a `sub EXPORT`
+    /// hook returned (`'&name' => ...`) in its lexical import set, and if so
+    /// keep `value` for it: the import then writes no env alias for it
+    /// (ADR-8751). Only a plain routine of the importing compunit's block
+    /// qualifies; an operator or a term keeps the env alias, which its
+    /// built-in op or bareword reads.
+    // Cost: O(|name|).
+    pub(crate) fn bind_hook_routine_lexically(&mut self, name: &str, value: &Value) -> bool {
+        if name.contains(':') || !matches!(value.view(), ValueView::Sub(_)) {
+            return false;
+        }
+        let importer = self.executing_unit_sym_for_module_load();
+        let Some(capture) = self.module.lexical_import_capture.as_mut() else {
+            return false;
+        };
+        if capture.unit != importer {
+            return false;
+        }
+        capture
+            .hook_routines
+            .insert(Symbol::intern(name), value.clone());
         true
     }
 
@@ -322,6 +350,8 @@ impl Interpreter {
                     Some(proto) => self.with_dispatch_proto(dispatcher, proto),
                     None => dispatcher,
                 }))
+            } else if let Some(value) = capture.hook_routines.get(&name) {
+                Some(LexicalImport::Code(value.clone()))
             } else if capture.amp_env_keys.contains(&amp) {
                 self.env
                     .get_sym(amp)
