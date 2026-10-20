@@ -325,6 +325,28 @@ impl Interpreter {
         Ok(Value::seq(rounds))
     }
 
+    /// `deepmap`/`duckmap` on a receiver that is not an aggregate answer a
+    /// one-item list (Rakudo's `Any.deepmap` is `self.list.deepmap`):
+    /// `42.deepmap(* + 1)` is `(43)`.
+    // Cost: O(1).
+    pub(crate) fn single_item_as_list(target: &Value, mapped: Value) -> Value {
+        let target = target.descalarize();
+        let aggregate = matches!(
+            target.view(),
+            ValueView::Array(..)
+                | ValueView::Seq(..)
+                | ValueView::Slip(..)
+                | ValueView::Hash(..)
+                | ValueView::LazyList(..)
+                | ValueView::Package(..)
+        ) || range_as_list(target).is_some();
+        if aggregate {
+            mapped
+        } else {
+            Value::array(vec![mapped])
+        }
+    }
+
     /// `duckmap(&block, \obj)` — apply block to each element; on type mismatch
     /// descend recursively into iterables, or return the element unchanged.
     pub(super) fn builtin_duckmap(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

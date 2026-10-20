@@ -414,10 +414,14 @@ handler!(flatmap, "flatmap", |interp, target, args| Some(
     interp.dispatch_flatmap_method(target, args)
 ));
 handler!(deepmap, "deepmap", |interp, target, args| Some(
-    interp.deepmap_iterate(&args[0], &target)
+    interp
+        .deepmap_iterate(&args[0], &target)
+        .map(|mapped| Interpreter::single_item_as_list(&target, mapped))
 ));
 handler!(duckmap, "duckmap", |interp, target, args| Some(
-    interp.duckmap_iterate(&args[0], &target)
+    interp
+        .duckmap_iterate(&args[0], &target)
+        .map(|mapped| Interpreter::single_item_as_list(&target, mapped))
 ));
 handler!(nodemap, "nodemap", |interp, target, args| Some(
     interp.nodemap_iterate(&args[0], &target)
