@@ -194,9 +194,18 @@ impl Interpreter {
                     continue;
                 }
                 seen.push(base);
-                for name in crate::builtins::method_introspection::introspectable_names_for_owner(base)
-                {
-                    result.push(self.make_native_method_object(name, base));
+                let names = crate::builtins::method_introspection::introspectable_names_for_owner(base);
+                if matches!(base, "Positional" | "Associative" | "Callable") {
+                    // Rakudo curries a parametric role into the class, so its
+                    // `of`/`keyof` sit next to the class's own (`Hash.of` and
+                    // `Associative.of`, #12990).
+                    for name in names {
+                        result.push(self.make_native_method_object(name, base));
+                    }
+                } else {
+                    // A name the class (or a more derived level) already lists
+                    // wins: it is the entry `.^find_method` returns.
+                    self.push_native_method_objects(&names, base, result);
                 }
             }
         }
