@@ -148,7 +148,7 @@ pub(crate) fn skip_bracketed_comment(input: &str) -> Option<&str> {
 ///
 /// Supports block forms such as `#|{ ... }` and `#={ ... }`, including multiline
 /// content and nested delimiters.
-fn skip_declarator_doc_comment(input: &str) -> Option<&str> {
+pub(super) fn skip_declarator_doc_comment(input: &str) -> Option<&str> {
     let rest = input
         .strip_prefix("#|")
         .or_else(|| input.strip_prefix("#="))?;
@@ -475,7 +475,7 @@ fn embedded_comment_opener(input: &str) -> Option<char> {
     matching_bracket(open).map(|_| open)
 }
 
-fn skip_embedded_comment(input: &str) -> Option<&str> {
+pub(super) fn skip_embedded_comment(input: &str) -> Option<&str> {
     // Must start with #`
     let after_hash_backtick = input.strip_prefix("#`")?;
     if after_hash_backtick.is_empty() {

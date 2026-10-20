@@ -9,6 +9,7 @@ mod class_decl;
 mod export_scan;
 mod grammar_module;
 mod package_decl;
+mod proto_decl;
 mod role_decl;
 pub(crate) mod rule_ws;
 mod rule_ws_quantified;
@@ -45,8 +46,7 @@ pub(crate) use class_decl::{
 pub(super) use grammar_module::{
     does_decl, grammar_decl, grammar_decl_my, module_decl, token_decl, trusts_decl,
 };
-pub(super) use package_decl::{
-    package_decl, package_decl_my, proto_decl, proto_decl_scoped, unit_module_stmt,
-};
+pub(super) use package_decl::{package_decl, package_decl_my, unit_module_stmt};
+pub(super) use proto_decl::{proto_decl, proto_decl_scoped};
 pub(super) use role_decl::role_decl;
 pub(crate) use role_decl::{parse_optional_role_type_params, role_type_param_names};
