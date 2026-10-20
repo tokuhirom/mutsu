@@ -524,16 +524,12 @@ impl Interpreter {
         // A `$` alias of an object hash (`my $t := $obj.attr`) has no declared
         // constraint of its own, so there the hash's embedded key type decides
         // (the element-assign path does the same).
-        let object_hash_key_type: Option<String> = if name.starts_with('%') {
-            loan_env!(self, var_hash_key_constraint_sym(&name, name_sym))
+        let object_hash_key_type =
+            self.object_hash_key_type_for_place(&name, name_sym, container.as_ref());
+        let idx_val = if let Some(constraint) = object_hash_key_type.as_deref() {
+            loan_env!(self, prepare_object_hash_key(constraint, idx_val))?
         } else {
-            container
-                .as_ref()
-                .map(Value::deref_container)
-                .and_then(|c| match c.view() {
-                    ValueView::Hash(h) => h.key_type.clone(),
-                    _ => None,
-                })
+            idx_val
         };
         // Declared *element* type of the container being subscripted, used to
         // seed an absent element for `++`/`--` (see below). The value carried by

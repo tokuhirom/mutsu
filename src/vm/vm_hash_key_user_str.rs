@@ -7,6 +7,26 @@
 use super::*;
 
 impl Interpreter {
+    /// A named hash uses its declaration; a scalar alias uses embedded metadata.
+    // Cost: O(d), d = declaration record lookup depth; O(1) for a scalar alias.
+    pub(super) fn object_hash_key_type_for_place(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        container: Option<&Value>,
+    ) -> Option<String> {
+        if name.starts_with('%') {
+            loan_env!(self, var_hash_key_constraint_sym(name, name_sym))
+        } else {
+            container.map(Value::deref_container).and_then(|value| {
+                match value.view() {
+                    ValueView::Hash(hash) => hash.key_type.clone(),
+                    _ => None,
+                }
+            })
+        }
+    }
+
     /// Normalize an associative index, then validate its object-hash keys.
     // Cost: O(n * T + S), n = keys, T = key type check, S = user Str call cost.
     pub(crate) fn prepare_hash_subscript_index(

@@ -1,6 +1,6 @@
 use Test;
 use MONKEY-SEE-NO-EVAL;
-plan 24;
+plan 28;
 
 my $message = 'Type check failed in binding to parameter \'key\'; expected Int but got Str ("a")';
 for
@@ -21,7 +21,11 @@ for
     '%h<a b>:delete',
     '%h.push("a" => 1)',
     '%h.append("a" => 1)',
-    '%h = "a" => 1'
+    '%h = "a" => 1',
+    '%h<a>++',
+    '++%h<a>',
+    '%h<a> += 1',
+    '%h<a> //= 1'
 -> $operation {
     throws-like { EVAL 'my %h{Int}; ' ~ $operation },
         X::TypeCheck::Binding::Parameter, message => $message,
