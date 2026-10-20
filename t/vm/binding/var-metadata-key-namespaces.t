@@ -56,7 +56,8 @@ plan 23;
     dies-ok { EVAL 'constant K = 1; K = 2' }, 'a constant is still immutable';
 }
 
-# __mutsu_bound_index:: -- an element that is itself `:=`-bound must not be
+# An element that is itself `:=`-bound (its own cell is the binding; the
+# retired __mutsu_bound_index:: table is gone) must not be
 # replaced wholesale by an element store.
 {
     my @a = 1, 2, 3;

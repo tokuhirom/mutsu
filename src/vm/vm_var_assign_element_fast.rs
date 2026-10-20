@@ -259,8 +259,8 @@ impl Interpreter {
         }
         // The latch is false for the overwhelming majority of programs, and
         // its being true means a *name-keyed* side table may describe this
-        // element (`__mutsu_bound_index::`, `__mutsu_elem_share::`).
-        // This lane deliberately knows nothing about those: it declines instead.
+        // element (`__mutsu_elem_share::`).
+        // This lane deliberately knows nothing about it: it declines instead.
         if crate::env::elem_index_meta_possible() {
             return None;
         }

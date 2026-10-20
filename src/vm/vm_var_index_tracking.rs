@@ -5,7 +5,7 @@ use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {
-    pub(super) fn encode_bound_index(idx: &Value) -> String {
+    pub(super) fn encode_element_index(idx: &Value) -> String {
         match idx.view() {
             ValueView::Array(indices, ..) => indices
                 .iter()
@@ -14,36 +14,6 @@ impl Interpreter {
                 .join(";"),
             _ => idx.to_string_value(),
         }
-    }
-
-    pub(super) fn is_bound_index(&self, var_name: &str, encoded: &str) -> bool {
-        // Runs on every element write. With no `:=` element bind anywhere in the
-        // program no such key can exist, so skip the `format!` + interned env probe.
-        if !crate::env::elem_index_meta_possible() {
-            return false;
-        }
-        let key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
-        if let Some(ValueView::Hash(map)) = self.env().get_sym(key).map(Value::view) {
-            map.contains_key(encoded)
-        } else {
-            false
-        }
-    }
-
-    pub(super) fn mark_bound_index(&mut self, var_name: &str, encoded: String) {
-        let key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
-        if let Some(entry) = self.env_mut().get_mut_sym(key)
-            && entry
-                .with_hash_mut(|map| {
-                    crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
-                })
-                .is_some()
-        {
-            return;
-        }
-        let mut map = ValueMap::default();
-        map.insert(encoded, Value::TRUE);
-        self.env_mut().insert_sym_noting(key, Value::hash(map));
     }
 
     /// Slice 2b (`docs/scalar-array-sharing.md`): mark element `encoded` of
@@ -70,7 +40,8 @@ impl Interpreter {
     }
 
     pub(super) fn is_element_share(&self, var_name: &str, encoded: &str) -> bool {
-        // Runs on every element write; see `is_bound_index`.
+        // Runs on every element write. With no element share anywhere in the
+        // program no such key can exist, so skip the interned env probe.
         if !crate::env::elem_index_meta_possible() {
             return false;
         }
@@ -88,19 +59,6 @@ impl Interpreter {
             return;
         }
         let key = MetaNs::ElemShare.key_for_str(var_name);
-        if let Some(entry) = self.env_mut().get_mut_sym(key) {
-            entry.with_hash_mut(|map| {
-                crate::gc::Gc::make_mut(map).remove(encoded);
-            });
-        }
-    }
-
-    /// Remove a bound-index marker (e.g. after splice breaks the binding).
-    pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
-        if !crate::env::elem_index_meta_possible() {
-            return;
-        }
-        let key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
         if let Some(entry) = self.env_mut().get_mut_sym(key) {
             entry.with_hash_mut(|map| {
                 crate::gc::Gc::make_mut(map).remove(encoded);
@@ -135,19 +93,6 @@ impl Interpreter {
                 data.mark_initialized(idx);
             });
         }
-    }
-
-    /// Remove deleted indices from the bound-index tracking set.
-    /// This must be called after array element deletion to sever bindings.
-    pub(super) fn unmark_bound_indices(&mut self, var_name: &str, idx: &Value) {
-        let key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
-        let Some(entry) = self.env_mut().get_mut_sym(key) else {
-            return;
-        };
-        entry.with_hash_mut(|map| {
-            let m = crate::gc::Gc::make_mut(map);
-            Self::unmark_index_entries(m, idx);
-        });
     }
 
     /// Remove deleted indices from the initialized-index tracking set.
@@ -234,35 +179,6 @@ impl Interpreter {
                 if let Some(i) = Self::index_to_usize(idx) {
                     out.push(i);
                 }
-            }
-        }
-    }
-
-    fn unmark_index_entries(map: &mut ValueMap, idx: &Value) {
-        match idx.view() {
-            ValueView::Array(items, ..) => {
-                for item in items.iter() {
-                    Self::unmark_index_entries(map, item);
-                }
-            }
-            ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => {
-                let expanded = crate::runtime::utils::value_to_list(idx);
-                for item in &expanded {
-                    Self::unmark_index_entries(map, item);
-                }
-            }
-            ValueView::Int(i) => {
-                map.remove(&i.to_string());
-            }
-            ValueView::Num(f) => {
-                map.remove(&(f as i64).to_string());
-            }
-            _ => {
-                map.remove(&idx.to_string_value());
             }
         }
     }

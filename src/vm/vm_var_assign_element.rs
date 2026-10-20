@@ -1,6 +1,5 @@
 use super::vm_var_assign_hash_fast::PlainHashTarget;
 use super::*;
-use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {
@@ -76,19 +75,6 @@ impl Interpreter {
             {
                 return None;
             }
-        }
-        // Gated on the process-global flag, like the `elem_index_meta_possible`
-        // probe further down: this runs on EVERY hash element write, and the
-        // `format!` plus the `Symbol::intern`ing `contains_key` it guards are
-        // exactly the cost `ELEM_INDEX_META_SEEN` was introduced to avoid. The
-        // key can only exist once the program `:=`-binds an element, which
-        // latches the flag through `Env::insert`.
-        if crate::env::elem_index_meta_possible()
-            && self
-                .env()
-                .contains_key_sym(MetaNs::BoundIndex.key(code.const_sym(name_idx)))
-        {
-            return None;
         }
         let var_name = var_name.to_string();
         let key = idx_ref.to_string_value();
@@ -172,15 +158,6 @@ impl Interpreter {
                 || self.is_readonly(var_name)
             {
                 return None;
-            }
-        }
-        {
-            // See the hash twin above for why the bound-index probe is gated.
-            if crate::env::elem_index_meta_possible() {
-                let bound_key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
-                if self.env().contains_key_sym(bound_key) {
-                    return None;
-                }
             }
         }
         let var_name = var_name.to_string();
