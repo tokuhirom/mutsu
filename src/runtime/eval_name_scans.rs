@@ -176,6 +176,8 @@ struct UndeclaredName<'a> {
     /// declared anywhere is never reported).
     declared: &'a HashSet<String>,
     found: Option<String>,
+    /// The unit is at language revision 6.e (`use v6.e.PREVIEW`).
+    revision_6e: bool,
     /// Judge only capitalised (type-like) names. The mainline leaves a
     /// lowercase term to the undeclared-routine check: rakudo reports one as
     /// an undeclared routine, and the parser leaves several lowercase
@@ -202,6 +204,14 @@ impl UndeclaredName<'_> {
             && name.ends_with(']')
         {
             return self.is_known(&name[..open]);
+        }
+        // `Format`, `Formatter` and `Formatter::Syntax` are 6.e-only types:
+        // below 6.e a name nothing in the unit declares is undeclared.
+        if matches!(name, "Format" | "Formatter" | "Formatter::Syntax")
+            && !self.declared.contains(name)
+            && !self.revision_6e
+        {
+            return false;
         }
         // A module's own declaration resolves only where that module is
         // merged (ADR-11136); the snippet may merge it itself (`use M; C`).
@@ -297,10 +307,19 @@ impl Interpreter {
         declared: &HashSet<String>,
         type_like_only: bool,
     ) -> Option<(String, i64)> {
+        let revision_6e = crate::parser::current_language_version().starts_with("6.e")
+            || stmts.iter().any(|stmt| {
+                matches!(
+                    stmt,
+                    Stmt::Use { module, arg: Some(Expr::Literal(version)), .. }
+                        if module == "v6" && version.to_string_value().starts_with("6.e")
+                )
+            });
         let mut scan = UndeclaredName {
             interp: self,
             declared,
             found: None,
+            revision_6e,
             type_like_only,
             line: 1,
             found_line: 1,
@@ -431,9 +450,13 @@ impl Interpreter {
         // validation, as rakudo does at BEGIN time, so the hook's real import
         // set is in scope; this split only approximates it (#13441).
         let hook = imported.imports_through_export_hook;
+        // A term a hook bound in the import sets of the blocks the `EVAL`
+        // runs in (ADR-8751): a bare word of the snippet reads it.
+        let hook_terms = self.active_lexical_import_hook_terms();
         self.check_eval_unit_routines(stmts, |name| {
             imported.types.contains(name)
                 || (hook && name.starts_with(|c: char| c.is_lowercase()))
+                || hook_terms.iter().any(|term| term == name)
         })
     }
 
@@ -463,6 +486,9 @@ impl Interpreter {
         }
         declared.extend(types.types);
         declared.extend(types.packages);
+        // The terms a hook bound in the import sets of the blocks the `EVAL`
+        // runs in (ADR-8751): the snippet's bare words read them.
+        declared.extend(self.active_lexical_import_hook_terms());
         if let Some((name, _)) = self.first_undeclared_name(stmts, &declared, false) {
             let suggestions = self.suggest_type_names(&name);
             return Err(RuntimeError::undeclared_type_symbols(

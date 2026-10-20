@@ -788,6 +788,7 @@ impl Interpreter {
                 self.register_role_body_subs_per_composer(
                     cx.name,
                     cx.class_body_plan,
+                    base_role_name,
                     role,
                     &declared,
                 )?;

@@ -392,27 +392,6 @@ impl Interpreter {
             self.set_var_meta_value(target_var, meta.clone());
             return Ok(meta);
         }
-        // `Array.default` of a lazy `@` variable (#13806): a lazy array is a
-        // `LazyList` value, which carries no container descriptor, so its
-        // declared `is default(...)` and element type live with the variable.
-        // TODO: compile to bytecode -- carry the container's default and
-        // element type on the lazy list itself, so the `Array.default` row
-        // answers it as it answers an eager array, and drop this name lookup.
-        if method == "default"
-            && args.is_empty()
-            && target_var.starts_with('@')
-            && matches!(target.view(), ValueView::LazyList(_))
-        {
-            let default = self
-                .var_default(target_var)
-                .cloned()
-                .or_else(|| {
-                    self.var_type_constraint(target_var)
-                        .map(|tc| Value::package(Symbol::intern(&tc)))
-                })
-                .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
-            return Ok(default);
-        }
         // .of returns the element type constraint of a container
         if method == "of"
             && args.is_empty()
@@ -543,7 +522,7 @@ impl Interpreter {
             //
             // The rw write-back is what made deferring this one awkward, and
             // it is carried by `rw_source`: the pull runs
-            // `eval_map_over_items_rw` and publishes any mutation by writing
+            // `eval_map_over_items_rw_into` and publishes any mutation by writing
             // the source `ArrayData` IN PLACE, so it needs no frame and no
             // name (`publish_rw_map_writeback`). That matters because the
             // pull happens wherever the Seq is consumed -- rakudo writes back
@@ -601,17 +580,8 @@ impl Interpreter {
                     "callmethodmutwithvalues",
                     "iterator-protocol",
                 );
-                if let Some(owners) = crate::builtins::method_table::iterator_owners_of(&target)
-                    && let Some(result) = crate::builtins::method_table::invoke_owner(
-                        self,
-                        owners,
-                        method,
-                        &args,
-                        || target.clone(),
-                    )
-                {
-                    return result;
-                }
+                // The rows are the opaque shapes' (`Iterator`, `PredictiveIterator`),
+                // reached by the by-name dispatch.
                 return self.call_method_with_values(target, method, args);
             }
 
@@ -807,7 +777,7 @@ impl Interpreter {
             // schedulers' and the handle classes' methods are rows, found by their
             // owner; they commit through the instance's shared cell (ADR-11276
             // §9.128, §9.130, §9.132, §9.133, §9.157).
-            if let Some(owners) = self.io_concurrency_owners_of(&target)
+            if let Some(owners) = self.carried_state_owners_of(&target)
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,

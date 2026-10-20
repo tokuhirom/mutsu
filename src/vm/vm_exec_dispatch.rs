@@ -177,6 +177,7 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        let at = *ip;
         let result = self.exec_one_dispatch(code, ip, compiled_fns);
         // `finish_op_result` returns an `Ok` unchanged unless a `where`
         // exception is pending, and moving the (large) `Result` through its
@@ -185,7 +186,14 @@ impl Interpreter {
         if result.is_ok() && self.pending_where_exception.is_none() {
             return Ok(());
         }
-        self.finish_op_result(code, *ip, result)
+        match self.finish_op_result(code, *ip, result) {
+            // Only an op that raised without moving `ip` resumes in place;
+            // a control-flow signal may leave `ip` anywhere, even past the end.
+            Err(err) if *ip == at && Self::op_raise_resumes_in_place(&code.ops[at]) => {
+                self.resume_op_raise(code, ip, err)
+            }
+            result => result,
+        }
     }
 
     /// What [`Self::exec_one`] does with an instruction's result, for a JIT
@@ -5461,7 +5469,9 @@ impl Interpreter {
             // Cost: O(c) probe, c = enclosing `use`-blocks; on a hit O(a) plus the callee's
             // body, a = arguments; on a miss nothing (the `CallFunc` at ip + 1 runs).
             OpCode::LexImportCall { chain_idx } => {
-                if self.exec_lex_import_call_site(code, *ip, *chain_idx, compiled_fns)? {
+                if let Some(next) = self.exec_lex_import_term_site(code, *ip, *chain_idx) {
+                    *ip = next;
+                } else if self.exec_lex_import_call_site(code, *ip, *chain_idx, compiled_fns)? {
                     *ip += 2;
                 } else {
                     *ip += 1;
@@ -7443,6 +7453,11 @@ impl Interpreter {
                 name_idx,
             } => {
                 self.exec_get_imported_var_op(code, *module_idx, *name_idx);
+                *ip += 1;
+            }
+            // Cost: O(1): two hashed lookups.
+            OpCode::GetHookExport { set_idx, name_idx } => {
+                self.exec_get_hook_export_op(code, *set_idx, *name_idx);
                 *ip += 1;
             }
             // Cost: O(x), x = exported symbols re-aliased per execution. Rakudo: O(1) at run time -- see #9170.

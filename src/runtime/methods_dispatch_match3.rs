@@ -28,20 +28,6 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        // The class methods of `Supply`, `CompUnit::RepositoryRegistry`,
-        // `Encoding::Registry` and the sockets are rows of the method table,
-        // found by their owner for the type object (ADR-11276 §9.122).
-        if let Some(owners) = crate::builtins::method_table::class_method_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return Some(result);
-        }
         // `Date.today`, `Date.new-from-daycount` and `DateTime.now` are rows of
         // the method table, found by their owner for the type object of the
         // class or a subclass (ADR-11276 §9.123).

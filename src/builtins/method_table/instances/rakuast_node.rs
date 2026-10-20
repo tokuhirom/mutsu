@@ -1,7 +1,9 @@
 //! `RakuAST::Node.visit-children` (ADR-11276 §9, slice 3D).
 //!
-//! A RakuAST node has no shape, so the row is reached through its owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`) from the method-call fallback.
+//! A RakuAST node is the opaque shape `RakuAstNode`, and `RakuAST::Origin` and
+//! `RakuAST::Origin::Source` instances are opaque shapes of their own
+//! (`value/dispatch_shape/opaque.rs`); the rows are `OWNER_ONLY` under the
+//! owners those shapes name.
 //!
 //! The same file holds the rows of `RakuAST::Origin` (a node's `.origin`) and
 //! `RakuAST::Origin::Source` (its `.source`). A statement node records only
@@ -74,29 +76,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
     origin_row!("RakuAST::Origin::Source", "original-line", 1, original_line),
 ];
-
-/// The owners the rows reachable from `target` are found under: a RakuAST
-/// node, or an origin or origin source built by [`origin_value`].
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        // The node classes whose builders are rows: each builder's handler
-        // declines a node of another class, and no name is declared twice.
-        ValueView::RakuAst(_) => Some(&[
-            "RakuAST::Node",
-            "RakuAST::StatementList",
-            "RakuAST::CompUnit",
-            "RakuAST::Statement::Expression",
-            "RakuAST::ArgList",
-        ]),
-        ValueView::Instance { class_name, .. } => match class_name.resolve().as_str() {
-            "RakuAST::Origin" => Some(&["RakuAST::Origin"]),
-            "RakuAST::Origin::Source" => Some(&["RakuAST::Origin::Source"]),
-            _ => None,
-        },
-        _ => None,
-    }
-}
 
 /// The `RakuAST::Origin` of a node that began on `line`.
 // Cost: O(1).

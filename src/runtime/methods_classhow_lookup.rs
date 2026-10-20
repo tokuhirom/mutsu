@@ -536,7 +536,7 @@ impl Interpreter {
     }
 
     pub(super) fn make_invocant_param(class_name: &str) -> crate::ast::ParamDef {
-        crate::ast::ParamDef {
+        crate::ast::ParamDef { trait_meta: Default::default(),
             type_capture: None,
             name: String::new(),
             default: None,
@@ -718,7 +718,7 @@ impl Interpreter {
         chain
     }
 
-    pub(super) fn classhow_find_method(
+    pub(crate) fn classhow_find_method(
         &mut self,
         invocant: &Value,
         method_name: &str,

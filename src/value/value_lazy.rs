@@ -50,6 +50,7 @@ impl Clone for LazyList {
             list_context: self.list_context,
             cached_no_sink: self.cached_no_sink,
             deleted_indices: Default::default(),
+            descriptor: self.descriptor.clone(),
             itemized: self.itemized,
         }
     }
@@ -240,14 +241,20 @@ impl LazyList {
             })
     }
 
-    /// A plain `gather` body (a coroutine, not a `...` sequence, scan or
-    /// lazy pipe).
-    // Cost: O(1).
-    pub(crate) fn is_gather_coroutine(&self) -> bool {
-        self.coroutine.is_some()
-            && self.sequence_spec.is_none()
-            && self.scan_spec.is_none()
-            && self.lazy_pipe.is_none()
+    /// The Seq a stream pipe ([`LazyList::new_stream_pipe`]) hands through,
+    /// as `Interpreter::gather_stream` builds one over a gather: a pipe with
+    /// no callback, no adaptor and the `Identity` transform, over a `Seq`.
+    /// `None` for every other list.
+    // Cost: O(1), one lock read.
+    pub(crate) fn seq_stream_source(&self) -> Option<Value> {
+        let spec = self.lazy_pipe.as_ref()?;
+        let spec = spec.lock().unwrap_or_else(|e| e.into_inner());
+        (matches!(spec.index_transform, Some(IndexTransform::Identity))
+            && spec.adaptor.is_none()
+            && spec.source_idx == 0
+            && spec.source.is_seq_value()
+            && !self.is_lazy_marked())
+        .then(|| spec.source.clone())
     }
 
     /// Whether this list's gather coroutine has run to completion.
@@ -493,6 +500,24 @@ impl LazyList {
     pub(crate) fn with_array_context(&self) -> Self {
         let mut cloned = self.clone();
         cloned.array_context = true;
+        cloned
+    }
+
+    /// [`Self::with_array_context`], carrying the container descriptor of the
+    /// `@` array it is placed in (its `is default(...)` value and element type).
+    // Cost: O(1) plus the clone `with_array_context` makes.
+    pub(crate) fn with_array_descriptor(
+        &self,
+        default: Option<Value>,
+        value_type: Option<String>,
+    ) -> Self {
+        let mut cloned = self.with_array_context();
+        if default.is_some() || value_type.is_some() {
+            cloned.descriptor = Some(std::sync::Arc::new(crate::value::LazyArrayDescriptor {
+                default,
+                value_type,
+            }));
+        }
         cloned
     }
 

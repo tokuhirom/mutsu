@@ -1,11 +1,16 @@
 use super::*;
 use crate::runtime::map_grep_plan::{InlineLoopKind, MapGrepPlanSlot};
 use crate::runtime::resolution_map_grep::bind_loop_topic;
-use crate::value::ValueView;
+use crate::value::{PullOut, ValueView};
 
 impl Interpreter {
-    /// Returns the mapped result and whether any element of `list_items` was
-    /// actually written back (Raku's rw binding of `$_` / an `is rw` param).
+    /// Maps `list_items` into `out` (see `eval_map_over_items_into`),
+    /// recording in `wrote_back` whether an element was actually written back
+    /// (Raku's rw binding of `$_` / an `is rw` param), also when the callback
+    /// dies part way: a deferred rw `.map` then publishes the elements written
+    /// so far, keeps what was produced and resumes after the failing element
+    /// (#12401).
+    ///
     /// The caller must only refresh the source array when that flag is set: a
     /// read-only block leaves the source untouched, and rebuilding it anyway
     /// would drop the container's per-slot metadata — most visibly the
@@ -18,12 +23,15 @@ impl Interpreter {
     /// (`runtime/map_grep_plan.rs`).
     // Cost: one callback call per element (per `arity` elements for a
     // multi-parameter block).
-    pub(crate) fn eval_map_over_items_rw(
+    pub(crate) fn eval_map_over_items_rw_into(
         &mut self,
         func: Option<Value>,
         list_items: &mut [Value],
         slot: &mut MapGrepPlanSlot,
-    ) -> Result<(Value, bool), RuntimeError> {
+        out: &mut PullOut,
+        wrote_back: &std::cell::Cell<bool>,
+    ) -> Result<(), RuntimeError> {
+        let consumed_base = out.consumed;
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -31,7 +39,6 @@ impl Interpreter {
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         let topic_key = crate::symbol::wk::rw_map_topic();
-        let wrote_back = std::cell::Cell::new(false);
         if let Some(func_ref) = func.as_ref()
             && let ValueView::Sub(data) = func_ref.view()
         {
@@ -46,7 +53,7 @@ impl Interpreter {
             // bench-ctor. It also stops an inner empty map from removing the
             // enclosing map's `topic_key` mid-iteration.
             if list_items.is_empty() {
-                return Ok((Value::array(Vec::new()), false));
+                return Ok(());
             }
             let data = data.clone();
             // A plan in `slot` means an earlier chunk of this same Seq already
@@ -91,7 +98,6 @@ impl Interpreter {
             if needs_call_path {
                 // Fall through to call_sub_value path for complex cases
                 let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
-                let mut result = Vec::new();
                 let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
                 // An explicit `is rw`/`is raw` scalar block param (`-> Int $x
                 // is rw { $x++ }`) rw-aliases the source element's container,
@@ -107,6 +113,7 @@ impl Interpreter {
                     .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
                 let mut i = 0usize;
                 while i < list_items.len() {
+                    out.consumed = consumed_base + (i + arity).min(list_items.len());
                     let value = if rw_param.is_some() {
                         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
                             list_items[i].clone(),
@@ -156,14 +163,14 @@ impl Interpreter {
                     };
                     let value = self.reify_finite_pipe_value(value)?;
                     if let ValueView::Slip(elems) = value.view() {
-                        result.extend(elems.iter().cloned());
+                        out.produced.extend(elems.iter().cloned());
                     } else {
-                        result.push(value);
+                        out.produced.push(value);
                     }
                     i += arity;
                 }
                 self.env.remove_sym(topic_key);
-                return Ok((Value::array(result), wrote_back.get()));
+                return Ok(());
             }
 
             let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
@@ -174,7 +181,10 @@ impl Interpreter {
                 .then(|| data.param_defs.get(data.assumed_positional.len()))
                 .flatten()
                 .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
-            let mut result = Vec::new();
+            let PullOut {
+                produced: result,
+                consumed,
+            } = &mut *out;
 
             // Compile once, reuse VM for every iteration (and reuse a cached
             // compile across repeated calls to this same closure literal —
@@ -228,7 +238,7 @@ impl Interpreter {
             // ADR-0027: see the matching comment in `eval_map_over_items`
             // (`resolution_map_grep.rs`).
             let block_owned = &data.owned_captures;
-            let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
+            let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope `state` variables to the closure instance — the body was
                 // re-compiled fresh, so two distinct blocks share compile-time
                 // state keys (see the same line in `eval_map_over_items`).
@@ -238,6 +248,9 @@ impl Interpreter {
                     if arity > 1 && i + arity > list_items.len() {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
+                    // The elements taken, this one included: if the callback
+                    // dies, the Seq resumes after it (#12401).
+                    *consumed = consumed_base + i + arity;
                     vm.frame_authoritative = block_authoritative.clone();
                     vm.frame_owned = block_owned.clone();
                     // Set when `rw_param` is active: the transient cell this
@@ -391,15 +404,19 @@ impl Interpreter {
                     i += arity;
                 }
 
-                Ok(Value::array(result))
+                Ok(())
             });
 
             self.leave_inline_loop_env(saved);
             self.env.remove_sym(topic_key);
-            return loop_result.map(|v| (v, wrote_back.get()));
+            return loop_result;
         }
         // Non-Sub func: delegate to regular map (which never writes back)
-        self.eval_map_over_items(func, list_items.to_vec())
-            .map(|v| (v, false))
+        self.eval_map_over_items_into(
+            func,
+            list_items.to_vec(),
+            &mut MapGrepPlanSlot::default(),
+            out,
+        )
     }
 }

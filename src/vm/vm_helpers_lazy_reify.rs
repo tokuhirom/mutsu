@@ -17,7 +17,7 @@ impl Interpreter {
     /// yield `()`. Two shapes are reified into a single `Seq` element (never
     /// flattened — raku `(1,).map({(10,20)})` == `((10 20),)`):
     ///
-    /// - a lazy `.map`/`.grep` pipe whose source chain bottoms out in a
+    /// - a lazy `.map`/`.grep` pipe, not `lazy`-marked, whose source chain bottoms out in a
     ///   provably-finite source (a `gather`, or a finite Array/Seq/Range). An
     ///   infinite pipe (`(1,).map({1..Inf})`) bottoms out `false` and stays
     ///   lazy, so this can never turn an infinite pipe into a hang;
@@ -36,7 +36,9 @@ impl Interpreter {
     /// (k ≤ MAP_RESULT_GATHER_FORCE_CAP for a gather); O(1) for other values.
     pub(crate) fn reify_finite_pipe_value(&mut self, val: Value) -> Result<Value, RuntimeError> {
         if let ValueView::LazyList(ll) = val.view() {
-            if ll.lazy_pipe.is_some() && ll.pipe_bottoms_out_finite() {
+            // A `lazy`-marked pipe (`lazy gather take 5`, `(1..3).lazy.map(..)`)
+            // is `.is-lazy` in Rakudo whatever its source, so it stays lazy.
+            if ll.lazy_pipe.is_some() && !ll.is_lazy_marked() && ll.pipe_bottoms_out_finite() {
                 let items = self.force_lazy_list_vm(&ll)?;
                 return Ok(Value::seq(items));
             }

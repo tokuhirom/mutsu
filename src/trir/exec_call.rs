@@ -237,9 +237,11 @@ impl Interpreter {
                 // variable is genuinely captured; the mask is how a TRIR
                 // frame — which has no caller local for `capture_var_cell` to
                 // alias — reaches the same place.
+                // A readonly parameter of this routine is a value, never a
+                // container, so an `is rw` parameter refuses it (#13782).
                 TrArg::Native(s, kind) => {
                     let v = kind.box_native(self.trir.nl[nbase + *s as usize]);
-                    if wants_container {
+                    if wants_container && !chunk.is_readonly_param_slot(*s, *kind) {
                         v.into_container_ref()
                     } else {
                         v
@@ -256,7 +258,7 @@ impl Interpreter {
                 }
                 TrArg::Obj(s) => {
                     let v = self.trir.ol[obase + *s as usize].clone();
-                    if wants_container {
+                    if wants_container && !chunk.is_readonly_param_slot(*s, TrKind::Obj) {
                         v.into_container_ref()
                     } else {
                         v

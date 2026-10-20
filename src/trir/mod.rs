@@ -306,6 +306,16 @@ pub(crate) fn next_chunk_id() -> u64 {
 }
 
 impl TrChunk {
+    /// Whether `slot` of `kind` holds one of this routine's readonly (not
+    /// `is rw`) parameters. A parameter's slot is never reused (every TRIR
+    /// binding gets a fresh one), so the slot identifies it exactly.
+    // Cost: O(p), p = parameters.
+    pub(crate) fn is_readonly_param_slot(&self, slot: u16, kind: TrKind) -> bool {
+        self.params
+            .iter()
+            .any(|p| !p.is_rw && p.slot == slot && p.kind == kind)
+    }
+
     /// Whether `MUTSU_TRIR=off` has switched TRIR off for this process.
     ///
     /// The A/B tool of ADR-0110 §5: with it set, every eligible routine

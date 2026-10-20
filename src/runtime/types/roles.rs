@@ -329,8 +329,8 @@ impl Interpreter {
                 this.eval_does_values(view, right)
             });
         }
-        if let Some((role_name, args, _)) = self.extract_role_application(&right)
-            && let Some(reblessed) = self.does_rebless_instance(&left, &[(role_name, args)])?
+        if let Some(application) = self.extract_role_application(&right)
+            && let Some(reblessed) = self.does_rebless_instance(&left, &[application])?
         {
             return Ok(reblessed);
         }
@@ -353,10 +353,9 @@ impl Interpreter {
                 this.eval_does_values_list(view, roles)
             });
         }
-        let applications: Vec<(String, Vec<Value>)> = roles
+        let applications: Vec<(String, Vec<Value>, bool)> = roles
             .iter()
             .filter_map(|role| self.extract_role_application(role))
-            .map(|(name, args, _)| (name, args))
             .collect();
         if applications.len() == roles.len()
             && let Some(reblessed) = self.does_rebless_instance(&left, &applications)?

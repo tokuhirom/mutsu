@@ -11,8 +11,10 @@
 //! the import as the block's own binding of it (`Compiler::bind_block_imported_vars`).
 //!
 //! The scan cannot tell for a module that computes its export set (a
-//! `sub EXPORT` hook, an export stash under a computed key); such a module
-//! has no entry here, and its variables keep the run-time import.
+//! `sub EXPORT` hook, an export stash under a computed key). A hook module's
+//! entry lists only the names its hook spells as literal pair keys (`hook`
+//! entries); everything else it exports keeps the run-time import. A module
+//! with a computed export stash has no entry.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -32,6 +34,12 @@ pub(crate) struct ExportedVar {
     /// under its term key (`term_names::term_key`).
     #[serde(default)]
     pub(crate) term: bool,
+    /// A name a `sub EXPORT` hook returns under a literal key
+    /// (`export_hook::collect_export_hook_value_keys`), not a package
+    /// variable: the block's binding takes the hook's value from the import
+    /// (`OpCode::GetHookExport`).
+    #[serde(default)]
+    pub(crate) hook: bool,
 }
 
 impl ExportedVar {
@@ -106,6 +114,28 @@ pub(super) fn record(module: &str, vars: Option<Rc<[ExportedVar]>>) {
     });
 }
 
+/// The entries of a `sub EXPORT` hook's literal keys `keys` (`'$x'`, `'@x'`,
+/// `'vrai'`) for `module`, in the spelling a declaration of each holds.
+// Cost: O(k), k = keys.
+pub(super) fn hook_vars(module: &str, keys: &[String]) -> Rc<[ExportedVar]> {
+    keys.iter()
+        .map(|key| {
+            let (name, term) = match key.chars().next() {
+                Some('$') => (key[1..].to_string(), false),
+                Some('@' | '%') => (key.clone(), false),
+                _ => (key.clone(), true),
+            };
+            ExportedVar {
+                name,
+                package: module.to_string(),
+                tags: vec!["MANDATORY".to_string()],
+                term,
+                hook: true,
+            }
+        })
+        .collect()
+}
+
 /// The exported variables of `module`, when a `use` of it was parsed and its
 /// export set is fully known from its `is export` traits.
 // Cost: O(n), n = length of `module`.
@@ -133,6 +163,7 @@ mod tests {
             package: "M".to_string(),
             tags: tags.iter().map(|s| s.to_string()).collect(),
             term: false,
+            hook: false,
         }
     }
 

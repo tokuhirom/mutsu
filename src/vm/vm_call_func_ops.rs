@@ -1826,6 +1826,15 @@ impl Interpreter {
             );
         }
         crate::vm::vm_stats::record_function_dispatch();
+        // An imported routine a trait composed a CALL-ME role into is called
+        // through that role, as its code object is (ADR-11827).
+        let binding = match binding {
+            CodeVarBinding::Routine(def) => match self.call_me_view_of_def(&def) {
+                Some(current) => CodeVarBinding::Bound(current),
+                None => CodeVarBinding::Routine(def),
+            },
+            other => other,
+        };
         if let CodeVarBinding::Routine(def) = &binding
             && self.try_lex_import_light_call(
                 code,
@@ -2039,26 +2048,26 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         trir_args: Option<&[Value]>,
     ) -> Result<Value, RuntimeError> {
-        let qualified_def =
-            if call_me_override.is_none() && crate::qualified::is_qualified(name_sym) {
-                self.registry().function_def(name_sym)
+        // A trait may have composed a role with CALL-ME onto the routine a
+        // call names. The composition lives in the routine's identity cell
+        // (ADR-11827), not in an env `&name` binding -- a module's binding
+        // does not outlive its load (#12907) -- so consult the cell of the
+        // routine the name resolves to before taking the ordinary
+        // compiled-function path. A multi's candidates are left to dispatch.
+        let composed_def =
+            if call_me_override.is_none() && crate::value::RoutineCell::any_composed() {
+                if crate::qualified::is_qualified(name_sym) {
+                    self.registry().function_def(name_sym)
+                } else if !self.has_multi_candidates_cached_sym(name_sym) {
+                    self.resolve_function(name)
+                } else {
+                    None
+                }
             } else {
                 None
             };
-        // A package-qualified call names a routine definition directly, so it
-        // normally skips the routine value's CALL-ME dispatch. A trait may have
-        // composed a role with CALL-ME onto that routine; consult the def-owned
-        // identity cell before taking the ordinary compiled-function path.
-        // This is deliberately limited to qualified names: bare-name calls
-        // retain their existing lexical and multi-dispatch resolution.
-        if let Some(def) = qualified_def
-            && let Some(current) =
-                Self::routine_current_view(&self.sub_value_from_function_def((*def).clone()))
-            && let ValueView::Mixin(_, mixins) = current.view()
-            && mixins.keys().any(|key| {
-                key.strip_prefix("__mutsu_role__")
-                    .is_some_and(|role| self.role_has_method(role, "CALL-ME"))
-            })
+        if let Some(def) = composed_def
+            && let Some(current) = self.call_me_view_of_def(&def)
         {
             return self.vm_call_on_value(current, args, Some(compiled_fns));
         }

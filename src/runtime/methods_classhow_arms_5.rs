@@ -305,8 +305,10 @@ impl Interpreter {
             let local_only = args[1..].iter().any(
                 |a| matches!(a.view(), ValueView::Pair(k, v) if k == "local" && v.truthy()),
             );
-            if let Some(role) = self.mop_receiver_role(&args[0], &owner_class) {
-                return Ok(Value::array(self.role_own_attribute_objects(&role)));
+            if let Some(candidate) = self.role_candidate_receiver(&args[0], &owner_class) {
+                return Ok(Value::array(
+                    self.role_candidate_own_attribute_objects(&owner_class, candidate),
+                ));
             }
             let mut values = self.mixin_role_attribute_objects(&args[0], &owner_class);
             if !(local_only && !values.is_empty()) {

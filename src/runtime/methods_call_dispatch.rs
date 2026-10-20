@@ -204,15 +204,16 @@ impl Interpreter {
         {
             return result;
         }
-        // `X::Promise::Broken`, `X::React::Died` and `X::Await::Died` are
-        // composed into the exception `Promise.result`, a dying `react` or
-        // `await` rethrows; the role's `gist` is a row, found by the role
-        // (ADR-11276, #11276). Asked here, ahead of the native `.gist` arms
-        // downstream that would answer the bare exception.
-        if let Some(owners) = crate::builtins::method_table::wrapper_role_owners_of(&target)
+        // A `Mixin` reaches the rows of the roles mixed into it ahead of its
+        // inner value's (ADR-11276, #11276): `X::Promise::Broken`,
+        // `X::React::Died` and `X::Await::Died`, composed into the exception
+        // `Promise.result`, a dying `react` or `await` rethrows, answer
+        // `gist` before the native `.gist` arms downstream that would answer
+        // the bare exception.
+        if let Some(owners) = crate::builtins::method_table::mixin_role_owners_of(&target, method)
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
-                owners,
+                &owners.iter().map(String::as_str).collect::<Vec<_>>(),
                 method,
                 &args,
                 || target.clone(),
@@ -555,6 +556,7 @@ impl Interpreter {
         // argument as the class's per-site hooks did.
         if let Some(owners) = crate::builtins::method_table::opaque_owners_of(&target)
             && !self.native_lever_a_user_override_sym(&target, Symbol::intern(method))
+            && !self.enum_composes_role_method(&target, method)
             && let Some(answer) = crate::builtins::method_table::invoke_owner(
                 self,
                 owners,
@@ -618,19 +620,6 @@ impl Interpreter {
             && let Some(rendered) = self.raku_repr_with_dispatch(&target)
         {
             return Ok(Value::str(rendered));
-        }
-        // `List.from-iterator` and `Array.from-iterator` are rows of their
-        // type objects (ADR-11276 §9.164).
-        if let Some(owners) = crate::builtins::method_table::from_iterator_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
         }
         // `Rakudo::Internals::JSON.from-json` / `.to-json`: a core Rakudo class
         // routed to the native JSON implementation (used by OpenSSL, JSON::JWT).
@@ -844,22 +833,6 @@ impl Interpreter {
         {
             return self.dispatch_instance_and_fallback(target, method, args);
         }
-        // A built-in iterator's protocol methods are rows of the `Iterator` and
-        // `PredictiveIterator` roles, found by their owner (ADR-11276 §9.126).
-        // They commit through the instance's shared attribute cell, so an
-        // iterator held in an array element or a temporary advances in place
-        // and every alias sees the step.
-        if let Some(owners) = crate::builtins::method_table::iterator_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
-        }
         // DateTime/Date formatter rendering. The formatter runs against this
         // invocant on every stringification (nothing is cached), so a value
         // derived by `.utc`, `.later`, `.clone`, `+` ... renders its own
@@ -953,20 +926,6 @@ impl Interpreter {
         {
             return result;
         }
-        // `RakuAST::Node.visit-children` and the `RakuAST::Origin` rows are
-        // rows of the method table, found by their owner: neither has a
-        // dispatch shape.
-        if let Some(owners) = crate::builtins::method_table::rakuast_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
-        }
         // Private method call on non-Instance
         if let Some(result) = self.dispatch_private_method_on_non_instance(&target, method) {
             return result;
@@ -1033,9 +992,6 @@ impl Interpreter {
             &args,
             || target.clone(),
         ) {
-            return result;
-        }
-        if let Some(result) = self.formatter_syntax_parse(&target, method, &args) {
             return result;
         }
         // `Match.make` is a row (ADR-11276 §9.164).

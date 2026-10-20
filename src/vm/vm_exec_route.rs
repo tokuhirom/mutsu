@@ -364,6 +364,7 @@ impl Interpreter {
             | OpCode::DoGivenExpr { .. }
             | OpCode::Eager
             | OpCode::EndBeginPrologue
+            | OpCode::GetHookExport { .. }
             | OpCode::GetImportedVar { .. }
             | OpCode::ImportModule { .. }
             | OpCode::ImportScope { .. }

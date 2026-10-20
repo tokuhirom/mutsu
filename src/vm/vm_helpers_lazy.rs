@@ -1,5 +1,5 @@
 use super::*;
-use crate::value::{SeqBody, SeqSource, SeqTaken};
+use crate::value::{PullOut, SeqBody, SeqSource, SeqTaken};
 use std::sync::Arc;
 
 impl Interpreter {
@@ -9,42 +9,47 @@ impl Interpreter {
     /// read its elements yet": a user/native `Iterator` (`Seq.new($iter)`,
     /// `Seq.from-loop`) and an `IO::Handle.lines`/`.words` read (formerly the
     /// separate `ValueRepr::LazyIoLines`).
+    ///
+    /// The elements go into `out` as they are produced, so a non-consuming
+    /// read that fails part way keeps them (#12401).
     pub(crate) fn pull_seq_source(
         &mut self,
         source: &SeqSource,
-    ) -> Result<Vec<Value>, RuntimeError> {
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
         match source {
             // `reify`/`take`/`sink` only invoke `pull` for a source that
             // still needs pulling; these two arms exist only so the match is
             // exhaustive and never panics if that invariant ever slips.
-            SeqSource::Reified => Ok(Vec::new()),
+            SeqSource::Reified => Ok(()),
             SeqSource::Taken => Err(crate::value::seq_consumed_error()),
-            SeqSource::Iterator(iterator) => self.pull_iterator_to_vec(iterator.clone()),
+            SeqSource::Iterator(iterator) => {
+                self.pull_iterator_prefix_into(iterator, usize::MAX, out)
+            }
             // Cost: a full pull of the cursor (O(n) for a `Str` cursor, n = bytes
             // of the string). `SeqBody` cuts this source itself (it needs no
             // interpreter); kept so the match stays total.
             SeqSource::Pure(spec) => {
-                let mut items = Vec::new();
-                spec.clone().push_up_to(&mut items, usize::MAX);
-                Ok(items)
+                spec.clone().push_up_to(&mut out.produced, usize::MAX);
+                Ok(())
             }
             SeqSource::IoLines { handle, words, kv } => {
-                self.pull_io_lines_to_vec(handle.clone(), *words, *kv)
+                let lines = self.pull_io_lines_to_vec(handle.clone(), *words, *kv)?;
+                out.produced.extend(lines);
+                Ok(())
             }
             // Cost: the callback runs over the source elements from `pos` on
             // (see `pull_map_grep_rest`).
-            SeqSource::MapGrep { .. } => self.pull_map_grep_rest(source),
+            SeqSource::MapGrep { .. } => self.pull_map_grep_rest_into(source, out),
             // Cost: runs the gather body to completion (ADR-11678).
-            SeqSource::Gather(list) => match list.view() {
-                ValueView::LazyList(ll) => self.force_lazy_list_vm(&ll),
-                _ => Ok(Vec::new()),
-            },
+            SeqSource::Gather(list) => {
+                if let ValueView::LazyList(ll) = list.view() {
+                    let items = self.force_lazy_list_vm(&ll)?;
+                    out.produced.extend(items);
+                }
+                Ok(())
+            }
         }
-    }
-
-    /// Drive a user/native `Iterator`'s `pull-one` until `IterationEnd`.
-    fn pull_iterator_to_vec(&mut self, iterator: Value) -> Result<Vec<Value>, RuntimeError> {
-        self.pull_iterator_prefix_to_vec(&iterator, usize::MAX)
     }
 
     /// Drive an `Iterator`'s `pull-one` at most `limit` times, stopping early
@@ -57,6 +62,21 @@ impl Interpreter {
         iterator: &Value,
         limit: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
+        let mut out = PullOut::default();
+        self.pull_iterator_prefix_into(iterator, limit, &mut out)?;
+        Ok(out.produced)
+    }
+
+    /// [`Self::pull_iterator_prefix_to_vec`] into `out`, which holds what was
+    /// pulled before a failing `pull-one`: the iterator keeps its own
+    /// position, so a non-consuming read resumes after it (#12048, #12401).
+    // Cost: O(limit) `pull-one` calls.
+    pub(crate) fn pull_iterator_prefix_into(
+        &mut self,
+        iterator: &Value,
+        limit: usize,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
         // `Seq.from-loop(&body, :label(...))` with no condition/step
         // (`dispatch_seq_from_loop`'s lazy-infinite branch,
         // `runtime/methods_seq_dispatch.rs`) wraps its body callable in a
@@ -72,31 +92,23 @@ impl Interpreter {
         if let ValueView::Instance { class_name, .. } = iterator.view()
             && class_name == "FromLoopIterator"
         {
-            return self.pull_from_loop_iterator_to_vec(iterator, limit);
+            let items = self.pull_from_loop_iterator_to_vec(iterator, limit)?;
+            out.produced.extend(items);
+            return Ok(());
         }
-        let mut pulled = Vec::new();
-        while pulled.len() < limit {
-            let val = match self.call_method_with_values(iterator.clone(), "pull-one", vec![]) {
-                Ok(val) => val,
-                Err(mut e) => {
-                    // The iterator keeps its own position; the Seq keeps what
-                    // was pulled so far and resumes after the failure (#12048).
-                    e.set_seq_pull_progress(crate::value::SeqPullProgress {
-                        produced: pulled,
-                        consumed: 0,
-                    });
-                    return Err(e);
-                }
-            };
+        let mut pulled = 0usize;
+        while pulled < limit {
+            let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
             if val.is_iteration_end() {
                 break;
             }
-            pulled.push(val);
+            out.produced.push(val);
+            pulled += 1;
         }
-        Ok(pulled)
+        Ok(())
     }
 
-    /// Drive a `FromLoopIterator` instance (see `pull_iterator_to_vec`'s doc
+    /// Drive a `FromLoopIterator` instance (see `pull_iterator_prefix_into`'s doc
     /// comment) by repeatedly invoking its stored `from_loop_body` callable,
     /// mirroring `dispatch_seq_from_loop`'s own eager loop (redo/next/last
     /// with label matching) — this IS the deferred half of that same loop,
@@ -227,15 +239,17 @@ impl Interpreter {
         // TODO: close the handle when its Seq is dropped, then pull a
         // bounded prefix here too.
         if body.is_gather_source() {
-            return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
+            return body.extend_gather_prefix(needed, |list, from, n| {
+                self.pull_gather_window(list, from, n)
+            });
         }
         // A deferred `.map`/`.grep` runs its callback over only as much of
         // its source as the subscript reaches (`$s[5]` runs it six times).
         if body.is_map_grep_source() {
             let have = body.len();
             if have < needed {
-                body.extend_map_grep_prefix(|source| {
-                    self.pull_map_grep_prefix(source, needed - have)
+                body.extend_map_grep_prefix(|source, out| {
+                    self.pull_map_grep_prefix_into(source, needed - have, out)
                 })?;
             }
             return Ok(());
@@ -263,7 +277,9 @@ impl Interpreter {
         &mut self,
         body: &Arc<SeqBody>,
     ) -> Result<Vec<Value>, RuntimeError> {
-        Ok(body.reify(|source| self.pull_seq_source(source))?.to_vec())
+        Ok(body
+            .reify(|source, out| self.pull_seq_source(source, out))?
+            .to_vec())
     }
 
     /// rakudo's `.iterator`/`.list`/...: produce the elements, consuming the
@@ -272,7 +288,7 @@ impl Interpreter {
         &mut self,
         body: &Arc<SeqBody>,
     ) -> Result<(Vec<Value>, SeqTaken), RuntimeError> {
-        body.take(|source| self.pull_seq_source(source))
+        body.take(|source, out| self.pull_seq_source(source, out))
     }
 
     /// [`crate::opcode::OpCode::ConsumeReifiedSeq`]: the invocant of an explicit
@@ -310,7 +326,7 @@ impl Interpreter {
 
     /// rakudo's `sink`: run the source for side effects and discard.
     pub(crate) fn sink_seq_body(&mut self, body: &Arc<SeqBody>) -> Result<(), RuntimeError> {
-        body.sink(|source| self.pull_seq_source(source))
+        body.sink(|source, out| self.pull_seq_source(source, out))
     }
 
     /// [`Self::sink_seq_body`] for the `.sink` METHOD — see
@@ -319,7 +335,7 @@ impl Interpreter {
         &mut self,
         body: &Arc<SeqBody>,
     ) -> Result<(), RuntimeError> {
-        body.sink_explicit(|source| self.pull_seq_source(source))
+        body.sink_explicit(|source, out| self.pull_seq_source(source, out))
     }
 
     /// Reify a not-yet-run `.map`/`.grep` Seq (`SeqSource::MapGrep`,
@@ -374,7 +390,9 @@ impl Interpreter {
             && body.is_gather_source()
         {
             let body = Arc::clone(&body);
-            return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
+            return body.extend_gather_prefix(needed, |list, from, n| {
+                self.pull_gather_window(list, from, n)
+            });
         }
         if let ValueView::Seq(body) = value.view()
             && body.is_map_grep_source()
@@ -384,7 +402,9 @@ impl Interpreter {
             if have >= needed {
                 return Ok(());
             }
-            body.extend_map_grep_prefix(|source| self.pull_map_grep_prefix(source, needed - have))?;
+            body.extend_map_grep_prefix(|source, out| {
+                self.pull_map_grep_prefix_into(source, needed - have, out)
+            })?;
         }
         Ok(())
     }
@@ -607,19 +627,17 @@ impl Interpreter {
             return Ok(Value::seq_body(fresh));
         }
         // `.lazy`, `.map`, `.grep` and `.first` on a plain gather consume the
-        // Seq, as Rakudo's do, and stream its coroutine: hand the inner gather list on
-        // to the `LazyList` paths that drive it (ADR-11678 §2.3).
+        // Seq, as Rakudo's do, and stream it: the `LazyList` paths drive a
+        // pipe that pulls the Seq one element at a time (ADR-11678 §2.3). On a
+        // cached Seq `.map`/`.grep`/`.first` pipe over it, leaving it readable.
         if matches!(method, "lazy" | "map" | "grep" | "first")
-            && let Some(list) = body.take_gather_source()
+            && body.is_gather_source()
+            && (method != "lazy" || body.shared_gather_source().is_none())
         {
-            return Ok(list);
-        }
-        // ... and on a cached one they pipe over the shared coroutine list,
-        // leaving the Seq readable.
-        if matches!(method, "map" | "grep" | "first")
-            && let Some(list) = body.shared_gather_source()
-        {
-            return Ok(list);
+            let stream = self.gather_stream(target.clone());
+            if matches!(stream.view(), ValueView::LazyList(_)) {
+                return Ok(stream);
+            }
         }
         // `.map`/`.grep` on a not-yet-run `.map`/`.grep` Seq chains onto its
         // source (`MapGrepItems::Chain`, #11176) instead of running the
@@ -757,11 +775,11 @@ impl Interpreter {
             }
             // A plain gather: the iterator resumes the coroutine per
             // `pull-one` (ADR-11678 §2.4).
-            if let Some(list) = body
-                .take_gather_source()
-                .or_else(|| body.shared_gather_source())
-            {
-                return self.dispatch_iterator_method(list);
+            if body.is_gather_source() {
+                let stream = self.gather_stream(target.clone());
+                if matches!(stream.view(), ValueView::LazyList(_)) {
+                    return self.dispatch_iterator_method(stream);
+                }
             }
             // A not-yet-finished `.map`/`.grep`: the iterator streams the
             // source, running the callback once per element it hands out
@@ -843,7 +861,7 @@ impl Interpreter {
         // only, as Rakudo's do (and as `?$g` does).
         if matches!(method, "Bool" | "so" | "not") && body.is_gather_source() {
             let body = Arc::clone(&body);
-            body.extend_gather_prefix(1, |list, n| self.pull_gather_prefix(list, n))?;
+            body.extend_gather_prefix(1, |list, from, n| self.pull_gather_window(list, from, n))?;
             return Ok(target);
         }
         // Rakudo's `Seq.values` is `.list`.

@@ -8,8 +8,9 @@
 //! `Thread.yield`.
 //!
 //! The rows are reached through their owner (`RowFlags::OWNER_ONLY`,
-//! `invoke_owner`) from the by-name dispatch that answered them before
-//! (`dispatch_method_by_name_3`), for the type object of the owner itself. The
+//! `RowFlags::CLASS_METHOD`) from the by-name dispatch's one class-method
+//! lookup (`Interpreter::type_object_class_method`), for the type object of
+//! the owner or of a user subclass of it. The
 //! implementations read the call's positional and named arguments as one list
 //! (`:$scheduler`, `:$enc`, ...), so a handler hands them back that way; the
 //! socket and registry rows take any number of arguments (`SLURPY`), as the
@@ -38,6 +39,7 @@ macro_rules! row {
             handler: Handler::Interp($handler),
             flags: RowFlags::OWNER_ONLY
                 .or(RowFlags::TYPE_OBJECT_OK)
+                .or(RowFlags::CLASS_METHOD)
                 .or(RowFlags::SLURPY)
                 .or($extra),
             named: $named,
@@ -92,7 +94,9 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "new",
         arity: 1,
         handler: Handler::Narrow(io_special_new),
-        flags: RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK),
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::TYPE_OBJECT_OK)
+            .or(RowFlags::CLASS_METHOD),
         named: &[],
     },
     // `Supply.start` is an instance method: a supply of the block's results.
@@ -105,52 +109,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
 ];
-
-/// The owner whose class methods `target` answers: the type object of one of
-/// the classes above.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let name = match target.view() {
-        ValueView::Package(name) => name,
-        // `Supply`'s class methods refuse an instance with Rakudo's message.
-        ValueView::Instance { class_name, .. } if class_name == "Supply" => {
-            return Some(&["Supply"]);
-        }
-        _ => return None,
-    };
-    Some(match name.as_str() {
-        "Supply" => &["Supply"],
-        "CompUnit::RepositoryRegistry" => &["CompUnit::RepositoryRegistry"],
-        "Encoding::Registry" => &["Encoding::Registry"],
-        "IO::Socket::INET" => &["IO::Socket::INET"],
-        "IO::Socket::Async" => &["IO::Socket::Async"],
-        "Rakudo::Internals" => &["Rakudo::Internals"],
-        "Deprecation" => &["Deprecation"],
-        "CompUnit::Loader" => &["CompUnit::Loader"],
-        "IO::Special" => &["IO::Special"],
-        // `Kernel.hostname` and the other `Systemic` rows that answer the type
-        // object (`systemic.rs`).
-        "Kernel" => &["Kernel"],
-        _ => return None,
-    })
-}
-
-/// The owner whose class methods the type object `target` answers early in the
-/// by-name dispatch (`dispatch_method_by_name_1`): `Seq`, `Thread` and
-/// `X::AdHoc` for their own type objects, and `Promise` for any other (its
-/// handlers decline a type object that is no `Promise` class, ADR-11276 §9.120).
-// Cost: O(1).
-pub(crate) fn early_owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let ValueView::Package(name) = target.view() else {
-        return None;
-    };
-    Some(match name.as_str() {
-        "Seq" => &["Seq"],
-        "Thread" => &["Thread"],
-        "X::AdHoc" => &["X::AdHoc"],
-        _ => &["Promise"],
-    })
-}
 
 /// The call's positional arguments followed by its named ones, the one list the
 /// implementations read.

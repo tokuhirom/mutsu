@@ -63,6 +63,14 @@ impl Compiler {
         else {
             return false;
         };
+        // A readonly parameter of this routine passed to an `is rw` parameter
+        // is refused (#13782); the direct call would hand the callee this
+        // frame's slot, so leave it to `CallFunc`, whose binder refuses it.
+        if args.iter().enumerate().any(|(i, a)| {
+            self.is_readonly_param_operand(a) && link.chunk.params.get(i).is_some_and(|p| p.is_rw)
+        }) {
+            return false;
+        }
         let mut arg_slots = Vec::with_capacity(args.len());
         for a in args {
             let Expr::Var(n) = a else { return false };

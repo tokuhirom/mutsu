@@ -78,6 +78,17 @@ impl Interpreter {
                 return true;
             }
         }
+        // The one subclass among the built-in metaclasses: `GrammarHOW is
+        // ClassHOW` (`Metamodel::GrammarHOW.^mro`), so a grammar's HOW takes
+        // a trait's `when Metamodel::ClassHOW` arm (AttrX::Mooish, #14154).
+        fn bare_metaclass(name: &str) -> &str {
+            name.strip_prefix("Perl6::").unwrap_or(name)
+        }
+        if bare_metaclass(constraint) == "Metamodel::ClassHOW"
+            && bare_metaclass(value_type) == "Metamodel::GrammarHOW"
+        {
+            return true;
+        }
         // Native type aliases: num -> Num, int -> Int, str -> Str
         if constraint == "num" && value_type == "Num" {
             return true;

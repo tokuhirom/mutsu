@@ -27,7 +27,7 @@ impl Interpreter {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
         // Both iterate their operands, consuming an uncached Seq; a plain
-        // gather is streamed through its coroutine list (ADR-11678), so
+        // gather is streamed through a pipe over its body (ADR-11678), so
         // `(gather { loop { ... } }) Z (1..3)` stays lazy.
         // A shared Array/Hash operand is walked as a snapshot: the operator
         // runs user code per pair (ADR-0068 §20).

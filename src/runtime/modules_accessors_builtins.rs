@@ -62,6 +62,7 @@ mod module_bytecode;
 pub(crate) mod module_load_facts;
 pub(crate) mod routine_scoped_enums;
 mod module_reinstate;
+mod module_trait_routine_bindings;
 mod numeric_subclass_repr;
 mod proxy_store;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;

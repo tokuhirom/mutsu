@@ -852,8 +852,13 @@ impl Interpreter {
         }
         // A built-in iterator does `Iterator` and, when it knows its count,
         // `PredictiveIterator`: its protocol methods are those roles' rows, found
-        // by owner for the instance's kind (ADR-11276 §9.126).
-        if let Some(owners) = crate::builtins::method_table::iterator_owners_of(target) {
+        // by the owners of its opaque shape (ADR-11276 §9.126).
+        if let Some(owners) = crate::builtins::method_table::opaque_owners_of(target)
+            && matches!(
+                target.receiver_shape(),
+                Some(crate::value::DispatchShape::Iterator | crate::value::DispatchShape::PredictiveIterator)
+            )
+        {
             let method = Symbol::intern(method_name);
             if let Some(owner) = owners
                 .iter()
@@ -1254,9 +1259,7 @@ impl Interpreter {
         // For enum values, also check enum-specific methods (key, value, Int, Str, etc.)
         if results.is_empty()
             && matches!(target.view(), ValueView::Enum { .. })
-            && self
-                .dispatch_enum_method(target, method_name, &[])
-                .is_some()
+            && Self::enum_member_has_method(target, method_name)
         {
             results.push(Value::routine_parts(
                 Symbol::intern(&class_name),

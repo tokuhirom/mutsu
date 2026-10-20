@@ -197,14 +197,18 @@ impl Interpreter {
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
-        // A wrapper role's `gist` row (ADR-11276, #11276), found by the role
-        // the exception carries, ahead of the native exception-gist arm below
-        // that would answer the bare cause; as in `call_method_with_values`.
-        if let Some(owners) = crate::builtins::method_table::wrapper_role_owners_of(target)
-            && let Some(result) =
-                crate::builtins::method_table::invoke_owner(self, owners, method_name, args, || {
-                    target.clone()
-                })
+        // A mixed-in role's rows (a wrapper role's `gist`, ADR-11276, #11276)
+        // ahead of the native arms below that would answer the bare inner
+        // value; as in `call_method_with_values`.
+        if let Some(owners) =
+            crate::builtins::method_table::mixin_role_owners_of(target, method_name)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                &owners.iter().map(String::as_str).collect::<Vec<_>>(),
+                method_name,
+                args,
+                || target.clone(),
+            )
         {
             return Some(result);
         }
@@ -782,16 +786,16 @@ impl Interpreter {
                 // lazy elements (`take internals($child)` in a binary-tree
                 // walk), which a raw return would leave un-descended
                 // (`('A', Seq(...), ...)`).
-                // A plain gather's coroutine list (`flat(gather {...})`, the
-                // §8.2 Stream class) is flattened as it is pulled instead, so
+                // A plain gather streamed as a pipe over its Seq (`flat(gather
+                // {...})`, the §8.2 Stream class) is flattened as it is pulled
+                // instead, so
                 // an infinite one works; the result is a Seq, as in Rakudo.
                 if name.as_str() == "flat"
                     && let [arg] = args
                     && let ValueView::LazyList(ll) = arg.view()
-                    && ll.is_gather_coroutine()
-                    && !ll.is_genuinely_lazy()
+                    && let Some(seq) = ll.seq_stream_source()
                 {
-                    return Some(Ok(Self::lazy_flat_gather(arg.clone())));
+                    return Some(Ok(Self::lazy_flat_gather(seq)));
                 }
                 let is_finite_gather = |v: &Value| {
                     matches!(v.view(), ValueView::LazyList(ll)

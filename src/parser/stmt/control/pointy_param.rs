@@ -113,6 +113,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r2,
                 ParamDef {
+                    trait_meta: Default::default(),
                     type_capture: None,
                     name: "__type_only__".to_string(),
                     default: None,
@@ -183,6 +184,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                trait_meta: Default::default(),
                 type_capture: None,
                 name,
                 default,
@@ -269,6 +271,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             r,
             ParamDef {
+                trait_meta: Default::default(),
                 type_capture: None,
                 name,
                 default,
@@ -306,6 +309,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r,
                 ParamDef {
+                    trait_meta: Default::default(),
                     type_capture: None,
                     name,
                     default: None,
@@ -341,6 +345,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r,
                 ParamDef {
+                    trait_meta: Default::default(),
                     type_capture: None,
                     name,
                     default: None,
@@ -375,6 +380,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             r,
             ParamDef {
+                trait_meta: Default::default(),
                 type_capture: None,
                 name: "_capture".to_string(),
                 default: None,
@@ -445,6 +451,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                trait_meta: Default::default(),
                 type_capture: None,
                 name: "&".to_string(),
                 default: None,
@@ -489,6 +496,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         return Ok((
             rest,
             ParamDef {
+                trait_meta: Default::default(),
                 type_capture: None,
                 name: "__literal__".to_string(),
                 default: None,
@@ -534,6 +542,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((
                 r,
                 ParamDef {
+                    trait_meta: Default::default(),
                     type_capture: None,
                     name: "__literal__".to_string(),
                     default: None,
@@ -692,6 +701,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     Ok((
         rest,
         ParamDef {
+            trait_meta: Default::default(),
             type_capture: None,
             name: param_name,
             default,

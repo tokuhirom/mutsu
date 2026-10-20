@@ -555,6 +555,9 @@ pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) mod render_guard;
 mod varref_declared;
+pub(crate) use dispatch_shape::iterator_kind::{
+    MAP_GREP_STREAM_ATTR, shape_of as iterator_shape_of,
+};
 pub(crate) use dispatch_shape::{
     ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
     ROLES_WITH_ROWS, const_str_eq, cool_numeric_method,
@@ -621,6 +624,7 @@ pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) use serde_support::PortableValue;
 pub(crate) mod attribute_class;
+pub(crate) mod param_trait_meta;
 pub(crate) mod signature;
 mod signature_smartmatch;
 pub(crate) mod split_lines;
@@ -701,7 +705,7 @@ pub(crate) use method_site::MethodSiteCaches;
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{
-    MapGrepMode, PrefixSource, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
+    MapGrepMode, PrefixSource, PullOut, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
     seq_method_never_touches,
 };
 pub(crate) use type_decl_site::TypeDeclSiteCaches;
@@ -742,7 +746,6 @@ pub(crate) use enum_display::{
     enum_display_name, is_package_enum_declared_name, note_enum_display_name,
 };
 pub(crate) use error::LazyBacktraceText;
-pub(crate) use error::SeqPullProgress;
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlinePayload, CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)
@@ -3894,6 +3897,18 @@ pub(crate) struct LazyList {
     /// fresh array starts without any (ADR-0097; it was the
     /// `__mutsu_deleted_index::` env key).
     pub(crate) deleted_indices: Mutex<Option<std::collections::HashSet<usize>>>,
+    /// The `is default(...)` value and element type of the `@` array this list
+    /// was placed in (`my Int @t = lazy 1..*`): the container descriptor an
+    /// eager `ArrayData` carries, so `Array.default`/`.of` answer from the
+    /// value and survive the list leaving its variable (#14101).
+    pub(crate) descriptor: Option<Arc<LazyArrayDescriptor>>,
+}
+
+/// See [`LazyList::descriptor`].
+#[derive(Debug)]
+pub(crate) struct LazyArrayDescriptor {
+    pub(crate) default: Option<Value>,
+    pub(crate) value_type: Option<String>,
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under

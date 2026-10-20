@@ -338,6 +338,23 @@ impl Interpreter {
                 .insert(importer.to_string(), value);
             return;
         }
+        // The BEGIN-time preload of a module a nested block `use`s
+        // (`push_preload_scope`) only loads it: the block's own `use` re-runs
+        // the hook where the import belongs (`rerun_module_export`). A value
+        // it installed here would stay in the unit's env for good, visible
+        // after the block (`{ use M }; EVAL '$x'`, `hf()`). Only the user
+        // program's preload: a module's own nested block keeps the hook's
+        // routines, which a sub hoisted to the head of that block calls
+        // before the block's `use` runs (#8564).
+        if inner_export_importer.is_none()
+            && self
+                .module
+                .import_scope_stack
+                .last()
+                .is_some_and(|scope| !scope.scope_classes)
+        {
+            return;
+        }
         let sigil = key.chars().next();
         if let Some('&') = sigil {
             let op = &key[1..];
@@ -374,6 +391,16 @@ impl Interpreter {
             // to the importing unit, as an `is export` import makes it (#11004).
             self.grant_scoped_family_import(&normalized_op, &value);
         }
+        // The importing block declares the name itself (ADR-8751): the hook's
+        // value goes to that binding, not into env.
+        if sigil != Some('&') && self.bind_hook_export_lexically(&key, &value) {
+            return;
+        }
+        if sigil.is_none_or(|c| c.is_alphanumeric() || c == '_')
+            && self.bind_hook_term_lexically(&key, &value)
+        {
+            return;
+        }
         // Install into env under the key the reader looks up. A `$scalar` read
         // compiles to a bare (sigil-stripped) `GetGlobal` — the same key an
         // `our $x` module global lands under — so the sigil must be dropped for
@@ -396,6 +423,12 @@ impl Interpreter {
             self.record_imported_routine_alias(&package, &env_key[1..]);
             if normalized_env_key != env_key {
                 self.record_imported_routine_alias(&package, &normalized_env_key[1..]);
+            }
+            // A plain routine a block-scoped `use` binds in its lexical import
+            // set needs no env alias (ADR-8751): every call site in the block
+            // reads the set.
+            if self.bind_hook_routine_lexically(&env_key[1..], &value) {
+                return;
             }
         }
         // Record the alias the same way the tag-based `is export` path does

@@ -26,7 +26,9 @@ macro_rules! row {
             $name,
             $arity,
             $handler,
-            RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK)
+            RowFlags::OWNER_ONLY
+                .or(RowFlags::TYPE_OBJECT_OK)
+                .or(RowFlags::CLASS_METHOD)
         )
     };
     ($name:literal, $arity:literal, $handler:ident, slurpy) => {
@@ -36,6 +38,7 @@ macro_rules! row {
             $handler,
             RowFlags::OWNER_ONLY
                 .or(RowFlags::TYPE_OBJECT_OK)
+                .or(RowFlags::CLASS_METHOD)
                 .or(RowFlags::SLURPY)
         )
     };
@@ -54,7 +57,9 @@ macro_rules! row {
     };
 }
 
-const CLASS: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK);
+const CLASS: RowFlags = RowFlags::OWNER_ONLY
+    .or(RowFlags::TYPE_OBJECT_OK)
+    .or(RowFlags::CLASS_METHOD);
 
 pub(super) static ROWS: &[MethodRow] = &[
     // `start(&code, :&catch, :$scheduler, |c)`: `|c` takes every other named

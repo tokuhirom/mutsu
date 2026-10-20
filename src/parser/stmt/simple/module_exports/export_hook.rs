@@ -282,3 +282,110 @@ impl<'ast> crate::ast_visit::Visit<'ast> for LiteralPairKeys {
         crate::ast_visit::walk_expr(self, expr);
     }
 }
+
+/// The variables and lowercase terms an `EXPORT` hook names by a string
+/// literal key of a pair (`'$x' => $x`, `'@log' => @log`, `'vrai' => vrai`),
+/// in their key spelling (ADR-8751). A block that `use`s the module declares
+/// each one as its own binding, which the import fills with the hook's value
+/// (`Compiler::bind_block_imported_vars`).
+///
+/// A superset, like the rest of this file: a key the hook does not return at
+/// run time binds `Any`. A key with a twigil, and a sigilless key that does
+/// not start with a lowercase letter, are left out: an uppercase one is
+/// usually a type (`'MyAlias' => Int`), which type positions resolve by name,
+/// so it keeps the run-time import.
+// Cost: O(n), n = AST nodes of the hook's body.
+pub(super) fn collect_export_hook_value_keys(stmts: &[Stmt]) -> Vec<String> {
+    let Some(body) = find_export_sub_body(stmts) else {
+        return Vec::new();
+    };
+    let mut keys = LiteralValueKeys::default();
+    for stmt in body {
+        crate::ast_visit::Visit::visit_stmt(&mut keys, stmt);
+    }
+    keys.names
+}
+
+/// The `'$name' => ...` / `'name' => ...` pair keys an `EXPORT` body spells
+/// out ([`collect_export_hook_value_keys`]).
+#[derive(Default)]
+struct LiteralValueKeys {
+    names: Vec<String>,
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for LiteralValueKeys {
+    fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
+        if let crate::ast::Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            ..
+        } = expr
+            && let crate::ast::Expr::Literal(key) = left.as_ref()
+            && let Some(key) = key.as_str()
+            && is_value_export_key(key)
+            && !self.names.iter().any(|name| name == key)
+        {
+            self.names.push(key.to_string());
+        }
+        crate::ast_visit::walk_expr(self, expr);
+    }
+}
+
+/// Whether `key` names a plain variable (`$x`, `@x`, `%x`) or a lowercase
+/// sigilless term (`vrai`, `is-even`).
+// Cost: O(n), n = length of `key`.
+fn is_value_export_key(key: &str) -> bool {
+    let bare = key.strip_prefix(['$', '@', '%']).unwrap_or(key);
+    let mut chars = bare.chars();
+    let first_ok = match chars.next() {
+        Some(c) if bare.len() < key.len() => c.is_alphabetic() || c == '_',
+        Some(c) => c.is_lowercase(),
+        None => false,
+    };
+    first_ok && chars.all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
+}
+
+/// The uppercase literal pair keys of an `EXPORT` hook's body whose value is
+/// a bare type name (`'MyAlias' => Int`, `'HookClass' => HookClass`): types
+/// the hook hands out, which the importer's parse must know as type names.
+// Cost: O(n), n = AST nodes of the hook's body.
+pub(super) fn collect_export_hook_type_keys(stmts: &[Stmt]) -> Vec<String> {
+    let Some(body) = find_export_sub_body(stmts) else {
+        return Vec::new();
+    };
+    let mut keys = LiteralTypeKeys::default();
+    for stmt in body {
+        crate::ast_visit::Visit::visit_stmt(&mut keys, stmt);
+    }
+    keys.names
+}
+
+/// The `'Name' => Type` pair keys ([`collect_export_hook_type_keys`]).
+#[derive(Default)]
+struct LiteralTypeKeys {
+    names: Vec<String>,
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for LiteralTypeKeys {
+    fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
+        if let crate::ast::Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            right,
+            ..
+        } = expr
+            && let crate::ast::Expr::Literal(key) = left.as_ref()
+            && let Some(key) = key.as_str()
+            && key.starts_with(|c: char| c.is_uppercase())
+            && key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ':')
+            && let crate::ast::Expr::BareWord(value) = right.as_ref()
+            && value.starts_with(|c: char| c.is_uppercase())
+            && !self.names.iter().any(|name| name == key)
+        {
+            self.names.push(key.to_string());
+        }
+        crate::ast_visit::walk_expr(self, expr);
+    }
+}

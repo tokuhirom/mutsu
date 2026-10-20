@@ -175,14 +175,19 @@ iterable_row!(hyper, "hyper");
 iterable_row!(race, "race");
 iterable_row!(lazy, "lazy");
 
-/// `Iterable.hyper`/`race`/`lazy` of a user `Iterable` instance with its own
-/// `iterator`: the elements it yields, as a `List`, hyperized or made lazy.
+/// `Iterable.hyper`/`race`/`lazy` of an `Iterable` instance with its own
+/// `iterator` (a user class's, or a built-in's like `IO::Path::Parts`): the elements it yields, as a `List`, hyperized or made lazy.
 // Cost: O(n), n = elements the iterator yields (one `pull-one` call each),
 // plus the list's own `method`.
 fn iterate(interp: &mut Interpreter, target: &Value, method: &str) -> Answer {
     let ValueView::Instance { class_name, .. } = target.view() else {
         return None;
     };
+    // A built-in `Iterable` with an `iterator` of its own (`IO::Path::Parts`
+    // iterates its three pairs) yields those elements.
+    if let Some(pairs) = crate::builtins::method_table::io_path_parts_pairs(target) {
+        return Some(interp.call_method_with_values(Value::array(pairs), method, Vec::new()));
+    }
     let class = class_name.resolve();
     if !interp.class_does_role(&class, "Iterable") || !interp.has_user_method(&class, "iterator") {
         return None;

@@ -87,7 +87,9 @@ impl Interpreter {
         mark: &crate::opcode::IndexArgRefMark,
     ) -> Result<(), RuntimeError> {
         if self.index_arg_callee_binds_container(code, mark)
-            && let Some(cell) = self.take_subscript_element_cell(mark.is_positional, true)
+            && let Some(cell) = self
+                .take_subscript_element_cell(mark.is_positional, true)
+                .or_else(|| self.take_subscript_slice_cells(mark.is_positional))
         {
             // Scoped to ONE subscript dispatch; consume it here too so producing
             // a cell instead cannot leak the suppression onto the next one.
@@ -150,6 +152,23 @@ impl Interpreter {
         }
         let index = self.stack[n - 1].clone();
         let target = self.stack[n - 2].clone();
+        let cell = self.subscript_element_cell(&target, &index, is_positional, argument)?;
+        self.stack.pop();
+        self.stack.pop();
+        Some(cell)
+    }
+
+    /// The location `target[index]` (`target{index}` unless `is_positional`)
+    /// names, for [`Self::take_subscript_element_cell`]; `None` for every
+    /// shape it does not hand out (see there). Leaves the stack alone.
+    // Cost: O(1) amortized: one slot promotion, or one hash probe.
+    fn subscript_element_cell(
+        &mut self,
+        target: &Value,
+        index: &Value,
+        is_positional: bool,
+        argument: bool,
+    ) -> Option<Value> {
         let cell = if is_positional {
             // Only a *mutable* array has element locations to hand out. A
             // `List`/`ItemList` element is immutable in raku (`(1,2)[0].mut`
@@ -168,8 +187,8 @@ impl Interpreter {
             // `@a[*-1].mut` addresses one element like any other subscript, so
             // the `*` is resolved here the same way the read path resolves it.
             let index = self
-                .eval_whatever_code_index(&index, len as i64)
-                .unwrap_or(index);
+                .eval_whatever_code_index(index, len as i64)
+                .unwrap_or_else(|| index.clone());
             let ValueView::Int(i) = index.view() else {
                 return None;
             };
@@ -189,10 +208,25 @@ impl Interpreter {
                 ValueView::Hash(map) => map.key_type.is_some(),
                 _ => return None,
             };
+            // A list or range index is a slice (`%h<a c>`), not one key: it
+            // must not be encoded into a single `"a c"` key.
+            if matches!(
+                index.view(),
+                ValueView::Array(..)
+                    | ValueView::Seq(..)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+            ) && !object_hash
+            {
+                return None;
+            }
             let key = if object_hash {
-                crate::runtime::utils::value_which_key(&index)
+                crate::runtime::utils::value_which_key(index)
             } else {
-                Value::hash_key_encode(&index)
+                Value::hash_key_encode(index)
             };
             // A MISSING key hands back the deferred token, exactly like the
             // array arm past the end.
@@ -205,9 +239,51 @@ impl Interpreter {
             ValueView::HashEntryRef { .. } if argument => {}
             _ => return None,
         }
-        self.stack.pop();
-        self.stack.pop();
         Some(cell)
+    }
+
+    /// A slice argument (`f(@a[0, 2])`, `f(%h<a c>)`) toward a callee that
+    /// binds its argument's location: the `List` of the selected elements'
+    /// locations, flagged as a bound slice ([`Value::bound_slice_array`]) so a
+    /// whole-value assignment through the parameter distributes over them, as
+    /// Rakudo's slice of element containers does (#13786). An empty selection
+    /// is a bound slice too, recognised by its flag rather than by its
+    /// contents. `None`, with the stack untouched, unless the subscript is a
+    /// finite list of plain indices or keys into a real `Array`/`Hash` (a
+    /// `Whatever`, a lazy or junction index and every other shape keep the
+    /// ordinary `Index` read).
+    // Cost: O(k) amortized, k = selected elements.
+    fn take_subscript_slice_cells(&mut self, is_positional: bool) -> Option<Value> {
+        let n = self.stack.len();
+        if n < 2 {
+            return None;
+        }
+        let index = self.stack[n - 1].clone();
+        let target = self.stack[n - 2].clone();
+        let keys: Vec<Value> = match index.view() {
+            ValueView::Array(items, _) => items.to_vec(),
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+                if !crate::value::flat::is_infinite_range(&index) =>
+            {
+                crate::runtime::utils::value_to_list(&index)
+            }
+            _ => return None,
+        };
+        let mut cells = Vec::with_capacity(keys.len());
+        for key in &keys {
+            // A nested list (`@a[(0, 1), 2]`) or a `Whatever` element is a
+            // multi-level selection this producer does not flatten.
+            if matches!(key.view(), ValueView::Array(..) | ValueView::Whatever) {
+                return None;
+            }
+            cells.push(self.subscript_element_cell(&target, key, is_positional, true)?);
+        }
+        self.stack.pop();
+        self.stack.pop();
+        Some(Value::bound_slice_array(cells))
     }
 
     /// Arm slice 3b's arrival channel for a `CallMethod` whose receiver is

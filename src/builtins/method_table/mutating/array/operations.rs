@@ -69,6 +69,19 @@ pub(super) fn grow(
             _ => Ok(arg.clone()),
         })
         .collect::<Result<_, _>>()?;
+    // A native array's one-argument `append` candidate takes any Iterable,
+    // itemized or not, and adds its elements (rakudo's `array.append(\value)`),
+    // where an `Array` -- and a native array's `prepend` -- keeps an itemized
+    // argument whole (#14232).
+    let args = if op == Op::Append
+        && args.len() == 1
+        && saved_meta.as_ref().is_some_and(|meta| {
+            crate::runtime::native_types::is_native_array_element_type(&meta.value_type)
+        }) {
+        vec![crate::value::flat::deitemize_flat_operand(&args[0])]
+    } else {
+        args
+    };
     let values = match op {
         Op::Push | Op::Unshift => Interpreter::normalize_push_unshift_args(args),
         _ => crate::runtime::flatten_append_args(args),

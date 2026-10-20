@@ -397,6 +397,12 @@ fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeErro
             // element type, no `is default`).
             Some(Ok(wrap(items.to_vec())))
         }
+        // `.list` of a plain array is the `List.list` row's implementation
+        // (`method_table::positional`): it strips an itemization and makes a
+        // native array's `List`.
+        ValueView::Array(..) if !want_array && super::positional::list(target, &[]).is_some() => {
+            super::positional::list(target, &[])
+        }
         ValueView::Array(items, kind) => {
             if want_array && (!kind.is_real_array() || kind.is_itemized()) {
                 Some(Ok(wrap(items.to_vec())))

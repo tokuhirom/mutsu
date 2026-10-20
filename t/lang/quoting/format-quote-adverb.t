@@ -1,3 +1,4 @@
+use v6.e.PREVIEW;
 use Test;
 
 plan 8;

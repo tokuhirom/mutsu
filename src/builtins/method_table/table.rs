@@ -7,7 +7,7 @@ use super::table_const::{
 };
 use super::{MethodRow, RowFlags};
 use crate::symbol::Symbol;
-use crate::value::{DispatchShape, Value};
+use crate::value::{DispatchShape, Value, ValueView};
 use std::cell::RefCell;
 
 use super::{collections, ctors_mop, instances, io_concurrency, mutating, scalars};
@@ -337,6 +337,60 @@ pub(crate) fn owner_declares(owner: &str, method: Symbol) -> bool {
                 && row.flags.in_force()
         })
     })
+}
+
+/// The roles mixed into `target` (a `Mixin`) that are catalog owners with a
+/// row for `method`, the most recently applied first: a mixin reaches the rows
+/// of its roles ahead of its inner value's (`X::Promise::Broken.gist`, the
+/// wrapper role of a broken promise's exception). `None` when there are none.
+// Cost: O(1) for a non-`Mixin` or a name no row has; otherwise O(k log k), k =
+// roles mixed into the value.
+pub(crate) fn mixin_role_owners_of(target: &Value, method: &str) -> Option<Vec<String>> {
+    let ValueView::Mixin(_, mixins) = target.view() else {
+        return None;
+    };
+    let method = Symbol::intern(method);
+    name_index(method)?;
+    let owners: Vec<String> = crate::value::types::mixin_roles_applied_last_first(mixins, "")
+        .into_iter()
+        .filter(|role| owner_declares(role, method))
+        .collect();
+    (!owners.is_empty()).then_some(owners)
+}
+
+/// Whether some class-method row ([`RowFlags::CLASS_METHOD`]) is named
+/// `method`: the cheap test ahead of a type object's MRO walk, so `Foo.new`
+/// and the like pay one hash probe.
+// Cost: O(1) after the first call; that call is O(r), r = rows.
+pub(crate) fn class_method_named(method: &str) -> bool {
+    static NAMES_OF: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    NAMES_OF
+        .get_or_init(|| {
+            ALL.iter()
+                .filter(|row| row.flags.contains(RowFlags::CLASS_METHOD))
+                .map(|row| row.name)
+                .collect()
+        })
+        .contains(method)
+}
+
+/// Whether `owner` declares a class method of a built-in type
+/// ([`RowFlags::CLASS_METHOD`]): `Promise`, `Supply`, `Seq`, `Thread`, `List`,
+/// ... The type object of such an owner, or of a user subclass of it, reaches
+/// its class-method rows.
+// Cost: O(1) after the first call; that call is O(r), r = rows.
+pub(crate) fn class_method_owner(owner: &str) -> bool {
+    static OWNERS: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    OWNERS
+        .get_or_init(|| {
+            ALL.iter()
+                .filter(|row| row.flags.contains(RowFlags::CLASS_METHOD))
+                .map(|row| row.owner)
+                .collect()
+        })
+        .contains(owner)
 }
 
 /// Whether `owner` has a row for `method` that exists in the program's language

@@ -325,6 +325,25 @@ impl Interpreter {
         Ok(Value::seq(rounds))
     }
 
+    /// [`Self::single_item_as_list`] for the method forms, which also see a
+    /// type object: it is one item too, wrapped in an `Array` when the type is
+    /// `Array` or a subclass of it and in a `List` otherwise, as Rakudo's
+    /// `Array.deepmap(&op)` is `[op(Array)]` and `Int.deepmap(&op)` is
+    /// `(op(Int),)`.
+    // Cost: O(1), plus an MRO lookup for a type object.
+    pub(crate) fn single_item_result(&mut self, target: &Value, mapped: Value) -> Value {
+        if let ValueView::Package(name) = target.descalarize().view() {
+            let array = Symbol::intern("Array");
+            let is_array = name == "Array" || self.class_mro(&name.resolve()).contains(&array);
+            return if is_array {
+                Value::real_array(vec![mapped])
+            } else {
+                Value::array(vec![mapped])
+            };
+        }
+        Self::single_item_as_list(target, mapped)
+    }
+
     /// `deepmap`/`duckmap` on a receiver that is not an aggregate answer a
     /// one-item list (Rakudo's `Any.deepmap` is `self.list.deepmap`):
     /// `42.deepmap(* + 1)` is `(43)`.
@@ -529,8 +548,9 @@ impl Interpreter {
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         match target.view() {
-            // Type objects (e.g. Array, Hash) — return as-is to avoid hanging
-            ValueView::Package(_) => Ok(target.clone()),
+            // A type object is one item, never iterated (`Array.deepmap(&op)`
+            // calls `op` on `Array` itself, as Rakudo does).
+            ValueView::Package(_) => self.deepmap_leaf_call(block, target).map(|(v, _)| v),
             ValueView::Array(items, kind) => {
                 // A sublist is itemized (wrapped in a Scalar container) only when
                 // its *parent* is a List, not when the parent is a real Array.

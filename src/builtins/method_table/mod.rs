@@ -47,6 +47,7 @@
 //! over the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
 pub(crate) mod allomorph;
+pub(crate) mod carried_state;
 mod collections;
 mod ctors_mop;
 mod dispatch;
@@ -68,11 +69,10 @@ mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
+pub(crate) use carried_state::owners_of as carried_state_owners_of;
 pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
-pub(crate) use collections::from_iterator::owners_of as from_iterator_owners_of;
-pub(crate) use collections::iteration_buffer::owners_of as iteration_buffer_owners_of;
 pub(crate) use collections::sampling::callable_count as sampling_callable_count;
 pub(crate) use collections::{
     any_enum_views, clone as collection_clone, lazy, list, list_aggregate, positional, quanthash,
@@ -80,20 +80,13 @@ pub(crate) use collections::{
     rotate as collection_rotate, terminals,
 };
 pub(crate) use instances::code_methods::method_object_answer;
-pub(crate) use instances::enumeration::owners_of as enumeration_owners_of;
 pub(crate) use instances::hyper_seq::answers_as_itself as hyper_seq_answers_as_itself;
 pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
-pub(crate) use instances::iterator::owners_of as iterator_owners_of;
-pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
+pub(crate) use instances::rakuast_node::origin_value;
 pub(crate) use instances::routine::owners_of as routine_owners_of;
-pub(crate) use instances::stash::owners_of as stash_owners_of;
-pub(crate) use instances::wrapper_role::owners_of as wrapper_role_owners_of;
 pub(crate) use instances::{backtrace, code, exception, failure, regex_match, signature, supply};
-pub(crate) use io_concurrency::class_methods::{
-    early_owners_of as early_class_method_owners_of, owners_of as class_method_owners_of,
-};
 pub(crate) use io_concurrency::encoding::{
     DECODER_OWNERS as ENCODING_DECODER_OWNERS, names as encoding_names,
 };
@@ -101,18 +94,17 @@ pub(crate) use io_concurrency::handle_names;
 pub(crate) use io_concurrency::io_path_lexical::basename as io_path_basename;
 pub(crate) use io_concurrency::io_path_parts::pairs as io_path_parts_pairs;
 pub(crate) use io_concurrency::io_special::raku_row as io_special_raku;
-pub(crate) use io_concurrency::proc_async::owners_of as proc_async_owners_of;
 pub(crate) use io_concurrency::promise_channel;
 pub(crate) use io_concurrency::promise_channel::{
     CHANNEL_LIST_COERCIONS, receiver_of as promise_channel_receiver_of,
 };
 pub(crate) use io_concurrency::supplier_scheduler;
-pub(crate) use io_concurrency::supplier_scheduler::owners_of as supplier_owners_of;
 pub(crate) use io_concurrency::systemic::names as systemic_names;
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
     str_numeric, str_search, truth,
 };
+pub(crate) use table::mixin_role_owners_of;
 
 pub(crate) use collections::accepts_open::accepts_by_smartmatch;
 pub(crate) use collections::early_entry_defers;
@@ -137,6 +129,7 @@ pub(crate) use table::{
     Receiver, RowId, base_row, max_row_arity, names_a_row, owner_declares, owner_has_row,
     owner_row, owner_row_names, owner_rows_at, resolve, row, shape_has_row, some_row_binds_named,
 };
+pub(crate) use table::{class_method_named, class_method_owner};
 pub(crate) use unadmitted::invoke_unadmitted;
 
 /// The owners an instance or the type object of an opaque shape (`DispatchShape::is_opaque`: a

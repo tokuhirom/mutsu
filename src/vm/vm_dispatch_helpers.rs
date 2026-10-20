@@ -770,6 +770,11 @@ impl Interpreter {
         } else {
             target
         };
+        // A routine a trait composed a CALL-ME role into is called through
+        // that role, whichever code object of it is called (ADR-11827).
+        if let Some(current) = self.routine_call_me_view(&target) {
+            return self.vm_call_on_value_at(current, args, compiled_fns, site);
+        }
 
         // A CodeVar referring to an imported proto/multi is materialized as a
         // dispatcher Sub whose candidates are captured by value. Its dispatch

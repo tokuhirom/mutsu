@@ -120,12 +120,20 @@ fn plain_array(
 
 /// `.list` preserves an already plain positional value and removes itemization
 /// from an itemized one.
-// Cost: O(1), the backing positional storage is shared.
-fn list(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+// Cost: O(1), the backing positional storage is shared; O(e), e = elements,
+// for a native array.
+pub(super) fn list(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if !args.is_empty() {
         return None;
     }
     let (items, kind) = plain_array(target)?;
+    // A native array (`my uint32 @b`) is no `List`: its `.list` is a `List` of
+    // its elements, where an `Array` is its own list (#14077).
+    // The copy sheds the container's type metadata, which the shared storage
+    // would keep.
+    if is_native_array(target) {
+        return Some(Ok(Value::array(items.to_vec())));
+    }
     if kind.is_itemized() {
         Some(Ok(Value::array_with_kind(
             items.clone(),
@@ -134,6 +142,18 @@ fn list(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     } else {
         Some(Ok(target.clone()))
     }
+}
+
+/// Whether `target` is a native array (`array[uint32]`, `array[str]`, ...).
+// Cost: O(1).
+fn is_native_array(target: &Value) -> bool {
+    crate::runtime::embedded_container_type_info(target).is_some_and(|info| {
+        crate::native_types::is_native_array_element_type(&info.value_type)
+            || info
+                .declared_type
+                .as_deref()
+                .is_some_and(|declared| declared == "array" || declared.starts_with("array["))
+    })
 }
 
 /// `.List` returns a List view, decontainerizing real Array elements.

@@ -1605,9 +1605,8 @@ pub(crate) struct Compiler {
     /// `my $b := %h<foo><baz>` creates a HashEntryRef.
     scalar_bind_autovivify: bool,
     /// Set while a block-scoped `use` declares an imported variable
-    /// (`bind_block_imported_vars`): the `GetImportedVar` operands its bind
-    /// source compiles to.
-    imported_var_source: Option<(u32, u32)>,
+    /// (`bind_block_imported_vars`): where its bind source comes from.
+    imported_var_source: Option<block_imported_vars::ImportedVarSource>,
     /// When true (alongside `scalar_bind_autovivify`), the next Index compiled is
     /// the TERMINAL element of the bind RHS (outermost subscript whose value is
     /// bound). A terminal index promotes even a container-valued (Array/Hash) leaf
@@ -1667,6 +1666,13 @@ pub(crate) struct Compiler {
     /// subscript's promoted cell in a per-site `__mutsu_bind_index_ref_N`
     /// `VarRef`, so `SetLocal` sees a bind.
     bind_target_direct: bool,
+    /// When true, the *immediate* upcoming `compile_call_arg` call compiles a
+    /// genuine routine-call argument (`compile_named_callee_arg`), so a
+    /// readonly parameter operand gets no container tag (#13782). One-shot,
+    /// like `bind_target_direct`: a `:=` source compiled through
+    /// `compile_call_arg` keeps its tag, which the binder reads to make the
+    /// alias readonly.
+    call_arg_direct: bool,
     /// When true, a scalar root of the source indexed assignment in a nested
     /// indexed bind must be promoted to a shared container before its path is
     /// evaluated. Ordinary bind chains retain their deferred-local fast path.
@@ -1736,8 +1742,11 @@ pub(crate) struct Compiler {
     decont_scalar_params: std::collections::HashSet<String>,
     /// READONLY `$` parameters of the routine being compiled (no `is rw` /
     /// `is raw` / `is copy`, not sigilless): a `return-rw`/`is rw` tail
-    /// naming one hands back a value, not a container (#11108). A body `my`
-    /// re-declaration removes the name, as for `decont_scalar_params`.
+    /// naming one hands back a value, not a container (#11108), and a call
+    /// argument naming one is passed as a value, not tagged as a container
+    /// an `is rw` parameter could bind (#13782). Any later binding that
+    /// reaches the name's slot (a body `my`, an inline loop or block
+    /// parameter, see `alloc_local`) removes the name.
     readonly_scalar_params: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
     /// Constants are `our`-scoped (installed in the package), so once their
@@ -2119,6 +2128,7 @@ impl Compiler {
             rw_tail_branch: false,
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,
+            call_arg_direct: false,
             compile_nested_index_bind_source: false,
             suppress_multidim_bind_ref_arg: false,
             mint_named_pair: false,
@@ -2452,6 +2462,11 @@ impl Compiler {
     }
 
     fn alloc_local(&mut self, name: &str) -> u32 {
+        // Any binding of `name` after the signature's (a body `my`, an inline
+        // loop or pointy-block parameter sharing the slot) may be writable,
+        // so a call argument `$name` is no longer known to be the readonly
+        // parameter (#13782).
+        self.readonly_scalar_params.remove(name);
         if let Some(&slot) = self.local_map.get(name) {
             return slot;
         }
@@ -3784,6 +3799,26 @@ impl Compiler {
         folded
     }
 
+    /// Whether `expr` reads a readonly `$` parameter of the routine being
+    /// compiled ([`Self::readonly_scalar_params`]), directly or as the value
+    /// of a `key => $p` named argument. Such an operand is a value, not a
+    /// container: it gets no container tag and no rw-writeback source, so an
+    /// `is rw` parameter refuses it (#13782).
+    // Cost: O(1).
+    pub(super) fn is_readonly_param_operand(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Var(name) => self.readonly_scalar_params.contains(name.as_str()),
+            Expr::Binary {
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+                ..
+            } => {
+                matches!(right.as_ref(), Expr::Var(name) if self.readonly_scalar_params.contains(name.as_str()))
+            }
+            _ => false,
+        }
+    }
+
     fn add_arg_sources_constant(&mut self, args: &[Expr]) -> Option<u32> {
         let mut entries = Vec::with_capacity(args.len());
         for arg in args {
@@ -3814,7 +3849,9 @@ impl Compiler {
                     self.declare_local(name);
                 }
             }
-            let source = if let Some(name) = self.positional_arg_source_name(arg) {
+            let source = if !self.is_readonly_param_operand(arg)
+                && let Some(name) = self.positional_arg_source_name(arg)
+            {
                 // §1.4/§1.5: bake the caller's local slot for a plain source var
                 // as `Pair(name, Int(slot))`, so the rw-arg writeback can target
                 // the LIVE (inner shadow) slot instead of the by-name `position`

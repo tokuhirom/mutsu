@@ -115,6 +115,31 @@ impl Interpreter {
         let name = Self::const_str(code, name_idx);
         let value = self
             .exported_var_value(module, name)
+            // An exported type the module declared outside any package.
+            .or_else(|| {
+                (!name.starts_with(['$', '@', '%', '&', '\\'])
+                    && self.has_type_or_package_kind(name))
+                .then(|| Value::package(crate::symbol::Symbol::intern(name)))
+            })
+            .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
+        self.stack.push(value);
+    }
+
+    /// `OpCode::GetHookExport`: the value a `sub EXPORT` hook returned for
+    /// the literal key `name_idx`, as the `use` filling lexical import set
+    /// `set_idx` stored it, for the block's binding of it (ADR-8751). A key
+    /// the hook did not return binds a fresh `Any`.
+    // Cost: O(1): two hashed lookups.
+    pub(super) fn exec_get_hook_export_op(
+        &mut self,
+        code: &CompiledCode,
+        set_idx: u32,
+        name_idx: u32,
+    ) {
+        let set = code.const_sym(set_idx);
+        let name = code.const_sym(name_idx);
+        let value = self
+            .lexical_import_hook_value(set, name)
             .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
         self.stack.push(value);
     }

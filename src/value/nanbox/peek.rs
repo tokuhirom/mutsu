@@ -718,13 +718,30 @@ impl NanBox {
             Classified::Kind(Kind::Channel) => Some(DispatchShape::Channel),
             Classified::Kind(Kind::HyperSeq) => Some(DispatchShape::HyperSeq),
             Classified::Kind(Kind::RaceSeq) => Some(DispatchShape::RaceSeq),
+            Classified::Kind(Kind::Enum) => {
+                // SAFETY: Enum words carry an `Arc<EnumBox>`.
+                let e = unsafe { peek_arc::<EnumBox>(self.0.get()) };
+                Some(match e.value {
+                    crate::value::EnumValue::Int(_) => DispatchShape::EnumNumeric,
+                    crate::value::EnumValue::Str(_) => DispatchShape::EnumStringy,
+                    crate::value::EnumValue::Generic(_) => DispatchShape::EnumGeneric,
+                })
+            }
+            Classified::Kind(Kind::RakuAst) => Some(DispatchShape::RakuAstNode),
             // A built-in class's own instance: its class name is the shape's.
             // A user subclass has another name, so it has none.
             Classified::Kind(Kind::Instance) => {
                 let bits = self.0.get();
                 // SAFETY: Instance words carry a `Gc<InstanceAttrs>`.
                 let attrs = unsafe { peek_gc::<InstanceAttrs>(bits) };
-                DispatchShape::from_instance_class(attrs.class_name())
+                let class = attrs.class_name();
+                // One class, two shapes: a built-in iterator's is decoded from
+                // its attributes (`dispatch_shape/iterator_kind.rs`).
+                if class == "Iterator" {
+                    let map = attrs.as_map();
+                    return Some(crate::value::iterator_shape_of(|key| map.get(key)));
+                }
+                DispatchShape::from_instance_class(class)
             }
             _ => None,
         }

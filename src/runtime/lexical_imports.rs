@@ -36,6 +36,12 @@ pub(crate) const BLOCK_MULTIS_MARK: &str = "\u{1}multis:";
 /// for those.
 pub(crate) const BLOCK_VARS_MARK: &str = "\u{1}vars:";
 
+/// Marks the id of a lexical import set an `EVAL`'d unit's top-level `use`
+/// fills (`Compiler::enter_eval_unit_lexical_uses`). Each `EVAL` is a
+/// compilation of its own, so such a `use` is never replayed
+/// (`lexical_import_replay`): its module's `sub EXPORT` runs every time.
+pub(crate) const EVAL_UNIT_MARK: &str = "\u{1}eval";
+
 /// The names listed after `mark` in the set id `id`, up to the next mark.
 // Cost: O(n), n = length of `id`.
 pub(super) fn id_section(id: &str, mark: &str) -> HashSet<Symbol> {
@@ -58,7 +64,7 @@ pub(crate) struct LexicalImportCapture {
     /// The compunit doing the importing: a module loaded by this `use`
     /// records its own `use`s through the same hooks, and those are not
     /// this block's imports.
-    unit: Symbol,
+    pub(super) unit: Symbol,
     /// `(package, name)` of each routine alias the import installed.
     routines: Vec<(Symbol, Symbol)>,
     /// The `&name` env keys the import wrote (a `sub EXPORT` hook binds its
@@ -81,6 +87,13 @@ pub(crate) struct LexicalImportCapture {
     /// block declares itself, bound to the module's package variables: the
     /// import writes no env alias for them.
     block_vars: HashSet<Symbol>,
+    /// The values a `sub EXPORT` hook returned for names in `block_vars`
+    /// (their declaration keys), which the block's bindings read
+    /// (`ModuleState::lexical_import_hook_values`).
+    pub(super) hook_values: HashMap<Symbol, Value>,
+    /// The plain routines a `sub EXPORT` hook returned, by name: bound in
+    /// the set as they are, with no env alias.
+    pub(super) hook_routines: HashMap<Symbol, Value>,
 }
 
 impl Interpreter {
@@ -105,6 +118,8 @@ impl Interpreter {
             lexical_defs: HashMap::new(),
             multi_defs: HashMap::new(),
             protos: HashMap::new(),
+            hook_values: HashMap::new(),
+            hook_routines: HashMap::new(),
         };
         self.module.lexical_import_capture.replace(capture)
     }
@@ -247,6 +262,13 @@ impl Interpreter {
         else {
             return;
         };
+        if capture.hook_values.is_empty() {
+            self.module.lexical_import_hook_values.remove(&id);
+        } else {
+            self.module
+                .lexical_import_hook_values
+                .insert(id, std::sync::Arc::new(capture.hook_values));
+        }
         let mut set = HashMap::new();
         for (package, name) in capture.routines {
             if set.contains_key(&name) {
@@ -276,6 +298,8 @@ impl Interpreter {
                     Some(proto) => self.with_dispatch_proto(dispatcher, proto),
                     None => dispatcher,
                 }))
+            } else if let Some(value) = capture.hook_routines.get(&name) {
+                Some(LexicalImport::Code(value.clone()))
             } else if capture.amp_env_keys.contains(&amp) {
                 self.env
                     .get_sym(amp)

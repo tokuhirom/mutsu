@@ -1080,7 +1080,7 @@ impl Interpreter {
                 crate::method_signature_shared::auto_signature_uses(body);
             let mut defs = Vec::new();
             if use_positional {
-                defs.push(ParamDef {
+                defs.push(ParamDef { trait_meta: Default::default(),
                     type_capture: None,
                     name: "@_".to_string(),
                     default: None,
@@ -1108,7 +1108,7 @@ impl Interpreter {
                 });
             }
             if use_named {
-                defs.push(ParamDef {
+                defs.push(ParamDef { trait_meta: Default::default(),
                     type_capture: None,
                     name: "%_".to_string(),
                     default: None,

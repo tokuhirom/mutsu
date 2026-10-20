@@ -656,6 +656,7 @@ impl Interpreter {
         Self::inject_iterator_role_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
+        Self::inject_formatter_syntax_prelude(&code, &mut stmts);
         Self::inject_container_descriptor_prelude(&code, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.
@@ -1480,6 +1481,9 @@ impl Interpreter {
             for name in &leaked_packages {
                 self.env.remove(name);
             }
+            // The module's trait-composed routines' `&name` write-backs are
+            // its own lexicals, not the importer's (#12907).
+            self.drop_module_trait_routine_bindings(&before_env_keys);
             // A `unit` compunit's own file-scope `constant`s and enum values are
             // package symbols of that compunit in rakudo, not names the importer
             // sees bare (#7787). The module body ran in the CALLER's env, so drop

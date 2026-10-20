@@ -18,7 +18,7 @@
 
 use super::*;
 use crate::runtime::map_grep_plan::MapGrepPlanSlot;
-use crate::value::{MapGrepItems, MapGrepMode, SeqSource};
+use crate::value::{MapGrepItems, MapGrepMode, PullOut, SeqSource};
 
 impl Interpreter {
     /// Pull every not-yet-pulled element of a deferred `.map`/`.grep`
@@ -29,6 +29,19 @@ impl Interpreter {
         &mut self,
         source: &SeqSource,
     ) -> Result<Vec<Value>, RuntimeError> {
+        let mut out = PullOut::default();
+        self.pull_map_grep_rest_into(source, &mut out)?;
+        Ok(out.produced)
+    }
+
+    /// [`Self::pull_map_grep_rest`] into `out`, which holds what was produced
+    /// and consumed when the callback dies (#12401).
+    // Cost: as [`Self::pull_map_grep_rest`].
+    pub(super) fn pull_map_grep_rest_into(
+        &mut self,
+        source: &SeqSource,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
         let SeqSource::MapGrep {
             items,
             pos,
@@ -38,7 +51,7 @@ impl Interpreter {
             plan,
         } = source
         else {
-            return Ok(Vec::new());
+            return Ok(());
         };
         // One loop run over the whole rest: the plan is built once either
         // way, so a scratch copy of the slot costs nothing.
@@ -47,8 +60,8 @@ impl Interpreter {
             // A scratch copy, as for the plan: the chain itself is shared.
             let mut source = source.clone();
             return self
-                .pull_map_grep_chain(&mut source, usize::MAX)
-                .map(|(out, _)| out);
+                .pull_map_grep_chain_into(&mut source, usize::MAX, out)
+                .map(|_| ());
         }
         self.run_map_grep_chunk(
             func,
@@ -59,8 +72,9 @@ impl Interpreter {
             *pos,
             items.len(),
             None,
+            out,
         )
-        .map(|(out, _)| out)
+        .map(|_| ())
     }
 
     /// [`Self::pull_map_grep_rest`] for a source that stays in use afterwards
@@ -84,6 +98,21 @@ impl Interpreter {
     /// elements produced (a `Slip` from the callback can overshoot `needed`)
     /// and whether the source is now exhausted — it ran out, or the callback
     /// said `last`.
+    // Cost: as [`Self::pull_map_grep_prefix_into`].
+    pub(crate) fn pull_map_grep_prefix(
+        &mut self,
+        source: &mut SeqSource,
+        needed: usize,
+    ) -> Result<(Vec<Value>, bool), RuntimeError> {
+        let mut out = PullOut::default();
+        let exhausted = self.pull_map_grep_prefix_into(source, needed, &mut out)?;
+        Ok((out.produced, exhausted))
+    }
+
+    /// [`Self::pull_map_grep_prefix`] into `out`, returning whether the source
+    /// is exhausted. When the callback dies, `pos` is already past the
+    /// failing element and `out` holds what was produced before it, so the
+    /// caller keeps both and the next pull resumes there (#12401).
     ///
     /// Only a callback that binds one element per call and has no `FIRST` /
     /// `LAST` phaser can be run a chunk at a time: a multi-parameter block
@@ -92,17 +121,18 @@ impl Interpreter {
     /// is pulled whole.
     // Cost: one callback call per source element up to the `needed`-th
     // element produced (for `.grep`, up to the `needed`-th match).
-    pub(crate) fn pull_map_grep_prefix(
+    pub(crate) fn pull_map_grep_prefix_into(
         &mut self,
         source: &mut SeqSource,
         needed: usize,
-    ) -> Result<(Vec<Value>, bool), RuntimeError> {
+        out: &mut PullOut,
+    ) -> Result<bool, RuntimeError> {
         if let SeqSource::MapGrep {
             items: MapGrepItems::Chain(_),
             ..
         } = source
         {
-            return self.pull_map_grep_chain(source, needed);
+            return self.pull_map_grep_chain_into(source, needed, out);
         }
         let SeqSource::MapGrep {
             items,
@@ -113,36 +143,60 @@ impl Interpreter {
             plan,
         } = source
         else {
-            return Ok((Vec::new(), true));
+            return Ok(true);
         };
+        let start_pos = *pos;
+        let consumed_base = out.consumed;
+        let produced_base = out.produced.len();
         if !plan.prefix_pullable(|| map_grep_pullable_by_prefix(func.as_ref(), mode)) {
-            let (out, _) =
-                self.run_map_grep_chunk(func, *fatal, mode, plan, items, *pos, items.len(), None)?;
+            let pulled = self.run_map_grep_chunk(
+                func,
+                *fatal,
+                mode,
+                plan,
+                items,
+                *pos,
+                items.len(),
+                None,
+                out,
+            );
+            *pos = start_pos + (out.consumed - consumed_base);
+            pulled?;
             *pos = items.len();
-            return Ok((out, true));
+            return Ok(true);
         }
-        let mut out = Vec::new();
-        while out.len() < needed && *pos < items.len() {
-            let missing = needed - out.len();
+        let group = map_group_size(func.as_ref(), mode);
+        while out.produced.len() - produced_base < needed && *pos < items.len() {
+            let missing = needed - (out.produced.len() - produced_base);
             // A grep runs until it has the missing matches (one loop run for
-            // the whole pull, #11515); a map needs exactly one source element
-            // per element missing.
-            let end = (*pos + missing).min(items.len());
+            // the whole pull, #11515); a map needs one call, of `group` source
+            // elements, per element missing (#14196).
+            let end = pos
+                .saturating_add(missing.saturating_mul(group))
+                .min(items.len());
             let max_matches = mode.is_grep().then_some(missing);
             let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
             self.async_state.map_grep_last_depth = None;
-            let (chunk, end) =
-                self.run_map_grep_chunk(func, *fatal, mode, plan, items, *pos, end, max_matches)?;
-            *pos = end;
-            out.extend(chunk);
+            let pulled = self.run_map_grep_chunk(
+                func,
+                *fatal,
+                mode,
+                plan,
+                items,
+                *pos,
+                end,
+                max_matches,
+                out,
+            );
+            *pos = start_pos + (out.consumed - consumed_base);
+            pulled?;
             // The loop the chunk ran in sat one handler level below us; a
             // `last` a loop nested inside the callback caught sits deeper.
             if self.async_state.map_grep_last_depth.take() == Some(depth + 1) {
-                return Ok((out, true));
+                return Ok(true);
             }
         }
-        let exhausted = *pos >= items.len();
-        Ok((out, exhausted))
+        Ok(*pos >= items.len())
     }
 
     /// Run a deferred `.map`/`.grep` callback over the source elements
@@ -156,8 +210,10 @@ impl Interpreter {
     ///
     /// A grep given `max_matches` reads the source from `start` on as it
     /// reaches each element and stops at that many matches instead of at
-    /// `end` (#11515). Returns the elements produced and the end of the source
-    /// elements consumed.
+    /// `end` (#11515). The elements produced go into `out` as they are
+    /// produced, and `out.consumed` grows by the source elements taken, so a
+    /// dying callback leaves both behind for the caller (#12401). Returns the
+    /// end of the source elements consumed.
     // Cost: one callback call per element of `start..end`, or per element up
     // to the `max_matches`-th match.
     #[allow(clippy::too_many_arguments)]
@@ -171,9 +227,20 @@ impl Interpreter {
         start: usize,
         end: usize,
         max_matches: Option<usize>,
-    ) -> Result<(Vec<Value>, usize), RuntimeError> {
+        out: &mut PullOut,
+    ) -> Result<usize, RuntimeError> {
         self.in_method_call(|interp| {
-            interp.run_map_grep_chunk_body(func, fatal, mode, plan, items, start, end, max_matches)
+            interp.run_map_grep_chunk_body(
+                func,
+                fatal,
+                mode,
+                plan,
+                items,
+                start,
+                end,
+                max_matches,
+                out,
+            )
         })
     }
 
@@ -188,7 +255,9 @@ impl Interpreter {
         start: usize,
         end: usize,
         max_matches: Option<usize>,
-    ) -> Result<(Vec<Value>, usize), RuntimeError> {
+        out: &mut PullOut,
+    ) -> Result<usize, RuntimeError> {
+        let consumed_base = out.consumed;
         // Same contract as `force_lazy_list_vm`: this force IS the
         // effective call site for the callbacks it runs, so a
         // captured-outer lexical the callback mutated (`LAST $ran =
@@ -253,24 +322,23 @@ impl Interpreter {
                         start..end,
                         max_matches,
                         plan,
+                        out,
                     )
                     .map(|(result, grep_end)| {
                         consumed_end = grep_end;
-                        result
+                        out.consumed = consumed_base + (grep_end - start);
+                        out.produced.extend(match result.view() {
+                            ValueView::Array(items, _) => items.to_vec(),
+                            _ => crate::runtime::utils::value_to_list(&result),
+                        });
                     }),
                 _ => self
-                    .grep_map_grep_items(func, items, start, end, max_matches, plan)
-                    .map(|(result, grep_end)| {
-                        consumed_end = grep_end;
-                        result
-                    }),
+                    .grep_map_grep_items(func, items, start, end, max_matches, plan, out)
+                    .map(|grep_end| consumed_end = grep_end),
             },
             MapGrepMode::Grep => self
-                .grep_map_grep_items(func, items, start, end, max_matches, plan)
-                .map(|(result, grep_end)| {
-                    consumed_end = grep_end;
-                    result
-                }),
+                .grep_map_grep_items(func, items, start, end, max_matches, plan, out)
+                .map(|grep_end| consumed_end = grep_end),
             // `@a.map({ $_++ })`: Raku rw-binds `$_` to the source
             // element, so the callback's writes have to reach `@a`.
             // See `MapGrepMode::MapRw`.
@@ -280,9 +348,10 @@ impl Interpreter {
                 source.clone(),
                 start,
                 plan,
+                out,
             ),
             MapGrepMode::Map => {
-                self.eval_map_over_items_planned(func.clone(), items.slice(start, end), plan)
+                self.eval_map_over_items_into(func.clone(), items.slice(start, end), plan, out)
             }
         };
         self.module.fatal_mode = saved_fatal;
@@ -299,23 +368,20 @@ impl Interpreter {
         // near here: it is whichever routine encloses the CONSUMER.
         // So decide it here, where the call site's `fatal` is known,
         // by turning the soft failure into a hard throw.
-        let result = result.map_err(|mut e| {
+        result.map_err(|mut e| {
             if fatal && e.is_fail() {
                 e.control = None;
             }
             e
         })?;
-        let items = match result.view() {
-            ValueView::Array(items, _) => items.to_vec(),
-            _ => crate::runtime::utils::value_to_list(&result),
-        };
-        Ok((items, consumed_end))
+        Ok(consumed_end)
     }
 
     /// Grep the source elements `start..end` of a deferred `.grep`, or with
     /// `max_matches` those `fetch` reads from `start` on, up to that many
     /// matches. Returns the result and the end of the elements consumed.
     // Cost: one callback call per element consumed.
+    #[allow(clippy::too_many_arguments)]
     fn grep_map_grep_items(
         &mut self,
         func: &Option<Value>,
@@ -324,28 +390,29 @@ impl Interpreter {
         end: usize,
         max_matches: Option<usize>,
         plan: &mut MapGrepPlanSlot,
-    ) -> Result<(Value, usize), RuntimeError> {
-        let (result, consumed, _) = match max_matches {
+        out: &mut PullOut,
+    ) -> Result<usize, RuntimeError> {
+        let (consumed, _) = match max_matches {
             Some(max_matches) => {
                 let fetch = |i: usize| items.get(start + i);
                 let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(&fetch, max_matches);
-                self.eval_grep_over_feed_planned(func.clone(), feed, plan)?
+                self.eval_grep_over_feed_into(func.clone(), feed, plan, out)?
             }
             None => {
-                self.eval_grep_over_items_planned(func.clone(), items.slice(start, end), plan)?
+                self.eval_grep_over_items_into(func.clone(), items.slice(start, end), plan, out)?
             }
         };
-        let consumed_end = match max_matches {
+        Ok(match max_matches {
             Some(_) => start + consumed.len(),
             None => end,
-        };
-        Ok((result, consumed_end))
+        })
     }
 
     /// Pull a deferred `.map` whose receiver was a real Array
     /// (`SeqSource::MapGrep::MapRw`): run the rw map loop over `items`, the
-    /// source elements from index `start` on, then publish any element the
-    /// callback wrote back into that container.
+    /// source elements from index `start` on, into `out`, then publish any
+    /// element the callback wrote back into that container.
+    #[allow(clippy::too_many_arguments)]
     fn pull_rw_map(
         &mut self,
         func: Option<Value>,
@@ -353,7 +420,8 @@ impl Interpreter {
         source: Value,
         start: usize,
         plan: &mut MapGrepPlanSlot,
-    ) -> Result<Value, RuntimeError> {
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
         // The narrow native rw loop first: it is the only one that captures a
         // prefix `++$_`/`--$_` or a bare `tr///` (`rw_map_topic_capture`),
         // which the shared loop's `__mutsu_rw_map_topic__` assignment mirror
@@ -377,20 +445,24 @@ impl Interpreter {
         {
             let (result_items, source_after) = native?;
             self.publish_rw_map_writeback(&source, source_after, start);
-            return Ok(Value::seq(result_items));
+            out.consumed += items.len();
+            out.produced.extend(result_items);
+            return Ok(());
         }
-        let (result, wrote_back) = self.eval_map_over_items_rw(func, &mut items, plan)?;
+        let wrote_back = std::cell::Cell::new(false);
+        let mapped = self.eval_map_over_items_rw_into(func, &mut items, plan, out, &wrote_back);
         // A read-only block wrote nothing, so leave the source container
         // ALONE. It used to be rebuilt unconditionally, which silently
         // dropped the per-slot metadata `ArrayData` carries: a `:delete`d
         // slot lost its `initialized` bit, stopped reading as a hole, and a
         // later trailing-element `:delete` could no longer truncate the array
         // (roast/S32-array/delete.t, via a read-only
-        // `@a.map({ $_ // "Any()" })` in between).
-        if wrote_back {
+        // `@a.map({ $_ // "Any()" })` in between). A callback that died part
+        // way still publishes what it wrote before (#12401).
+        if wrote_back.get() {
             self.publish_rw_map_writeback(&source, items, start);
         }
-        Ok(result)
+        mapped
     }
 
     /// Write the mutated elements `items` of a rw `.map` back into the source
@@ -466,7 +538,9 @@ impl Interpreter {
 }
 
 /// Whether a deferred `.map`/`.grep` can be run a chunk of its source at a
-/// time (see [`Interpreter::pull_map_grep_prefix`]).
+/// time (see [`Interpreter::pull_map_grep_prefix`]). A multi-parameter map
+/// can: its chunks are cut at whole groups ([`map_group_size`]). A grep with
+/// several parameters, a slurpy parameter and a `FIRST`/`LAST` phaser cannot.
 // Cost: O(s), s = top-level statements of the callback's body.
 pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMode) -> bool {
     if let MapGrepMode::MapRw(source) = mode
@@ -482,13 +556,6 @@ pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMo
         // element at a time and keeps no state between elements.
         return true;
     };
-    let positional = data
-        .param_defs
-        .iter()
-        .filter(|pd| !pd.named && !pd.is_invocant)
-        .count()
-        .max(data.params.len())
-        .saturating_sub(data.assumed_positional.len());
     let slurpy = data.param_defs.iter().any(|pd| pd.slurpy);
     let loop_phaser = data.body.iter().any(|stmt| {
         matches!(
@@ -499,5 +566,32 @@ pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMo
             }
         )
     });
-    positional <= 1 && !slurpy && !loop_phaser
+    (callback_positionals(func) <= 1 || !mode.is_grep()) && !slurpy && !loop_phaser
+}
+
+/// How many positional parameters `func`, a `.map`/`.grep` callback, binds
+/// per call; 1 for a callable that is not a `Sub` (it takes one element).
+// Cost: O(p), p = parameters.
+fn callback_positionals(func: &Value) -> usize {
+    let ValueView::Sub(data) = func.view() else {
+        return 1;
+    };
+    data.param_defs
+        .iter()
+        .filter(|pd| !pd.named && !pd.is_invocant)
+        .count()
+        .max(data.params.len())
+        .saturating_sub(data.assumed_positional.len())
+}
+
+/// The source elements one call of a `.map` callback consumes, so a prefix
+/// pull cuts its chunks at whole groups (`.map(-> $a, $b { ... })` takes two
+/// per call, as Rakudo's iterator pulls them). A grep tests one element at a
+/// time.
+// Cost: O(p), p = parameters.
+pub(super) fn map_group_size(func: Option<&Value>, mode: &MapGrepMode) -> usize {
+    if mode.is_grep() {
+        return 1;
+    }
+    func.map_or(1, callback_positionals).max(1)
 }

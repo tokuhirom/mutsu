@@ -31,6 +31,11 @@ fn collect_use_declared_type_names(
     // `use Timezones::ZoneInfo::Time:auth<zef:guifa>` and then type a
     // parameter with the exported `Time` class).
     let (module, _) = Interpreter::split_dist_selectors(module);
+    // The types its `sub EXPORT` hook hands out under literal keys
+    // (`'MyAlias' => Int`), which no declarator below names.
+    if let Some(keys) = crate::parser::scanned_hook_type_keys(module) {
+        out.extend(keys.iter().cloned());
+    }
     let path = module_source_in_dirs(module, extra_dirs)
         .or_else(|| interp.resolve_module_path(module).map(|(p, _)| p));
     let Some(path) = path else {

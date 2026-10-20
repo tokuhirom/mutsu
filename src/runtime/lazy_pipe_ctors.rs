@@ -54,6 +54,7 @@ impl LazyList {
             list_context: false,
             cached_no_sink: false,
             deleted_indices: Default::default(),
+            descriptor: None,
             itemized: false,
         }
     }
@@ -98,6 +99,7 @@ impl LazyList {
             list_context: false,
             cached_no_sink: false,
             deleted_indices: Default::default(),
+            descriptor: None,
             itemized: false,
         }
     }
@@ -111,6 +113,20 @@ impl LazyList {
         let mut ll = Self::new_pipe(source, func, false);
         if let Some(spec) = ll.lazy_pipe.as_mut() {
             spec.get_mut().unwrap_or_else(|e| e.into_inner()).adaptor = Some(Box::new(adaptor));
+        }
+        ll
+    }
+
+    /// Create a stage that hands `source`'s elements through unchanged, as
+    /// lazy as `source` is (unlike an `Identity` [`Self::new_index_pipe`],
+    /// which is `.lazy` and so always lazy). A streamed gather is one over
+    /// its Seq (`Interpreter::gather_stream`): `.is-lazy` stays `False` and a
+    /// strict consumer may reify it, as for the gather itself.
+    pub(crate) fn new_stream_pipe(source: Value) -> Self {
+        let mut ll = Self::new_pipe(source, Value::NIL, false);
+        if let Some(spec) = ll.lazy_pipe.as_mut() {
+            spec.get_mut().unwrap_or_else(|e| e.into_inner()).index_transform =
+                Some(IndexTransform::Identity);
         }
         ll
     }

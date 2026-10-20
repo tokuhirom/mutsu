@@ -361,6 +361,7 @@ mod vm_regex_bool;
 mod vm_register_ops;
 mod vm_register_proto_ops;
 mod vm_register_sub_ops;
+mod vm_resume_op_raise;
 mod vm_routine_capture;
 mod vm_run_loop;
 mod vm_rw_arg_callee;

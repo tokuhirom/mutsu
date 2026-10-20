@@ -48,6 +48,11 @@ struct Inner {
     op_prec: std::sync::OnceLock<crate::op_prec::OpPrec>,
 }
 
+/// Set once any routine has had a composition stored; never cleared. A
+/// by-name call asks it before looking up the callee's cell, so a program that
+/// never mixes into a routine pays one relaxed load per call for it.
+static ANY_COMPOSED: AtomicBool = AtomicBool::new(false);
+
 /// See the module docs. Cloning shares the cell: a clone of the handle is the
 /// same routine. A Raku-level `.clone` of a routine takes [`Self::forked`].
 #[derive(Clone, Default)]
@@ -76,6 +81,13 @@ impl RoutineCell {
             *slot = Some(overrides);
         }
         self.0.composed.store(true, Ordering::Release);
+        ANY_COMPOSED.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether any routine in the process has had roles composed into it.
+    // Cost: O(1).
+    pub(crate) fn any_composed() -> bool {
+        ANY_COMPOSED.load(Ordering::Relaxed)
     }
 
     /// The `Signature` bound to the routine's `$!signature`, if any.

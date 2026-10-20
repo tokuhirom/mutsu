@@ -386,7 +386,10 @@ impl Interpreter {
             .split_once('[')
             .map(|(base, _)| base)
             .unwrap_or(class_name);
-        if !matches!(base, "Promise" | "Channel" | "Date" | "DateTime") {
+        if !matches!(
+            base,
+            "Promise" | "Channel" | "Date" | "DateTime" | "IO::Path::Parts"
+        ) {
             return Vec::new();
         }
         crate::builtin_types::catalog::builtin_type_info(base)

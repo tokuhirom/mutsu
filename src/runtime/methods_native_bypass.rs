@@ -23,6 +23,13 @@ impl Interpreter {
             return target.clone();
         }
         match target.view() {
+            // One candidate of a role group (`R.^candidates[0]`) stays itself:
+            // its index is what tells the candidates apart (#14186).
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_role_candidate_idx") =>
+            {
+                target.clone()
+            }
             ValueView::Instance { class_name, .. } => Value::package(class_name),
             _ => target.clone(),
         }
