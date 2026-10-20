@@ -63,6 +63,10 @@ CASES=(
     '"a{ $t }b" vs env|1000|1|LOCALS my $t = 1; my $s;|for ^5000 { $s = "a{ $t }b" }'
     '"a$t b" vs env (control)|1000|1|LOCALS my $t = 1; my $s;|for ^5000 { $s = "a$t b" }'
     '&f read vs frame locals|500|1|sub f { 1 }; LOCALS my $c;|for ^20000 { $c = &f }'
+    # A block sub's escape-hatch value is a closure capture, not a handle on
+    # the live env chain, so the block's write-back on exit does not copy the
+    # enclosing tier (#9170).
+    'bare block { sub } write-back vs enclosing env|1000|1|SUBS my $t = 0;|for ^3000 { { sub g { 1 }; $t += g() } }'
     '-> { $q } creation vs env|2000|1|LOCALS my $c;|for ^20000 { my $q = $_; $c = -> { $q } }'
     'sub returning -> { } vs env|2000|1|sub mk { my $q = 1; -> { $q } }; LOCALS my $s = 0;|for ^20000 { $s += mk()() }'
     # The system names a capture keeps (types, constants, dynamics, uppercase

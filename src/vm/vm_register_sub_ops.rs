@@ -964,6 +964,14 @@ impl Interpreter {
                     ))
                     .cloned();
                 let sub_val = if let Some(def) = installed {
+                    // Captured as any closure created here would be: the
+                    // memoized layers of the enclosing tiers and the sub's own
+                    // free variables, not a second handle on the live env
+                    // chain. That handle kept the enclosing tier shared, so
+                    // the block's first write-back on exit deep-copied it,
+                    // O(enclosing entries) per run of the block (#9170).
+                    let cc = def.compiled_fn().map(|cf| cf.code.clone());
+                    let env = self.capture_closure_env(code, &cc);
                     Value::make_sub_for_routine(
                         self.lexical_closure_package_sym(),
                         Symbol::intern(&resolved_name),
@@ -971,7 +979,7 @@ impl Interpreter {
                         def.param_defs.clone(),
                         def.body.clone(),
                         def.is_rw,
-                        self.env().clone(),
+                        env,
                         def.compiled_fn().cloned(),
                     )
                 } else {
