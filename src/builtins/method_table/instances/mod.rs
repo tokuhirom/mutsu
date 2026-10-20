@@ -45,6 +45,7 @@ pub(crate) mod hyper_seq;
 pub(crate) mod instant;
 pub(crate) mod iterator;
 pub(crate) mod label;
+pub(crate) mod rakudo_internals;
 pub(crate) mod rakuast_node;
 pub(crate) mod regex_match;
 pub(crate) mod routine;
@@ -85,6 +86,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     iterator::ROWS,
     collation::ROWS,
     label::ROWS,
+    rakudo_internals::ROWS,
     code::ROWS,
     code::BLOCK_ROWS,
     code_accepts::ROWS,

@@ -696,15 +696,6 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
             return result;
         }
-        // `Rakudo::Internals.IS-WIN` / `.IS-MACOS` / `.INCLUDE`: the same
-        // helper the VM's native method path answers them with.
-        if let Some(result) = self.try_rakudo_internals_method(&target, method, &args) {
-            return result;
-        }
-        // `Rakudo::Sorting.MERGESORT-str` on a native str array.
-        if let Some(result) = self.try_rakudo_sorting_method(&target, method, &args) {
-            return result;
-        }
         // `Kernel.cpu-cores`, `Thread.usage`, ... on the type object.
         if let Some(result) = self.try_core_type_object_method(&target, method, &args) {
             return result;
