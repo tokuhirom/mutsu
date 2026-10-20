@@ -36,7 +36,7 @@ pub(crate) fn qualify_program(stmts: &mut [Stmt]) {
     }
     let mut pass = Qualify {
         declared: decls.declared,
-        lexical: decls.lexical,
+        local_names: decls.local_names,
         packages: Vec::new(),
         scopes: Vec::new(),
     };
@@ -146,8 +146,9 @@ fn prefix(packages: &[Option<&str>]) -> Option<String> {
 #[derive(Default)]
 struct PackageTypes<'a> {
     declared: HashSet<String>,
-    /// The composed names of the `my`-scoped types declared in a package.
-    lexical: HashSet<String>,
+    /// The short names the unit declares as something other than an
+    /// `our`-scoped type: a `my` type, a constant or another sigil-less term.
+    local_names: HashSet<String>,
     packages: Packages<'a>,
     opens_package: bool,
 }
@@ -157,9 +158,15 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
         if let Some(prefix) = prefix(&self.packages) {
             if let Some(name) = declared_type(stmt) {
                 self.declared.insert(format!("{prefix}::{name}"));
-            } else if let Some(name) = lexical_type(stmt) {
-                self.lexical.insert(format!("{prefix}::{name}"));
             }
+        }
+        if let Some(name) = lexical_type(stmt) {
+            self.local_names.insert(name.to_string());
+        }
+        if let Stmt::VarDecl { name, .. } = stmt
+            && name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        {
+            self.local_names.insert(name.clone());
         }
         let opened = opened_package(stmt);
         self.opens_package |= opened.is_some();
@@ -181,7 +188,7 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
 
 struct Qualify<'d> {
     declared: HashSet<String>,
-    lexical: HashSet<String>,
+    local_names: HashSet<String>,
     packages: Vec<Option<&'d str>>,
     /// The `my` classes each open statement list declares inside a package,
     /// by source name, with the storage name the run time registers them
@@ -242,9 +249,11 @@ impl Qualify<'_> {
             // A type the unit declares, or one a `use`d module declared under
             // the package (`use URI::Path` inside `unit class URI`, where
             // `Path` names `URI::Path`). The parser's type registry does not
-            // tell `my` from `our`, so the unit's own `my` types are left out.
+            // tell a type from a `my` type or a type-valued constant (`my
+            // constant CArray is export = NativeCall::Types::CArray`), so a
+            // name the unit declares as one of those is left alone.
             if self.declared.contains(&candidate)
-                || (!self.lexical.contains(&candidate)
+                || (!self.local_names.contains(name)
                     && super::stmt::simple::is_user_declared_type(&candidate))
             {
                 return Some(candidate);
