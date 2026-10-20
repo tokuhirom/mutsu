@@ -722,6 +722,17 @@ impl Interpreter {
         {
             return self.type_matches_value_why(&resolved_constraint, value, why);
         }
+        // An imported parameterized role written bare (`Box[P]` for the
+        // exporter's `ParamRoleExporter::Box`) is checked under its package
+        // alias. Only the check takes it: a declaration's type object is
+        // built from the spelling. The spelling itself is still tried below:
+        // some core-shaped types (`CArray[uint8]`) match by it.
+        if constraint.contains('[')
+            && let Some(aliased) = self.parameterized_package_alias(constraint)
+            && self.type_matches_value_why(&aliased, value, &mut None)
+        {
+            return true;
+        }
         // Hot-path fast accept (ADR-0004 J3): a concrete value whose exact tag /
         // class matches the bare constraint name. Sound unless a user `subset`
         // shadows the name (then the full checker below must run its predicate),

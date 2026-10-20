@@ -95,7 +95,11 @@ fn refusal(err: RuntimeError) -> RuntimeError {
 /// parser's tree with.
 pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
     let node = super::convert::statement_list(stmts)?;
-    super::lower(&node)
+    let mut lowered = super::lower(&node)?;
+    // The spelled parse keeps bare type names for the conversion; the
+    // lowered tree gets the qualification an ordinary parse does.
+    crate::parser::qualify_type_names(&mut lowered);
+    Ok(lowered)
 }
 
 /// [`round_trip_if_enabled`] for an `EVAL` string, whose bare names may be
