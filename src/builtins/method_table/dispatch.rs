@@ -1153,10 +1153,10 @@ pub(crate) fn shapeless_row(
     } else {
         arity
     };
-    // A row reached only through its owner (`Cool.Int`, which `.^can` lists)
-    // is never a shape's answer.
+    // `Cool`'s owner-only rows (`Cool.Int`, which `.^can` lists) are never
+    // the coercion fallback's answer.
     super::owner_row(owner, method, arity)
-        .filter(|&id| !super::row(id).flags.contains(RowFlags::OWNER_ONLY))
+        .filter(|&id| owner != cool || !super::row(id).flags.contains(RowFlags::OWNER_ONLY))
         .or_else(|| {
             coerce
                 .then(|| super::owner_row(mu_owner, method, arity))
