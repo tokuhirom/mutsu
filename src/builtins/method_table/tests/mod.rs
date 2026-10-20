@@ -315,6 +315,11 @@ fn every_row_is_reached_and_answers() {
                 );
                 continue;
             }
+            // An opaque shape's sample carries none of the runtime state its
+            // rows read (a lock id, a configuration), so they may decline it.
+            if shape.is_opaque() {
+                continue;
+            }
             assert!(
                 result.is_some(),
                 "{}.{} on a {shape:?} did not answer",
@@ -536,7 +541,8 @@ fn the_name_test_knows_the_arity() {
     assert!(!names_a_row(samecase, 2));
     let substr = Symbol::intern("substr");
     assert!(names_a_row(substr, 1) && names_a_row(substr, 2));
-    assert!(!names_a_row(Symbol::intern("elems"), 1));
+    // (`elems` takes an argument on a `Supply`, whose row is slurpy.)
+    assert!(!names_a_row(Symbol::intern("chars"), 1));
     assert!(!names_a_row(substr, 200));
 }
 
