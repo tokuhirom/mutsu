@@ -211,16 +211,17 @@ pub(crate) fn augment_core_method_conflict(
     }
 }
 
-/// The names Rakudo declares directly on `owner` that a row of `owner`
-/// implements, in snapshot order; for an owner the snapshot does not list, its
-/// rows' names. `.^methods` lists these as the class's own method table.
-// Cost: O(n * k), n = names declared, k = rows per name.
+/// The names Rakudo declares directly on `owner` that a row of `owner` or of a
+/// class in its MRO implements (`Map` declares `Bag`, mutsu's row is `Any`'s),
+/// in snapshot order; for an owner the snapshot does not list, its rows'
+/// names. `.^methods` lists these as the class's own method table.
+// Cost: O(n * m * k), n = names declared, m = MRO length, k = rows per name.
 pub(crate) fn declared_names_for_owner(owner: &str) -> Vec<&'static str> {
     match facts().get(owner) {
         Some(facts) => facts
             .names(Kind::Declared)
             .into_iter()
-            .filter(|name| owner_has_row(owner, name))
+            .filter(|name| row_reaches(owner, name, false))
             .collect(),
         None => owner_row_names(owner),
     }
