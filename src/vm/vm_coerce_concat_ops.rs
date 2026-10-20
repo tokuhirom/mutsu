@@ -66,6 +66,21 @@ impl Interpreter {
             self.stack.push(symbols);
             return self.exec_make_slip_op();
         }
+        // An `is Hash` / `is Array` subclass instance is its storage, so
+        // `|$obj` slips what `|%h` / `|@a` would: pairs (named arguments, in
+        // an argument list) or elements.
+        if let ValueView::Instance { attributes, .. } = val.view()
+            && let Some(storage) = {
+                let attrs = attributes.as_map();
+                attrs
+                    .get("__mutsu_hash_storage")
+                    .or_else(|| attrs.get("__mutsu_array_storage"))
+                    .cloned()
+            }
+        {
+            self.stack.push(storage);
+            return self.exec_make_slip_op();
+        }
         // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines`) must first
         // pull all elements from its source (ADR-0034), else `|$seq` yields
         // nothing. `|EXPR` steals the source like `.iterator`/`.list` (a

@@ -1458,7 +1458,7 @@ impl Interpreter {
                 // Split at the LAST `::` so a nested owner class name
                 // (`$c!Jar::Cookie::secret` → owner `Jar::Cookie`, method `secret`)
                 // resolves correctly.
-                let (pm_name, resolved) = if let Some((owner_class, pm_name)) =
+                let (pm_name, resolved, owner_only) = if let Some((owner_class, pm_name)) =
                     crate::qualified::split_qualified(crate::qualified::known_symbol(private_rest))
                         .map(|(head, tail)| (head.as_str(), tail.as_str()))
                 {
@@ -1481,20 +1481,37 @@ impl Interpreter {
                             caller_class.as_deref().unwrap_or("GLOBAL"),
                         ));
                     }
-                    (
+                    let resolved = self.resolve_private_method_with_owner(
+                        &name.resolve(),
+                        &canonical_owner,
                         pm_name,
-                        self.resolve_private_method_with_owner(
-                            &name.resolve(),
-                            &canonical_owner,
-                            pm_name,
-                            &args,
-                        ),
-                    )
+                        &args,
+                    );
+                    (pm_name, resolved, Some(canonical_owner))
                 } else {
                     (
                         private_rest,
                         self.resolve_private_method_any_owner(&name.resolve(), private_rest, &args),
+                        None,
                     )
+                };
+                // As on the instance path: no signature match is not "no such
+                // private method". A single candidate by name runs, so its
+                // binding reports the real error; several are a multi no-match.
+                let resolved = match resolved {
+                    Some(r) => Some(r),
+                    None => {
+                        let mut candidates = self.private_method_candidates_by_name(
+                            &name.resolve(),
+                            owner_only.as_deref(),
+                            pm_name,
+                        );
+                        match candidates.len() {
+                            0 => None,
+                            1 => Some(candidates.remove(0)),
+                            _ => return Err(make_multi_no_match_error(pm_name)),
+                        }
+                    }
                 };
                 if let Some((resolved_owner, method_def)) = resolved {
                     let caller_allowed = self
