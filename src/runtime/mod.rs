@@ -2753,6 +2753,9 @@ pub(crate) struct ImportScopeSnapshot {
     /// (ADR-8751): what a by-name lookup the compiler could not resolve
     /// (`::('&f')`, an `EVAL` in the block) still sees while it runs.
     pub(crate) lexical_sets: Vec<Symbol>,
+    /// `routine_stack` depth when the scope opened: a frame pushed later (a
+    /// routine the block calls) runs outside the block's lexical extent.
+    pub(crate) routine_depth: usize,
     /// The compilation unit whose code opened this scope
     /// (`executing_unit_sym_for_module_load` at the push). An import made here
     /// shadows that unit's own top-level routines, but not another unit's

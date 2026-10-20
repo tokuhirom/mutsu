@@ -590,6 +590,13 @@ impl Compiler {
             .cloned()
             .collect();
         self.code.eval_scope_names.extend(names);
+        // The sets lexically around this `EVAL` call: what its unit starts
+        // inside, instead of the sets of whatever blocks are open when it
+        // runs (ADR-8751).
+        let chain: Vec<Symbol> = self.lexical_import_chain.iter().rev().copied().collect();
+        if !self.code.eval_site_chains.contains(&chain) {
+            self.code.eval_site_chains.push(chain);
+        }
     }
 
     /// Emit the hoist-pass registration of one `Stmt::SubDecl`: a plan-only

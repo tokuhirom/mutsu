@@ -7080,6 +7080,11 @@ pub(crate) struct CompiledCode {
     /// sites: per site, the ids of the import sets of the `use`-blocks
     /// lexically enclosing it, innermost first (ADR-8751 stage 1).
     pub(crate) lexical_import_chains: Vec<Vec<Symbol>>,
+    /// The lexical import chains of this code's `EVAL` calls (one per distinct
+    /// chain, innermost first): the sets an EVAL'd unit starts inside
+    /// (`Interpreter::eval_lexical_import_chain`). Empty when the code calls
+    /// no `EVAL` by name.
+    pub(crate) eval_site_chains: Vec<Vec<Symbol>>,
     /// §1.3 closure-capture slot bake: parallel to `free_var_syms`, the CREATING
     /// frame's compile-time local slot for each free variable (`local_map` at the
     /// closure's emit point, baked by `Compiler::add_closure_code_baked`), or
@@ -8286,6 +8291,7 @@ impl CompiledCode {
             expr_declared_syms: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
             lexical_import_chains: Vec::new(),
+            eval_site_chains: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),
             outer_ref_names: Vec::new(),

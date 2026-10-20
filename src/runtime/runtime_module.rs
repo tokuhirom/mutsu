@@ -113,6 +113,7 @@ impl Interpreter {
                 imported_env_aliases: self.module.imported_env_aliases.clone(),
                 leave_phasers: Vec::new(),
                 lexical_sets: Vec::new(),
+                routine_depth: self.routine_stack().len(),
                 unit: self.executing_unit_sym_for_module_load(),
                 importer_type_aliases: (
                     self.import_target_package_for_load(),
@@ -510,6 +511,7 @@ impl Interpreter {
                 scope_classes,
                 leave_phasers: _,
                 lexical_sets: _,
+                routine_depth: _,
                 unit: _,
                 importer_type_aliases,
             } = snapshot;
