@@ -556,8 +556,8 @@ impl Interpreter {
     // declaration facts are computed once per chunk (`block_range_facts`), and the
     // routine-registry snapshot is O(1) with an O(1) restore when the block changed
     // no routine table; a block that does declare a routine pays O(R) on exit, R =
-    // routine-registry entries. Once any sigilless alias exists in the process the
-    // alias sync adds O(L), L = frame locals. Rakudo: O(1) -- see #9170.
+    // routine-registry entries. The alias sync is O(a), a = `:=` alias keys the
+    // program has ever bound. Rakudo: O(1) -- see #9170.
     pub(super) fn exec_block_scope_op(
         &mut self,
         code: &CompiledCode,
@@ -1072,45 +1072,7 @@ impl Interpreter {
             }
         }
         *self.env_mut() = restored_env;
-        // After block scope restoration, sync `:=` alias bindings.
-        // If a local variable was modified inside the block and has a
-        // sigilless alias (e.g. `my $a := $_`), propagate the local's
-        // current value to the alias target in env so they stay in sync.
-        //
-        // No `__mutsu_sigilless_*` key has ever existed in this process in the
-        // common program, and then there is nothing to sync: skip the per-local
-        // scan outright. TODO: once some alias exists this is still O(L) per
-        // block exit; a per-frame record of the aliased slots would make it
-        // O(aliases) (#9170).
-        let alias_slots = if crate::env::sigilless_meta_keys_possible() {
-            code.locals.len()
-        } else {
-            0
-        };
-        for (idx, name) in code.locals.iter().enumerate().take(alias_slots) {
-            let alias_key = code
-                .alias_sym(idx)
-                .unwrap_or_else(|| crate::runtime::sigilless_alias_key(name));
-            if !crate::symbol::maybe_env_key(alias_key) {
-                continue;
-            }
-            if let Some(ValueView::Str(target)) = self
-                .env()
-                .get_sym(alias_key)
-                .cloned()
-                .as_ref()
-                .map(Value::view)
-            {
-                let local_val = self.locals[idx].clone();
-                let differs = self
-                    .env()
-                    .get(target.as_str())
-                    .is_some_and(|env_val| &local_val != env_val);
-                if differs {
-                    self.env_mut().insert(target.to_string(), local_val);
-                }
-            }
-        }
+        self.sync_block_exit_alias_targets(code);
         // Drop readonly flags for block-declared variables so a later outer
         // `my` redeclaration of the same name is not marked as readonly by
         // the now-gone binding (`my %h := SetHash.new(...)` inside a block

@@ -7189,7 +7189,7 @@ impl Interpreter {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }
 
-            // Cost: O(w + d) plus the body, w = names it wrote by name, d = names it declared; O(R) more on exit when the block declared a routine, R = registry, and O(L) for the sigilless-alias sync once one exists (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(w + d) plus the body, w = names it wrote by name, d = names it declared; O(R) more on exit when the block declared a routine, R = registry, and O(a) for the alias sync, a = `:=` alias keys ever bound (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
             OpCode::BlockScope {
                 pre_end,
                 enter_end,
