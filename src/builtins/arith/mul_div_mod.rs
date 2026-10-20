@@ -269,22 +269,14 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
     }
 }
 
-pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError> {
+/// `$a mod $b`. Rakudo's `mod` differs from `%` for an `Int` over a non-`Int`
+/// `Real`: that pair takes the `Real, Real` candidate, `$a - ($a div $b) * $b`,
+/// whose `div` coerces `$b` to `Int` first, so `7 mod 2.5` is `-0.5` where
+/// `7 % 2.5` is the floored `2` (#14119). Everything else is [`arith_mod`].
+// Cost: as `arith_mod`.
+pub(crate) fn arith_mod_op(left: Value, right: Value) -> Result<Value, RuntimeError> {
     let (left, right) = (left.into_deref(), right.into_deref());
-    if let Some(raw) = instance_duration_raw_value(&left)
-        && right.is_numeric()
-    {
-        // Duration % Real => Duration. Compute with exact rational arithmetic
-        // (the same code path as a plain modulo) so the result is eqv to
-        // Duration.new($seconds % $real). arith_mod throws X::Numeric::DivideByZero
-        // when the divisor is zero.
-        let modded = arith_mod(real_to_rat(&raw), right)?;
-        return Ok(make_duration_from_value(super::temporal::tai_rat(&modded)));
-    }
-    let (mut l, mut r) = crate::runtime::coerce_numeric(left, right);
-    // An `Int` over a non-`Int` `Real` takes Rakudo's `Real, Real` candidate,
-    // `$a - ($a div $b) * $b`, whose `div` coerces `$b` to `Int` first, so
-    // `7 mod 2.5` is `-0.5`, not the floored remainder (#14119).
+    let (l, r) = crate::runtime::coerce_numeric(left, right);
     if matches!(l.view(), ValueView::Int(_) | ValueView::BigInt(_))
         && match r.view() {
             ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => true,
@@ -298,6 +290,22 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
         }
         return Ok(quotient);
     }
+    arith_mod(l, r)
+}
+
+pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    let (left, right) = (left.into_deref(), right.into_deref());
+    if let Some(raw) = instance_duration_raw_value(&left)
+        && right.is_numeric()
+    {
+        // Duration % Real => Duration. Compute with exact rational arithmetic
+        // (the same code path as a plain modulo) so the result is eqv to
+        // Duration.new($seconds % $real). arith_mod throws X::Numeric::DivideByZero
+        // when the divisor is zero.
+        let modded = arith_mod(real_to_rat(&raw), right)?;
+        return Ok(make_duration_from_value(super::temporal::tai_rat(&modded)));
+    }
+    let (mut l, mut r) = crate::runtime::coerce_numeric(left, right);
     // Mixed Num/Rat modulo should use floating semantics; routing through
     // exact-rational reduction loses expected precision behavior for cases like
     // 1.01 % 0.2 (should be ~0.01).
