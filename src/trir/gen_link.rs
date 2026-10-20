@@ -38,7 +38,7 @@ use super::{TrArg, TrChunk, TrInnerCall, TrKind};
 use crate::opcode::CompiledFns;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, ValueView};
 
 /// The resolution state a link was observed in.
 type GenContext = (u64, Symbol, Option<Symbol>);
