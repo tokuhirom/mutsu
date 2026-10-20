@@ -293,7 +293,8 @@ impl Interpreter {
             "*" | "\u{00D7}" => Ok(crate::builtins::arith_mul(left.clone(), right.clone())),
             "/" | "\u{00F7}" => crate::builtins::arith_div(left.clone(), right.clone()),
             "div" => Ok(crate::builtins::int_div(left, right)),
-            "%" | "mod" => crate::builtins::arith_mod(left.clone(), right.clone()),
+            "%" => crate::builtins::arith_mod(left.clone(), right.clone()),
+            "mod" => crate::builtins::arith_mod_op(left.clone(), right.clone()),
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
             "~" => crate::runtime::Interpreter::concat_values(left.clone(), right.clone()),
             "&&" | "and" => {

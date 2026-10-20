@@ -19,7 +19,7 @@ mod temporal;
 
 // Core arithmetic operators — re-exported pub(crate) to match original visibility.
 pub(crate) use add_sub::{arith_add, arith_sub};
-pub(crate) use mul_div_mod::{arith_div, arith_mod, arith_mul};
+pub(crate) use mul_div_mod::{arith_div, arith_mod, arith_mod_op, arith_mul};
 pub(crate) use pow_negate::{arith_negate, arith_pow};
 
 // The one implementation of each integer operator and of succ/pred

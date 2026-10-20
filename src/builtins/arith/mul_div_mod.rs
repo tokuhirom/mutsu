@@ -269,6 +269,30 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
     }
 }
 
+/// `$a mod $b`. Rakudo's `mod` differs from `%` for an `Int` over a non-`Int`
+/// `Real`: that pair takes the `Real, Real` candidate, `$a - ($a div $b) * $b`,
+/// whose `div` coerces `$b` to `Int` first, so `7 mod 2.5` is `-0.5` where
+/// `7 % 2.5` is the floored `2` (#14119). Everything else is [`arith_mod`].
+// Cost: as `arith_mod`.
+pub(crate) fn arith_mod_op(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    let (left, right) = (left.into_deref(), right.into_deref());
+    let (l, r) = crate::runtime::coerce_numeric(left, right);
+    if matches!(l.view(), ValueView::Int(_) | ValueView::BigInt(_))
+        && match r.view() {
+            ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => true,
+            ValueView::Num(f) => f.is_finite(),
+            _ => false,
+        }
+    {
+        let quotient = super::int_div(&l, &r);
+        if matches!(quotient.view(), ValueView::Int(_) | ValueView::BigInt(_)) {
+            return Ok(super::arith_sub(l, arith_mul(quotient, r)));
+        }
+        return Ok(quotient);
+    }
+    arith_mod(l, r)
+}
+
 pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError> {
     let (left, right) = (left.into_deref(), right.into_deref());
     if let Some(raw) = instance_duration_raw_value(&left)
