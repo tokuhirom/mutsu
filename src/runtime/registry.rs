@@ -688,9 +688,9 @@ impl Registry {
     /// run — for 7,236 `resolve_lexical_type_key` calls, ~17,000 instructions
     /// apiece ([#8830]).
     ///
-    /// A key matches `"{unmangled}\u{0}"` exactly when its segment before the
-    /// FIRST NUL is `unmangled`, so the set of those segments answers the
-    /// question exactly rather than approximately, in one hash probe. Programs
+    /// A key matches `"{unmangled}\u{0}"` exactly when `unmangled` is the part
+    /// of the key before one of its NULs, so the set of those prefixes answers
+    /// the question exactly rather than approximately, in one hash probe. Programs
     /// that declare no `my class`/`my grammar` at all have an empty set and
     /// never scan again.
     ///
@@ -708,8 +708,13 @@ impl Registry {
                     .chain(self.roles.keys())
                     .chain(self.enum_types.keys())
                     .chain(self.subsets.keys())
-                    .filter_map(|key| key.split_once('\u{0}'))
-                    .map(|(bare, _)| Box::<str>::from(bare))
+                    .flat_map(|key| {
+                        // Every NUL-terminated prefix: a type nested in a
+                        // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
+                        // and a scan for `Outer\0<id>::Inner` is a prefix of it.
+                        key.match_indices('\u{0}')
+                            .map(|(at, _)| Box::<str>::from(&key[..at]))
+                    })
                     .collect()
             })
             .contains(unmangled)
