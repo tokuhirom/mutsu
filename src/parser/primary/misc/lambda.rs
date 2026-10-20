@@ -650,12 +650,22 @@ fn parse_block_body_with_sigilless<'a>(
     param_defs: &[crate::ast::ParamDef],
     input: &'a str,
 ) -> PResult<'a, Vec<crate::ast::Stmt>> {
-    if !has_sigilless_param(param_defs) {
+    // A `&name` parameter declares a routine for the body, exactly as it does
+    // for `for`/`sub`: `-> &next { next() }` calls the parameter, it is not the
+    // loop-control `next`.
+    let mut term_names: Vec<&str> = Vec::new();
+    let mut code_names: Vec<&str> = Vec::new();
+    collect_routine_param_names(param_defs, &mut term_names, &mut code_names);
+    if !has_sigilless_param(param_defs) && code_names.is_empty() {
         return parse_block_body(input);
     }
     let (r, _) = parse_char(input, '{')?;
+    let _generation = (!code_names.is_empty()).then(crate::parser::memo::begin_parse_generation);
     crate::parser::stmt::simple::push_scope();
     register_sigilless_params(param_defs);
+    for name in code_names {
+        crate::parser::stmt::simple::register_user_sub(name);
+    }
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
         let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);

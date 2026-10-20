@@ -319,6 +319,11 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
                 &[("twigil", twigil), ("scope", scope_name)],
             ));
         }
+        // `my &next = ...` declares a lexical routine that shadows the
+        // loop-control keyword of the same name for the rest of the scope.
+        if is_code && !n.is_empty() && !n.contains(':') {
+            super::super::simple::register_user_sub(&n);
+        }
         (r, format!("{}{}", prefix, n))
     } else {
         return Err(illegal_my_var_error(
