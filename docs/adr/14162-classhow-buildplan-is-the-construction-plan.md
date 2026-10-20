@@ -1,6 +1,6 @@
 # ADR-14162: A class's BUILDPLAN is its construction plan, visible and replaceable through the MOP
 
-- **Status**: Proposed
+- **Status**: Accepted
 
 ## Context
 
