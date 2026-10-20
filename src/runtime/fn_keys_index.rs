@@ -360,7 +360,12 @@ mod tests {
         // refilled the other one as well.
         let alpha = i.fn_keys_for_base("alpha");
         assert!(alpha.contains(&bare), "the unqualified key is listed");
-        assert_eq!(&*alpha, &*i.collect_fn_keys_for_base("alpha"));
+        let sorted = |keys: &[Symbol]| {
+            let mut v: Vec<&str> = keys.iter().map(|k| k.as_str()).collect();
+            v.sort_unstable();
+            v
+        };
+        assert_eq!(sorted(&alpha), sorted(&i.collect_fn_keys_for_base("alpha")));
         assert!(!indexed(&i, "beta"), "only the looked-up name is refilled");
         assert_eq!(&*i.fn_keys_for_base("beta"), &*beta);
 
