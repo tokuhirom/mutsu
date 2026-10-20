@@ -1,6 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
+use super::block_imported_vars::ImportedVarSource;
 
 mod default;
 
@@ -1725,10 +1726,18 @@ impl Compiler {
                     // the whole container and keep the promotion too.)
                     self.raw_list_elem_terminal = sigilless_bind_vardecl || scalar_bind_decont;
                     self.bind_target_direct = true;
-                    if let Some((module_idx, name_idx)) = self.imported_var_source.take() {
-                        self.code.emit(OpCode::GetImportedVar {
-                            module_idx,
-                            name_idx,
+                    if let Some(source) = self.imported_var_source.take() {
+                        self.code.emit(match source {
+                            ImportedVarSource::Module {
+                                module_idx,
+                                name_idx,
+                            } => OpCode::GetImportedVar {
+                                module_idx,
+                                name_idx,
+                            },
+                            ImportedVarSource::Hook { set_idx, name_idx } => {
+                                OpCode::GetHookExport { set_idx, name_idx }
+                            }
                         });
                     } else {
                         self.compile_call_arg(expr);
@@ -4687,8 +4696,10 @@ impl Compiler {
                     });
                     // The variables it imports are the block's own bindings
                     // (ADR-8751).
-                    if lexical_set_idx.is_some() && arg.is_none() {
-                        self.bind_block_imported_vars(module, tags);
+                    if let Some(set_idx) = lexical_set_idx
+                        && arg.is_none()
+                    {
+                        self.bind_block_imported_vars(module, tags, set_idx);
                     }
                 }
             }

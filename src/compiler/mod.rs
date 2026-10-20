@@ -1605,9 +1605,8 @@ pub(crate) struct Compiler {
     /// `my $b := %h<foo><baz>` creates a HashEntryRef.
     scalar_bind_autovivify: bool,
     /// Set while a block-scoped `use` declares an imported variable
-    /// (`bind_block_imported_vars`): the `GetImportedVar` operands its bind
-    /// source compiles to.
-    imported_var_source: Option<(u32, u32)>,
+    /// (`bind_block_imported_vars`): where its bind source comes from.
+    imported_var_source: Option<block_imported_vars::ImportedVarSource>,
     /// When true (alongside `scalar_bind_autovivify`), the next Index compiled is
     /// the TERMINAL element of the bind RHS (outermost subscript whose value is
     /// bound). A terminal index promotes even a container-valued (Array/Hash) leaf

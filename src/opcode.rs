@@ -4478,6 +4478,13 @@ pub(crate) enum OpCode {
     /// declaration binds it with no by-name source alias. Stack:
     /// `[] → [container]`.
     GetImportedVar { module_idx: u32, name_idx: u32 },
+    /// The bind source of a block's declaration of a name a `sub EXPORT`
+    /// hook returns under a literal key (`Compiler::bind_block_imported_vars`,
+    /// ADR-8751): the value the hook returned for key `name_idx` (`x` for
+    /// `'$x'`, `@a`, the term key of a sigilless one), which the `use`'s
+    /// import stored in lexical import set `set_idx` (the set id constant).
+    /// `Any` when the hook did not return the key. Stack: `[] → [value]`.
+    GetHookExport { set_idx: u32, name_idx: u32 },
     /// Prefix of the binary [`Self::InfixFunc`] at `ip + 1` (one right
     /// operand, no meta-operator) inside a block that `use`s a module
     /// (ADR-8751 stage 2): as [`Self::LexImportCall`], for an operator.

@@ -374,6 +374,27 @@ impl Interpreter {
             // to the importing unit, as an `is export` import makes it (#11004).
             self.grant_scoped_family_import(&normalized_op, &value);
         }
+        // The importing block declares the name itself (ADR-8751): the hook's
+        // value goes to that binding, not into env.
+        if sigil != Some('&') && self.bind_hook_export_lexically(&key, &value) {
+            return;
+        }
+        // The BEGIN-time preload of a module a nested block `use`s
+        // (`push_preload_scope`) only loads it: the block's own `use` re-runs
+        // the hook where the import belongs (`rerun_module_export`). A value
+        // it installed here would stay in the unit's env for good, visible
+        // after the block (`{ use M }; EVAL '$x'`). A routine is kept: a sub
+        // hoisted to the head of the same package block calls it (#8564).
+        if sigil != Some('&')
+            && inner_export_importer.is_none()
+            && self
+                .module
+                .import_scope_stack
+                .last()
+                .is_some_and(|scope| !scope.scope_classes)
+        {
+            return;
+        }
         // Install into env under the key the reader looks up. A `$scalar` read
         // compiles to a bare (sigil-stripped) `GetGlobal` — the same key an
         // `our $x` module global lands under — so the sigil must be dropped for
