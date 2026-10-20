@@ -12,3 +12,9 @@ character that cannot occur in a source identifier, so VM state storage and
 method invocant handling also distinguish them from legal user variables.
 A focused regression compares declaration nodes, both frontends, EVAL,
 typed assignment, method invocants, and repeated routine calls with Rakudo.
+
+Typed anonymous declarations and their constructors now share the ordinary
+declaration lowering for assignment, binding, and call-assignment initializers.
+State declaration sites also belong to their compilation session: separate
+EVAL units initialize independently, while alternate signatures of one logical
+body retain shared state.

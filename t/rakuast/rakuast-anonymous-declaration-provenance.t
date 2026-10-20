@@ -52,12 +52,21 @@ for Q[my Int $ = 3], Q[state Int $ = 3], Q[my int $ = 3],
     is $node.type.^name, 'RakuAST::Type::Simple', 'the anonymous declaration keeps its type';
     is EVAL($source.AST), 3, 'a typed anonymous initializer evaluates';
 }
+is Q[my Int $ := 3].AST.statements[0].expression.initializer.^name,
+    'RakuAST::Initializer::Bind', 'an anonymous declaration preserves its binding initializer';
+is Q[my Int $ .= new(3)].AST.statements[0].expression.initializer.^name,
+    'RakuAST::Initializer::CallAssign', 'an anonymous declaration preserves its call-assignment initializer';
 my $typed = RakuAST::VarDeclaration::Anonymous.new(
     sigil => '$', type => RakuAST::Type::Simple.new(RakuAST::Name.from-identifier('Int')),
     initializer => RakuAST::Initializer::Assign.new(RakuAST::IntLiteral.new(3))
 );
 is $typed.scope, 'my', 'an anonymous constructor defaults to my scope';
 is EVAL($typed), 3, 'a constructed typed anonymous declaration lowers';
+my $defaults = RakuAST::VarDeclaration::Anonymous.new(
+    sigil => '$', type => RakuAST::Type, initializer => RakuAST::Initializer
+);
+nok $defaults.gist.contains('type'), 'an explicit default type is omitted from constructor text';
+nok $defaults.gist.contains('initializer'), 'an explicit default initializer is omitted from constructor text';
 is EVAL(Q[my $pair = a => my Int $ = 3; $pair.value = 4; $pair.value].AST), 4,
     'a typed anonymous scalar retains its writable container';
 throws-like { EVAL(Q[my $pair = a => my Int $ = 3; $pair.value = 'x'].AST) },

@@ -27,6 +27,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
                     }
                     continue;
                 }
+                "type" if is_default_type(&value, "RakuAST::Type") => continue,
                 "type" => require_any_rakuast(&value, CONSTRUCTOR, name)?,
                 "shape" => require_rakuast_class(&value, RakuAstClass::SemiList, CONSTRUCTOR)?,
                 _ => {}
@@ -83,6 +84,7 @@ pub(super) fn construct_anonymous(args: &[Value]) -> Result<Value, RuntimeError>
     fields.push(field("sigil", sigil));
     if let Some(constraint) = named_arg(args, "type")
         && !constraint.is_nil()
+        && !is_default_type(&constraint, "RakuAST::Type")
     {
         require_any_rakuast(&constraint, CONSTRUCTOR, "type")?;
         fields.push(field("type", constraint));
@@ -99,7 +101,9 @@ fn push_initializer(
     args: &[Value],
     constructor: &str,
 ) -> Result<(), RuntimeError> {
-    if let Some(initializer) = named_arg(args, "initializer") {
+    if let Some(initializer) = named_arg(args, "initializer")
+        && !is_default_type(&initializer, "RakuAST::Initializer")
+    {
         if !matches!(initializer.view(), ValueView::RakuAst(n) if matches!(n.class,
             RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind | RakuAstClass::InitializerCallAssign))
         {
@@ -110,6 +114,10 @@ fn push_initializer(
         fields.push(field("initializer", initializer));
     }
     Ok(())
+}
+
+fn is_default_type(value: &Value, expected: &str) -> bool {
+    matches!(value.view(), ValueView::Package(name) if name.with_str(|name| name == expected))
 }
 
 fn field(name: &'static str, value: Value) -> RakuAstField {
