@@ -33,7 +33,7 @@
 //!   was written for the shapes that existed when it was, so it reaches a new
 //!   shape only once the slice that owns the shape has audited it and marked
 //!   the shape open.
-//! - **A type object is not an instance.** [`DispatchShape::from_type_name`]
+//! - **A type object is not an instance.** [`DispatchShape::from_type_symbol`]
 //!   decodes `Package("Int")`; only a row flagged `TYPE_OBJECT_OK` answers it.
 
 mod instances;
