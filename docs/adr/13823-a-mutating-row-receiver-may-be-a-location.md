@@ -6,7 +6,7 @@
   `ReceiverPlace` decision of [ADR-11276](11276-built-in-methods-are-handler-rows.md) §8.1
   (`Var` or `Detached`), on top of the slot-addressed binding descriptor of
   [ADR-0097](0097-a-binding-descriptor-addressed-by-slot.md) and the container-mode
-  arguments of [ADR-0059](0059-returned-containers.md) Slice 3.
+  arguments of [ADR-0059](0059-is-rw-routines-return-a-container.md) Slice 3.
 
 ## 1. Context
 
