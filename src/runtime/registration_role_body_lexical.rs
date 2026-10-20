@@ -240,6 +240,16 @@ impl Interpreter {
         wanted: impl Fn(&Stmt) -> bool,
     ) -> Result<(), RuntimeError> {
         let parameterized = !type_params.is_empty();
+        // The routines the body declares: they are registered after this
+        // pass (or only at composition), so a constant that calls one waits
+        // for composition, as before.
+        let body_routines: Vec<String> = deferred_body_ops
+            .iter()
+            .filter_map(|op| match &op.raw {
+                Stmt::SubDecl { name, .. } | Stmt::ProtoDecl { name, .. } => Some(name.resolve()),
+                _ => None,
+            })
+            .collect();
         let saved_package = self.current_package().to_string();
         let saved_types = self.save_role_type_bindings(role_name, deferred_body_ops);
         let mut declared_types = HashSet::new();
@@ -250,7 +260,10 @@ impl Interpreter {
             }
             let eager = match &op.raw {
                 // An exported `my constant`/`my $x` is a compile-time
-                // declaration too (#9981).
+                // declaration too (#9981), and so is every `constant`: Rakudo
+                // initializes it when the body is compiled, so a `sub` of the
+                // role body exported to an importer that never composes the
+                // role reads it (CSS::Units' `%Dimension`, #13279).
                 Stmt::VarDecl {
                     is_export: true, ..
                 }
@@ -261,17 +274,26 @@ impl Interpreter {
                 | Stmt::SubsetDecl { .. } => {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
+                Stmt::VarDecl { custom_traits, .. } if is_constant_decl(custom_traits) => {
+                    (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
+                        && !stmt_mentions_role_params(&op.raw, &body_routines)
+                }
                 // A sigilless or bind declaration arrives as the group
                 // `role_body_plan` keeps whole.
                 Stmt::SyntheticBlock(inner)
                     if crate::ast::scope_members(inner).any(|s| {
-                        matches!(
-                            s,
+                        match s {
                             Stmt::VarDecl {
-                                is_export: true,
+                                is_export,
+                                custom_traits,
                                 ..
+                            } => {
+                                *is_export
+                                    || (is_constant_decl(custom_traits)
+                                        && !stmt_mentions_role_params(s, &body_routines))
                             }
-                        )
+                            _ => false,
+                        }
                     }) =>
                 {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
@@ -378,4 +400,10 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     };
     m.visit_stmt(stmt);
     m.found
+}
+
+/// Whether a `VarDecl`'s traits mark it a `constant` declaration.
+// Cost: O(t), t = the declaration's traits.
+fn is_constant_decl(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits.iter().any(|(name, _)| name == "__constant")
 }
