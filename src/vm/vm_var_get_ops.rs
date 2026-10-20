@@ -900,6 +900,7 @@ impl Interpreter {
                 // = 1` creates the package `foo`, and `OUR::foo` must resolve
                 // to it rather than report a missing `&foo`.
                 && !self.package_namespace_exists(Interpreter::strip_pseudo_packages(name))
+                && !self.export_namespace_exists(name)
             {
                 // The last segment starts with lowercase, indicating a qualified
                 // function/sub call (e.g. `Our::Package::pkg`). If the prefix
