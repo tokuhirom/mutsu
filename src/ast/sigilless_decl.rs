@@ -67,6 +67,7 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
     // readonly marker. The parser's call-assignment expansion has no traits.
     let [
         Stmt::VarDecl {
+            anonymous: _,
             name,
             expr:
                 expr @ Expr::MethodCall {

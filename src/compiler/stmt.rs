@@ -460,6 +460,7 @@ impl Compiler {
         // element to `@tmp` would wrap it as a one-element array and iterate
         // the wrong thing.
         let decl = Stmt::VarDecl {
+            anonymous: false,
             name: format!("@{}", tmp),
             expr: Expr::MethodCall {
                 target: Box::new(element.clone()),
@@ -757,6 +758,7 @@ impl Compiler {
     /// A `my <NAME> = <EXPR>;` declaration for a compiler-synthesized temp.
     fn init_decl(name: &str, expr: Expr) -> Stmt {
         Stmt::VarDecl {
+            anonymous: false,
             name: name.to_string(),
             expr,
             type_constraint: None,
@@ -1188,6 +1190,7 @@ impl Compiler {
                 export_tags,
                 custom_traits,
                 where_constraint,
+                anonymous: _,
             } => {
                 // `use variables :D/:U` adds its implicit smiley to the
                 // declared type before anything below reads it (#9990).
@@ -1546,14 +1549,8 @@ impl Compiler {
                 // (e.g. `state $a = state $b = 42`) since the inner state var
                 // needs its StateVarInit to run on every call.
                 let state_guard_idx = if *is_state && !Self::expr_has_state_decl(expr) {
-                    // Pre-compute the state key early so the guard can reference it.
-                    // We use a placeholder IP that will be unique enough.
-                    let placeholder_ip = self.code.ops.len();
-                    let key = format!(
-                        "__state_{}::{}@{}",
-                        self.current_package, name, placeholder_ip
-                    );
-                    let key_sym = Symbol::intern(&key);
+                    // Guard and initializer share one compilation-owned site.
+                    let key_sym = super::compile_session::state_key(&self.current_package, name);
                     let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym, 0));
                     Some((guard_idx, key_sym))
                 } else {
@@ -1976,9 +1973,8 @@ impl Compiler {
                         if preapply_container_default {
                             self.emit_state_array_store_into_defaulted(slot);
                         }
-                        let ip = self.code.ops.len();
-                        let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
-                        let key_sym = Symbol::intern(&key);
+                        let key_sym =
+                            super::compile_session::state_key(&self.current_package, name);
                         self.code.state_locals.push((slot as usize, key_sym));
                         self.code.emit(OpCode::StateVarInit(slot, key_sym));
                     }
@@ -2523,12 +2519,12 @@ impl Compiler {
                 let name_idx = self
                     .code
                     .add_constant(Value::str(effective_name.to_string()));
-                // The anonymous state scalar (`$`, compiled as `__ANON_STATE__`)
+                // The anonymous state scalar (`$`, compiled as `__ANON_STATE#`)
                 // can never be readonly via the sigilless-binding mechanism, and
                 // SetGlobal performs its own readonly_vars check, so the extra
                 // CheckReadOnly op (which allocates a `__mutsu_sigilless_readonly::`
                 // lookup key on every assignment) is pure overhead here.
-                if !matches!(op, AssignOp::Bind) && effective_name != "__ANON_STATE__" {
+                if !matches!(op, AssignOp::Bind) && effective_name != "__ANON_STATE#" {
                     self.code.emit(OpCode::CheckReadOnly(name_idx));
                 }
                 if matches!(op, AssignOp::Bind) {
@@ -4356,7 +4352,7 @@ impl Compiler {
                 if name_expr.is_none() {
                     let mut method_params: Vec<String> = vec![
                         "self".to_string(),
-                        "__ANON_STATE__".to_string(),
+                        "__ANON_STATE#".to_string(),
                         "?CLASS".to_string(),
                         "?ROLE".to_string(),
                     ];

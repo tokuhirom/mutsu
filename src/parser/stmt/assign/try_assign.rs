@@ -182,12 +182,12 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     // A bare-`$` assignment target is an anonymous state variable; mint it a
     // unique per-occurrence name, exactly as `assign_stmt` does — see the note
     // there, including the guard: a following `.`/subscript means the
-    // collapsed `__ANON_STATE__` is load-bearing (`$.attr op= …` resolves it
+    // collapsed `__ANON_STATE#` is load-bearing (`$.attr op= …` resolves it
     // to `self`), so only a directly-assigned bare `$` is minted. (This path
     // serves the parenthesized/expression form, e.g. the classify callback
     // `{ ~($ ~= $_) }`.)
     let var = if sigil == b'$'
-        && var == "__ANON_STATE__"
+        && var == "__ANON_STATE#"
         && !crate::parser::primary::var::starts_named_placeholder(r)
         && !matches!(
             r.trim_start().as_bytes().first(),

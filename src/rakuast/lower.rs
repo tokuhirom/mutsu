@@ -1159,6 +1159,7 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         };
         return Ok(Stmt::SyntheticBlock(vec![
             Stmt::VarDecl {
+                anonymous: false,
                 name: name.clone(),
                 expr,
                 type_constraint: None,
@@ -1302,6 +1303,7 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         None => None,
     };
     Ok(Stmt::VarDecl {
+        anonymous: false,
         name,
         expr,
         type_constraint,
@@ -3204,12 +3206,19 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let sigil = leaf_str(node, "sigil")?;
     let type_constraint =
         super::keyed_hash::lower(node, &sigil, type_constraint, &mut custom_traits)?;
-    let desigil_node = named_child(node, "desigilname")?;
-    let desigil = match name_parts::name_shape(desigil_node) {
-        // `my $a::b`: a package-qualified name, `::`-joined as the parser
-        // keeps it (`Name.from-identifier-parts("a", "b")`).
-        Some(NameShape::Identifier(name)) if !name_parts::has_leading_empty(desigil_node) => name,
-        _ => return Err(unsupported(node)),
+    let anonymous = node.class == RakuAstClass::VarDeclarationAnonymous;
+    let desigil = if anonymous {
+        "__ANON_STATE#".to_string()
+    } else {
+        let desigil_node = named_child(node, "desigilname")?;
+        match name_parts::name_shape(desigil_node) {
+            // `my $a::b`: a package-qualified name, `::`-joined as the parser
+            // keeps it (`Name.from-identifier-parts("a", "b")`).
+            Some(NameShape::Identifier(name)) if !name_parts::has_leading_empty(desigil_node) => {
+                name
+            }
+            _ => return Err(unsupported(node)),
+        }
     };
     let twigil = if is_dynamic { "*" } else { "" };
     let is_dynamic = is_dynamic || dynamic_trait;
@@ -3274,6 +3283,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Ok(crate::ast::method_assign_decl::expand(
             crate::ast::method_assign_decl::MethodAssignDecl {
                 name,
+                anonymous,
                 type_constraint,
                 is_state,
                 is_our,
@@ -3318,6 +3328,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
         }
         return Ok(crate::ast::bind_decl::expand(Stmt::VarDecl {
+            anonymous,
             name,
             expr,
             type_constraint,
@@ -3331,6 +3342,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }));
     }
     Ok(Stmt::VarDecl {
+        anonymous,
         name,
         expr,
         type_constraint,

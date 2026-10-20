@@ -397,13 +397,13 @@ impl Interpreter {
         let decl_package = declaring_package.unwrap_or(class_key);
         let old_self = self.env.get("self").cloned();
         self.env.insert("self".to_string(), self_val.clone());
-        // A compiled method-body chunk always carries an implicit `__ANON_STATE__`
+        // A compiled method-body chunk always carries an implicit `__ANON_STATE#`
         // param alongside `self` (see `compile_routine_closure_body`); mirror that
         // here so an anonymous-`$`-referencing default resolves the same way a
         // method body would.
-        let old_anon = self.env.get("__ANON_STATE__").cloned();
+        let old_anon = self.env.get("__ANON_STATE#").cloned();
         self.env
-            .insert("__ANON_STATE__".to_string(), self_val.clone());
+            .insert("__ANON_STATE#".to_string(), self_val.clone());
         // `::?CLASS` in a default (e.g. `has $.Version = ::?CLASS.^ver` composed
         // from a role) resolves through `?CLASS`; bind it to the class being built.
         let old_class = self.env.get("?CLASS").cloned();
@@ -473,9 +473,9 @@ impl Interpreter {
             self.env.remove("self");
         }
         if let Some(old) = old_anon {
-            self.env.insert("__ANON_STATE__".to_string(), old);
+            self.env.insert("__ANON_STATE#".to_string(), old);
         } else {
-            self.env.remove("__ANON_STATE__");
+            self.env.remove("__ANON_STATE#");
         }
         if let Some(old) = old_class {
             self.env.insert("?CLASS".to_string(), old);

@@ -106,6 +106,7 @@ impl Compiler {
         let qualified = format!("{}::{bare}", var.package);
         if var.term {
             let decl = Stmt::VarDecl {
+                anonymous: false,
                 name: var.name.clone(),
                 expr: Expr::BareWord(qualified),
                 type_constraint: None,
@@ -138,6 +139,7 @@ impl Compiler {
             ),
         };
         Some(crate::ast::bind_decl::expand(Stmt::VarDecl {
+            anonymous: false,
             name: var.name.clone(),
             expr,
             type_constraint: None,

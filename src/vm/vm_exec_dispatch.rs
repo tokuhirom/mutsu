@@ -682,7 +682,7 @@ impl Interpreter {
                             // a topic explicitly set to Nil (e.g. `Xorelse`
                             // topicalizing a Nil operand) must stay Nil.
                             Ok(Value::package(crate::symbol::wk::any()))
-                        } else if name.starts_with("__ANON_STATE_") {
+                        } else if name.starts_with("__ANON_STATE#") {
                             // An anonymous scalar (`$`) is a declared but
                             // uninitialized scalar: it reads as the Any type
                             // object, like `my $x` (S03-operators/context.t).
@@ -1454,7 +1454,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 // Fast path for the anonymous state scalar (`$` and `$.` desugaring).
-                // `__ANON_STATE__` is a synthetic internal name that can never be a
+                // `__ANON_STATE#` is a synthetic internal name that can never be a
                 // private attribute, package/class, sigilless-bound alias, or strict-
                 // undeclared symbol, so the heavy general store path below (including
                 // the O(env) reverse-alias scan, shared-var sync, and our-var store)
@@ -1466,12 +1466,12 @@ impl Interpreter {
                 // `element_constraint_for` (container-embedded metadata
                 // first, name-keyed map as fallback) like the other mutation
                 // chokepoints in this ADR's table, for mechanical
-                // consistency. `__ANON_STATE__` is always a scalar, so this
+                // consistency. `__ANON_STATE#` is always a scalar, so this
                 // falls straight through to the name-keyed lookup — the
                 // scalar cell-carried `of` is ADR-0042 slice 2. The name
-                // comparison stays first so a non-`__ANON_STATE__` SetGlobal
+                // comparison stays first so a non-`__ANON_STATE#` SetGlobal
                 // (the overwhelming majority) never pays the env lookup.
-                if name_str == "__ANON_STATE__"
+                if name_str == "__ANON_STATE#"
                     && !raw_mode
                     && !is_rebind
                     && !self.module.lexical_fatal_mode
@@ -1498,8 +1498,8 @@ impl Interpreter {
                 {
                     let val = self.stack.pop().unwrap_or(Value::NIL);
                     // Preserve `$` state persistence across closure calls.
-                    self.sync_anon_state_value("__ANON_STATE__", &val);
-                    let sym = Symbol::intern("__ANON_STATE__");
+                    self.sync_anon_state_value("__ANON_STATE#", &val);
+                    let sym = Symbol::intern("__ANON_STATE#");
                     if let Some(slot) = self.env_mut().get_mut_sym(sym) {
                         *slot = val;
                     } else {

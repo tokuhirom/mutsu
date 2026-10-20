@@ -145,6 +145,7 @@ fn no_user_args(args: &[Expr]) -> bool {
 
 fn hidden_decls() -> [Stmt; 2] {
     let decl = |name: &str, expr: Expr, is_state: bool, custom_traits| Stmt::VarDecl {
+        anonymous: false,
         name: name.to_string(),
         expr,
         type_constraint: None,

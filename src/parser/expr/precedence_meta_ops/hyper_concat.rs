@@ -122,6 +122,7 @@ pub(crate) fn lower_hyper_assignment(
         dwim_right,
     };
     let temp_decl = |name: String, expr: Expr| crate::ast::Stmt::VarDecl {
+        anonymous: false,
         name,
         expr,
         type_constraint: None,

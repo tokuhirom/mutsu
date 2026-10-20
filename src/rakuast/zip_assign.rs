@@ -120,6 +120,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }),
         Expr::DoStmt(inner) => match *inner {
             Stmt::VarDecl {
+                anonymous,
                 name,
                 expr,
                 type_constraint,
@@ -132,6 +133,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 where_constraint,
             } => Ok(Expr::DoStmt(Box::new(Stmt::SyntheticBlock(vec![
                 Stmt::VarDecl {
+                    anonymous,
                     name: name.clone(),
                     expr,
                     type_constraint,

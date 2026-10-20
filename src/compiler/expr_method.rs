@@ -632,6 +632,7 @@ impl Compiler {
     ) {
         let tmp = format!("__mutsu_nested_del_{}", self.code.constants.len());
         let bind_decl = Stmt::VarDecl {
+            anonymous: false,
             name: tmp.clone(),
             expr: delete_target.clone(),
             type_constraint: None,

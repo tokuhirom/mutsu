@@ -21,6 +21,7 @@ pub(super) fn expand(decl: &SignatureDecl, rhs: Expr) -> Vec<Stmt> {
         sugar: false,
     };
     let mut stmts = vec![Stmt::VarDecl {
+        anonymous: false,
         name: tmp_name,
         expr: rhs,
         type_constraint: None,
@@ -82,6 +83,7 @@ pub(super) fn expand(decl: &SignatureDecl, rhs: Expr) -> Vec<Stmt> {
             index_expr
         };
         stmts.push(Stmt::VarDecl {
+            anonymous: false,
             name: dvar.name.clone(),
             expr: value_expr,
             type_constraint: decl.type_constraint.clone(),

@@ -148,7 +148,7 @@ impl Interpreter {
                     // Type-only param: show just the type constraint
                     return pd.type_constraint.as_deref().unwrap_or("Any").to_string();
                 }
-                let name_part = if pd.name == "__ANON_STATE__" {
+                let name_part = if pd.name == "__ANON_STATE#" {
                     "$".to_string()
                 } else {
                     format!("{}{}", sigil, pd.name)
@@ -383,7 +383,7 @@ impl Interpreter {
                     && !pd.named
                     && (pd.name == bare
                         || (failing == "<anon>"
-                            && matches!(pd.name.as_str(), "__ANON_STATE__" | "__type_only__")))
+                            && matches!(pd.name.as_str(), "__ANON_STATE#" | "__type_only__")))
             });
             if failed_has_default {
                 return err;

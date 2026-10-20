@@ -223,6 +223,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             } = *stmt
             {
                 Expr::DoStmt(Box::new(Stmt::VarDecl {
+                    anonymous: false,
                     name,
                     expr: value,
                     type_constraint,

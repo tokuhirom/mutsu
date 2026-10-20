@@ -603,7 +603,7 @@ pub fn is_anonymous_param_name(name: &str) -> bool {
         // A bare `::T` / `::T:` capture carries a synthetic parameter name; the
         // parameter itself is anonymous, and rakudo renders it as a bare `$`.
         || name.starts_with("__type_capture__")
-        || name.starts_with("__ANON_STATE_")
+        || name.starts_with("__ANON_STATE#")
         || name == "__ANON_OPTIONAL__"
         || name == "__subsig__"
         || name == "__ANON_ARRAY__"

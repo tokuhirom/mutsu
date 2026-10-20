@@ -28,6 +28,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                 return Ok((
                     rest,
                     Stmt::VarDecl {
+                        anonymous: false,
                         name,
                         expr,
                         type_constraint: None,
@@ -44,6 +45,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
             return Ok((
                 rest,
                 Stmt::VarDecl {
+                    anonymous: false,
                     name,
                     expr: Expr::Literal(crate::value::Value::NIL),
                     type_constraint: None,
@@ -317,6 +319,7 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn repeat_param_clause(param: Option<String>) -> (Option<Box<Stmt>>, Option<Expr>) {
     let init = param.as_ref().map(|name| {
         Box::new(Stmt::VarDecl {
+            anonymous: false,
             name: name.clone(),
             expr: Expr::Literal(crate::value::Value::package(Symbol::intern("Mu"))),
             type_constraint: None,

@@ -737,7 +737,7 @@ pub(crate) mod wk {
         /// method call writes on entry (see the family below).
         self_ => "self";
         /// `$.foo` desugaring's alias for the invocant, written next to `self`.
-        anon_state => "__ANON_STATE__";
+        anon_state => "__ANON_STATE#";
         /// The capture of a call whose code reads it (`nqp::usecapture`),
         /// bound in the callee env for the return writeback of its cells
         /// (`runtime::call_capture`).
@@ -855,7 +855,7 @@ pub(crate) mod wk {
     pub(crate) fn method_entry_keys() -> [(Symbol, &'static str); 6] {
         [
             (self_(), "self"),
-            (anon_state(), "__ANON_STATE__"),
+            (anon_state(), "__ANON_STATE#"),
             (class_decl(), "?CLASS"),
             (role_decl(), "?ROLE"),
             (error_var(), "!"),

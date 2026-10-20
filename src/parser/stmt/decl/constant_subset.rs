@@ -23,6 +23,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         return Err(missing_initializer_error());
     }
     // The name can be $var, @var, %var, &var, or bare identifier.
+    let name_input = rest;
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
     let (rest, name) = if let Some(r) = rest.strip_prefix('\\') {
         let (r, n) = parse_sigilless_decl_name(r)?;
@@ -91,6 +92,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         b'&' => "&",
         _ => "",
     };
+    let anonymous = !sigil_marker.is_empty() && name_input.len() - rest.len() == 1;
     // A constant always has a user-written initializer, so it is marked like
     // any other initialized declaration: `constant z = Nil` must keep its Nil
     // rather than be taken for the synthesized default (re-seeded as `Any`,
@@ -178,6 +180,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             r,
             Stmt::VarDecl {
+                anonymous,
                 name,
                 expr,
                 type_constraint: None,
@@ -225,6 +228,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             rest,
             Stmt::VarDecl {
+                anonymous,
                 name,
                 expr,
                 type_constraint: None,

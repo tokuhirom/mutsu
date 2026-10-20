@@ -1221,6 +1221,7 @@ impl Compiler {
         matches!(
             stmt.as_ref(),
             crate::ast::Stmt::VarDecl {
+                anonymous: true,
                 name,
                 type_constraint: None,
                 is_state: false,
@@ -1229,7 +1230,7 @@ impl Compiler {
                 custom_traits,
                 where_constraint: None,
                 ..
-            } if name == "__ANON_STATE__"
+            } if !name.starts_with(['@', '%', '&'])
                 && custom_traits.iter().all(|(t, _)| t.starts_with("__"))
         )
     }

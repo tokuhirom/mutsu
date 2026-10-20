@@ -273,6 +273,7 @@ fn split_sigil(name: &str) -> (char, &str) {
 /// Walk a declaration; `check_self` arms the self-initializer check.
 fn walk_var_decl(stmt: &mut Stmt, check_self: bool, ctx: &mut Ctx) {
     let Stmt::VarDecl {
+        anonymous: _,
         name,
         expr,
         type_constraint: _,

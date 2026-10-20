@@ -311,9 +311,9 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         // so this never suppresses a genuine sink warning; it only stops the
         // spurious "Useless use of $@a in sink context" on `my @a := @b`.
         // A bare anonymous `$` (the unnamed state scalar) parses to a synthetic
-        // `__ANON_STATE_<id>__` name. Raku reports it as "unnamed $ variable",
+        // `__ANON_STATE#<id>__` name. Raku reports it as "unnamed $ variable",
         // not by its internal name.
-        Expr::Var(n) if n.starts_with("__ANON_STATE_") => Some("unnamed $ variable".to_string()),
+        Expr::Var(n) if n.starts_with("__ANON_STATE#") => Some("unnamed $ variable".to_string()),
         // The reserved `$self` lexical key already carries its sigil (ADR-0061),
         // so it must be reported before the generic sigiled-name skip below.
         Expr::Var(n) if n == crate::env::LEX_SELF => Some(crate::env::LEX_SELF.to_string()),

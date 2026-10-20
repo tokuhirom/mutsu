@@ -71,6 +71,7 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
         SourceForm::MethodAssignDecl(declaration) => {
             let crate::ast::method_assign_decl::MethodAssignDecl {
                 name,
+                anonymous: _,
                 type_constraint,
                 is_state: _,
                 is_our: _,

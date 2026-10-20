@@ -42,6 +42,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             expr
         };
         let stmt = Stmt::VarDecl {
+            anonymous: s.anonymous,
             name: s.name,
             expr,
             type_constraint: s.type_constraint,
@@ -135,6 +136,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 s.type_constraint.as_deref(),
             );
             let decl = Stmt::VarDecl {
+                anonymous: s.anonymous,
                 name: s.name.clone(),
                 expr: decl_expr,
                 type_constraint: s.type_constraint.clone(),
@@ -190,6 +192,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 s.type_constraint.as_deref(),
             );
             let decl = Stmt::VarDecl {
+                anonymous: s.anonymous,
                 name: s.name.clone(),
                 expr: decl_expr,
                 type_constraint: s.type_constraint.clone(),
@@ -229,6 +232,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         s.type_constraint.as_deref(),
     );
     let stmt = Stmt::VarDecl {
+        anonymous: s.anonymous,
         name: s.name.clone(),
         expr,
         type_constraint: s.type_constraint,
@@ -338,6 +342,7 @@ where
         exception: None,
     })?;
     let decl_stmt = Stmt::VarDecl {
+        anonymous: s.anonymous,
         name: s.name.clone(),
         expr: default_decl_expr(
             s.is_array,
@@ -502,6 +507,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 meta,
                 op,
                 left: Box::new(Expr::DoStmt(Box::new(Stmt::VarDecl {
+                    anonymous: s.anonymous,
                     name: s.name.clone(),
                     expr: *left,
                     type_constraint: s.type_constraint.clone(),
@@ -563,6 +569,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 source = shaped_array_new_with_data_expr(dims, source);
             }
             *slot = Expr::DoStmt(Box::new(Stmt::VarDecl {
+                anonymous: s.anonymous,
                 name: s.name.clone(),
                 expr: source,
                 type_constraint: s.type_constraint.clone(),
@@ -605,6 +612,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
     }
     let base_stmt = Stmt::VarDecl {
+        anonymous: s.anonymous,
         name: s.name.clone(),
         expr: expr.clone(),
         type_constraint: s.type_constraint.clone(),
@@ -648,6 +656,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
     }
     let stmt = Stmt::VarDecl {
+        anonymous: s.anonymous,
         name: s.name.clone(),
         expr,
         type_constraint: s.type_constraint,
@@ -797,6 +806,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let stmt = if s.apply_modifier && !has_trailing_comma {
         crate::ast::method_assign_decl::expand(crate::ast::method_assign_decl::MethodAssignDecl {
             name: s.name,
+            anonymous: s.anonymous,
             type_constraint: s.type_constraint,
             is_state: s.is_state,
             is_our: s.is_our,
@@ -814,6 +824,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         })
     } else {
         let declaration = Stmt::VarDecl {
+            anonymous: s.anonymous,
             name: s.name,
             expr,
             type_constraint: s.type_constraint,
@@ -951,6 +962,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // bound-array records) is built by `ast::bind_decl::expand`, which the
     // RakuAST lowerer shares.
     let stmt = crate::ast::bind_decl::expand(Stmt::VarDecl {
+        anonymous: s.anonymous,
         name: s.name,
         expr,
         type_constraint: s.type_constraint,

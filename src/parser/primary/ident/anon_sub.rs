@@ -255,6 +255,7 @@ pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> E
                 );
             }
             crate::ast::Stmt::VarDecl {
+                anonymous: false,
                 // `$self` binds the reserved lexical key, not the invocant's
                 // own (ADR-0061); every other alias keeps its sigil-less name.
                 name: if name == "self" {

@@ -55,16 +55,7 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
             value: RakuAstFieldValue::List(rakuast_node_list(&traits, CONSTRUCTOR, "traits")?),
         });
     }
-    if let Some(initializer) = named_arg(args, "initializer") {
-        if !matches!(initializer.view(), ValueView::RakuAst(n) if matches!(n.class,
-            RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind | RakuAstClass::InitializerCallAssign))
-        {
-            return Err(RuntimeError::new(format!(
-                "{CONSTRUCTOR} expects a RakuAST::Initializer node"
-            )));
-        }
-        fields.push(field("initializer", initializer));
-    }
+    push_initializer(&mut fields, args, CONSTRUCTOR)?;
     if let Some(constraint) = named_arg(args, "where")
         && !constraint.is_nil()
     {
@@ -75,6 +66,50 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
         class: RakuAstClass::VarDeclarationSimple,
         fields,
     })))
+}
+
+// Cost: O(a + s), a = arguments, s = scope spelling length.
+pub(super) fn construct_anonymous(args: &[Value]) -> Result<Value, RuntimeError> {
+    const CONSTRUCTOR: &str = "RakuAST::VarDeclaration::Anonymous.new";
+    let mut fields = Vec::new();
+    if let Some(scope) = named_arg(args, "scope") {
+        let scope = scope.to_string_value();
+        if !scope.is_empty() && scope != "my" {
+            fields.push(field("scope", Value::str(scope)));
+        }
+    }
+    let sigil = named_arg(args, "sigil")
+        .ok_or_else(|| RuntimeError::new(format!("{CONSTRUCTOR} requires a `sigil` argument")))?;
+    fields.push(field("sigil", sigil));
+    if let Some(constraint) = named_arg(args, "type")
+        && !constraint.is_nil()
+    {
+        require_any_rakuast(&constraint, CONSTRUCTOR, "type")?;
+        fields.push(field("type", constraint));
+    }
+    push_initializer(&mut fields, args, CONSTRUCTOR)?;
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::VarDeclarationAnonymous,
+        fields,
+    })))
+}
+
+fn push_initializer(
+    fields: &mut Vec<RakuAstField>,
+    args: &[Value],
+    constructor: &str,
+) -> Result<(), RuntimeError> {
+    if let Some(initializer) = named_arg(args, "initializer") {
+        if !matches!(initializer.view(), ValueView::RakuAst(n) if matches!(n.class,
+            RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind | RakuAstClass::InitializerCallAssign))
+        {
+            return Err(RuntimeError::new(format!(
+                "{constructor} expects a RakuAST::Initializer node"
+            )));
+        }
+        fields.push(field("initializer", initializer));
+    }
+    Ok(())
 }
 
 fn field(name: &'static str, value: Value) -> RakuAstField {

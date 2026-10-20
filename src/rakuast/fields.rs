@@ -286,7 +286,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         VarDeclarationAnonymous => &[
             ("type", Absent::TypeObject("RakuAST::Type")),
-            ("scope", Absent::Required),
+            ("scope", Absent::Str("my")),
             ("sigil", Absent::Required),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],

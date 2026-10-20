@@ -2,11 +2,11 @@ use super::*;
 use crate::symbol::Symbol;
 
 /// Whether an anonymous state variable's name carries the PER-CALL
-/// classification the parser baked in at mint time: `__ANON_STATE_PC_<id>__`
+/// classification the parser baked in at mint time: `__ANON_STATE#PC_<id>__`
 /// means the `$` sits inside a nested block within a routine, so its counter
 /// restarts on every call of that routine (see `anon_state_key`).
 pub(super) fn anon_state_per_call(name: &str) -> bool {
-    name.starts_with("__ANON_STATE_PC_")
+    name.starts_with("__ANON_STATE#PC_")
 }
 
 impl Interpreter {
@@ -437,7 +437,7 @@ impl Interpreter {
     /// The state-store key for an anonymous state variable (`$++` / `++$`).
     ///
     /// An occurrence the PARSER classified as per-call — spelled
-    /// `__ANON_STATE_PC_<id>__` because it sits inside a nested block within a
+    /// `__ANON_STATE#PC_<id>__` because it sits inside a nested block within a
     /// routine — gets the innermost enclosing NON-BLOCK routine frame's
     /// invocation id folded into the key, so it starts fresh on every call of
     /// that routine. At the mainline there is no such frame and the id is a
@@ -450,7 +450,7 @@ impl Interpreter {
     /// comes from a different counter than closure ids, so it is tagged with
     /// [`ROUTINE_INVOCATION_SCOPE`] to keep the two id spaces apart.
     pub(super) fn anon_state_key(&self, name: &str) -> Option<(Symbol, Option<u64>)> {
-        if !name.starts_with("__ANON_STATE_") {
+        if !name.starts_with("__ANON_STATE#") {
             return None;
         }
         if anon_state_per_call(name) {

@@ -128,6 +128,7 @@ pub(super) fn lower_statement_block(node: &RakuAstNode) -> Result<Stmt, RuntimeE
         .into_iter()
         .filter(|(bit, _)| declared & bit != 0)
         .map(|(_, name)| Stmt::VarDecl {
+            anonymous: false,
             name: name.to_string(),
             expr: Expr::ArrayLiteral(Vec::new()),
             type_constraint: None,

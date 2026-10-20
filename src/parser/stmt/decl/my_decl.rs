@@ -44,6 +44,7 @@ pub(super) struct MyDeclState {
     pub is_state: bool,
     pub is_our: bool,
     pub name: String,
+    pub anonymous: bool,
     pub is_array: bool,
     pub is_hash: bool,
     pub is_code: bool,
@@ -255,6 +256,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     } else {
         "my"
     };
+    let declaration_name_input = rest;
     let (rest, name) = if sigil == b'$' || is_array || is_hash || is_code {
         // Reject illegal `$`-sigil variable names in a declaration. These are
         // valid to *read* (match captures, the `$?FILE` compile-time var) but
@@ -332,6 +334,9 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
             &[],
         ));
     };
+    // A bare sigil consumes exactly one byte; a source name always consumes
+    // more, even when it is spelled like an anonymous binding's placeholder.
+    let anonymous = declaration_name_input.len() - rest.len() == 1;
     let term_decl_name = if sigil == b'$' {
         format!("${name}")
     } else {
@@ -389,7 +394,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     };
 
     // Parse variable traits and build the state
-    let (rest, state) = parse_variable_traits(
+    let (rest, mut state) = parse_variable_traits(
         rest,
         apply_modifier,
         is_state,
@@ -402,6 +407,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         shape_dims,
         &mut hash_key_constraint,
     )?;
+    state.anonymous = anonymous;
 
     // A colonpair adverb directly on a declaration (`my $x :a`) is illegal —
     // you can't adverb a variable. `:=` (bind) and `::` are not adverbs.
@@ -798,6 +804,7 @@ fn parse_variable_traits<'a>(
             is_state,
             is_our,
             name: name.to_string(),
+            anonymous: false,
             is_array,
             is_hash,
             is_code,

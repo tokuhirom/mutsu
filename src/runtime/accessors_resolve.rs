@@ -46,7 +46,7 @@ impl Interpreter {
         compiler.lexically_in_method = true;
         let mut method_params = vec![
             "self".to_string(),
-            "__ANON_STATE__".to_string(),
+            "__ANON_STATE#".to_string(),
             "?CLASS".to_string(),
             "?ROLE".to_string(),
         ];

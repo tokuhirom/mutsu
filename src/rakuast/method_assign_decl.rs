@@ -37,6 +37,7 @@ pub(super) fn convert(form: &MethodAssignDecl) -> Result<RakuAstNode, RuntimeErr
         form.type_constraint.as_deref(),
         twigil,
         None,
+        form.anonymous,
     )?;
     decl_traits::insert(&mut decl, decl_traits::convert(&form.custom_traits)?);
     if let Some(dims) = &form.shape {

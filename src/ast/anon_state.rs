@@ -1,8 +1,8 @@
 //! The anonymous variables, `$` / `@` / `%` written without a name.
 //!
 //! A bare `$` is a `state` variable of the block it appears in. The parser
-//! mints a fresh name for each occurrence (`__ANON_STATE_<id>__`, or
-//! `__ANON_STATE_PC_<id>__` below a routine body, where the block literal is
+//! mints a fresh name for each occurrence (`__ANON_STATE#<id>__`, or
+//! `__ANON_STATE#PC_<id>__` below a routine body, where the block literal is
 //! cloned per call) and declares it as a `state` at the top of the enclosing
 //! block (`parser::stmt::simple::take_anon_state_decls`); a bare `@` is the
 //! minted `__ANON_ARRAY_<id>__` and a bare `%` the shared `__ANON_HASH__`.
@@ -11,12 +11,16 @@
 //! declarations: this module says which names and which statements are the
 //! parser's, so the RakuAST converter can render the node and drop the
 //! declarations, and the lowering can mint and declare them again.
+//!
+//! Scalar storage names include `#`, which cannot appear in a source
+//! identifier. Runtime state and invocant handling must never capture a legal
+//! source name merely because it resembles an old anonymous-state spelling.
 
 use super::{Expr, Stmt};
 use crate::value::Value;
 
-const STATE_PREFIX: &str = "__ANON_STATE_";
-const STATE_PER_CALL_PREFIX: &str = "__ANON_STATE_PC_";
+const STATE_PREFIX: &str = "__ANON_STATE#";
+const STATE_PER_CALL_PREFIX: &str = "__ANON_STATE#PC_";
 const ARRAY_PREFIX: &str = "__ANON_ARRAY_";
 
 fn is_minted(name: &str, prefix: &str) -> bool {
@@ -25,7 +29,7 @@ fn is_minted(name: &str, prefix: &str) -> bool {
         .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// Whether `name` is a minted anonymous scalar (`__ANON_STATE_<id>__`).
+/// Whether `name` is a minted anonymous scalar (`__ANON_STATE#<id>__`).
 // Cost: O(|name|).
 pub(crate) fn is_scalar(name: &str) -> bool {
     is_minted(name, STATE_PREFIX) || is_minted(name, STATE_PER_CALL_PREFIX)
@@ -48,6 +52,7 @@ pub(crate) fn is_hash(name: &str) -> bool {
 // Cost: O(|name|).
 pub(crate) fn implicit_decl(name: String) -> Stmt {
     Stmt::VarDecl {
+        anonymous: true,
         name,
         expr: Expr::Literal(Value::NIL),
         type_constraint: None,
@@ -67,6 +72,7 @@ pub(crate) fn is_implicit_decl(stmt: &Stmt) -> bool {
     matches!(
         stmt,
         Stmt::VarDecl {
+            anonymous: true,
             name,
             expr: Expr::Literal(_),
             is_state: true,

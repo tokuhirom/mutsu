@@ -223,6 +223,7 @@ fn expand_dot_assign(
             let assigned_value = method_call_fn(lhs_expr);
             Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    anonymous: false,
                     name: tmp_idx,
                     expr: *index.clone(),
                     type_constraint: None,
@@ -398,6 +399,7 @@ fn expand_dot_assign(
             };
             Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    anonymous: false,
                     name: inv_tmp,
                     expr: *inv.clone(),
                     type_constraint: None,
@@ -410,6 +412,7 @@ fn expand_dot_assign(
                     where_constraint: None,
                 },
                 Stmt::VarDecl {
+                    anonymous: false,
                     name: cur_tmp,
                     expr: read_expr,
                     type_constraint: None,
@@ -463,6 +466,7 @@ fn expand_dot_assign(
             };
             Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    anonymous: false,
                     name: tmp,
                     expr: target,
                     type_constraint: None,

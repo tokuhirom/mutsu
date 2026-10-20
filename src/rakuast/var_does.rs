@@ -67,6 +67,7 @@ pub(super) fn lower_expansion(
         return Err(unsupported(node));
     };
     let Stmt::VarDecl {
+        anonymous,
         name,
         expr,
         type_constraint,
@@ -109,6 +110,7 @@ pub(super) fn lower_expansion(
     };
     let role = lower_expr(role)?;
     let declared = Stmt::VarDecl {
+        anonymous,
         name: name.clone(),
         expr: default,
         type_constraint,

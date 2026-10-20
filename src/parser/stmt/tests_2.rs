@@ -261,7 +261,7 @@ fn parse_sub_decl_with_compact_anonymous_sigil_params() {
         assert!(
             param_defs
                 .iter()
-                .all(|p| p.name == "__ANON_STATE__" && !p.named && !p.slurpy)
+                .all(|p| p.name == "__ANON_STATE#" && !p.named && !p.slurpy)
         );
     } else {
         panic!("expected SubDecl");
