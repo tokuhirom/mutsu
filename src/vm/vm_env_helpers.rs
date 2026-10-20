@@ -1921,6 +1921,15 @@ impl Interpreter {
         if self.unit_scope_lexical_write(name, name_sym, &value) {
             return;
         }
+        // Like the read path, a write to a package's declared `our` scalar
+        // reaches its canonical cell before the caller's bare env binding.
+        // A fresh declaration or incoming cell installs a binding instead.
+        if !fresh_binding
+            && !value.is_container_ref()
+            && self.our_package_scalar_write(name, &value)
+        {
+            return;
+        }
         // Write companion of the unmerged-package redirect (#13942).
         if let Some(key) =
             self.unmerged_package_var_key(name_sym.unwrap_or_else(|| Symbol::intern(name)))

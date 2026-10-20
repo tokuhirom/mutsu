@@ -171,12 +171,15 @@ impl Interpreter {
         code: &CompiledCode,
         slot: u32,
         qualified_idx: u32,
+        constraint_idx: Option<u32>,
     ) {
         let idx = slot as usize;
         let raw = self.stack.pop().unwrap_or(Value::NIL);
         let local_name = code.locals[idx].clone();
-        let raw = if raw.is_nil() {
+        let raw = if raw.is_nil() && constraint_idx.is_some() {
             self.our_scalar_nil_default(&local_name)
+        } else if raw.is_nil() {
+            Value::package(crate::symbol::wk::any())
         } else {
             raw
         };
@@ -202,7 +205,20 @@ impl Interpreter {
         // The declared type (`our Int $x`, registered just before this op) is
         // carried by the cell itself, so a write through the package-qualified
         // name (`$Pkg::x = "a"`) is checked like one through `$x` (ADR-0042).
-        self.register_container_cell_constraint_for_name(&cell, &local_name);
+        if let ValueView::ContainerRef(container) = cell.view() {
+            if let Some(tc) = constraint_idx {
+                crate::value::register_container_constraint_named(
+                    &container,
+                    Self::const_str(code, tc),
+                    &if local_name.starts_with(['$', '@', '%', '&']) {
+                        local_name.clone()
+                    } else {
+                        format!("${local_name}")
+                    },
+                );
+            }
+            container.set_binding_decision(None);
+        }
         self.locals[idx] = cell.clone();
         self.env_mut().insert(local_name.clone(), cell.clone());
         self.env_mut().insert(qualified.clone(), cell.clone());

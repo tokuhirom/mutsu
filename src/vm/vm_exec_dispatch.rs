@@ -2780,6 +2780,18 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
+                // A bare package alias has its own canonical cell. Resolve it
+                // before a generic env-cell store can reach the caller's
+                // unrelated same-named lexical.
+                if !is_bind_ctx
+                    && !is_rebind
+                    && !fresh_binding_decl
+                    && bind_source.is_none()
+                    && self.our_package_scalar_write(&name, &val)
+                {
+                    *ip += 1;
+                    return Ok(());
+                }
                 if self.unit_scope_lexical_write(&name, Some(name_sym), &val) {
                     *ip += 1;
                     return Ok(());
@@ -7616,8 +7628,9 @@ impl Interpreter {
             OpCode::DeclareOurScalar {
                 slot,
                 qualified_idx,
+                constraint_idx,
             } => {
-                self.exec_declare_our_scalar_op(code, *slot, *qualified_idx);
+                self.exec_declare_our_scalar_op(code, *slot, *qualified_idx, *constraint_idx);
                 *ip += 1;
             }
             // Cost: O(1) amortized (name-index probes; see exec_set_var_dynamic_op), so a sub with

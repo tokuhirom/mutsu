@@ -525,6 +525,12 @@ impl Interpreter {
         if free_var_store && let Some(constraint) = self.class_body_static_store_type(name) {
             return (constraint, true);
         }
+        if free_var_store && let Some((_, cell)) = self.our_package_scalar_cell(name) {
+            let constraint = crate::value::lookup_cell_constraint(&cell)
+                .filter(|c| c.element_of.is_none())
+                .map(|c| c.ty);
+            return (constraint, true);
+        }
         (self.var_type_constraint_sym(name_sym), false)
     }
 }

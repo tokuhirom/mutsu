@@ -2040,9 +2040,13 @@ impl Compiler {
                             .our_locals
                             .push((slot as usize, qualified.clone()));
                         let qualified_idx = self.code.add_constant(Value::str(qualified));
+                        let constraint_idx = type_constraint
+                            .as_ref()
+                            .map(|tc| self.code.add_constant(Value::str(tc.clone())));
                         self.code.emit(OpCode::DeclareOurScalar {
                             slot,
                             qualified_idx,
+                            constraint_idx,
                         });
                     } else {
                         // For `our` we need a second copy of the value to store into the

@@ -111,24 +111,47 @@ impl Interpreter {
             Some(cur_sym),
         ];
         for candidate in candidates.into_iter().flatten() {
-            for pkg_sym in crate::qualified::package_ancestors(candidate) {
-                if crate::qualified::is_global_package(pkg_sym)
-                    || crate::qualified::is_routine_scoped_package(pkg_sym)
-                {
-                    break;
-                }
-                // `package_qualified_candidate` applies the same twigil /
-                // positional-capture exclusions the compiler's
-                // `qualify_variable_name` does, so reads and writes reconstruct
-                // exactly the key the declaration stored.
-                if let Some(key) = Self::package_qualified_candidate(name_sym, pkg_sym)
-                    && self.get_our_var(key.as_str()).is_some()
-                {
-                    return Some(key.as_str().to_string());
-                }
+            if let Some(key) = self.our_package_var_key_in(name_sym, candidate) {
+                return Some(key.as_str().to_string());
             }
         }
         None
+    }
+
+    // Cost: O(d), d = nesting depth of the declaring package.
+    fn our_package_var_key_in(&self, name: Symbol, owner: Symbol) -> Option<Symbol> {
+        for package in crate::qualified::package_ancestors(owner) {
+            if crate::qualified::is_global_package(package)
+                || crate::qualified::is_routine_scoped_package(package)
+            {
+                break;
+            }
+            // The same exclusions and memoized key used by the VM's read
+            // and write paths; no caller-frame names enter this lookup.
+            if let Some(key) = Self::package_qualified_candidate(name, package)
+                && self.get_our_var(key.as_str()).is_some()
+            {
+                return Some(key);
+            }
+        }
+        None
+    }
+
+    /// A scalar's canonical package cell for an entry that knows its own
+    /// declaring package and has not opened a bytecode routine frame (TRIR).
+    // Cost: O(d), d = nesting depth of the declaring package.
+    pub(crate) fn our_package_scalar_binding_in(
+        &self,
+        name: Symbol,
+        owner: Symbol,
+    ) -> Option<Value> {
+        if !self.lexicals.our_scalar_cell_names.contains(name.as_str()) {
+            return None;
+        }
+        let key = self.our_package_var_key_in(name, owner)?;
+        self.get_our_var(key.as_str())
+            .filter(|value| value.is_container_ref())
+            .cloned()
     }
 
     /// The shared cell backing a bare `our` SCALAR name, as seen from the
@@ -153,7 +176,7 @@ impl Interpreter {
     /// mistaken for a package scalar. The shapes `use_our_cell` excludes
     /// (`our constant`, `:=`-bound, sigil-less, traited) keep their existing
     /// two-independent-stores behaviour untouched.
-    fn our_package_scalar_cell(
+    pub(super) fn our_package_scalar_cell(
         &self,
         name: &str,
     ) -> Option<(String, crate::gc::Gc<crate::value::ContainerCell>)> {

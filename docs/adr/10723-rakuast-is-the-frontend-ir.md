@@ -1515,3 +1515,26 @@ On the tested tree, 8,052 / 8,094 files pass the frontend survey, and all
 8,052 ratchet files / 83,488 assertions pass under the release binary. The
 16 added entries comprise the two feed tests and 14 refreshed-main tests;
 the remaining cause survey has 27 DIFF and 15 REFUSE files.
+
+### 6.85 S10: package scalar binding authority (2026-10-20)
+
+TRIR outer seeding now consults the declaring package's canonical `our`
+scalar cell after exact activation captures and before file/env fallbacks.
+The cell remains live rather than entering a value snapshot cache. The
+ordinary parser's incidental callsite marker had hidden this first-call
+binding error; RakuAST lowering need not recreate that marker.
+
+VM plain stores resolve the same cell before the generic bare-env write
+shortcut. Container arguments carry that cell through `WrapVarRef`; the
+parameter binder preserves an already-resolved lvalue instead of re-resolving
+its name and scheduling an unrelated name-based copyback. Readonly decisions
+and scalar constraints consult the target binding. `DeclareOurScalar` carries
+its own optional constraint constant, including an explicit absence, rather
+than attaching a caller's same-named type. The cache format advances to 34.
+
+Class-body exit restores the bare aliases of top-level `our` declarations
+while preserving their qualified storage and changes to shared outer cells.
+The executable contract is `t/rakuast/rakuast-package-our-bindings.t`, with
+string and AST EVAL coverage measured against Rakudo 2026.07. Existing routine
+package-switch and in-file package-variable regressions exercise both
+frontends as well.

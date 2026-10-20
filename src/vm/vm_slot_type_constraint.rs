@@ -74,6 +74,13 @@ impl Interpreter {
         slot: u32,
         name_sym: Symbol,
     ) -> VarRefDeclared {
+        if slot == u32::MAX
+            && let Some((_, cell)) = self.our_package_scalar_cell(name_sym.as_str())
+        {
+            return VarRefDeclared::Resolved(
+                crate::value::lookup_cell_constraint(&cell).map(|c| Value::str(c.ty)),
+            );
+        }
         if slot != u32::MAX
             && code.declared_constraint(slot as usize) == DeclaredConstraint::Untyped
         {

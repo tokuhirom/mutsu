@@ -132,7 +132,7 @@ pub(crate) fn interpreter_version() -> String {
     // 32: named method calls carry their resolved receiver slot; BindingDesc
     // lost scalar_no_container_sym, replaced by the binding's readonly kind.
     // 33: variable and call-assignment declarations carry anonymous provenance.
-    const CACHE_FORMAT_VERSION: u32 = 33;
+    const CACHE_FORMAT_VERSION: u32 = 34;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

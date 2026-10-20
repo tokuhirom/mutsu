@@ -996,8 +996,8 @@ pub(crate) enum OpCode {
         explicit_init: bool,
         typechecked: bool,
     },
-    /// `our $x = <expr>` for a plain untyped scalar (no `:=` bind, no type
-    /// constraint, no container sigil, not a `constant`): installs ONE shared
+    /// `our $x = <expr>` for a plain non-native scalar (no `:=` bind, no
+    /// container sigil, not a `constant`): installs ONE shared
     /// `ContainerRef` cell under the lexical local slot, the bare env name,
     /// and the package-qualified name (`qualified_idx`) — see
     /// `Interpreter::exec_declare_our_scalar_op`. `our $x` and `$Pkg::x` (or
@@ -1006,10 +1006,15 @@ pub(crate) enum OpCode {
     /// generic `ContainerRef` read/write-through chokepoints (`GetLocal`/
     /// `SetLocal`/`GetGlobal`/`SetGlobal`) — no bespoke sync code needed.
     /// Replaces the old two-store `Dup; SetLocalDecl(slot); SetGlobal(q)`
-    /// sequence for exactly this case; every other `our` shape (typed,
-    /// `@`/`%`/`&`-sigiled, `constant`, `:=` bound, or shadowing an outer
-    /// `constant`) keeps the old sequence unchanged.
-    DeclareOurScalar { slot: u32, qualified_idx: u32 },
+    /// sequence for exactly this case. `constraint_idx` names this declaration's
+    /// own scalar constraint, if any; caller metadata cannot supply one.
+    /// Native, aggregate, constant and bound declarations keep their existing
+    /// store sequence.
+    DeclareOurScalar {
+        slot: u32,
+        qualified_idx: u32,
+        constraint_idx: Option<u32>,
+    },
     /// The bind-source tag of a package-qualified scalar (`my $x := $Pkg::y`,
     /// #13941), in place of [`Self::WrapVarRef`]. Pops the value the read
     /// pushed; when the package variable lives in a shared `ContainerRef`
