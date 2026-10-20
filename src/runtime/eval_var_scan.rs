@@ -24,6 +24,7 @@ use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::regex_tree::RegexNode;
 
 mod forward;
+mod lowered_decls;
 mod refs;
 use refs::{VarRefs, later_param_in_where};
 pub(super) use forward::first_var_used_before_unit_declares;
@@ -435,6 +436,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                         if let Some(b) = binding_var {
                             v.declare(b);
                         }
+                        v.declare_pointy_params(branch);
                         walk_stmts(v, branch);
                     });
                 }
@@ -462,7 +464,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                 self.routine(param_defs, stmt)
             }
             Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
-                self.type_body(body, stmt)
+                self.in_lenient_code(|v| v.type_body(body, stmt))
             }
             // A statement-form phaser (`BEGIN my $c = ...`) declares into the
             // enclosing scope; its block form (`BEGIN { my $c }`, whose body
@@ -484,11 +486,49 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             // unit's head), so in the compunit mode it is no evidence of a
             // use before a declaration.
             Stmt::Phaser { .. } => self.in_scope(|v| {
-                v.in_moved_code(|v| v.judging(true, |v| walk_stmt(v, stmt)))
+                v.in_lenient_code(|v| {
+                    v.in_moved_code(|v| v.judging(true, |v| walk_stmt(v, stmt)))
+                })
             }),
-            Stmt::For { .. }
-            | Stmt::Given { .. }
-            | Stmt::When { .. }
+            Stmt::Package { .. } | Stmt::AugmentClass { .. } | Stmt::PackageRuntimeBody { .. } => {
+                // A type body's run-time statements are moved to a
+                // `PackageRuntimeBody` by the BEGIN prologue.
+                self.in_scope(|v| {
+                    v.in_lenient_code(|v| v.judging(true, |v| walk_stmt(v, stmt)))
+                })
+            }
+            // Its topic declares into the enclosing scope (`given my $x = 2
+            // { ... }; $x`), as a condition does.
+            Stmt::Given { topic, body, .. } => self.judging(true, |v| {
+                v.visit_expr(topic);
+                v.in_scope(|v| {
+                    v.declare_pointy_params(body);
+                    walk_stmts(v, body);
+                })
+            }),
+            // Its iterable declares into the enclosing scope (`for my @a =
+            // 1, 2 { }; @a`); its parameters are the body's.
+            Stmt::For {
+                iterable,
+                param,
+                param_def,
+                params,
+                params_def,
+                body,
+                ..
+            } => self.judging(true, |v| {
+                v.visit_expr(iterable);
+                v.in_scope(|v| {
+                    for name in param.iter().chain(params) {
+                        v.visit_name(name, NameKind::BlockParam);
+                    }
+                    for p in param_def.iter().chain(params_def) {
+                        v.visit_param(p);
+                    }
+                    walk_stmts(v, body);
+                })
+            }),
+            Stmt::When { .. }
             | Stmt::Default(_)
             | Stmt::Catch(_)
             | Stmt::Control(_)
@@ -496,9 +536,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Stmt::React { .. }
             | Stmt::TokenDecl { .. }
             | Stmt::RuleDecl { .. }
-            | Stmt::ProtoDecl { .. }
-            | Stmt::Package { .. }
-            | Stmt::AugmentClass { .. } => {
+            | Stmt::ProtoDecl { .. } => {
                 self.in_scope(|v| v.judging(true, |v| walk_stmt(v, stmt)))
             }
             _ => self.judging(true, |v| walk_stmt(v, stmt)),
@@ -524,6 +562,23 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                 origin: crate::ast::DoBlockOrigin::Desugar,
                 ..
             } => self.judging(true, |v| walk_expr(v, expr)),
+            // A statement prefix over a statement, not a block (`try my $x =
+            // ...`, `once my $x`), is a thunk: its declarations go into the
+            // enclosing scope, as in rakudo. A block form's body starts with
+            // its `SetLine`.
+            Expr::Try { body, .. } | Expr::Once { body } | Expr::Gather(body)
+                if !matches!(body.first(), Some(Stmt::SetLine(..))) =>
+            {
+                self.judging(true, |v| walk_expr(v, expr))
+            }
+            // A supply block's `CLOSE` phaser is registered ahead of the
+            // statements its body follows in the source (`supply { my $stop;
+            // ...; CLOSE { $stop = True } }`), as the phaser it is.
+            Expr::MethodCall { name, .. }
+                if name.resolve().as_str() == "__mutsu_register_close_phaser" =>
+            {
+                self.in_lenient_code(|v| v.judging(false, |v| walk_expr(v, expr)))
+            }
             // Closures and inline blocks are scopes of their own.
             Expr::AnonSub { .. }
             | Expr::AnonSubParams { .. }
@@ -540,9 +595,12 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         }
     }
 
-    // Regex-internal declarations (`:my $x`) and match variables are not
-    // modelled, so a regex is not entered.
-    fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
+    // Uses inside a regex (its code blocks, match variables) are not
+    // judged. Its `:my $x` declarations are in scope after the regex, as in
+    // rakudo ("helps scoping the $c variable within the regex and beyond").
+    fn visit_regex_node(&mut self, node: &'ast RegexNode) {
+        self.declare_regex_vars(node);
+    }
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         if matches!(kind, NameKind::Param | NameKind::BlockParam) {
@@ -555,3 +613,4 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         }
     }
 }
+
