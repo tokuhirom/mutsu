@@ -87,6 +87,20 @@ pub(super) const fn opaque(
         S::Vm => ("VM", &["VM"]),
         S::RakuSystemic => ("Raku", &["Raku"]),
         S::Compiler => ("Compiler", &["Compiler"]),
+        // The node classes whose builders are rows: each builder's handler
+        // declines a node of another class, and no name is declared twice.
+        S::RakuAstNode => (
+            "RakuAST::Node",
+            &[
+                "RakuAST::Node",
+                "RakuAST::StatementList",
+                "RakuAST::CompUnit",
+                "RakuAST::Statement::Expression",
+                "RakuAST::ArgList",
+            ],
+        ),
+        S::RakuAstOrigin => ("RakuAST::Origin", &["RakuAST::Origin"]),
+        S::RakuAstOriginSource => ("RakuAST::Origin::Source", &["RakuAST::Origin::Source"]),
         _ => return None,
     })
 }

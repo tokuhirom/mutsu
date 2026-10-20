@@ -86,10 +86,10 @@ pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::iterator::owners_of as iterator_owners_of;
-pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
+pub(crate) use instances::rakuast_node::origin_value;
 pub(crate) use instances::routine::owners_of as routine_owners_of;
 pub(crate) use instances::stash::owners_of as stash_owners_of;
-pub(crate) use instances::wrapper_role::owners_of as wrapper_role_owners_of;
+pub(crate) use table::mixin_role_owners_of;
 pub(crate) use instances::{backtrace, code, exception, failure, regex_match, signature, supply};
 pub(crate) use io_concurrency::class_methods::{
     early_owners_of as early_class_method_owners_of, owners_of as class_method_owners_of,

@@ -86,14 +86,6 @@ fn role_mixin_keys(role: &str) -> [String; 3] {
     ]
 }
 
-/// The name of the wrapper role composed into `target` most recently (the
-/// outermost rethrow), whose `gist` row answers it (ADR-11276, #11276), or
-/// `None` when it carries none of them.
-// Cost: O(1), three mixin-map probes.
-pub(crate) fn outermost_wrapper_role_name(target: &Value) -> Option<&'static str> {
-    Interpreter::outermost_wrapper_role(target).map(|w| w.role)
-}
-
 impl Interpreter {
     /// The wrapper role composed into `target` most recently (the outermost
     /// rethrow), or `None` when it carries none of them.
