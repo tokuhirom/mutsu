@@ -358,6 +358,41 @@ pub(crate) fn mixin_role_owners_of(target: &Value, method: &str) -> Option<Vec<S
     (!owners.is_empty()).then_some(owners)
 }
 
+/// Whether some class-method row ([`RowFlags::CLASS_METHOD`]) is named
+/// `method`: the cheap test ahead of a type object's MRO walk, so `Foo.new`
+/// and the like pay one hash probe.
+// Cost: O(1) after the first call; that call is O(r), r = rows.
+pub(crate) fn class_method_named(method: &str) -> bool {
+    static NAMES_OF: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    NAMES_OF
+        .get_or_init(|| {
+            ALL.iter()
+                .filter(|row| row.flags.contains(RowFlags::CLASS_METHOD))
+                .map(|row| row.name)
+                .collect()
+        })
+        .contains(method)
+}
+
+/// Whether `owner` declares a class method of a built-in type
+/// ([`RowFlags::CLASS_METHOD`]): `Promise`, `Supply`, `Seq`, `Thread`, `List`,
+/// ... The type object of such an owner, or of a user subclass of it, reaches
+/// its class-method rows.
+// Cost: O(1) after the first call; that call is O(r), r = rows.
+pub(crate) fn class_method_owner(owner: &str) -> bool {
+    static OWNERS: std::sync::OnceLock<rustc_hash::FxHashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    OWNERS
+        .get_or_init(|| {
+            ALL.iter()
+                .filter(|row| row.flags.contains(RowFlags::CLASS_METHOD))
+                .map(|row| row.owner)
+                .collect()
+        })
+        .contains(owner)
+}
+
 /// Whether `owner` has a row for `method` that exists in the program's language
 /// revision, at any arity and of any kind (a deferral base included): what
 /// introspection asks of an owner (ADR-14032).
