@@ -921,6 +921,7 @@ impl Interpreter {
                     Value::package(Symbol::intern(self.resolve_core_type_alias(bare)))
                 } else if self.is_known_package(name)
                     || self.has_type(name)
+                    || self.export_namespace_exists(name)
                     || Self::is_builtin_type(name)
                     || crate::core_type_names::contains(name)
                     || crate::rakuast::is_registered_type_object(name)

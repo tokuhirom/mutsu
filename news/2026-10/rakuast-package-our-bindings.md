@@ -31,11 +31,13 @@ All 83 assertions of `roast/S10-packages/basic.t` now pass, and the file joins
 the whitelist.
 
 The runtime and AST conversion share the generated CORE type-name catalogue.
-Export namespaces retain their module provenance, and class/role plans carry
+Generated export namespaces use separate unit and qualified-package indexes.
+Class/role plans carry
 explicit compiler qualification instead of guessing from a package prefix.
 Body chunks use that same provenance, and relative compound type identities
-remain distinct from their written bindings. Root `EXPORT` stashes use the
-same canonical owner for both qualified and indirect lookup.
+remain distinct from their written bindings. Generated namespaces preserve
+custom EXPORT lookup, and a vivified ancestor does not replace a pending
+class's HOW.
 The declaration-phase timing of trait arguments remains tracked in #14146.
 
 This is a Stage 1 S10 slice of #7564, tracked by #14111 and ADR-10723.

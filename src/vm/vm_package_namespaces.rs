@@ -3,10 +3,38 @@
 use super::*;
 
 impl Interpreter {
-    // Cost: O(n), n = declaration name bytes; two hash operations.
+    // Cost: O(d + n), d = declaring package depth, n = declaration name bytes.
     pub(super) fn record_compound_type_binding(&mut self, identity: Symbol, written: Symbol) {
-        let binding = Symbol::intern(Self::strip_pseudo_packages(written.as_str()));
-        if crate::qualified::is_qualified(binding) && identity != binding {
+        let written = Symbol::intern(Self::strip_pseudo_packages(written.as_str()));
+        let binding = if let Some((head, tail)) = crate::qualified::split_first(written) {
+            let (head, tail) = (Symbol::intern(head), Symbol::intern(tail));
+            let value = self
+                .lexical_type_binding_sym(head)
+                .or_else(|| self.type_name_binding(head.as_str()));
+            let owner = match value.as_ref().map(Value::view) {
+                Some(ValueView::Package(owner)) => Some(owner),
+                _ if self.is_known_package(head.as_str())
+                    || crate::core_type_names::contains(head.as_str()) =>
+                {
+                    Some(head)
+                }
+                _ => self
+                    .resolve_bareword_type_name(head.as_str())
+                    .map(|name| Symbol::intern(&name)),
+            };
+            owner
+                .map(|owner| crate::qualified::qualified(owner, tail))
+                .unwrap_or_else(|| {
+                    if self.current_package_is_global() {
+                        written
+                    } else {
+                        crate::qualified::qualified(self.current_package_sym(), written)
+                    }
+                })
+        } else {
+            identity
+        };
+        if crate::qualified::is_qualified(written) && identity != written && identity != binding {
             if self.registry().compound_identity_bindings.get(&identity) != Some(&binding) {
                 self.registry_mut()
                     .compound_identity_bindings
@@ -38,7 +66,9 @@ impl Interpreter {
             if crate::qualified::is_global_package(parent) {
                 continue;
             }
-            if self.is_known_package(parent.as_str()) {
+            if self.is_known_package(parent.as_str())
+                || self.types.user_declared_classes.contains(parent.as_str())
+            {
                 if self.module.module_load_stack.is_empty() {
                     self.release_foreign_provenance(parent.as_str());
                 }
@@ -58,30 +88,6 @@ impl Interpreter {
             }
             crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
                 .insert(parent.as_str().to_owned());
-        }
-    }
-
-    // Cost: O(t * (d + n)), t = export tags, d = package depth, n = ancestor name bytes.
-    pub(crate) fn declare_export_namespaces(&mut self, package: &str, tags: &[String]) {
-        let owner = Symbol::intern(package);
-        let exports = if crate::qualified::is_global_package(owner) {
-            Symbol::intern("EXPORT")
-        } else {
-            crate::qualified::qualified(owner, Symbol::intern("EXPORT"))
-        };
-        let all = crate::qualified::qualified(exports, Symbol::intern("ALL"));
-        self.declare_package_namespace(all);
-        if tags.is_empty() {
-            self.declare_package_namespace(crate::qualified::qualified(
-                exports,
-                Symbol::intern("DEFAULT"),
-            ));
-        }
-        for tag in tags {
-            self.declare_package_namespace(crate::qualified::qualified(
-                exports,
-                Symbol::intern(tag),
-            ));
         }
     }
 }

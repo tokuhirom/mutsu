@@ -3801,6 +3801,7 @@ t/oo/class/private-attr-wrong-class.t
 t/oo/class/private-nested-lexical-class.t
 t/oo/class/proto-star-cross-mro-candidates.t
 t/oo/class/qualified-name-pair-key.t
+t/oo/class/qualified-name-trailing-coloncolon.t
 t/oo/class/readonly-mark-not-inherited-by-fresh-binding.t
 t/oo/class/return-type-not-inherited-by-inner-block.t
 t/oo/class/return-type-not-inherited.t

@@ -73,6 +73,10 @@ pub(crate) struct ModuleState {
     /// blocks, and a script's own top-level `unit module`, never populate
     /// this table, so they are never mistakenly gated).
     pub(crate) package_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
+    /// Generated EXPORT stashes belong to their declaring compilation unit.
+    pub(crate) unit_export_namespaces: std::sync::Arc<HashSet<(Symbol, Symbol)>>,
+    /// Qualified export stashes of named packages, gated by module visibility.
+    pub(crate) package_export_namespaces: std::sync::Arc<HashSet<Symbol>>,
     /// Which module declarations resolve where: the #7797 package grants and
     /// ADR-11136's GLOBAL-merge provenance and merges
     /// (`runtime::module_merge::ModuleVisibility`).
@@ -573,6 +577,8 @@ impl ModuleState {
             unit_private_names: Default::default(),
             class_declaring_units: Default::default(),
             package_declaring_units: Default::default(),
+            unit_export_namespaces: Default::default(),
+            package_export_namespaces: Default::default(),
             module_visibility: Default::default(),
             prelude_sub_names: Default::default(),
             lib_paths: Default::default(),
@@ -661,6 +667,8 @@ impl ModuleState {
             unit_private_names: self.unit_private_names.clone(),
             class_declaring_units: self.class_declaring_units.clone(),
             package_declaring_units: self.package_declaring_units.clone(),
+            unit_export_namespaces: self.unit_export_namespaces.clone(),
+            package_export_namespaces: self.package_export_namespaces.clone(),
             module_visibility: self.module_visibility.clone(),
             prelude_sub_names: self.prelude_sub_names.clone(),
             lib_paths: self.lib_paths.clone(),

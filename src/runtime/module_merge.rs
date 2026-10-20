@@ -629,6 +629,10 @@ impl Interpreter {
                 let pkg = self.current_package_sym();
                 (pkg.as_str().is_empty() || crate::qualified::is_global_package(pkg))
                     || (self.module_scope_lexical(&key).is_none()
+                    // During its load, a module's own constant is live but has
+                    // not yet entered module_scope_lexicals. Its owner-keyed
+                    // declaration marker distinguishes it from a caller term.
+                    && !(self.toplevel_constant_marker(&key) && self.term_value(name).is_some())
                     && self
                         .package_chain_var_fallback(crate::symbol::Symbol::intern(&key))
                         .is_none()

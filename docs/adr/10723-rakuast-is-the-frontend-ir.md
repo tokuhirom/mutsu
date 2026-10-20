@@ -1551,8 +1551,10 @@ Missing parents and unsupported core HOW operations raise the shared typed
 exceptions. Qualified declarations register their namespace ancestors;
 unresolved qualified terms fail instead of manufacturing package objects.
 Execution and conversion share the generated CORE type-name catalogue.
-Namespace entries retain module provenance so export stashes do not become
-program GLOBAL declarations. Class/role plans explicitly record compiler
+Generated export namespaces have separate unit and qualified-package indexes;
+they do not become user package declarations or change custom EXPORT lookup.
+An ancestor vivified during a pending class's load does not replace its HOW.
+Class/role plans explicitly record compiler
 qualification instead of guessing it from a repeated package prefix.
 The matching method/body chunks use the same declaration-name provenance.
 Relative compound type identities remain distinct from their written package
