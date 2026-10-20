@@ -20,7 +20,7 @@
 //! copy-on-write deep copy of that env.
 //!
 //! The program's own mainline is the same: it runs once, and `run_unit` runs
-//! it under [`Interpreter::run_module_mainline`] too, so its top-level
+//! it under [`Interpreter::run_program_mainline`], so its top-level
 //! routines' ids leave the program's frame env as well.
 //!
 //! So such a registration goes to [`ModuleToplevel::callable_ids`]
@@ -74,6 +74,11 @@ pub(crate) struct ModuleToplevel {
     /// The depths the executing module mainline started at, while one runs.
     /// See [`Interpreter::run_module_mainline`].
     pub(crate) depth: Option<ModuleToplevelDepth>,
+    /// The depths the program's own mainline started at, while it runs. Only
+    /// the clone-id table follows it; the other tables are about what a
+    /// module makes visible to its importer, which a program has none of.
+    /// See [`Interpreter::run_program_mainline`].
+    pub(crate) program_depth: Option<ModuleToplevelDepth>,
 }
 
 impl ModuleToplevel {
@@ -87,6 +92,7 @@ impl ModuleToplevel {
             constant_markers: self.constant_markers.clone(),
             enum_keys: self.enum_keys.clone(),
             depth: None,
+            program_depth: None,
         }
     }
 }
@@ -118,6 +124,33 @@ impl Interpreter {
         result
     }
 
+    /// Run the program's own mainline, marking its top level so the routines
+    /// it registers there record their clone ids in
+    /// [`ModuleToplevel::callable_ids`], as a module mainline's do.
+    // Cost: O(1) beyond `body`.
+    pub(crate) fn run_program_mainline<T>(
+        &mut self,
+        body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
+    ) -> Result<T, RuntimeError> {
+        let depth = self.current_toplevel_depth();
+        let saved = self.module.module_toplevel.program_depth.replace(depth);
+        let result = body(self);
+        self.module.module_toplevel.program_depth = saved;
+        result
+    }
+
+    /// Whether the executing code is the program's own mainline, directly at
+    /// the depths it started at, and no module mainline runs inside it.
+    // Cost: O(1).
+    fn at_program_toplevel(&self) -> bool {
+        self.module.module_toplevel.depth.is_none()
+            && self
+                .module
+                .module_toplevel
+                .program_depth
+                .is_some_and(|depth| depth == self.current_toplevel_depth())
+    }
+
     /// Record a fresh registration clone id for the routine `package::name`.
     ///
     /// The one writer of the `__mutsu_callable_id::` marker: a registration
@@ -130,7 +163,7 @@ impl Interpreter {
     pub(crate) fn note_registration_callable_id(&mut self, package: &str, name: &str) {
         let key = MetaNs::CallableId.key_pair_for_strs(package, name);
         let id = crate::value::next_instance_id() as i64;
-        if self.at_module_toplevel()
+        if (self.at_module_toplevel() || self.at_program_toplevel())
             // An env marker for the same routine (an earlier lexical
             // registration still in scope) would shadow the table; overwrite
             // it in place rather than leave a stale id in front.
