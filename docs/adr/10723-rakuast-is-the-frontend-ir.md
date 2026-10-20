@@ -1530,7 +1530,10 @@ parameter binder preserves an already-resolved lvalue instead of re-resolving
 its name and scheduling an unrelated name-based copyback. Readonly decisions
 and scalar constraints consult the target binding. `DeclareOurScalar` carries
 its own optional constraint constant, including an explicit absence, rather
-than attaching a caller's same-named type. The cache format advances to 34.
+than attaching a caller's same-named type. Split runtime package bodies carry
+their own `our` aliases separately from their private lexicals: compilation
+hides caller slots for both, but binds only private lexicals from the static
+store. The cache format advances to 35.
 
 Class-body exit restores the bare aliases of top-level `our` declarations
 while preserving their qualified storage and changes to shared outer cells.

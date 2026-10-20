@@ -45,7 +45,13 @@ for
     Q[my $tag = 0; sub bump(:$x! is rw) { $x += 4 }; module BindingNamedRw { our $tag = 1; our sub change { bump(x => $tag); $tag } }; BindingNamedRw::change() ~ ',' ~ BindingNamedRw::change() ~ '|' ~ $tag], '5,9|0',
     Q[my $tag = 0; sub bump($x is rw) { $x += 4 }; sub relay($x is rw) { bump($x) }; module BindingRelay { our $tag = 1; our sub change { relay($tag); $tag } }; BindingRelay::change() ~ ',' ~ BindingRelay::change() ~ '|' ~ $tag], '5,9|0',
     Q[my $tag = 0; sub read(:$x) { try { $x = 9 }; $x }; module BindingNamedValue { our $tag = 1; our sub change { my $v = read(x => $tag); $tag = 3; $v ~ ',' ~ $tag } }; BindingNamedValue::change() ~ '|' ~ $tag], '1,3|0',
-    Q[my $tag = 0; sub read(:$x is copy) { $x = 9; $x }; module BindingNamedCopy { our $tag = 1; our sub change { read(x => $tag) ~ ',' ~ $tag } }; BindingNamedCopy::change() ~ '|' ~ $tag], '9,1|0'
+    Q[my $tag = 0; sub read(:$x is copy) { $x = 9; $x }; module BindingNamedCopy { our $tag = 1; our sub change { read(x => $tag) ~ ',' ~ $tag } }; BindingNamedCopy::change() ~ '|' ~ $tag], '9,1|0',
+    Q[our $tag = 0; my $seen; class BindingPhase { our $tag = 9 }; BEGIN $seen = $BindingPhase::tag.defined; $seen ~ '|' ~ $BindingPhase::tag ~ '|' ~ $tag], 'False|9|0',
+    Q[my $tag = 0; my $seen; class BindingPhaseMy { our $tag = 9 }; BEGIN $seen = $BindingPhaseMy::tag.defined; $seen ~ '|' ~ $BindingPhaseMy::tag ~ '|' ~ $tag], 'False|9|0',
+    Q[my Int $tag = 0; my $seen; class BindingPhaseRefs { our $tag = 9; our $other = $tag + 1 }; BEGIN $seen = $BindingPhaseRefs::tag.defined; $seen ~ '|' ~ $BindingPhaseRefs::tag ~ ',' ~ $BindingPhaseRefs::other ~ '|' ~ $tag], 'False|9,10|0',
+    Q[our $tag = 0; my $seen; module BindingPhaseModule { our $tag = 9; our sub read { $tag } }; BEGIN $seen = $BindingPhaseModule::tag.defined; $seen ~ '|' ~ BindingPhaseModule::read() ~ '|' ~ $tag], 'False|9|0',
+    Q[my @tag = 0; my $seen; class BindingPhaseArray { our @tag = 1,2 }; BEGIN $seen = @BindingPhaseArray::tag.elems; $seen ~ '|' ~ @BindingPhaseArray::tag.join(',') ~ '|' ~ @tag.join(',')], '0|1,2|0',
+    Q[my %tag = x => 0; my $seen; class BindingPhaseHash { our %tag = x => 3 }; BEGIN $seen = %BindingPhaseHash::tag.elems; $seen ~ '|' ~ %BindingPhaseHash::tag<x> ~ '|' ~ %tag<x>], '0|3|0'
     -> $source, $expected {
     is EVAL($source.AST), $expected, 'AST binding identity: ' ~ $source;
     my $ordinary = $source.subst('Binding', 'OrdinaryBinding', :g);

@@ -19,6 +19,7 @@ impl Compiler {
         name: Symbol,
         body: &[Stmt],
         lexicals: &[String],
+        our_names: &[String],
         decl: PackageRuntimeDecl,
     ) {
         let qualified_name = match decl {
@@ -59,6 +60,7 @@ impl Compiler {
         // outer one's slot while the body compiles.
         let shadowed: Vec<(String, u32)> = lexicals
             .iter()
+            .chain(our_names)
             .filter_map(|name| self.local_map.remove_entry(name))
             .collect();
         for s in body {

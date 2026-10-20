@@ -3910,9 +3910,10 @@ impl Compiler {
                 name,
                 body,
                 lexicals,
+                our_names,
                 decl,
             } => {
-                self.compile_package_runtime_body(*name, body, lexicals, *decl);
+                self.compile_package_runtime_body(*name, body, lexicals, our_names, *decl);
             }
 
             // ADR-0048 Phase 2: no phaser body takes a signature in raku

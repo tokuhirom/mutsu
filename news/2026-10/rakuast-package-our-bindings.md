@@ -12,7 +12,9 @@ during parameter binding, so a callee neither substitutes a caller lexical
 nor copies its result back into that unrelated variable. Readonly decisions
 and type constraints follow the actual binding. Package scalar declarations
 carry their own constraint in bytecode instead of inheriting same-named
-caller metadata; the precompilation cache format is now 34.
+caller metadata. Split package bodies also carry their own `our` aliases, so
+their runtime initializers cannot reuse a caller's same-named slot. The
+precompilation cache format is now 35.
 
 Class-body `our` declarations retain package storage while restoring their
 bare lexical aliases when the body exits. Changes through an outer shared

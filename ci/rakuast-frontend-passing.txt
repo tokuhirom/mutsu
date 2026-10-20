@@ -9,6 +9,7 @@ t/collections/array/array-append-range.t
 t/collections/array/array-assign-bound-iterable.t
 t/collections/array/array-based-enum-acts-as-its-base.t
 t/collections/array/array-bind-cell.t
+t/collections/array/array-bind-missing-intermediate.t
 t/collections/array/array-bind-to-item-container.t
 t/collections/array/array-clone-decouples-element-cells.t
 t/collections/array/array-coercer-result-element-store.t
@@ -3017,6 +3018,7 @@ t/modules/import-export/use-version-adverb-parens.t
 t/modules/import-export/use-version-auth-adverb.t
 t/modules/import-export/use-version-short-adverb.t
 t/modules/import-export/when-imported-exported-type.t
+t/modules/in-file-package-our-var.t
 t/modules/indirect-rakudo-internals-json.t
 t/modules/init-check-in-package-body.t
 t/modules/inline-module-check-import.t
@@ -3201,6 +3203,7 @@ t/modules/role-method-closure-module-names.t
 t/modules/role-method-trait-package-how.t
 t/modules/role-type-object-package-scope.t
 t/modules/routine-do-bind-same-name-module.t
+t/modules/routine-package-switch-restore.t
 t/modules/rw-arg-from-packageless-module-sub.t
 t/modules/same-named-inner-type-publishes-outer-package.t
 t/modules/scalar-trailing-package-separator.t
@@ -5086,6 +5089,7 @@ t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operators.t
 t/rakuast/rakuast-outer-slurpy-bindings.t
 t/rakuast/rakuast-package-indirect-lookup.t
+t/rakuast/rakuast-package-our-bindings.t
 t/rakuast/rakuast-parameter-optional-traits.t
 t/rakuast/rakuast-paren-list-assign.t
 t/rakuast/rakuast-parser-decisions-kept.t
@@ -7437,6 +7441,7 @@ t/vm/binding/assign-key-through-bound-alias.t
 t/vm/binding/assign-plain-scalar-store-fast-path.t
 t/vm/binding/assign-rhs-sequence-op.t
 t/vm/binding/assignment-ro-literal.t
+t/vm/binding/bind-alias-block-exit-sync.t
 t/vm/binding/bind-alias-chain.t
 t/vm/binding/bind-alias-is-a-container.t
 t/vm/binding/bind-alias-recursive-frame-index.t
@@ -7768,6 +7773,7 @@ t/vm/scope/dynamic-array-hash-var-not-found.t
 t/vm/scope/dynamic-codevar-chdir.t
 t/vm/scope/dynamic-codevar-unbound.t
 t/vm/scope/dynamic-collection-decl-init.t
+t/vm/scope/dynamic-mutator-on-type-object.t
 t/vm/scope/dynamic-scope-pragma.t
 t/vm/scope/dynamic-stash-key-walks-dynamic-scope.t
 t/vm/scope/dynamic-var-bound-missing-elem-push-autoviv.t

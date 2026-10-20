@@ -2196,6 +2196,9 @@ pub(crate) enum Stmt {
         /// The `my` lexicals the declaration's body declares, which `body`
         /// reads and writes through the package's static store.
         lexicals: Vec<String>,
+        /// The body's own package aliases, which shadow caller local slots
+        /// without becoming entries in the private lexical store.
+        our_names: Vec<String>,
         /// Which declaration the body belongs to, so the package name is
         /// qualified the way that declaration's own registration qualifies it.
         decl: PackageRuntimeDecl,

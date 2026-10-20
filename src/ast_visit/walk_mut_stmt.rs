@@ -145,6 +145,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             name: _,
             body,
             lexicals: _,
+            our_names: _,
             decl: _,
         } => v.visit_stmts_mut(body),
         Stmt::Return(e)

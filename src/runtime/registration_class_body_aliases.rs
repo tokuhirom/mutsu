@@ -14,14 +14,44 @@ impl Interpreter {
     ) {
         for op in plan {
             let crate::opcode::ClassBodyOp::Other {
-                raw: Stmt::VarDecl { name, is_our: true, .. },
+                raw:
+                    Stmt::VarDecl {
+                        name,
+                        is_our: true,
+                        custom_traits,
+                        ..
+                    },
                 ..
-            } = op else {
+            } = op
+            else {
                 continue;
             };
+            // Constants and legacy scalar forms still resolve through their
+            // bare binding. Only ordinary package cells and aggregate stores
+            // have the authoritative qualified home this cleanup preserves.
+            if custom_traits
+                .iter()
+                .any(|(trait_name, _)| trait_name == "__constant")
+                || name.starts_with('&')
+            {
+                continue;
+            }
+            if !name.starts_with(['@', '%']) {
+                let key = crate::qualified::qualified_text(cx.name, name);
+                if !self
+                    .get_our_var(key.as_str())
+                    .is_some_and(Value::is_container_ref)
+                {
+                    continue;
+                }
+            }
             match cx.saved_env.get(name).cloned() {
-                Some(previous) => { self.env.insert(name.clone(), previous); }
-                None => { self.env.remove(name); }
+                Some(previous) => {
+                    self.env.insert(name.clone(), previous);
+                }
+                None => {
+                    self.env.remove(name);
+                }
             }
         }
     }
