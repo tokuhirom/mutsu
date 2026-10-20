@@ -2826,6 +2826,10 @@ impl Interpreter {
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
+                    // A `$` parameter's default is an item binding, like a
+                    // supplied argument -- after any coercion (`List() :$a =
+                    // []` binds `$()`), so it is one subscript key, not a slice.
+                    let value = Self::itemize_plain_scalar_param(pd, value);
                     let mut value = if pd.captured_type_name().is_some() {
                         self.normalize_type_capture_value(value)
                     } else {
@@ -3970,6 +3974,10 @@ impl Interpreter {
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
                     } else if !pd.name.is_empty() {
+                        // A `$` parameter's default is an item binding, like a
+                        // supplied argument: `sub f($a = [])` binds `$[]`, a
+                        // single subscript key rather than a slice.
+                        let value = Self::itemize_plain_scalar_param(pd, value);
                         self.bind_param_value_sym(binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,
