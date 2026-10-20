@@ -430,7 +430,7 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     // Otherwise parse as a block (anonymous sub)
     crate::parser::stmt::simple::push_scope();
     let result = (|| -> PResult<'_, Expr> {
-        let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, mut stmts) = crate::parser::stmt::stmt_list_with_lines_pub(r)?;
         let (r, _) = ws_inner(r);
         if !r.starts_with('}') {
             return Err(PError::expected("'}'"));
@@ -585,7 +585,7 @@ fn parse_block_body_with_line_tracking(
 }
 
 pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
-    parse_block_body_with_line_tracking(input, false)
+    parse_block_body_with_line_tracking(input, true)
 }
 
 /// Like [`parse_block_body`], but clears `self`-availability in the pushed
@@ -667,7 +667,7 @@ fn parse_block_body_with_sigilless<'a>(
         crate::parser::stmt::simple::register_user_sub(name);
     }
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
-        let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, mut stmts) = crate::parser::stmt::stmt_list_with_lines_pub(r)?;
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
         // See `parser::stmt_ending_brace`.
