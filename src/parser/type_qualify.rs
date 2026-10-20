@@ -64,7 +64,10 @@ fn opened_package(stmt: &Stmt) -> Option<(Option<&str>, bool)> {
             Some(((!my).then(|| name.as_str()), false))
         }
         Stmt::Package {
-            name, is_unit, is_my, ..
+            name,
+            is_unit,
+            is_my,
+            ..
         } => Some(((!is_my).then(|| name.as_str()), *is_unit)),
         // A class or package body's run-time statements, which the BEGIN
         // prologue moved out of its declaration; they run in its package.

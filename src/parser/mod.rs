@@ -1,7 +1,7 @@
 pub(crate) mod core_type_fold;
 pub(crate) mod decl_doc;
-mod type_qualify;
 mod expr;
+mod type_qualify;
 // ADR-0033: `crate::whatever_curry::build_closure` (the WhateverCode closure
 // construction that moved out of the parser) needs these priming-scope
 // predicates, so re-export them at crate visibility without making the whole
