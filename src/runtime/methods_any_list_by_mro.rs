@@ -12,7 +12,7 @@
 use super::*;
 
 /// The methods whose `Any` rows answer by the receiver's MRO.
-const ANY_LIST_BY_MRO: [&str; 71] = [
+const ANY_LIST_BY_MRO: [&str; 72] = [
     "are",
     "nl-out",
     "chomp",
@@ -84,6 +84,8 @@ const ANY_LIST_BY_MRO: [&str; 71] = [
     "categorize",
     "classify-list",
     "categorize-list",
+    // `Any.reverse` (`self.list.reverse`) of an instance is its twin's (#13819).
+    "reverse",
 ];
 
 impl Interpreter {

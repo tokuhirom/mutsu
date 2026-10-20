@@ -175,8 +175,24 @@ pub(super) static ROWS: &[MethodRow] = &[
             {
                 Some(interp.dispatch_head(target, count))
             }
+            // `Any.head` is `self.list.head`: an instance (its `list` may be
+            // its own) reads its list's first element (#13819).
+            [] if matches!(target.view(), ValueView::Instance { .. }) => {
+                via_self_list(interp, &target, "head")
+            }
             _ => None,
         }
+    }),
+    // `Any.reverse` is `self.list.reverse`, for an instance or a user type
+    // object the pure row declines (#13819).
+    twin!("reverse", TWIN_NULLARY, |interp, target, _args| {
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) {
+            return None;
+        }
+        via_self_list(interp, &target, "reverse")
     }),
     // `fmt` with a `Format` object, or over elements whose `.Str`/`.Numeric`
     // is user code, which the pure rows decline (§9.187).
@@ -217,3 +233,22 @@ pub(super) static ROWS: &[MethodRow] = &[
     raku_twin!("Mix"),
     raku_twin!("MixHash"),
 ];
+
+/// `self.list.METHOD` for an instance or a type object: its `list` (a user
+/// one, or `Any`'s one-element list of itself), then `method` on that. `None`
+/// when the receiver's `list` answers an instance, which would recurse.
+// Cost: O(1) plus the two calls'.
+fn via_self_list(
+    interp: &mut Interpreter,
+    target: &Value,
+    method: &str,
+) -> Option<Result<Value, RuntimeError>> {
+    let list = match interp.call_method_with_values(target.clone(), "list", Vec::new()) {
+        Ok(list) => list,
+        Err(e) => return Some(Err(e)),
+    };
+    if matches!(list.view(), ValueView::Instance { .. }) {
+        return None;
+    }
+    Some(interp.call_method_with_values(list, method, Vec::new()))
+}
