@@ -1416,7 +1416,10 @@ impl Interpreter {
                 && !is_our_scoped
                 && !is_method_value_decl
                 && !operator_alias
-                && !same_site_reexecution()
+                // A `my &x` placeholder is a Callable type object, not the sub's
+                // own earlier install: `my &x; sub x {}` is a redeclaration even
+                // though the hoisted run of `sub x {}` already recorded its site.
+                && !(matches!(existing.view(), ValueView::Sub(..)) && same_site_reexecution())
             {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
