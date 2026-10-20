@@ -183,13 +183,12 @@ pub(super) static ROWS: &[MethodRow] = &[
             _ => None,
         }
     }),
-    // `Any.reverse` is `self.list.reverse`, for an instance or a user type
-    // object the pure row declines (#13819).
+    // `Any.reverse` is `self.list.reverse`, for an instance the pure row
+    // declines (#13819).
     twin!("reverse", TWIN_NULLARY, |interp, target, _args| {
-        if !matches!(
-            target.view(),
-            ValueView::Instance { .. } | ValueView::Package(_)
-        ) {
+        // A type object is left to the rows that answer or refuse it
+        // (`Supply.reverse` must die).
+        if !matches!(target.view(), ValueView::Instance { .. }) {
             return None;
         }
         via_self_list(interp, &target, "reverse")
@@ -234,9 +233,9 @@ pub(super) static ROWS: &[MethodRow] = &[
     raku_twin!("MixHash"),
 ];
 
-/// `self.list.METHOD` for an instance or a type object: its `list` (a user
-/// one, or `Any`'s one-element list of itself), then `method` on that. `None`
-/// when the receiver's `list` answers an instance, which would recurse.
+/// `self.list.METHOD` for an instance: its `list` (a user one, or `Any`'s
+/// one-element list of itself), then `method` on that. `None` when the
+/// instance's `list` answers an instance, which would recurse.
 // Cost: O(1) plus the two calls'.
 fn via_self_list(
     interp: &mut Interpreter,

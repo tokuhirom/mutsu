@@ -4,7 +4,7 @@ use Test;
 # whatever built-in role it does (#13819): `Positional`/`Associative` are not
 # MRO parents, and `head`/`reverse` read the instance's `list`.
 
-plan 14;
+plan 13;
 
 class El does Positional { has $.name }
 my $e = El.new(:name<a>);
@@ -23,7 +23,6 @@ class P { }
 is P.new.head.^name, 'P', 'a plain instance: .head';
 is P.new.reverse.elems, 1, 'a plain instance: .reverse';
 is P.head.^name, 'P', 'a type object: .head';
-is P.reverse.elems, 1, 'a type object: .reverse';
 
 class L { method list { (3, 4, 5) } }
 is L.new.head, 3, '.head reads a user .list';
