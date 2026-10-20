@@ -5,7 +5,7 @@ use Test;
 # answer from the instance's attributes, and next/last/redo raise the labelled
 # loop-control signal.
 
-plan 11;
+plan 12;
 
 my $seen;
 FOO: for 1..3 -> $i {
@@ -46,4 +46,5 @@ LOOPC: for 1 {
 }
 is $tries, 3, 'Label.redo restarts the iteration';
 
+is $seen.^can('name').so, True, '.^can sees a row';
 is $seen.WHAT.gist, '(Label)', 'WHAT';
