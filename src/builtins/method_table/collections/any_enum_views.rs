@@ -47,6 +47,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     view_row!("invert", invert),
 ];
 
+/// Whether one of the six views is named `method`.
+// Cost: O(r), r = 6 rows.
+pub(crate) fn declares(method: &str) -> bool {
+    ROWS.iter().any(|row| row.name == method)
+}
+
 /// Answer `method` from these rows, or `None` when no row of that name and
 /// arity binds the call (the caller's dispatch goes on).
 // Cost: O(r) to find the row, r = 6 rows, plus the row's own.

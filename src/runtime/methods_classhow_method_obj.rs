@@ -1254,9 +1254,7 @@ impl Interpreter {
         // For enum values, also check enum-specific methods (key, value, Int, Str, etc.)
         if results.is_empty()
             && matches!(target.view(), ValueView::Enum { .. })
-            && self
-                .dispatch_enum_method(target, method_name, &[])
-                .is_some()
+            && Self::enum_member_has_method(target, method_name)
         {
             results.push(Value::routine_parts(
                 Symbol::intern(&class_name),

@@ -718,6 +718,15 @@ impl NanBox {
             Classified::Kind(Kind::Channel) => Some(DispatchShape::Channel),
             Classified::Kind(Kind::HyperSeq) => Some(DispatchShape::HyperSeq),
             Classified::Kind(Kind::RaceSeq) => Some(DispatchShape::RaceSeq),
+            Classified::Kind(Kind::Enum) => {
+                // SAFETY: Enum words carry an `Arc<EnumBox>`.
+                let e = unsafe { peek_arc::<EnumBox>(self.0.get()) };
+                Some(match e.value {
+                    crate::value::EnumValue::Int(_) => DispatchShape::EnumNumeric,
+                    crate::value::EnumValue::Str(_) => DispatchShape::EnumStringy,
+                    crate::value::EnumValue::Generic(_) => DispatchShape::EnumGeneric,
+                })
+            }
             Classified::Kind(Kind::RakuAst) => Some(DispatchShape::RakuAstNode),
             // A built-in class's own instance: its class name is the shape's.
             // A user subclass has another name, so it has none.
