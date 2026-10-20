@@ -647,7 +647,10 @@ impl Interpreter {
         // the `mem::take(self)` + `VM::new` + `*self = interp` ping-pong.
         let outer_prologue_pending =
             std::mem::replace(&mut self.control.begin_prologue_pending, begin_prologue);
-        let body_result = self.run_top(&code, &compiled_fns);
+        // The program's own mainline runs once, like a loaded module's, so a
+        // routine it registers at its top level keeps its clone id off the
+        // frame env too (ADR-0084 §2 group 1, #7817).
+        let body_result = self.run_program_mainline(|interp| interp.run_top(&code, &compiled_fns));
         // A worker's `exit` interrupted the mainline (ADR-11617): the program
         // ends as if the mainline had called `exit` there. Whatever the
         // interrupted op left behind (an `await` that gave up on its promise)
