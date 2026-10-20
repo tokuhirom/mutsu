@@ -345,11 +345,14 @@ t/collections/lazy-seq/lazy-map-returns-map-seq.t
 t/collections/lazy-seq/lazy-marked-finite-pipe-coercion.t
 t/collections/lazy-seq/lazy-marker-rows.t
 t/collections/lazy-seq/lazy-pairs-kv-antipairs.t
+t/collections/lazy-seq/lazy-pipe-coercion-lanes.t
 t/collections/lazy-seq/lazy-positional-views-and-combinatorics.t
 t/collections/lazy-seq/lazy-rat-index.t
 t/collections/lazy-seq/lazy-receiver-pulls.t
+t/collections/lazy-seq/lazy-receiver-raku-values.t
 t/collections/lazy-seq/lazy-receiver-refusals.t
 t/collections/lazy-seq/lazy-receiver-reify-audit.t
+t/collections/lazy-seq/lazy-receiver-streams.t
 t/collections/lazy-seq/lazy-rotor-flat-tree.t
 t/collections/lazy-seq/lazy-self-ending-generator-stays-lazy.t
 t/collections/lazy-seq/lazy-seq-cache-list-name.t
@@ -611,6 +614,7 @@ t/collections/set-bag-mix/set-op-list-element-which.t
 t/collections/set-bag-mix/set-op-mutability.t
 t/collections/set-bag-mix/set-op-pending-map-seq-operand.t
 t/collections/set-bag-mix/set-operator-forms-agree.t
+t/collections/set-bag-mix/set-operator-unicode-override.t
 t/collections/set-bag-mix/set-operators.t
 t/collections/set-bag-mix/set-ops-undefined-operands-are-elements.t
 t/collections/set-bag-mix/set-precedes-ops.t
@@ -717,6 +721,7 @@ t/collections/subscript/nested-lazy-slice.t
 t/collections/subscript/nested-whatever-index-assign.t
 t/collections/subscript/object-keyed-associative-subscript.t
 t/collections/subscript/object-subscript-attr-assign-keeps-var.t
+t/collections/subscript/object-subscript-postfix-semantics.t
 t/collections/subscript/object-subscript-protocol.t
 t/collections/subscript/out-of-range-scalar-index.t
 t/collections/subscript/positional-index-custom-bind-pos.t
@@ -2131,6 +2136,7 @@ t/io/io-pipe-slurp-rest.t
 t/io/io-readchars.t
 t/io/io-socket-ephemeral-port.t
 t/io/io-socket-recv-limit.t
+t/io/io-spec-curupdir-block.t
 t/io/io-spec-instance-repr.t
 t/io/io-spec-method-rows.t
 t/io/io-spec-win32-join.t
@@ -2588,6 +2594,7 @@ t/modules/attribute-where-module-private-sub.t
 t/modules/backtrace-frame-code-package-and-callsite.t
 t/modules/backtrace-module-block-file.t
 t/modules/backtrace-module-file.t
+t/modules/bare-file-module-multi-binds-lexically.t
 t/modules/bare-module-multi-family-scope.t
 t/modules/bare-module-private-lexical.t
 t/modules/bare-package-id-metamethods.t
@@ -2692,6 +2699,7 @@ t/modules/compunit/signature-literal-precomp-warm-cache.t
 t/modules/compunit/trait-mod-candidate-is-compunit-scoped.t
 t/modules/constant-package-alias-container-store.t
 t/modules/constant-package-alias-qualified-type.t
+t/modules/constant-package-alias-type-constraints.t
 t/modules/constant-package-alias-variable.t
 t/modules/core-skip-list.t
 t/modules/cross-module-short-name-types.t
@@ -2951,6 +2959,7 @@ t/modules/import-export/use-if-pragma.t
 t/modules/import-export/use-in-block-binds-affix-operators-lexically.t
 t/modules/import-export/use-in-block-binds-builtin-operator-candidates-lexically.t
 t/modules/import-export/use-in-block-binds-constants-lexically.t
+t/modules/import-export/use-in-block-binds-core-operators-lexically.t
 t/modules/import-export/use-in-block-binds-increments-lexically.t
 t/modules/import-export/use-in-block-binds-lexically.t
 t/modules/import-export/use-in-block-binds-multis-lexically.t
@@ -3898,6 +3907,7 @@ t/oo/method/bound-element-cell-rw-arg-in-method.t
 t/oo/method/bound-nil-method-warn.t
 t/oo/method/buffer-instance-method-rows.t
 t/oo/method/builtin-method-name-rows.t
+t/oo/method/builtin-method-shadow-query.t
 t/oo/method/builtin-method-too-many-positionals.t
 t/oo/method/builtin-subclass-method-override.t
 t/oo/method/by-name-gate-method-rows.t
@@ -4184,6 +4194,7 @@ t/oo/method/numeric-coerce-method-rows.t
 t/oo/method/numeric-coercion-method-rows.t
 t/oo/method/numeric-equality-falls-back-to-the-numeric-method.t
 t/oo/method/numeric-method-does-not-provide-str.t
+t/oo/method/object-incdec-missing-method.t
 t/oo/method/perl5-unary-topic-method-arg.t
 t/oo/method/placeholder-named-in-method-do.t
 t/oo/method/plain-method-dispatch-boundary.t
@@ -4967,6 +4978,7 @@ t/rakuast/rakuast-hyper-function-infix.t
 t/rakuast/rakuast-hyper-infix.t
 t/rakuast/rakuast-hyper-method.t
 t/rakuast/rakuast-hyper-prefix.t
+t/rakuast/rakuast-hyper-subscript-operator.t
 t/rakuast/rakuast-hyper-whatever-term.t
 t/rakuast/rakuast-identity.t
 t/rakuast/rakuast-if-pointy-block.t
@@ -5103,6 +5115,7 @@ t/rakuast/rakuast-routine-custom-traits.t
 t/rakuast/rakuast-routine-trait-order.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sequential-interpolation.t
+t/rakuast/rakuast-set-operator-spelling.t
 t/rakuast/rakuast-shaped-array-parameter.t
 t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-sigilless-declarator-init.t
@@ -5116,6 +5129,7 @@ t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
 t/rakuast/rakuast-smiley-pragma.t
 t/rakuast/rakuast-source-forms.t
+t/rakuast/rakuast-source-identifiers.t
 t/rakuast/rakuast-statement-block-bindings.t
 t/rakuast/rakuast-statement-origin.t
 t/rakuast/rakuast-statement-prefix-binding.t
@@ -6207,6 +6221,7 @@ t/routines/dispatch/say-multi-args.t
 t/routines/dispatch/seq-multidim-flatten.t
 t/routines/dispatch/seq-skip-multiarg-v6c.t
 t/routines/dispatch/seq-skip-multiarg.t
+t/routines/dispatch/set-operator-alias-dispatch.t
 t/routines/dispatch/set-overload-dispatch.t
 t/routines/dispatch/single-candidate-dispatch-fast-path.t
 t/routines/dispatch/sized-buffer-dispatch-narrowness.t
@@ -6677,6 +6692,7 @@ t/routines/signature/type-capture-smiley-param.t
 t/routines/signature/type-only-param-before-double-semicolon.t
 t/routines/signature/typecheck-binding-parameter-object.t
 t/routines/signature/typed-aggregate-param-constraint.t
+t/routines/signature/typed-array-is-copy-parameter.t
 t/routines/signature/typed-array-param-seq-argument-reported-as-seq.t
 t/routines/signature/typed-container-param-accepts-parametric-type-object.t
 t/routines/signature/uint-param-int-subtypes.t
@@ -7186,6 +7202,7 @@ t/types/string/empty-string-numifies-to-zero.t
 t/types/string/encode-latin1-alias.t
 t/types/string/encode-utf8-is-blob.t
 t/types/string/encoding-decoder-builtin.t
+t/types/string/encoding-decoder-canonical-names.t
 t/types/string/encoding-decoder-rows.t
 t/types/string/encoding-decoder-streaming.t
 t/types/string/fc-case-folding.t
@@ -7682,6 +7699,7 @@ t/vm/scope/declaration-initializer-self-scope.t
 t/vm/scope/declaration-scope.t
 t/vm/scope/declaration-where-outer-lexicals.t
 t/vm/scope/declarator-adverb-body-lexicals.t
+t/vm/scope/double-underscore-lexical-names.t
 t/vm/scope/dynamic-array-hash-var-not-found.t
 t/vm/scope/dynamic-codevar-chdir.t
 t/vm/scope/dynamic-codevar-unbound.t
