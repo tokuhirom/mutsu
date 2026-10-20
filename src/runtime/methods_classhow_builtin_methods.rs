@@ -194,10 +194,10 @@ impl Interpreter {
                     continue;
                 }
                 seen.push(base);
-                for name in crate::builtins::method_introspection::introspectable_names_for_owner(base)
-                {
-                    result.push(self.make_native_method_object(name, base));
-                }
+                // A name the class (or a more derived level) already lists wins:
+                // it is the entry `.^find_method` returns.
+                let names = crate::builtins::method_introspection::introspectable_names_for_owner(base);
+                self.push_native_method_objects(&names, base, result);
             }
         }
     }
