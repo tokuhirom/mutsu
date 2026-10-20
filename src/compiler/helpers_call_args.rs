@@ -875,10 +875,7 @@ impl Compiler {
             // not a source resolved by name later (#13941).
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::WrapPackageVarRef { name_idx });
-        } else if !is_bind_target
-            && let Expr::Var(name) = arg
-            && self.readonly_scalar_params.contains(name.as_str())
-        {
+        } else if !is_bind_target && self.is_readonly_param_operand(arg) {
             // A readonly `$` parameter is a value, not a container: tagging it
             // would let an `is rw` parameter bind it and write into this frame
             // (#13782). Untagged, the binder refuses it with

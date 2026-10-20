@@ -3792,6 +3792,26 @@ impl Compiler {
         folded
     }
 
+    /// Whether `expr` reads a readonly `$` parameter of the routine being
+    /// compiled ([`Self::readonly_scalar_params`]), directly or as the value
+    /// of a `key => $p` named argument. Such an operand is a value, not a
+    /// container: it gets no container tag and no rw-writeback source, so an
+    /// `is rw` parameter refuses it (#13782).
+    // Cost: O(1).
+    pub(super) fn is_readonly_param_operand(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Var(name) => self.readonly_scalar_params.contains(name.as_str()),
+            Expr::Binary {
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+                ..
+            } => {
+                matches!(right.as_ref(), Expr::Var(name) if self.readonly_scalar_params.contains(name.as_str()))
+            }
+            _ => false,
+        }
+    }
+
     fn add_arg_sources_constant(&mut self, args: &[Expr]) -> Option<u32> {
         let mut entries = Vec::with_capacity(args.len());
         for arg in args {
@@ -3822,7 +3842,9 @@ impl Compiler {
                     self.declare_local(name);
                 }
             }
-            let source = if let Some(name) = self.positional_arg_source_name(arg) {
+            let source = if !self.is_readonly_param_operand(arg)
+                && let Some(name) = self.positional_arg_source_name(arg)
+            {
                 // §1.4/§1.5: bake the caller's local slot for a plain source var
                 // as `Pair(name, Int(slot))`, so the rw-arg writeback can target
                 // the LIVE (inner shadow) slot instead of the by-name `position`

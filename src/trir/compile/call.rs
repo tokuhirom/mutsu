@@ -173,6 +173,15 @@ impl TrirCompiler<'_> {
                         return None;
                     }
                 }
+                // A readonly parameter of this routine is a value, not a
+                // container: it goes over as its value, so an `is rw`
+                // parameter refuses it as it refuses a literal (#13782).
+                _ if matches!(a, Expr::Var(n) if self.is_readonly_param(n)) => {
+                    if want_kind.is_some() {
+                        self.note_decline(|| "a readonly parameter passed `is rw`".to_string());
+                        return None;
+                    }
+                }
                 _ => {
                     // `f($pos)` — the variable itself.
                     if let Expr::Var(n) = a
@@ -264,6 +273,17 @@ impl TrirCompiler<'_> {
             _ if self.is_rw_param_slot(slot, kind) => TrArg::Ref(slot, kind),
             TrKind::Int | TrKind::Num => TrArg::Native(slot, kind),
             TrKind::Obj => TrArg::Obj(slot),
+        })
+    }
+
+    /// Whether `name` still binds one of this routine's own parameters that
+    /// is not `is rw` (the only trait TRIR admits), i.e. a readonly one.
+    // Cost: O(p), p = parameters.
+    fn is_readonly_param(&self, name: &str) -> bool {
+        self.binding_of(name).is_some_and(|Binding { slot, kind }| {
+            self.params
+                .iter()
+                .any(|p| !p.is_rw && p.slot == slot && p.kind == kind)
         })
     }
 
