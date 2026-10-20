@@ -14,7 +14,8 @@
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value};
+use super::promise_channel::PROMISE_PAYLOAD;
+use crate::value::{RuntimeError, Value, ValueView};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
@@ -84,44 +85,75 @@ fn all_args(args: &[Value], named: Named<'_>) -> Vec<Value> {
     all
 }
 
+/// A class method called on a user subclass of `Promise` answers an instance
+/// of that subclass, as Rakudo's `self.new` does (`PRO.kept(3).status` is the
+/// subclass's own `status`, #14217): the instance `new` builds, carrying the
+/// promise the implementation made in place of the one `new` seeded. A call on
+/// `Promise` itself answers the promise.
+// Cost: O(1) for `Promise`; a subclass pays one `new` call.
+fn subclass_instance(i: &mut Interpreter, target: &Value, answer: Answer) -> Answer {
+    let Some(Ok(promise)) = &answer else {
+        return answer;
+    };
+    let ValueView::Package(class) = target.view() else {
+        return answer;
+    };
+    if class == "Promise" || !matches!(promise.view(), ValueView::Promise(_)) {
+        return answer;
+    }
+    Some(i.call_method_with_values(target.clone(), "new", Vec::new()).map(|instance| {
+        if let ValueView::Instance { attributes, .. } = instance.view() {
+            attributes.with_attr_mut(PROMISE_PAYLOAD, |payload| *payload = promise.clone());
+        }
+        instance
+    }))
+}
+
 /// `Promise.start(&code, :$scheduler)`.
 // Cost: O(1) to schedule the block.
 fn start(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    i.promise_class_start(t, &all_args(args, named))
+    let answer = i.promise_class_start(t, &all_args(args, named));
+    subclass_instance(i, t, answer)
 }
 
 /// `Promise.in($seconds, :$scheduler)`: kept once the delay has elapsed.
 // Cost: O(log n) to arm the timer, n = pending timers.
 fn in_row(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    i.dispatch_promise_in(t, &all_args(args, named))
+    let answer = i.dispatch_promise_in(t, &all_args(args, named));
+    subclass_instance(i, t, answer)
 }
 
 /// `Promise.at($instant, :$scheduler)`: kept at the instant.
 // Cost: O(log n) to arm the timer, n = pending timers.
 fn at(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    i.dispatch_promise_at(t, &all_args(args, named))
+    let answer = i.dispatch_promise_at(t, &all_args(args, named));
+    subclass_instance(i, t, answer)
 }
 
 /// `Promise.kept($value?)`: a promise already kept.
 // Cost: O(1).
 fn kept(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    i.dispatch_promise_kept(t, &all_args(args, named))
+    let answer = i.dispatch_promise_kept(t, &all_args(args, named));
+    subclass_instance(i, t, answer)
 }
 
 /// `Promise.broken($reason?)`: a promise already broken.
 // Cost: O(1).
 fn broken(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    i.dispatch_promise_broken(t, &all_args(args, named))
+    let answer = i.dispatch_promise_broken(t, &all_args(args, named));
+    subclass_instance(i, t, answer)
 }
 
 /// `Promise.allof(@promises)`: kept once every promise is resolved.
 // Cost: O(p), p = promises.
 fn allof(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    i.dispatch_promise_allof(t, &all_args(args, named))
+    let answer = i.dispatch_promise_allof(t, &all_args(args, named));
+    subclass_instance(i, t, answer)
 }
 
 /// `Promise.anyof(@promises)`: kept once any promise is resolved.
 // Cost: O(p), p = promises.
 fn anyof(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    i.dispatch_promise_anyof(t, &all_args(args, named))
+    let answer = i.dispatch_promise_anyof(t, &all_args(args, named));
+    subclass_instance(i, t, answer)
 }
