@@ -3225,6 +3225,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),
+            Spelling::BracketTraitArgument => convert_expr(&spelled.expr),
             Spelling::Heredoc { stop } => heredoc_node(&spelled.expr, stop),
             Spelling::WordQuote {
                 quotewords,

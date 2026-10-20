@@ -29,15 +29,16 @@
 //! `is DEPRECATED("m")`'s as its message string (a bare `is DEPRECATED` is the
 //! message `something else`).
 
-use super::convert::{
-    convert_expr, name_from_identifier, node_field, statement_expression, unsupported,
-};
+mod argument;
+use super::convert::{convert_expr, name_from_identifier, node_field, unsupported};
 use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::attr_trait::AttrTrait;
 use crate::ast_visit::VisitMut;
 use crate::value::{RuntimeError, Value, ValueView};
+use argument::trait_argument;
+pub(super) use argument::{lower_paren_argument, paren_argument};
 
 /// The message the parser records for a bare `is DEPRECATED`.
 const DEPRECATED_DEFAULT: &str = "something else";
@@ -91,15 +92,6 @@ fn trait_is_name_or_type(name: &str) -> Value {
         }));
     }
     trait_is(name, None)
-}
-
-/// The argument of a trait: a comma list is written inside the one pair of
-/// parentheses.
-fn trait_argument(argument: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    match argument {
-        Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => paren_argument(inner),
-        other => paren_argument(other),
-    }
 }
 
 impl AttributeTraits {
@@ -236,45 +228,6 @@ fn convert_handles_term(term: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let mut term = term.clone();
     MethodNames.visit_expr_mut(&mut term);
     convert_expr(&term)
-}
-
-/// `(EXPR)` as a trait argument.
-// Cost: O(e), e = size of the expression.
-pub(super) fn paren_argument(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let semilist = RakuAstNode {
-        class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
-    };
-    Ok(RakuAstNode {
-        class: RakuAstClass::CircumfixParentheses,
-        fields: vec![node_field(None, semilist)],
-    })
-}
-
-/// The expression inside a `(EXPR)` trait argument.
-// Cost: O(e), e = size of the expression.
-pub(super) fn lower_paren_argument(
-    owner: &RakuAstNode,
-    argument: &RakuAstNode,
-) -> Result<Expr, RuntimeError> {
-    let refuse = || super::lower::unsupported(owner);
-    if argument.class != RakuAstClass::CircumfixParentheses {
-        return Err(refuse());
-    }
-    let semilist = named_child_or_positional(argument)?;
-    let [statement] = semilist.fields.as_slice() else {
-        return Err(refuse());
-    };
-    let RakuAstFieldValue::Node(statement) = &statement.value else {
-        return Err(refuse());
-    };
-    let ValueView::RakuAst(statement) = statement.view() else {
-        return Err(refuse());
-    };
-    if statement.class != RakuAstClass::StatementExpression || statement.fields.len() != 1 {
-        return Err(refuse());
-    }
-    lower_expr(named_child(statement, "expression")?)
 }
 
 /// Put the attribute's written traits at the front of `decl`'s `traits` list,
@@ -419,7 +372,11 @@ fn lower_trait_is(
     };
     let name = name.to_string();
     let argument = match named_child(t, "argument") {
-        Ok(argument) => Some(lower_paren_argument(node, argument)?),
+        Ok(argument) => Some(if argument.class == RakuAstClass::CircumfixArrayComposer {
+            lower_expr(argument)?
+        } else {
+            lower_paren_argument(node, argument)?
+        }),
         Err(_) if t.fields.len() == 1 => None,
         Err(_) => return Err(refuse()),
     };

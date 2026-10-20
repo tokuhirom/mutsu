@@ -367,47 +367,6 @@ fn is_native_scalar_type(type_constraint: &str) -> bool {
     )
 }
 
-/// Parse the parenthesized argument list of a custom attribute trait call,
-/// `is traitname(a, b, c)`. A single argument becomes that argument's own
-/// `Expr` (`is doc('barks')` binds the bare Str). Two or more become an
-/// `Expr::ArrayLiteral`: Raku itemizes a multi-value trait call's arguments
-/// into one List when it binds to a scalar named parameter, e.g.
-/// `is xml-namespace('urn', 'prefix')` against `:$xml-namespace!` sees
-/// `$("urn", "prefix")`, not just the first value. Returns `None` (rather
-/// than a fatal parse error) on anything that does not fully parse as a
-/// comma-separated expression list, matching the pre-existing conservative
-/// fallback for a single unparseable argument.
-fn parse_trait_call_args(inner: &str) -> Option<Expr> {
-    let inner = inner.trim();
-    if inner.is_empty() {
-        return None;
-    }
-    let (leftover, first) = expression(inner).ok()?;
-    let (leftover, _) = ws(leftover).ok()?;
-    if leftover.is_empty() {
-        return Some(first);
-    }
-    let mut items = vec![first];
-    let mut rest = leftover;
-    while let Some(after_comma) = rest.strip_prefix(',') {
-        let (r, _) = ws(after_comma).ok()?;
-        if r.is_empty() {
-            // Trailing comma: `is trait(a, b,)`.
-            rest = r;
-            break;
-        }
-        let (r, expr) = expression(r).ok()?;
-        let (r, _) = ws(r).ok()?;
-        items.push(expr);
-        rest = r;
-    }
-    if rest.is_empty() {
-        Some(Expr::ArrayLiteral(items))
-    } else {
-        None
-    }
-}
-
 /// Parse `has` attribute declaration.
 pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // `HAS` is NativeCall's *embedded* attribute declarator: the same
@@ -841,77 +800,11 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 rest = r2;
                 continue;
             } else {
-                // Unknown lowercase trait — dispatched to a custom `trait_mod:<is>`
-                // at class registration, or X::Comp::Trait::Unknown if none exists.
-                // Capture optional argument in parens: `is doc('barks')` -> `'barks'`.
-                let (r_ws, _) = ws(r)?;
-                if let Some(stripped) = r_ws.strip_prefix('(') {
-                    let mut depth = 1u32;
-                    let mut idx = 0;
-                    for (i, ch) in stripped.char_indices() {
-                        match ch {
-                            '(' => depth += 1,
-                            ')' => {
-                                depth -= 1;
-                                if depth == 0 {
-                                    idx = i;
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    let inner = stripped[..idx].trim();
-                    let trait_arg = parse_trait_call_args(inner);
-                    unknown_traits.push(("is".to_string(), trait_name.to_string(), trait_arg));
-                    rest = &stripped[idx + 1..];
-                    let (r2, _) = ws(rest)?;
-                    rest = r2;
-                    continue;
-                }
-                // `is predicate<bazzy>` — an angle-bracket word-quote argument
-                // (`:predicate<bazzy>` == `:predicate("bazzy")`). A single word
-                // becomes a Str; multiple words become a list of Str. Without
-                // this the `<bazzy>` leaked out as a separate statement and the
-                // trait sub saw only the bare `:predicate` (Bool True).
-                if let Some(stripped) = r_ws.strip_prefix('<')
-                    && let Some(close) = stripped.find('>')
-                {
-                    let inner = stripped[..close].trim();
-                    let words: Vec<&str> = inner.split_whitespace().collect();
-                    let trait_arg = match words.as_slice() {
-                        [] => None,
-                        [one] => Some(Expr::Literal(Value::str_from(one))),
-                        many => Some(Expr::ArrayLiteral(
-                            many.iter()
-                                .map(|w| Expr::Literal(Value::str_from(w)))
-                                .collect(),
-                        )),
-                    };
-                    unknown_traits.push(("is".to_string(), trait_name.to_string(), trait_arg));
-                    rest = &stripped[close + 1..];
-                    let (r2, _) = ws(rest)?;
-                    rest = r2;
-                    continue;
-                }
-                // A custom attribute trait may take a bare block, as in
-                // Red's `is relationship{ .foreign-key }`.  Keep the block
-                // as an Expr so the trait dispatcher evaluates it to a
-                // Callable; treating it as a bare trait would pass Bool::True
-                // and leave the following block to be parsed separately.
-                if r_ws.starts_with('{') {
-                    let (after_block, trait_arg) =
-                        crate::parser::primary::misc::block_or_hash_expr(r_ws)?;
-                    unknown_traits.push((
-                        "is".to_string(),
-                        trait_name.to_string(),
-                        Some(trait_arg),
-                    ));
-                    let (r2, _) = ws(after_block)?;
-                    rest = r2;
-                    continue;
-                }
-                unknown_traits.push(("is".to_string(), trait_name.to_string(), None));
+                // Custom attribute trait arguments share the ordinary expression parsers.
+                let (after, argument) = super::has_trait_argument::parse(r)?;
+                unknown_traits.push(("is".to_string(), trait_name.to_string(), argument));
+                rest = ws(after)?.0;
+                continue;
             }
             let (r, _) = ws(r)?;
             rest = r;

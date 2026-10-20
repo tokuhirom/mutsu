@@ -577,7 +577,7 @@ impl Interpreter {
                     fresh
                 };
                 let trait_arg_val = if let Some(arg_expr) = trait_arg {
-                    Some(self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?)
+                    Some(self.eval_decl_trait_arg(arg_expr)?)
                 } else {
                     None
                 };
