@@ -108,8 +108,15 @@ impl Interpreter {
             // running env sees its overlay only, so a `my constant &name` of
             // the unit was missing (#13272).
             let env = self.env();
+            // A module loaded by a block-scoped `use` runs over the block's
+            // scoped env: its own lexicals sit in a tier above the chain's
+            // tail, which is the importer's program scope (#14115). A
+            // module's `UNIT::` reads every tier of its chain instead.
+            let module_unit = self.current_unit != crate::runtime::main_unit();
+            let module_view = module_unit.then(|| env.flattened());
             if env.is_scoped() {
-                for (key, val) in env.chain_tail().iter() {
+                let tail = module_view.as_ref().unwrap_or_else(|| env.chain_tail());
+                for (key, val) in tail.iter() {
                     let key_str = key.resolve();
                     if self.should_hide_from_my_global_stash(&key_str) {
                         continue;
