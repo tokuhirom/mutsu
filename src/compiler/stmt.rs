@@ -934,6 +934,12 @@ impl Compiler {
     }
 
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
+        if Self::is_feed_modifier(stmt)
+            && let Some(rewritten) = self.hoist_feed_sinks(stmt)
+        {
+            self.compile_stmt(&rewritten);
+            return;
+        }
         // A statement is an expression-depth boundary: its own operands are
         // one frame below it, and a `Stmt::Expr` root is reset to depth 0
         // below (see `Compiler::expr_depth`).

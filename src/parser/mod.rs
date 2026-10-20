@@ -327,7 +327,6 @@ pub use stmt::simple::{
 };
 
 pub(crate) use expr::precedence::assign_to_target_expr;
-pub(crate) use expr::precedence::lower_feed_node;
 pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_parts};
 pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use stmt::assign::callable_lvalue_assign_expr;

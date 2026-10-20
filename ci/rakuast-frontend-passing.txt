@@ -1425,6 +1425,7 @@ t/control/block-local-my-scope.t
 t/control/block-newline-ends-junction-statement.t
 t/control/block-phasers-split.t
 t/control/block-position-parity.t
+t/control/block-restore-keeps-our-subs.t
 t/control/block-restore-slot-authoritative.t
 t/control/block-scope-code-vars.t
 t/control/block-scope-env-tier.t
@@ -2332,6 +2333,7 @@ t/lang/operators/fat-arrow-loose-logical-precedence.t
 t/lang/operators/fat-arrow-qualified-name-precedence.t
 t/lang/operators/fat-arrow-statement-prefix-key.t
 t/lang/operators/feed-comma-precedence.t
+t/lang/operators/feed-operators.t
 t/lang/operators/hyper-array-mutators.t
 t/lang/operators/hyper-assign-nested-destructuring.t
 t/lang/operators/hyper-assign.t
@@ -2594,6 +2596,7 @@ t/lang/zprintf-g-exponent.t
 t/lang/zprintf-g-strip-zeros.t
 t/modules/add-method-module-lexical-type.t
 t/modules/adr0110-trir-module-linkage.t
+t/modules/also-is-parent-name-under-a-loaded-class-package.t
 t/modules/anon-package-decl-no-symbol.t
 t/modules/anon-package-expr.t
 t/modules/anon-type-name-in-package.t
@@ -2715,6 +2718,7 @@ t/modules/constant-package-alias-qualified-type.t
 t/modules/constant-package-alias-type-constraints.t
 t/modules/constant-package-alias-variable.t
 t/modules/core-skip-list.t
+t/modules/core-type-name-beats-loaded-package-type-in-signature.t
 t/modules/cross-module-short-name-types.t
 t/modules/declarator-doc-why-module-declarations.t
 t/modules/does-role-init-module-lexical-role.t
@@ -2815,6 +2819,7 @@ t/modules/import-export/exported-subset-when-matcher.t
 t/modules/import-export/exported-term-sub.t
 t/modules/import-export/exported-wrapper-same-name-imported-proto.t
 t/modules/import-export/exporthow-class-aspects.t
+t/modules/import-export/exporthow-declarator-in-term-position.t
 t/modules/import-export/exporthow-declare-body-trait.t
 t/modules/import-export/exporthow-declare-keyword.t
 t/modules/import-export/exporthow-declare-monitor-protocol.t
@@ -3769,6 +3774,7 @@ t/oo/class/composition-not-composable.t
 t/oo/class/date-subclass-qualified-and-inherited-new.t
 t/oo/class/deep-mro-dispatch.t
 t/oo/class/defer-inherited-chain.t
+t/oo/class/enum-mro-base-type.t
 t/oo/class/eval-type-capture-inheritance-compile-check.t
 t/oo/class/eval-unit-does-not-inherit-fatal.t
 t/oo/class/inheritance-unsupported.t
@@ -4203,6 +4209,7 @@ t/oo/method/mutating-method-colon.t
 t/oo/method/my-class-method-captures-own-type.t
 t/oo/method/my-decl-bare-dot-method-call.t
 t/oo/method/my-multi-method.t
+t/oo/method/name-method-on-builtin-instances.t
 t/oo/method/named-method-declaration-keeps-its-declarator.t
 t/oo/method/named-method-expression-position.t
 t/oo/method/nested-block-method-capture-persists.t
@@ -4339,6 +4346,7 @@ t/oo/method/version-subclass-method-rows.t
 t/oo/method/whatevercode-hyper-method.t
 t/oo/method/whatevercode-pseudo-method-curry.t
 t/oo/method/which-method.t
+t/oo/method/wrap-builtin-class-method.t
 t/oo/method/wrap-builtin-method.t
 t/oo/method/wrap-proto-method-dispatcher.t
 t/oo/method/wrap-uni-builtin-method.t
@@ -4486,6 +4494,7 @@ t/oo/role/issue-8145-parametric-role-my-enum.t
 t/oo/role/iterable-role-without-iterator-method.t
 t/oo/role/iterator-role-default-methods.t
 t/oo/role/lexical-role-two-modules.t
+t/oo/role/local-role-parameter-identity.t
 t/oo/role/map-rejects-role-mixed-sub-as-callable.t
 t/oo/role/metamodel-role-how-taxonomy.t
 t/oo/role/method-trait-proto-and-role-dispatch.t
@@ -4532,6 +4541,7 @@ t/oo/role/parametric-role-trailing-comma-named-default.t
 t/oo/role/parametric-role-type-invocant.t
 t/oo/role/parametric-role-typed-var.t
 t/oo/role/parent-role-multi-invocant-candidate-survives-override.t
+t/oo/role/positional-role-any-list-methods.t
 t/oo/role/positional-role-attr-writeback-coherence.t
 t/oo/role/positional-role-of-type-object.t
 t/oo/role/prefix-plus-role-mixin.t
@@ -4919,6 +4929,7 @@ t/rakuast/rakuast-core-type-names.t
 t/rakuast/rakuast-decl-default-trait.t
 t/rakuast/rakuast-decl-postfix-tail.t
 t/rakuast/rakuast-declaration-compound-assign.t
+t/rakuast/rakuast-declaration-feeds.t
 t/rakuast/rakuast-declaration-given-modifier.t
 t/rakuast/rakuast-declaration-headers.t
 t/rakuast/rakuast-declaration-loose-tail.t
@@ -5918,6 +5929,7 @@ t/routines/closure/assuming-type-capture.t
 t/routines/closure/block-sub-closure-binding-activation.t
 t/routines/closure/block-sub-closure-binding-calls.t
 t/routines/closure/block-sub-closure-binding.t
+t/routines/closure/block-sub-closure-escape-capture.t
 t/routines/closure/bound-array-slice-from-closure.t
 t/routines/closure/cas-in-closure-celled-store-reaches-declarer.t
 t/routines/closure/closure-arg-shares-its-captured-container.t
@@ -6095,6 +6107,7 @@ t/routines/dispatch/multi-candidate-dispatcher.t
 t/routines/dispatch/multi-candidate-key-narrowing.t
 t/routines/dispatch/multi-candidate-ranking.t
 t/routines/dispatch/multi-candidate-search-packages.t
+t/routines/dispatch/multi-candidate-star-array-where-named.t
 t/routines/dispatch/multi-candidate-state-otf.t
 t/routines/dispatch/multi-candidate-term-value.t
 t/routines/dispatch/multi-candidate-where-binds-slash.t
@@ -6261,6 +6274,7 @@ t/routines/dispatch/seq-skip-multiarg-v6c.t
 t/routines/dispatch/seq-skip-multiarg.t
 t/routines/dispatch/set-operator-alias-dispatch.t
 t/routines/dispatch/set-overload-dispatch.t
+t/routines/dispatch/shaped-multidim-binding-semantics.t
 t/routines/dispatch/single-candidate-dispatch-fast-path.t
 t/routines/dispatch/sized-buffer-dispatch-narrowness.t
 t/routines/dispatch/special-form-override.t
@@ -6317,6 +6331,7 @@ t/routines/keyword-named-subs.t
 t/routines/kill-routine-without-path.t
 t/routines/lexical-amp-binding-shadows-a-routine.t
 t/routines/lexical-callable-shadows-loop-control.t
+t/routines/lexical-sub-in-loop-block.t
 t/routines/lexical-sub-not-clobbered-by-nested-call.t
 t/routines/lexical-sub-shadow-static-link.t
 t/routines/lvalue-subroutine-call-through-code-var.t
@@ -8015,6 +8030,7 @@ t/vm/writeback/rw-sub-lvalue-writeback-coherence.t
 t/vm/writeback/scalar-array-share.t
 t/vm/writeback/scalar-attr-shares-assigned-container.t
 t/vm/writeback/scalar-bind-inline-my.t
+t/vm/writeback/scalar-bind-object-value.t
 t/vm/writeback/scalar-bind-to-non-scalar-container.t
 t/vm/writeback/scalar-bind-unrelated-element-store-semantics.t
 t/vm/writeback/scalar-bind-unrelated-store-semantics.t

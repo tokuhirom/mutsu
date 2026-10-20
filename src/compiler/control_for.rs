@@ -46,6 +46,18 @@ impl Compiler {
     /// `Stmt::For` and re-enter `compile_stmt`, so they are not part of this
     /// lowering.
     pub(super) fn compile_for_construct(&mut self, parts: ForParts<'_>) {
+        let rewritten;
+        let parts = if parts.is_statement_modifier
+            && let Some(body) = self.hoist_feed_body(parts.body)
+        {
+            rewritten = body;
+            ForParts {
+                body: &rewritten,
+                ..parts
+            }
+        } else {
+            parts
+        };
         let ForParts {
             iterable,
             param,

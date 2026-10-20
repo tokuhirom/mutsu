@@ -3125,9 +3125,26 @@ pub fn construct(
                     )));
                 }
             };
+            let value = if class == RakuAstClass::ApplyListInfix && fname == "operands" {
+                let items = value.as_list_items().ok_or_else(|| {
+                    RuntimeError::new("RakuAST::ApplyListInfix.new expects a list of operands")
+                })?;
+                let mut operands = Vec::new();
+                operands.try_reserve(items.len()).map_err(|_| {
+                    RuntimeError::new("RakuAST::ApplyListInfix.new operand list is too large")
+                })?;
+                for item in items {
+                    let item = item.with_deref(|value| value.descalarize().clone());
+                    require_any_rakuast(&item, class_name, fname)?;
+                    operands.push(item);
+                }
+                RakuAstFieldValue::List(operands)
+            } else {
+                RakuAstFieldValue::Node(value)
+            };
             fields.push(RakuAstField {
                 name: Some(fname),
-                value: RakuAstFieldValue::Node(value),
+                value,
             });
         }
         let optional: &[&'static str] = match class {
@@ -3435,6 +3452,9 @@ fn multi_field_schema(
         }
         ("RakuAST::ApplyInfix", "new") => {
             (RakuAstClass::ApplyInfix, &["left", "infix", "right"][..])
+        }
+        ("RakuAST::ApplyListInfix", "new") => {
+            (RakuAstClass::ApplyListInfix, &["infix", "operands"][..])
         }
         ("RakuAST::ApplyPrefix", "new") => (RakuAstClass::ApplyPrefix, &["prefix", "operand"][..]),
         ("RakuAST::ApplyPostfix", "new") => {
