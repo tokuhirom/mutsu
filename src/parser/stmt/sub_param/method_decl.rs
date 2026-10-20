@@ -192,6 +192,7 @@ fn method_decl_body_with_my(
     Ok((
         rest,
         Stmt::MethodDecl {
+            value_prototype: None,
             name: Symbol::intern(&name),
             name_expr,
             params,

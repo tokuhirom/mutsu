@@ -925,6 +925,8 @@ impl RakuAstClass {
         const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
         const EXPR: &[&str] = &["RakuAST::Expression"];
         match self {
+            TraitIs | TraitReturns | TraitOf | TraitDoes | TraitHides | TraitWillBuild
+            | TraitHandles | TraitWill | TraitTrusts => &["RakuAST::Trait"],
             Native => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
             CallBlockMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
             StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],

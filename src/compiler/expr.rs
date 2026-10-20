@@ -1434,6 +1434,7 @@ impl Compiler {
                     *is_whatever_code,
                     *declarator,
                     crate::symbol::well_known::anon(),
+                    None,
                 );
             }
             Expr::Lambda {

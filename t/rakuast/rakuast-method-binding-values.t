@@ -38,8 +38,16 @@ my &built-alias = $built.WHO{'&alias'};
 isa-ok &built-alias, Method, 'hand-built variable receives a Method';
 is built-alias($built), 42, 'hand-built alias invokes its compiled body';
 is &built-alias.name, 'actual', 'hand-built alias retains the method name';
+for RakuAST::Method.new, RakuAST::Submethod.new -> $node {
+    is $node.multiness, '', 'routine constructor has empty multiness by default';
+    is $node.private, False, 'routine constructor is public by default';
+    isa-ok $node.body, RakuAST::Blockoid, 'routine constructor supplies an empty body';
+}
 
 for
+    Q[class BindingInvocant { our &alias = method actual($this:) { $this.WHICH eq self.WHICH } }; BindingInvocant::alias(BindingInvocant)], True,
+    Q[class BindingLexicalInvocant { our &alias = method actual($self:) { $self.WHICH eq self.WHICH } }; BindingLexicalInvocant::alias(BindingLexicalInvocant)], True,
+    Q[class BindingReturn { our &alias = method actual(--> Int) {42} }; (BindingReturn::alias(BindingReturn), &BindingReturn::alias.returns.^name).join(',')], '42,Int',
     Q[class BindingNamed { our &alias = method actual($x) { $x }; }; BindingNamed::alias(BindingNamed, 42)], 42,
     Q[class BindingAnonymous { our &alias = method ($x) { $x }; }; BindingAnonymous::alias(BindingAnonymous, 42)], 42,
     Q[class BindingIdentity { our &alias = method actual() { state $n=0; ++$n } }; my $o=BindingIdentity.new; ($o.actual, BindingIdentity::alias($o), $o.actual, BindingIdentity::alias($o)).join(',')], '1,1,2,2',

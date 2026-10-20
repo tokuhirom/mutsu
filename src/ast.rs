@@ -2644,6 +2644,9 @@ pub(crate) enum Stmt {
         trait_order: Vec<attr_trait::AttrTrait>,
     },
     MethodDecl {
+        /// Compiler-owned correspondence between a Method initializer and
+        /// its declaration prototype. Source trees keep this absent.
+        value_prototype: Option<Symbol>,
         name: Symbol,
         name_expr: Option<Expr>,
         params: Vec<String>,

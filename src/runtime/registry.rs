@@ -109,6 +109,9 @@ pub(crate) struct Registry {
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
     pub(crate) method_entries: CowTable<HashMap<MethodEntryKey, MethodEntry>>,
+    /// Declaration prototypes, including copies owned by composed classes.
+    /// Replacing a method row does not change an already declared initializer.
+    pub(crate) method_value_prototypes: HashMap<Symbol, HashMap<Symbol, Arc<crate::value::RoutinePrototype>>>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
     /// ADR-0067 slice 3a: has any user method with a **raw invocant**
@@ -2298,6 +2301,7 @@ mod tests {
         let mut registry = Registry::default();
         let seeded_generation = registry.method_generation;
         let method = MethodDef {
+            value_prototype: None,
             syms: Default::default(),
             lexical_package: crate::symbol::wk::global_package(),
             params: Vec::new(),

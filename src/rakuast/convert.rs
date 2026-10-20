@@ -1216,6 +1216,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Ok(Some(statement_expression(node)))
         }
         Stmt::MethodDecl {
+            value_prototype: _,
             name,
             name_expr,
             param_defs,

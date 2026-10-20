@@ -604,7 +604,7 @@ pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_payload;
 mod param_copy;
 pub(crate) mod routine_cell;
-pub(crate) use routine_cell::RoutineCell;
+pub(crate) use routine_cell::{RoutineCell, RoutinePrototype};
 mod quanthash_store;
 pub(crate) mod raku_repr;
 pub(crate) mod shaped_array;

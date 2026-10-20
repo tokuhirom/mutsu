@@ -187,6 +187,8 @@ pub(crate) struct SubsetDef {
 
 #[derive(Debug, Clone)]
 pub(crate) struct MethodDef {
+    /// The source declaration's immutable metadata for its initializer value.
+    pub(crate) value_prototype: Option<std::sync::Arc<crate::value::RoutinePrototype>>,
     /// Package containing the method declaration lexically. This can differ
     /// from the owning class for an explicitly qualified class declaration.
     ///

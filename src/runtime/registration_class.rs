@@ -143,6 +143,7 @@ fn delegation_slurpy_param() -> ParamDef {
 /// on the object in `attr_var_name`.
 pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -> MethodDef {
     MethodDef {
+        value_prototype: None,
         syms: Default::default(),
         lexical_package: crate::symbol::wk::global_package(),
         params: vec!["@_".to_string(), "%_".to_string()],
@@ -427,6 +428,7 @@ pub(super) fn substitute_type_params_in_method(
         .map(|pd| substitute_param_def(pd, type_subs))
         .collect();
     MethodDef {
+        value_prototype: method.value_prototype.clone(),
         syms: Default::default(),
         lexical_package: method.lexical_package,
         params: method.params.clone(),

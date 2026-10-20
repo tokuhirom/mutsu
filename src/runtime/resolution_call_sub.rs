@@ -735,7 +735,7 @@ impl Interpreter {
                     (None, None)
                 };
                 self.push_wrap_dispatch_frame(frame);
-                let result = self.call_sub_value(outermost, sanitized_args, false);
+                let result = self.call_method_wrapper(outermost, sanitized_args);
                 self.pop_wrap_dispatch_frame();
                 // Propagate closure variable mutations from the wrapper back to
                 // the current env so captured variables (e.g. $seen = True) are

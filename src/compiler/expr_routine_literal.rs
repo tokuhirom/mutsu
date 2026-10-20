@@ -60,6 +60,7 @@ impl Compiler {
         is_whatever_code: bool,
         declarator: crate::ast::RoutineDeclarator,
         routine_name: Symbol,
+        prototype: Option<Symbol>,
     ) {
         // A parameter type naming a `constant` alias is its target, as in a
         // sub's signature (`param_defs_with_type_aliases_resolved`, #13728).
@@ -299,6 +300,7 @@ impl Compiler {
             idx,
             Some(cc_idx),
             is_whatever_code,
+            prototype,
         ));
     }
 }

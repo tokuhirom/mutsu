@@ -1963,6 +1963,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     super::routine_source::retain(node, &mut body)?;
     let handles = super::routine_source::handle_specs(&body).ok_or_else(|| unsupported(node))?;
     Ok(Stmt::MethodDecl {
+        value_prototype: None,
         name: crate::symbol::Symbol::intern(&name),
         name_expr,
         params,

@@ -979,20 +979,13 @@ impl Interpreter {
         // the stale entry value) and the mutation is visible to every alias. This
         // removes the attributive-param case from the exit-time reconcile.
         self.mirror_attributive_params_to_cell(cc, &method_def.param_defs);
-        // A method body's `state` is keyed by the method itself — its
-        // `state_locals` keys already carry the owning package and method name —
-        // NOT by whatever closure the CALLER happened to be running in. Clearing
-        // the ambient scope makes the body's `StateVarInit` (which resolves
-        // through `scoped_state_key`) agree with the raw-key load/sync below;
-        // without it, a class declared inside any block had every method call
-        // init under `key#c<caller>` and sync under `key`, so `method m { state
-        // $n; $n++ }` restarted on every call. Restored after the sync.
+        // Install the declaring/composing type's state scope for initialization,
+        // loads and writeback. Inherited methods retain that owner; a separate
+        // role composition owns separate state. Restore the caller after sync.
         let saved_state_scope = self.lexicals.state_scope_id.take();
         self.scope_method_state(method_name, receiver_class_name, owner_sym);
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
-            // `state_scope_id` is `None` here (cleared just above), so this
-            // resolves the raw, unscoped key.
             if let Some(val) = self.get_state_var(self.scoped_state_key(*key)) {
                 self.locals[*slot] = val.clone();
             }

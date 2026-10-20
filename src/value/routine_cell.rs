@@ -18,6 +18,37 @@ use super::MixinOverrides;
 use crate::gc::Gc;
 use crate::symbol::Symbol;
 
+/// Declaration metadata copied by a Method initializer. Its executable body
+/// is compiled independently; only trait composition and wrapper values travel
+/// with this prototype. Role composition shares the declaration metadata.
+#[derive(Debug)]
+pub(crate) struct RoutinePrototype {
+    pub(crate) site: Symbol,
+    pub(crate) cell: RoutineCell,
+    wrappers: std::sync::OnceLock<Vec<(u64, super::Value)>>,
+}
+
+impl RoutinePrototype {
+    pub(crate) fn new(site: Symbol, cell: RoutineCell) -> Self {
+        Self {
+            site,
+            cell,
+            wrappers: std::sync::OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn finish(
+        &self,
+        wrappers: Vec<(u64, super::Value)>,
+    ) -> Result<(), Vec<(u64, super::Value)>> {
+        self.wrappers.set(wrappers)
+    }
+
+    pub(crate) fn wrappers(&self) -> Option<&[(u64, super::Value)]> {
+        self.wrappers.get().map(Vec::as_slice)
+    }
+}
+
 #[derive(Default)]
 struct Inner {
     /// Set once a composition is stored; never cleared.

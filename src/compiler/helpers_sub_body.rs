@@ -941,7 +941,8 @@ impl Compiler {
                 anonymous: true,
                 ..
             }
-        ) && crate::ast::anon_state::is_scalar(name);
+        ) && (name == "__ANON_STATE#"
+            || crate::ast::anon_state::is_scalar(name));
         if self.rw_tail && !is_bind_decl && (Self::is_plain_lexical_name(name) || anonymous_scalar)
         {
             self.emit_wrap_var_ref(name);

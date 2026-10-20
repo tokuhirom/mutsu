@@ -250,6 +250,7 @@ impl Interpreter {
                         .map(|p| p.name.clone())
                         .collect();
                     let def = MethodDef {
+                        value_prototype: None,
                         syms: Default::default(),
                         lexical_package: self.current_package_sym(),
                         params: effective_params.clone(),

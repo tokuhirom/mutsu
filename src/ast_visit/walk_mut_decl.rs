@@ -89,6 +89,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             }
         }
         Stmt::MethodDecl {
+            value_prototype: _,
             name: _,
             name_expr,
             params: _,

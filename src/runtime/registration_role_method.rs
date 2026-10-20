@@ -280,7 +280,10 @@ impl Interpreter {
         } else {
             crate::symbol::Symbol::intern(name)
         };
+        let method_cell = crate::value::RoutineCell::default();
         let def = MethodDef {
+            value_prototype: decl.value_prototype.map(|site| std::sync::Arc::new(
+                crate::value::RoutinePrototype::new(site, method_cell.clone()))),
             syms: Default::default(),
             lexical_package,
             params: effective_params,
@@ -306,7 +309,7 @@ impl Interpreter {
             role_param_bindings: None,
             nested_capture_index: decl.nested_capture_index,
             captured_readonly: Some(self.capture_declaring_readonly_state()),
-            routine_cell: Default::default(),
+            routine_cell: method_cell,
         };
         // A role method's custom `is` traits dispatch to a user
         // `trait_mod:<is>` at declaration time, with `$*PACKAGE` the role --
@@ -314,6 +317,9 @@ impl Interpreter {
         self.registry_mut()
             .roles_in_trait_dispatch
             .push(name.to_string());
+        let candidate_idx = cx.role_def.methods.get(&resolved_method_name).map_or(0, |defs| {
+            if decl.multi { defs.len() } else { defs.iter().filter(|def| def.is_private != decl.is_private).count() }
+        });
         let traits_result = self.apply_method_is_traits(
             name,
             &resolved_method_name,
@@ -325,9 +331,13 @@ impl Interpreter {
             decl.return_type.as_deref(),
             &decl.custom_traits,
             &def.routine_cell,
+            candidate_idx,
         );
         self.registry_mut().roles_in_trait_dispatch.pop();
         traits_result?;
+        self.finish_method_value_prototype(def.value_prototype.as_deref(), name, &resolved_method_name, candidate_idx)?;
+        self.registry_mut()
+            .note_method_value_prototype(Symbol::intern(name), &def);
         // `my method` in roles are role-private, skip method table.
         // Submethods (is_submethod) DO get composed even though
         // is_my is true.

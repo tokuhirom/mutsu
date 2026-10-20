@@ -181,6 +181,16 @@ pub(crate) fn parse_anon_method_with_params(
     // fold the declaration into the single `self` parameter: its type/`where`
     // constraint moves onto `self` (so `method (List:D:)` still type-checks the
     // invocant), and a user-chosen name is bound to `self` in the body.
+    let (method_param_defs, invocant_aliases) = method_literal_params(param_defs);
+    let params = method_param_defs.iter().map(|pd| pd.name.clone()).collect();
+    let (r, expr) = parse_anon_sub_rest(r, params, method_param_defs, return_type, declarator)?;
+    Ok((r, bind_invocant_aliases(expr, &invocant_aliases)))
+}
+
+/// Fold written method parameters onto the single receiver used by the VM.
+pub(crate) fn method_literal_params(
+    param_defs: Vec<crate::ast::ParamDef>,
+) -> (Vec<crate::ast::ParamDef>, Vec<(String, bool)>) {
     let mut invocant = invocant_param_def();
     // `(name, sigilless)` for every user-named invocant.
     let mut invocant_aliases: Vec<(String, bool)> = Vec::new();
@@ -209,12 +219,9 @@ pub(crate) fn parse_anon_method_with_params(
         seen_positional = true;
         rest_params.push(pd);
     }
-    let mut params = vec!["self".to_string()];
-    params.extend(rest_params.iter().map(|p| p.name.clone()));
     let mut method_param_defs = vec![invocant];
     method_param_defs.extend(rest_params);
-    let (r, expr) = parse_anon_sub_rest(r, params, method_param_defs, return_type, declarator)?;
-    Ok((r, bind_invocant_aliases(expr, &invocant_aliases)))
+    (method_param_defs, invocant_aliases)
 }
 
 /// Prepend `my $NAME := self;` for every user-named invocant of a method
