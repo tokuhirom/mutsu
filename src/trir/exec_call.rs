@@ -105,7 +105,7 @@ impl Interpreter {
             match arg {
                 TrArg::Value(TrKind::Int | TrKind::Num) => n_nat += 1,
                 TrArg::Value(TrKind::Obj) => n_obj += 1,
-                TrArg::Native(_) | TrArg::Obj(_) | TrArg::Ref(_) | TrArg::Outer(_) => {}
+                TrArg::Native(..) | TrArg::Obj(_) | TrArg::Ref(..) | TrArg::Outer(_) => {}
             }
         }
         let ns_base = self.trir.ns.len().saturating_sub(n_nat);
@@ -125,16 +125,16 @@ impl Interpreter {
                 // the caller's slot. The callee's `GetRefI`/`SetRefI` then
                 // write the caller's variable directly, and passing the
                 // parameter on keeps naming the same slot.
-                (TrArg::Native(s), true) => {
+                (TrArg::Native(s, _), true) => {
                     self.trir.nl[cnb + slot] = (nbase + *s as usize) as i64;
                 }
-                (TrArg::Ref(s), true) => {
+                (TrArg::Ref(s, _), true) => {
                     self.trir.nl[cnb + slot] = self.trir.nl[nbase + *s as usize];
                 }
-                (TrArg::Native(s), false) => {
+                (TrArg::Native(s, _), false) => {
                     self.trir.nl[cnb + slot] = self.trir.nl[nbase + *s as usize];
                 }
-                (TrArg::Ref(s), false) => {
+                (TrArg::Ref(s, _), false) => {
                     let r = self.trir.nl[nbase + *s as usize] as usize;
                     self.trir.nl[cnb + slot] = self.trir.nl[r];
                 }
@@ -237,17 +237,17 @@ impl Interpreter {
                 // variable is genuinely captured; the mask is how a TRIR
                 // frame — which has no caller local for `capture_var_cell` to
                 // alias — reaches the same place.
-                TrArg::Native(s) => {
-                    let v = Value::int(self.trir.nl[nbase + *s as usize]);
+                TrArg::Native(s, kind) => {
+                    let v = kind.box_native(self.trir.nl[nbase + *s as usize]);
                     if wants_container {
                         v.into_container_ref()
                     } else {
                         v
                     }
                 }
-                TrArg::Ref(s) => {
+                TrArg::Ref(s, kind) => {
                     let r = self.trir.nl[nbase + *s as usize] as usize;
-                    let v = Value::int(self.trir.nl[r]);
+                    let v = kind.box_native(self.trir.nl[r]);
                     if wants_container {
                         v.into_container_ref()
                     } else {
@@ -279,9 +279,9 @@ impl Interpreter {
         }
         let name = call.name.resolve();
         // Mirror `exec_call_func_op`'s save/restore of the multi-candidate
-        // literal mask: a TRIR site's arguments are never literals, but the
-        // mask must be published rather than inherited from the caller.
-        let saved = std::mem::replace(&mut self.literal_native_args, 0);
+        // provenance mask. Native variables must retain their source type
+        // when this call boxes them for ordinary multi dispatch.
+        let saved = std::mem::replace(&mut self.literal_native_args, call.native_args);
         let saved_static = std::mem::replace(&mut self.static_call_args, false);
         let armed = self.trir_gen_arm(call.name);
         // Only an `is rw` parameter was handed a container, so only then do
@@ -319,13 +319,13 @@ impl Interpreter {
             };
             let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             match arg {
-                TrArg::Native(s) => {
-                    if let Some(n) = inner.as_int() {
+                TrArg::Native(s, kind) => {
+                    if let Some(n) = kind.unbox_native(&inner) {
                         self.trir.nl[nbase + *s as usize] = n;
                     }
                 }
-                TrArg::Ref(s) => {
-                    if let Some(n) = inner.as_int() {
+                TrArg::Ref(s, kind) => {
+                    if let Some(n) = kind.unbox_native(&inner) {
                         let r = self.trir.nl[nbase + *s as usize] as usize;
                         self.trir.nl[r] = n;
                     }

@@ -207,6 +207,9 @@ impl TrirCompiler<'_> {
                 Some("str") => "str",
                 _ => "",
             };
+            if tc == Some("str") {
+                self.native_str_slots.insert(slot);
+            }
             self.params.push(TrParam {
                 slot,
                 kind,
