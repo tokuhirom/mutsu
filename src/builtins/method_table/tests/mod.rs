@@ -152,6 +152,9 @@ fn sample(shape: DispatchShape) -> Value {
             Value::make_instance(Symbol::intern("Attribute"), attributes)
         }
         DispatchShape::Variable => instance_sample("Variable"),
+        // An opaque shape's handlers read the runtime state its attributes
+        // name; a bare instance has none, and its rows decline or refuse it.
+        shape if shape.is_opaque() => instance_sample(shape.type_name()),
         DispatchShape::Collation => {
             crate::runtime::Interpreter::make_collation_instance(1, 1, 1, 1)
         }
@@ -199,6 +202,10 @@ fn samples_have_their_shape() {
             // Only the entries after the consumption step decode a `Seq`.
             assert_eq!(sample(shape).dispatch_shape(), None);
             assert_eq!(sample(shape).settled_seq_shape(), Some(shape));
+        } else if shape.is_opaque() {
+            // Only the table's receiver decode sees an opaque shape.
+            assert_eq!(sample(shape).dispatch_shape(), None);
+            assert_eq!(sample(shape).receiver_shape(), Some(shape));
         } else if shape.has_instances() {
             assert_eq!(sample(shape).dispatch_shape(), Some(shape));
         } else {
@@ -531,8 +538,8 @@ fn the_name_test_knows_the_arity() {
 #[test]
 fn the_shape_test_knows_the_receiver() {
     assert!(
-        DispatchShape::ALL.len() <= 64,
-        "a shape bit must fit Table::shapes' u64"
+        DispatchShape::ALL.len() <= 127,
+        "a shape bit must fit Table::shapes' u128 and the receiver byte"
     );
     let polymod = Symbol::intern("polymod");
     assert!(shape_has_row(

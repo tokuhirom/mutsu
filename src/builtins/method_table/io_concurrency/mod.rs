@@ -57,16 +57,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     class_methods::ROWS,
 ];
 
-/// The owners whose rows answer an instance of one of the handle classes,
-/// `Lock`, `Lock::ConditionVariable`, `Cancellation`, `Tap`, `Proc` and
-/// `IO::Socket::INET` and their kin (ADR-11276 §9.157, §9.158).
-// Cost: O(1).
-pub(crate) fn handle_owners_of(class: &str) -> Option<&'static [&'static str]> {
-    lock_rows::owners_of(class)
-        .or_else(|| tap_proc_rows::owners_of(class))
-        .or_else(|| socket_rows::owners_of(class))
-}
-
 /// The methods the handle class `owner` declares: the native methods
 /// `runtime_init` registers for it, derived so they cannot drift from the rows.
 // Cost: O(r), r = rows of the two families.
@@ -77,18 +67,4 @@ pub(crate) fn handle_names(owner: &str) -> impl Iterator<Item = &'static str> + 
         .chain(socket_rows::ROWS)
         .filter(move |row| row.owner == owner)
         .map(|row| row.name)
-}
-
-/// [`handle_owners_of`] for an instance of one of the handle classes themselves
-/// (a user subclass reaches them through the native dispatcher instead).
-// Cost: O(1).
-pub(crate) fn handle_owners_of_instance(
-    target: &crate::value::Value,
-) -> Option<&'static [&'static str]> {
-    match target.view() {
-        crate::value::ValueView::Instance { class_name, .. } => {
-            handle_owners_of(&class_name.resolve())
-        }
-        _ => None,
-    }
 }

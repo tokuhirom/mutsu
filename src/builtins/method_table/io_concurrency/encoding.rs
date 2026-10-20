@@ -2,8 +2,9 @@
 //! (what `Encoding::Registry.find` answers), its `Encoding::Encoder::Builtin`
 //! and its streaming `Encoding::Decoder::Builtin`.
 //!
-//! None of them has a shape, so every row is reached through its owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`). A decoder keeps its state in its
+//! Each has an opaque dispatch shape (`DispatchShape::is_opaque`), so every
+//! call entry reaches the rows through the table; a user subclass of the
+//! decoder reaches them through its owner (`invoke_owner`). A decoder keeps its state in its
 //! own attribute cell (`stream_decoder_object`), which its rows edit in place,
 //! the same routines the `nqp::decoder*` ops run.
 
@@ -25,7 +26,10 @@ macro_rules! row {
             name: $name,
             arity: $arity,
             handler: $handler,
-            flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+            // A decoder's rows edit its queues in its shared cell.
+            flags: RowFlags::ANY_ARGS
+                .or(RowFlags::OBJECT_ARGS)
+                .or(RowFlags::EFFECTS),
             named: $named,
         }
     };
@@ -118,18 +122,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         Handler::Narrow(is_empty)
     ),
 ];
-
-/// The owners an encoding object's methods are looked up in: its own class
-/// for one of the three, and the decoder for a subclass of it.
-// Cost: O(1).
-pub(crate) fn owners_of(class: &str) -> Option<&'static [&'static str]> {
-    Some(match class {
-        "Encoding::Builtin" => &["Encoding::Builtin"],
-        "Encoding::Encoder::Builtin" => &["Encoding::Encoder::Builtin"],
-        "Encoding::Decoder::Builtin" => &["Encoding::Decoder::Builtin"],
-        _ => return None,
-    })
-}
 
 /// The decoder owner, for a user subclass of `Encoding::Decoder::Builtin`.
 pub(crate) const DECODER_OWNERS: &[&str] = &[DECODER];

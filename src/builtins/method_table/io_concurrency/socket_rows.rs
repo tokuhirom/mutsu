@@ -3,8 +3,8 @@
 //! interpreter's I/O handle table by its `handle` id, and `IO::Socket::Async`,
 //! a TCP connection (`conn-id`) or a bound UDP socket (`udp-socket-id`).
 //!
-//! Neither has a shape, so every row is reached through its owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`). Each handler is one `Interpreter`
+//! Each has an opaque dispatch shape (`DispatchShape::is_opaque`), so every
+//! call entry reaches the rows through the table. Each handler is one `Interpreter`
 //! method (`runtime/native_methods/socket_inet.rs`, `socket_async*.rs`).
 
 use crate::builtins::method_table::{Handler, MethodRow, Named, RowFlags};
@@ -15,7 +15,7 @@ type Answer = Option<Result<Value, RuntimeError>>;
 
 macro_rules! row {
     ($name:literal, $handler:expr) => {
-        row!($name, $handler, RowFlags::OWNER_ONLY)
+        row!($name, $handler, RowFlags::NONE)
     };
     ($name:literal, $handler:expr, $flags:expr) => {
         row!("IO::Socket::INET", $name, $handler, $flags, &[])
@@ -35,13 +35,7 @@ macro_rules! row {
 /// An `IO::Socket::Async` row.
 macro_rules! async_row {
     ($name:literal, $handler:expr) => {
-        row!(
-            "IO::Socket::Async",
-            $name,
-            $handler,
-            RowFlags::OWNER_ONLY,
-            &[]
-        )
+        row!("IO::Socket::Async", $name, $handler, RowFlags::NONE, &[])
     };
     ($name:literal, $handler:expr, $flags:expr, $named:expr) => {
         row!("IO::Socket::Async", $name, $handler, $flags, $named)
@@ -49,8 +43,7 @@ macro_rules! async_row {
 }
 
 /// A row taking any positional arguments, which its handler reads itself.
-const ARGS: RowFlags = RowFlags::OWNER_ONLY
-    .or(RowFlags::SLURPY)
+const ARGS: RowFlags = RowFlags::SLURPY
     .or(RowFlags::ANY_ARGS)
     .or(RowFlags::OBJECT_ARGS);
 
@@ -172,16 +165,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         &[]
     ),
 ];
-
-/// The owners an instance of `class` is answered from.
-// Cost: O(1).
-pub(super) fn owners_of(class: &str) -> Option<&'static [&'static str]> {
-    match class {
-        "IO::Socket::INET" => Some(&["IO::Socket::INET"]),
-        "IO::Socket::Async" => Some(&["IO::Socket::Async"]),
-        _ => None,
-    }
-}
 
 /// A snapshot of the receiver's attributes.
 // Cost: O(a), a = attributes.

@@ -13,8 +13,8 @@ struct Legacy {
     slurpy: FxHashMap<(Symbol, Symbol), RowId>,
     arities: FxHashMap<Symbol, u8>,
     mut_arities: FxHashMap<Symbol, u8>,
-    shapes: FxHashMap<Symbol, u64>,
-    type_shapes: FxHashMap<Symbol, u64>,
+    shapes: FxHashMap<Symbol, u128>,
+    type_shapes: FxHashMap<Symbol, u128>,
 }
 
 fn legacy() -> Legacy {
@@ -50,7 +50,9 @@ fn legacy() -> Legacy {
         }
     }
     for shape in DispatchShape::ALL {
-        let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_strs(shape.type_name())
+        let Some(mro) = shape
+            .opaque_owners()
+            .or_else(|| crate::builtin_types::catalog::builtin_type_mro_strs(shape.type_name()))
         else {
             continue;
         };
@@ -94,9 +96,9 @@ fn legacy() -> Legacy {
                             .or_insert(id);
                     }
                 }
-                *t.shapes.entry(name).or_default() |= 1 << (shape as u64);
+                *t.shapes.entry(name).or_default() |= 1 << (shape as u128);
                 if row.flags.contains(RowFlags::TYPE_OBJECT_OK) {
-                    *t.type_shapes.entry(name).or_default() |= 1 << (shape as u64);
+                    *t.type_shapes.entry(name).or_default() |= 1 << (shape as u128);
                 }
             }
         }
@@ -146,7 +148,7 @@ fn const_index_matches_the_runtime_builder() {
                 };
                 let want = masks
                     .get(&sym)
-                    .is_some_and(|m| m & (1 << (shape as u64)) != 0);
+                    .is_some_and(|m| m & (1 << (shape as u128)) != 0);
                 assert_eq!(shape_has_row(receiver, sym), want, "{name} {shape:?} shape");
                 for arity in 0..10usize {
                     let legacy_id = u8::try_from(arity).ok().and_then(|a| {

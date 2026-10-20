@@ -1,8 +1,8 @@
 //! The rows of `Tap`, `IO::Socket::Async::ListenSocket` (the `Tap` a
 //! listening socket's supply answers) and `Proc` (ADR-11276 §9.157).
 //!
-//! None of them has a shape, so every row is reached through its owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`). `Proc.spawn` and `Proc.shell`
+//! Each class has an opaque dispatch shape (`DispatchShape::is_opaque`), so
+//! every call entry reaches the rows through the table. `Proc.spawn` and `Proc.shell`
 //! re-run a command and commit what it changed through the instance's shared
 //! attribute cell.
 
@@ -15,7 +15,7 @@ type Answer = Option<Result<Value, RuntimeError>>;
 
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:expr) => {
-        row!($owner, $name, $handler, RowFlags::OWNER_ONLY)
+        row!($owner, $name, $handler, RowFlags::EFFECTS)
     };
     ($owner:literal, $name:literal, $handler:expr, $flags:expr) => {
         MethodRow {
@@ -30,8 +30,7 @@ macro_rules! row {
 }
 
 /// `spawn` and `shell` take the command's words and its adverbs.
-const COMMAND_ARGS: RowFlags = RowFlags::OWNER_ONLY
-    .or(RowFlags::SLURPY)
+const COMMAND_ARGS: RowFlags = RowFlags::SLURPY
     .or(RowFlags::ANY_ARGS)
     .or(RowFlags::OBJECT_ARGS)
     .or(RowFlags::ANY_NAMED);
@@ -86,17 +85,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         COMMAND_ARGS
     ),
 ];
-
-/// The owners an instance of `class` is answered from.
-// Cost: O(1).
-pub(super) fn owners_of(class: &str) -> Option<&'static [&'static str]> {
-    Some(match class {
-        "Tap" => &["Tap"],
-        "IO::Socket::Async::ListenSocket" => &["IO::Socket::Async::ListenSocket", "Tap"],
-        "Proc" => &["Proc"],
-        _ => return None,
-    })
-}
 
 /// A snapshot of the receiver's attributes.
 // Cost: O(a), a = attributes.

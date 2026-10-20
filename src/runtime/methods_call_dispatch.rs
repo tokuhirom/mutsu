@@ -524,10 +524,14 @@ impl Interpreter {
             )?;
             return Ok(result);
         }
-        // The methods of the runtime's own result objects are their rows:
-        // a `.WALK(...)` result (§9.140), a `.wrap` handle and a `.hyper`
-        // configuration (§9.160).
-        if let Some(owners) = crate::builtins::method_table::runtime_object_owners_of(&target)
+        // An instance of an opaque shape (a lock, a socket, a scheduler, a
+        // compilation unit, the runtime's own result objects) is answered by its
+        // class's rows through the table from every entry; a call the guard
+        // step declined (an argument it does not admit, a named argument no row
+        // declares) finds the row by the shape's owners here, which accepts any
+        // argument as the class's per-site hooks did.
+        if let Some(owners) = crate::builtins::method_table::opaque_owners_of(&target)
+            && !self.native_lever_a_user_override_sym(&target, Symbol::intern(method))
             && let Some(answer) = crate::builtins::method_table::invoke_owner(
                 self,
                 owners,
@@ -990,11 +994,10 @@ impl Interpreter {
         {
             return result;
         }
-        // `RakuAST::Node.visit-children`, the `RakuAST::Origin` rows and the
-        // `CompUnit` family's rows are rows of the method table, found by their
-        // owner: none has a dispatch shape.
+        // `RakuAST::Node.visit-children` and the `RakuAST::Origin` rows are
+        // rows of the method table, found by their owner: neither has a
+        // dispatch shape.
         if let Some(owners) = crate::builtins::method_table::rakuast_owners_of(&target)
-            .or_else(|| crate::builtins::method_table::compunit_owners_of(&target))
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
                 owners,

@@ -68,7 +68,7 @@ impl Receiver {
     // Cost: O(1), a tag probe; a `Package` also looks its name up.
     #[inline]
     pub(crate) fn of(target: &Value) -> Option<Receiver> {
-        match target.dispatch_shape() {
+        match target.receiver_shape() {
             Some(shape) => Some(Receiver::instance(shape)),
             None => target.type_object_shape().map(Receiver::type_object),
         }
@@ -86,7 +86,7 @@ impl Receiver {
     // name up, an instance of a user class asks the buffer-class registry.
     #[inline]
     pub(crate) fn of_settled(target: &Value) -> Option<Receiver> {
-        match target.dispatch_shape() {
+        match target.receiver_shape() {
             Some(shape) => Some(Receiver::instance(shape)),
             None => match target.settled_seq_shape() {
                 Some(shape) => Some(Receiver::instance(shape)),
@@ -190,7 +190,7 @@ pub(crate) fn shape_has_row(receiver: Receiver, method: Symbol) -> bool {
     } else {
         SHAPES[name]
     };
-    bits & (1 << (receiver.shape as u64)) != 0
+    bits & (1 << (receiver.shape as u128)) != 0
 }
 
 /// The most positional arguments any row `receiver` reaches for `method`

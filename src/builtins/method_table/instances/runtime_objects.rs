@@ -3,9 +3,9 @@
 //! (what `HyperSeq.configuration` answers) and `Pod::Block::Declarator`
 //! (what a `#|` / `#=` comment builds).
 //!
-//! Neither has a shape, so every row is `OWNER_ONLY`, found through
-//! [`runtime_object_owners_of`] from `call_method_with_values`, together with
-//! `WalkList`'s (§9.140).
+//! Each has an opaque dispatch shape (`DispatchShape::is_opaque`), as
+//! `WalkList` does (§9.140), so every call entry reaches the rows through the
+//! table.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::runtime::Interpreter;
@@ -19,7 +19,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "restore",
         arity: 0,
         handler: Handler::Interp(|interp, target, _, _| restore(interp, target)),
-        flags: RowFlags::OWNER_ONLY,
+        flags: RowFlags::NONE,
         named: &[],
     },
     MethodRow {
@@ -27,7 +27,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "batch",
         arity: 0,
         handler: Handler::Narrow(|target, _| attribute(target, "batch")),
-        flags: RowFlags::OWNER_ONLY,
+        flags: RowFlags::NONE,
         named: &[],
     },
     MethodRow {
@@ -35,7 +35,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "degree",
         arity: 0,
         handler: Handler::Narrow(|target, _| attribute(target, "degree")),
-        flags: RowFlags::OWNER_ONLY,
+        flags: RowFlags::NONE,
         named: &[],
     },
     MethodRow {
@@ -43,7 +43,9 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "_add_leading",
         arity: 1,
         handler: Handler::Narrow(|target, args| add_declarator_text(target, "leading", &args[0])),
-        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        flags: RowFlags::ANY_ARGS
+            .or(RowFlags::OBJECT_ARGS)
+            .or(RowFlags::EFFECTS),
         named: &[],
     },
     MethodRow {
@@ -51,27 +53,12 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "_add_trailing",
         arity: 1,
         handler: Handler::Narrow(|target, args| add_declarator_text(target, "trailing", &args[0])),
-        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        flags: RowFlags::ANY_ARGS
+            .or(RowFlags::OBJECT_ARGS)
+            .or(RowFlags::EFFECTS),
         named: &[],
     },
 ];
-
-/// The owners whose rows answer `target`: a `WalkList`, a
-/// `Routine::WrapHandle`, a `HyperConfiguration` or a
-/// `Pod::Block::Declarator` instance.
-// Cost: O(1).
-pub(crate) fn runtime_object_owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let ValueView::Instance { class_name, .. } = target.view() else {
-        return None;
-    };
-    Some(match class_name.as_str() {
-        "WalkList" => &["WalkList"],
-        "Routine::WrapHandle" => &["Routine::WrapHandle"],
-        "HyperConfiguration" => &["HyperConfiguration"],
-        "Pod::Block::Declarator" => &["Pod::Block::Declarator"],
-        _ => return None,
-    })
-}
 
 // Cost: O(w), w = wrappers in the chain.
 fn restore(interp: &mut Interpreter, target: &Value) -> Answer {

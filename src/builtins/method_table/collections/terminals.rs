@@ -158,10 +158,11 @@ pub(crate) fn tail_one(target: &Value, args: &[Value]) -> Option<Result<Value, R
 }
 
 /// Whether an instance of `class` is one of a class with no dispatch shape (a
-/// user class, `Supply`), whose list or own method only the interpreter finds.
-// Cost: O(s), s = instance-backed shapes.
+/// user class, `Supply`) or an opaque one (a `Lock`), whose list or own method
+/// only the interpreter finds.
+// Cost: O(1), one hash lookup.
 fn user_instance(class: crate::symbol::Symbol) -> bool {
-    crate::value::DispatchShape::from_instance_class(class).is_none()
+    crate::value::DispatchShape::from_instance_class(class).is_none_or(|shape| shape.is_opaque())
 }
 
 /// Whether `target` is a buffer-backed positional mixin (upstream NativeCall's

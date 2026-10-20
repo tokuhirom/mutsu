@@ -117,7 +117,7 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     // A value with no shape of its own (an immutable `Map`) reaches the rows
     // of its type's MRO through the owner chain (`method_table::invoke_owner`,
     // ADR-11276 §9.113).
-    if crate::builtins::method_table::Receiver::of(value).is_none()
+    if shapeless(value)
         && let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_strs(
             &crate::value::what_type_name(value),
         )
@@ -154,7 +154,7 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     // A value of a built-in class with no shape reaches the rows its own class
     // declares (`invoke_owner` from the instance dispatch): a RakuAST node's
     // builders, an `Attribute`'s accessors.
-    if crate::builtins::method_table::Receiver::of(value).is_none() {
+    if shapeless(value) {
         let own = match value.view() {
             crate::value::ValueView::RakuAst(node) => Symbol::intern(node.class.printed_name()),
             _ => Symbol::intern(&crate::value::what_type_name(value)),
@@ -494,4 +494,14 @@ mod listed_tests {
         assert!(!builtin_type_method_listed("IO::Path", "chars"));
         assert!(!builtin_type_method_listed("NoSuchType", "lines"));
     }
+}
+
+/// Whether `value` reaches the table only through an owner chain: it has no
+/// receiver shape, or an opaque one (`DispatchShape::is_opaque`), whose rows
+/// are its own class's.
+// Cost: O(1), a tag probe; a `Package` also looks its name up.
+#[cfg(test)]
+fn shapeless(value: &crate::value::Value) -> bool {
+    crate::builtins::method_table::Receiver::of(value)
+        .is_none_or(|receiver| receiver.shape.is_opaque())
 }

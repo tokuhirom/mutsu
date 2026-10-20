@@ -343,7 +343,7 @@ const fn arity_hi(row: &MethodRow) -> u8 {
     }
 }
 
-/// The shapes with a catalog MRO, with the rows each shape reaches, in the
+/// The shapes with a catalog MRO or opaque owners, with the rows each shape reaches, in the
 /// order the table registers them: calls `visit` ... written out as a macro
 /// because a `const fn` takes no closure.
 macro_rules! for_each_registration {
@@ -351,9 +351,13 @@ macro_rules! for_each_registration {
         let mut s = 0;
         while s < DispatchShape::ALL.len() {
             let $shape = DispatchShape::ALL[s];
-            if let Some(mro) =
-                crate::builtin_types::catalog::builtin_type_mro_strs($shape.type_name())
-            {
+            // An opaque shape names its owners itself; the others walk their
+            // type's catalog MRO.
+            let mro = match $shape.opaque_owners() {
+                Some(owners) => Some(owners),
+                None => crate::builtin_types::catalog::builtin_type_mro_strs($shape.type_name()),
+            };
+            if let Some(mro) = mro {
                 let mut m = 0;
                 while m < mro.len() {
                     if $shape.reaches_owner(mro[m]) || $shape.may_reach_audited(mro[m]) {
@@ -420,8 +424,8 @@ const G: usize = count_candidates();
 struct Registered {
     /// Per name, the bit of each arity some registered row takes.
     arities: [u8; U],
-    shapes: [u64; U],
-    type_shapes: [u64; U],
+    shapes: [u128; U],
+    type_shapes: [u128; U],
     /// Entries after the first-wins dedupe, each `(receiver bits << 8 | arity)`
     /// with the row it resolves to, grouped by name and sorted by key.
     len: usize,
@@ -466,9 +470,9 @@ const fn register() -> Registered {
             }
             arity += 1;
         }
-        out.shapes[name] |= 1 << (shape as u64);
+        out.shapes[name] |= 1 << (shape as u128);
         if row.flags.contains(RowFlags::TYPE_OBJECT_OK) {
-            out.type_shapes[name] |= 1 << (shape as u64);
+            out.type_shapes[name] |= 1 << (shape as u128);
         }
     });
     assert!(n == G);
@@ -528,6 +532,10 @@ const fn mut_arities() -> [u8; U] {
 const M: usize = REGISTERED.len;
 
 const _: () = assert!(M < 60_000, "entries no longer fit a u16 offset");
+const _: () = assert!(
+    DispatchShape::ALL.len() <= 127,
+    "a shape no longer fits the receiver byte's seven bits or a u128 mask"
+);
 
 const fn truncate<const L: usize>(src: &[u16; G]) -> [u16; L] {
     let mut out = [0u16; L];
@@ -544,9 +552,9 @@ pub(super) static ARITIES: [u8; U] = REGISTERED.arities;
 /// The same bits for the `Mut` rows, which are not registered by shape.
 pub(super) static MUT_ARITIES: [u8; U] = mut_arities();
 /// Per name, one bit per [`DispatchShape`] some registered row answers on an instance.
-pub(super) static SHAPES: [u64; U] = REGISTERED.shapes;
+pub(super) static SHAPES: [u128; U] = REGISTERED.shapes;
 /// The same bits for a type object receiver.
-pub(super) static TYPE_SHAPES: [u64; U] = REGISTERED.type_shapes;
+pub(super) static TYPE_SHAPES: [u128; U] = REGISTERED.type_shapes;
 /// `ENTRY_KEYS[ENTRY_START[u]..ENTRY_START[u + 1]]` are name `u`'s entries,
 /// sorted: `receiver bits << 8 | arity`.
 pub(super) static ENTRY_KEYS: [u16; M] = truncate::<M>(&REGISTERED.keys);

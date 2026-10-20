@@ -934,7 +934,11 @@ pub(crate) fn shapeless_row(
             || (method == "raku"
                 && interp.is_some()
                 && matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_))));
-    if !(text || list || mu || iterable || container) || Receiver::of_settled(target).is_some() {
+    // An opaque instance (`DispatchShape::is_opaque`) is shapeless here: only its
+    // own class's rows reach it through its shape.
+    if !(text || list || mu || iterable || container)
+        || Receiver::of_settled(target).is_some_and(|receiver| !receiver.shape.is_opaque())
+    {
         return None;
     }
     // A `.VAR` descriptor asks the value its container holds (ADR-0064), which

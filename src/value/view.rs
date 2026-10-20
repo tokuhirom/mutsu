@@ -883,8 +883,20 @@ impl Value {
     /// not one of the plain receivers the zero-argument native dispatch table
     /// covers. A pure tag probe (see [`Self::is_junction_value`]) — it must
     /// stay one, since it gates a path taken on every method call.
+    ///
+    /// An opaque instance shape (`DispatchShape::is_opaque`) is not one: the
+    /// value answers every protocol but its own class's rows as an object
+    /// with no shape does. Only the table's receiver decode sees it
+    /// ([`Self::receiver_shape`]).
     #[inline]
     pub(crate) fn dispatch_shape(&self) -> Option<crate::value::DispatchShape> {
+        self.0.dispatch_shape().filter(|shape| !shape.is_opaque())
+    }
+
+    /// [`Self::dispatch_shape`], and also an opaque instance shape: what the
+    /// method table's receiver decode (`method_table::Receiver::of`) reads.
+    #[inline]
+    pub(crate) fn receiver_shape(&self) -> Option<crate::value::DispatchShape> {
         self.0.dispatch_shape()
     }
 

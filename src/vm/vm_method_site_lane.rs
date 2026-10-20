@@ -161,7 +161,11 @@ impl Interpreter {
         {
             return None;
         }
-        let pure = method_table::row(row).handler.is_pure();
+        // A row with effects is not re-run by the debug cross-check.
+        let pure = method_table::row(row).handler.is_pure()
+            && !method_table::row(row)
+                .flags
+                .contains(method_table::RowFlags::EFFECTS);
         let result = if pure {
             let (target, args) = self.stack[base..].split_first()?;
             method_table::invoke(row, target, args)?

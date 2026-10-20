@@ -3,8 +3,8 @@
 //! by an id into the runtime's tables (`lock-id`, `cond-id`,
 //! `cancellation-id`).
 //!
-//! None of them has a shape, so every row is reached through its owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`). A handler reads the ids off a
+//! Each has an opaque dispatch shape (`DispatchShape::is_opaque`), so every
+//! entry reaches the rows through the table. A handler reads the ids off a
 //! snapshot of the attributes, so a method that blocks (`lock`, `wait`) or runs
 //! user code (`protect`) holds no lock on them.
 
@@ -16,7 +16,7 @@ type Answer = Option<Result<Value, RuntimeError>>;
 
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:expr) => {
-        row!($owner, $name, $handler, RowFlags::OWNER_ONLY)
+        row!($owner, $name, $handler, RowFlags::EFFECTS)
     };
     ($owner:literal, $name:literal, $handler:expr, $flags:expr) => {
         MethodRow {
@@ -32,8 +32,7 @@ macro_rules! row {
 
 /// A row whose arguments its handler checks itself: `protect`'s one block
 /// (anything else is `X::Multi::NoMatch`) and `wait`'s optional test.
-const BLOCK_ARGS: RowFlags = RowFlags::OWNER_ONLY
-    .or(RowFlags::SLURPY)
+const BLOCK_ARGS: RowFlags = RowFlags::SLURPY
     .or(RowFlags::ANY_ARGS)
     .or(RowFlags::OBJECT_ARGS);
 
@@ -65,19 +64,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Cancellation", "cancel", Handler::Narrow(cancel)),
     row!("Cancellation", "cancelled", Handler::Narrow(cancelled)),
 ];
-
-/// The owners an instance of `class` is answered from. `Lock::Async` is its own
-/// class in Rakudo, with no `condition`; `Lock::Soft` is a `Lock`.
-// Cost: O(1).
-pub(super) fn owners_of(class: &str) -> Option<&'static [&'static str]> {
-    Some(match class {
-        "Lock" | "Lock::Soft" => &["Lock"],
-        "Lock::Async" => &["Lock::Async"],
-        "Lock::ConditionVariable" => &["Lock::ConditionVariable"],
-        "Cancellation" => &["Cancellation"],
-        _ => return None,
-    })
-}
 
 /// A snapshot of the receiver's attributes.
 // Cost: O(a), a = attributes.

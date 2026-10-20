@@ -95,7 +95,9 @@ pub(crate) fn type_object_row(
     if !NAMES.contains(&method.as_str()) {
         return None;
     }
-    if crate::builtins::method_table::Receiver::of_settled(target).is_some() {
+    if crate::builtins::method_table::Receiver::of_settled(target)
+        .is_some_and(|receiver| !receiver.shape.is_opaque())
+    {
         return None;
     }
     let name = match target.view() {
