@@ -297,6 +297,10 @@ impl Qualify<'_> {
             // `DS` role in GLOBAL wins over a loaded `P::DS` inside `P`.
             if self.declared.contains(&candidate)
                 || (!self.local_names.contains(name)
+                    // A core type (`Attribute`) is found in GLOBAL before the
+                    // package's stash, so `use AttrX::Mooish::Attribute` inside
+                    // `unit module AttrX::Mooish` leaves `Attribute` the core one.
+                    && crate::builtin_types::catalog::builtin_type_info(name).is_none()
                     && !super::stmt::simple::is_user_declared_type(name)
                     && super::stmt::simple::is_user_declared_type(&candidate))
             {
