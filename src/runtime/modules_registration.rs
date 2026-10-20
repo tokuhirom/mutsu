@@ -22,6 +22,7 @@ mod registration_role_bind_cells;
 mod registration_role_body;
 mod registration_role_body_composer_subs;
 mod registration_role_body_lexical;
+pub(crate) mod registration_role_composition_scope;
 mod registration_role_decl;
 mod registration_role_method;
 mod registration_role_parent;

@@ -57,7 +57,10 @@ mod tests {
         let first = body.live_generation();
         assert_eq!(first.len(), 0, "nothing pulled yet, so the seed is empty");
         let reified = body
-            .reify(|_source| Ok(vec![Value::int(10), Value::int(20), Value::int(30)]))
+            .reify(|_source, out| {
+                out.produced = vec![Value::int(10), Value::int(20), Value::int(30)];
+                Ok(())
+            })
             .unwrap();
         assert_eq!(reified.len(), 3, "reify() pulled the real elements");
         // The line a naive overwrite-in-place implementation would make UB:
@@ -144,14 +147,17 @@ mod tests {
         let clone = Arc::clone(&body);
         let handle = std::thread::spawn(move || {
             clone
-                .reify(|_source| Ok(vec![Value::int(1), Value::int(2)]))
+                .reify(|_source, out| {
+                    out.produced = vec![Value::int(1), Value::int(2)];
+                    Ok(())
+                })
                 .map(<[Value]>::to_vec)
         });
         let pulled = handle.join().unwrap().unwrap();
         assert_eq!(pulled, vec![Value::int(1), Value::int(2)]);
 
         let seen = body
-            .reify(|_source| panic!("already reified; must not pull a second time"))
+            .reify(|_source, _| panic!("already reified; must not pull a second time"))
             .unwrap();
         assert_eq!(*seen, vec![Value::int(1), Value::int(2)]);
     }

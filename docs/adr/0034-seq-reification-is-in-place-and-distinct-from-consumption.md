@@ -627,3 +627,19 @@ Two assumptions in §2.2 did not hold once a `.cache`d Seq was read from several
   over. The puller itself never waits, so a pull that re-enters the same Seq on its own thread
   still sees `Taken`, as before. The consumption matrix (§1.4) is unchanged: an uncached Seq is
   still single-use.
+
+## Amendment (2026-10-20): pull progress is the caller's buffer, not the exception's (#12401)
+
+The 2026-10-06 amendment's "the pull hands back its progress when it fails" was first done by
+attaching a `SeqPullProgress` to the `RuntimeError` on the error path (#12394). That made progress
+side-data every loop had to remember to attach, and an exception could carry progress that belonged
+to a different Seq.
+
+**Decision.** A pull fills an output buffer its caller owns, `PullOut { produced, consumed }`
+(`src/value/seq_body.rs`). `SeqBody`'s pull closures receive it, and every map/grep loop pushes each
+element as it produces it and counts the source elements it takes, the one in flight included.
+When a callback dies, the caller already holds both, so the exception carries nothing, and no loop
+can forget to report. A non-consuming read (`reify`, a prefix pull) stores what was produced as a
+generation and puts the source back past the failing element. A consuming read (`take`, `sink`)
+still leaves the body `Taken`, as rakudo does. `SeqPullProgress` and its `RuntimeError` accessors
+are deleted.

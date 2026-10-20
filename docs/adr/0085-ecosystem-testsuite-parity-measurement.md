@@ -885,6 +885,29 @@ The reduced comparison answers True on Rakudo and False on mutsu; #14154
 records this next, non-parser blocker. This parser slice does not claim that
 the complete distribution is at parity.
 
+## 27. Campaign slice: statement boundaries after modified try (2026-10-20)
+
+The next named #7988 remainder, #14156, is RakuPM 1.1.3's
+`try $tar.unlink if $built-internally;` before an `unless` statement.
+The shared statement-modifier parser consumed the semicolon belonging to its
+enclosing statement, allowing that enclosing parser to interpret the next
+conditional as another modifier. Modifiers now leave explicit separators
+to statement and semilist parsing, including the binding-statement path.
+
+Statement-prefix terminator restoration shares validated current-buffer
+slices with statement-list and modifier boundary checks. Heredocs can return
+a rewritten buffer; inferring a consumed span by subtracting its length from
+the original source could land inside a Unicode delimiter. Registered
+heredoc buffers retain their existing static lifetime as a safe string
+reference, without introducing another allocation or an unsafe conversion.
+
+`t/exceptions/parser-try-statement-boundaries.t` pins ten cases against
+Rakudo 2026.07 and both mutsu frontend modes: conditional and loop modifiers,
+binding, caught and subsequent exceptions, empty statements, and a Unicode
+heredoc condition. The real RakuPM::Author module loads with the complete
+checkout dependency closure on both interpreters. Load success alone does
+not establish whole-distribution test-suite parity.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers

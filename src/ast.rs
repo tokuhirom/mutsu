@@ -128,6 +128,10 @@ pub(crate) struct ParamDef {
     pub(crate) sub_signature: Option<Vec<ParamDef>>,
     pub(crate) where_constraint: Option<Box<Expr>>,
     pub(crate) traits: Vec<String>,
+    /// The `Parameter` object this declaration's custom traits mutated
+    /// (`crate::value::param_trait_meta`). Shared by clones; not serialized.
+    #[serde(skip)]
+    pub(crate) trait_meta: crate::value::param_trait_meta::ParamTraitMeta,
     /// The captured argument for a *custom* (non-builtin) parameter trait that
     /// carries one, e.g. the `<!>` in `is option<!>` (Getopt::Long, #8560) or
     /// the `('utf8')` in a hypothetical `is myencoding('utf8')`. Sparse: only
@@ -347,6 +351,7 @@ impl ParamDef {
     // Cost: O(|name|).
     pub(crate) fn sigilless_term(name: &str) -> Self {
         ParamDef {
+            trait_meta: Default::default(),
             type_capture: None,
             name: name.to_string(),
             default: None,
@@ -3205,6 +3210,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             let param_defs = legacy_params
                 .iter()
                 .map(|name| ParamDef {
+                    trait_meta: Default::default(),
                     type_capture: None,
                     name: name.clone(),
                     default: None,
@@ -3259,6 +3265,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 // Named placeholders use `:` twigil: $:f, @:f, %:f
                 let is_named = name.contains(':');
                 ParamDef {
+                    trait_meta: Default::default(),
                     type_capture: None,
                     name: name.clone(),
                     default: None,
@@ -3289,6 +3296,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
         if uses_hash_underscore {
             params.push("%_".to_string());
             param_defs.push(ParamDef {
+                trait_meta: Default::default(),
                 type_capture: None,
                 name: "%_".to_string(),
                 default: None,

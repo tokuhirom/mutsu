@@ -245,7 +245,7 @@ impl Value {
             ValueView::Int(i) => NumBigInt::from(i),
             ValueView::BigInt(n) => (**n).clone(),
             ValueView::Num(f) => NumBigInt::from(f as i64),
-            ValueView::Rat(n, d) => {
+            ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
                 if d != 0 {
                     NumBigInt::from(n / d)
                 } else {

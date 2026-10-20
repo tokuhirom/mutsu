@@ -23,6 +23,13 @@ impl Interpreter {
             return target.clone();
         }
         match target.view() {
+            // One candidate of a role group (`R.^candidates[0]`) stays itself:
+            // its index is what tells the candidates apart (#14186).
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_role_candidate_idx") =>
+            {
+                target.clone()
+            }
             ValueView::Instance { class_name, .. } => Value::package(class_name),
             _ => target.clone(),
         }
@@ -388,13 +395,15 @@ impl Interpreter {
             let Some(role_name) = key.strip_prefix("__mutsu_role__") else {
                 continue;
             };
-            if let Some(role) = self.registry().roles.get(role_name)
-                && (role.methods.contains_key(method)
+            // The candidate the mixin was made from: a role group's plain
+            // `R` lacks the methods of its parametric `R[...]` (#14175).
+            if self.mixin_role_satisfies(mixins, role_name, |role| {
+                role.methods.contains_key(method)
                     || role
                         .attributes
                         .iter()
-                        .any(|a| a.is_public && a.name == method))
-            {
+                        .any(|a| a.is_public && a.name == method)
+            }) {
                 return true;
             }
         }

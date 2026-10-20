@@ -81,6 +81,10 @@ pub(crate) struct LexicalImportCapture {
     /// block declares itself, bound to the module's package variables: the
     /// import writes no env alias for them.
     block_vars: HashSet<Symbol>,
+    /// The values a `sub EXPORT` hook returned for names in `block_vars`
+    /// (their declaration keys), which the block's bindings read
+    /// (`ModuleState::lexical_import_hook_values`).
+    hook_values: HashMap<Symbol, Value>,
 }
 
 impl Interpreter {
@@ -105,6 +109,7 @@ impl Interpreter {
             lexical_defs: HashMap::new(),
             multi_defs: HashMap::new(),
             protos: HashMap::new(),
+            hook_values: HashMap::new(),
         };
         self.module.lexical_import_capture.replace(capture)
     }
@@ -144,6 +149,40 @@ impl Interpreter {
         !capture.block_vars.is_empty()
             && capture.unit == self.executing_unit_sym_for_module_load()
             && capture.block_vars.contains(&Symbol::intern(name))
+    }
+
+    /// Whether the importing block declares the name a `sub EXPORT` hook
+    /// returned under `key` (`$x`, `@a`, `vrai`) itself, and if so keep
+    /// `value` for its binding (`OpCode::GetHookExport`): the import then
+    /// writes no env alias for it (ADR-8751).
+    // Cost: O(|key|).
+    pub(crate) fn bind_hook_export_lexically(&mut self, key: &str, value: &Value) -> bool {
+        let decl_key = match key.chars().next() {
+            Some('$') => key[1..].to_string(),
+            Some('@' | '%') => key.to_string(),
+            _ => crate::runtime::term_names::term_key(key),
+        };
+        if !self.block_binds_imported_var(&decl_key) {
+            return false;
+        }
+        self.note_block_bound_import(key.strip_prefix('$').unwrap_or(key));
+        if let Some(capture) = self.module.lexical_import_capture.as_mut() {
+            capture
+                .hook_values
+                .insert(Symbol::intern(&decl_key), value.clone());
+        }
+        true
+    }
+
+    /// The value a `sub EXPORT` hook returned for the declaration key `name`
+    /// in the `use` that fills lexical import set `set`.
+    // Cost: O(1).
+    pub(crate) fn lexical_import_hook_value(&self, set: Symbol, name: Symbol) -> Option<Value> {
+        self.module
+            .lexical_import_hook_values
+            .get(&set)?
+            .get(&name)
+            .cloned()
     }
 
     /// Whether the running import binds the multi family `name` (its
@@ -247,6 +286,13 @@ impl Interpreter {
         else {
             return;
         };
+        if capture.hook_values.is_empty() {
+            self.module.lexical_import_hook_values.remove(&id);
+        } else {
+            self.module
+                .lexical_import_hook_values
+                .insert(id, std::sync::Arc::new(capture.hook_values));
+        }
         let mut set = HashMap::new();
         for (package, name) in capture.routines {
             if set.contains_key(&name) {

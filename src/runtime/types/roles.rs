@@ -108,7 +108,23 @@ impl Interpreter {
         role_name: &str,
         attr: &str,
     ) -> bool {
-        let declares = |role: &RoleDef| role.attributes.iter().any(|a| a.name == attr);
+        self.mixin_role_satisfies(mixins, role_name, |role| {
+            role.attributes.iter().any(|a| a.name == attr)
+        })
+    }
+
+    /// Whether `test` holds for the `RoleDef` of the role `role_name`
+    /// composed into `mixins`: the candidate the mixin recorded (a role
+    /// group's parametric `R[...]` rather than its plain `R`), else the role
+    /// registered under the name. Looked up as
+    /// [`Self::role_def_for_mixin_role`] does, without cloning the def.
+    // Cost: O(c) plus `test`'s, c = candidates of the role name.
+    pub(crate) fn mixin_role_satisfies(
+        &self,
+        mixins: &crate::value::MixinOverrides,
+        role_name: &str,
+        test: impl Fn(&RoleDef) -> bool,
+    ) -> bool {
         let role_id = mixins
             .get(MetaNs::RoleId.str_key_for_str(role_name))
             .and_then(|value| match value.view() {
@@ -122,9 +138,9 @@ impl Interpreter {
                     .find(|candidate| candidate.role_def.role_id == role_id)
             })
         {
-            return declares(&candidate.role_def);
+            return test(&candidate.role_def);
         }
-        registry.roles.get(role_name).is_some_and(declares)
+        registry.roles.get(role_name).is_some_and(test)
     }
 
     pub(crate) fn resolve_parametric_role_runtime(
@@ -313,8 +329,8 @@ impl Interpreter {
                 this.eval_does_values(view, right)
             });
         }
-        if let Some((role_name, args, _)) = self.extract_role_application(&right)
-            && let Some(reblessed) = self.does_rebless_instance(&left, &[(role_name, args)])?
+        if let Some(application) = self.extract_role_application(&right)
+            && let Some(reblessed) = self.does_rebless_instance(&left, &[application])?
         {
             return Ok(reblessed);
         }
@@ -337,10 +353,9 @@ impl Interpreter {
                 this.eval_does_values_list(view, roles)
             });
         }
-        let applications: Vec<(String, Vec<Value>)> = roles
+        let applications: Vec<(String, Vec<Value>, bool)> = roles
             .iter()
             .filter_map(|role| self.extract_role_application(role))
-            .map(|(name, args, _)| (name, args))
             .collect();
         if applications.len() == roles.len()
             && let Some(reblessed) = self.does_rebless_instance(&left, &applications)?

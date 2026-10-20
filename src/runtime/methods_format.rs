@@ -15,7 +15,7 @@ use super::Interpreter;
 
 /// Build a required positional `ParamDef` with the given (sigilless) name.
 pub(super) fn positional_param(name: &str) -> ParamDef {
-    ParamDef {
+    ParamDef { trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),
         default: None,
@@ -185,38 +185,6 @@ impl Interpreter {
             idx = end;
         }
         Ok(Value::str(parts.join(separator)))
-    }
-
-    /// `Formatter::Syntax.parse($format)` and `.subparse`: a `Match` of the
-    /// whole format string. `Formatter::Syntax` is a `Grammar` in Rakudo, whose
-    /// `parse` is `Grammar.parse` running its rules (`TOP`, `directive`, ...).
-    // TODO: bundle `Formatter::Syntax` as a real grammar so `Grammar.parse`
-    // answers it with its captures; this answers the call by name for a type
-    // object, which is all `Formatter::Syntax` users read today (#13738).
-    pub(super) fn formatter_syntax_parse(
-        &mut self,
-        target: &Value,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        let ValueView::Package(name) = target.view() else {
-            return None;
-        };
-        if name != "Formatter::Syntax"
-            || !matches!(method, "parse" | "subparse")
-            || self.has_class("Formatter::Syntax")
-        {
-            return None;
-        }
-        let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
-        let len = fmt.chars().count() as i64;
-        Some(Ok(Value::make_match_object_full(
-            0,
-            len,
-            &[],
-            &Default::default(),
-            crate::runtime::MatchTarget::new(&fmt),
-        )))
     }
 
     /// Handle `<collection>.fmt($format, $separator)` where `$format` is a `Format`.

@@ -850,7 +850,8 @@ impl Compiler {
                     | Expr::HashVar(_)
                     | Expr::CodeVar(_)
                     | Expr::BareWord(_)
-            ) || Self::is_dostmt_vardecl(target) =>
+            ) || Self::is_dostmt_vardecl(target)
+                || Self::is_any_type_literal(target) =>
             {
                 self.compile_expr_method_on_var(target, name, args, modifier, *quoted);
             }

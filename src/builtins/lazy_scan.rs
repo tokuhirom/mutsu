@@ -82,7 +82,8 @@ fn scan_binary_op(op: &str, left: Value, right: Value) -> Value {
         "-" => crate::builtins::arith::arith_sub(left, right),
         "*" => crate::builtins::arith::arith_mul(left, right),
         "/" => crate::builtins::arith::arith_div(left, right).unwrap_or(Value::NIL),
-        "%" | "mod" => crate::builtins::arith::arith_mod(left, right).unwrap_or(Value::NIL),
+        "%" => crate::builtins::arith::arith_mod(left, right).unwrap_or(Value::NIL),
+        "mod" => crate::builtins::arith::arith_mod_op(left, right).unwrap_or(Value::NIL),
         "**" => crate::builtins::arith::arith_pow(left, right),
         "~" => Value::str(format!(
             "{}{}",

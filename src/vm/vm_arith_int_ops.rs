@@ -304,8 +304,9 @@ impl Interpreter {
             }
             // `mod` is `%` on the operands' numeric values: floored for
             // integers, exact for rationals (`7.5 mod 2` is 1.5), with the same
-            // `using %` Failure for a zero divisor.
-            crate::builtins::arith_mod(l, r)
+            // `using %` Failure for a zero divisor; an `Int` over a non-`Int`
+            // `Real` is the `Real, Real` candidate.
+            crate::builtins::arith_mod_op(l, r)
         })?;
         self.stack.push(result);
         Ok(())

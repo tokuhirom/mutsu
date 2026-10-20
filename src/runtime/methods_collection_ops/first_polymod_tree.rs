@@ -266,36 +266,6 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        fn val_to_f64(v: &Value) -> f64 {
-            match v.view() {
-                ValueView::Int(n) => n as f64,
-                ValueView::Num(n) => n,
-                ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
-                    crate::value::rat_to_f64(n, d)
-                }
-                ValueView::Bool(b) => {
-                    if b {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
-                ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-                // An `Int` subclass instance divides its `Int` payload.
-                ValueView::Instance { .. } => {
-                    crate::builtins::native_base::numeric_subclass_payload(v)
-                        .map_or(0.0, |payload| val_to_f64(&payload))
-                }
-                _ => 0.0,
-            }
-        }
-        fn f64_to_val(n: f64) -> Value {
-            if n.is_finite() && n == n.trunc() && n.abs() < i64::MAX as f64 {
-                Value::int(n as i64)
-            } else {
-                Value::num(n)
-            }
-        }
         fn flatten_to_list(v: &Value) -> Vec<Value> {
             match v.view() {
                 ValueView::Array(items, ..) => items.as_ref().clone().into_items(),
@@ -315,7 +285,6 @@ impl Interpreter {
             }
             _ => target,
         };
-        let mut n = val_to_f64(target);
         // Flatten args into a list of divisors, tracking if any source is infinite
         let mut divisors = Vec::new();
         let mut has_infinite = false;
@@ -399,41 +368,88 @@ impl Interpreter {
         // arithmetic so results like `5.Rat.polymod(.3, .2)` stay `(0.2 0 80)`
         // instead of accreting float noise. Any operand outside that domain (Num,
         // BigRat, negatives, a zero divisor, an infinite source, or an i128
-        // overflow) falls through to the float loop below unchanged.
+        // overflow) falls through to the `mod`/`div` loop below.
         if let Some(exact) = polymod_exact_int(target, &divisors, has_infinite) {
             return Ok(Value::seq(exact));
         }
         if let Some(exact) = polymod_exact(target, &divisors, has_infinite) {
             return Ok(Value::seq(exact));
         }
+        // Rakudo's `Real.polymod`: a negative invocant is a `Failure`, a zero
+        // divisor throws, and each step is the shared `mod`/`div` (ADR-0118), so
+        // an `Int` over a fractional divisor takes `mod`'s `Real, Real`
+        // candidate and `div`'s `Int` coercion (`10.polymod(2.5)` is
+        // `(-2.5, 5)`). A `Num` invocant decomposes in floating point
+        // (`(n - rem) / d`), and a zero element is always an `Int`.
+        let is_zero = |v: &Value| match v.view() {
+            ValueView::Int(i) => i == 0,
+            ValueView::Num(f) => f == 0.0,
+            ValueView::Rat(n, _) | ValueView::FatRat(n, _) => n == 0,
+            _ => false,
+        };
+        let is_negative = |v: &Value| match v.view() {
+            ValueView::Int(i) => i < 0,
+            ValueView::BigInt(b) => b.sign() == num_bigint::Sign::Minus,
+            ValueView::Num(f) => f < 0.0,
+            ValueView::Rat(n, _) | ValueView::FatRat(n, _) => n < 0,
+            _ => false,
+        };
+        if is_negative(target) {
+            return Ok(RuntimeError::out_of_range_failure(
+                "invocant to polymod",
+                target.clone(),
+                "0..^Inf",
+            ));
+        }
+        let mut n = target.clone();
         let mut result = Vec::new();
         let mut stopped = false;
         for d in &divisors {
-            let d_val = val_to_f64(d);
-            if d_val == 0.0 {
-                result.push(f64_to_val(n));
-                n = f64::INFINITY;
-                continue;
+            if is_zero(d) {
+                return Err(RuntimeError::numeric_divide_by_zero_full(
+                    Some(n.clone()),
+                    Some("polymod"),
+                ));
             }
             // For infinite lists, stop when n reaches 0
-            if has_infinite && n == 0.0 {
+            if has_infinite && is_zero(&n) {
                 stopped = true;
                 break;
             }
             // Modulo 1 always yields remainder 0 and quotient = n; for infinite lists
             // this would loop forever, so push n directly and stop
-            if has_infinite && d_val == 1.0 {
-                result.push(f64_to_val(n));
+            if has_infinite && matches!(d.view(), ValueView::Int(1)) {
+                result.push(n.clone());
                 stopped = true;
                 break;
             }
-            let rem = n % d_val;
-            let quot = ((n - rem) / d_val).trunc();
-            result.push(f64_to_val(rem));
-            n = quot;
+            let (rem, quot) = if matches!(n.view(), ValueView::Num(_)) {
+                let rem = crate::builtins::arith::arith_mod(n.clone(), d.clone())?;
+                let diff = crate::builtins::arith::arith_sub(n.clone(), rem.clone());
+                let quot = crate::builtins::arith::arith_div(diff, d.clone())?;
+                (rem, quot)
+            } else {
+                let rem = crate::builtins::arith::arith_mod_op(n.clone(), d.clone())?;
+                let quot = crate::builtins::arith::int_div(&n, d);
+                (rem, quot)
+            };
+            // A `Failure` step (a fractional divisor that coerces to the `Int` 0,
+            // `7.polymod(0.5)`) ends the decomposition, leaving the number as it
+            // stood, as in Rakudo.
+            let failed = |v: &Value| {
+                matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+            };
+            if failed(&rem) || failed(&quot) {
+                break;
+            }
+            let zero_to_int = |v: Value| {
+                if is_zero(&v) { Value::int(0) } else { v }
+            };
+            result.push(zero_to_int(rem));
+            n = zero_to_int(quot);
         }
         if !stopped {
-            result.push(f64_to_val(n));
+            result.push(n);
         }
         Ok(Value::seq(result))
     }
@@ -645,6 +661,11 @@ fn polymod_exact(target: &Value, divisors: &[Value], has_infinite: bool) -> Opti
     let mut result = Vec::with_capacity(divisors.len() + 1);
     for d in divisors {
         let (dn, dd) = polymod_rat(d)?;
+        // An `Int` over a fractional divisor takes `mod`'s `Real, Real`
+        // candidate and `div`'s `Int` coercion: the generic loop answers it.
+        if matches!(kind, PolymodKind::Int) && dd != 1 {
+            return None;
+        }
         if dn == 0 {
             return None; // zero divisor: leave to the float path's own handling
         }

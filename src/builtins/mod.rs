@@ -100,9 +100,9 @@ pub(crate) fn chomp_value(v: &Value) -> Value {
 
 pub(crate) use crate::value::flat::is_infinite_range;
 pub(crate) use arith::{
-    BitOp, arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub, int_abs,
-    int_abs_value, int_bitneg, int_bitop, int_cmp, int_div, int_gcd, int_lcm, int_operand,
-    int_shift_left, int_shift_right, int_to_base, value_pred, value_succ,
+    BitOp, arith_add, arith_div, arith_mod, arith_mod_op, arith_mul, arith_negate, arith_pow,
+    arith_sub, int_abs, int_abs_value, int_bitneg, int_bitop, int_cmp, int_div, int_gcd, int_lcm,
+    int_operand, int_shift_left, int_shift_right, int_to_base, value_pred, value_succ,
 };
 pub(crate) use functions::build_junction;
 pub(crate) use functions::epoch_nanos;

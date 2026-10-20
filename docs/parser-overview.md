@@ -37,6 +37,13 @@ High-impact groups in current order:
 
 ## Expression precedence (low -> high)
 
+Inline statement-modifier parsing stops before an explicit semicolon. The
+enclosing statement or semilist owns that separator; expression prefixes such
+as `try` must still see it so a following conditional starts a new statement.
+Full-statement prefix paths that consume other terminators use the shared
+`primary::ident::statement_terminator` helper to restore them. A rewritten
+heredoc remainder that already contains its separator is retained as-is.
+
 In `src/parser/expr.rs`, `expression()` starts at ternary/fat-arrow level and descends:
 
 1. `ternary` (`?? !!`)

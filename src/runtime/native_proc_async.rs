@@ -1,8 +1,8 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
-use crate::builtins::stream_decoder::{Codec, DecoderConfig, StreamDecoder, TextQueues};
-use crate::value::{AttrMap, BufBytes};
+use crate::builtins::stream_decoder::{ChunkDecoder, Codec};
+use crate::value::AttrMap;
 use std::io::{Read, Write};
 
 /// Create a Buf Value from raw bytes.
@@ -60,54 +60,30 @@ impl ChunkSinks {
     }
 }
 
-/// The text side of one Proc::Async output stream: the shared streaming
-/// decoder (#11783, `crate::builtins::stream_decoder`) over the bytes the
-/// reader thread has read so far. It is the same state machine behind
-/// `Encoding::Decoder::Builtin` and the `nqp::decoder*` ops, so a chunk
-/// boundary is handled exactly as Rakudo's decoder handles it:
-///
-/// * a final grapheme a later read could extend (a combining mark) is held
-///   back and flushed alone once the stream ends -- `printf "abc"; sleep 1;
-///   printf "def"` yields `"ab"`, `"cde"`, `"f"`. A chunk ending in a newline
-///   is delivered whole, which keeps line-oriented output streaming
-///   (`roast/S17-procasync/kill.t`);
-/// * a trailing `\r` is held until the byte after it is known, so the
-///   `\r\n` -> `\n` translation (stdout only) never sees a split pair;
-/// * a malformed byte, or an incomplete sequence at the end of the stream,
-///   quits the supply and drops whatever is held (roast
-///   S17-procasync/encoding.t).
+/// The text side of one Proc::Async output stream: the shared chunk decoder
+/// (`crate::builtins::stream_decoder::ChunkDecoder`, #11783) over the bytes
+/// the reader thread has read so far. A final grapheme is held back and
+/// flushed alone once the stream ends -- `printf "abc"; sleep 1; printf
+/// "def"` yields `"ab"`, `"cde"`, `"f"`; a chunk ending in a newline is
+/// delivered whole, which keeps line-oriented output streaming
+/// (`roast/S17-procasync/kill.t`). Only stdout translates `\r\n`. A
+/// malformed byte, or an incomplete sequence at the end of the stream, quits
+/// the supply and drops whatever is held (roast S17-procasync/encoding.t).
 struct ProcTextStream {
-    cfg: DecoderConfig,
-    bytes: BufBytes,
-    queues: TextQueues,
+    decoder: ChunkDecoder,
 }
 
 impl ProcTextStream {
     fn new(translate_crlf: bool) -> Self {
         ProcTextStream {
-            cfg: DecoderConfig {
-                codec: Codec::Utf8,
-                translate_nl: translate_crlf,
-                line_separators: Vec::new(),
-            },
-            bytes: BufBytes::new(),
-            queues: TextQueues::default(),
-        }
-    }
-
-    fn decoder(&mut self) -> StreamDecoder<'_> {
-        StreamDecoder {
-            cfg: &self.cfg,
-            bytes: &mut self.bytes,
-            q: &mut self.queues,
+            decoder: ChunkDecoder::new(Codec::Utf8, translate_crlf),
         }
     }
 
     /// Decode a read and deliver the text that is final. `true` when the
     /// stream is malformed -- the caller quits the supply.
     fn feed(&mut self, new: &[u8], sinks: &ChunkSinks, collected: &mut String) -> bool {
-        self.bytes.extend_from_slice(new);
-        match self.decoder().take_available_chars() {
+        match self.decoder.feed(new) {
             Ok(text) => {
                 send_chunk(text, sinks, collected);
                 false
@@ -119,7 +95,7 @@ impl ProcTextStream {
     /// The stream has ended: deliver the held-back text. `true` when bytes
     /// that do not form a whole character are left over.
     fn finish(&mut self, sinks: &ChunkSinks, collected: &mut String) -> bool {
-        match self.decoder().take_all_chars() {
+        match self.decoder.finish() {
             Ok(text) => {
                 send_chunk(text, sinks, collected);
                 false

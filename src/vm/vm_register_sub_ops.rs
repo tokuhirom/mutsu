@@ -33,8 +33,11 @@ impl Interpreter {
                 // candidate accepts this trait name, which is raku's
                 // compile-time "unknown trait" error (see the discrimination
                 // below).
-                let param_val =
-                    crate::value::signature::make_parameter_value_from_param_def(p, Some(&*self));
+                // Every trait of the declaration mutates the same object: the
+                // one the first trait got, kept on the declaration.
+                let param_val = p.trait_meta.get().unwrap_or_else(|| {
+                    crate::value::signature::fresh_parameter_value_from_param_def(p, Some(&*self))
+                });
                 // A trait written with its own argument (`is option<!>`,
                 // `is encoded('utf8')`) must hand that value to the candidate
                 // instead of a bare `True` -- Getopt::Long's own
@@ -69,18 +72,13 @@ impl Interpreter {
                     }
                     return Err(e);
                 }
-                // A trait body is almost always `$param does SomeRole`, which
-                // reblesses the object in place — so the type it left on this
-                // very handle IS the trait's effect on a parameter. Record it,
-                // because `Signature.params` builds a fresh `Parameter` on every
-                // access and the throwaway we just passed in is about to die.
-                if let ValueView::Instance { class_name, .. } = param_val.view()
-                    && class_name != "Parameter"
-                {
-                    crate::value::signature::register_param_trait_mixin_type(
-                        trait_name, class_name,
-                    );
-                }
+                // A trait body is almost always `$param does SomeRole(...)`,
+                // which reblesses the object in place and seeds the role's
+                // attributes on it. Keep the object on the declaration:
+                // `Signature.params` hands out this very `Parameter`, role,
+                // attribute values and all, as Rakudo's one compile-time
+                // object does (#13528).
+                p.trait_meta.set(param_val);
             }
             if let Some(subs) = &p.sub_signature {
                 self.check_param_custom_traits(subs)?;
