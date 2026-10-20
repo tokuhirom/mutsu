@@ -200,7 +200,8 @@ impl Interpreter {
         // A mixed-in role's rows (a wrapper role's `gist`, ADR-11276, #11276)
         // ahead of the native arms below that would answer the bare inner
         // value; as in `call_method_with_values`.
-        if let Some(owners) = crate::builtins::method_table::mixin_role_owners_of(target, method_name)
+        if let Some(owners) =
+            crate::builtins::method_table::mixin_role_owners_of(target, method_name)
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
                 &owners.iter().map(String::as_str).collect::<Vec<_>>(),
