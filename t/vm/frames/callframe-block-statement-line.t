@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 7;
+plan 8;
 
 # A block's call frame reports the line of the statement executing in the
 # block, not the line the enclosing statement (the one that built the block)
@@ -57,3 +57,10 @@ my &k = {
 };
 try k();
 ok $!.backtrace.map(*.line).grep(56), 'a die in a block reports its own line';
+
+class E { method be { callframe(1).line } }
+sub ex { E.new }
+my $m = cap {
+    ex().be;
+};
+is $m, 64, 'a method called on the first line of a block body reports that line';

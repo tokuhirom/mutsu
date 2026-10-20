@@ -109,7 +109,8 @@ pub(crate) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
 /// Public accessor for stmt_list (used by primary.rs for block expressions).
 ///
 /// An expression block's statements carry a `Stmt::SetLine` marker wherever
-/// the line changes from the line the block's body opens on, so a call from
+/// the line changes from the line of the block's `{` (callers skip the
+/// whitespace after it before calling this), so a call from
 /// its third line records that line, not the line of the statement that built
 /// the block (`callframe(N).line`, a backtrace; #13627). Statements on the
 /// opening line get none, so a one-line block keeps the bare body shape the
@@ -117,7 +118,7 @@ pub(crate) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
 // Cost: O(s + l), s = statements of the body, l = its line lookups.
 pub(crate) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
     let mut line = crate::parser::primary::is_within_original_source(input)
-        .then(|| crate::parser::primary::current_line_number(input));
+        .then(|| crate::parser::primary::line_before_whitespace(input));
     let (rest, stmts) = stmt_list_with_mode(input, false, true)?;
     let stmts = stmts
         .into_iter()
