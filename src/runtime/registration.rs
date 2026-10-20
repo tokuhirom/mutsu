@@ -313,6 +313,17 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         for parent in mro.iter().skip(1) {
             let registry = self.registry();
+            // A built-in parent (the `Attribute` an `$attr does R` mixin type
+            // inherits from) implements the method with a native row.
+            if !registry.classes.contains_key(parent.as_str())
+                && !matches!(parent.as_str(), "Any" | "Mu")
+                && crate::builtins::method_introspection::native_method_row_exists(
+                    parent.as_str(),
+                    method_name,
+                )
+            {
+                return true;
+            }
             let Some(defs) = registry.user_method_overloads(parent.as_str(), method_name) else {
                 continue;
             };

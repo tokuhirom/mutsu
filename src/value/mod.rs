@@ -633,6 +633,7 @@ pub(crate) mod temporal_core;
 pub(crate) mod to_list;
 mod to_list_range;
 pub(crate) mod type_name;
+pub(crate) mod attribute_class;
 pub(crate) mod types;
 pub(crate) mod types_eqv;
 pub(crate) mod types_isa;

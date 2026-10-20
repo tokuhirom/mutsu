@@ -461,6 +461,15 @@ impl Interpreter {
                         })
                 })
             }),
+            // An `Attribute` reblessed by `$attr does R`: the mixin type
+            // composed the role's methods.
+            ValueView::Instance { class_name, .. }
+                if crate::value::attribute_class::is_composed_meta_object(value) =>
+            {
+                self.registry()
+                    .user_method_overloads(class_name.as_str(), method_name)
+                    .is_some_and(|defs| defs.iter().any(|def| !def.is_private))
+            }
             _ => false,
         }
     }

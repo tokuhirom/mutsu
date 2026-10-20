@@ -128,9 +128,9 @@ pub(crate) const BUILTIN_PARENT_TYPES: &[&str] = &[
 /// into it: that table also decides whether a `does` target is composable
 /// (`registration_class_validate.rs`) and whether a `but`-mixin may take the
 /// class-declaration path instead of the wrapper one
-/// (`types::role_mixin_class`, whose own comment names `Attribute` as the
-/// example that must keep the wrapper). Only the `is`-parent existence check
-/// consults this list, so neither of those decisions moves.
+/// (`types::role_mixin_class`, which admits `Attribute` there on its own).
+/// Only the `is`-parent existence check consults this list, so neither of
+/// those decisions moves.
 pub(crate) const BUILTIN_INHERITABLE_TYPES: &[&str] = &[
     "Allomorph",
     "Attribute",

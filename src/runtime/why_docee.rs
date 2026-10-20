@@ -54,7 +54,7 @@ impl Interpreter {
         else {
             return false;
         };
-        if class_name != "Attribute" {
+        if !crate::value::attribute_class::is_attribute_class(class_name) {
             return false;
         }
         let attr = attr.as_map();

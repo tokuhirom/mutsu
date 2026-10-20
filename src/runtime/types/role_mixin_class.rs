@@ -229,11 +229,16 @@ impl Interpreter {
         }
         let base = class_name.resolve();
         // The mixin type inherits from the object's class, so the class has to be
-        // something a declaration may name as a parent. A built-in type with no
-        // registry entry (`Attribute`) is not, and keeps the wrapper path.
+        // something a declaration may name as a parent. `Attribute` is one: the
+        // reblessed meta-object keeps answering its own methods (the
+        // `Attribute` dispatch shape covers `Attribute+{R}`, see
+        // `value::attribute_class`), and only rebless makes a role a trait
+        // handler mixes in visible to the handler that called it (#13263).
+        // Another built-in type with no registry entry keeps the wrapper path.
         if !self.registry().classes.contains_key(base.as_str())
             && !crate::runtime::registration_class_decl::BUILTIN_PARENT_TYPES
                 .contains(&base.as_str())
+            && base != "Attribute"
         {
             return Ok(None);
         }

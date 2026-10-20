@@ -107,7 +107,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Attribute" => {
+            } if crate::value::attribute_class::is_attribute_class(class_name) => {
                 let map = attributes.as_map();
                 match (map.get("__mutsu_attr_owner"), map.get("__mutsu_attr_name")) {
                     (Some(owner), Some(attr)) => {
@@ -147,13 +147,13 @@ impl Interpreter {
         }
         let mixed = self.vm_does_values(doee, role)?;
         if let Some((owner, attr_name)) = attribute_target
-            && matches!(mixed.view(), ValueView::Mixin(..))
+            && crate::value::attribute_class::is_composed_meta_object(&mixed)
         {
             self.registry_mut()
                 .class_attribute_trait_objects
                 .insert((owner, attr_name), mixed.clone());
         }
-        if self.trait_mod_writeback_key.is_some() && matches!(mixed.view(), ValueView::Mixin(..)) {
+        if self.trait_mod_writeback_key.is_some() && crate::value::attribute_class::is_composed_meta_object(&mixed) {
             self.trait_mod_writeback_value = Some(mixed.clone());
             if Self::how_target_from_value(&mixed).is_none() {
                 self.trait_mod_attr_writeback_value = Some(mixed.clone());

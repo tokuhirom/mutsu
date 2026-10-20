@@ -234,7 +234,7 @@ impl Interpreter {
                 attributes: attr_attrs,
                 ..
             } = args[1].view()
-                && attr_class.resolve() == "Attribute"
+                && crate::value::attribute_class::is_attribute_class(attr_class)
             {
                 let attr_name_raw = attr_attrs
                     .as_map()

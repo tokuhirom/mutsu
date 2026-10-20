@@ -237,7 +237,7 @@ impl Interpreter {
         // AttrX::Mooish).
         if method == "get_value"
             && method_args.len() == 1
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Attribute")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if crate::value::attribute_class::is_attribute_class(class_name))
         {
             self.call_method_with_values(
                 target,
