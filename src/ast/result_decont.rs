@@ -64,36 +64,47 @@ pub(crate) fn result_is_decontainerized(param_defs: &[ParamDef], stmts: &[Stmt])
 
 /// Whether the value of `stmts` can be a readonly `$` parameter of the
 /// routine: its last value statement, an `if` branch's or a ternary arm's.
-// Cost: O(d), d = nesting of the tail's branches.
+/// Follows only the tail, with a worklist.
+// Cost: O(t + p * v), t = tail statements and arms followed, p = parameters,
+// v = variables reached.
 fn tail_is_readonly_param(param_defs: &[ParamDef], stmts: &[Stmt]) -> bool {
-    match super::last_value_stmt(stmts, super::TailSkip::Markers) {
-        Some(Stmt::Expr(expr)) => expr_is_readonly_param(param_defs, expr),
-        Some(Stmt::If {
-            then_branch,
-            else_branch,
-            ..
-        }) => {
-            tail_is_readonly_param(param_defs, then_branch)
-                || tail_is_readonly_param(param_defs, else_branch)
+    let mut bodies: Vec<&[Stmt]> = vec![stmts];
+    let mut values: Vec<&Expr> = Vec::new();
+    while let Some(body) = bodies.pop() {
+        match super::last_value_stmt(body, super::TailSkip::Markers) {
+            Some(Stmt::Expr(expr)) => values.push(expr),
+            Some(Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            }) => {
+                bodies.push(then_branch);
+                bodies.push(else_branch);
+            }
+            _ => {}
         }
-        _ => false,
     }
-}
-
-// Cost: O(p + d), p = parameters, d = nesting of ternary arms.
-fn expr_is_readonly_param(param_defs: &[ParamDef], expr: &Expr) -> bool {
-    match expr {
-        Expr::Var(name) => param_defs.iter().any(|pd| {
-            !pd.sigilless && pd.name == *name && !pd.traits.iter().any(|t| t == "rw" || t == "copy")
-        }),
-        Expr::Ternary {
-            then_expr,
-            else_expr,
-            ..
-        } => {
-            expr_is_readonly_param(param_defs, then_expr)
-                || expr_is_readonly_param(param_defs, else_expr)
+    while let Some(expr) = values.pop() {
+        match expr {
+            Expr::Var(name) => {
+                if param_defs.iter().any(|pd| {
+                    !pd.sigilless
+                        && pd.name == *name
+                        && !pd.traits.iter().any(|t| t == "rw" || t == "copy")
+                }) {
+                    return true;
+                }
+            }
+            Expr::Ternary {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                values.push(then_expr);
+                values.push(else_expr);
+            }
+            _ => {}
         }
-        _ => false,
     }
+    false
 }

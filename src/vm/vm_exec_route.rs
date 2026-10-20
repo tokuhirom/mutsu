@@ -207,8 +207,8 @@ impl Interpreter {
             | OpCode::PushBlockFrame
             | OpCode::SeqToList
             | OpCode::SinkPop(..)
-            | OpCode::SinkPopCall(_)
             | OpCode::SinkPopAssign
+            | OpCode::SinkPopCall(..)
             | OpCode::ThrowIfFailure
             | OpCode::WarnSuppressPop
             | OpCode::WarnSuppressPush => self.exec_ops_group_07(code, ip, compiled_fns),
