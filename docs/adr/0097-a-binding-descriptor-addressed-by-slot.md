@@ -1071,8 +1071,10 @@ its container where the container is made:
 
 - `state @s` / `%s` stamps its fresh container, as `my` already did.
 - A boxed declaration cell (`my $*OUT`) is named by its declaration.
-- A dynamic-variable argument binds `is rw` / raw parameters through the
-  same shared cell as a lexical one.
+- An `is rw` / raw parameter bound to a dynamic variable holds its own cell
+  carrying the variable's name. It does not share the declaration's cell:
+  installing a cell under a dynamic name in the callee leaked past `temp`
+  (`roast/S32-io/indir.t`).
 - An attribute's container is named after the attribute the first time
   `.VAR` reflects on it or a parameter receives it
   (`Value::name_attribute_container`). Attributes reach storage through

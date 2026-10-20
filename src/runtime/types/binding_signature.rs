@@ -3005,6 +3005,9 @@ impl Interpreter {
                     // Caller source name a scalar `is rw`/`is raw` param should
                     // alias through a shared cell (set below when eligible).
                     let mut rw_shared_cell_key: Option<String> = None;
+                    // The dynamic variable (`*OUT`) a scalar `is rw`/`is raw`
+                    // param aliases, which takes no shared cell here.
+                    let mut dynamic_source: Option<String> = None;
                     let arg_source_name = varref_from_value(&args[positional_idx])
                         .map(|(source_name, _)| source_name)
                         .or_else(|| {
@@ -3153,12 +3156,9 @@ impl Interpreter {
                                     .first()
                                     .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
                             // A sigilless source is named by its term key
-                            // (`\c`, ADR-12441); a dynamic one by its twigil
-                            // (`*OUT`), whose declaration's cell the
-                            // parameter aliases (`f(my $*OUT)`, #11196).
+                            // (`\c`, ADR-12441).
                             let source_is_plain_scalar = source_name
                                 .strip_prefix(crate::runtime::term_names::TERM_PREFIX)
-                                .or_else(|| source_name.strip_prefix('*'))
                                 .unwrap_or(&source_name)
                                 .as_bytes()
                                 .first()
@@ -3209,6 +3209,9 @@ impl Interpreter {
                                 && !raw_readonly_source
                             {
                                 rw_shared_cell_key = Some(source_name.clone());
+                            }
+                            if param_is_plain_scalar && source_name.starts_with('*') {
+                                dynamic_source = Some(source_name.clone());
                             }
                             // Set up a sigilless alias so that subsequent `:=`
                             // bindings (e.g. `$a := $arg`) can transitively
@@ -3882,6 +3885,26 @@ impl Interpreter {
                             value
                         };
                         let value = Self::itemize_plain_scalar_param(pd, value);
+                        // A dynamic variable is not boxed into a shared cell
+                        // here, but the parameter still aliases its container,
+                        // whose descriptor names it (`.VAR.name`, #11196; Tee's
+                        // `Tee($file, my $*OUT)` keys on it).
+                        // The parameter's own cell carries that name; the
+                        // caller's variable is untouched (writes reach it
+                        // through the rw writeback, as before) -- installing a
+                        // cell under the dynamic name would leak past `temp`.
+                        let value = match dynamic_source.take() {
+                            Some(src) if !value.is_proxy_value() => {
+                                let cell = if value.is_container_ref() {
+                                    value
+                                } else {
+                                    value.into_container_ref()
+                                };
+                                crate::value::name_container_cell(&cell, &format!("${src}"));
+                                cell
+                            }
+                            _ => value,
+                        };
                         self.bind_param_value_sym(binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,

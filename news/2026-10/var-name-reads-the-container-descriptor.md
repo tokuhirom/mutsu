@@ -23,6 +23,6 @@ record still covered now name their containers instead:
 
 - `state @s` names its container, as `my @s` does.
 - A `my $*OUT` declaration's cell carries its name.
-- `f(my $*OUT)` binds an `is rw` or sigilless parameter through that same
-  cell, as it does for a lexical.
+- An `is rw` or sigilless parameter bound to a dynamic variable
+  (`f(my $*OUT)`) holds a cell named after that variable.
 - An attribute's container is named after the attribute.

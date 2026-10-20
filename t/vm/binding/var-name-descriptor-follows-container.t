@@ -4,7 +4,7 @@ use Test;
 # it on the container's descriptor: the declaration that named it, however
 # many parameters it was passed through, else "element" for an anonymous one.
 
-plan 16;
+plan 17;
 
 sub f(@kh) { @kh.VAR.name }
 sub g(%kh) { %kh.VAR.name }
@@ -50,3 +50,9 @@ is rw(my $*FRESH), '$*FRESH', 'a dynamic variable declared in the argument list'
 sub writes(\x) { x = 5 }
 writes($*DYN);
 is $*DYN, 5, 'a write through the parameter reaches the dynamic variable';
+
+sub takes-raw($x is raw) { 1 }
+sub restores { temp $*TEMPED = 1; takes-raw($*TEMPED); $*TEMPED = 2 }
+my $*TEMPED = 0;
+restores();
+is $*TEMPED, 0, 'binding a dynamic variable to a raw parameter does not defeat `temp`';
