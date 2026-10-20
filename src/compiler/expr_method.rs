@@ -963,8 +963,11 @@ impl Compiler {
         // does (a literal name compiles on the BareWord `self` as a variable
         // target), so a mutator on a `Hash`/`Array` subclass's storage reaches
         // its writeback.
+        // Any other bare word (a type name: `List."$m"(1)`) takes the mutating
+        // entry too, as the literal spelling does (`compile_expr_method_on_var`),
+        // so a mutator refuses a type object the same way (#13888).
         let target_var_name = match target {
-            Expr::BareWord(n) if n == "self" => Some(self.sigilless_storage_key(n)),
+            Expr::BareWord(n) => Some(self.sigilless_storage_key(n)),
             other => other.container_var_key(),
         };
         self.compile_expr(target);
