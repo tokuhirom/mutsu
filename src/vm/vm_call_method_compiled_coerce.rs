@@ -206,6 +206,14 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // Only a built-in iterator: the other opaque shapes (an enum member whose
+        // enum composes a role of its own) answer through the by-name dispatch.
+        if !matches!(
+            target.receiver_shape()?,
+            crate::value::DispatchShape::Iterator | crate::value::DispatchShape::PredictiveIterator
+        ) {
+            return None;
+        }
         let owners = crate::builtins::method_table::opaque_owners_of(target)?;
         crate::builtins::method_table::invoke_owner(self, owners, method, args, || target.clone())
     }

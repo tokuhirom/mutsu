@@ -853,7 +853,12 @@ impl Interpreter {
         // A built-in iterator does `Iterator` and, when it knows its count,
         // `PredictiveIterator`: its protocol methods are those roles' rows, found
         // by the owners of its opaque shape (ADR-11276 §9.126).
-        if let Some(owners) = crate::builtins::method_table::opaque_owners_of(target) {
+        if let Some(owners) = crate::builtins::method_table::opaque_owners_of(target)
+            && matches!(
+                target.receiver_shape(),
+                Some(crate::value::DispatchShape::Iterator | crate::value::DispatchShape::PredictiveIterator)
+            )
+        {
             let method = Symbol::intern(method_name);
             if let Some(owner) = owners
                 .iter()
