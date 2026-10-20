@@ -1478,7 +1478,15 @@ impl Interpreter {
             if has_subclass_attr {
                 target
             } else {
-                self.auto_fetch_proxy(&target)?
+                let fetched = self.auto_fetch_proxy(&target)?;
+                // The shadow query above saw the Proxy, not the value it
+                // holds: a user method of the fetched value's class (a
+                // `Blob`-doing class's own `Str`) takes the call from the
+                // built-in row exactly as it does without the Proxy.
+                if !skip_native {
+                    skip_native = self.user_shadows_builtin(&fetched, method_sym, &args, quoted);
+                }
+                fetched
             }
         } else {
             target
