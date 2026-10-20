@@ -18,52 +18,65 @@ use super::*;
 use std::collections::HashSet;
 
 impl Interpreter {
-    /// Declare `role`'s plain body `sub`s again in `class`'s package, closed
+    /// Declare `role`'s (named `role_name`) plain body `sub`s again in
+    /// `class`'s package, closed
     /// over `class`'s statics for the names in `declared` (the body's
     /// lexicals). Only a plain, non-exported `sub` without custom traits is
     /// re-declared: a `multi` or exported one belongs to the role (it is
     /// registered once, at declaration), and running a trait again would
-    /// apply it twice (#13645). A name the class declares a `sub` of itself
-    /// keeps the class's; the composed methods then call that one, as before.
-    // TODO: a role method should call the role body's `sub` even when the
-    // composing class declares its own of the same name (Rakudo keeps the two
-    // lexical scopes apart); that needs a per-method lexical scope for the
-    // role body, which the package-keyed registration cannot express.
+    /// apply it twice (#13645). When the class declares a `sub` of one of
+    /// the names itself, the subs go into the role's composition scope in
+    /// `class` instead (`role_composition_scope`), where the composed role
+    /// methods run; the class's own methods keep calling the class's (#14177).
     // Cost: O(s + v), s = the body's statements, v = `declared`; plus one
     // sub registration per re-declared sub.
     pub(super) fn register_role_body_subs_per_composer(
         &mut self,
         class: &str,
         class_body: &[crate::opcode::ClassBodyOp],
+        role_name: &str,
         role: &RoleDef,
         declared: &HashSet<String>,
     ) -> Result<(), RuntimeError> {
-        let subs: Vec<&crate::opcode::DeferredBodyOp> = role
+        let class_sym = Symbol::intern(class);
+        let scope = crate::runtime::registration_role_composition_scope::role_composition_scope(
+            class_sym,
+            Symbol::intern(role_name),
+        );
+        let candidates: Vec<(&crate::opcode::DeferredBodyOp, Symbol)> = role
             .deferred_body
             .iter()
-            .filter(|op| {
-                op.kind == crate::opcode::DeferredBodyOpKind::Plain
-                    && match &op.raw {
-                        Stmt::SubDecl {
-                            name,
-                            multi: false,
-                            is_export: false,
-                            name_expr: None,
-                            custom_traits,
-                            ..
-                        } if custom_traits.is_empty() => {
-                            let key =
-                                crate::qualified::qualified(Symbol::intern(class), *name);
-                            !self.registry().functions.contains_key(&key)
-                                && !class_body.iter().any(|op| {
-                                    matches!(op, crate::opcode::ClassBodyOp::ClassSub {
-                                        name: own, ..
-                                    } if own == name)
-                                })
-                        }
-                        _ => false,
-                    }
+            .filter(|op| op.kind == crate::opcode::DeferredBodyOpKind::Plain)
+            .filter_map(|op| match &op.raw {
+                Stmt::SubDecl {
+                    name,
+                    multi: false,
+                    is_export: false,
+                    name_expr: None,
+                    custom_traits,
+                    ..
+                } if custom_traits.is_empty() => Some((op, *name)),
+                _ => None,
             })
+            .collect();
+        // When the class declares a `sub` of one of the names, the body's subs
+        // all go into the composition scope, so they keep reaching each other
+        // and not the class's; otherwise they go into the class's package.
+        let shadowed = candidates.iter().any(|(_, name)| {
+            class_body.iter().any(|op| {
+                matches!(op, crate::opcode::ClassBodyOp::ClassSub { name: own, .. } if own == name)
+            })
+        });
+        let package = if shadowed { scope } else { class_sym };
+        let subs: Vec<&crate::opcode::DeferredBodyOp> = candidates
+            .into_iter()
+            .filter(|(_, name)| {
+                !self
+                    .registry()
+                    .functions
+                    .contains_key(&crate::qualified::qualified(package, *name))
+            })
+            .map(|(op, _)| op)
             .collect();
         if subs.is_empty() {
             return Ok(());
@@ -82,18 +95,38 @@ impl Interpreter {
                 .collect(),
             None => Vec::new(),
         };
-        if cells.is_empty() {
+        // With no body lexicals to close over, the role's own registration
+        // already serves every composer that does not shadow one of its subs.
+        if subs.is_empty() || (cells.is_empty() && !shadowed) {
             return Ok(());
         }
+        if shadowed {
+            self.registry_mut().role_composition_scopes.insert(scope);
+            self.share_role_body_statics_with_scope(class, scope.as_str(), declared);
+        }
+        // A sub declaration also binds `&name` in the env, where the class's
+        // own same-named sub is bound; that binding is put back afterwards.
+        let amp_names: Vec<String> = if shadowed {
+            subs.iter()
+                .filter_map(|op| match &op.raw {
+                    Stmt::SubDecl { name, .. } => Some(format!("&{name}")),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let saved: Vec<(String, Option<Value>)> = cells
             .iter()
-            .map(|(name, _)| (name.clone(), self.env.get(name).cloned()))
+            .map(|(name, _)| name)
+            .chain(amp_names.iter())
+            .map(|name| (name.clone(), self.env.get(name).cloned()))
             .collect();
         for (name, cell) in cells {
             self.env.insert(name, cell);
         }
         let saved_package = self.current_package().to_string();
-        self.set_current_package(class.to_string());
+        self.set_current_package(package.as_str().to_string());
         let saved_file = self.enter_source_file(role.decl_file.as_deref());
         let mut result = Ok(());
         for op in subs {
@@ -112,5 +145,45 @@ impl Interpreter {
             Self::restore_env_entry(&mut self.env, &name, prior);
         }
         result
+    }
+
+    /// Make the role body's lexicals that `class` holds as statics (`declared`)
+    /// statics of the composition scope `scope` too, sharing the same cells: a
+    /// role method or sub running in the scope reads and writes the body's
+    /// lexicals there, and must see what one running in `class` did.
+    // Cost: O(v), v = `declared`.
+    fn share_role_body_statics_with_scope(
+        &mut self,
+        class: &str,
+        scope: &str,
+        declared: &HashSet<String>,
+    ) {
+        let shared: Vec<(String, Value)> = match self.lexicals.package_lexicals.get(class) {
+            Some(statics) => declared
+                .iter()
+                .filter_map(|name| {
+                    statics
+                        .get(name.as_str())
+                        .map(|value| (name.clone(), value.clone()))
+                })
+                .collect(),
+            None => return,
+        };
+        if shared.is_empty() {
+            return;
+        }
+        let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
+            .entry(scope.to_string())
+            .or_default();
+        for (name, _) in &shared {
+            marks.insert(name.clone());
+        }
+        let store = self
+            .package_lexicals_cow_mut()
+            .entry(scope.to_string())
+            .or_default();
+        for (name, value) in shared {
+            store.insert(name, value);
+        }
     }
 }

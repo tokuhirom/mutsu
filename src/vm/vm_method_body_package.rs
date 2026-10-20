@@ -25,6 +25,21 @@ impl Interpreter {
         owner_sym: Symbol,
         method_def: &crate::runtime::MethodDef,
     ) -> Option<Symbol> {
+        // A role method composed into a class that shadows one of the role
+        // body's subs runs in the role's composition scope, where it finds the
+        // role's sub first and the class's package next (#14177).
+        if let Some(role) = method_def.role_origin.as_deref()
+            && role != owner_class
+            && !self.registry().role_composition_scopes.is_empty()
+        {
+            let scope = crate::runtime::registration_role_composition_scope::role_composition_scope(
+                owner_sym,
+                Symbol::intern(role),
+            );
+            if self.registry().role_composition_scopes.contains(&scope) {
+                return Some(scope);
+            }
+        }
         if self.types.published_mixins.may_hold(owner_class) {
             return method_def
                 .original_role

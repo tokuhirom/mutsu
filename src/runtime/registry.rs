@@ -445,6 +445,10 @@ pub(crate) struct Registry {
     pub(crate) class_enum_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
     pub(crate) class_subs: CowTable<HashMap<String, HashMap<String, Value>>>,
+    /// Role composition scopes (`K::&role:R`) holding a role body's `sub`
+    /// whose name the composing class declares too; a role method composed
+    /// into `K` runs in its scope (`role_composition_scope`, #14177).
+    pub(crate) role_composition_scopes: HashSet<crate::symbol::Symbol>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
     pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.
