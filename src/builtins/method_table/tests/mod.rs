@@ -152,9 +152,10 @@ fn sample(shape: DispatchShape) -> Value {
             Value::make_instance(Symbol::intern("Attribute"), attributes)
         }
         DispatchShape::Variable => instance_sample("Variable"),
-        // An opaque shape's handlers read the runtime state its attributes
-        // name; a bare instance has none, and its rows decline or refuse it.
-        shape if shape.is_opaque() => instance_sample(shape.type_name()),
+        DispatchShape::Promise => Value::promise(crate::value::SharedPromise::new()),
+        DispatchShape::Channel => Value::channel(crate::value::SharedChannel::new()),
+        DispatchShape::HyperSeq => Value::hyper_seq(vec![Value::int(1)]),
+        DispatchShape::RaceSeq => Value::race_seq(vec![Value::int(1)]),
         DispatchShape::Collation => {
             crate::runtime::Interpreter::make_collation_instance(1, 1, 1, 1)
         }
@@ -167,6 +168,12 @@ fn sample(shape: DispatchShape) -> Value {
             );
             attributes.insert("text".to_string(), Value::str_from("  in block <unit>\n"));
             Value::make_instance(Symbol::intern("Backtrace"), attributes)
+        }
+        // An opaque shape's handlers read the runtime state its attributes
+        // name; a bare instance has none, and its rows decline or refuse it.
+        shape => {
+            assert!(shape.is_opaque(), "{shape:?} needs a sample");
+            instance_sample(shape.type_name())
         }
     }
 }
