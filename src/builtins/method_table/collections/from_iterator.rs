@@ -1,4 +1,4 @@
-//! `List.from-iterator` and `Array.from-iterator` (ADR-11276 §9.164): a type
+//! `List.from-iterator`, `Array.from-iterator` and `Array.from-list` (ADR-11276 §9.164): a type
 //! object's constructor from an `Iterator` (`List:U: Iterator $iter`).
 //!
 //! A `Slip` inherits `List`'s and builds a `Slip`. The type objects reach the
@@ -28,7 +28,37 @@ macro_rules! row {
     };
 }
 
-pub(super) static ROWS: &[MethodRow] = &[row!("List"), row!("Array")];
+pub(super) static ROWS: &[MethodRow] = &[
+    row!("List"),
+    row!("Array"),
+    MethodRow {
+        owner: "Array",
+        name: "from-list",
+        arity: 1,
+        handler: Handler::Interp(from_list),
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::TYPE_OBJECT_OK)
+            .or(RowFlags::CLASS_METHOD)
+            .or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+];
+
+/// `Array.from-list(\list)`: a new `Array` over the elements of an already
+/// reified `List` (`Array:U: Mu \list`).
+// Cost: O(e), e = elements (they are copied once).
+fn from_list(
+    _interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if !matches!(target.view(), ValueView::Package(_)) {
+        return None;
+    }
+    let items = args[0].as_list_items()?;
+    Some(Ok(Value::real_array(items.to_vec())))
+}
 
 // Cost: as `Interpreter::list_from_iterator`.
 fn from_iterator(

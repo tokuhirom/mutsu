@@ -885,7 +885,7 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 41] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 42] = [
     // `Any`'s list coercions (`method_table::any_coerce`, §9.110).
     "List",
     "list",
@@ -939,6 +939,8 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 41] = [
     "tree",
     // `Any.chrs` (§9.112): `self.list.chrs`.
     "chrs",
+    // `Any.lazy-if` ignores its flag: the receiver itself.
+    "lazy-if",
 ];
 
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];
