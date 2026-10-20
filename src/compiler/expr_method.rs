@@ -175,6 +175,15 @@ impl Compiler {
         }
     }
 
+    /// The `Any` keyword, which the parser folds to a type-object literal
+    /// where every other type word stays a `BareWord`.
+    pub(super) fn is_any_type_literal(target: &Expr) -> bool {
+        matches!(
+            target,
+            Expr::Literal(v) if matches!(v.view(), ValueView::Package(name) if name == "Any")
+        )
+    }
+
     /// Compile method call on variable target (needs writeback).
     pub(super) fn compile_expr_method_on_var(
         &mut self,
@@ -187,6 +196,12 @@ impl Compiler {
         let target_name = match target {
             // A sigil-less constant is reached through its term key (#9962).
             Expr::BareWord(n) => self.sigilless_storage_key(n),
+            // The parser folds the `Any` keyword to a type-object literal.
+            // It names no variable (a plain `Any` key would collide with a
+            // scalar `$Any`, and the root env holds a `Nil` slot under it), so
+            // it takes a term key, which a mutator refuses as a containerless
+            // type object (`Any.push(1)`, #14107).
+            Expr::Literal(_) => crate::runtime::term_names::term_key("Any"),
             Expr::DoStmt(stmt) => match stmt.as_ref() {
                 Stmt::VarDecl { name, .. } => name.clone(),
                 _ => unreachable!(),
