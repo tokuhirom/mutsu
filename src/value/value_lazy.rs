@@ -240,16 +240,6 @@ impl LazyList {
             })
     }
 
-    /// A plain `gather` body (a coroutine, not a `...` sequence, scan or
-    /// lazy pipe).
-    // Cost: O(1).
-    pub(crate) fn is_gather_coroutine(&self) -> bool {
-        self.coroutine.is_some()
-            && self.sequence_spec.is_none()
-            && self.scan_spec.is_none()
-            && self.lazy_pipe.is_none()
-    }
-
     /// The Seq a stream pipe ([`LazyList::new_stream_pipe`]) hands through,
     /// as `Interpreter::gather_stream` builds one over a gather: a pipe with
     /// no callback, no adaptor and the `Identity` transform, over a `Seq`.
