@@ -125,7 +125,12 @@ impl Interpreter {
         let ValueView::ContainerRef(cell) = value.view() else {
             return;
         };
-        let constraint = self.declared_scalar_type(name);
+        // `my Str @a` / `my Int %h` record the ELEMENT type under the
+        // sigiled name; a cell holding the whole aggregate must not check
+        // `@a = ()` against it (the typed container checks its elements).
+        let constraint = self
+            .declared_scalar_type(name)
+            .filter(|_| !name.starts_with(['@', '%']));
         if let Some(constraint) = constraint {
             let display = if name.starts_with(['$', '@', '%', '&']) {
                 name.to_string()
