@@ -496,6 +496,7 @@ pub(crate) fn share_body_static_scalar(bare: &str, value: Value) -> Value {
     // binding, not a container.
     if bare.starts_with(['@', '%', '&'])
         || bare.starts_with(crate::term_names::TERM_PREFIX)
+        || bare.starts_with(crate::term_names::LEXICAL_TYPE_PREFIX)
         || value.is_container_ref()
     {
         return value;

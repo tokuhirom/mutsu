@@ -59,6 +59,7 @@ impl Interpreter {
                 // the env under its term key (`\H`).
                 let declared_name = bare
                     .strip_prefix(crate::term_names::TERM_PREFIX)
+                    .or_else(|| bare.strip_prefix(crate::term_names::LEXICAL_TYPE_PREFIX))
                     .unwrap_or(bare.as_str());
                 if !declared.contains(declared_name) {
                     return None;

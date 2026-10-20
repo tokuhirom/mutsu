@@ -1,0 +1,55 @@
+use Test;
+plan 18;
+
+role Local { }
+role Owner[Str :$name] {
+    my role Local { method greeting { 'hello' } }
+    my $Local = 'scalar';
+    multi sub read($value where * !~~ Local, |rest) {
+        $value does Local;
+        read($value, |rest)
+    }
+    multi sub read(Local $value, Int $count) { 'ok ' ~ $count }
+    method go($value) { read($value, 3) }
+    method wrap($value) { $value does Local }
+    method checked(Local $value) { $value.greeting }
+    method local-type { Local }
+    method scalar { $Local }
+    method set-scalar($value) { $Local = $value }
+}
+class A does Owner[name => 'a'] { }
+class B does Owner[name => 'b'] { }
+class Element { }
+
+my $a = A.new;
+my $b = B.new;
+is $a.go(Element.new), 'ok 3', 'a recursive multi accepts the role it just applied';
+is $a.go(Element.new), 'ok 3', 'the typed multi works on repeated calls';
+is $b.go(Element.new), 'ok 3', 'another parameterization keeps its local role binding';
+my $wrapped = $a.wrap(Element.new);
+is $a.checked($wrapped), 'hello', 'a role-typed method accepts its own local role';
+is $b.checked($wrapped), 'hello', 'a parameter-independent local role is shared';
+ok $a.local-type === $b.local-type, 'the declaration retains the same role identity';
+ok $wrapped ~~ $a.local-type, 'smartmatch agrees with parameter binding';
+nok $wrapped ~~ Local, 'the same-named outer role remains a distinct type';
+is $a.scalar, 'scalar', 'a same-named scalar does not replace the local type';
+$a.set-scalar('changed');
+is $a.scalar, 'changed', 'the same-named scalar remains a writable container';
+is $a.checked($wrapped), 'hello', 'changing the scalar does not change a signature type';
+dies-ok { $a.checked(Element.new) }, 'a bare object is rejected by the role constraint';
+
+role Other[::T] {
+    my role Local { method greeting { 'other' } }
+    method wrap($value) { $value does Local }
+    method checked(Local $value) { $value.greeting }
+    method local-type { Local }
+}
+class C does Other[Int] { }
+my $c = C.new;
+my $other = $c.wrap(Element.new);
+is $c.checked($other), 'other', 'another declaration resolves its own local role';
+nok $c.local-type === $a.local-type, 'same-named roles at different sites are distinct';
+dies-ok { $c.checked($wrapped) }, 'the other declaration rejects the first role';
+dies-ok { $a.checked($other) }, 'the first declaration rejects the other role';
+is $a.checked($wrapped), 'hello', 'later role declarations do not retarget the first signature';
+ok $other ~~ $c.local-type, 'the other role also agrees with smartmatch';
