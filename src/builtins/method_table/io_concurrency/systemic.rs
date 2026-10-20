@@ -81,7 +81,15 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     attr!("Kernel", "version"),
     attr!("Kernel", "signature"),
-    attr!("Kernel", "signals"),
+    // A method, not an attribute: its type object is refused for its `:D`
+    // invocant (#13952).
+    row!(
+        "Kernel",
+        "signals",
+        0,
+        Handler::Narrow(|target, _| attribute(target, "signals")),
+        RowFlags::DEFINITE
+    ),
     row!(
         "Kernel",
         "endian",
@@ -152,7 +160,15 @@ pub(super) static ROWS: &[MethodRow] = &[
     attr!("Raku", "name"),
     attr!("Raku", "auth"),
     attr!("Raku", "desc"),
-    attr!("Raku", "version"),
+    // `Raku.version` is the language revision, so the type object answers it
+    // too (#13952).
+    row!(
+        "Raku",
+        "version",
+        0,
+        Handler::Narrow(raku_version),
+        RowFlags::TYPE_OBJECT_OK
+    ),
     attr!("Raku", "signature"),
     // A new `Compiler` object each call: an identity of its own.
     row!(
@@ -216,6 +232,16 @@ fn attribute(target: &Value, name: &str) -> Answer {
         }
         _ => Value::NIL,
     }))
+}
+
+/// `Raku.version`: the instance's `version`, or for the type object the
+/// language revision in force.
+// Cost: O(1).
+fn raku_version(target: &Value, _: &[Value]) -> Answer {
+    match target.view() {
+        ValueView::Instance { .. } => attribute(target, "version"),
+        _ => Some(Ok(Interpreter::language_version_value())),
+    }
 }
 
 /// The attribute `name` of the receiver as a string, empty when it has none.
