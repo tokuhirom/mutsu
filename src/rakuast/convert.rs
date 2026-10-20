@@ -3125,6 +3125,38 @@ fn signature_bind_node(signature: &Expr, rhs: &Expr) -> Result<RakuAstNode, Runt
     })
 }
 
+/// Source provenance applies to this identifier only. Arguments still pass
+/// through ordinary conversion, including its generated-construct guards.
+// Cost: O(n), n = identifier length and converted argument nodes.
+fn written_identifier(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    match expr {
+        Expr::Var(name) => Ok(written_variable("$", name)),
+        Expr::ArrayVar(name) => Ok(written_variable("@", name)),
+        Expr::HashVar(name) => Ok(written_variable("%", name)),
+        Expr::CodeVar(name) => Ok(written_variable("&", name)),
+        Expr::Call { name, args, listop } | Expr::UserRoutineCall { name, args, listop } => {
+            named_routine_call(expr, name.as_str(), args, *listop)
+        }
+        _ => Err(unsupported(
+            "source identifier without an identifier expression",
+        )),
+    }
+}
+
+fn named_routine_call(
+    expr: &Expr,
+    name: &str,
+    args: &[Expr],
+    listop: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut node = call_name(name, args, listop)?;
+    if matches!(expr, Expr::UserRoutineCall { .. }) {
+        node.fields
+            .push(super::declared_routines::user_call_field());
+    }
+    Ok(node)
+}
+
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = super::deferred_name::convert(expr) {
         return node;
@@ -3145,6 +3177,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `<a b  c>`: rakudo keeps the raw text of a word list, whitespace
         // included, as one word-quote (ADR-12199).
         Expr::Spelled(spelled) => match &spelled.spelling {
+            Spelling::SourceIdentifier => written_identifier(&spelled.expr),
             Spelling::ArraySections(sections) => {
                 let fields = sections
                     .iter()
@@ -3371,12 +3404,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     fields,
                 });
             }
-            let mut node = call_name(name.as_str(), args, listop)?;
-            if matches!(expr, Expr::UserRoutineCall { .. }) {
-                node.fields
-                    .push(super::declared_routines::user_call_field());
-            }
-            Ok(node)
+            named_routine_call(expr, name.as_str(), args, listop)
         }
         Expr::Var(name) => {
             if let Some(capture) = super::match_vars::convert_positional(name) {
@@ -6601,6 +6629,12 @@ pub(super) fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
     {
         return anonymous_declaration(Some("state"), sigil, None);
     }
+    written_variable(sigil, name)
+}
+
+/// A source-written name is never an anonymous parser temporary.
+// Cost: O(n), n = identifier length.
+fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
     // A `$!x` private attribute is a `Var::Attribute` of the whole spelling; a
     // `$.x` public one a `Var::Attribute::Public` whose `name` is the whole
     // spelling too (measured on 2026.09).

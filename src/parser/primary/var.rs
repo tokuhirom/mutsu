@@ -32,6 +32,21 @@ pub(crate) use sigil_vars::is_known_word_infix;
 
 // ── pub(super): accessible from parser::primary (the parent of `var`)
 //    and all its descendants via `crate::parser::primary::var::` paths ──────
-pub(super) use scalar::{parse_dollar_paren_block_pub, parse_var_name_from_str, scalar_var};
+pub(super) use scalar::{parse_dollar_paren_block_pub, parse_var_name_from_str};
 pub(crate) use sigil_vars::fresh_anon_array_name;
-pub(crate) use sigil_vars::{array_var, code_var, hash_var};
+
+macro_rules! source_variable {
+    ($name:ident, $module:ident) => {
+        pub(crate) fn $name(
+            input: &str,
+        ) -> crate::parser::parse_result::PResult<'_, crate::ast::Expr> {
+            $module::$name(input)
+                .map(|(rest, expr)| (rest, crate::ast::Expr::source_identifier(expr, input)))
+        }
+    };
+}
+
+source_variable!(scalar_var, scalar);
+source_variable!(array_var, sigil_vars);
+source_variable!(hash_var, sigil_vars);
+source_variable!(code_var, sigil_vars);

@@ -20,6 +20,10 @@ use std::cell::Cell;
 /// How a term was written, when that is not recoverable from its value.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Spelling {
+    /// An identifier written in source whose spelling also resembles an
+    /// internal parser name. Only this leaf/call is source-written; its
+    /// children retain their own provenance.
+    SourceIdentifier,
     /// A labelled bare block, whose execution uses a labelled do-block.
     LabelledBlock,
     /// A source label reference whose executable term is a Label value.
@@ -112,6 +116,29 @@ pub(crate) fn keeping() -> bool {
 }
 
 impl Expr {
+    /// Preserve a source identifier that otherwise resembles a generated name.
+    /// The input check excludes anonymous variables minted while parsing a
+    /// bare sigil and helpers synthesized by a keyword parser.
+    // Cost: O(k), k = identifier length.
+    pub(crate) fn source_identifier(expr: Expr, written: &str) -> Expr {
+        let source_name = match &expr {
+            Expr::Var(name) => written.strip_prefix('$').map(|rest| (name.as_str(), rest)),
+            Expr::ArrayVar(name) => written.strip_prefix('@').map(|rest| (name.as_str(), rest)),
+            Expr::HashVar(name) => written.strip_prefix('%').map(|rest| (name.as_str(), rest)),
+            Expr::CodeVar(name) => written.strip_prefix('&').map(|rest| (name.as_str(), rest)),
+            Expr::Call { name, .. } | Expr::UserRoutineCall { name, .. } => {
+                Some((name.as_str(), written))
+            }
+            _ => None,
+        };
+        if source_name.is_some_and(|(name, text)| name.starts_with("__") && text.starts_with(name))
+        {
+            Self::spelled(expr, || Spelling::SourceIdentifier)
+        } else {
+            expr
+        }
+    }
+
     /// `expr`, wrapped to remember its `spelling` when the running parse keeps
     /// spellings; `expr` itself otherwise. `spelling` is only built then.
     // Cost: O(1), plus the cost of `spelling` when it is built.
@@ -131,6 +158,19 @@ impl Expr {
 mod tests {
     use super::*;
     use crate::value::Value;
+
+    #[test]
+    fn source_identifiers_only_wrap_when_requested_and_written() {
+        let plain = Expr::source_identifier(Expr::Var("__x".into()), "$__x");
+        assert!(matches!(plain, Expr::Var(_)));
+        let _guard = keep_spelling(true);
+        let written = Expr::source_identifier(Expr::Var("__x".into()), "$__x");
+        assert!(matches!(written, Expr::Spelled(_)));
+        let anonymous = Expr::source_identifier(Expr::Var("__ANON_STATE_1__".into()), "$");
+        assert!(matches!(anonymous, Expr::Var(_)));
+        let synthesized = Expr::source_identifier(Expr::Var("__with_tmp_0".into()), "with");
+        assert!(matches!(synthesized, Expr::Var(_)));
+    }
 
     fn words() -> Expr {
         Expr::ArrayLiteral(vec![

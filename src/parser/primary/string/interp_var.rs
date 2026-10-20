@@ -487,8 +487,10 @@ pub(crate) fn try_interpolate_var<'a>(
             // An interpolated `$self` is the user lexical, not the `self` term —
             // it takes the reserved key like every other `$`-sigiled `self`
             // (ADR-0061).
-            let (expr, var_rest) =
-                parse_postcircumfix_index(var_rest, crate::ast::scalar_var_expr(var_name));
+            let (expr, var_rest) = parse_postcircumfix_index(
+                var_rest,
+                Expr::source_identifier(crate::ast::scalar_var_expr(var_name), rest),
+            );
             // Handle postcircumfix call interpolation: "$var()" / "$var(args)"
             let (expr, var_rest) = try_parse_interp_call(var_rest, expr);
             // Handle method call interpolation: "$var.method()" or "$var.method"
@@ -565,7 +567,7 @@ pub(crate) fn try_interpolate_var<'a>(
             });
         }
         if let Some((name, after_name)) = split_interp_var_name(&rest[1..]) {
-            let expr = Expr::ArrayVar(name.to_string());
+            let expr = Expr::source_identifier(Expr::ArrayVar(name.to_string()), rest);
             let mut remainder = after_name;
             // Zen-slice interpolation: "@arr[]" and "@arr.[]" should interpolate the array value
             let mut consumed = false;
@@ -600,7 +602,7 @@ pub(crate) fn try_interpolate_var<'a>(
             return Some(result);
         }
         if let Some((name, tail)) = split_interp_var_name(&rest[1..]) {
-            let expr = Expr::HashVar(name.to_string());
+            let expr = Expr::source_identifier(Expr::HashVar(name.to_string()), rest);
             // Zen-slice: %hash{} should stringify the whole hash
             if let Some(r) = tail.strip_prefix("{}") {
                 if !current.is_empty() {
