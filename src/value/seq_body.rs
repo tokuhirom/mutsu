@@ -1292,7 +1292,6 @@ impl SeqSource {
 }
 
 /// Run `pull` over a deferred `source`, except a [`SeqSource::Pure`],
-
 /// which is cut here: it needs no interpreter.
 // Cost: a full pull of a `Pure` cursor (for a `Str` cursor O(n), n = bytes of
 // its string); otherwise `pull`'s cost.

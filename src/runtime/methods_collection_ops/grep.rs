@@ -416,6 +416,7 @@ impl Interpreter {
     /// `.grep` resumes after the failing slot (#12401).
     // Cost: one callback call per slot consumed, plus O(m) promotions,
     // m = matched slots.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn grep_over_array_promoting_range(
         &mut self,
         items: crate::gc::Gc<crate::value::ArrayData>,
