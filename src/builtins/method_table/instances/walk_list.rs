@@ -2,9 +2,9 @@
 //! `invoke` batch-calls the matched candidates, `reverse` and `quiet` answer
 //! a derived `WalkList` with that flag changed.
 //!
-//! The rows are `OWNER_ONLY`, found by their owner for a `WalkList` instance
-//! from `call_method_with_values` (`runtime_object_owners_of`); every other method of a `WalkList` (`gist`,
-//! `isa`, ...) is the ordinary dispatch's.
+//! A `WalkList` has an opaque dispatch shape (`DispatchShape::is_opaque`), so
+//! every call entry reaches the rows through the table; every other method of
+//! a `WalkList` (`gist`, `isa`, ...) is the ordinary dispatch's.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -13,8 +13,8 @@ use crate::value::{RuntimeError, Value};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
-const OWN: RowFlags = RowFlags::OWNER_ONLY
-    .or(RowFlags::ANY_ARGS)
+const OWN: RowFlags = RowFlags::ANY_ARGS
+    .or(RowFlags::OBJECT_ARGS)
     .or(RowFlags::SLURPY)
     .or(RowFlags::ANY_NAMED);
 

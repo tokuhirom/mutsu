@@ -5,8 +5,10 @@
 //!
 //! A `Proc::Async` is an instance whose state is its shared attribute cell, so
 //! a method that changes it (`start`, the binds, selecting an output Supply)
-//! commits through that cell and no row needs a receiver place: they are all
-//! pure-entry `OWNER_ONLY` rows, found by owner from the instance dispatch.
+//! commits through that cell and no row needs a receiver place. The class has
+//! an opaque dispatch shape (`DispatchShape::is_opaque`), so every call entry
+//! reaches the rows through the table; a user subclass's instance, which
+//! carries the state too, reaches them through its owner (`owners_of`).
 //! Their one implementation is `Interpreter::proc_async_call`
 //! (`runtime/native_proc_async.rs`), which takes the method as a
 //! [`ProcAsyncOp`]. The methods read their positional and named arguments as
@@ -37,7 +39,9 @@ macro_rules! row {
                 }
                 handler
             }),
-            flags: RowFlags::OWNER_ONLY.or(RowFlags::SLURPY),
+            flags: RowFlags::SLURPY
+                .or(RowFlags::ANY_ARGS)
+                .or(RowFlags::OBJECT_ARGS),
             named: named_of($name),
         }
     };

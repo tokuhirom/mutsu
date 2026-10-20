@@ -1,7 +1,7 @@
 //! The rows of `Semaphore` and `Thread` (ADR-11276 §9.22): receivers that carry
 //! live OS state (a semaphore's id into the runtime's table, a thread's id and
-//! name). Neither has a shape, so every row is reached through its owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`).
+//! name). Each has an opaque dispatch shape (`DispatchShape::is_opaque`), so
+//! every call entry reaches the rows through the table.
 
 use crate::builtins::method_table::{Handler, MethodRow, Named, RowFlags};
 use crate::runtime::Interpreter;
@@ -14,7 +14,7 @@ macro_rules! row {
             name: $name,
             arity: 0,
             handler: $handler,
-            flags: RowFlags::OWNER_ONLY,
+            flags: RowFlags::NONE,
             named: &[],
         }
     };
@@ -34,7 +34,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "is-initial-thread",
         arity: 0,
         handler: Handler::Narrow(initial_row),
-        flags: RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK),
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
     row!("Thread", "app_lifetime", Handler::Narrow(app_lifetime_row)),

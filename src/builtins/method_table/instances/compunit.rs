@@ -1,8 +1,7 @@
 //! `CompUnit`'s and `CompUnit::Handle`'s rows (ADR-11276 §9.117, #11002).
 //!
-//! Neither class has a dispatch shape; the rows are reached through their owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`) from the method-call fallback, like
-//! the `RakuAST::Origin` rows. A `CompUnit` (from a repository's `need`,
+//! Each class has an opaque dispatch shape (`DispatchShape::is_opaque`), so
+//! every call entry reaches the rows through the table. A `CompUnit` (from a repository's `need`,
 //! `load` or `resolve`) carries its accessors as attributes; a handle of a
 //! loaded unit carries the unit's name (`unit-name`) and, for an
 //! `Installation` repository, the symbols the unit loaded
@@ -23,7 +22,7 @@ macro_rules! row {
             name: $name,
             arity: 0,
             handler: $handler,
-            flags: RowFlags::OWNER_ONLY,
+            flags: RowFlags::NONE,
             named: &[],
         }
     };
@@ -51,24 +50,16 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("CompUnit", "repo-id", Handler::Narrow(repo_id)),
     row!("CompUnit", "distribution", Handler::Narrow(distribution)),
     row!("CompUnit", "precompiled", Handler::Narrow(precompiled)),
-    row!("CompUnit", "handle", Handler::Narrow(handle)),
+    // A new `CompUnit::Handle` each call: an identity of its own.
+    MethodRow {
+        owner: "CompUnit",
+        name: "handle",
+        arity: 0,
+        handler: Handler::Narrow(handle),
+        flags: RowFlags::RANDOM,
+        named: &[],
+    },
 ];
-
-/// The owners the rows reachable from `target` are found under: a
-/// `CompUnit` or `CompUnit::Handle` instance, a repository
-/// ([`super::compunit_repo::owners_of`]) or a distribution
-/// ([`super::distribution::owners_of`]).
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Instance { class_name, .. } if class_name == "CompUnit::Handle" => {
-            Some(&["CompUnit::Handle"])
-        }
-        ValueView::Instance { class_name, .. } if class_name == "CompUnit" => Some(&["CompUnit"]),
-        _ => super::compunit_repo::owners_of(target)
-            .or_else(|| super::distribution::owners_of(target)),
-    }
-}
 
 /// The attribute `key` of the instance, `None` inside when it was not set.
 // Cost: O(1).

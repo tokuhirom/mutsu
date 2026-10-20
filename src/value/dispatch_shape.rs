@@ -33,13 +33,14 @@
 //!   was written for the shapes that existed when it was, so it reaches a new
 //!   shape only once the slice that owns the shape has audited it and marked
 //!   the shape open.
-//! - **A type object is not an instance.** [`DispatchShape::from_type_name`]
+//! - **A type object is not an instance.** [`DispatchShape::from_type_symbol`]
 //!   decodes `Package("Int")`; only a row flagged `TYPE_OBJECT_OK` answers it.
 
 mod instances;
+mod opaque;
 
 use crate::symbol::Symbol;
-use instances::instance_shapes;
+use instances::{instance_shapes, type_shapes};
 
 /// The shape of a plain receiver, or of the type object of such a type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -196,13 +197,99 @@ pub(crate) enum DispatchShape {
     /// A `Variable`, the reflective object a variable trait handler receives
     /// (closed).
     Variable,
+    // The opaque instance shapes (`opaque.rs`): an instance of a built-in
+    // class whose state lives in the interpreter or in its attributes, and
+    // whose rows are its class's own. Each reaches the owners
+    // [`DispatchShape::opaque_owners`] names and nothing else.
+    /// `Lock` or `Lock::Soft`, which Rakudo's `Lock` methods answer (opaque).
+    Lock,
+    /// `Lock::Async` (opaque).
+    LockAsync,
+    /// `Lock::ConditionVariable` (opaque).
+    LockConditionVariable,
+    /// `Cancellation` (opaque).
+    Cancellation,
+    /// `Semaphore` (opaque).
+    Semaphore,
+    /// `Thread` (opaque).
+    Thread,
+    /// `Tap` (opaque).
+    Tap,
+    /// `IO::Socket::Async::ListenSocket`, a `Tap` (opaque).
+    ListenSocket,
+    /// `Proc` (opaque).
+    Proc,
+    /// `IO::Socket::INET` (opaque).
+    SocketInet,
+    /// `IO::Socket::Async` (opaque).
+    SocketAsync,
+    /// `IO::CatHandle` (opaque).
+    CatHandle,
+    /// `ThreadPoolScheduler` (opaque).
+    ThreadPoolScheduler,
+    /// `CurrentThreadScheduler` (opaque).
+    CurrentThreadScheduler,
+    /// `Encoding::Builtin` (opaque).
+    EncodingBuiltin,
+    /// `Encoding::Encoder::Builtin` (opaque).
+    EncodingEncoder,
+    /// `Encoding::Decoder::Builtin` (opaque).
+    EncodingDecoder,
+    /// `WalkList` (opaque).
+    WalkList,
+    /// `Routine::WrapHandle` (opaque).
+    WrapHandle,
+    /// `HyperConfiguration` (opaque).
+    HyperConfiguration,
+    /// `Pod::Block::Declarator` (opaque).
+    PodDeclarator,
+    /// `CompUnit` (opaque).
+    CompUnit,
+    /// `CompUnit::Handle` (opaque).
+    CompUnitHandle,
+    /// `CompUnit::Repository::Installation` (opaque).
+    RepoInstallation,
+    /// `CompUnit::Repository::FileSystem` (opaque).
+    RepoFileSystem,
+    /// `CompUnit::Repository::Distribution` (opaque).
+    RepoDistribution,
+    /// `CompUnit::Repository::Installation::LazyDistribution` (opaque).
+    LazyDistribution,
+    /// `Distribution::Hash` (opaque).
+    DistributionHash,
+    /// `Distribution::Path` (opaque).
+    DistributionPath,
+    /// `Supply` (opaque).
+    Supply,
+    /// `Proc::Async` (opaque).
+    ProcAsync,
+    /// `Promise` (opaque): a value kind, not an instance.
+    Promise,
+    /// `Promise::Vow` (opaque).
+    PromiseVow,
+    /// `Channel` (opaque): a value kind.
+    Channel,
+    /// `HyperSeq` (opaque): a value kind.
+    HyperSeq,
+    /// `RaceSeq` (opaque): a value kind.
+    RaceSeq,
+    /// `Distro` (opaque).
+    Distro,
+    /// `Kernel` (opaque).
+    Kernel,
+    /// `VM` (opaque).
+    Vm,
+    /// `Raku` (and `Perl`) (opaque).
+    RakuSystemic,
+    /// `Compiler` (opaque).
+    Compiler,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
-    /// into one byte and the table keeps a bit per shape, so this stays under
-    /// 64.
-    pub(crate) const ALL: [DispatchShape; 48] = [
+    /// into seven bits of a byte (the eighth marks a type object) and the
+    /// table keeps a bit of a `u128` per shape, so this stays under 128.
+    pub(crate) const ALL: [DispatchShape; 89] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -251,6 +338,47 @@ impl DispatchShape {
         DispatchShape::Collation,
         DispatchShape::Attribute,
         DispatchShape::Variable,
+        DispatchShape::Lock,
+        DispatchShape::LockAsync,
+        DispatchShape::LockConditionVariable,
+        DispatchShape::Cancellation,
+        DispatchShape::Semaphore,
+        DispatchShape::Thread,
+        DispatchShape::Tap,
+        DispatchShape::ListenSocket,
+        DispatchShape::Proc,
+        DispatchShape::SocketInet,
+        DispatchShape::SocketAsync,
+        DispatchShape::CatHandle,
+        DispatchShape::ThreadPoolScheduler,
+        DispatchShape::CurrentThreadScheduler,
+        DispatchShape::EncodingBuiltin,
+        DispatchShape::EncodingEncoder,
+        DispatchShape::EncodingDecoder,
+        DispatchShape::WalkList,
+        DispatchShape::WrapHandle,
+        DispatchShape::HyperConfiguration,
+        DispatchShape::PodDeclarator,
+        DispatchShape::CompUnit,
+        DispatchShape::CompUnitHandle,
+        DispatchShape::RepoInstallation,
+        DispatchShape::RepoFileSystem,
+        DispatchShape::RepoDistribution,
+        DispatchShape::LazyDistribution,
+        DispatchShape::DistributionHash,
+        DispatchShape::DistributionPath,
+        DispatchShape::Supply,
+        DispatchShape::ProcAsync,
+        DispatchShape::Promise,
+        DispatchShape::PromiseVow,
+        DispatchShape::Channel,
+        DispatchShape::HyperSeq,
+        DispatchShape::RaceSeq,
+        DispatchShape::Distro,
+        DispatchShape::Kernel,
+        DispatchShape::Vm,
+        DispatchShape::RakuSystemic,
+        DispatchShape::Compiler,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -306,7 +434,28 @@ impl DispatchShape {
             DispatchShape::Collation => "Collation",
             DispatchShape::Attribute => "Attribute",
             DispatchShape::Variable => "Variable",
+            shape => match opaque::opaque(shape) {
+                Some((name, _)) => name,
+                None => panic!("every shape has a type name"),
+            },
         }
+    }
+
+    /// The owners an opaque instance shape's rows are found under, nearest
+    /// first (`opaque.rs`); `None` for every other shape.
+    // Cost: O(1).
+    pub(crate) const fn opaque_owners(self) -> Option<&'static [&'static str]> {
+        match opaque::opaque(self) {
+            Some((_, owners)) => Some(owners),
+            None => None,
+        }
+    }
+
+    /// Whether this is an opaque instance shape (`opaque.rs`): it reaches its
+    /// own owners' rows and no ancestor's.
+    // Cost: O(1).
+    pub(crate) const fn is_opaque(self) -> bool {
+        self.opaque_owners().is_some()
     }
 
     /// Whether a value can be an instance of this shape. The `IO::Spec` shapes
@@ -344,13 +493,16 @@ impl DispatchShape {
     /// all of them; [`ROLES_WITH_ROWS`] lists the roles that were.
     // Cost: O(r), r = audited roles.
     pub(crate) const fn reaches_role(self, role: &str) -> bool {
-        const_list_contains(&ROLES_WITH_ROWS, role)
+        !self.is_opaque() && const_list_contains(&ROLES_WITH_ROWS, role)
     }
 
     /// [`Self::reaches`] for the rows of `owner` as a whole, before the
     /// per-method audit of `Cool` for the closed collection shapes.
     // Cost: O(1).
     pub(crate) const fn reaches_owner(self, owner: &str) -> bool {
+        if let Some(owners) = self.opaque_owners() {
+            return const_list_contains(owners, owner);
+        }
         self.inherits()
             || const_str_eq(owner, self.type_name())
             || (matches!(
@@ -372,7 +524,10 @@ impl DispatchShape {
         ) && const_str_eq(owner, "Cool"))
             || (matches!(self, DispatchShape::Match) && const_str_eq(owner, "Capture"))
             || (self.reaches_audited_any() && const_str_eq(owner, "Any"))
-            || (!self.inherits() && !self.answers_on_payload() && const_str_eq(owner, "Mu"))
+            || (!self.inherits()
+                && !self.answers_on_payload()
+                && !self.is_opaque()
+                && const_str_eq(owner, "Mu"))
     }
 
     /// Whether this shape's inherited methods are answered on the native
@@ -389,7 +544,7 @@ impl DispatchShape {
     /// says which).
     // Cost: O(1).
     const fn reaches_audited_any(self) -> bool {
-        !self.inherits() && self.has_instances() && !self.answers_on_payload()
+        !self.inherits() && self.has_instances() && !self.answers_on_payload() && !self.is_opaque()
     }
 
     /// Whether `Any`'s list row `method` reaches this closed shape. None
@@ -562,21 +717,18 @@ impl DispatchShape {
     }
 
     /// The shape of the type object named `name` (`Package("Int")`).
-    // Cost: O(s), s = shapes.
-    pub(crate) fn from_type_name(name: &str) -> Option<DispatchShape> {
-        DispatchShape::ALL
-            .into_iter()
-            .find(|shape| shape.type_name() == name)
+    // Cost: O(1), one hash lookup.
+    #[inline]
+    pub(crate) fn from_type_symbol(name: Symbol) -> Option<DispatchShape> {
+        type_shapes().get(&name).copied()
     }
 
     /// The shape of an `Instance` of the built-in class `class`, for the
     /// shapes whose values are instances.
-    // Cost: O(1), one symbol compare per instance-backed shape.
+    // Cost: O(1), one hash lookup.
+    #[inline]
     pub(crate) fn from_instance_class(class: Symbol) -> Option<DispatchShape> {
-        instance_shapes()
-            .iter()
-            .find(|&&(name, _)| name == class)
-            .map(|&(_, shape)| shape)
+        instance_shapes().get(&class).copied()
     }
 }
 

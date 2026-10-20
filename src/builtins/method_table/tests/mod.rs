@@ -152,6 +152,10 @@ fn sample(shape: DispatchShape) -> Value {
             Value::make_instance(Symbol::intern("Attribute"), attributes)
         }
         DispatchShape::Variable => instance_sample("Variable"),
+        DispatchShape::Promise => Value::promise(crate::value::SharedPromise::new()),
+        DispatchShape::Channel => Value::channel(crate::value::SharedChannel::new()),
+        DispatchShape::HyperSeq => Value::hyper_seq(vec![Value::int(1)]),
+        DispatchShape::RaceSeq => Value::race_seq(vec![Value::int(1)]),
         DispatchShape::Collation => {
             crate::runtime::Interpreter::make_collation_instance(1, 1, 1, 1)
         }
@@ -164,6 +168,12 @@ fn sample(shape: DispatchShape) -> Value {
             );
             attributes.insert("text".to_string(), Value::str_from("  in block <unit>\n"));
             Value::make_instance(Symbol::intern("Backtrace"), attributes)
+        }
+        // An opaque shape's handlers read the runtime state its attributes
+        // name; a bare instance has none, and its rows decline or refuse it.
+        shape => {
+            assert!(shape.is_opaque(), "{shape:?} needs a sample");
+            instance_sample(shape.type_name())
         }
     }
 }
@@ -199,6 +209,10 @@ fn samples_have_their_shape() {
             // Only the entries after the consumption step decode a `Seq`.
             assert_eq!(sample(shape).dispatch_shape(), None);
             assert_eq!(sample(shape).settled_seq_shape(), Some(shape));
+        } else if shape.is_opaque() {
+            // Only the table's receiver decode sees an opaque shape.
+            assert_eq!(sample(shape).dispatch_shape(), None);
+            assert_eq!(sample(shape).receiver_shape(), Some(shape));
         } else if shape.has_instances() {
             assert_eq!(sample(shape).dispatch_shape(), Some(shape));
         } else {
@@ -299,6 +313,11 @@ fn every_row_is_reached_and_answers() {
                     row.owner,
                     row.name
                 );
+                continue;
+            }
+            // An opaque shape's sample carries none of the runtime state its
+            // rows read (a lock id, a configuration), so they may decline it.
+            if shape.is_opaque() {
                 continue;
             }
             assert!(
@@ -522,7 +541,8 @@ fn the_name_test_knows_the_arity() {
     assert!(!names_a_row(samecase, 2));
     let substr = Symbol::intern("substr");
     assert!(names_a_row(substr, 1) && names_a_row(substr, 2));
-    assert!(!names_a_row(Symbol::intern("elems"), 1));
+    // (`elems` takes an argument on a `Supply`, whose row is slurpy.)
+    assert!(!names_a_row(Symbol::intern("chars"), 1));
     assert!(!names_a_row(substr, 200));
 }
 
@@ -531,8 +551,8 @@ fn the_name_test_knows_the_arity() {
 #[test]
 fn the_shape_test_knows_the_receiver() {
     assert!(
-        DispatchShape::ALL.len() <= 64,
-        "a shape bit must fit Table::shapes' u64"
+        DispatchShape::ALL.len() <= 127,
+        "a shape bit must fit Table::shapes' u128 and the receiver byte"
     );
     let polymod = Symbol::intern("polymod");
     assert!(shape_has_row(

@@ -1,9 +1,9 @@
 //! `CompUnit::Repository::Installation`'s and `CompUnit::Repository::FileSystem`'s
 //! rows (ADR-11276 §9.117).
 //!
-//! A repository has no dispatch shape: the rows are reached through their owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`) from the method-call fallback, as
-//! `CompUnit::Handle`'s are ([`super::compunit::owners_of`]). Every row
+//! A repository has an opaque dispatch shape (`DispatchShape::is_opaque`), as
+//! `CompUnit::Handle` does, so every call entry reaches the rows through the
+//! table. Every row
 //! needs the interpreter (it reads the file system, loads a module or walks the
 //! repository chain); the implementations are `Interpreter` methods in
 //! `runtime/methods_distribution*.rs`. A repository instance carries its
@@ -21,7 +21,13 @@ const FS: &str = "CompUnit::Repository::FileSystem";
 /// A row of `$owner` reached through its owner, needing the interpreter.
 macro_rules! row {
     ($owner:expr, $name:literal, $arity:literal, $handler:ident) => {
-        row!($owner, $name, $arity, $handler, RowFlags::OWNER_ONLY)
+        row!(
+            $owner,
+            $name,
+            $arity,
+            $handler,
+            RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS)
+        )
     };
     ($owner:expr, $name:literal, $arity:literal, $handler:ident, slurpy) => {
         row!(
@@ -29,7 +35,9 @@ macro_rules! row {
             $name,
             $arity,
             $handler,
-            RowFlags::OWNER_ONLY.or(RowFlags::SLURPY)
+            RowFlags::SLURPY
+                .or(RowFlags::ANY_ARGS)
+                .or(RowFlags::OBJECT_ARGS)
         )
     };
     ($owner:expr, $name:literal, $arity:literal, $handler:ident, $flags:expr) => {
@@ -96,16 +104,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!(FS, "resolve", 1, resolve),
     row!(FS, "repo-chain", 0, repo_chain),
 ];
-
-/// The owners a repository instance's rows are found under.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Instance { class_name, .. } if class_name == INST => Some(&[INST]),
-        ValueView::Instance { class_name, .. } if class_name == FS => Some(&[FS]),
-        _ => None,
-    }
-}
 
 /// A copy of the repository's attributes (a handler may write the `next-repo`
 /// link back while it reads them) and its prefix.

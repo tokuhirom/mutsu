@@ -11,12 +11,10 @@ impl Interpreter {
         &mut self,
         target: &Value,
     ) -> Option<&'static [&'static str]> {
-        crate::builtins::method_table::proc_async_owners_of(target)
-            .or_else(|| crate::builtins::method_table::supply_owners_of(target))
-            .or_else(|| crate::builtins::method_table::cathandle_owners_of(target))
-            .or_else(|| crate::builtins::method_table::supplier_scheduler_owners_of(target))
+        crate::builtins::method_table::opaque_owners_of(target)
+            .or_else(|| crate::builtins::method_table::proc_async_owners_of(target))
+            .or_else(|| crate::builtins::method_table::supplier_owners_of(target))
             .or_else(|| self.encoding_owners_of(target))
-            .or_else(|| crate::builtins::method_table::handle_owners_of_instance(target))
     }
 
     /// The owners whose rows answer an encoding object (ADR-11276 §9.156):
@@ -29,7 +27,7 @@ impl Interpreter {
             return None;
         };
         let class = class_name.resolve();
-        crate::builtins::method_table::encoding_owners_of(&class).or_else(|| {
+        crate::builtins::method_table::opaque_class_owners(&class).or_else(|| {
             self.is_stream_decoder_class(&class)
                 .then_some(crate::builtins::method_table::ENCODING_DECODER_OWNERS)
         })

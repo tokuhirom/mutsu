@@ -187,6 +187,13 @@ impl RowFlags {
     /// `BOOTStrArray`), which is not a plain argument by default. The handler
     /// reads its elements as the array they are (`Rakudo::Sorting.MERGESORT-str`).
     pub(crate) const VM_ARRAY_ARGS: RowFlags = RowFlags(1 << 17);
+    /// The handler needs no interpreter but changes state outside its answer:
+    /// it edits the receiver's shared attribute cell (a decoder's byte queue,
+    /// a `Pod::Block::Declarator`'s text) or the runtime's tables (a
+    /// cancellation, a condition variable). No debug cross-check may run its
+    /// call a second time, and the call-site lane treats it as it treats an
+    /// interpreter row.
+    pub(crate) const EFFECTS: RowFlags = RowFlags(1 << 18);
 
     /// The flags of both.
     // Cost: O(1).
@@ -196,13 +203,14 @@ impl RowFlags {
 
     /// Whether the debug cross-checks cannot run this row's call a second
     /// time and compare the rendered answers: a random one ([`Self::RANDOM`]),
-    /// a lazy view of the receiver ([`Self::LIVE_VIEW`]) or one of language
-    /// revision 6.e ([`Self::REVISION_E`]).
+    /// a lazy view of the receiver ([`Self::LIVE_VIEW`]), one of language
+    /// revision 6.e ([`Self::REVISION_E`]) or one with effects
+    /// ([`Self::EFFECTS`]).
     // Cost: O(1).
     pub(crate) const fn skips_cross_check(self) -> bool {
         // The cascades know no language revision: a `REVISION_E` row's answer
         // is not theirs.
-        self.0 & (Self::RANDOM.0 | Self::LIVE_VIEW.0 | Self::REVISION_E.0) != 0
+        self.0 & (Self::RANDOM.0 | Self::LIVE_VIEW.0 | Self::REVISION_E.0 | Self::EFFECTS.0) != 0
     }
 
     /// Whether the row exists in the program's language revision: always,

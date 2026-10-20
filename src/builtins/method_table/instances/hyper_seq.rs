@@ -1,19 +1,30 @@
 //! The rows of `HyperSeq` and `RaceSeq` (ADR-11276 §9.137): `hyper`, `race`,
 //! `configuration`, `is-lazy`, `iterator`, `map` and `grep`.
 //!
-//! Their bodies were a by-name block in `call_method_with_values`. The rows
-//! are `OWNER_ONLY`, found by owner ([`owners_of`]) from that same place;
-//! every other method of a hyper or race sequence still reads it as its
+//! Their bodies were a by-name block in `call_method_with_values`. Both kinds
+//! have an opaque dispatch shape (`DispatchShape::is_opaque`), so every call
+//! entry reaches the rows through the table; every other method of a hyper or race sequence still reads it as its
 //! `List`, as Rakudo's do through `self.List`.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
-const OWN: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS);
+/// The owners of a hyper or race sequence's rows (its opaque shape's);
+/// `None` for any other value.
+// Cost: O(1), a tag probe.
+pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
+    use crate::value::DispatchShape;
+    match target.receiver_shape()? {
+        shape @ (DispatchShape::HyperSeq | DispatchShape::RaceSeq) => shape.opaque_owners(),
+        _ => None,
+    }
+}
+
+const OWN: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS);
 
 macro_rules! rows {
     ($owner:literal) => {
@@ -82,17 +93,6 @@ static HYPER: [MethodRow; 7] = rows!("HyperSeq");
 static RACE: [MethodRow; 7] = rows!("RaceSeq");
 pub(super) static HYPER_ROWS: &[MethodRow] = &HYPER;
 pub(super) static RACE_ROWS: &[MethodRow] = &RACE;
-
-/// The owner whose rows answer a hyper or race sequence, `None` for
-/// anything else.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::HyperSeq(_) => Some(&["HyperSeq"]),
-        ValueView::RaceSeq(_) => Some(&["RaceSeq"]),
-        _ => None,
-    }
-}
 
 /// The methods a hyper or race sequence answers as itself rather than as its
 /// `List`: `Mu`'s type and identity introspection. Rakudo's `HyperSeq` and

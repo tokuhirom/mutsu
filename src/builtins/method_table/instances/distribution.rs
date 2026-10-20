@@ -3,9 +3,9 @@
 //! (`CompUnit::Repository::Distribution`) and an installed distribution
 //! (`CompUnit::Repository::Installation::LazyDistribution`).
 //!
-//! No distribution has a dispatch shape; the rows are reached through their
-//! owner (`RowFlags::OWNER_ONLY`, `invoke_owner`) from the method-call fallback,
-//! as the repositories' are. Every distribution carries its `meta` hash; the
+//! Each distribution class has an opaque dispatch shape
+//! (`DispatchShape::is_opaque`), as the repositories do, so every call entry
+//! reaches the rows through the table. Every distribution carries its `meta` hash; the
 //! two `Distribution::*` classes and an installed distribution carry their
 //! `prefix` and a `files` map too, while a `$?DISTRIBUTION` keeps its prefix in
 //! `meta<prefix>`.
@@ -29,7 +29,7 @@ macro_rules! row {
             name: $name,
             arity: $arity,
             handler: $handler,
-            flags: RowFlags::OWNER_ONLY,
+            flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
             named: &[],
         }
     };
@@ -53,21 +53,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!(LAZY, "Str", 0, Handler::Narrow(identity)),
     row!(LAZY, "dist-id", 0, Handler::Narrow(dist_id)),
 ];
-
-/// The owners a distribution instance's rows are found under.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let ValueView::Instance { class_name, .. } = target.view() else {
-        return None;
-    };
-    Some(match class_name.as_str() {
-        HASH => &[HASH],
-        PATH => &[PATH],
-        REPO_DIST => &[REPO_DIST],
-        LAZY => &[LAZY],
-        _ => return None,
-    })
-}
 
 /// The attribute `key` of the instance, `None` inside when it is not set.
 // Cost: O(1).

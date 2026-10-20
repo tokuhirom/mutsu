@@ -701,6 +701,12 @@ impl NanBox {
                 let node = unsafe { peek_gc::<MatchNode>(self.0.get()) };
                 node.is_plain().then_some(DispatchShape::Match)
             }
+            // The value kinds of the runtime's own classes, which have opaque
+            // shapes (`DispatchShape::is_opaque`).
+            Classified::Kind(Kind::Promise) => Some(DispatchShape::Promise),
+            Classified::Kind(Kind::Channel) => Some(DispatchShape::Channel),
+            Classified::Kind(Kind::HyperSeq) => Some(DispatchShape::HyperSeq),
+            Classified::Kind(Kind::RaceSeq) => Some(DispatchShape::RaceSeq),
             // A built-in class's own instance: its class name is the shape's.
             // A user subclass has another name, so it has none.
             Classified::Kind(Kind::Instance) => {
@@ -743,7 +749,7 @@ impl NanBox {
                 let sym = crate::symbol::Symbol::from_id(inline_payload(bits));
                 // A shape whose values answer on their payload has a type object
                 // with none (`Format`): it is an ordinary type object.
-                crate::value::DispatchShape::from_type_name(sym.as_str())
+                crate::value::DispatchShape::from_type_symbol(sym)
                     .filter(|shape| !shape.answers_on_payload())
             }
             _ => None,

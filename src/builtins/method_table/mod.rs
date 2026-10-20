@@ -79,7 +79,6 @@ pub(crate) use collections::{
     rotate as collection_rotate, terminals,
 };
 pub(crate) use instances::code_methods::method_object_answer;
-pub(crate) use instances::compunit::owners_of as compunit_owners_of;
 pub(crate) use instances::enumeration::owners_of as enumeration_owners_of;
 pub(crate) use instances::hyper_seq::answers_as_itself as hyper_seq_answers_as_itself;
 pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
@@ -88,33 +87,26 @@ pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::iterator::owners_of as iterator_owners_of;
 pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
 pub(crate) use instances::routine::owners_of as routine_owners_of;
-pub(crate) use instances::runtime_objects::runtime_object_owners_of;
 pub(crate) use instances::stash::owners_of as stash_owners_of;
-pub(crate) use instances::supply::owners_of as supply_owners_of;
 pub(crate) use instances::wrapper_role::owners_of as wrapper_role_owners_of;
 pub(crate) use instances::{backtrace, code, exception, failure, regex_match, signature, supply};
-pub(crate) use io_concurrency::cathandle::owners_of as cathandle_owners_of;
 pub(crate) use io_concurrency::class_methods::{
     early_owners_of as early_class_method_owners_of, owners_of as class_method_owners_of,
 };
 pub(crate) use io_concurrency::encoding::{
     DECODER_OWNERS as ENCODING_DECODER_OWNERS, names as encoding_names,
-    owners_of as encoding_owners_of,
 };
+pub(crate) use io_concurrency::handle_names;
 pub(crate) use io_concurrency::io_path_lexical::basename as io_path_basename;
 pub(crate) use io_concurrency::io_special::raku_row as io_special_raku;
 pub(crate) use io_concurrency::proc_async::owners_of as proc_async_owners_of;
 pub(crate) use io_concurrency::promise_channel;
 pub(crate) use io_concurrency::promise_channel::{
-    CHANNEL_LIST_COERCIONS, owners_of as promise_channel_owners_of,
-    receiver_of as promise_channel_receiver_of,
+    CHANNEL_LIST_COERCIONS, receiver_of as promise_channel_receiver_of,
 };
 pub(crate) use io_concurrency::supplier_scheduler;
-pub(crate) use io_concurrency::supplier_scheduler::owners_of as supplier_scheduler_owners_of;
-pub(crate) use io_concurrency::systemic::{
-    names as systemic_names, owners_of as systemic_owners_of,
-};
-pub(crate) use io_concurrency::{handle_names, handle_owners_of, handle_owners_of_instance};
+pub(crate) use io_concurrency::supplier_scheduler::owners_of as supplier_owners_of;
+pub(crate) use io_concurrency::systemic::names as systemic_names;
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
     str_numeric, str_search, truth,
@@ -144,6 +136,23 @@ pub(crate) use table::{
     owner_row, owner_row_names, owner_rows_at, resolve, row, shape_has_row, some_row_binds_named,
 };
 pub(crate) use unadmitted::invoke_unadmitted;
+
+/// The owners an instance or the type object of an opaque shape (`DispatchShape::is_opaque`: a
+/// lock, a socket, a scheduler, a compilation unit) has its rows under,
+/// nearest first; `None` for any other value. The one owner chain the call
+/// sites that used to ask a per-class hook now ask, for a call the guard step
+/// declined.
+// Cost: O(1), a tag probe and one hash lookup.
+pub(crate) fn opaque_owners_of(target: &crate::value::Value) -> Option<&'static [&'static str]> {
+    target.receiver_shape()?.opaque_owners()
+}
+
+/// [`opaque_owners_of`] for an instance of the class named `class`.
+// Cost: O(1), one interning and one hash lookup.
+pub(crate) fn opaque_class_owners(class: &str) -> Option<&'static [&'static str]> {
+    crate::value::DispatchShape::from_instance_class(crate::symbol::Symbol::intern(class))?
+        .opaque_owners()
+}
 
 #[cfg(test)]
 mod tests;
