@@ -16,8 +16,6 @@
 use std::hash::{Hash, Hasher};
 
 use super::{Expr, ReadonlyKind, Stmt};
-use crate::symbol::Symbol;
-use crate::value::Value;
 
 /// The internal trait marking a `$` declaration as bound (`:=`) rather than
 /// assigned; the compiler reads it to bind instead of storing into a Scalar.
