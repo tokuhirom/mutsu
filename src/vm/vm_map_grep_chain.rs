@@ -94,15 +94,23 @@ impl Interpreter {
             *pos = items.len();
             return Ok(true);
         }
+        // A multi-parameter map takes `group` elements per call, so a chunk
+        // ends at a whole group unless the upstream ran dry (#14196).
+        let group = super::vm_map_grep_pull::map_group_size(func.as_ref(), mode);
         while out.produced.len() - produced_base < needed {
-            if *pos >= items.len() {
+            let available = items.len().saturating_sub(*pos);
+            if available == 0 || (available < group && !chain.exhausted()) {
                 if chain.exhausted() {
                     break;
                 }
                 chain.extend(|source| self.pull_map_grep_prefix(source, 1))?;
                 continue;
             }
-            let end = items.len();
+            let end = if chain.exhausted() {
+                items.len()
+            } else {
+                *pos + available / group * group
+            };
             let max_matches = mode
                 .is_grep()
                 .then_some(needed - (out.produced.len() - produced_base));
