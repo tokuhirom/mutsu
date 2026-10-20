@@ -285,7 +285,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HandleTerms {
         };
         match term {
             Expr::ArrayLiteral(_) => crate::ast_visit::walk_expr(self, term),
-            Expr::Whatever => self.specs.push(HandleSpec::Wildcard),
+            Expr::Whatever if self.depth == 1 => self.specs.push(HandleSpec::Wildcard),
             Expr::BareWord(name) => self.specs.push(HandleSpec::Name(name.clone())),
             Expr::Literal(value) => {
                 if let Some(name) = handle_method_name(value) {
@@ -319,7 +319,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HandleTerms {
                 op: crate::token_kind::TokenKind::Pipe,
                 expr,
                 ..
-            } => self
+            } if self.depth == 2 => self
                 .specs
                 .push(HandleSpec::Expr(Box::new((**expr).clone()))),
             // These are existing dynamic handles forms. Quote-word lists
@@ -328,8 +328,12 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HandleTerms {
             | Expr::ArrayVar(_)
             | Expr::HashVar(_)
             | Expr::MethodCall { .. }
-            | Expr::Call { .. } => self.specs.push(HandleSpec::Expr(Box::new(term.clone()))),
-            Expr::RegexLiteral { value, .. } => match value.view() {
+            | Expr::Call { .. }
+                if self.depth == 1 =>
+            {
+                self.specs.push(HandleSpec::Expr(Box::new(term.clone())))
+            }
+            Expr::RegexLiteral { value, .. } if self.depth == 1 => match value.view() {
                 crate::value::ValueView::Regex(pattern) => {
                     self.specs.push(HandleSpec::Regex(pattern.to_string()));
                 }
@@ -379,6 +383,14 @@ mod tests {
         for _ in 0..129 {
             term = Expr::ArrayLiteral(vec![term]);
         }
+        assert!(handle_specs_from_term(&term).is_none());
+    }
+
+    #[test]
+    fn nested_lists_do_not_introduce_dynamic_evaluation() {
+        let term = Expr::ArrayLiteral(vec![Expr::ArrayLiteral(vec![Expr::Var(
+            "names".to_string(),
+        )])]);
         assert!(handle_specs_from_term(&term).is_none());
     }
 }
