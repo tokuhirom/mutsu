@@ -24,8 +24,8 @@ impl Interpreter {
         match value.view() {
             ValueView::Seq(body) => {
                 // A plain gather nested in a collection (ADR-11678): run it so
-                // pure readers see its elements, as the `LazyList` arm below
-                // does. The value itself is left to its reader (`nested`).
+                // pure readers see its elements. The value itself is left to
+                // its reader (`nested`).
                 if nested && body.is_gather_source() {
                     let body = std::sync::Arc::clone(&body);
                     self.reify_seq_body(&body)?;
@@ -54,22 +54,6 @@ impl Interpreter {
             }
             ValueView::Scalar(inner) => {
                 self.reify_nested_map_grep_for_read_inner(inner, nested, seen)?;
-            }
-            // A finite `gather` NESTED in a collection is a LazyList until
-            // pulled: fill its cache so pure readers see its elements (see the
-            // Seq arm above). `nested` is false for the read value itself and
-            // the item containers around it; that top-level value is left to its reader, which
-            // pulls it itself -- with the caller's routine still the target of
-            // a `return` in the gather body (`~gather { return 99 }`).
-            ValueView::LazyList(list) if nested => {
-                if !list.is_genuinely_lazy()
-                    && seen.insert((3, crate::gc::Gc::as_ptr(&list) as *const () as usize))
-                {
-                    let list = crate::gc::Gc::clone(&list);
-                    for item in self.force_lazy_list_vm(&list)? {
-                        self.reify_nested_map_grep_for_read_inner(&item, true, seen)?;
-                    }
-                }
             }
             // A Pair's value is an item container, so `$k => @seq.map(...)`
             // built from a variable (or by a `for` loop body) holds the
