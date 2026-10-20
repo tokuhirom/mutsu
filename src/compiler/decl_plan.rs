@@ -209,6 +209,8 @@ impl Compiler {
 
     /// [`Self::add_sub_decl_plan`] for a class declaration.
     pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let expanded = Self::with_expression_methods(stmt);
+        let stmt = expanded.as_ref().unwrap_or(stmt);
         let Stmt::ClassDecl {
             name,
             name_expr,
@@ -787,6 +789,8 @@ impl Compiler {
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is
     /// always compile-time known, so only its trait arguments are lowered.
     pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let expanded = Self::with_expression_methods(stmt);
+        let stmt = expanded.as_ref().unwrap_or(stmt);
         let Stmt::RoleDecl {
             name,
             custom_traits,

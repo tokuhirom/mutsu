@@ -1227,7 +1227,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             is_our,
             is_my,
             is_submethod,
-            our_variable_form,
             return_type,
             is_default_candidate,
             deprecated_message,
@@ -1257,7 +1256,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_export != !export_tags.is_empty(),
                     "method with a bare `is export`",
                 ),
-                (*our_variable_form, "`our &m = method` form"),
                 (
                     !handles.is_empty() && !super::routine_source::keeps_handles(body),
                     "method with `handles`",

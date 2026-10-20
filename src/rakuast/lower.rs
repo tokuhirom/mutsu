@@ -1951,10 +1951,11 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     // `scope => "my"` / `"our"`; a plain method has none.
     let (is_our, is_my) = match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => (false, node.class == RakuAstClass::Submethod),
+        None => (false, false),
         Some(_) => match (leaf_str(node, "scope")?.as_str(), node.class) {
             ("our", RakuAstClass::Method) => (true, false),
             ("my", RakuAstClass::Method) => (false, true),
+            ("has" | "anon", RakuAstClass::Method | RakuAstClass::Submethod) => (false, false),
             _ => return Err(unsupported(node)),
         },
     };
@@ -1976,7 +1977,6 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // raku names the declarator with the class, so `submethod` comes back
         // from `node.class` rather than from a field.
         is_submethod: node.class == RakuAstClass::Submethod,
-        our_variable_form: false,
         return_type,
         is_default_candidate,
         deprecated_message,

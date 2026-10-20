@@ -766,7 +766,7 @@ impl Interpreter {
                 // collide (`@a ==> map({ state $n ... })` twice — PLAN §8.14).
                 // load/sync/init all resolve through `scoped_state_key`, so
                 // within-map persistence across items is unaffected.
-                vm.lexicals.state_scope_id.set(Some(data.id));
+                vm.lexicals.state_scope_id.set(Some(vm.callable_state_scope(&data)));
                 // The fresh chunk's block-declared routine calls read the
                 // closure's own upvalues (`bind_origin_code_var_upvalues`).
                 vm.upvalues = data.upvalues.clone();
@@ -1102,7 +1102,7 @@ impl Interpreter {
         let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
             // Scope `state` variables to the closure instance (see
             // `eval_map_over_items`).
-            vm.lexicals.state_scope_id.set(Some(data.id));
+            vm.lexicals.state_scope_id.set(Some(vm.callable_state_scope(&data)));
             vm.set_topic_source_var(None);
             let len = list_items.len();
             for scan in 0..len {

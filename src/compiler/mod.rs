@@ -1134,6 +1134,7 @@ mod lazy_body_reads;
 pub(crate) mod lex_scope;
 mod lexical_stash;
 mod lexsub_aliases;
+mod method_values;
 mod mixin_rhs;
 mod native_str_coercion;
 mod nqp_atomic_forms;

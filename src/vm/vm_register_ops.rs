@@ -797,8 +797,8 @@ impl Interpreter {
         let signature = code.closure_signature(idx as usize);
         let spec = crate::vm::vm_closure_build::ClosureSpec {
             name: crate::symbol::well_known::anon(),
+            empty_sig: !is_block && signature.params.is_empty() && signature.param_defs.is_empty(),
             signature,
-            empty_sig: false,
             is_rw: false,
             is_raw: false,
             is_bare_block: is_block,

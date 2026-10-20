@@ -935,7 +935,15 @@ impl Compiler {
         }
         let is_bind_decl = matches!(stmt, Stmt::VarDecl { custom_traits, .. }
             if custom_traits.iter().any(|(t, _)| t == "__scalar_bind"));
-        if self.rw_tail && !is_bind_decl && Self::is_plain_lexical_name(name) {
+        let anonymous_scalar = matches!(
+            stmt,
+            Stmt::VarDecl {
+                anonymous: true,
+                ..
+            }
+        ) && crate::ast::anon_state::is_scalar(name);
+        if self.rw_tail && !is_bind_decl && (Self::is_plain_lexical_name(name) || anonymous_scalar)
+        {
             self.emit_wrap_var_ref(name);
             self.code.emit(OpCode::CaptureVarCell);
         }

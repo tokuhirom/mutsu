@@ -74,6 +74,7 @@ mod regex_quantifier;
 mod regex_sym;
 mod render;
 mod role;
+mod routine_ctor;
 mod routine_is_traits;
 mod routine_lower;
 mod routine_source;
@@ -1793,6 +1794,11 @@ pub fn construct(
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
     if method == "new"
+        && let Some(result) = routine_ctor::construct(class_name, args)
+    {
+        return result.map(Some);
+    }
+    if method == "new"
         && let Some(result) = package_traits::construct(class_name, args)
     {
         return result.map(Some);
@@ -2070,70 +2076,6 @@ pub fn construct(
                 name: None,
                 value: RakuAstFieldValue::Node(args[0].clone()),
             }],
-        }))));
-    }
-    if class_name == "RakuAST::Sub" && method == "new" {
-        let name = named_arg(args, "name");
-        if let Some(value) = &name {
-            require_rakuast_class(value, RakuAstClass::Name, "RakuAST::Sub.new")?;
-        }
-        let signature = named_arg(args, "signature");
-        if let Some(value) = &signature {
-            require_rakuast_class(value, RakuAstClass::Signature, "RakuAST::Sub.new")?;
-        }
-        let traits = named_arg(args, "traits")
-            .map(|value| {
-                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
-                    RuntimeError::new("RakuAST::Sub.new expects `traits` to be a list")
-                })
-            })
-            .transpose()?;
-        if let Some(traits) = &traits {
-            for trait_node in traits {
-                if !matches!(
-                    trait_node.view(),
-                    ValueView::RakuAst(node)
-                        if matches!(node.class, RakuAstClass::TraitReturns | RakuAstClass::TraitOf)
-                ) {
-                    return Err(RuntimeError::new(
-                        "RakuAST::Sub.new expects `traits` to contain return-type traits",
-                    ));
-                }
-            }
-        }
-        let body = match named_arg(args, "body") {
-            Some(value) => {
-                require_rakuast_class(&value, RakuAstClass::Blockoid, "RakuAST::Sub.new")?;
-                value
-            }
-            None => empty_blockoid(),
-        };
-        let mut fields = Vec::with_capacity(4);
-        if let Some(name) = name {
-            fields.push(RakuAstField {
-                name: Some("name"),
-                value: RakuAstFieldValue::Node(name),
-            });
-        }
-        if let Some(signature) = signature {
-            fields.push(RakuAstField {
-                name: Some("signature"),
-                value: RakuAstFieldValue::Node(signature),
-            });
-        }
-        if let Some(traits) = traits {
-            fields.push(RakuAstField {
-                name: Some("traits"),
-                value: RakuAstFieldValue::List(traits),
-            });
-        }
-        fields.push(RakuAstField {
-            name: Some("body"),
-            value: RakuAstFieldValue::Node(body),
-        });
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::Sub,
-            fields,
         }))));
     }
     if class_name == "RakuAST::Signature" && method == "new" {
@@ -3780,6 +3722,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
             | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
             | RakuAstClass::Sub
+            | RakuAstClass::Method
+            | RakuAstClass::Submethod
             | RakuAstClass::Signature
             | RakuAstClass::TraitReturns
             | RakuAstClass::TraitOf

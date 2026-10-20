@@ -245,10 +245,8 @@ impl Interpreter {
         // method table — they are only callable as functions.
         // Submethods (is_submethod=true) DO go in the table even
         // though they also have is_my=true from the parser.
-        // The `our &name = method name(...)` variable form
-        // (our_variable_form=true) keeps the method in the table.
         let is_lexical_only = decl.is_my && !decl.is_submethod;
-        let is_our_only = decl.is_our && !decl.our_variable_form;
+        let is_our_only = decl.is_our;
         if !is_lexical_only && !is_our_only {
             // ADR-0019 F4c-9b: the registry's `method_entries` table is the
             // sole store now -- every write goes straight through the

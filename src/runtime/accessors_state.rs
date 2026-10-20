@@ -474,7 +474,7 @@ impl Interpreter {
             .contains(&Symbol::intern(name))
     }
 
-    pub(crate) fn get_state_var(&self, key: (Symbol, Option<u64>)) -> Option<&Value> {
+    pub(crate) fn get_state_var(&self, key: crate::state_scope::StateKey) -> Option<&Value> {
         self.lexicals.state_vars.get(&key)
     }
 
@@ -491,21 +491,24 @@ impl Interpreter {
     /// counting up across later executions of its enclosing statement — Cro's
     /// `Cro.compose` recursed on a `state $split` that never restarted at 1 and
     /// blew the stack once a `Cro::Service.start` had run.
-    pub(crate) fn remove_state_var(&mut self, key: (Symbol, Option<u64>)) {
+    pub(crate) fn remove_state_var(&mut self, key: crate::state_scope::StateKey) {
         self.lexicals.state_vars.remove(&key);
         self.threads
             .shared_vars
             .remove(&Self::shared_state_cell_key(key));
     }
 
-    /// Reconstruct the pre-rekey display string for a `(Symbol, Option<u64>)`
+    /// Reconstruct the pre-rekey display string for a `crate::state_scope::StateKey`
     /// state key — `{base}#c{id}` when scoped to a closure clone, else the bare
     /// base key. Only the cross-thread cell-key derivation
     /// (`normalize_state_key`) still needs a string; the store itself and every
     /// hot-path read/write use the Copy tuple directly.
-    pub(crate) fn state_key_display(key: (Symbol, Option<u64>)) -> String {
+    pub(crate) fn state_key_display(key: crate::state_scope::StateKey) -> String {
         match key.1 {
-            Some(id) => format!("{}#c{}", key.0.as_str(), id),
+            Some(crate::state_scope::StateScopeId::Routine(id)) => format!("{}#r{}", key.0.as_str(), id),
+            Some(crate::state_scope::StateScopeId::Block(id)) => format!("{}#c{}", key.0.as_str(), id),
+            Some(crate::state_scope::StateScopeId::Invocation(id)) => format!("{}#i{}", key.0.as_str(), id),
+            Some(crate::state_scope::StateScopeId::Type(id)) => format!("{}#t{}", key.0.as_str(), id),
             None => key.0.as_str().to_string(),
         }
     }
@@ -514,20 +517,29 @@ impl Interpreter {
     /// env metadata bridge (a closure's free-var state writeback path, see
     /// `vm_closure_dispatch.rs`), which persists the key as a string `Value`
     /// since `Env` is string-keyed.
-    pub(crate) fn state_key_from_display(s: &str) -> (Symbol, Option<u64>) {
-        if let Some(pos) = s.rfind("#c")
-            && !s[pos + 2..].is_empty()
-            && s[pos + 2..].bytes().all(|b| b.is_ascii_digit())
-        {
-            let id: u64 = s[pos + 2..].parse().unwrap_or(0);
-            (Symbol::intern(&s[..pos]), Some(id))
-        } else {
-            (Symbol::intern(s), None)
+    pub(crate) fn state_key_from_display(s: &str) -> crate::state_scope::StateKey {
+        use crate::state_scope::StateScopeId;
+        for marker in ["#r", "#c", "#i", "#t"] {
+            if let Some((base, suffix)) = s.rsplit_once(marker)
+                && let Ok(id) = suffix.parse::<u64>()
+            {
+                let scope = match marker {
+                    "#r" => StateScopeId::Routine(id),
+                    "#c" => StateScopeId::Block(id),
+                    "#i" => StateScopeId::Invocation(id),
+                    _ => match u32::try_from(id) {
+                        Ok(id) => StateScopeId::Type(id),
+                        Err(_) => continue,
+                    },
+                };
+                return (Symbol::intern(base), Some(scope));
+            }
         }
+        (Symbol::intern(s), None)
     }
 
     /// The `shared_vars` key under which `key`'s cross-thread `state` cell lives.
-    pub(crate) fn shared_state_cell_key(scoped_key: (Symbol, Option<u64>)) -> String {
+    pub(crate) fn shared_state_cell_key(scoped_key: crate::state_scope::StateKey) -> String {
         // `owned_key_from_parts`, not the memoized `owned_key_for_str`: a
         // state key carries the routine's CLONE id (`$n#c17`), so the set of
         // them grows with what the program runs rather than with what it says,
@@ -537,7 +549,7 @@ impl Interpreter {
         ])
     }
 
-    pub(crate) fn set_state_var(&mut self, key: (Symbol, Option<u64>), value: Value) {
+    pub(crate) fn set_state_var(&mut self, key: crate::state_scope::StateKey, value: Value) {
         // Track C/Track B: once a `state` variable lives in a shared
         // `ContainerRef` cell (StateVarInit under an active thread context),
         // every writeback must go THROUGH the cell, not replace the store
@@ -565,7 +577,7 @@ impl Interpreter {
     /// migration pass. The list is bounded by the store it indexes: once it
     /// outgrows `state_vars` (a long spawn-free stretch that also removed
     /// entries), it is rebuilt from the store's live keys.
-    fn note_unmigrated_state_key(&mut self, key: (Symbol, Option<u64>)) {
+    fn note_unmigrated_state_key(&mut self, key: crate::state_scope::StateKey) {
         self.reap_dead_state_scopes();
         self.lexicals.state_vars_unmigrated.push(key);
         if self.lexicals.state_vars_unmigrated.len() > 2 * self.lexicals.state_vars.len() + 16 {
@@ -588,7 +600,8 @@ impl Interpreter {
             crate::value::state_scope_reaper::take_dead_scopes()
                 .into_iter()
                 .collect();
-        let is_dead = |key: &(Symbol, Option<u64>)| key.1.is_some_and(|id| ids.contains(&id));
+        let is_dead = |key: &crate::state_scope::StateKey| matches!(key.1,
+            Some(crate::state_scope::StateScopeId::Routine(id) | crate::state_scope::StateScopeId::Block(id)) if ids.contains(&id));
         let mut removed = Vec::new();
         self.lexicals.state_vars.retain(|key, _| {
             if is_dead(key) {

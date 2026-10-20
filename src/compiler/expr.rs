@@ -1433,6 +1433,7 @@ impl Compiler {
                     custom_traits,
                     *is_whatever_code,
                     *declarator,
+                    crate::symbol::well_known::anon(),
                 );
             }
             Expr::Lambda {

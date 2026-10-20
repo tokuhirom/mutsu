@@ -19,7 +19,7 @@ impl Interpreter {
         // position via the same cursor `method_name_chunks` already uses
         // (D3-1/D3-3) instead of calling `CompiledMethodDecl::from_stmt` on
         // the raw statement. This walk does not read
-        // `is_our`/`our_variable_form`/`custom_traits`/`is_export`/
+        // `is_our`/`custom_traits`/`is_export`/
         // `export_tags` — a role method is never `our`-registered as a
         // package sub and custom traits/exports on a role method are not
         // handled here, matching the walk's original ignored bindings.

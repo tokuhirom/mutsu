@@ -2662,10 +2662,6 @@ pub(crate) enum Stmt {
         /// True for `submethod` declarations (not inherited, but dispatched on own class).
         /// Distinct from `is_my` which means `my method` (lexical, not in method table).
         is_submethod: bool,
-        /// True for `our &name = method name(...) { ... }` form.
-        /// Unlike `our method name()`, this form keeps the method in the class
-        /// method table in addition to registering it as a package function.
-        our_variable_form: bool,
         return_type: Option<String>,
         /// `is default` trait for multi dispatch tie-breaking.
         is_default_candidate: bool,

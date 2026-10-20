@@ -39,7 +39,6 @@ use assign::{
     try_parse_assign_expr,
 };
 use class::class_decl_body;
-pub(crate) mod hoisted_methods;
 pub(crate) mod nested_block_methods;
 use modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use sub::{

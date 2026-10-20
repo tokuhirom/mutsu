@@ -7,6 +7,13 @@ impl Compiler {
             .flatten();
         let stmt = rewritten.as_ref().unwrap_or(stmt);
         match stmt {
+            Stmt::MethodDecl {
+                is_my: false,
+                is_our: false,
+                ..
+            } => {
+                self.compile_named_method_value(stmt);
+            }
             // `proto method NAME(...) {*}` as a term (`my constant
             // &proto-handler = proto method handler(|) {*}`,
             // Object::Trampoline). The parser hoisted a copy into the package

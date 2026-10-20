@@ -296,7 +296,7 @@ impl Interpreter {
                     // still go in the table even though they also carry
                     // `is_my=true` from the parser.
                     let is_lexical_only = decl.is_my && !decl.is_submethod;
-                    let is_our_only = decl.is_our && !decl.our_variable_form;
+                    let is_our_only = decl.is_our;
                     // #10234: the core type itself declares `only` this method.
                     if !is_lexical_only
                         && !is_our_only

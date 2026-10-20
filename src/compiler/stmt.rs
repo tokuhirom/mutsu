@@ -4388,6 +4388,9 @@ impl Compiler {
                     supersede: false,
                     custom_traits: {
                         let mut traits = vec![("__mutsu_method_decl".to_string(), None)];
+                        if *is_our {
+                            traits.push(("__our_scoped".to_string(), None));
+                        }
                         if let Some(marker) = declarator.literal_marker() {
                             traits.push((marker.to_string(), None));
                         }
