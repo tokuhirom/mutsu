@@ -1,7 +1,6 @@
 //! Deleted-index and initialized-index bookkeeping helpers
 //! split from `vm_var_ops` (§7-8 file split).
 use super::*;
-use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn encode_element_index(idx: &Value) -> String {

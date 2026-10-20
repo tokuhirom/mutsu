@@ -555,12 +555,12 @@ mod tests {
     #[test]
     fn the_memo_returns_the_same_symbol_and_namespaces_do_not_collide() {
         let name = Symbol::intern("%h");
-        assert_eq!(MetaNs::ElemShare.key(name), MetaNs::ElemShare.key(name));
+        assert_eq!(MetaNs::Type.key(name), MetaNs::Type.key(name));
         assert_ne!(
-            MetaNs::ElemShare.key(name),
-            MetaNs::SigillessAlias.key(name),
+            MetaNs::Type.key(name),
+            MetaNs::HashKeyType.key(name),
             "the memo is keyed by (namespace, name); a name-only key would \
-             hand `__mutsu_sigilless_alias::` the `__mutsu_elem_share::` entry"
+             hand `__mutsu_hash_key_type::` the `__mutsu_type::` entry"
         );
     }
 
