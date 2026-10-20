@@ -424,31 +424,7 @@ impl Interpreter {
             };
             let current_shape = current_val
                 .as_ref()
-                .and_then(|v| v.with_deref(crate::runtime::utils::shaped_array_shape))
-                .or_else(|| {
-                    // Also check declared shape metadata for multi-dim
-                    if !crate::env::shaped_array_dims_possible() {
-                        return None;
-                    }
-                    let key = crate::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&name);
-                    self.env().get_sym(key).and_then(|v| {
-                        if let ValueView::Array(dims, ..) = v.view() {
-                            Some(
-                                dims.iter()
-                                    .filter_map(|d| {
-                                        if let ValueView::Int(n) = d.view() {
-                                            Some(n as usize)
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect(),
-                            )
-                        } else {
-                            None
-                        }
-                    })
-                });
+                .and_then(|v| v.with_deref(crate::runtime::utils::shaped_array_shape));
             // Only preserve the old shape if the new value is NOT already shaped
             let assigned_has_own_shape = crate::runtime::utils::shaped_array_shape(&assigned)
                 .is_some()
