@@ -132,7 +132,7 @@ pub(crate) fn sink(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
                 return None;
             }
             // No pull to run here (already reified, cache-requested or taken).
-            let _ = body.sink_explicit(|_| {
+            let _ = body.sink_explicit(|_, _| {
                 unreachable!("sink() only pulls a deferred, non-cached source, excluded above")
             });
             Some(Ok(Value::NIL))

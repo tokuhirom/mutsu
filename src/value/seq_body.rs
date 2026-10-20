@@ -23,6 +23,19 @@ use super::{RuntimeError, Value};
 use crate::value::{MapGrepItems, PureCursor};
 use std::sync::{Arc, Mutex};
 
+/// What one pull of a deferred source produced, owned by the caller and
+/// filled as the pull goes: the elements produced so far, and the source
+/// elements consumed from where the pull started, the one in flight included
+/// (#12401). When the callback dies the caller still holds both, so a
+/// non-consuming read keeps the elements and resumes the source after the
+/// failing one, as rakudo's `.cache` does (#12048). An `Iterator` source keeps
+/// its own position and leaves `consumed` alone.
+#[derive(Debug, Default)]
+pub(crate) struct PullOut {
+    pub(crate) produced: Vec<Value>,
+    pub(crate) consumed: usize,
+}
+
 mod gather_source;
 mod generations;
 mod map_grep_stream;
@@ -35,7 +48,7 @@ pub(crate) enum MapGrepMode {
     /// A map over a real Array (`@a.map({ $_++ })`, or an Array reached through
     /// `@a.list`/a scalar) rw-binds `$_` to the source element, so the callback's
     /// writes have to reach the container. The pull runs
-    /// `eval_map_over_items_rw` and publishes the write-back by mutating this
+    /// `eval_map_over_items_rw_into` and publishes the write-back by mutating this
     /// container's `ArrayData` IN PLACE, which is frame-independent — the pull
     /// happens wherever the Seq is consumed, long after the frame whose `env`
     /// held the source's name is gone.
@@ -478,7 +491,7 @@ impl SeqBody {
     /// are already in `gens`, nothing to pull.
     fn pull_and_store(
         &self,
-        pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
+        pull: impl FnOnce(&SeqSource, &mut PullOut) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         self.settle_pure_source();
         let (source, _claim) = {
@@ -495,10 +508,11 @@ impl SeqBody {
             };
             (source, claim)
         };
-        let items = match pull_source(&source, pull) {
-            Ok(rest) => self.after_pulled_prefix(&source, rest),
-            Err(mut e) => {
-                self.keep_progress_of_failed_pull(source, &mut e);
+        let mut out = PullOut::default();
+        let items = match pull_source(&source, &mut out, pull) {
+            Ok(()) => self.after_pulled_prefix(&source, out.produced),
+            Err(e) => {
+                self.keep_progress_of_failed_pull(source, out);
                 return Err(e);
             }
         };
@@ -507,16 +521,13 @@ impl SeqBody {
         Ok(())
     }
 
-    /// A non-consuming pull of `source` died with `error`. When the pull
-    /// reported how far it got (`SeqPullProgress`), keep what it produced as
-    /// a generation and put the source back just past the failing element, so
-    /// the next read resumes there the way rakudo's `.cache` does (#12048).
-    /// Without progress the body stays `Taken`, as for any failed pull.
+    /// A non-consuming pull of `source` died. Keep what it produced (`out`,
+    /// filled as the pull went) as a generation and put the source back just
+    /// past the failing element, so the next read resumes there the way
+    /// rakudo's `.cache` does (#12048, #12401). A source that cannot resume
+    /// (a gather, an IO read) stays `Taken`, as for any failed pull.
     // Cost: O(p) to join the progress onto the prefix already stored, p = elements kept.
-    fn keep_progress_of_failed_pull(&self, source: SeqSource, error: &mut RuntimeError) {
-        let Some(progress) = error.take_seq_pull_progress() else {
-            return;
-        };
+    fn keep_progress_of_failed_pull(&self, source: SeqSource, progress: PullOut) {
         if !matches!(source, SeqSource::Iterator(_) | SeqSource::MapGrep { .. }) {
             return;
         }
@@ -532,7 +543,7 @@ impl SeqBody {
                 plan,
             } => {
                 let pos = pos + progress.consumed;
-                if pos >= items.len() {
+                if items.drained_at(pos) {
                     SeqSource::Reified
                 } else {
                     SeqSource::MapGrep {
@@ -586,7 +597,7 @@ impl SeqBody {
     // Cost: `pull`'s cost, plus O(1) amortized per element appended.
     pub(crate) fn extend_map_grep_prefix(
         &self,
-        pull: impl FnOnce(&mut SeqSource) -> Result<(Vec<Value>, bool), RuntimeError>,
+        pull: impl FnOnce(&mut SeqSource, &mut PullOut) -> Result<bool, RuntimeError>,
     ) -> Result<(), RuntimeError> {
         let (mut source, _claim) = {
             let mut state = self.lock_state();
@@ -599,14 +610,23 @@ impl SeqBody {
                 claim,
             )
         };
-        let (new_items, exhausted) = without_pull_progress(pull(&mut source))?;
-        self.core.gens.append(new_items);
+        let mut out = PullOut::default();
+        let pulled = pull(&mut source, &mut out);
+        self.core.gens.append(out.produced);
+        // A failed pull left `source` just past the failing element
+        // (`pull_map_grep_prefix`), so the next read resumes there (#12401).
+        let exhausted = match &pulled {
+            Ok(exhausted) => *exhausted,
+            Err(_) => {
+                matches!(&source, SeqSource::MapGrep { items, pos, .. } if items.drained_at(*pos))
+            }
+        };
         self.lock_state().source = if exhausted {
             SeqSource::Reified
         } else {
             source
         };
-        Ok(())
+        pulled.map(|_| ())
     }
 
     /// Cut a still-unread [`SeqSource::Pure`] body into its elements, in
@@ -683,7 +703,7 @@ impl SeqBody {
     /// was already handed away by a consuming method.
     pub(crate) fn reify(
         &self,
-        pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
+        pull: impl FnOnce(&SeqSource, &mut PullOut) -> Result<(), RuntimeError>,
     ) -> Result<&[Value], RuntimeError> {
         self.settle_pure_source();
         {
@@ -721,7 +741,7 @@ impl SeqBody {
     /// [`reify`]: SeqBody::reify
     pub(crate) fn take(
         &self,
-        pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
+        pull: impl FnOnce(&SeqSource, &mut PullOut) -> Result<(), RuntimeError>,
     ) -> Result<(Vec<Value>, SeqTaken), RuntimeError> {
         self.settle_pure_source();
         let (reified, servable) = {
@@ -746,8 +766,11 @@ impl SeqBody {
             let mut state = self.lock_state();
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
-        let items =
-            self.after_pulled_prefix(&source, without_pull_progress(pull_source(&source, pull))?);
+        // A consuming read leaves the body `Taken` even when it fails
+        // (rakudo: "consumed"), so a partial `out` is dropped.
+        let mut out = PullOut::default();
+        pull_source(&source, &mut out, pull)?;
+        let items = self.after_pulled_prefix(&source, out.produced);
         Ok((items, SeqTaken::Taken))
     }
 
@@ -832,7 +855,7 @@ impl SeqBody {
     /// `.sink`ing an uncached Seq twice does not throw the second time.
     pub(crate) fn sink(
         &self,
-        pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
+        pull: impl FnOnce(&SeqSource, &mut PullOut) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         self.sink_inner(pull, true)
     }
@@ -845,14 +868,14 @@ impl SeqBody {
     /// `itemized` exemption is about *sink context*, not about `.sink`.
     pub(crate) fn sink_explicit(
         &self,
-        pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
+        pull: impl FnOnce(&SeqSource, &mut PullOut) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         self.sink_inner(pull, false)
     }
 
     fn sink_inner(
         &self,
-        pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
+        pull: impl FnOnce(&SeqSource, &mut PullOut) -> Result<(), RuntimeError>,
         honor_itemized: bool,
     ) -> Result<(), RuntimeError> {
         self.settle_pure_source();
@@ -875,7 +898,7 @@ impl SeqBody {
                 | SeqSource::MapGrep { .. }
                 | SeqSource::Gather(_)
         ) {
-            without_pull_progress(pull(&source))?;
+            pull(&source, &mut PullOut::default())?;
         }
         Ok(())
     }
@@ -1117,7 +1140,7 @@ impl SeqBody {
     pub(crate) fn extend_from_iterator(
         &self,
         needed: usize,
-        pull: impl FnOnce(&Value, usize) -> Result<Vec<Value>, RuntimeError>,
+        pull: impl FnOnce(&Value, usize, &mut PullOut) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         if self.live_generation().len() >= needed {
             return Ok(());
@@ -1135,9 +1158,13 @@ impl SeqBody {
         // what keeps a second thread from pulling it at the same time.
         let _claim = generations::claim_pull(&self.core, &mut state);
         drop(state);
-        let new_items = without_pull_progress(pull(&iterator, needed - have))?;
-        let exhausted = new_items.len() < needed - have;
-        self.core.gens.append(new_items);
+        // The iterator keeps its own position: what it produced before a
+        // failure is kept, and the next read resumes after it (#12401).
+        let mut out = PullOut::default();
+        let pulled = pull(&iterator, needed - have, &mut out);
+        let exhausted = out.produced.len() < needed - have;
+        self.core.gens.append(out.produced);
+        pulled?;
         if exhausted {
             self.lock_state().source = SeqSource::Reified;
         }
@@ -1265,31 +1292,20 @@ impl SeqSource {
 }
 
 /// Run `pull` over a deferred `source`, except a [`SeqSource::Pure`],
-/// A pull that does not put its source back on failure (a consuming read, a
-/// sink, a prefix pull) must not let the progress the loops attached travel
-/// on: an enclosing Seq's `pull_and_store` would take it for its own.
-// Cost: O(1).
-fn without_pull_progress<T>(result: Result<T, RuntimeError>) -> Result<T, RuntimeError> {
-    result.map_err(|mut e| {
-        e.take_seq_pull_progress();
-        e
-    })
-}
-
 /// which is cut here: it needs no interpreter.
 // Cost: a full pull of a `Pure` cursor (for a `Str` cursor O(n), n = bytes of
 // its string); otherwise `pull`'s cost.
 fn pull_source(
     source: &SeqSource,
-    pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
-) -> Result<Vec<Value>, RuntimeError> {
+    out: &mut PullOut,
+    pull: impl FnOnce(&SeqSource, &mut PullOut) -> Result<(), RuntimeError>,
+) -> Result<(), RuntimeError> {
     match source {
         SeqSource::Pure(spec) => {
-            let mut items = Vec::new();
-            spec.clone().push_up_to(&mut items, usize::MAX);
-            Ok(items)
+            spec.clone().push_up_to(&mut out.produced, usize::MAX);
+            Ok(())
         }
-        _ => pull(source),
+        _ => pull(source, out),
     }
 }
 

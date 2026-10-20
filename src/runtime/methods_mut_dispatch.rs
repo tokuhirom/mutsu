@@ -543,7 +543,7 @@ impl Interpreter {
             //
             // The rw write-back is what made deferring this one awkward, and
             // it is carried by `rw_source`: the pull runs
-            // `eval_map_over_items_rw` and publishes any mutation by writing
+            // `eval_map_over_items_rw_into` and publishes any mutation by writing
             // the source `ArrayData` IN PLACE, so it needs no frame and no
             // name (`publish_rw_map_writeback`). That matters because the
             // pull happens wherever the Seq is consumed -- rakudo writes back

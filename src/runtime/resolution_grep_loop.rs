@@ -7,7 +7,7 @@
 use super::*;
 use crate::runtime::map_grep_plan::{InlineLoopKind, MapGrepPlanSlot};
 use crate::runtime::resolution_map_grep::bind_loop_topic;
-use crate::value::ValueView;
+use crate::value::{PullOut, ValueView};
 
 /// What a grep over a list of items produced: the matched values, the source
 /// items after any `$_` write-backs, and — when the grep consumed one element
@@ -82,35 +82,64 @@ impl Interpreter {
         list_items: Vec<Value>,
         slot: &mut MapGrepPlanSlot,
     ) -> Result<GrepOutcome, RuntimeError> {
-        self.eval_grep_loop(func, list_items, None, slot)
+        let mut out = PullOut::default();
+        let (items, matched) = self.eval_grep_loop(func, list_items, None, slot, &mut out)?;
+        Ok((Value::array(out.produced), items, matched))
     }
 
-    /// [`Self::eval_grep_over_items_planned`] over the source elements `feed`
+    /// [`Self::eval_grep_over_items_planned`] into `out`: each match is
+    /// pushed as it is found, and `out.consumed` counts the source elements
+    /// taken, the one in flight included, so a deferred `.grep` keeps the
+    /// matches and resumes after an element whose callback died (#12401).
+    /// Returns the source items and the matched indices.
+    // Cost: one callback call per element (per `arity` elements for a
+    // multi-parameter block).
+    pub(crate) fn eval_grep_over_items_into(
+        &mut self,
+        func: Option<Value>,
+        list_items: Vec<Value>,
+        slot: &mut MapGrepPlanSlot,
+        out: &mut PullOut,
+    ) -> Result<(Vec<Value>, Option<Vec<usize>>), RuntimeError> {
+        self.eval_grep_loop(func, list_items, None, slot, out)
+    }
+
+    /// [`Self::eval_grep_over_items_into`] over the source elements `feed`
     /// reads, stopping at its `max_matches`-th match: one loop run (one env
     /// merge, one register reset) for a whole prefix pull, however many source
     /// elements it skips. The returned source items are the elements the loop
     /// consumed — the pull advances by their count.
     // Cost: one callback call per element consumed, up to the
     // `max_matches`-th match.
-    pub(crate) fn eval_grep_over_feed_planned(
+    pub(crate) fn eval_grep_over_feed_into(
         &mut self,
         func: Option<Value>,
         feed: GrepFeed<'_>,
         slot: &mut MapGrepPlanSlot,
-    ) -> Result<GrepOutcome, RuntimeError> {
-        self.eval_grep_loop(func, Vec::new(), Some(feed), slot)
+        out: &mut PullOut,
+    ) -> Result<(Vec<Value>, Option<Vec<usize>>), RuntimeError> {
+        self.eval_grep_loop(func, Vec::new(), Some(feed), slot, out)
     }
 
     /// The grep loop: over `list_items`, or — with `feed` — over the elements
-    /// it reads, `list_items` collecting them as they are consumed.
-    // Cost: see the two callers.
+    /// it reads, `list_items` collecting them as they are consumed. The
+    /// matches go into `out.produced` and the elements taken are counted in
+    /// `out.consumed`, both as the loop goes (#12401).
+    // Cost: see the callers.
     fn eval_grep_loop(
         &mut self,
         func: Option<Value>,
         mut list_items: Vec<Value>,
         mut feed: Option<GrepFeed<'_>>,
         slot: &mut MapGrepPlanSlot,
-    ) -> Result<GrepOutcome, RuntimeError> {
+        out: &mut PullOut,
+    ) -> Result<(Vec<Value>, Option<Vec<usize>>), RuntimeError> {
+        let consumed_base = out.consumed;
+        let produced_base = out.produced.len();
+        let PullOut {
+            produced: result,
+            consumed,
+        } = out;
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -127,7 +156,6 @@ impl Interpreter {
             && let ValueView::Sub(data) = func_ref.view()
         {
             let data = data.clone();
-            let mut result = Vec::new();
             // Source index of each matched element, recorded by the loop (see
             // the doc comment): only meaningful for a one-element-per-iteration
             // grep, so it is discarded below when `arity > 1`.
@@ -157,6 +185,7 @@ impl Interpreter {
                 }
                 let mut matched = Vec::new();
                 for (i, item) in list_items.iter().enumerate() {
+                    *consumed = consumed_base + i + 1;
                     let callable = Value::sub_value(data.clone());
                     let pred =
                         if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
@@ -169,7 +198,7 @@ impl Interpreter {
                         matched.push(i);
                     }
                 }
-                return Ok((Value::array(result), list_items, Some(matched)));
+                return Ok((list_items, Some(matched)));
             }
             let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
             // Only the inline loop below reads a feed lazily, and only one
@@ -196,6 +225,7 @@ impl Interpreter {
                     } else {
                         list_items[i..i + arity].to_vec()
                     };
+                    *consumed = consumed_base + i + arity;
                     let pred =
                         self.call_sub_value(Value::sub_value(data.clone()), chunk.clone(), false)?;
                     if self.eval_predicate_truthy(&pred) {
@@ -210,7 +240,7 @@ impl Interpreter {
                 }
                 // A chunked grep has no one-to-one element/slot mapping.
                 let matched = (arity == 1).then_some(matched);
-                return Ok((Value::array(result), list_items, matched));
+                return Ok((list_items, matched));
             }
 
             // Compile once, reuse VM for every iteration (and reuse a cached
@@ -266,7 +296,7 @@ impl Interpreter {
                     if let Some(feed) = &feed {
                         // `i` is always the next element to read here: a feed
                         // runs one element per call.
-                        if result.len() >= feed.max_matches {
+                        if result.len() - produced_base >= feed.max_matches {
                             break;
                         }
                         match feed.fetch(i) {
@@ -284,6 +314,10 @@ impl Interpreter {
                     } else {
                         list_items[i..i + arity].to_vec()
                     };
+                    // The elements taken, this one included: if the callback
+                    // dies, the Seq keeps the matches and resumes after it
+                    // (#12048).
+                    *consumed = consumed_base + i + arity;
                     'body_redo: loop {
                         vm.frame_authoritative = block_authoritative.clone();
                         vm.frame_owned = block_owned.clone();
@@ -405,17 +439,7 @@ impl Interpreter {
                                 }
                                 break 'body_redo;
                             }
-                            Err(mut e) => {
-                                // The Seq keeps the matches so far and resumes
-                                // after this element (#12048).
-                                if !e.has_seq_pull_progress() {
-                                    e.set_seq_pull_progress(crate::value::SeqPullProgress {
-                                        produced: std::mem::take(&mut result),
-                                        consumed: i + arity,
-                                    });
-                                }
-                                return Err(e);
-                            }
+                            Err(e) => return Err(e),
                         }
                     }
                     if stop {
@@ -433,50 +457,53 @@ impl Interpreter {
             loop_result?;
             // A chunked grep has no one-to-one element/slot mapping.
             let matched = (arity == 1).then_some(matched);
-            return Ok((Value::array(result), list_items, matched));
+            return Ok((list_items, matched));
         }
         if let Some(pattern) = func {
             if matches!(pattern.view(), ValueView::Bool(_)) {
                 return Err(RuntimeError::match_bool(".grep"));
             }
-            let mut result = Vec::new();
             let mut matched = Vec::new();
             if let Some(feed) = feed {
-                while result.len() < feed.max_matches
+                while result.len() - produced_base < feed.max_matches
                     && let Some(item) = feed.fetch(list_items.len())
                 {
+                    *consumed = consumed_base + list_items.len() + 1;
                     if self.try_smart_match(&item, &pattern)? {
                         result.push(item.clone());
                         matched.push(list_items.len());
                     }
                     list_items.push(item);
                 }
-                return Ok((Value::array(result), list_items, Some(matched)));
+                return Ok((list_items, Some(matched)));
             }
             for (i, item) in list_items.iter().enumerate() {
+                *consumed = consumed_base + i + 1;
                 if self.try_smart_match(item, &pattern)? {
                     result.push(item.clone());
                     matched.push(i);
                 }
             }
-            return Ok((Value::array(result), list_items, Some(matched)));
+            return Ok((list_items, Some(matched)));
         }
         if let Some(func) = func {
-            let mut result = Vec::new();
             let mut matched = Vec::new();
             for (i, item) in list_items.iter().enumerate() {
+                *consumed = consumed_base + i + 1;
                 let pred = self.call_sub_value(func.clone(), vec![item.clone()], false)?;
                 if self.eval_predicate_truthy(&pred) {
                     result.push(item.clone());
                     matched.push(i);
                 }
             }
-            return Ok((Value::array(result), list_items, Some(matched)));
+            return Ok((list_items, Some(matched)));
         }
         if let Some(feed) = feed {
             list_items = feed.window();
         }
+        *consumed = consumed_base + list_items.len();
+        result.extend(list_items.iter().cloned());
         let all = (0..list_items.len()).collect();
-        Ok((Value::array(list_items.clone()), list_items, Some(all)))
+        Ok((list_items, Some(all)))
     }
 }

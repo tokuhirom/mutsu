@@ -396,6 +396,7 @@ impl Interpreter {
             0..len,
             None,
             &mut crate::runtime::map_grep_plan::MapGrepPlanSlot::default(),
+            &mut crate::value::PullOut::default(),
         )
         .map(|(result, _)| result)
     }
@@ -410,9 +411,12 @@ impl Interpreter {
     /// With `max_matches`, the grep reads the slots from `range.start` on as
     /// it reaches them and stops at that many matches instead of at
     /// `range.end` (a prefix pull, #11515). Returns the result and the end of
-    /// the slots it consumed.
+    /// the slots it consumed. When the callback dies, `partial` receives the
+    /// matches so far (not yet promoted) and the slots consumed, so a deferred
+    /// `.grep` resumes after the failing slot (#12401).
     // Cost: one callback call per slot consumed, plus O(m) promotions,
     // m = matched slots.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn grep_over_array_promoting_range(
         &mut self,
         items: crate::gc::Gc<crate::value::ArrayData>,
@@ -421,6 +425,7 @@ impl Interpreter {
         range: std::ops::Range<usize>,
         max_matches: Option<usize>,
         plan: &mut crate::runtime::map_grep_plan::MapGrepPlanSlot,
+        partial: &mut crate::value::PullOut,
     ) -> Result<(Value, usize), RuntimeError> {
         // `items` is the LIVE Array's node even once a second mutator thread
         // exists (#12484, ADR-0068 §16.1): every read and the promotion below
@@ -431,14 +436,15 @@ impl Interpreter {
             let _guard = lock();
             range.start.min(items.len())
         };
-        let (filtered, mutated_items, matched_indices) = match max_matches {
+        let mut matches = crate::value::PullOut::default();
+        let grepped = match max_matches {
             Some(max_matches) => {
                 let fetch = |i: usize| {
                     let _guard = lock();
                     items.get(start + i).cloned()
                 };
                 let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(&fetch, max_matches);
-                self.eval_grep_over_feed_planned(func, feed, plan)?
+                self.eval_grep_over_feed_into(func, feed, plan, &mut matches)
             }
             None => {
                 let slice = {
@@ -446,9 +452,18 @@ impl Interpreter {
                     let end = range.end.min(items.len()).max(start);
                     items[start..end].to_vec()
                 };
-                self.eval_grep_over_items_planned(func, slice, plan)?
+                self.eval_grep_over_items_into(func, slice, plan, &mut matches)
             }
         };
+        let (mutated_items, matched_indices) = match grepped {
+            Ok(grepped) => grepped,
+            Err(e) => {
+                partial.produced.extend(matches.produced);
+                partial.consumed += matches.consumed;
+                return Err(e);
+            }
+        };
+        let filtered = Value::array(matches.produced);
         let end = start + mutated_items.len();
         // Which source positions matched, so those slots can be shared
         // with the result as first-class element containers. The grep

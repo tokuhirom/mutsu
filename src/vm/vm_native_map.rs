@@ -1,7 +1,7 @@
 //! Native `.map` over a concrete array for a `$_`-mutating / rw-param block.
 //!
 //! This loop exists for exactly one thing the shared map loop
-//! (`runtime/resolution_map_grep_rw.rs::eval_map_over_items_rw`) cannot do:
+//! (`runtime/resolution_map_grep_rw.rs::eval_map_over_items_rw_into`) cannot do:
 //! Raku's rw binding of `$_` to the source element, i.e. `@a.map({ $_++ })` and
 //! `@a.map(-> $x is rw { $x++ })` mutating `@a`. It captures the block's final
 //! `$_` directly (`rw_map_topic_capture`) instead of relying on the shared
@@ -44,7 +44,7 @@ impl Interpreter {
     /// Try to run `target.map(block)` natively for a block that WRITES BACK
     /// into the source elements. Returns `Some((result elements, the source
     /// elements after the block's rw writes))` when handled here, `None` to
-    /// fall back to the shared loop (`eval_map_over_items_rw`) unchanged.
+    /// fall back to the shared loop (`eval_map_over_items_rw_into`) unchanged.
     ///
     /// Called from the deferred `.map` PULL (`Interpreter::pull_rw_map`), not
     /// from the `.map` call: ADR-0058 makes every `.map` hand back a Seq whose
@@ -200,7 +200,7 @@ pub(crate) struct NativeRwMapShape {
 /// raw` param — with a single element per call.
 ///
 /// A read-only block is declined: this loop has nothing the shared
-/// compile-once/`run_reuse` loop (`eval_map_over_items_rw`) cannot do — and it
+/// compile-once/`run_reuse` loop (`eval_map_over_items_rw_into`) cannot do — and it
 /// is MUCH slower at it. This loop calls the general closure-call machinery
 /// once per element (`call_compiled_closure_with_topic`: a scoped env child,
 /// the full captured-env merge, per-instance state lookups and an exit
