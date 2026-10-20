@@ -3241,6 +3241,11 @@ impl Interpreter {
                 needs_interpreter: Self::function_body_needs_interpreter(&def.body),
                 declares_state: Self::function_body_declares_state(&def.body),
                 uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
+                result_is_decontainerized:
+                    crate::ast::result_decont::result_is_decontainerized(
+                        &def.param_defs,
+                        &def.body,
+                    ),
                 registration_identity: crate::ast::registration_identity_fingerprint(
                     &def.params,
                     &def.param_defs,

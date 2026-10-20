@@ -2415,6 +2415,15 @@ pub(crate) enum OpCode {
     /// mention. Every other sunk shape (fresh calls, method calls, `sink`
     /// prefix, ...) keeps `true`, matching prior behavior.
     SinkPop(bool, bool),
+    /// [`OpCode::SinkPop`] for the value of a statement call to the routine
+    /// named by constant `name_idx` (`g;`, #11537). A user `sink` method of
+    /// the value runs when the callee hands back a decontainerized value: a
+    /// routine that is not `is rw`/`is raw`/`return-rw`, whose result is
+    /// implicit and not a readonly parameter
+    /// (`RoutineBodyFacts::result_is_decontainerized`). The callee is
+    /// resolved only once a value with a user `sink` is in hand. Otherwise as
+    /// `SinkPop(false, true)`.
+    SinkPopCall(u32),
     /// Pop the value of an assignment used as a statement (`%h{$k} = ...;`,
     /// `@a[$i] = ...;`). Rakudo treats assignment statements as wanted, not
     /// sunk: an assigned unhandled Failure is stored, never thrown — except
@@ -5285,6 +5294,10 @@ pub(crate) fn compiled_routine_metadata(
             needs_interpreter: crate::runtime::Interpreter::function_body_needs_interpreter(body),
             declares_state: crate::runtime::Interpreter::function_body_declares_state(body),
             uses_return_rw: body_uses_return_rw(body),
+            result_is_decontainerized: crate::ast::result_decont::result_is_decontainerized(
+                &effective_param_defs,
+                body,
+            ),
             registration_identity: crate::ast::registration_identity_fingerprint(
                 params,
                 &effective_param_defs,

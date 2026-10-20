@@ -4901,10 +4901,20 @@ impl Interpreter {
             // is drained, k = elements; O(d) for a `user_sink` instance, d = MRO
             // depth; with a user `sink` method, plus its call and the drain of any
             // by-name caller write it recorded (O(1) when none).
-            OpCode::SinkPop(user_sink, may_explode_failure) => {
+            //
+            // `SinkPopCall`: as `SinkPop(false, true)`, plus O(1) to resolve the
+            // callee when the value has a user `sink` method.
+            OpCode::SinkPop(..) | OpCode::SinkPopCall(_) => {
                 self.sync_source_line(code, *ip);
-                let user_sink = *user_sink;
-                let may_explode_failure = *may_explode_failure;
+                let (user_sink, may_explode_failure) = match &code.ops[*ip] {
+                    OpCode::SinkPop(user_sink, may_explode_failure) => {
+                        (*user_sink, *may_explode_failure)
+                    }
+                    OpCode::SinkPopCall(name_idx) => {
+                        (self.sunk_call_result_runs_sink(code, *name_idx), true)
+                    }
+                    _ => unreachable!(),
+                };
                 if let Some(val) = self.stack.pop() {
                     // A bare statement value whose class defines its own `sink`
                     // method invokes it in sink context (Raku semantics:

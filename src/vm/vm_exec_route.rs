@@ -207,6 +207,7 @@ impl Interpreter {
             | OpCode::PushBlockFrame
             | OpCode::SeqToList
             | OpCode::SinkPop(..)
+            | OpCode::SinkPopCall(_)
             | OpCode::SinkPopAssign
             | OpCode::ThrowIfFailure
             | OpCode::WarnSuppressPop

@@ -169,6 +169,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::GetLocalMetaAssign { .. }
             // Sink context (forces lazies / throws unhandled Failures)
             | OpCode::SinkPop(_, _)
+            | OpCode::SinkPopCall(_)
             // Topic / context markers
             | OpCode::MarkBindContext
             | OpCode::MarkVarDeclContext
