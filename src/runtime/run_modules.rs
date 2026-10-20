@@ -1343,7 +1343,10 @@ impl Interpreter {
             // module-local bindings back out. `apply_module_export` needs
             // this: `sub EXPORT` is part of the module's own closure and must
             // resolve everything the mainline could (see its doc comment).
-            let module_body_env = self.env.clone();
+            // Flattened: a load inside a block runs over a scoped env whose
+            // own tier holds the module's lexicals, and the hook's `UNIT::`
+            // reads the chain's tail as the module scope (#14115).
+            let module_body_env = self.env.flattened();
             self.restore_monkey_see_no_eval(saved_monkey_see_no_eval);
             self.pending_rw_writeback_sources
                 .truncate(saved_pending_rw_writeback_len);
