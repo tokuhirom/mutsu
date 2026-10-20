@@ -177,8 +177,11 @@ pub(crate) fn seed_native_subclass_payloads(
     }
     // An `is Attribute` subclass is a metaobject too: `Attribute.new`'s named
     // arguments are its facts, which the `Attribute` rows read.
-    if class_mro.iter().any(|name| name == "Attribute") && !attrs.contains_key("__mutsu_attr_name") {
-        for (key, value) in crate::runtime::methods_object_dispatch_new::attribute_facts_from_args(args) {
+    if class_mro.iter().any(|name| name == "Attribute") && !attrs.contains_key("__mutsu_attr_name")
+    {
+        for (key, value) in
+            crate::runtime::methods_object_dispatch_new::attribute_facts_from_args(args)
+        {
             if matches!(
                 key.as_str(),
                 "name" | "__mutsu_attr_name" | "type" | "__mutsu_attr_owner" | "has_accessor"
