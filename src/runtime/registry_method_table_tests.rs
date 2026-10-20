@@ -98,17 +98,18 @@ fn remove_user_methods_is_set_user_methods_with_an_empty_vec() {
 }
 
 #[test]
-fn clear_user_methods_for_owner_wipes_user_rows_but_spares_builtin_columns() {
+fn clear_user_methods_for_owner_wipes_user_rows() {
     let mut registry = Registry::default();
-    registry.seed_builtin_method_entries();
     let owner = Symbol::intern("Str");
     let name = Symbol::intern("chars");
     registry.set_user_methods(owner, name, vec![dummy_method_def()]);
     registry.clear_user_methods_for_owner(owner);
     assert!(registry.owner_method_names("Str").is_empty());
-    let entry = &registry.method_entries[&MethodEntryKey { owner, name }];
-    assert!(entry.builtin.is_some());
-    assert!(entry.user_candidates.is_empty());
+    assert!(
+        !registry
+            .method_entries
+            .contains_key(&MethodEntryKey { owner, name })
+    );
 }
 
 #[test]

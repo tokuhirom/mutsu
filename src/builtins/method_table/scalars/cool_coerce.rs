@@ -1,5 +1,5 @@
-//! `Cool.Real` (ADR-11276 slice 5, §9.92): the coercion every `Cool` value
-//! reaches when its own type declares none.
+//! `Cool.Real` (ADR-11276 slice 5, §9.92) and `Cool.Int`: the coercions every
+//! `Cool` value reaches when its own type declares none.
 //!
 //! The numeric types answer their own `Real` (`numeric_coerce`); this row
 //! answers a `Str` (parsed as `.Numeric` parses it), a `List`, `Array`, `Hash`,
@@ -13,14 +13,48 @@ use super::{Handler, MethodRow, RowFlags};
 use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::{RuntimeError, Value, ValueView};
 
-pub(super) static COOL_ROWS: &[MethodRow] = &[MethodRow {
-    owner: "Cool",
-    name: "Real",
-    arity: 0,
-    handler: Handler::Narrow(real),
-    flags: RowFlags::TYPE_OBJECT_OK,
-    named: &[],
-}];
+pub(super) static COOL_ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "Cool",
+        name: "Real",
+        arity: 0,
+        handler: Handler::Narrow(real),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+    // `Cool.Int` is `self.Numeric.Int` (ADR-14032: Rakudo declares it on
+    // `Cool`, so `Str.^can("Int")` finds it there).
+    MethodRow {
+        owner: "Cool",
+        name: "Int",
+        arity: 0,
+        handler: Handler::Interp(int),
+        // Every shaped `Cool` value has an `Int` of its own; a shapeless one
+        // (a `Match`, an `IO::Path`) reaches this row through its owner.
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+];
+
+/// `Cool.Int` of a defined receiver: `self.Numeric.Int`, both through the
+/// receiver's own methods (a `StrDistance` numifies to its edit distance). A
+/// type object is `Mu.Int`'s, which answers the type object itself.
+// Cost: the receiver's `Numeric` plus the number's `Int`.
+fn int(
+    interp: &mut crate::runtime::Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: crate::builtins::method_table::Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if matches!(target.view(), ValueView::Package(_)) {
+        return None;
+    }
+    Some(
+        interp
+            .call_method_with_values(target.clone(), "Numeric", Vec::new())
+            .and_then(|number| interp.call_method_with_values(number, "Int", Vec::new())),
+    )
+}
 
 /// The zero a type object's `.Real` warns and answers with, for the types
 /// whose zero is not an `Int`; `None` for a type with no numeric zero.

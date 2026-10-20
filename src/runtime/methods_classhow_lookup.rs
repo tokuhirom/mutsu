@@ -352,7 +352,7 @@ impl Interpreter {
         // `DateTime.^can('timezone')` found it, so `.wrap` on it died
         // (DateTime::Timezones).
         for level in mro.iter() {
-            if crate::builtins::native_method_row::native_method_declared(
+            if crate::builtins::method_introspection::native_method_declared(
                 level.as_str(),
                 method_name,
             ) {

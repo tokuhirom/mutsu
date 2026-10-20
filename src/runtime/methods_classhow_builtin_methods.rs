@@ -153,7 +153,7 @@ impl Interpreter {
                 if !all && matches!(cn, "Any" | "Mu" | "Cool") {
                     continue;
                 }
-                let names = crate::builtins::native_method_row::declared_names_for_owner(cn);
+                let names = crate::builtins::method_introspection::declared_names_for_owner(cn);
                 self.push_native_method_objects(&names, cn, &mut result);
             }
             let mro_names: Vec<String> = mro.iter().map(|s| s.to_string()).collect();
@@ -190,7 +190,7 @@ impl Interpreter {
                     continue;
                 }
                 seen.push(base);
-                for name in crate::builtins::native_method_row::introspectable_names_for_owner(base)
+                for name in crate::builtins::method_introspection::introspectable_names_for_owner(base)
                 {
                     result.push(self.make_native_method_object(name, base));
                 }

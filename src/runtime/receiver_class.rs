@@ -523,7 +523,7 @@ impl Interpreter {
         }
         let chain = self.dispatch_owner_chain(target);
         chain_owner_probe(&chain, |owner| {
-            crate::builtins::native_method_row::native_method_row_exists(owner, name)
+            crate::builtins::method_introspection::native_method_row_exists(owner, name)
         })
     }
 }

@@ -2,7 +2,6 @@
 declared	Allomorph	ACCEPTS	Bool	Str	WHICH	chomp	chop	comb	fc	flip	lc	narrow	pred	raku	samecase	samemark	samespace	split	subst	subst-mutate	substr	substr-rw	succ	tc	tclc	trim	trim-leading	trim-trailing	uc	words
 methods	Allomorph	ACCEPTS	BUILD	Bool	COERCE	Capture	DUMP	Date	DateTime	IO	Int	NFC	NFD	NFKC	NFKD	Num	Numeric	POPULATE	Str	Stringy	Version	WHICH	WHY	WORDS_AUTODEREF	chars	chomp	chop	codes	comb	contains	encode	ends-with	fc	flip	gist	indent	index	indices	is-whitespace	lc	leading-whitespace	lines	match	naive-word-wrapper	narrow	no-zero-arg	ord	ords	parse-base	pred	raku	rindex	samecase	samemark	samespace	split	starts-with	subst	subst-mutate	substr	substr-eq	substr-rw	succ	tc	tclc	trailing-whitespace	trans	trim	trim-leading	trim-trailing	uc	unimatch	uniname	uninames	uniparse	uniprop	uniprops	unival	univals	wordcase	words
 only	Allomorph	Str	chomp	chop	comb	fc	flip	lc	narrow	pred	samecase	samemark	samespace	split	subst	subst-mutate	substr	substr-rw	succ	tc	tclc	trim	trim-leading	trim-trailing	uc	words
-methods.e	Allomorph	nomark
 declared	Any	ACCEPTS	ASSIGN-KEY	ASSIGN-POS	AT-KEY	AT-POS	Array	BIND-KEY	BIND-POS	Bag	BagHash	DELETE-KEY	DELETE-POS	EXISTS-KEY	EXISTS-POS	FLATTENABLE_HASH	FLATTENABLE_LIST	Hash	List	Map	Mix	MixHash	Seq	Set	SetHash	Slip	Supply	ZEN-KEY	all	antipairs	any	append	are	batch	cache	categorize	chrs	classify	collate	combinations	deepmap	duckmap	eager	elems	end	fail-cannot-be-empty	fail-iterator-cannot-be-lazy	first	flat	flatmap	fmt	grep	hash	head	invert	iterator	iterator-and-first	join	keys	kv	lazy-if	list	map	match	max	maxpairs	min	minmax	minpairs	nl-out	nodemap	none	one	pairs	pairup	permutations	pick	prepend	print-nl	produce	push	reduce	repeated	reverse	roll	rotor	serial	skip	slice	sort	splice	squish	sum	tail	throw-cannot-be-empty	throw-iterator-cannot-be-lazy	toggle	tree	unique	unshift	values
 methods	Any	ACCEPTS	ASSIGN-KEY	ASSIGN-POS	AT-KEY	AT-POS	Array	BIND-KEY	BIND-POS	Bag	BagHash	DELETE-KEY	DELETE-POS	EXISTS-KEY	EXISTS-POS	FLATTENABLE_HASH	FLATTENABLE_LIST	Hash	List	Map	Mix	MixHash	POPULATE	Seq	Set	SetHash	Slip	Supply	ZEN-KEY	all	antipairs	any	append	are	batch	cache	categorize	chrs	classify	collate	combinations	deepmap	duckmap	eager	elems	end	fail-cannot-be-empty	fail-iterator-cannot-be-lazy	first	flat	flatmap	fmt	grep	hash	head	invert	iterator	iterator-and-first	join	keys	kv	lazy-if	list	map	match	max	maxpairs	min	minmax	minpairs	nl-out	nodemap	none	one	pairs	pairup	permutations	pick	prepend	print-nl	produce	push	reduce	repeated	reverse	roll	rotor	serial	skip	slice	sort	splice	squish	sum	tail	throw-cannot-be-empty	throw-iterator-cannot-be-lazy	toggle	tree	unique	unshift	values
 only	Any	FLATTENABLE_HASH	FLATTENABLE_LIST	all	any	cache	combinations	fail-cannot-be-empty	fail-iterator-cannot-be-lazy	iterator-and-first	join	lazy-if	match	nl-out	none	one	permutations	print-nl	reverse	throw-cannot-be-empty	throw-iterator-cannot-be-lazy
@@ -36,6 +35,9 @@ only	CX::Warn	UPGRADE-RAT	message
 declared	CallFrame	SET-SELF	annotations	callframe	code	deprecate-IO-dash	file	gist	language-revision	line	my	new
 methods	CallFrame	POPULATE	SET-SELF	annotations	callframe	code	deprecate-IO-dash	file	gist	language-revision	line	my	new
 only	CallFrame	SET-SELF	annotations	callframe	code	deprecate-IO-dash	file	language-revision	line	my	new
+declared	Cancellation	cancel	cancelled
+methods	Cancellation	BUILD	POPULATE	cancel	cancelled
+only	Cancellation	cancel	cancelled
 declared	Capture	AT-KEY	AT-POS	Bool	Capture	EXISTS-KEY	EXISTS-POS	FLATTENABLE_HASH	FLATTENABLE_LIST	Numeric	Str	WHICH	antipairs	elems	from-args	gist	hash	keys	kv	list	pairs	raku	values
 methods	Capture	AT-KEY	AT-POS	BUILD	Bool	Capture	EXISTS-KEY	EXISTS-POS	FLATTENABLE_HASH	FLATTENABLE_LIST	Numeric	POPULATE	Str	WHICH	antipairs	elems	from-args	gist	hash	keys	kv	list	pairs	raku	values
 only	Capture	Capture	FLATTENABLE_HASH	FLATTENABLE_LIST	from-args	hash	list
@@ -57,6 +59,9 @@ only	CompUnit::DependencySpecification	Str	api-matcher	auth-matcher	from	short-n
 declared	CompUnit::Handle	ctxsave	export-how-package	export-package	export-sub	globalish-package	unit
 methods	CompUnit::Handle	POPULATE	ctxsave	export-how-package	export-package	export-sub	from-unit	globalish-package	new	unit
 only	CompUnit::Handle	ctxsave	export-how-package	export-package	export-sub	globalish-package	unit
+declared	CompUnit::Loader	load-precompilation	load-precompilation-file	load-source	load-source-file
+methods	CompUnit::Loader	POPULATE	load-precompilation	load-precompilation-file	load-source	load-source-file
+only	CompUnit::Loader	load-precompilation	load-source	load-source-file
 declared	CompUnit::Repository::Distribution	Str	content	dist	dist-id	files	from-precomp	id	meta	new	prefix	raku	repo	repo-name	serialize
 methods	CompUnit::Repository::Distribution	POPULATE	Str	TWEAK	content	dist	dist-id	files	from-precomp	id	meta	new	prefix	raku	repo	repo-name	serialize
 only	CompUnit::Repository::Distribution	content	dist	dist-id	files	from-precomp	id	meta	new	prefix	repo	repo-name	serialize
@@ -69,6 +74,9 @@ only	CompUnit::Repository::Installation	abspath	can-install	change-wrapper-mode	
 declared	CompUnit::RepositoryRegistry	file-for-spec	head	name-for-repository	register-name	repository-for-name	repository-for-spec	resolve-unknown-repos	resolve_repossession_conflicts	run-script	setup-repositories	use-repository
 methods	CompUnit::RepositoryRegistry	POPULATE	file-for-spec	head	name-for-repository	register-name	repository-for-name	repository-for-spec	resolve-unknown-repos	resolve_repossession_conflicts	run-script	setup-repositories	use-repository
 only	CompUnit::RepositoryRegistry	file-for-spec	head	name-for-repository	register-name	repository-for-name	resolve-unknown-repos	resolve_repossession_conflicts	run-script	setup-repositories	use-repository
+declared	Compiler	Str	auth	backend	codename	desc	flavor	gist	id	name	release	signature	supports-op	verbose-config	version
+methods	Compiler	POPULATE	Str	TWEAK	auth	backend	codename	desc	flavor	gist	id	name	release	signature	supports-op	verbose-config	version
+only	Compiler	Str	auth	backend	codename	desc	flavor	name	release	signature	supports-op	verbose-config	version
 declared	Complex	ACCEPTS	Bool	Complex	DUMP	FatRat	Int	Num	Numeric	Rat	Real	Str	WHICH	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atanh	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	exp	floor	gist	im	isNaN	log	log10	log2	narrow	new	polar	pred	raku	re	reals	roots	round	sec	sech	sin	sinh	sqrt	succ	tan	tanh	truncate
 methods	Complex	ACCEPTS	Bool	Complex	DUMP	FatRat	Int	Num	Numeric	POPULATE	Rat	Real	Str	WHICH	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atanh	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	exp	floor	gist	im	isNaN	log	log10	log2	narrow	new	polar	pred	raku	re	reals	roots	round	sec	sech	sin	sinh	sqrt	succ	tan	tanh	truncate
 only	Complex	Complex	Int	Num	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atanh	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	floor	im	isNaN	log10	log2	narrow	polar	pred	re	reals	roots	sec	sech	sin	sinh	succ	tan	tanh	truncate
@@ -84,30 +92,48 @@ only	Date	Date	IO	MOVE-DAYS	clone	day	day-of-month	day-of-week	day-of-year	dayco
 declared	DateTime	ACCEPTS	Date	DateTime	IO	Instant	Numeric	Real	Str	WHICH	clone	day	day-fraction	day-of-month	day-of-week	day-of-year	daycount	days-in-month	days-in-year	dd-mm-yyyy	earlier	formatter	gist	hh-mm-ss	hour	in-timezone	is-leap-year	julian-date	later	local	minute	mm-dd	mm-dd-yyyy	modified-julian-date	month	move-by-unit	new	now	offset	offset-in-hours	offset-in-minutes	posix	raku	second	timezone	truncated-to	utc	week	week-number	week-year	weekday-of-month	whole-second	year	yyyy-mm	yyyy-mm-dd
 methods	DateTime	ACCEPTS	Date	DateTime	IO	Instant	Numeric	POPULATE	Real	Str	WHICH	clone	day	day-fraction	day-of-month	day-of-week	day-of-year	daycount	days-in-month	days-in-year	dd-mm-yyyy	earlier	formatter	gist	hh-mm-ss	hour	in-timezone	is-leap-year	julian-date	later	local	minute	mm-dd	mm-dd-yyyy	modified-julian-date	month	move-by-unit	new	now	offset	offset-in-hours	offset-in-minutes	posix	raku	second	timezone	truncated-to	utc	week	week-number	week-year	weekday-of-month	whole-second	year	yyyy-mm	yyyy-mm-dd
 only	DateTime	DateTime	IO	Instant	clone	day	day-fraction	day-of-month	day-of-week	day-of-year	daycount	dd-mm-yyyy	formatter	hh-mm-ss	hour	in-timezone	is-leap-year	julian-date	local	minute	mm-dd	mm-dd-yyyy	modified-julian-date	month	move-by-unit	now	offset	offset-in-hours	offset-in-minutes	second	timezone	truncated-to	utc	week	week-number	week-year	weekday-of-month	whole-second	year	yyyy-mm	yyyy-mm-dd
+declared	Deprecation	DEPRECATIONS	WHICH	alternative	callsites	file	from	name	package	removed	report	type
+methods	Deprecation	DEPRECATIONS	POPULATE	WHICH	alternative	callsites	file	from	name	package	removed	report	type
+only	Deprecation	DEPRECATIONS	alternative	callsites	file	from	name	package	removed	type
 declared	Distribution::Hash	content	meta	new	prefix	raku
 methods	Distribution::Hash	POPULATE	content	meta	new	prefix	raku
 only	Distribution::Hash	content	meta	new	prefix
 declared	Distribution::Path	content	meta	meta-file	new	prefix	raku
 methods	Distribution::Path	POPULATE	TWEAK	content	meta	meta-file	new	prefix	raku
 only	Distribution::Path	content	meta	meta-file	new	prefix
+declared	Distro	Str	auth	cur-sep	desc	gist	is-win	name	path-sep	release	signature	version
+methods	Distro	POPULATE	Str	TWEAK	auth	cur-sep	desc	gist	is-win	name	path-sep	release	signature	version
+only	Distro	Str	auth	cur-sep	desc	is-win	name	path-sep	release	signature	version
 declared	Duration	ACCEPTS	Bool	Bridge	Complex	DUMP	FatRat	Int	Num	Numeric	Rat	Real	Str	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atan2	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	exp	floor	from-posix-nanos	gist	isNaN	log	log10	log2	narrow	new	polymod	pred	raku	rand	roots	round	sec	sech	sign	sin	sinh	sqrt	succ	tai	tan	tanh	to-nanos	truncate	unpolar
 methods	Duration	ACCEPTS	Bool	Bridge	Complex	DUMP	FatRat	Int	Num	Numeric	POPULATE	Rat	Real	Str	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atan2	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	exp	floor	from-posix-nanos	gist	isNaN	log	log10	log2	narrow	new	polymod	pred	raku	rand	roots	round	sec	sech	sign	sin	sinh	sqrt	succ	tai	tan	tanh	to-nanos	truncate	unpolar
 only	Duration	Bridge	Complex	FatRat	Int	Num	Rat	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	floor	from-posix-nanos	isNaN	log10	log2	narrow	polymod	pred	rand	roots	sec	sech	sign	sin	sinh	succ	tai	tan	tanh	to-nanos	truncate	unpolar
+declared	Encoding::Builtin	SET-SELF	alternative-names	decoder	encoder	name	new
+methods	Encoding::Builtin	POPULATE	SET-SELF	alternative-names	decoder	encoder	name	new
+only	Encoding::Builtin	SET-SELF	alternative-names	decoder	encoder	name	new
+declared	Encoding::Decoder::Builtin	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
+methods	Encoding::Decoder::Builtin	POPULATE	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
+only	Encoding::Decoder::Builtin	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
+declared	Encoding::Encoder::Builtin	encode-chars	new
+methods	Encoding::Encoder::Builtin	POPULATE	encode-chars	new
+only	Encoding::Encoder::Builtin	encode-chars	new
 declared	Encoding::Registry	find	register
 methods	Encoding::Registry	POPULATE	find	register
 only	Encoding::Registry	find	register
 declared	Exception	Failure	Str	UPGRADE-RAT	backtrace	die	fail	gist	is-compile-time	message	reset-backtrace	resume	rethrow	throw	vault-backtrace
 methods	Exception	Failure	POPULATE	Str	UPGRADE-RAT	backtrace	die	fail	gist	is-compile-time	message	reset-backtrace	resume	rethrow	throw	vault-backtrace
 only	Exception	Failure	UPGRADE-RAT	backtrace	die	fail	is-compile-time	message	reset-backtrace	resume	rethrow	throw	vault-backtrace
-declared	Failure	ASSIGN-KEY	ASSIGN-POS	AT-KEY	AT-POS	BIND-KEY	BIND-POS	Bag	BagHash	FALLBACK	Int	Mix	MixHash	Numeric	STORE	Set	SetHash	Str	append	chars	chomp	chop	chrs	codes	comb	contains	ends-with	flip	gist	indent	index	indices	iterator	lc	lines	new	ords	prepend	push	raku	rindex	sink	starts-with	subst	substr	substr-eq	substr-rw	tc	tclc	trans	uc	unshift	wordcase	words
-methods	Failure	ASSIGN-KEY	ASSIGN-POS	AT-KEY	AT-POS	BIND-KEY	BIND-POS	Bag	BagHash	FALLBACK	Int	Mix	MixHash	Numeric	POPULATE	STORE	Set	SetHash	Str	append	chars	chomp	chop	chrs	codes	comb	contains	ends-with	flip	gist	indent	index	indices	iterator	lc	lines	new	ords	prepend	push	raku	rindex	sink	starts-with	subst	substr	substr-eq	substr-rw	tc	tclc	trans	uc	unshift	wordcase	words
-only	Failure	AT-KEY	AT-POS	FALLBACK	Numeric	STORE	sink
+declared	Failure	AT-KEY	AT-POS	Bag	BagHash	Bool	CALL-ME	Capture	FALLBACK	Failure	Int	Mix	MixHash	Num	Numeric	STORE	Set	SetHash	Str	UPGRADE-RAT	backtrace	defined	exception	gist	handled	iterator	list	mess	new	raku	self	sink
+methods	Failure	ASSIGN-KEY	ASSIGN-POS	AT-KEY	AT-POS	BIND-KEY	BIND-POS	Bag	BagHash	Bool	CALL-ME	Capture	DESTROY	FALLBACK	Failure	Int	Mix	MixHash	Num	Numeric	POPULATE	STORE	Set	SetHash	Str	UPGRADE-RAT	append	backtrace	chars	chomp	chop	chrs	codes	comb	contains	defined	ends-with	exception	flip	gist	handled	indent	index	indices	iterator	lc	lines	list	mess	new	ords	prepend	push	raku	rindex	self	sink	starts-with	subst	substr	substr-eq	substr-rw	tc	tclc	trans	uc	unshift	wordcase	words
+only	Failure	AT-KEY	AT-POS	Bag	BagHash	CALL-ME	Capture	FALLBACK	Failure	Int	Mix	MixHash	Num	Numeric	STORE	Set	SetHash	UPGRADE-RAT	backtrace	exception	handled	mess	self	sink
 declared	Grammar	parse	parsefile	subparse
 methods	Grammar	!BACKREF	!BACKREF-LATEST-CAPTURE	!DELEGATE_ACCEPTS	!DYNQUANT_LIMITS	!LITERAL	!alt	!alt_nfa	!braid	!clear_highwater	!clone_match_at	!cursor_capture	!cursor_fail	!cursor_init	!cursor_more	!cursor_next	!cursor_pass	!cursor_pass_no_reduce	!cursor_pass_quick	!cursor_pos	!cursor_push_cstack	!cursor_start	!cursor_start_all	!cursor_start_cur	!cursor_start_fail	!cursor_start_subcapture	!dba	!dump_str	!fresh_highexpect	!highexpect	!highwater	!precompute_nfas	!protoregex	!protoregex_nfa	!protoregex_table	!reduce	!reduce_with_match	!set_highexpect	!shared	!shared_type	ACCEPTS	AT-KEY	AT-POS	BUILD	Bool	CALL_SUBRULE	CURSOR	CURSOR_CAPTURE_MARKERS	CURSOR_MORE	CURSOR_NEXT	CURSOR_OVERLAP	Capture	DELEGATE-ACCEPTS	DYNQUANT_LIMITS	EXISTS-KEY	EXISTS-POS	FAILGOAL	FLATTENABLE_HASH	FLATTENABLE_LIST	INDMETHOD	INDRULE	INTERPOLATE	INTERPOLATE_ASSERTION	Int	MATCH	Num	Numeric	OTHERGRAMMAR	POPULATE	PRECURSOR	RECURSE	STR	Str	WHICH	actions	after	after_scan	alnum	alpha	antipairs	ast	at	before	blank	braid	caps	chars	check_LANG_oopsies	check_PACKAGE_oopsies	chunks	clone	clone_braid_from	cntrl	define_slang	digit	dump	elems	from	from-args	gist	grammar	graph	hash	how	ident	keys	know_how	kv	list	lower	made	make	not	orig	package	pairs	parse	parsefile	pos	postmatch	pragma	prematch	print	prune	punct	raku	refine_slang	replace-with	same	set_actions	set_braid	set_braid_from	set_how	set_package	set_pragma	slang_actions	slang_grammar	slangs	snapshot_braid	space	subparse	switch_to_slang	target	to	upper	values	wb	ws	ww	xdigit
 only	Grammar	parse	parsefile	subparse
 declared	Hash	ASSIGN-KEY	AT-KEY	BIND-KEY	DELETE-KEY	DUMP	Hash	INSTANTIATE-GENERIC	Map	STORE	STORE_AT_KEY	Str	TEMP-LET-GET-HANDLE	TEMP-LET-LOCALIZE	TEMP-LET-RESTORE	WHICH	append	categorize-list	classify-list	clone	default	dynamic	gist	is-generic	keyof	name	of	push	raku
 methods	Hash	ACCEPTS	ASSIGN-KEY	AT-KEY	BIND-KEY	Bag	BagHash	Bool	Capture	DELETE-KEY	DUMP	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	Hash	INSTANTIATE-GENERIC	Int	IterationBuffer	List	Map	Mix	MixHash	Numeric	POPULATE	PUSH_FROM_MAP	STORE	STORE_AT_KEY	Set	SetHash	Str	TEMP-LET-GET-HANDLE	TEMP-LET-LOCALIZE	TEMP-LET-RESTORE	WHICH	antipairs	append	categorize-list	classify-list	clone	contains	default	dynamic	elems	flat	fmt	gist	hash	head	hyper	index	invert	is-generic	item	iterator	keyof	keys	kv	lazy	lazy-if	list	name	new	of	pairs	pick	push	race	raku	roll	sort	store-odd-number	values
 only	Hash	TEMP-LET-GET-HANDLE	TEMP-LET-LOCALIZE	TEMP-LET-RESTORE	append	default	dynamic	keyof	name	push
+declared	HyperConfiguration	batch	degree
+methods	HyperConfiguration	POPULATE	TWEAK	batch	degree
+only	HyperConfiguration	batch	degree
 declared	HyperSeq	AT-POS	Array	Bag	BagHash	EXISTS-POS	List	Mix	MixHash	Numeric	Set	SetHash	Slip	Str	Stringy	cache	configuration	eager	flat	fmt	gist	grep	hyper	invert	is-lazy	item	iterator	lazy	lazy-if	list	map	race	serial	sink
 methods	HyperSeq	AT-POS	Array	BUILD	Bag	BagHash	EXISTS-POS	List	Mix	MixHash	Numeric	POPULATE	Set	SetHash	Slip	Str	Stringy	cache	configuration	eager	flat	fmt	gist	grep	hyper	invert	is-lazy	item	iterator	lazy	lazy-if	list	map	race	serial	sink
 only	HyperSeq	Numeric	cache	configuration	flat	grep	hyper	invert	is-lazy	item	iterator	lazy	lazy-if	map	race	sink
@@ -126,6 +152,9 @@ only	IO::Path::Parts	AT-KEY	AT-POS	basename	dirname	flat	hyper	item	iterator	key
 declared	IO::Socket::Async	Supply	bind-udp	close	connect	connect-path	enc	listen	listen-path	native-descriptor	new	peer-host	peer-port	print	print-to	socket-host	socket-port	udp	write	write-to
 methods	IO::Socket::Async	POPULATE	Supply	bind-udp	close	connect	connect-path	enc	listen	listen-path	native-descriptor	new	peer-host	peer-port	print	print-to	socket-host	socket-port	udp	write	write-to
 only	IO::Socket::Async	bind-udp	close	connect	connect-path	enc	listen	listen-path	native-descriptor	new	peer-host	peer-port	print	print-to	socket-host	socket-port	udp	write	write-to
+declared	IO::Socket::Async::ListenSocket	native-descriptor	new	socket-host	socket-port
+methods	IO::Socket::Async::ListenSocket	BUILD	POPULATE	close	native-descriptor	new	socket-host	socket-port
+only	IO::Socket::Async::ListenSocket	native-descriptor	new	socket-host	socket-port
 declared	IO::Socket::INET	accept	backlog	close	connect	encoding	family	get	host	lines	listen	listening	localhost	localport	native-descriptor	new	nl-in	nl-out	port	print	proto	put	read	recv	type	write
 methods	IO::Socket::INET	POPULATE	accept	backlog	close	connect	encoding	family	get	host	lines	listen	listening	localhost	localport	native-descriptor	new	nl-in	nl-out	port	print	proto	put	read	recv	type	write
 only	IO::Socket::INET	accept	backlog	close	connect	encoding	family	get	host	lines	listen	listening	localhost	localport	native-descriptor	nl-in	nl-out	port	print	proto	put	read	recv	type	write
@@ -156,9 +185,21 @@ only	IterationBuffer	List	Seq	Slip	append	clear	iterator	prepend	push	unshift
 declared	Junction	ACCEPTS	AUTOTHREAD	BOOLIFY-ACCEPTS	Bool	CALL-ME	INFIX-TWO	Int	Numeric	Real	Str	THREAD	WHICH	defined	gist	iterator	map	new	put	raku	sink
 methods	Junction	ACCEPTS	AUTOTHREAD	BOOLIFY-ACCEPTS	Bool	CALL-ME	INFIX-TWO	Int	Numeric	POPULATE	Real	Str	THREAD	WHICH	defined	gist	iterator	map	new	put	raku	sink
 only	Junction	AUTOTHREAD	CALL-ME	INFIX-TWO	THREAD	sink
+declared	Kernel	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	gist	hardware	hostname	name	raku	release	signal	signals	signature	total-memory	version
+methods	Kernel	POPULATE	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	gist	hardware	hostname	name	raku	release	signal	signals	signature	total-memory	version
+only	Kernel	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	hardware	hostname	name	release	signals	signature	total-memory	version
 declared	List	ACCEPTS	ASSIGN-POS	AT-POS	Array	BIND-POS	Bag	BagHash	Bool	Capture	EXISTS-POS	FLATTENABLE_HASH	FLATTENABLE_LIST	Int	List	Mix	MixHash	Numeric	STORE	Set	SetHash	Slip	Str	Supply	antipairs	append	chrs	combinations	eager	elems	end	flat	fmt	from	from-iterator	from-slurpy	from-slurpy-flat	from-slurpy-onearg	gist	head	hyper	invert	is-lazy	item	iterator	join	keys	kv	lazy	lazy-if	list	new	of	pairs	permutations	pick	pop	prepend	push	race	raku	reification-target	reverse	roll	rotate	shift	sink	sort	sum	tail	to	unshift	values
 methods	List	ACCEPTS	ASSIGN-POS	AT-POS	Array	BIND-POS	Bag	BagHash	Bool	Capture	EXISTS-POS	FLATTENABLE_HASH	FLATTENABLE_LIST	Int	List	Mix	MixHash	Numeric	POPULATE	STORE	Set	SetHash	Slip	Str	Supply	antipairs	append	chrs	combinations	eager	elems	end	flat	fmt	from	from-iterator	from-slurpy	from-slurpy-flat	from-slurpy-onearg	gist	head	hyper	invert	is-lazy	item	iterator	join	keys	kv	lazy	lazy-if	list	new	of	pairs	permutations	pick	pop	prepend	push	race	raku	reification-target	reverse	roll	rotate	shift	sink	sort	sum	tail	to	unshift	values
 only	List	ASSIGN-POS	BIND-POS	Capture	FLATTENABLE_HASH	FLATTENABLE_LIST	append	eager	flat	from	from-iterator	from-slurpy	from-slurpy-flat	from-slurpy-onearg	hyper	item	join	lazy	lazy-if	new	of	pop	prepend	push	race	reification-target	reverse	rotate	shift	sink	to	unshift
+declared	Lock	condition	lock	new	protect	unlock
+methods	Lock	POPULATE	condition	lock	new	protect	unlock
+only	Lock	condition	lock	new	unlock
+declared	Lock::Async	lock	protect	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
+methods	Lock::Async	POPULATE	lock	protect	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
+only	Lock::Async	lock	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
+declared	Lock::ConditionVariable	new	signal	signal_all	wait
+methods	Lock::ConditionVariable	POPULATE	new	signal	signal_all	wait
+only	Lock::ConditionVariable	new	signal	signal_all
 declared	Map	ACCEPTS	ASSIGN-KEY	AT-KEY	Bag	BagHash	Bool	Capture	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	Hash	Int	IterationBuffer	List	Map	Mix	MixHash	Numeric	PUSH_FROM_MAP	STORE	Set	SetHash	Str	antipairs	clone	contains	elems	flat	fmt	gist	hash	head	hyper	index	invert	item	iterator	keyof	keys	kv	lazy	lazy-if	list	new	of	pairs	pick	race	raku	roll	sort	store-odd-number	values
 methods	Map	ACCEPTS	ASSIGN-KEY	AT-KEY	Bag	BagHash	Bool	Capture	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	Hash	Int	IterationBuffer	List	Map	Mix	MixHash	Numeric	POPULATE	PUSH_FROM_MAP	STORE	Set	SetHash	Str	antipairs	clone	contains	elems	flat	fmt	gist	hash	head	hyper	index	invert	item	iterator	keyof	keys	kv	lazy	lazy-if	list	new	of	pairs	pick	race	raku	roll	sort	store-odd-number	values
 only	Map	Capture	FLATTENABLE_HASH	FLATTENABLE_LIST	IterationBuffer	List	PUSH_FROM_MAP	flat	hash	hyper	item	keyof	lazy	lazy-if	of	race	store-odd-number
@@ -204,6 +245,9 @@ only	Num	Bridge	Capture	Complex	FatRat	Int	Num	Range	Rat	UPGRADE-RAT	abs	acosec	
 declared	Pair	ACCEPTS	AT-KEY	Capture	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	Pair	Str	WHICH	abs-value	add-value	antipair	antipairs	clone	fmt	freeze	gist	invert	iterator	key	keyof	keys	kv	new	of	pairs	raku	value	values
 methods	Pair	ACCEPTS	AT-KEY	Capture	EXISTS-KEY	FLATTENABLE_HASH	FLATTENABLE_LIST	POPULATE	Pair	Str	WHICH	abs-value	add-value	antipair	antipairs	clone	fmt	freeze	gist	invert	iterator	key	keyof	keys	kv	new	of	pairs	raku	value	values
 only	Pair	Capture	FLATTENABLE_HASH	FLATTENABLE_LIST	Pair	abs-value	add-value	antipair	freeze	iterator	key	keyof	of	value
+declared	Proc	Bool	Numeric	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
+methods	Proc	BUILD	Bool	Numeric	POPULATE	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
+only	Proc	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
 declared	Proc::Async	Supply	arg0	args	bind-stderr	bind-stdin	bind-stdout	close-stdin	command	enc	kill	new	path	pid	print	pty	pty-cols	pty-rows	put	ready	resize-pty	say	start	started	stderr	stdout	translate-nl	w	win-verbatim-args	write
 methods	Proc::Async	POPULATE	Supply	TWEAK	arg0	args	bind-stderr	bind-stdin	bind-stdout	close-stdin	command	enc	kill	new	path	pid	print	pty	pty-cols	pty-rows	put	ready	resize-pty	say	start	started	stderr	stdout	translate-nl	w	win-verbatim-args	write
 only	Proc::Async	arg0	args	bind-stderr	bind-stdout	close-stdin	command	enc	path	pid	print	pty	pty-cols	pty-rows	put	ready	resize-pty	say	start	started	translate-nl	w	win-verbatim-args	write
@@ -213,6 +257,12 @@ only	Promise	allof	andthen	anyof	at	cause	get-await-handle	in	orelse	result	sche
 declared	RaceSeq	AT-POS	Array	Bag	BagHash	EXISTS-POS	List	Mix	MixHash	Numeric	Set	SetHash	Slip	Str	Stringy	cache	configuration	eager	flat	fmt	gist	grep	hyper	invert	is-lazy	item	iterator	lazy	lazy-if	list	map	race	serial	sink
 methods	RaceSeq	AT-POS	Array	BUILD	Bag	BagHash	EXISTS-POS	List	Mix	MixHash	Numeric	POPULATE	Set	SetHash	Slip	Str	Stringy	cache	configuration	eager	flat	fmt	gist	grep	hyper	invert	is-lazy	item	iterator	lazy	lazy-if	list	map	race	serial	sink
 only	RaceSeq	Numeric	cache	configuration	flat	grep	hyper	invert	is-lazy	item	iterator	lazy	lazy-if	map	race	sink
+declared	Raku	DISTROnames	KERNELnames	Str	VMnames	auth	compiler	desc	gist	legacy	name	signature	version
+methods	Raku	DISTROnames	KERNELnames	POPULATE	Str	TWEAK	VMnames	auth	compiler	desc	gist	legacy	name	signature	version
+only	Raku	DISTROnames	KERNELnames	Str	VMnames	auth	compiler	desc	legacy	name	signature	version
+declared	Rakudo::Internals	ACCESS-ELEMENT-ANY-DISPATCH-CLASS	ACCESS-ELEMENT-DISPATCH-CLASS	ACCESS-SLICE-DISPATCH-CLASS	ADVERBS_AND_NAMED_TO_DISPATCH_INDEX	ADVERBS_TO_DISPATCH_INDEX	ALL_DEFINED_TYPE	ANY_DEFINED_TYPE	Array-with-one-elem	BYTE_SUPPLY_DECODER	CAN-SUCC-INDEX	DEPARSE	DIR-RECURSE	EXPORT_SYMBOL	FAIL_X_ADVERB	FETCH-USER-GROUP	FILETEST-ACCESSED	FILETEST-CHANGED	FILETEST-CREATED	FILETEST-D	FILETEST-E	FILETEST-ES	FILETEST-F	FILETEST-L	FILETEST-LE	FILETEST-MODE	FILETEST-MODIFIED	FILETEST-R	FILETEST-RW	FILETEST-RWX	FILETEST-S	FILETEST-W	FILETEST-X	FILETEST-Z	GET-LOCAL-TIMEZONE-OFFSET	GistList2list_s	HANDLE-NQP-SPRINTF-ERRORS	INCLUDE	INFIX_COMMA_SLIP_HELPER	INITIALIZE-DYNAMIC	INITTHREAD	INITTIME	IS-ISOLATED-MATCH	IS-WIN	IterationSet2keys	KEY_COLON_VALUE	KEY_SPACE_VALUE	LANGUAGE-REVISION-OF-CONTEXT	LANGUAGE-VERSION-OF-CONTEXT	LL-EXCEPTION	MAKE-ABSOLUTE-PATH	MAKE-BASENAME	MAKE-CLEAN-PARTS	MAYBE-STRING	METAOP_ASSIGN	NEXT-ID	NORMALIZE_ENCODING	NUMERIC-ENV-KEY	OPTIMIZE	PERL5	POSSIBLE-MAGIC-CHARS	PRECOMP-EXT	PRECOMP-TARGET	PRED	PROFILE	PROGRAM	RANGE-AS-ints	REGISTER-DYNAMIC	REMOVE-ROOT	RERUN-WITH	SET_LEADING_DOCS	SET_TRAILING_DOCS	SHAPED-ARRAY-STORAGE	SHORT-STRING	SLASH-WRITE-TARGET	SLICE_HUH	SLICE_POSITIONS_WITH_ADVERBS	SLICE_WITH_ADVERBS	STAGESTATS	SUCC	StrList2list_s	TARGET	TEMP-LET	TRANSPOSE	TRANSPOSE-ONE	UPGRADE-OVERFLOWING-RAT	VERBATIM-EXCEPTION	VM-SIGNALS	WALK-AT-POS	activate-std	client-callframe	client-language-revision	compare-as-Int	compare-as-Num	compare-as-Numeric	compare-as-Real	compare-as-abs	current-offset-nanos	daycount-leapseconds	epoch-from-tai	error-rcgye	initialize-sprintf-handler	is-leap-second-date	posix-and-leap-from-tai	posix-from-tai	tai-from-posix
+methods	Rakudo::Internals	ACCESS-ELEMENT-ANY-DISPATCH-CLASS	ACCESS-ELEMENT-DISPATCH-CLASS	ACCESS-SLICE-DISPATCH-CLASS	ADVERBS_AND_NAMED_TO_DISPATCH_INDEX	ADVERBS_TO_DISPATCH_INDEX	ALL_DEFINED_TYPE	ANY_DEFINED_TYPE	Array-with-one-elem	BYTE_SUPPLY_DECODER	CAN-SUCC-INDEX	DEPARSE	DIR-RECURSE	EXPORT_SYMBOL	FAIL_X_ADVERB	FETCH-USER-GROUP	FILETEST-ACCESSED	FILETEST-CHANGED	FILETEST-CREATED	FILETEST-D	FILETEST-E	FILETEST-ES	FILETEST-F	FILETEST-L	FILETEST-LE	FILETEST-MODE	FILETEST-MODIFIED	FILETEST-R	FILETEST-RW	FILETEST-RWX	FILETEST-S	FILETEST-W	FILETEST-X	FILETEST-Z	GET-LOCAL-TIMEZONE-OFFSET	GistList2list_s	HANDLE-NQP-SPRINTF-ERRORS	INCLUDE	INFIX_COMMA_SLIP_HELPER	INITIALIZE-DYNAMIC	INITTHREAD	INITTIME	IS-ISOLATED-MATCH	IS-WIN	IterationSet2keys	KEY_COLON_VALUE	KEY_SPACE_VALUE	LANGUAGE-REVISION-OF-CONTEXT	LANGUAGE-VERSION-OF-CONTEXT	LL-EXCEPTION	MAKE-ABSOLUTE-PATH	MAKE-BASENAME	MAKE-CLEAN-PARTS	MAYBE-STRING	METAOP_ASSIGN	NEXT-ID	NORMALIZE_ENCODING	NUMERIC-ENV-KEY	OPTIMIZE	PERL5	POPULATE	POSSIBLE-MAGIC-CHARS	PRECOMP-EXT	PRECOMP-TARGET	PRED	PROFILE	PROGRAM	RANGE-AS-ints	REGISTER-DYNAMIC	REMOVE-ROOT	RERUN-WITH	SET_LEADING_DOCS	SET_TRAILING_DOCS	SHAPED-ARRAY-STORAGE	SHORT-STRING	SLASH-WRITE-TARGET	SLICE_HUH	SLICE_POSITIONS_WITH_ADVERBS	SLICE_WITH_ADVERBS	STAGESTATS	SUCC	StrList2list_s	TARGET	TEMP-LET	TRANSPOSE	TRANSPOSE-ONE	UPGRADE-OVERFLOWING-RAT	VERBATIM-EXCEPTION	VM-SIGNALS	WALK-AT-POS	activate-std	client-callframe	client-language-revision	compare-as-Int	compare-as-Num	compare-as-Numeric	compare-as-Real	compare-as-abs	current-offset-nanos	daycount-leapseconds	epoch-from-tai	error-rcgye	initialize-sprintf-handler	is-leap-second-date	posix-and-leap-from-tai	posix-from-tai	tai-from-posix
+only	Rakudo::Internals	ACCESS-ELEMENT-ANY-DISPATCH-CLASS	ACCESS-ELEMENT-DISPATCH-CLASS	ACCESS-SLICE-DISPATCH-CLASS	ADVERBS_AND_NAMED_TO_DISPATCH_INDEX	ADVERBS_TO_DISPATCH_INDEX	ALL_DEFINED_TYPE	ANY_DEFINED_TYPE	Array-with-one-elem	BYTE_SUPPLY_DECODER	CAN-SUCC-INDEX	DEPARSE	DIR-RECURSE	EXPORT_SYMBOL	FAIL_X_ADVERB	FETCH-USER-GROUP	FILETEST-ACCESSED	FILETEST-CHANGED	FILETEST-CREATED	FILETEST-D	FILETEST-E	FILETEST-ES	FILETEST-F	FILETEST-L	FILETEST-LE	FILETEST-MODE	FILETEST-MODIFIED	FILETEST-R	FILETEST-RW	FILETEST-RWX	FILETEST-S	FILETEST-W	FILETEST-X	FILETEST-Z	GET-LOCAL-TIMEZONE-OFFSET	GistList2list_s	HANDLE-NQP-SPRINTF-ERRORS	INCLUDE	INFIX_COMMA_SLIP_HELPER	INITIALIZE-DYNAMIC	INITTHREAD	INITTIME	IS-ISOLATED-MATCH	IS-WIN	KEY_COLON_VALUE	KEY_SPACE_VALUE	LANGUAGE-REVISION-OF-CONTEXT	LANGUAGE-VERSION-OF-CONTEXT	LL-EXCEPTION	MAKE-ABSOLUTE-PATH	MAKE-BASENAME	MAKE-CLEAN-PARTS	MAYBE-STRING	METAOP_ASSIGN	NEXT-ID	NORMALIZE_ENCODING	NUMERIC-ENV-KEY	OPTIMIZE	PERL5	POSSIBLE-MAGIC-CHARS	PRECOMP-EXT	PRECOMP-TARGET	PRED	PROFILE	PROGRAM	RANGE-AS-ints	REGISTER-DYNAMIC	REMOVE-ROOT	RERUN-WITH	SET_LEADING_DOCS	SET_TRAILING_DOCS	SHAPED-ARRAY-STORAGE	SHORT-STRING	SLASH-WRITE-TARGET	SLICE_HUH	SLICE_POSITIONS_WITH_ADVERBS	SLICE_WITH_ADVERBS	STAGESTATS	SUCC	StrList2list_s	TARGET	TEMP-LET	TRANSPOSE	TRANSPOSE-ONE	UPGRADE-OVERFLOWING-RAT	VERBATIM-EXCEPTION	VM-SIGNALS	WALK-AT-POS	activate-std	client-callframe	client-language-revision	compare-as-Int	compare-as-Num	compare-as-Numeric	compare-as-Real	compare-as-abs	current-offset-nanos	daycount-leapseconds	epoch-from-tai	error-rcgye	initialize-sprintf-handler	is-leap-second-date	posix-and-leap-from-tai	posix-from-tai	tai-from-posix
 declared	Range	ACCEPTS	ASSIGN-POS	AT-POS	Bag	BagHash	Bool	Capture	EXISTS-POS	Inf-Inf	Mix	MixHash	Numeric	Set	SetHash	Str	WHICH	append	bounds	contains	elems	ended-by	excludes-max	excludes-min	first	flat	fmt	generic-string-sequence	hyper	in-range	index	infinite	int-bounds	is-int	is-lazy	item	iterator	lazy	lazy-if	list	max	min	minmax	new	of	pick	pop	prepend	push	race	raku	rand	reverse	roll	shift	sum	unshift
 methods	Range	ACCEPTS	ASSIGN-POS	AT-POS	Bag	BagHash	Bool	Capture	EXISTS-POS	Inf-Inf	Mix	MixHash	Numeric	POPULATE	Set	SetHash	Str	WHICH	append	bounds	contains	elems	ended-by	excludes-max	excludes-min	first	flat	fmt	generic-string-sequence	hyper	in-range	index	infinite	int-bounds	is-int	is-lazy	item	iterator	lazy	lazy-if	list	max	min	minmax	new	of	pick	pop	prepend	push	race	raku	rand	reverse	roll	shift	sum	unshift
 only	Range	ASSIGN-POS	Capture	Inf-Inf	append	bounds	ended-by	excludes-max	excludes-min	first	flat	fmt	hyper	in-range	infinite	is-int	item	iterator	lazy	lazy-if	of	pop	prepend	push	race	rand	reverse	shift	unshift
@@ -249,6 +299,9 @@ only	Supplier	Supply	done	emit	unsanitized-supply
 declared	Supply	Capture	Channel	Promise	Seq	Supply	Tappable	act	batch	categorize	classify	collate	comb	decode	delayed	do	elems	encode	first	flat	from-list	get-await-handle	grab	grep	head	interval	iterator	lines	list	live	map	max	merge	migrate	min	minmax	new	on-close	on-demand	produce	reduce	repeated	reverse	rotate	rotor	sanitize	schedule-on	serial	serialize	share	skip	sort	split	squish	stable	start	tail	tap	throttle	unique	wait	words	zip	zip-latest
 methods	Supply	BUILD	Capture	Channel	POPULATE	Promise	Seq	Supply	Tappable	act	batch	categorize	classify	collate	comb	decode	delayed	do	elems	encode	first	flat	from-list	get-await-handle	grab	grep	head	interval	iterator	lines	list	live	map	max	merge	migrate	min	minmax	new	on-close	on-demand	produce	reduce	repeated	reverse	rotate	rotor	sanitize	schedule-on	serial	serialize	share	skip	sort	split	squish	stable	start	tail	tap	throttle	unique	wait	words	zip	zip-latest
 only	Supply	Capture	Channel	Promise	Seq	Tappable	act	batch	decode	delayed	do	encode	first	from-list	get-await-handle	grab	grep	interval	live	map	max	merge	migrate	min	minmax	on-close	on-demand	produce	reduce	reverse	rotate	sanitize	schedule-on	serial	serialize	share	skip	stable	start	tap	wait	words	zip	zip-latest
+declared	Tap	close	new
+methods	Tap	BUILD	POPULATE	close	new
+only	Tap	close
 declared	Thread	Numeric	Str	app_lifetime	finish	gist	id	is-initial-thread	join	name	run	start	usage	yield
 methods	Thread	BUILD	Numeric	POPULATE	Str	app_lifetime	finish	gist	id	is-initial-thread	join	name	run	start	usage	yield
 only	Thread	app_lifetime	finish	id	is-initial-thread	join	name	run	start	usage	yield
@@ -261,6 +314,9 @@ only	Uni	Int	NFC	NFD	NFKC	NFKD	Numeric	Uni	codes	encode	list	of
 declared	Unicode	NFG	version
 methods	Unicode	NFG	POPULATE	version
 only	Unicode
+declared	VM	Str	auth	config	desc	gist	name	osname	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
+methods	VM	POPULATE	Str	TWEAK	auth	config	desc	gist	name	osname	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
+only	VM	Str	auth	config	desc	name	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
 declared	Variable	block	implicit-lexical-usage	name	scope	slash	var
 methods	Variable	POPULATE	block	implicit-lexical-usage	name	native	scope	slash	throw	var	willdo
 only	Variable	block	implicit-lexical-usage	name	scope	slash	var
@@ -273,6 +329,9 @@ only	X::AdHoc	Numeric	from-slurpy	message	payload
 declared	X::TypeCheck::Assignment	desc	message	operation	symbol
 methods	X::TypeCheck::Assignment	Failure	POPULATE	Str	UPGRADE-RAT	backtrace	complainee-message	desc	die	expected	expectedn	explain	fail	gist	got	gotn	is-compile-time	message	operation	priors	reset-backtrace	resume	rethrow	symbol	throw	vault-backtrace
 only	X::TypeCheck::Assignment	desc	message	operation	symbol
+declared.e	Allomorph
+methods.e	Allomorph	nomark
+only.e	Allomorph
 declared.e	Any	snip	snitch
 methods.e	Any	snip	snitch
 only.e	Any
@@ -306,60 +365,3 @@ only.e	Format	AST	CALL-ME	Callable	arity	count	directives	handle-iterator	new	re
 declared.e	Formatter	AST	CODE	fetch	new
 methods.e	Formatter	AST	CODE	POPULATE	fetch	new
 only.e	Formatter	AST	CODE	fetch	new
-declared	Compiler	Str	auth	backend	codename	desc	flavor	gist	id	name	release	signature	supports-op	verbose-config	version
-methods	Compiler	POPULATE	Str	TWEAK	auth	backend	codename	desc	flavor	gist	id	name	release	signature	supports-op	verbose-config	version
-only	Compiler	Str	auth	backend	codename	desc	flavor	name	release	signature	supports-op	verbose-config	version
-declared	Distro	Str	auth	cur-sep	desc	gist	is-win	name	path-sep	release	signature	version
-methods	Distro	POPULATE	Str	TWEAK	auth	cur-sep	desc	gist	is-win	name	path-sep	release	signature	version
-only	Distro	Str	auth	cur-sep	desc	is-win	name	path-sep	release	signature	version
-declared	Kernel	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	gist	hardware	hostname	name	raku	release	signal	signals	signature	total-memory	version
-methods	Kernel	POPULATE	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	gist	hardware	hostname	name	raku	release	signal	signals	signature	total-memory	version
-only	Kernel	Str	arch	archname	auth	bits	cpu-cores	cpu-cores-but-one	cpu-usage	desc	endian	free-memory	hardware	hostname	name	release	signals	signature	total-memory	version
-declared	Raku	DISTROnames	KERNELnames	Str	VMnames	auth	compiler	desc	gist	legacy	name	signature	version
-methods	Raku	DISTROnames	KERNELnames	POPULATE	Str	TWEAK	VMnames	auth	compiler	desc	gist	legacy	name	signature	version
-only	Raku	DISTROnames	KERNELnames	Str	VMnames	auth	compiler	desc	legacy	name	signature	version
-declared	VM	Str	auth	config	desc	gist	name	osname	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
-methods	VM	POPULATE	Str	TWEAK	auth	config	desc	gist	name	osname	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
-only	VM	Str	auth	config	desc	name	own-up	platform-library-name	precomp-ext	precomp-target	prefix	remote-debugging	request-garbage-collection	signature	version
-declared	Encoding::Builtin	SET-SELF	alternative-names	decoder	encoder	name	new
-methods	Encoding::Builtin	POPULATE	SET-SELF	alternative-names	decoder	encoder	name	new
-only	Encoding::Builtin	SET-SELF	alternative-names	decoder	encoder	name	new
-declared	Encoding::Decoder::Builtin	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
-methods	Encoding::Decoder::Builtin	POPULATE	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
-only	Encoding::Decoder::Builtin	add-bytes	bytes-available	consume-all-chars	consume-available-chars	consume-exactly-bytes	consume-exactly-chars	consume-line-chars	is-empty	new	set-line-separators
-declared	Encoding::Encoder::Builtin	encode-chars	new
-methods	Encoding::Encoder::Builtin	POPULATE	encode-chars	new
-only	Encoding::Encoder::Builtin	encode-chars	new
-declared	Cancellation	cancel	cancelled
-methods	Cancellation	BUILD	POPULATE	cancel	cancelled
-only	Cancellation	cancel	cancelled
-declared	IO::Socket::Async::ListenSocket	native-descriptor	new	socket-host	socket-port
-methods	IO::Socket::Async::ListenSocket	BUILD	POPULATE	close	native-descriptor	new	socket-host	socket-port
-only	IO::Socket::Async::ListenSocket	native-descriptor	new	socket-host	socket-port
-declared	Lock	condition	lock	new	protect	unlock
-methods	Lock	POPULATE	condition	lock	new	protect	unlock
-only	Lock	condition	lock	new	unlock
-declared	Lock::Async	lock	protect	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
-methods	Lock::Async	POPULATE	lock	protect	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
-only	Lock::Async	lock	protect-or-queue-on-recursion	unlock	with-lock-hidden-from-recursion-check
-declared	Lock::ConditionVariable	new	signal	signal_all	wait
-methods	Lock::ConditionVariable	POPULATE	new	signal	signal_all	wait
-only	Lock::ConditionVariable	new	signal	signal_all
-declared	Proc	Bool	Numeric	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
-methods	Proc	BUILD	Bool	Numeric	POPULATE	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
-only	Proc	command	err	exitcode	in	os-error	out	pid	shell	signal	sink	spawn
-declared	Tap	close	new
-methods	Tap	BUILD	POPULATE	close	new
-only	Tap	close
-declared	CompUnit::Loader	load-precompilation	load-precompilation-file	load-source	load-source-file
-methods	CompUnit::Loader	POPULATE	load-precompilation	load-precompilation-file	load-source	load-source-file
-only	CompUnit::Loader	load-precompilation	load-source	load-source-file
-declared	Deprecation	DEPRECATIONS	WHICH	alternative	callsites	file	from	name	package	removed	report	type
-methods	Deprecation	DEPRECATIONS	POPULATE	WHICH	alternative	callsites	file	from	name	package	removed	report	type
-only	Deprecation	DEPRECATIONS	alternative	callsites	file	from	name	package	removed	type
-declared	Rakudo::Internals	ACCESS-ELEMENT-ANY-DISPATCH-CLASS	ACCESS-ELEMENT-DISPATCH-CLASS	ACCESS-SLICE-DISPATCH-CLASS	ADVERBS_AND_NAMED_TO_DISPATCH_INDEX	ADVERBS_TO_DISPATCH_INDEX	ALL_DEFINED_TYPE	ANY_DEFINED_TYPE	Array-with-one-elem	BYTE_SUPPLY_DECODER	CAN-SUCC-INDEX	DEPARSE	DIR-RECURSE	EXPORT_SYMBOL	FAIL_X_ADVERB	FETCH-USER-GROUP	FILETEST-ACCESSED	FILETEST-CHANGED	FILETEST-CREATED	FILETEST-D	FILETEST-E	FILETEST-ES	FILETEST-F	FILETEST-L	FILETEST-LE	FILETEST-MODE	FILETEST-MODIFIED	FILETEST-R	FILETEST-RW	FILETEST-RWX	FILETEST-S	FILETEST-W	FILETEST-X	FILETEST-Z	GET-LOCAL-TIMEZONE-OFFSET	GistList2list_s	HANDLE-NQP-SPRINTF-ERRORS	INCLUDE	INFIX_COMMA_SLIP_HELPER	INITIALIZE-DYNAMIC	INITTHREAD	INITTIME	IS-ISOLATED-MATCH	IS-WIN	IterationSet2keys	KEY_COLON_VALUE	KEY_SPACE_VALUE	LANGUAGE-REVISION-OF-CONTEXT	LANGUAGE-VERSION-OF-CONTEXT	LL-EXCEPTION	MAKE-ABSOLUTE-PATH	MAKE-BASENAME	MAKE-CLEAN-PARTS	MAYBE-STRING	METAOP_ASSIGN	NEXT-ID	NORMALIZE_ENCODING	NUMERIC-ENV-KEY	OPTIMIZE	PERL5	POSSIBLE-MAGIC-CHARS	PRECOMP-EXT	PRECOMP-TARGET	PRED	PROFILE	PROGRAM	RANGE-AS-ints	REGISTER-DYNAMIC	REMOVE-ROOT	RERUN-WITH	SET_LEADING_DOCS	SET_TRAILING_DOCS	SHAPED-ARRAY-STORAGE	SHORT-STRING	SLASH-WRITE-TARGET	SLICE_HUH	SLICE_POSITIONS_WITH_ADVERBS	SLICE_WITH_ADVERBS	STAGESTATS	SUCC	StrList2list_s	TARGET	TEMP-LET	TRANSPOSE	TRANSPOSE-ONE	UPGRADE-OVERFLOWING-RAT	VERBATIM-EXCEPTION	VM-SIGNALS	WALK-AT-POS	activate-std	client-callframe	client-language-revision	compare-as-Int	compare-as-Num	compare-as-Numeric	compare-as-Real	compare-as-abs	current-offset-nanos	daycount-leapseconds	epoch-from-tai	error-rcgye	initialize-sprintf-handler	is-leap-second-date	posix-and-leap-from-tai	posix-from-tai	tai-from-posix
-methods	Rakudo::Internals	ACCESS-ELEMENT-ANY-DISPATCH-CLASS	ACCESS-ELEMENT-DISPATCH-CLASS	ACCESS-SLICE-DISPATCH-CLASS	ADVERBS_AND_NAMED_TO_DISPATCH_INDEX	ADVERBS_TO_DISPATCH_INDEX	ALL_DEFINED_TYPE	ANY_DEFINED_TYPE	Array-with-one-elem	BYTE_SUPPLY_DECODER	CAN-SUCC-INDEX	DEPARSE	DIR-RECURSE	EXPORT_SYMBOL	FAIL_X_ADVERB	FETCH-USER-GROUP	FILETEST-ACCESSED	FILETEST-CHANGED	FILETEST-CREATED	FILETEST-D	FILETEST-E	FILETEST-ES	FILETEST-F	FILETEST-L	FILETEST-LE	FILETEST-MODE	FILETEST-MODIFIED	FILETEST-R	FILETEST-RW	FILETEST-RWX	FILETEST-S	FILETEST-W	FILETEST-X	FILETEST-Z	GET-LOCAL-TIMEZONE-OFFSET	GistList2list_s	HANDLE-NQP-SPRINTF-ERRORS	INCLUDE	INFIX_COMMA_SLIP_HELPER	INITIALIZE-DYNAMIC	INITTHREAD	INITTIME	IS-ISOLATED-MATCH	IS-WIN	IterationSet2keys	KEY_COLON_VALUE	KEY_SPACE_VALUE	LANGUAGE-REVISION-OF-CONTEXT	LANGUAGE-VERSION-OF-CONTEXT	LL-EXCEPTION	MAKE-ABSOLUTE-PATH	MAKE-BASENAME	MAKE-CLEAN-PARTS	MAYBE-STRING	METAOP_ASSIGN	NEXT-ID	NORMALIZE_ENCODING	NUMERIC-ENV-KEY	OPTIMIZE	PERL5	POPULATE	POSSIBLE-MAGIC-CHARS	PRECOMP-EXT	PRECOMP-TARGET	PRED	PROFILE	PROGRAM	RANGE-AS-ints	REGISTER-DYNAMIC	REMOVE-ROOT	RERUN-WITH	SET_LEADING_DOCS	SET_TRAILING_DOCS	SHAPED-ARRAY-STORAGE	SHORT-STRING	SLASH-WRITE-TARGET	SLICE_HUH	SLICE_POSITIONS_WITH_ADVERBS	SLICE_WITH_ADVERBS	STAGESTATS	SUCC	StrList2list_s	TARGET	TEMP-LET	TRANSPOSE	TRANSPOSE-ONE	UPGRADE-OVERFLOWING-RAT	VERBATIM-EXCEPTION	VM-SIGNALS	WALK-AT-POS	activate-std	client-callframe	client-language-revision	compare-as-Int	compare-as-Num	compare-as-Numeric	compare-as-Real	compare-as-abs	current-offset-nanos	daycount-leapseconds	epoch-from-tai	error-rcgye	initialize-sprintf-handler	is-leap-second-date	posix-and-leap-from-tai	posix-from-tai	tai-from-posix
-only	Rakudo::Internals	ACCESS-ELEMENT-ANY-DISPATCH-CLASS	ACCESS-ELEMENT-DISPATCH-CLASS	ACCESS-SLICE-DISPATCH-CLASS	ADVERBS_AND_NAMED_TO_DISPATCH_INDEX	ADVERBS_TO_DISPATCH_INDEX	ALL_DEFINED_TYPE	ANY_DEFINED_TYPE	Array-with-one-elem	BYTE_SUPPLY_DECODER	CAN-SUCC-INDEX	DEPARSE	DIR-RECURSE	EXPORT_SYMBOL	FAIL_X_ADVERB	FETCH-USER-GROUP	FILETEST-ACCESSED	FILETEST-CHANGED	FILETEST-CREATED	FILETEST-D	FILETEST-E	FILETEST-ES	FILETEST-F	FILETEST-L	FILETEST-LE	FILETEST-MODE	FILETEST-MODIFIED	FILETEST-R	FILETEST-RW	FILETEST-RWX	FILETEST-S	FILETEST-W	FILETEST-X	FILETEST-Z	GET-LOCAL-TIMEZONE-OFFSET	GistList2list_s	HANDLE-NQP-SPRINTF-ERRORS	INCLUDE	INFIX_COMMA_SLIP_HELPER	INITIALIZE-DYNAMIC	INITTHREAD	INITTIME	IS-ISOLATED-MATCH	IS-WIN	KEY_COLON_VALUE	KEY_SPACE_VALUE	LANGUAGE-REVISION-OF-CONTEXT	LANGUAGE-VERSION-OF-CONTEXT	LL-EXCEPTION	MAKE-ABSOLUTE-PATH	MAKE-BASENAME	MAKE-CLEAN-PARTS	MAYBE-STRING	METAOP_ASSIGN	NEXT-ID	NORMALIZE_ENCODING	NUMERIC-ENV-KEY	OPTIMIZE	PERL5	POSSIBLE-MAGIC-CHARS	PRECOMP-EXT	PRECOMP-TARGET	PRED	PROFILE	PROGRAM	RANGE-AS-ints	REGISTER-DYNAMIC	REMOVE-ROOT	RERUN-WITH	SET_LEADING_DOCS	SET_TRAILING_DOCS	SHAPED-ARRAY-STORAGE	SHORT-STRING	SLASH-WRITE-TARGET	SLICE_HUH	SLICE_POSITIONS_WITH_ADVERBS	SLICE_WITH_ADVERBS	STAGESTATS	SUCC	StrList2list_s	TARGET	TEMP-LET	TRANSPOSE	TRANSPOSE-ONE	UPGRADE-OVERFLOWING-RAT	VERBATIM-EXCEPTION	VM-SIGNALS	WALK-AT-POS	activate-std	client-callframe	client-language-revision	compare-as-Int	compare-as-Num	compare-as-Numeric	compare-as-Real	compare-as-abs	current-offset-nanos	daycount-leapseconds	epoch-from-tai	error-rcgye	initialize-sprintf-handler	is-leap-second-date	posix-and-leap-from-tai	posix-from-tai	tai-from-posix
-declared	HyperConfiguration	batch	degree
-methods	HyperConfiguration	POPULATE	TWEAK	batch	degree
-only	HyperConfiguration	batch	degree

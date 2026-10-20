@@ -1,6 +1,6 @@
 # ADR-14032: Built-in introspection reads Rakudo's method-table snapshot, gated by the method rows
 
-- **Status**: Proposed
+- **Status**: Accepted (user decision 2026-10-20)
 - **Date**: 2026-10-20
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#14032](https://github.com/tokuhirom/mutsu/issues/14032)

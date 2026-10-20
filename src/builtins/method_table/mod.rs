@@ -143,8 +143,9 @@ use table::all_rows;
 pub(crate) use table::names_a_mut_row;
 use table::names_any_row;
 pub(crate) use table::{
-    Receiver, RowId, base_row, max_row_arity, names_a_row, owner_declares, owner_row,
-    owner_rows_at, resolve, row, shape_has_row, some_row_binds_named,
+    Receiver, RowId, base_row, max_row_arity, names_a_row, owner_declares, owner_has_row,
+    owner_row, owner_row_names, owner_rows_at, resolve, row, shape_has_row,
+    some_row_binds_named,
 };
 pub(crate) use unadmitted::invoke_unadmitted;
 

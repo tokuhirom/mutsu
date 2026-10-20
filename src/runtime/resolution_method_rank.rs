@@ -130,7 +130,7 @@ impl Interpreter {
             } else {
                 folded
             };
-            crate::builtins::native_method_row::native_method_row_exists(owner, name)
+            crate::builtins::method_introspection::native_method_row_exists(owner, name)
         })
     }
 

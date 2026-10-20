@@ -133,7 +133,7 @@ mod tests {
         let undeclared: Vec<String> = STREAMS
             .iter()
             .filter(|s| {
-                !crate::builtins::native_method_row::native_method_declared(s.owner, s.name)
+                !crate::builtins::method_introspection::native_method_declared(s.owner, s.name)
             })
             .map(|s| format!("{}.{}", s.owner, s.name))
             .collect();

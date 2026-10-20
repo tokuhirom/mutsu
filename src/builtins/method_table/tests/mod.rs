@@ -449,7 +449,16 @@ fn rows_are_declared_by_rakudo() {
         .filter(|row| !(row.owner == "Any" && row.name == "pending"))
         // Rakudo's `Failure` answers `rethrow`, `die` and `fail` through its
         // `FALLBACK`, which throws the exception it carries (ADR-11276 §9.163).
-        .filter(|row| !(row.owner == "Failure" && matches!(row.name, "rethrow" | "die" | "fail")))
+        .filter(|row| {
+            !(row.owner == "Failure" && matches!(row.name, "rethrow" | "die" | "fail" | "throw"))
+        })
+        // Rakudo's quant hashes inherit `Any.BIND-KEY`, which refuses them with
+        // `X::Bind`; mutsu's receiver-mutating rows are found by the receiver's
+        // own kind, so the refusal is a row of each (ADR-11276 §9.41).
+        .filter(|row| {
+            !(row.name == "BIND-KEY"
+                && matches!(row.owner, "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"))
+        })
         // `is DEPRECATED` mixes a role declaring `DEPRECATED` into the
         // attribute; mutsu answers it on `Attribute` (ADR-11276 §9.161).
         .filter(|row| !(row.owner == "Attribute" && row.name == "DEPRECATED"))
@@ -458,7 +467,7 @@ fn rows_are_declared_by_rakudo() {
         // already recognizes on the owner (`Complex.sign`).
         .filter(|row| {
             !(row.flags.contains(RowFlags::REVISION_E)
-                && crate::builtins::native_method_row_rakudo_oracle::declared_in_revision_e(
+                && crate::builtins::method_introspection::declared_in_revision_e(
                     row.owner, row.name,
                 ))
         })
@@ -468,14 +477,14 @@ fn rows_are_declared_by_rakudo() {
                     "" => row.owner,
                     folded => folded,
                 };
-            !crate::builtins::native_method_row::native_method_declared(row.owner, row.name)
-                && !crate::builtins::native_method_row::native_method_declared(owner, row.name)
+            !crate::builtins::method_introspection::native_method_declared(row.owner, row.name)
+                && !crate::builtins::method_introspection::native_method_declared(owner, row.name)
         })
         .map(|row| format!("{}.{}", row.owner, row.name))
         .collect();
     assert!(
         undeclared.is_empty(),
-        "rows the catalog does not record Rakudo declaring: {undeclared:?}"
+        "rows Rakudo's method-table snapshot does not declare: {undeclared:?}"
     );
 }
 

@@ -6,7 +6,8 @@
 # Every Raku *method* carries an implicit `*%_`, so an adverb the method does
 # not declare cannot change its answer. This script probes that property
 # directly: for every (owner, method, argument-shape) triple derived from
-# `src/builtins/native_method_row_table.rs` it evaluates
+# `src/builtins/rakudo_method_tables.txt` (the methods Rakudo declares, probed
+# with zero, one and two arguments) it evaluates
 #
 #     RECEIVER.method(ARGS)          and          RECEIVER.method(ARGS, :qqzz9)
 #
@@ -97,11 +98,13 @@ my $SKIP = set <
 >;
 
 sub rows() {
-    my $path = 'src/builtins/native_method_row_table.rs';
+    my $path = 'src/builtins/rakudo_method_tables.txt';
     my @out;
     for $path.IO.lines -> $line {
-        next unless $line ~~ / ^ \s* '(' '"' (<-["]>+) '"' ',' \s* '"' (<-["]>+) '"' ',' \s* (\d+) ',' /;
-        @out.push: ($0.Str, $1.Str, $2.Int);
+        my ($kind, $owner, *@names) = $line.split("\t");
+        next unless $kind eq 'declared';
+        # Arity bits 0b111: probe with zero, one and two arguments.
+        @out.push: ($owner, $_, 7) for @names.grep(*.chars);
     }
     @out
 }

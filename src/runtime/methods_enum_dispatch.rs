@@ -65,7 +65,7 @@ impl Interpreter {
             EnumValue::Generic(_) => &[],
         };
         if !base.is_empty()
-            && !crate::builtins::native_method_row::native_method_declared("Enumeration", method)
+            && !crate::builtins::method_introspection::native_method_declared("Enumeration", method)
             && let Some(result) =
                 crate::builtins::method_table::invoke_owner(self, base, method, args, || {
                     value.to_value()
