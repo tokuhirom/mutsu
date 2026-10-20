@@ -215,16 +215,18 @@ fn reads_as_pairs(target: &Value, name: &str) -> bool {
 /// Whether the VM's native entry must leave `map`/`grep`/`first` to the
 /// interpreter, which runs its receiver probes (`call_method_with_values`)
 /// before it asks the table again: a receiver whose elements live behind a
-/// user `iterator` or an `IterationBuffer` (read as their elements), or a lazy
-/// source a `map`/`grep` turns into a pipeline stage. The decision belongs to
-/// that early entry, not to the row: once the probes have run, the row is the
-/// method (ADR-11276 §9.134).
+/// user `iterator`, an `IterationBuffer` or an `IO::Path::Parts` (read as their
+/// elements), or a lazy source a `map`/`grep` turns into a pipeline stage. The
+/// decision belongs to that early entry, not to the row: once the probes have
+/// run, the row is the method (ADR-11276 §9.134).
 // Cost: O(1) tag probes; O(m) method-table lookups for an instance, m = MRO length.
 pub(crate) fn early_entry_defers(interp: &mut Interpreter, target: &Value, name: &str) -> bool {
     if !matches!(name, "map" | "grep" | "first") {
         return false;
     }
-    if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
+    if crate::runtime::nqp_ops_list::is_iteration_buffer(target)
+        || crate::builtins::method_table::io_path_parts_pairs(target).is_some()
+    {
         return true;
     }
     match target.view() {

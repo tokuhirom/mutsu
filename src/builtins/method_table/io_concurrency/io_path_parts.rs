@@ -4,11 +4,15 @@
 //!
 //! Rakudo declares `AT-POS`, `AT-KEY` and `flat` on the class: the parts by
 //! position (a `volume`, `dirname`, `basename` pair) or by name, and the three
-//! pairs in that order. Every other list method is `Any`'s, which reads the
-//! object as one item (`$parts.elems` is `1`), and `.hash`/`.Hash`/`.Map`
-//! read its parts by name (`map_hash_coerce::hash_contents`).
+//! pairs in that order; `iterator` iterates those pairs. Every other list
+//! method is `Any`'s: those Rakudo writes on `self.iterator` (`map`, `head`,
+//! `sort`, ...) read the pairs ([`pairs`], through `own_iteration_view`),
+//! those on `self.list` read the object as one item (`$parts.elems` is `1`),
+//! and `.hash`/`.Hash`/`.Map` read its parts by name
+//! (`map_hash_coerce::hash_contents`).
 
-use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::{Handler, MethodRow, Named, RowFlags};
+use crate::runtime::Interpreter;
 use crate::runtime::utils::io_path_parts_keys;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -41,7 +45,36 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::ANY_ARGS,
         named: &[],
     },
+    MethodRow {
+        owner: "IO::Path::Parts",
+        name: "iterator",
+        arity: 0,
+        handler: Handler::Interp(iterator),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
 ];
+
+/// The three part pairs of an `IO::Path::Parts` instance, in order; `None` for
+/// any other value. `Any`'s methods that read `self.iterator`, a `for` loop and
+/// an `@`-assignment iterate these.
+// Cost: O(1).
+pub(crate) fn pairs(target: &Value) -> Option<Vec<Value>> {
+    match target.view() {
+        ValueView::Instance { class_name, .. } if class_name == "IO::Path::Parts" => {
+            all_pairs(target)
+        }
+        _ => None,
+    }
+}
+
+/// The three part pairs of the receiver, in order.
+// Cost: O(1).
+fn all_pairs(target: &Value) -> Option<Vec<Value>> {
+    (0..io_path_parts_keys().len())
+        .map(|idx| pair_at(target, idx))
+        .collect()
+}
 
 /// The part named `key`, or `Nil`.
 fn part(target: &Value, key: &str) -> Option<Value> {
@@ -67,10 +100,15 @@ fn pair_at(target: &Value, idx: usize) -> Option<Value> {
 /// `IO::Path::Parts.flat`: the three part pairs, in order.
 // Cost: O(1).
 fn flat(target: &Value, _args: &[Value]) -> Answer {
-    let pairs = (0..io_path_parts_keys().len())
-        .map(|idx| pair_at(target, idx))
-        .collect::<Option<Vec<_>>>()?;
+    let pairs = all_pairs(target)?;
     Some(Ok(Value::seq(pairs)))
+}
+
+/// `IO::Path::Parts.iterator`: an iterator over the three part pairs.
+// Cost: O(1).
+fn iterator(interp: &mut Interpreter, target: &Value, _args: &[Value], _: Named<'_>) -> Answer {
+    let pairs = all_pairs(target)?;
+    Some(interp.call_method_with_values(Value::array(pairs), "iterator", vec![]))
 }
 
 /// `IO::Path::Parts.AT-POS($pos)`: the part pair at that position.

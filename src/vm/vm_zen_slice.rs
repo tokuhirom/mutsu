@@ -16,29 +16,6 @@ impl Interpreter {
             val
         };
         match val.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name.as_str() == "IO::Path::Parts" => {
-                // TODO: Rakudo's zen slice of a `Parts` is the `Parts`, which
-                // iterates its pairs through its own `iterator`; mutsu's `Parts`
-                // does not iterate yet, so the slice hands out the pairs instead
-                // (#14034).
-                let attrs = attributes.as_map();
-                // ADR-0021 I2: a data-minted pair defaults positional.
-                Value::array(
-                    crate::runtime::utils::io_path_parts_keys()
-                        .iter()
-                        .map(|key| {
-                            Value::value_pair(
-                                Value::str((*key).to_string()),
-                                attrs.get(*key).cloned().unwrap_or(Value::NIL),
-                            )
-                        })
-                        .collect(),
-                )
-            }
             ValueView::Array(items, kind) if kind.is_itemized() => {
                 Value::array_with_kind(items.clone(), kind.decontainerize())
             }

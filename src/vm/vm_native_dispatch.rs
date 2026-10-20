@@ -219,9 +219,12 @@ impl Interpreter {
             method_name,
             "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
         ) {
-            // An `IterationBuffer` likewise answers these from its elements
-            // (`call_method_with_values`); the native impl would see one item.
-            if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
+            // An `IterationBuffer` and an `IO::Path::Parts` likewise answer
+            // these from their elements (`call_method_with_values`); the native
+            // impl would see one item.
+            if crate::runtime::nqp_ops_list::is_iteration_buffer(target)
+                || crate::builtins::method_table::io_path_parts_pairs(target).is_some()
+            {
                 return None;
             }
             let cn = match target.view() {
