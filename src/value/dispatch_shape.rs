@@ -187,13 +187,22 @@ pub(crate) enum DispatchShape {
     /// The type object `Rakudo::Sorting` (closed), a type object only:
     /// `MERGESORT-str`.
     RakudoSorting,
+    /// A `Collation` (`$*COLLATION`), the built-in class and not a subclass of
+    /// it (closed): a handler reads and writes its four level attributes.
+    Collation,
+    /// An `Attribute` metaobject (closed): a handler reads the declaration's
+    /// facts from its attributes.
+    Attribute,
+    /// A `Variable`, the reflective object a variable trait handler receives
+    /// (closed).
+    Variable,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 45] = [
+    pub(crate) const ALL: [DispatchShape; 48] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -239,6 +248,9 @@ impl DispatchShape {
         DispatchShape::Label,
         DispatchShape::RakudoInternals,
         DispatchShape::RakudoSorting,
+        DispatchShape::Collation,
+        DispatchShape::Attribute,
+        DispatchShape::Variable,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -291,6 +303,9 @@ impl DispatchShape {
             DispatchShape::Label => "Label",
             DispatchShape::RakudoInternals => "Rakudo::Internals",
             DispatchShape::RakudoSorting => "Rakudo::Sorting",
+            DispatchShape::Collation => "Collation",
+            DispatchShape::Attribute => "Attribute",
+            DispatchShape::Variable => "Variable",
         }
     }
 

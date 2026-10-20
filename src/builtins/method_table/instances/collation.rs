@@ -4,8 +4,8 @@
 //! A `Collation` (`$*COLLATION`) is an instance keeping its four levels in its
 //! shared attribute cell. `set` writes them there, so every alias of the
 //! object sees the change and the row needs no receiver place (§9.126). The
-//! class has no shape: the rows are reached through their owner from the
-//! by-name dispatch. Rakudo declares no `raku` on `Collation`: the instance
+//! class has a closed shape, so every entry reaches the rows through the
+//! table, the mutating by-name one included. Rakudo declares no `raku` on `Collation`: the instance
 //! rendering (`methods_instance_ops.rs`) re-encodes the level its default
 //! `.raku` lists, because mutsu stores the four levels.
 
@@ -26,7 +26,7 @@ macro_rules! row {
             name: $name,
             arity: 0,
             handler: $handler,
-            flags: RowFlags::OWNER_ONLY,
+            flags: RowFlags::NONE,
             named: $named,
         }
     };
@@ -44,15 +44,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("set", Handler::Named(set), LEVELS),
     row!("gist", Handler::Narrow(gist)),
 ];
-
-/// `Collation`'s rows for a `Collation` instance; `None` for anything else.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Instance { class_name, .. } if class_name == "Collation" => Some(&["Collation"]),
-        _ => None,
-    }
-}
 
 /// One level's setting, 1 when unset.
 // Cost: O(1).
