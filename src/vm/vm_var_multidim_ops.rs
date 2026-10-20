@@ -20,17 +20,9 @@ impl Interpreter {
             return Ok(false);
         }
         let indices = self.resolve_multidim_indices_for_assign(&target, dims)?;
-        if crate::value::readonly_cells_possible()
-            && let Some(bound) = Self::multidim_readonly_slot(&target, &indices)
-        {
-            return Err(RuntimeError::assignment_ro_typename(
-                crate::runtime::utils::value_type_name(&bound),
-                &bound.to_string_value(),
-            ));
-        }
         let value = bind_cell
             .map(|cell| Value::container_ref(cell.clone()))
-            .unwrap_or_else(|| Value::bound_element(source.clone()));
+            .unwrap_or_else(|| Value::bound_element(source.deref_container()));
         self.mutate_named_container(code, var_name, false, move |_slf, container| {
             Self::bind_array_multidim(container, &indices, value)
         })?;

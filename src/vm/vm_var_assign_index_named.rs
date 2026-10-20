@@ -2852,11 +2852,19 @@ impl Interpreter {
                         // Handled by the Hash arm above.
                     } else if matches!(container.view(), ValueView::Array(..)) {
                         if crate::runtime::utils::is_shaped_array(container) {
-                            Self::assign_array_multidim(
+                            Self::store_shaped_index(
                                 container,
-                                std::slice::from_ref(&idx),
-                                val.clone(),
+                                &idx,
+                                &val,
+                                bind_mode,
+                                bind_cell.as_ref(),
                             )?;
+                            if bind_mode && let Some((source_install, cell)) = &bind_cell {
+                                stored_bind_cell = true;
+                                pending_source_cell = source_install
+                                    .as_ref()
+                                    .map(|name| (name.clone(), cell.clone()));
+                            }
                         } else if let Some((slice_indices, vals)) = &range_slice {
                             container
                                 .with_array_mut(|items, _| -> Result<(), RuntimeError> {
@@ -5428,7 +5436,13 @@ impl Interpreter {
                 let leaf_val = bind_cell
                     .as_ref()
                     .map(|c| Value::container_ref(c.clone()))
-                    .unwrap_or_else(|| val.clone());
+                    .unwrap_or_else(|| {
+                        if is_bind_value {
+                            Value::bound_element(val.deref_container())
+                        } else {
+                            val.clone()
+                        }
+                    });
                 unsafe {
                     let cur = &mut *current;
                     // #7556 C2's bare-valued-List row (3+ level chain twin of
@@ -5453,7 +5467,7 @@ impl Interpreter {
                                 }
                                 let arr = crate::value::gc_data_mut(arr_arc);
                                 Self::autoviv_resize_tracking(arr, i, native_fill.clone())?;
-                                if bind_cell.is_some() {
+                                if is_bind_value {
                                     arr[i] = leaf_val.clone();
                                 } else {
                                     Value::assign_element_slot(&mut arr[i], leaf_val.clone());
@@ -5466,7 +5480,7 @@ impl Interpreter {
                     } else if cur
                         .with_hash_mut(|hash_arc| {
                             let hash = crate::value::gc_data_mut(hash_arc);
-                            if bind_cell.is_some() {
+                            if is_bind_value {
                                 hash.insert(key.clone(), leaf_val.clone());
                             } else {
                                 Value::hash_insert_through(hash, key.clone(), leaf_val.clone());

@@ -5,6 +5,25 @@ use crate::symbol::Symbol;
 use num_traits::Zero;
 
 impl Interpreter {
+    /// A one-dimensional shaped element bind replaces the slot's container.
+    // Cost: O(d), d = shaped dimensions.
+    pub(super) fn store_shaped_index(
+        target: &mut Value,
+        index: &Value,
+        value: &Value,
+        binding: bool,
+        source: Option<&(Option<String>, crate::gc::Gc<crate::value::ContainerCell>)>,
+    ) -> Result<(), RuntimeError> {
+        if binding {
+            let bound = source
+                .map(|(_, cell)| Value::container_ref(cell.clone()))
+                .unwrap_or_else(|| Value::bound_element(value.clone()));
+            Self::bind_array_multidim(target, std::slice::from_ref(index), bound)
+        } else {
+            Self::assign_array_multidim(target, std::slice::from_ref(index), value.clone())
+        }
+    }
+
     /// Array/List subscripts coerce each leaf index to Int. Pair has no valid
     /// Int candidate, including when it appears inside a nested slice.
     pub(super) fn reject_pair_positional_index(index: &Value) -> Result<(), RuntimeError> {
