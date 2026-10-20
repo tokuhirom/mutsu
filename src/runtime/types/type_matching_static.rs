@@ -3,32 +3,10 @@ use super::*;
 use crate::runtime::utils::{has_bracket, split_once_bracket};
 
 impl Interpreter {
-    /// Whether `qualified`'s trailing component may stand in for the bare name
-    /// `short` (see the "qualified name matching" bridge in [`Self::type_matches`]).
-    ///
-    /// A *core setting* type never lives under a user package, so a nested
-    /// `Foo::Any` is a genuinely different type from `Any` and the bridge must
-    /// not equate them. Doing so was catastrophic rather than merely wrong: a
-    /// `Foo::Any` constraint reached the `constraint == "Any"` universal arm via
-    /// every class's MRO (which ends in `Any`, `Mu`), so it accepted *every*
-    /// instance — e.g. Zef's `multi method spec-matcher(…::DependencySpecification::Any $spec)`
-    /// swallowed a plain `…::DependencySpecification` and then died calling the
-    /// `.specs` method only the `::Any` sibling has.
-    fn short_name_bridges(qualified: &str, short: &str) -> bool {
-        // ADR-0047: `qualified`'s trailing component may itself be a
-        // lexically-mangled storage name (`Session\u{0}<decl-id>`), e.g. a
-        // `my class Session` nested inside a `my monitor Store` registers as
-        // `Store\u{0}<id1>::Session\u{0}<id2>`. Strip any such suffix before
-        // comparing, or a type object's own bare-name self-check (`has
-        // Session $x` defaulting to the `Session` type object) never bridges
-        // back to its own declared constraint.
-        let last = crate::qualified::last_segment(Symbol::intern(qualified)).as_str();
-        let last = last
-            .split_once('\u{0}')
-            .map_or(last, |(stripped, _)| stripped);
-        last == short && !crate::runtime::Interpreter::is_builtin_type(short)
-    }
-
+    /// `constraint`, a parameterization (`Box[P]`), with its bare base
+    /// replaced by the package alias an import gave it
+    /// (`ParamRoleExporter::Box[P]`), when there is one.
+    // Cost: O(|constraint|) plus one alias lookup.
     pub(crate) fn parameterized_package_alias(&self, constraint: &str) -> Option<String> {
         let (base, args) = split_once_bracket(constraint)?;
         if base.is_empty() || crate::qualified::is_qualified_str(base) {
@@ -58,30 +36,6 @@ impl Interpreter {
         if !has_bracket(constraint)
             && let Some((value_base, _)) = split_once_bracket(value_type)
             && value_base == constraint
-        {
-            return true;
-        }
-        // Qualified name matching: GH2613::R1 should match R1 and vice versa.
-        // When one name is qualified (contains ::) and the other is a short name,
-        // check if the short name matches the last component of the qualified name.
-        // This bridges a registration gap: a type declared under a `unit module`
-        // is registered qualified but referred to bare inside that module.
-        //
-        // `str::contains("::")` built a two-way searcher per call, three times
-        // per call (#7696); each answer is now one memoized symbol flag. Only
-        // reached once the cheap equality and parameterization arms above have
-        // declined.
-        let constraint_qualified = crate::qualified::is_qualified_str(constraint);
-        let value_type_qualified = crate::qualified::is_qualified_str(value_type);
-        if constraint_qualified
-            && !value_type_qualified
-            && Self::short_name_bridges(constraint, value_type)
-        {
-            return true;
-        }
-        if value_type_qualified
-            && !constraint_qualified
-            && Self::short_name_bridges(value_type, constraint)
         {
             return true;
         }
