@@ -1322,6 +1322,58 @@ impl Interpreter {
         None
     }
 
+    /// A user-declared method (public or private) called on a decontainerized
+    /// Proxy subclass value (`.VAR`): the method runs against a twin instance
+    /// that holds the Proxy's attribute map, and what it left in the map is
+    /// written back. A `self` it hands back is the Proxy itself. AttrX::Mooish's
+    /// `AttrProxy is Proxy` is built this way (ADR-14162).
+    // TODO: the twin is a copy, so a method that stores `self` elsewhere
+    // stores the twin; sharing the Proxy's attribute cell would remove that.
+    // Cost: O(a), a = attributes of the Proxy subclass (copied in and back).
+    pub(crate) fn dispatch_proxy_subclass_user_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Proxy {
+            subclass: Some((class, attrs)),
+            decontainerized: true,
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        let class_name = class.resolve();
+        let declared = match method.strip_prefix('!') {
+            Some(private) => !self
+                .private_method_candidates_by_name(&class_name, None, private)
+                .is_empty(),
+            None => self.class_has_user_method(&class_name, method),
+        };
+        if !declared {
+            return None;
+        }
+        let map: AttrMap = attrs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let twin = Value::make_instance(*class, map);
+        let result = self.call_method_with_values(twin.clone(), method, args.to_vec());
+        if let Some(cell) = Self::self_instance_attrs(&twin) {
+            let updated: ValueMap = (&cell.to_map()).into();
+            *attrs.lock().unwrap_or_else(|e| e.into_inner()) = updated;
+        }
+        Some(result.map(|value| {
+            match (Self::self_instance_attrs(&value), Self::self_instance_attrs(&twin)) {
+                (Some(a), Some(b)) if crate::gc::Gc::ptr_eq(&a, &b) => target.clone(),
+                _ => value,
+            }
+        }))
+    }
+
     /// Auto-FETCH Proxy values for most method calls.
     pub(super) fn dispatch_proxy_auto_fetch(
         &mut self,

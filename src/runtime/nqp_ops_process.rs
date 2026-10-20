@@ -150,6 +150,17 @@ impl Interpreter {
             // are concrete objects whose `.defined` happens to answer False,
             // and `nqp::isconcrete` says 1 for both (measured against rakudo).
             // So these ask `value_is_concrete`, not `value_is_defined`.
+            // `isconcrete_nd` asks about the container itself, so a Scalar is
+            // concrete whatever it holds (`nqp::isconcrete_nd($aviv)` over an
+            // attribute's `auto_viv_container`, AttrX::Mooish).
+            "isconcrete_nd"
+                if matches!(
+                    args.first().map(Value::view),
+                    Some(ValueView::ContainerRef(_) | ValueView::ContainerView(_))
+                ) =>
+            {
+                Ok(Value::int(1))
+            }
             "defined" | "isconcrete" | "isconcrete_nd" => Ok(Value::int(i64::from(
                 crate::runtime::types::value_is_concrete(args.first().unwrap_or(&Value::NIL)),
             ))),

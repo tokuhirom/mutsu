@@ -48,6 +48,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("gist", 0, Handler::Narrow(gist)),
     row!("Str", 0, Handler::Narrow(str_row)),
     row!("container", 0, Handler::Narrow(container)),
+    row!("auto_viv_container", 0, Handler::Narrow(auto_viv_container)),
     row!("DEPRECATED", 0, Handler::Narrow(deprecated)),
     row!("set_rw", 0, Handler::Interp(set_rw)),
     row!("build", 0, Handler::Interp(build)),
@@ -197,6 +198,29 @@ fn container(target: &Value, _args: &[Value]) -> Answer {
             Value::str(sigil),
         );
         Ok(Value::make_instance(Symbol::intern("Scalar"), cmeta))
+    })
+}
+
+/// `Attribute.auto_viv_container`: a fresh container of the attribute's
+/// kind, as an instance's attribute starts out: a Scalar holding the type's
+/// default for `$`, an empty Array for `@`, an empty Hash for `%`.
+// Cost: O(1).
+fn auto_viv_container(target: &Value, _args: &[Value]) -> Answer {
+    with_meta(target, |meta| {
+        let sigil = fact_str(meta, "sigil").unwrap_or_else(|| "$".to_string());
+        Ok(match sigil.as_str() {
+            "@" => Value::real_array(Vec::new()),
+            "%" => Value::hash(crate::value::ValueMap::default()),
+            _ => {
+                let default = match meta.as_map().get("type").map(Value::view) {
+                    Some(ValueView::Package(name)) if name != "Mu" => {
+                        Value::package(name)
+                    }
+                    _ => Value::package(Symbol::intern("Any")),
+                };
+                Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(default)))
+            }
+        })
     })
 }
 

@@ -148,6 +148,14 @@ impl Interpreter {
             // already decontainerized once at the `call_nqp_op` boundary, so
             // it shares this implementation (see `nqp_ops.rs`).
             // Cost: O(e) for an array/hash, e = elements; O(1) otherwise.
+            // `clone_nd` copies a Scalar container with what it holds.
+            "clone_nd"
+                if let Some(ValueView::ContainerRef(cell)) = args.first().map(Value::view) =>
+            {
+                Ok(Value::container_ref(crate::gc::Gc::new(
+                    crate::value::ContainerCell::new(cell.load()),
+                )))
+            }
             "clone" | "clone_nd" => {
                 let v = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),

@@ -353,6 +353,9 @@ impl Interpreter {
         mut args: Vec<Value>,
         reify_seq: bool,
     ) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.dispatch_proxy_subclass_user_method(&target, method, &args) {
+            return result;
+        }
         let target_was_seq = target.is_seq_value();
         // ADR-0064: a `.VAR` reflection descriptor is a CONTAINER, and a
         // container is transparent for ordinary method dispatch -- everything
@@ -924,6 +927,9 @@ impl Interpreter {
                 || target.clone(),
             )
         {
+            return result;
+        }
+        if let Some(result) = self.dispatch_proxy_subclass_user_method(&target, method, &args) {
             return result;
         }
         // Private method call on non-Instance

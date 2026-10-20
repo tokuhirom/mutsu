@@ -526,6 +526,12 @@ impl Interpreter {
                     match sigil {
                         '@' => Value::real_array(Vec::new()),
                         '%' => Value::hash(ValueMap::default()),
+                        // An untyped `$` attribute reads as the Any type object
+                        // (what the plain constructor seeds), so `cas` against
+                        // a `my $old = $!attr` copy compares equal.
+                        _ if attr.type_constraint.is_none() => {
+                            Value::package(crate::symbol::wk::any())
+                        }
                         _ => Value::NIL,
                     }
                 };

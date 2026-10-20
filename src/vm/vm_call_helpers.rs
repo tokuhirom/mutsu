@@ -251,6 +251,9 @@ impl Interpreter {
         matches!(
             name,
             "return-rw"
+                // rakudo: `nqp::decont` of a Proxy hands the container back
+                // without running its FETCH (AttrX::Mooish's FETCH relies on it).
+                | "nqp::decont"
                 | "return"
                 | "die"
                 | "fail"
