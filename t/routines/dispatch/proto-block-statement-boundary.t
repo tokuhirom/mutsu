@@ -1,6 +1,6 @@
 use Test;
 use MONKEY-SEE-NO-EVAL;
-plan 33;
+plan 36;
 
 my @invalid =
     'my class A { proto method a(|) { {*} } method b {2} }',
@@ -35,7 +35,10 @@ my @valid =
     'my class P6 { proto method a(|) {*} .gist; }',
     'proto sub proto-postfix(|) {*} .gist;',
     'my grammar P7 { proto token a {*} .gist; }',
-    'sub ordinary-postfix {1} .gist;';
+    'sub ordinary-postfix {1} .gist;',
+    'proto sub proto-indexed(|) {*}[0];',
+    'my class P8 { proto method a(|) {*}[0]; }',
+    'sub immediate {2}();';
 for @valid -> $source {
     lives-ok { EVAL $source }, 'a separator or routine postfix remains valid';
 }

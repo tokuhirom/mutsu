@@ -5,12 +5,9 @@ use super::*;
 /// by a newline, semicolon, closing brace, comma, or end-of-input.
 pub(super) fn is_block_ending_stmt(stmt: &Stmt, consumed: &str) -> bool {
     match stmt {
-        // Empty bodies and forward declarations can both have no body
-        // statements. The consumed source retains the distinction; regex
-        // protos likewise retain no body in their AST node.
-        Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. } | Stmt::ProtoToken { .. } => {
-            consumed.ends_with('}')
-        }
+        // A genuinely empty body is still a block. The consumed source can
+        // establish that fact where an empty statement vector cannot.
+        Stmt::SubDecl { body, .. } => !body.is_empty() || consumed.ends_with('}'),
         // `when`/`default` block statements take a `{...}` body and, unlike
         // `if`/`for`/etc., are not followed by any same-line continuation
         // keyword (no `else`/`elsif`) and do not consume trailing statement
@@ -37,6 +34,24 @@ pub(super) fn is_block_ending_stmt(stmt: &Stmt, consumed: &str) -> bool {
         // trailing separators before returning to stmt_list_with_mode.
         _ => false,
     }
+}
+
+/// Check a proto body's source boundary before its AST loses body syntax.
+pub(super) fn require_proto_body_boundary(rest: &str) -> Result<(), PError> {
+    if has_statement_separator(rest) || rest.starts_with(['(', '[', '{', ')', ']']) {
+        return Ok(());
+    }
+    let (next, _) = ws(rest)?;
+    if next.starts_with('.') || super::modifier::is_stmt_modifier_keyword(next) {
+        return Ok(());
+    }
+    Err(missing_block_separator())
+}
+
+pub(super) fn missing_block_separator() -> PError {
+    PError::fatal(
+        "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)".to_string(),
+    )
 }
 
 /// A routine declaration can continue with a postfix or statement modifier.

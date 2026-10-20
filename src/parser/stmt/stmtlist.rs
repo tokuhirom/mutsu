@@ -518,10 +518,7 @@ pub(crate) fn stmt_list_with_mode(
                     && !has_statement_separator(r)
                     && !routine_decl_continuation_follows(&stmt, r_ws)
                 {
-                    return Err(PError::fatal(
-                        "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
-                            .to_string(),
-                    ));
+                    return Err(super::statement_boundary::missing_block_separator());
                 }
                 // A statement that stopped short of a separator on the same line
                 // left a term behind: `my $x = (1,2) cross (3,4)`, where `cross`

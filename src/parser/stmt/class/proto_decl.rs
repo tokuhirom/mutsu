@@ -89,6 +89,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
             Err(error) if error.is_fatal() => return Err(error),
             Err(_) => consume_raw_braced_body(rest)?,
         };
+        crate::parser::stmt::statement_boundary::require_proto_body_boundary(rest)?;
         body = parsed_body;
         if is_regex_proto {
             return Ok((
