@@ -5868,10 +5868,6 @@ fn synthetic_block_needs_atomic_compile(stmts: &[Stmt]) -> bool {
         matches!(
             s,
             Stmt::MarkBind | Stmt::MarkSigilless(_) | Stmt::MarkSigillessReadonly(_)
-        ) || matches!(
-            s,
-            Stmt::Expr(Expr::Call { name, .. })
-                if name.resolve() == "__mutsu_record_bound_array_len"
         )
     })
 }

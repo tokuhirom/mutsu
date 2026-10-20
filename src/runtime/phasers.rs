@@ -198,16 +198,10 @@ fn flatten_synthetic_blocks(stmts: &mut Vec<Stmt>) {
             let has_mark_readonly = inner
                 .iter()
                 .any(|s| matches!(s, Stmt::MarkReadonly(..) | Stmt::MarkSigillessReadonly(_)));
-            // Keep SyntheticBlocks with bound array markers intact so the compiler
-            // can detect `:=` bind context for `@` variables.
-            let has_bound_array = inner.iter().any(|s| {
-                matches!(s,
-                    Stmt::Expr(Expr::Call { name, .. })
-                    if name.resolve() == "__mutsu_record_bound_array_len"
-                )
-            });
+            // Keep SyntheticBlocks with a bind marker intact so the compiler
+            // can detect `:=` bind context.
             let has_mark_bind = inner.iter().any(|s| matches!(s, Stmt::MarkBind));
-            if has_mark_readonly || has_bound_array || has_mark_bind {
+            if has_mark_readonly || has_mark_bind {
                 stmts.push(stmt);
             } else if let Stmt::SyntheticBlock(inner) = stmt {
                 stmts.extend(inner);

@@ -56,9 +56,9 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     let is_hash = bound_name.starts_with('%');
     if is_array || is_hash {
         let mut stmts = Vec::new();
-        if is_hash {
-            stmts.push(Stmt::MarkBind);
-        }
+        // The bind marker tells the compiler the declaration binds (keeps the
+        // bound container's type: a List stays a List).
+        stmts.push(Stmt::MarkBind);
         stmts.push(decl);
         if is_hash {
             // A `SyntheticBlock` yields its LAST statement's value, so re-read
@@ -67,11 +67,6 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
             stmts.push(Stmt::Expr(Expr::Var(bound_name.clone())));
         }
         if is_array {
-            stmts.push(Stmt::Expr(Expr::Call {
-                name: Symbol::intern("__mutsu_record_bound_array_len"),
-                args: vec![Expr::Literal(Value::str(bound_name.clone()))],
-                listop: false,
-            }));
             stmts.push(Stmt::Expr(Expr::Call {
                 name: Symbol::intern("__mutsu_record_shaped_array_dims"),
                 args: vec![Expr::Literal(Value::str(bound_name.clone()))],

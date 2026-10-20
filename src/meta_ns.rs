@@ -136,9 +136,6 @@ pub(crate) enum MetaNs {
     /// `__mutsu_atomic_value::<id>` — the shared-store slot an atomic scalar's
     /// value lives in. Keyed by id, not by a variable name.
     AtomicValue,
-    /// `__mutsu_bound_array_len::<name>` — the element count a `bind-array`
-    /// target was bound at.
-    BoundArrayLen,
     /// `__mutsu_bound_array_slice::<name>` — the name is a genuine bound array
     /// slice (`@slice := @a[1,2]`).
     BoundArraySlice,
@@ -286,7 +283,6 @@ impl MetaNs {
         MetaNs::ArrayShare,
         MetaNs::AtomicName,
         MetaNs::AtomicValue,
-        MetaNs::BoundArrayLen,
         MetaNs::BoundArraySlice,
         MetaNs::BoundDecont,
         MetaNs::Compunit,
@@ -347,7 +343,6 @@ impl MetaNs {
             MetaNs::ArrayShare => "__mutsu_array_share::",
             MetaNs::AtomicName => "__mutsu_atomic_name::",
             MetaNs::AtomicValue => "__mutsu_atomic_value::",
-            MetaNs::BoundArrayLen => "__mutsu_bound_array_len::",
             MetaNs::BoundArraySlice => "__mutsu_bound_array_slice::",
             MetaNs::BoundDecont => "__mutsu_bound_decont::",
             MetaNs::Compunit => "__mutsu_compunit::",
@@ -583,9 +578,9 @@ mod tests {
         assert_eq!(MetaNs::BoundIndex.key(name), MetaNs::BoundIndex.key(name));
         assert_ne!(
             MetaNs::BoundIndex.key(name),
-            MetaNs::BoundArrayLen.key(name),
+            MetaNs::BoundArraySlice.key(name),
             "the memo is keyed by (namespace, name); a name-only key would \
-             hand `__mutsu_bound_array_len::` the `__mutsu_bound_index::` entry"
+             hand `__mutsu_bound_array_slice::` the `__mutsu_bound_index::` entry"
         );
     }
 
@@ -613,7 +608,6 @@ mod tests {
             (MetaNs::ArrayShare, "__mutsu_array_share::@a"),
             (MetaNs::AtomicName, "__mutsu_atomic_name::@a"),
             (MetaNs::AtomicValue, "__mutsu_atomic_value::@a"),
-            (MetaNs::BoundArrayLen, "__mutsu_bound_array_len::@a"),
             (MetaNs::BoundArraySlice, "__mutsu_bound_array_slice::@a"),
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
@@ -772,7 +766,7 @@ mod tests {
             );
             assert!(seen.insert(p), "{ns:?} duplicates another prefix");
         }
-        // No prefix may be a prefix of another: `__mutsu_bound_array_len::` vs
+        // No prefix may be a prefix of another: `__mutsu_bound_index::` vs
         // `__mutsu_bound_array_slice::`, `__mutsu_role__` vs `__mutsu_role_seq__`,
         // `__mutsu_attr__` vs `__mutsu_attr_trait__` all come within one
         // character of colliding. `MixinOverrides::seed_missing_attributes`

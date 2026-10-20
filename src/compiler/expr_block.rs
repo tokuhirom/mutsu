@@ -1169,26 +1169,16 @@ impl Compiler {
             {
                 self.compile_synthetic_block_inline(inner);
             }
-            Stmt::SyntheticBlock(inner) if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) => {
-                self.compile_synthetic_block_inline(inner);
-            }
             // A `my @x := LIST` / `my %h := ...` declaration used in expression
-            // position (e.g. `+my @x := 1,2,3` or `plan +my @x := ...`). Its
-            // synthetic block carries a `__mutsu_record_bound_array_len` marker.
-            // Like the other declaration synthetic blocks above, compile it
-            // inline (NOT scope-isolated) so the `my` declaration leaks into the
-            // enclosing lexical scope — a `my` always declares in the current
-            // block regardless of expression nesting. Scope-isolating it (the
-            // generic arm below) would confine the binding to the synthetic
-            // block, leaving the outer `@x` undeclared (read as Nil).
-            Stmt::SyntheticBlock(inner)
-                if inner.iter().any(|s| {
-                    matches!(s,
-                        Stmt::Expr(Expr::Call { name, .. })
-                        if name.resolve() == "__mutsu_record_bound_array_len"
-                    )
-                }) =>
-            {
+            // position (e.g. `+my @x := 1,2,3` or `plan +my @x := ...`); its
+            // synthetic block carries a `MarkBind` marker. Like the other
+            // declaration synthetic blocks above, compile it inline (NOT
+            // scope-isolated) so the `my` declaration leaks into the enclosing
+            // lexical scope — a `my` always declares in the current block
+            // regardless of expression nesting. Scope-isolating it (the generic
+            // arm below) would confine the binding to the synthetic block,
+            // leaving the outer `@x` undeclared (read as Nil).
+            Stmt::SyntheticBlock(inner) if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) => {
                 self.compile_synthetic_block_inline(inner);
             }
             // A scalar bind to a readonly RHS used in expression position

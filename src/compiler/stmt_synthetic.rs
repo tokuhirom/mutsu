@@ -4,18 +4,11 @@ use super::*;
 
 impl Compiler {
     pub(super) fn compile_synthetic_stmt(&mut self, stmts: &[Stmt]) {
-        // Detect `:=` bind context for `@` variables: the parser wraps
-        // `my @a := expr` in a SyntheticBlock containing VarDecl followed
-        // by `__mutsu_record_bound_array_len`.  Set bind_vardecl so the
-        // VarDecl compilation emits MarkBindContext before SetLocal,
-        // making the VM preserve the container type (e.g. List stays List).
-        let has_bound_array_len = stmts.iter().any(|s| {
-            matches!(s,
-                Stmt::Expr(Expr::Call { name, .. })
-                if name.resolve() == "__mutsu_record_bound_array_len"
-            )
-        });
-        // Detect `:=` bind context for scalar variables via MarkBind.
+        // Detect `:=` bind context via MarkBind: the parser wraps `my @a :=
+        // expr` (and the `%`/`$` forms) in a SyntheticBlock that starts with
+        // it. Set bind_vardecl so the VarDecl compilation emits
+        // MarkBindContext before SetLocal, making the VM preserve the
+        // container type (e.g. List stays List).
         let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
         let restore_pointy_given_topic = stmts.iter().any(|s| {
             matches!(s, Stmt::VarDecl { custom_traits, .. }
@@ -47,11 +40,10 @@ impl Compiler {
         // trailing Var statement that would force the LazyList via SinkPop.
         let mut bound_array_var: Option<String> = None;
         for s in stmts {
-            if has_bound_array_len
+            if has_mark_bind
                 && let Stmt::VarDecl { name, .. } = s
                 && name.starts_with('@')
             {
-                self.bind_vardecl = true;
                 bound_array_var = Some(name.clone());
             }
             if has_mark_bind && matches!(s, Stmt::VarDecl { .. }) {

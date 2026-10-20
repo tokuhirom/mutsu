@@ -277,12 +277,6 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
-        let has_bound_array_len = stmts.iter().any(|s| {
-            matches!(s,
-                Stmt::Expr(Expr::Call { name, .. })
-                if name.resolve() == "__mutsu_record_bound_array_len"
-            )
-        });
         let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
         // See the matching flag in `compile_stmt`'s `Stmt::SyntheticBlock` arm.
         let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
@@ -697,12 +691,6 @@ impl Compiler {
                     }
                     _ => {}
                 }
-            }
-            if has_bound_array_len
-                && let Stmt::VarDecl { name, .. } = stmt
-                && name.starts_with('@')
-            {
-                self.bind_vardecl = true;
             }
             if has_mark_bind && matches!(stmt, Stmt::VarDecl { .. }) {
                 self.bind_vardecl = true;
