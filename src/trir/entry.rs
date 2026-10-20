@@ -359,7 +359,12 @@ impl Interpreter {
     /// `ContainerRef` cell — the same promotion the untyped `is rw` path
     /// performs — after which both halves are the same container and the
     /// writeback is one store through it.
-    fn bind_rw_slot(&mut self, slot: u32, caller_code: &CompiledCode, kind: TrKind) -> Option<(i64, RwTarget)> {
+    fn bind_rw_slot(
+        &mut self,
+        slot: u32,
+        caller_code: &CompiledCode,
+        kind: TrKind,
+    ) -> Option<(i64, RwTarget)> {
         let idx = slot as usize;
         if idx >= caller_code.locals.len() || idx >= self.locals.len() {
             return None;
