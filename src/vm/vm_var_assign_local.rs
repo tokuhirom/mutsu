@@ -140,7 +140,7 @@ impl Interpreter {
                 // survives assignment as a reify-on-demand LazyList in array
                 // context (L2b step 6 — docs/lazy-arrays.md).
                 if list.preserve_lazy_on_array_assign() {
-                    Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+                    self.lazy_array_value(&list, name)
                 } else {
                     let forced = self.force_lazy_list_vm(&list)?;
                     Value::real_array(self.decay_nil_vec_elements(forced))

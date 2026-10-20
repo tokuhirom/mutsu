@@ -50,6 +50,7 @@ impl Clone for LazyList {
             list_context: self.list_context,
             cached_no_sink: self.cached_no_sink,
             deleted_indices: Default::default(),
+            descriptor: self.descriptor.clone(),
             itemized: self.itemized,
         }
     }
@@ -499,6 +500,26 @@ impl LazyList {
     pub(crate) fn with_array_context(&self) -> Self {
         let mut cloned = self.clone();
         cloned.array_context = true;
+        cloned
+    }
+
+    /// [`Self::with_array_context`], carrying the container descriptor of the
+    /// `@` array it is placed in (its `is default(...)` value and element type).
+    // Cost: O(1) plus the clone `with_array_context` makes.
+    pub(crate) fn with_array_descriptor(
+        &self,
+        default: Option<Value>,
+        value_type: Option<String>,
+    ) -> Self {
+        let mut cloned = self.with_array_context();
+        if default.is_some() || value_type.is_some() {
+            cloned.descriptor = Some(std::sync::Arc::new(
+                crate::value::LazyArrayDescriptor {
+                    default,
+                    value_type,
+                },
+            ));
+        }
         cloned
     }
 

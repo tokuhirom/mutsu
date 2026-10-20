@@ -48,6 +48,8 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
     "List"."AT-POS" => at_pos,
     "List"."EXISTS-POS" => exists_pos,
     "Array"."AT-POS" => at_pos,
+    "Array"."default" => default,
+    "Array"."of" => of,
     "Seq"."cache" => cache,
     "Any"."cache" => cache,
     "Seq"."gist" => gist,
@@ -228,6 +230,49 @@ fn exists_pos(
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     index(interp, "EXISTS-POS", list, args)
+}
+
+/// `Array.default` of a lazy `@` array: the container descriptor the list
+/// carries (`is default(...)`, else the element type, else `Any`), as an eager
+/// array answers it (#14101).
+// Cost: O(1).
+fn default(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() || !list.in_array_context() {
+        return None;
+    }
+    let descriptor = list.descriptor.as_deref();
+    Some(Ok(descriptor
+        .and_then(|d| d.default.clone())
+        .or_else(|| {
+            descriptor
+                .and_then(|d| d.value_type.as_deref())
+                .map(|t| Value::package(crate::symbol::Symbol::intern(t)))
+        })
+        .unwrap_or_else(|| Value::package(crate::symbol::wk::any()))))
+}
+
+/// `Array.of` of a lazy `@` array: its element type, `Mu` when untyped.
+// Cost: O(1).
+fn of(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() || !list.in_array_context() {
+        return None;
+    }
+    let value_type = list
+        .descriptor
+        .as_deref()
+        .and_then(|d| d.value_type.as_deref())
+        .unwrap_or("Mu");
+    Some(Ok(Value::package(crate::symbol::Symbol::intern(value_type))))
 }
 
 /// `cache`: Rakudo's `.cache` caches elements as they are pulled, it does not
