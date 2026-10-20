@@ -3870,6 +3870,13 @@ pub(crate) struct LazyList {
     /// but is orthogonal to it (a `.cache` view and an itemized scalar are
     /// different reasons to skip the same forcing).
     pub(crate) itemized: bool,
+    /// The indices an `@`-array's `:delete` emptied while it stays lazy
+    /// (`@a[i]:delete` reifies through `i` without collapsing the array), so
+    /// `:exists` answers `False` for them. It belongs to the list, not to the
+    /// variable's name: every holder of the array sees the same holes, and a
+    /// fresh array starts without any (ADR-0097; it was the
+    /// `__mutsu_deleted_index::` env key).
+    pub(crate) deleted_indices: Mutex<Option<std::collections::HashSet<usize>>>,
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under

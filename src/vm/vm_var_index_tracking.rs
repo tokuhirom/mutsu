@@ -109,18 +109,6 @@ impl Interpreter {
     }
 
     pub(super) fn mark_initialized_index(&mut self, var_name: &str, encoded: String) {
-        // Assigning a slot clears any deleted-index marker so subsequent
-        // `:exists` checks report the slot as present again. Skipped entirely when
-        // the program has never `:delete`d an index — this runs on every element
-        // write and would otherwise cost a `format!` + an interned env lookup.
-        if crate::env::elem_index_meta_possible() {
-            let deleted_key = MetaNs::DeletedIndex.key_for_str(var_name);
-            if let Some(entry) = self.env_mut().get_mut_sym(deleted_key) {
-                entry.with_hash_mut(|map| {
-                    crate::gc::Gc::make_mut(map).remove(&encoded);
-                });
-            }
-        }
         // Record the assigned index in the array's *embedded* `initialized`
         // set so it travels with the value across scopes/closures/method calls
         // (the former env-name-keyed side table was scoped to the assigning
@@ -146,73 +134,6 @@ impl Interpreter {
                 };
                 data.mark_initialized(idx);
             });
-        }
-    }
-
-    /// Mark the given indices as deleted. `:exists` on an array consults
-    /// this set so that a slot holding a type-object hole can be reported
-    /// as missing even though the slot value is not `Nil`.
-    pub(super) fn mark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
-        let key = MetaNs::DeletedIndex.key_for_str(var_name);
-        if let Some(entry) = self.env_mut().get_mut_sym(key)
-            && entry
-                .with_hash_mut(|map| {
-                    let m = crate::gc::Gc::make_mut(map);
-                    Self::mark_index_entries(m, idx);
-                })
-                .is_some()
-        {
-            return;
-        }
-        let m = ValueMap::default();
-        self.env_mut().insert_sym_noting(key, Value::hash(m));
-        if let Some(entry) = self.env_mut().get_mut_sym(key) {
-            entry.with_hash_mut(|map| {
-                let m = crate::gc::Gc::make_mut(map);
-                Self::mark_index_entries(m, idx);
-            });
-        }
-    }
-
-    pub(super) fn is_deleted_index(&self, var_name: &str, idx: i64) -> bool {
-        // Consulted per element by `:exists`; no marker can exist unless the program
-        // has `:delete`d an index. Skips the `format!` + the `idx.to_string()`.
-        if !crate::env::elem_index_meta_possible() {
-            return false;
-        }
-        let key = MetaNs::DeletedIndex.key_for_str(var_name);
-        matches!(
-            self.env().get_sym(key).map(Value::view),
-            Some(ValueView::Hash(map)) if map.contains_key(&idx.to_string())
-        )
-    }
-
-    fn mark_index_entries(map: &mut ValueMap, idx: &Value) {
-        match idx.view() {
-            ValueView::Array(items, ..) => {
-                for item in items.iter() {
-                    Self::mark_index_entries(map, item);
-                }
-            }
-            ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => {
-                let expanded = crate::runtime::utils::value_to_list(idx);
-                for item in &expanded {
-                    Self::mark_index_entries(map, item);
-                }
-            }
-            ValueView::Int(i) => {
-                map.insert(i.to_string(), Value::TRUE);
-            }
-            ValueView::Num(f) => {
-                map.insert((f as i64).to_string(), Value::TRUE);
-            }
-            _ => {
-                map.insert(idx.to_string_value(), Value::TRUE);
-            }
         }
     }
 

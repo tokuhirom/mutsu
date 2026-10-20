@@ -49,12 +49,46 @@ impl Clone for LazyList {
             array_context: self.array_context,
             list_context: self.list_context,
             cached_no_sink: self.cached_no_sink,
+            deleted_indices: Default::default(),
             itemized: self.itemized,
         }
     }
 }
 
 impl LazyList {
+    /// Record that `:delete` emptied index `i` (see `deleted_indices`).
+    // Cost: O(1) amortized.
+    pub(crate) fn mark_deleted_index(&self, i: usize) {
+        self.deleted_indices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get_or_insert_with(Default::default)
+            .insert(i);
+    }
+
+    /// Forget a deleted index again: an element store refilled it.
+    // Cost: O(1).
+    pub(crate) fn clear_deleted_index(&self, i: usize) {
+        if let Some(set) = self
+            .deleted_indices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+        {
+            set.remove(&i);
+        }
+    }
+
+    /// Whether `:delete` emptied index `i` and no store refilled it.
+    // Cost: O(1).
+    pub(crate) fn is_deleted_index(&self, i: usize) -> bool {
+        self.deleted_indices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|set| set.contains(&i))
+    }
+
     /// Whether this lazy list was assigned into an `@` array (see the
     /// `array_context` field doc on `LazyList`).
     pub(crate) fn in_array_context(&self) -> bool {

@@ -150,11 +150,11 @@ impl DeclaredConstraint {
 /// One local slot's compile-time-settled metadata. `CompiledCode::binding_descs`
 /// holds one per entry of `CompiledCode::locals`, same index.
 ///
-/// The five `Option<Symbol>` fields are `None` until
+/// The four `Option<Symbol>` fields are `None` until
 /// [`crate::opcode::CompiledCode::compute_locals_sym`] runs (deliberately —
 /// see that method), at which point every slot gets `Some`. Each accessor on
-/// `CompiledCode` (`alias_sym`, `readonly_sym`, `deleted_index_sym`,
-/// `bound_slice_sym`, `scalar_no_container_sym`) falls back to deriving the
+/// `CompiledCode` (`alias_sym`, `readonly_sym`, `bound_slice_sym`,
+/// `scalar_no_container_sym`) falls back to deriving the
 /// key from the slot's name on a `None`, exactly as it did when the field was
 /// a separate, possibly-shorter `Vec<Symbol>`.
 #[derive(Debug, Clone, Copy, Default, bincode::Encode, bincode::Decode)]
@@ -164,8 +164,6 @@ pub(crate) struct BindingDesc {
     pub(crate) alias_sym: Option<Symbol>,
     /// The interned `__mutsu_sigilless_readonly::<name>` env key.
     pub(crate) readonly_sym: Option<Symbol>,
-    /// The interned `__mutsu_deleted_index::<name>` env key.
-    pub(crate) deleted_index_sym: Option<Symbol>,
     /// The interned `__mutsu_bound_array_slice::<name>` env key.
     pub(crate) bound_slice_sym: Option<Symbol>,
     /// The interned `__mutsu_scalar_bind_no_container::<name>` env key.

@@ -802,9 +802,7 @@ impl Interpreter {
             let vals: Vec<Value> = indices
                 .iter()
                 .map(|&i| {
-                    let deleted = array_var_name
-                        .as_deref()
-                        .is_some_and(|n| self.is_deleted_index(n, i));
+                    let deleted = i >= 0 && ll.is_deleted_index(i as usize);
                     let present = i >= 0 && (i as usize) < reified_len;
                     Value::truth((present && !deleted) ^ effective_negated)
                 })

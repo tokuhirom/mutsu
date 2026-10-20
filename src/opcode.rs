@@ -8935,22 +8935,6 @@ impl CompiledCode {
         }
     }
 
-    /// The interned `__mutsu_deleted_index::<name>` env key of local `idx`.
-    /// See [`CompiledCode::alias_sym`].
-    pub(crate) fn deleted_index_sym(&self, idx: usize) -> Option<Symbol> {
-        match self
-            .binding_descs
-            .get(idx)
-            .and_then(|d| d.deleted_index_sym)
-        {
-            Some(sym) => Some(sym),
-            None => self
-                .locals
-                .get(idx)
-                .map(|n| Symbol::intern(&crate::runtime::deleted_index_key(n))),
-        }
-    }
-
     /// The interned `__mutsu_bound_array_slice::<name>` env key of local `idx`.
     /// See [`CompiledCode::alias_sym`].
     pub(crate) fn bound_slice_sym(&self, idx: usize) -> Option<Symbol> {
@@ -9142,7 +9126,6 @@ impl CompiledCode {
         for (desc, name) in self.binding_descs.iter_mut().zip(self.locals.iter()) {
             desc.alias_sym = Some(crate::runtime::sigilless_alias_key(name));
             desc.readonly_sym = Some(crate::runtime::sigilless_readonly_key(name));
-            desc.deleted_index_sym = Some(Symbol::intern(&crate::runtime::deleted_index_key(name)));
             desc.bound_slice_sym =
                 Some(Symbol::intern(&crate::runtime::bound_array_slice_key(name)));
             desc.scalar_no_container_sym = Some(Symbol::intern(

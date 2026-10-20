@@ -1503,17 +1503,6 @@ impl Interpreter {
         if is_vardecl {
             let name = &code.locals[idx];
             self.clear_var_default(name);
-            // Clear the deleted-index tracker left over from a previous
-            // same-named variable in an outer scope. (Pre-interned key: this
-            // whole block runs on every declaration, so a loop-body `my $t`
-            // pays it once per iteration.) Skipped outright when no such key has
-            // ever been created -- the program never `:delete`d an index, so
-            // there is nothing to clear.
-            if crate::env::elem_index_meta_possible()
-                && let Some(sym) = code.deleted_index_sym(idx)
-            {
-                self.env_mut().remove_sym(sym);
-            }
             // Clear any sigilless-readonly flag inherited from an outer
             // scope (e.g. a for-loop `\result` shouldn't block `my $result`
             // in a called sub). Same latch: the `__mutsu_sigilless_readonly::*`

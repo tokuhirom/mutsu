@@ -155,10 +155,6 @@ pub(crate) enum MetaNs {
     /// this module's GLOBAL into the scope (ADR-11136). Lives in the block's
     /// env tier, so it ends with the block and a closure keeps it.
     ModuleMerge,
-    /// `__mutsu_deleted_index::<name>` — the set of indices `:delete`d out of
-    /// this container, which read as missing even when the slot holds a type
-    /// object.
-    DeletedIndex,
     /// `__mutsu_elem_share::<name>` — the set of this container's indices that
     /// hold a shared cell an element store must write *through*.
     ElemShare,
@@ -296,7 +292,6 @@ impl MetaNs {
         MetaNs::Compunit,
         MetaNs::ConstantVar,
         MetaNs::ModuleMerge,
-        MetaNs::DeletedIndex,
         MetaNs::ElemShare,
         MetaNs::EvalRole,
         MetaNs::FfState,
@@ -358,7 +353,6 @@ impl MetaNs {
             MetaNs::Compunit => "__mutsu_compunit::",
             MetaNs::ConstantVar => "__mutsu_constant_var::",
             MetaNs::ModuleMerge => "__mutsu_module_merge::",
-            MetaNs::DeletedIndex => "__mutsu_deleted_index::",
             MetaNs::ElemShare => "__mutsu_elem_share::",
             MetaNs::EvalRole => "__mutsu_eval_role::",
             MetaNs::FfState => "__mutsu_ff_state::",
@@ -624,7 +618,6 @@ mod tests {
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
             (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
-            (MetaNs::DeletedIndex, "__mutsu_deleted_index::@a"),
             (MetaNs::ElemShare, "__mutsu_elem_share::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),
             (MetaNs::GatherSelfRef, "__mutsu_gather_self_ref::@a"),
