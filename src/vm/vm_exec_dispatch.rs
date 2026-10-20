@@ -177,6 +177,7 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        let at = *ip;
         let result = self.exec_one_dispatch(code, ip, compiled_fns);
         // `finish_op_result` returns an `Ok` unchanged unless a `where`
         // exception is pending, and moving the (large) `Result` through its
@@ -185,7 +186,14 @@ impl Interpreter {
         if result.is_ok() && self.pending_where_exception.is_none() {
             return Ok(());
         }
-        self.finish_op_result(code, *ip, result)
+        match self.finish_op_result(code, *ip, result) {
+            // Only an op that raised without moving `ip` resumes in place;
+            // a control-flow signal may leave `ip` anywhere, even past the end.
+            Err(err) if *ip == at && Self::op_raise_resumes_in_place(&code.ops[at]) => {
+                self.resume_op_raise(code, ip, err)
+            }
+            result => result,
+        }
     }
 
     /// What [`Self::exec_one`] does with an instruction's result, for a JIT
