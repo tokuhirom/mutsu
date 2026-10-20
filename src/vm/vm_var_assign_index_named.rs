@@ -2181,8 +2181,8 @@ impl Interpreter {
                 if let Some(key_constraint) = loan_env!(self, var_hash_key_constraint(&var_name)) {
                     for key in keys.iter() {
                         if !self.type_matches_value(&key_constraint, key) {
-                            return Err(self.type_check_element_failure(
-                                &var_name,
+                            return Err(self.typecheck_binding_parameter_failure(
+                                "key",
                                 &key_constraint,
                                 key,
                             ));
@@ -2360,7 +2360,7 @@ impl Interpreter {
                 // coercion (e.g. a non-numeric string into Int) throws, matching
                 // raku (`X::Str::Numeric`).
                 let idx = if let Some(kc) = key_constraint.as_ref() {
-                    loan_env!(self, prepare_object_hash_key(kc, idx, Some(&var_name)))?
+                    loan_env!(self, prepare_object_hash_key(kc, idx))?
                 } else if let Some(kc) = quanthash_key_constraint.as_ref() {
                     loan_env!(self, coerce_key_for_constraint(kc, idx))?
                 } else {
@@ -5828,7 +5828,7 @@ impl Interpreter {
                 let idx = if let Some(constraint) = arc.key_type.clone() {
                     loan_env!(
                         self,
-                        prepare_object_hash_key(&constraint, idx.clone(), None)
+                        prepare_object_hash_key(&constraint, idx.clone())
                     )?
                 } else {
                     idx.clone()

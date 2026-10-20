@@ -8,12 +8,23 @@
 //! table does not answer (an argument it does not admit, an itemized hash).
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Zero;
 
 macro_rules! row {
+    ($owner:literal, $name:literal, $handler:ident, checked) => {
+        MethodRow {
+            owner: $owner,
+            name: $name,
+            arity: 1,
+            handler: Handler::Interp($handler),
+            flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
+            named: &[],
+        }
+    };
     ($owner:literal, $name:literal, $handler:ident) => {
         MethodRow {
             owner: $owner,
@@ -28,7 +39,7 @@ macro_rules! row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
-    row!("Hash", "AT-KEY", at_key),
+    row!("Hash", "AT-KEY", at_key_checked, checked),
     // A Map value is a Hash value and `Hash` declares `AT-KEY` itself, so no
     // shape reaches `Map`'s row: it is the table's statement of Rakudo's
     // declaration, found by owner only.
@@ -36,7 +47,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         owner: "Map",
         name: "AT-KEY",
         arity: 1,
-        handler: Handler::Narrow(at_key),
+        handler: Handler::Interp(at_key_checked),
         flags: RowFlags::ANY_ARGS
             .or(RowFlags::OBJECT_ARGS)
             .or(RowFlags::OWNER_ONLY),
@@ -50,7 +61,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("MixHash", "AT-KEY", at_key),
     row!("Pair", "AT-KEY", at_key),
     row!("Capture", "AT-KEY", at_key),
-    row!("Map", "EXISTS-KEY", exists_key),
+    row!("Map", "EXISTS-KEY", exists_key_checked, checked),
     row!("Set", "EXISTS-KEY", exists_key),
     row!("SetHash", "EXISTS-KEY", exists_key),
     row!("Bag", "EXISTS-KEY", exists_key),
@@ -60,6 +71,36 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Pair", "EXISTS-KEY", exists_key),
     row!("Capture", "EXISTS-KEY", exists_key),
 ];
+
+/// Bind the key before the hash's lookup can vivify an element container.
+// Cost: O(T + k) expected, T = key type check/coercion, k = key string length.
+fn at_key_checked(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let key = match interp.prepare_hash_key_arg(target, args[0].clone()) {
+        Ok(key) => key,
+        Err(error) => return Some(Err(error)),
+    };
+    at_key(target, &[key])
+}
+
+/// Bind the key before the hash's existence probe.
+// Cost: O(T + k) expected, T = key type check/coercion, k = key string length.
+fn exists_key_checked(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let key = match interp.prepare_hash_key_arg(target, args[0].clone()) {
+        Ok(key) => key,
+        Err(error) => return Some(Err(error)),
+    };
+    exists_key(target, &[key])
+}
 
 /// `.AT-KEY($key)`: the value stored under `key`, or the type's default
 /// (`Nil` for a Hash, `0`/`False` for the quant hashes).

@@ -52,8 +52,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// for a source that is not a variable, to a read-only cell holding the
 /// value). An object hash keys by `.WHICH` and remembers the key object.
 /// Answers the bound value.
-// Cost: O(1) expected (one hash insert; an object hash also records its key
-// object).
+// Cost: O(T + k) expected, T = key type check/coercion, k = key string length.
 pub(super) fn hash_bind_key(
     interp: &mut Interpreter,
     place: &mut ReceiverPlace<'_>,
@@ -67,6 +66,10 @@ pub(super) fn hash_bind_key(
     if !matches!(hash.view(), ValueView::Hash(..)) {
         return None;
     }
+    let key_arg = match interp.prepare_hash_key_arg(&hash, args[0].clone()) {
+        Ok(key) => key,
+        Err(error) => return Some(Err(error)),
+    };
     let value = args[1].clone();
     let mut install: Option<(String, Value)> = None;
     let source_var = place.arg_source(1).map(str::to_string);
@@ -74,13 +77,13 @@ pub(super) fn hash_bind_key(
     hash.with_hash_mut(|gc| {
         let data = crate::value::gc_data_mut(gc);
         let key = if data.key_type.is_some() {
-            let key = crate::runtime::utils::value_which_key(&args[0]);
+            let key = crate::runtime::utils::value_which_key(&key_arg);
             data.original_keys
                 .get_or_insert_with(ValueMap::default)
-                .insert(key.clone(), args[0].clone());
+                .insert(key.clone(), key_arg.clone());
             key
         } else {
-            args[0].to_string_value()
+            key_arg.to_string_value()
         };
         data.map.insert(key, Value::container_ref(cell));
     });

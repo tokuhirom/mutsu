@@ -1372,12 +1372,7 @@ impl Interpreter {
                 if let ValueView::Array(keys, ..) = index.view() {
                     for k in keys.iter() {
                         if !key_unconstrained && !self.type_matches_value(&key_type, k) {
-                            return Err(RuntimeError::new(format!(
-                                "Type check failed for object hash key; expected {} but got {} ({})",
-                                key_type,
-                                crate::runtime::utils::value_type_name(k),
-                                k.to_string_value()
-                            )));
+                            return Err(self.typecheck_binding_parameter_failure("key", &key_type, k));
                         }
                     }
                     let default = self.typed_container_default(&hash_val);
@@ -1400,12 +1395,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 if !key_unconstrained && !self.type_matches_value(&key_type, &index) {
-                    return Err(RuntimeError::new(format!(
-                        "Type check failed for object hash key; expected {} but got {} ({})",
-                        key_type,
-                        crate::runtime::utils::value_type_name(&index),
-                        index.to_string_value()
-                    )));
+                    return Err(self.typecheck_binding_parameter_failure("key", &key_type, &index));
                 }
                 let which = self.which_key(&index);
                 let v = self.resolve_hash_entry(&items, &which);

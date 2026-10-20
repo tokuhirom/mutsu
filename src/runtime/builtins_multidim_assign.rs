@@ -276,7 +276,7 @@ impl Interpreter {
             Self::check_assign_key_writable(&hash, &key)?;
         }
         let index = if let Some(constraint) = self.hash_key_type(&current) {
-            self.prepare_object_hash_key(&constraint, index, None)?
+            self.prepare_object_hash_key(&constraint, index)?
         } else {
             index
         };

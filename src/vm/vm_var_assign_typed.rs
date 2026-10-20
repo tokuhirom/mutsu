@@ -321,10 +321,10 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or_else(|| Self::try_reconstruct_typed_key(key, &target_type));
                     if !loan_env!(self, type_matches_value(&target_type, &key_as_typed_value)) {
-                        return Err(self.type_check_element_failure(
-                            var_name,
+                        return Err(self.typecheck_binding_parameter_failure(
+                            "key",
                             constraint,
-                            &Value::str(key.clone()),
+                            &key_as_typed_value,
                         ));
                     }
                     if track_typed_keys {

@@ -190,7 +190,7 @@ fn typed_push(
             && !matches!(kc.as_str(), "" | "Any" | "Mu")
             && !interp.type_matches_value(kc, k)
         {
-            return Err(interp.type_check_element_failure(shown, kc, k));
+            return Err(interp.typecheck_binding_parameter_failure("key", kc, k));
         }
         if let Some(vc) = &value_constraint
             && !matches!(vc.as_str(), "" | "Any" | "Mu")
