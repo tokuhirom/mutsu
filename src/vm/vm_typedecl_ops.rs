@@ -303,6 +303,17 @@ impl Interpreter {
                 }
                 None => qualified_name.clone(),
             };
+            // A stub awaits its definition until the next same-named
+            // declaration of this scope runs; the definition ends the wait.
+            if *is_stub {
+                if self.types.lexical_class_pending.get(&qualified_name) == Some(&storage_name) {
+                    self.types
+                        .lexical_class_awaiting
+                        .insert(storage_name.clone());
+                }
+            } else {
+                self.types.lexical_class_awaiting.remove(&storage_name);
+            }
             // A `my class` binds its source-facing names in the declaring scope's
             // env below. Record what an enclosing same-named binding held first,
             // so an `if`/loop body that declared it hands that binding back on
