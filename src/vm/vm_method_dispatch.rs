@@ -516,7 +516,7 @@ impl Interpreter {
         if let Some(role_name) = &role_context {
             self.env_mut().insert_sym(
                 crate::symbol::wk::role_decl(),
-                Value::package(crate::symbol::Symbol::intern(&role_name)),
+                Value::package(crate::symbol::Symbol::intern(role_name)),
             );
         } else {
             self.env_mut().remove_sym(crate::symbol::wk::role_decl());
