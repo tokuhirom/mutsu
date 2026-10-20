@@ -735,6 +735,27 @@ impl Value {
         data.initialized = like.initialized.clone();
         crate::gc::Gc::new(data)
     }
+    /// Rebuild the backing data of a WHOLE array (not one of its rows) with new
+    /// elements: its `shape` stays, since a typed-element coercion keeps the
+    /// array's structure, and so does its `initialized` set when
+    /// `keep_initialized` (a non-native element type, whose unset cells are
+    /// type-object gaps). Losing the shape made a typed shaped array
+    /// (`my int @a[2;2]`) stop answering `.list` / `.List` (#14243). Rows are
+    /// rebuilt with [`Value::array_data_keeping_initialized`], which leaves the
+    /// shape off on purpose.
+    // Cost: O(n), n = elements (the vector move), plus the `initialized` clone.
+    pub(crate) fn array_data_coerced_whole(
+        like: &ArrayData,
+        items: Vec<Value>,
+        keep_initialized: bool,
+    ) -> crate::gc::Gc<ArrayData> {
+        let mut data = ArrayData::new(items);
+        if keep_initialized {
+            data.initialized = like.initialized.clone();
+        }
+        data.shape = like.shape.clone();
+        crate::gc::Gc::new(data)
+    }
     /// Build an `crate::gc::Gc<ArrayData>` from a plain element vector.
     pub(crate) fn array_arc(items: Vec<Value>) -> crate::gc::Gc<ArrayData> {
         crate::gc::Gc::new(ArrayData::new(items))
