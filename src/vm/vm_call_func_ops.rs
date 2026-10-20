@@ -2054,19 +2054,18 @@ impl Interpreter {
         // does not outlive its load (#12907) -- so consult the cell of the
         // routine the name resolves to before taking the ordinary
         // compiled-function path. A multi's candidates are left to dispatch.
-        let composed_def = if call_me_override.is_none()
-            && crate::value::RoutineCell::any_composed()
-        {
-            if crate::qualified::is_qualified(name_sym) {
-                self.registry().function_def(name_sym)
-            } else if !self.has_multi_candidates_cached_sym(name_sym) {
-                self.resolve_function(name)
+        let composed_def =
+            if call_me_override.is_none() && crate::value::RoutineCell::any_composed() {
+                if crate::qualified::is_qualified(name_sym) {
+                    self.registry().function_def(name_sym)
+                } else if !self.has_multi_candidates_cached_sym(name_sym) {
+                    self.resolve_function(name)
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
         if let Some(def) = composed_def
             && let Some(current) = self.call_me_view_of_def(&def)
         {
