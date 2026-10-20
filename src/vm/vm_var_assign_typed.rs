@@ -70,7 +70,7 @@ impl Interpreter {
                     false,
                 )?;
                 val = Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(coerced)),
+                    Value::array_data_coerced_whole(&items, coerced, false),
                     kind,
                 );
             }
@@ -275,11 +275,8 @@ impl Interpreter {
             // read as assigned. A NATIVE element type has no type object — its
             // unset cells become the numeric/string zero, a real value — so it
             // has no gap markers to track and keeps the cheaper `None`.
-            let data = if crate::runtime::native_types::is_native_array_element_type(&constraint) {
-                crate::gc::Gc::new(crate::value::ArrayData::new(coerced_items))
-            } else {
-                Value::array_data_keeping_initialized(&items, coerced_items)
-            };
+            let native = crate::runtime::native_types::is_native_array_element_type(&constraint);
+            let data = Value::array_data_coerced_whole(&items, coerced_items, !native);
             return Ok(Value::array_with_kind(data, kind));
         }
 
