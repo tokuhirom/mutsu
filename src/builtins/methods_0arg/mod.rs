@@ -1,6 +1,6 @@
+use crate::builtins::method_table::receiver_step::Step;
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::builtins::method_table::receiver_step::Step;
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 
 pub(crate) mod coercion;
