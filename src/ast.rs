@@ -753,6 +753,10 @@ pub(crate) struct RoutineBodyFacts {
     /// (`sub f() { return-rw $v }; f() = 5` writes `$v` in Rakudo), so the
     /// lvalue-assignment machinery treats it as rw-capable (ADR-0059).
     pub(crate) uses_return_rw: bool,
+    /// The routine's implicit result is a decontainerized value its caller
+    /// sinks (#11537; `routine_scans::result_is_decontainerized`). Says
+    /// nothing about the `is rw`/`is raw` traits, which the caller checks.
+    pub(crate) result_is_decontainerized: bool,
     /// Line-insensitive identity of the declaration (params, param_defs, body
     /// with top-level `SetLine` markers stripped) — the redeclaration
     /// comparison keys on it. Carried here so a plan-derived def keeps its
@@ -2957,6 +2961,7 @@ pub(crate) use signature_decl::{
     is_group_declaration, scope_statements,
 };
 pub(crate) mod regex_placeholders;
+pub(crate) mod result_decont;
 mod scope_members;
 pub(crate) mod scope_scan;
 mod tail;

@@ -775,9 +775,9 @@ impl Compiler {
     /// Whether a bare statement expression yields a syntactically fresh rvalue
     /// (a method call / `Foo.new`) whose value may invoke a user-defined `sink`
     /// method in sink context. Bare variables (`$x;`) and function-call returns
-    /// (`frob();`, possibly `is rw` → container) are excluded: Raku keeps those
-    /// container-wrapped and does not auto-sink them, and mutsu decontainerizes
-    /// before `SinkPop` so the two cases are indistinguishable at runtime.
+    /// (`frob();`) are excluded here: whether their value is a container
+    /// depends on the callee, which `OpCode::SinkPopCall` asks at run time
+    /// ([`Compiler::emit_sink_pop_call`], #11537).
     pub(super) fn stmt_value_may_user_sink(expr: &Expr) -> bool {
         match expr {
             Expr::MethodCall { .. } => true,
@@ -798,6 +798,14 @@ impl Compiler {
             },
             _ => false,
         }
+    }
+
+    /// Sink the value of a statement call to the routine `name`: its user
+    /// `sink` runs when the callee hands back a decontainerized value
+    /// (`OpCode::SinkPopCall`, #11537).
+    pub(super) fn emit_sink_pop_call(&mut self, name: Symbol) {
+        let name_idx = self.code.add_constant(Value::str(name.resolve()));
+        self.code.emit(OpCode::SinkPopCall(name_idx));
     }
 
     /// Whether a bare statement expression is a pure container read — a bare
@@ -1016,6 +1024,10 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                 } else if Self::stmt_value_is_assignment(expr) {
                     self.code.emit(OpCode::SinkPopAssign);
+                } else if let Expr::Call { name, .. } = expr {
+                    // A routine call's value: whether its `sink` runs depends on
+                    // whether the callee hands back a container (#11537).
+                    self.emit_sink_pop_call(*name);
                 } else {
                     self.code.emit(OpCode::SinkPop(
                         Self::stmt_value_may_user_sink(expr),
@@ -3106,8 +3118,9 @@ impl Compiler {
                     listop: false,
                 };
                 self.compile_expr(&call_expr);
-                // Sink context, exactly as the normalized path above.
-                self.code.emit(OpCode::SinkPop(false, true));
+                // Sink context, as the normalized path above; a routine's own
+                // result may run its `sink` (#11537).
+                self.emit_sink_pop_call(*name);
             }
             // Loop control
             Stmt::Goto(expr) => {

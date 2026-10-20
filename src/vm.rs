@@ -374,6 +374,7 @@ mod vm_scope_ops;
 mod vm_set_arith_ops;
 mod vm_set_ops;
 mod vm_sigilless_aggregate_store;
+mod vm_sink_call;
 pub(crate) mod vm_smart_match;
 mod vm_smartmatch_ops;
 pub(crate) mod vm_smartmatch_sync;
