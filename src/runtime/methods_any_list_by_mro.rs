@@ -160,11 +160,10 @@ impl Interpreter {
                 self.reify_map_grep_seq(&item)?;
                 self.reify_gather_seq(&item)?;
                 match item.view() {
-                    ValueView::Array(sub_items, _) => {
-                        flat_items.extend(sub_items.iter().cloned());
-                    }
-                    ValueView::Seq(sub_items) => {
-                        flat_items.extend(sub_items.iter().cloned());
+                    // `.flatmap` is `.map(...).flat`: a mapper result flattens
+                    // all the way down, itemized sublists aside.
+                    ValueView::Array(..) | ValueView::Seq(..) => {
+                        crate::builtins::flat_val(&item, &mut flat_items, true);
                     }
                     // Ranges are iterable values too. A mapper can
                     // return a Range (for example, `* * 2` applied to
