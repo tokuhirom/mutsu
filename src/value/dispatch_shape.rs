@@ -37,6 +37,7 @@
 //!   decodes `Package("Int")`; only a row flagged `TYPE_OBJECT_OK` answers it.
 
 mod instances;
+pub(super) mod iterator_kind;
 mod opaque;
 
 use crate::symbol::Symbol;
@@ -283,6 +284,11 @@ pub(crate) enum DispatchShape {
     RakuSystemic,
     /// `Compiler` (opaque).
     Compiler,
+    /// A built-in iterator that is not a `PredictiveIterator` (opaque; the
+    /// shape is decoded from the instance's attributes, `iterator_kind.rs`).
+    Iterator,
+    /// A built-in iterator that knows its count (opaque).
+    PredictiveIterator,
     /// `Stash` (opaque): its associative indexing stays with the hash paths,
     /// which read [`Value::dispatch_shape`](crate::value::Value::dispatch_shape).
     Stash,
@@ -306,7 +312,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 96] = [
+    pub(crate) const ALL: [DispatchShape; 98] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -402,6 +408,8 @@ impl DispatchShape {
         DispatchShape::RakuAstNode,
         DispatchShape::RakuAstOrigin,
         DispatchShape::RakuAstOriginSource,
+        DispatchShape::Iterator,
+        DispatchShape::PredictiveIterator,
         DispatchShape::Stash,
     ];
 

@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 /// The instance attribute holding the stream body.
-pub(crate) const MAP_GREP_STREAM_ATTR: &str = "map_grep_stream";
+pub(crate) use crate::value::MAP_GREP_STREAM_ATTR;
 
 /// Build the `Iterator` instance over a stolen `.map`/`.grep` source.
 /// `prefix` is what a prefix pull already produced; `lazy` is the Seq's

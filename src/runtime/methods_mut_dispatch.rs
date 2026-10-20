@@ -601,17 +601,8 @@ impl Interpreter {
                     "callmethodmutwithvalues",
                     "iterator-protocol",
                 );
-                if let Some(owners) = crate::builtins::method_table::iterator_owners_of(&target)
-                    && let Some(result) = crate::builtins::method_table::invoke_owner(
-                        self,
-                        owners,
-                        method,
-                        &args,
-                        || target.clone(),
-                    )
-                {
-                    return result;
-                }
+                // The rows are the opaque shapes' (`Iterator`, `PredictiveIterator`),
+                // reached by the by-name dispatch.
                 return self.call_method_with_values(target, method, args);
             }
 
