@@ -352,7 +352,7 @@ impl Interpreter {
                 .collect_multi_dim_leaf_cells(&deref_target, &dims, &mut cells)
                 .is_some()
             {
-                self.stack.push(Value::array(cells));
+                self.stack.push(Value::bound_slice_array(cells));
                 return Ok(());
             }
         } else if let Some(cell) = self.multi_dim_scalar_autoviv_cell(&target, &dims) {

@@ -126,37 +126,10 @@ impl Interpreter {
         // replacing the slot, bounded by the slice's own (fixed) arity —
         // extra RHS values are discarded, matching raku's bound-slice
         // semantics.
-        if name.starts_with('@')
-            && matches!(
-                self.env()
-                    .get(&Self::bound_array_slice_marker_key(name))
-                    .map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-            && let ValueView::Array(items, ..) = self.locals[idx].view()
-            && items
-                .iter()
-                .any(|v| v.is_container_ref() || v.is_hash_entry_ref_value())
-        {
-            let cells: Vec<Value> = items.iter().cloned().collect();
-            let rhs_vals = self.assignment_rhs_values(&raw_val)?;
-            let mut result = Vec::with_capacity(cells.len());
-            for (i, cell_val) in cells.iter().enumerate() {
-                let v = rhs_vals
-                    .get(i)
-                    .cloned()
-                    .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
-                if let ValueView::ContainerRef(cell) = cell_val.view() {
-                    Value::store_through_cell(&cell, &v);
-                } else if matches!(cell_val.view(), ValueView::HashEntryRef { .. }) {
-                    let cell =
-                        crate::gc::Gc::new(crate::value::ContainerCell::new(cell_val.clone()));
-                    Value::store_through_cell(&cell, &v);
-                    self.locals[idx].array_set_in_place(i, Value::container_ref(cell));
-                }
-                result.push(v);
-            }
-            self.stack.push(Value::array(result));
+        if name.starts_with('@') && Self::is_bound_array_slice_holder(&self.locals[idx]) {
+            let holder = self.locals[idx].clone();
+            let stored = self.store_through_bound_slice(&holder, &raw_val)?;
+            self.stack.push(stored);
             return Ok(());
         }
         let mut val = if name.starts_with('%') {

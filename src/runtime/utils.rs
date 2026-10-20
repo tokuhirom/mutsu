@@ -47,14 +47,6 @@ pub(crate) fn twigil_dynamic_alias(name: &str) -> Option<String> {
     None
 }
 
-/// The env key marking `name` as a genuine bound array SLICE (`@slice :=
-/// @array[1,2]`), i.e. "this variable's elements are write-through cells". Set
-/// only at the bind moment that produces them, and cleared on every
-/// redeclaration of the same name.
-pub(crate) fn bound_array_slice_key(name: &str) -> String {
-    MetaNs::BoundArraySlice.owned_key_for_str(name)
-}
-
 /// The env key recording that a `$` name was `:=`-bound straight to a value and
 /// so owns no Scalar container (`my $i := 42`). Written at the declaration's
 /// store and speculatively cleared on every other scalar declaration, so — like

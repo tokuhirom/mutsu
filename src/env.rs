@@ -345,11 +345,6 @@ static SIGILLESS_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// over-set only makes the (correct) probe run.
 static SIGILLESS_READONLY_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
-/// Monotonic, process-global flag for `__mutsu_bound_array_slice::*` markers
-/// (sigilless multi-dim slice binds), consulted by
-/// `distribute_bound_multidim_slice` on every scalar `SetLocal`/assignment.
-static BOUND_SLICE_KEY_SEEN: AtomicBool = AtomicBool::new(false);
-
 /// Monotonic, process-global flag for `__mutsu_scalar_bind_no_container::*`
 /// markers (`my $i := 42`, recording that the name owns no Scalar container).
 ///
@@ -357,7 +352,7 @@ static BOUND_SLICE_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// redeclaration could not inherit an earlier same-named variable's state — an
 /// `env_mut()` (and so a possible CoW deep clone of the frame env) per `my $x`,
 /// for a key that a program without a single `:=`-to-value bind never holds.
-/// Same soundness argument as [`BOUND_SLICE_KEY_SEEN`]: the only creation site
+/// Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: the only creation site
 /// goes through a noting insert, the flag is monotonic, and an over-set only
 /// makes the (correct) clear run.
 static SCALAR_NO_CONTAINER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
@@ -427,13 +422,6 @@ pub(crate) fn sigilless_meta_keys_possible() -> bool {
     SIGILLESS_META_KEY_SEEN.load(Ordering::Relaxed)
 }
 
-/// True if any `__mutsu_bound_array_slice::*` marker may exist in some env.
-/// See [`BOUND_SLICE_KEY_SEEN`].
-#[inline]
-pub(crate) fn bound_array_slice_possible() -> bool {
-    BOUND_SLICE_KEY_SEEN.load(Ordering::Relaxed)
-}
-
 /// True if any `__mutsu_scalar_bind_no_container::*` marker may exist in some
 /// env. See [`SCALAR_NO_CONTAINER_KEY_SEEN`].
 #[inline]
@@ -488,8 +476,6 @@ pub(crate) fn note_env_key(key: &str) {
             || key.starts_with("__mutsu_predictive_seq_iter::")
         {
             CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
-        } else if key.starts_with("__mutsu_bound_array_slice::") {
-            BOUND_SLICE_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_scalar_bind_no_container::") {
             SCALAR_NO_CONTAINER_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_index::")
