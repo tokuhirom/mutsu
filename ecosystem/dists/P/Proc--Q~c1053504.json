@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 64.46,
+        "secs": 64.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 74.19,
+        "secs": 80.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.78,
+        "secs": 3.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.21,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,29 +82,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.75,
+        "secs": 3.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "3 batch",
+        "nok": 1,
+        "ok": 1,
         "plan": 2,
-        "secs": 6.11,
+        "secs": 6.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/04-batch.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.81,
+        "secs": 6.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,7 +117,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.22,
+        "secs": 4.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +127,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 7.17,
+        "secs": 14.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -138,10 +139,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-18",
+    "date": "2026-10-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e152e90b",
+    "mutsu_commit": "5fdb286f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -152,13 +153,13 @@
     "index": "fez",
     "url": "https://raw.githubusercontent.com/raku/REA/main/archive/P/Proc%3A%3AQ/Proc%3A%3AQ%3Aver%3C1.001003%3E%3Aauth%3Cgithub%3Araku-community-modules%3E.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 34,
     "baseline_files": 5,
-    "mutsu_assertions": 34,
-    "parity_files": 5,
-    "regressed_files": 0
+    "mutsu_assertions": 33,
+    "parity_files": 4,
+    "regressed_files": 1
   },
   "version": "1.001003"
 }

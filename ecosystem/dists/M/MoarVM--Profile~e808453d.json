@@ -26,14 +26,14 @@
   "dist": "MoarVM::Profile",
   "files": [],
   "load": {
-    "MoarVM::Profile": "Could not instantiate role 'DefaultParts\u000010675528128736002048' because it died with X::Method::NotFound; exception details:"
+    "MoarVM::Profile": "Could not instantiate role 'DefaultParts\u00009711277350905184256' because it died with X::Method::NotFound; exception details:"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-18",
+    "date": "2026-10-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e152e90b",
+    "mutsu_commit": "5fdb286f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

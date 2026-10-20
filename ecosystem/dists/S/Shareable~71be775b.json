@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,29 +26,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.37,
+        "secs": 2.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown function: serialize",
         "nok": 0,
-        "ok": 6,
+        "ok": 1,
         "plan": 6,
-        "secs": 0.14,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/01-methods.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.92,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,10 +61,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-18",
+    "date": "2026-10-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e152e90b",
+    "mutsu_commit": "5fdb286f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -74,13 +75,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/HA/SHAREABLE/46e1c96a56a93d308c299771036e3146b24f1504.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 2,
-    "mutsu_assertions": 7,
-    "parity_files": 2,
-    "regressed_files": 0
+    "mutsu_assertions": 2,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.1"
 }

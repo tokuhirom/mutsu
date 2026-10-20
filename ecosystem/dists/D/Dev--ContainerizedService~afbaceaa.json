@@ -9,21 +9,89 @@
     "unresolved": []
   },
   "dist": "Dev::ContainerizedService",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Successfully ran development script",
+        "nok": 7,
+        "ok": 0,
+        "plan": 7,
+        "secs": 4.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/clickhouse.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.65,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.1,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/postgres.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.06,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.11,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/redis.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.62,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "Dev::ContainerizedService": "ok",
     "Dev::ContainerizedService::Spec": "ok",
-    "Dev::ContainerizedService::Spec::ClickHouse": "Attribute $!port:8123 not declared in class Dev::ContainerizedService::Spec::ClickHouse",
-    "Dev::ContainerizedService::Spec::Postgres": "Attribute $!port:5432 not declared in class Dev::ContainerizedService::Spec::Postgres",
-    "Dev::ContainerizedService::Spec::Redis": "Attribute $!port:6379 not declared in class Dev::ContainerizedService::Spec::Redis",
+    "Dev::ContainerizedService::Spec::ClickHouse": "ok",
+    "Dev::ContainerizedService::Spec::Postgres": "ok",
+    "Dev::ContainerizedService::Spec::Redis": "ok",
     "Dev::ContainerizedService::Tool": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-18",
+    "date": "2026-10-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e152e90b",
+    "mutsu_commit": "5fdb286f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -34,13 +102,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/EV/DEV_CONTAINERIZEDSERVICE/f22ae8ad6bf7f81168fff42ff6461eb84ec05873.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 3,
+    "baseline_files": 3,
+    "mutsu_assertions": 2,
+    "parity_files": 2,
+    "regressed_files": 1
   },
   "version": "0.3.4"
 }

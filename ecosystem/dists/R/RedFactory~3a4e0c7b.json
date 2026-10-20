@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.41,
+        "secs": 8.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -44,7 +44,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 60.53,
+        "secs": 142.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,11 +53,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No matching candidate found for the parametric role",
-        "nok": 3,
-        "ok": 14,
+        "first_failure": "Cannot resolve caller first-name(Person:D: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
         "plan": null,
-        "secs": 11.03,
+        "secs": 13.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -67,7 +67,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.87,
+        "secs": 4.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.33,
+        "secs": 4.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.91,
+        "secs": 1.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -101,10 +101,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-18",
+    "date": "2026-10-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e152e90b",
+    "mutsu_commit": "5fdb286f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -119,7 +119,7 @@
   "totals": {
     "baseline_assertions": 31,
     "baseline_files": 3,
-    "mutsu_assertions": 17,
+    "mutsu_assertions": 3,
     "parity_files": 1,
     "regressed_files": 2
   },
