@@ -323,7 +323,19 @@ impl Interpreter {
         // the alias probe uses the memoized `Pkg::name` symbols instead of a
         // `format!` + intern per enclosing package on every bareword read.
         let imported_routine = self.imported_routine_alias_in_scope(name);
+        // A package bound under the name for another reason (a role's sigilless
+        // type parameter `\dimension` bound to the enum `Lengths`) is a term,
+        // not the type this routine shares its spelling with.
+        let bound_to_other_package = imported_routine
+            && [self.env().get(name).cloned(), self.term_binding(name)]
+                .into_iter()
+                .flatten()
+                .any(|v| {
+                    matches!(v.view(), ValueView::Package(p)
+                        if crate::qualified::unqualified_part(p).as_str() != name && p != "Any")
+                });
         if imported_routine
+            && !bound_to_other_package
             && self.has_type(name)
             && (self.has_declared_function(name) || self.has_multi_function(name))
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
@@ -662,6 +674,13 @@ impl Interpreter {
                 }
                 v
             } else if matches!(v.view(), ValueView::Package(pkg) if pkg.as_str() != name) {
+                // Only a package that IS the type of this short name (`class
+                // Time::localtime` binds `localtime`) gives way to the imported
+                // routine. A package bound under the name for another reason
+                // (a role's sigilless type parameter `\dimension` bound to the
+                // enum `Lengths`) is a term, and the term wins.
+                let named_by_leaf = matches!(v.view(), ValueView::Package(pkg)
+                    if crate::qualified::unqualified_part(pkg).as_str() == name);
                 // A package binding can share a short name with an imported
                 // routine (`class Time::localtime` and the exported
                 // `localtime` sub). In term position the callable wins; the
@@ -669,6 +688,7 @@ impl Interpreter {
                 // is especially visible when the routine is passed as a
                 // no-paren listop argument (`ok-time localtime`).
                 if imported_routine
+                    && named_by_leaf
                     && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
                         .ok()
                         .flatten()

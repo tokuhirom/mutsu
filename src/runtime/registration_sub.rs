@@ -1375,6 +1375,22 @@ impl Interpreter {
                     Some(ValueView::Bool(true))
                 )));
         let code_var_key = format!("&{}", name);
+        // The same declaration re-executing is no redeclaration: a role body's
+        // `sub ... is export` runs again every time the role body does (a
+        // specialization, `Role.method`), while the first run's export already
+        // sits in the importer's `&name` binding (CSS::Units' `sub dimension`).
+        // Recorded under the package the FIRST run installed it in, which is
+        // not this one's when the role body re-runs for a caller's package, so
+        // the whole table is asked; only reached when a conflict would be raised.
+        let same_site_reexecution = || {
+            !multi
+                && site_fingerprint.is_some_and(|site_fp| {
+                    self.dispatch
+                        .registered_fn_fingerprints
+                        .values()
+                        .any(|(fp, _)| *fp == site_fp)
+                })
+        };
         // A sub declared inside `EVAL` is lexically scoped to that EVAL and its
         // registry is restored afterwards, so it may shadow an `&name` that
         // already existed in the enclosing scope (e.g. a loop's `my &name := EVAL
@@ -1400,6 +1416,7 @@ impl Interpreter {
                 && !is_our_scoped
                 && !is_method_value_decl
                 && !operator_alias
+                && !same_site_reexecution()
             {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
@@ -1537,7 +1554,11 @@ impl Interpreter {
             if has_multi && !has_proto && !shadows_outer_eval_multi {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
-            if has_single && !existing_is_stub && !shadows_outer_eval_single {
+            if has_single
+                && !existing_is_stub
+                && !shadows_outer_eval_single
+                && !same_site_reexecution()
+            {
                 // A stub declaration re-arriving from its own site: `RegisterSub`
                 // executes both hoisted and in place, so by the time the stub's
                 // in-place copy runs, the real definition it forward-declared may
