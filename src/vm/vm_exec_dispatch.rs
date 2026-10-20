@@ -185,7 +185,12 @@ impl Interpreter {
         if result.is_ok() && self.pending_where_exception.is_none() {
             return Ok(());
         }
-        self.finish_op_result(code, *ip, result)
+        match self.finish_op_result(code, *ip, result) {
+            Err(err) if Self::op_raise_resumes_in_place(&code.ops[*ip]) => {
+                self.resume_op_raise(code, ip, err)
+            }
+            result => result,
+        }
     }
 
     /// What [`Self::exec_one`] does with an instruction's result, for a JIT

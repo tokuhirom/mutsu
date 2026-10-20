@@ -369,6 +369,7 @@ mod vm_rw_attr_container;
 mod vm_rw_param_rebind;
 mod vm_scalar_incdec;
 mod vm_scalar_param_bind;
+mod vm_resume_op_raise;
 mod vm_scope_ops;
 mod vm_set_arith_ops;
 mod vm_set_ops;
