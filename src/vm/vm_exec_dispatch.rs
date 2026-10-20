@@ -1927,12 +1927,28 @@ impl Interpreter {
                     && !was_scalar_bind
                     && !self.vardecl_context().get()
                     && name.starts_with('\\')
-                    && crate::env::bound_array_slice_possible()
                     && let Some(holder) = self.env().get_sym(name_sym).map(Value::deref_container)
                     && let Some(res) =
                         self.distribute_bound_multidim_slice(&name, &holder, &raw_val)
                 {
                     res?;
+                    *ip += 1;
+                    return Ok(());
+                }
+                // The `@` twin: a closure or routine assigning to a captured
+                // bound slice (`my @s := @a[1, 2]; { @s = 8, 9 }()`) writes
+                // through its cells, as the declaring frame's `SetLocal` does.
+                // The mark is on the bound value (ADR-0097), so it reaches
+                // every frame that sees the variable.
+                if !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !self.vardecl_context().get()
+                    && name.starts_with('@')
+                    && let Some(holder) = self.env().get_sym(name_sym).map(Value::deref_container)
+                    && Self::is_bound_array_slice_holder(&holder)
+                {
+                    self.store_through_bound_slice(&holder, &raw_val)?;
                     *ip += 1;
                     return Ok(());
                 }

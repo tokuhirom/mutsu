@@ -2383,6 +2383,17 @@ pub struct ArrayData {
     /// slots are `0` / `0e0` / the null string, where an untyped `nqp::list`
     /// grows with null. Every other array is [`NqpElemKind::Object`].
     pub nqp_elem: NqpElemKind,
+    /// This array is a `:=`-bound SLICE (`my @s := @a[1, 2]`, a sigilless
+    /// `\t` bound to `@a[0;0;(0,1)]`): its elements are write-through
+    /// `ContainerRef` cells into the source, so a whole-value assignment
+    /// distributes through them at fixed arity instead of replacing them.
+    /// Set by the bind on the bound value itself (ADR-0097: binding metadata
+    /// lives on the binding's home, not under a name-keyed env marker), so it
+    /// cannot outlive the binding or leak to a later same-named variable.
+    /// "Elements are cells" alone is not the signal: `.grep`'s rw-topic
+    /// promotion can leave cells in an unrelated array that must keep plain
+    /// replace semantics.
+    pub bound_slice: bool,
 }
 
 /// See [`ArrayData::nqp_elem`]. MoarVM keeps the same distinction as the

@@ -55,6 +55,43 @@ impl Value {
         }
     }
 
+    /// A fresh `List` of `cells` marked as a `:=`-bound slice
+    /// ([`ArrayData::bound_slice`]).
+    // Cost: O(1) beyond moving `cells`.
+    pub fn bound_slice_array(cells: Vec<Value>) -> Value {
+        let mut data = ArrayData::new(cells);
+        data.bound_slice = true;
+        Value::array_with_kind(crate::gc::Gc::new(data), ArrayKind::List)
+    }
+
+    /// This array re-homed in a fresh container marked as a `:=`-bound slice
+    /// (sharing its element cells), or `self` unchanged when it already is
+    /// one or is not an Array. A copy rather than an in-place flag store: the
+    /// value may be reachable from elsewhere, and its only consumer is the
+    /// binding being made.
+    // Cost: O(n), n = the array's elements (copied once per bind).
+    pub fn with_bound_slice_flag(self) -> Value {
+        match self.view() {
+            ValueView::Array(arc, kind) if !arc.bound_slice => {
+                let mut data = (**arc).clone();
+                data.bound_slice = true;
+                Value::array_with_kind(crate::gc::Gc::new(data), kind)
+            }
+            _ => self,
+        }
+    }
+
+    /// Whether this value (seen through a container cell) is an array marked
+    /// by [`mark_bound_slice`](Self::mark_bound_slice).
+    // Cost: O(1).
+    pub fn is_bound_slice(&self) -> bool {
+        match self.view() {
+            ValueView::Array(arc, _) => arc.bound_slice,
+            ValueView::ContainerRef(_) => self.deref_container().is_bound_slice(),
+            _ => false,
+        }
+    }
+
     /// A copy of this `Array`/`Hash` that shares nothing with the original: a
     /// fresh `Gc` holding cloned data (elements, and the container's own
     /// metadata). `None` for anything that is not a real `Array`/`Hash`.

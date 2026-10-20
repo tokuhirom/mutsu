@@ -535,7 +535,7 @@ impl Interpreter {
                             }
                         })
                         .collect();
-                    self.stack.push(Value::array(cells));
+                    self.stack.push(Value::bound_slice_array(cells));
                 } else {
                     self.stack.push(resolved.clone());
                     self.stack.push(index);

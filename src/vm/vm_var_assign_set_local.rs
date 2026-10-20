@@ -10,9 +10,6 @@ impl Interpreter {
     /// cleared on every redeclaration of the same name. See the write-through
     /// checks in `vm_var_assign_local.rs` and this file's non-bind path for
     /// why "elements are cells" alone is not a safe trigger.
-    pub(crate) fn bound_array_slice_marker_key(name: &str) -> String {
-        runtime::bound_array_slice_key(name)
-    }
 
     /// True when a `$`-sigil `:=` bind SOURCE has no assignable container
     /// behind it, so a later `$x = v` through the bound name is rakudo's
@@ -160,34 +157,53 @@ impl Interpreter {
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return None;
         }
-        // No `__mutsu_bound_array_slice::*` marker was ever created (the
-        // common program): skip the per-assignment `format!` + env probe.
-        if !crate::env::bound_array_slice_possible() {
+        // Only a value the bind marked as a slice distributes (ADR-0097:
+        // the mark lives on the bound value, not under a name-keyed key).
+        if !holder.is_bound_slice() {
             return None;
         }
-        if !matches!(
-            self.env()
-                .get(&Self::bound_array_slice_marker_key(name))
-                .map(Value::view),
-            Some(ValueView::Bool(true))
-        ) {
-            return None;
-        }
-        let cells: Vec<Value> = match holder.view() {
+        match holder.view() {
             ValueView::Array(items, ..)
                 if !items.is_empty()
                     && items
                         .iter()
-                        .all(|v| v.is_container_ref() || v.is_hash_entry_ref_value()) =>
-            {
-                items.iter().cloned().collect()
-            }
+                        .all(|v| v.is_container_ref() || v.is_hash_entry_ref_value()) => {}
             _ => return None,
+        }
+        Some(self.store_through_bound_slice(holder, rhs).map(|_| ()))
+    }
+
+    /// Whether an `@` variable's value is a `:=`-bound slice whose whole-value
+    /// assignment writes through its element cells: the bind marked it
+    /// ([`Value::is_bound_slice`]) and it still holds at least one cell.
+    // Cost: O(n), n = the slice's elements (stops at the first cell).
+    pub(crate) fn is_bound_array_slice_holder(holder: &Value) -> bool {
+        holder.is_bound_slice()
+            && matches!(holder.view(), ValueView::Array(items, ..)
+                if items.iter().any(|v| v.is_container_ref() || v.is_hash_entry_ref_value()))
+    }
+
+    /// Distribute a whole-value assignment through a bound slice's element
+    /// cells (`@s := @a[1, 2]; @s = 8, 9, 10`), bounded by the slice's own
+    /// (fixed) arity: extra RHS values are discarded and a missing one stores
+    /// `Any`, matching raku's bound-slice semantics (§4 BLOCKERS.md test 15).
+    /// A deferred hash-entry token is promoted to a cell on its first write,
+    /// in place in `holder`. Returns the stored values as a `List`. The one
+    /// implementation behind every assign path that meets a bound slice: the
+    /// declaring frame's `SetLocal`/`AssignExprLocal` and a closure's or
+    /// routine's `SetGlobal`.
+    // Cost: O(n + m), n = the slice's arity, m = the RHS's elements.
+    pub(crate) fn store_through_bound_slice(
+        &mut self,
+        holder: &Value,
+        rhs: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let cells: Vec<Value> = match holder.view() {
+            ValueView::Array(items, ..) => items.iter().cloned().collect(),
+            _ => Vec::new(),
         };
-        let rhs_vals = match self.assignment_rhs_values(rhs) {
-            Ok(v) => v,
-            Err(e) => return Some(Err(e)),
-        };
+        let rhs_vals = self.assignment_rhs_values(rhs)?;
+        let mut stored = Vec::with_capacity(cells.len());
         for (i, cell_val) in cells.iter().enumerate() {
             let v = rhs_vals
                 .get(i)
@@ -200,8 +216,9 @@ impl Interpreter {
                 Value::store_through_cell(&cell, &v);
                 holder.array_set_in_place(i, Value::container_ref(cell));
             }
+            stored.push(v);
         }
-        Some(Ok(()))
+        Ok(Value::array(stored))
     }
 
     /// `:=` bind of a Positional value to an `@`-sigiled target: preserves the
@@ -572,7 +589,7 @@ impl Interpreter {
         //     (`code.readonly_sym(idx)`), so only a set marker declines;
         //   - `__mutsu_state_key::`/`__mutsu_predictive_seq_iter::` keys have
         //     no consumer on the store path at all.
-        !(crate::env::bound_array_slice_possible()
+        !(self.locals.get(idx).is_some_and(Value::is_bound_slice)
             || self.bound_decont_active().get()
             || !self.pending_alias_bind_names.is_empty()
             || self.slot_is_bind_pair_source(idx)
@@ -1483,9 +1500,9 @@ impl Interpreter {
             && !is_vardecl
             && !is_rebind
             && !scalar_bind
-            // Gate before the String/holder clones: no slice marker was ever
-            // created in the common program.
-            && crate::env::bound_array_slice_possible()
+            // Gate before the String/holder clones: only a bound slice
+            // distributes.
+            && self.locals[idx].is_bound_slice()
         {
             let name = code.locals[idx].clone();
             let holder = self.locals[idx].clone();
@@ -1637,18 +1654,6 @@ impl Interpreter {
             {
                 self.locals[idx] = Value::NIL;
             }
-            // Clear a stale bound-array-slice marker (§4 BLOCKERS.md test 15)
-            // left over from an earlier same-named variable — a fresh
-            // declaration (bind or not) must not inherit "this array's
-            // elements are write-through cells" from a prior scope/iteration.
-            // Re-set below, in the `is_bind` arm, only if THIS declaration is
-            // genuinely a bound array slice. Skipped entirely when no such
-            // marker was ever created (the common program).
-            if crate::env::bound_array_slice_possible()
-                && let Some(sym) = code.bound_slice_sym(idx)
-            {
-                self.env_mut().remove_sym(sym);
-            }
         }
 
         // Apply the `:=`-to-immutable-literal marking decided above, now that
@@ -1728,37 +1733,10 @@ impl Interpreter {
         if !is_bind
             && !is_rebind
             && name.starts_with('@')
-            && matches!(
-                self.env()
-                    .get(&Self::bound_array_slice_marker_key(name))
-                    .map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-            && let ValueView::Array(items, ..) = self.locals[idx].view()
-            && items
-                .iter()
-                .any(|v| v.is_container_ref() || v.is_hash_entry_ref_value())
+            && Self::is_bound_array_slice_holder(&self.locals[idx])
         {
-            let cells: Vec<Value> = items.iter().cloned().collect();
-            let rhs_vals = self.assignment_rhs_values(&raw_popped)?;
-            for (i, cell_val) in cells.iter().enumerate() {
-                if let ValueView::ContainerRef(cell) = cell_val.view() {
-                    let v = rhs_vals
-                        .get(i)
-                        .cloned()
-                        .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
-                    Value::store_through_cell(&cell, &v);
-                } else if matches!(cell_val.view(), ValueView::HashEntryRef { .. }) {
-                    let v = rhs_vals
-                        .get(i)
-                        .cloned()
-                        .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
-                    let cell =
-                        crate::gc::Gc::new(crate::value::ContainerCell::new(cell_val.clone()));
-                    Value::store_through_cell(&cell, &v);
-                    self.locals[idx].array_set_in_place(i, Value::container_ref(cell));
-                }
-            }
+            let holder = self.locals[idx].clone();
+            self.store_through_bound_slice(&holder, &raw_popped)?;
             return Ok(());
         }
         // Capture the old hash Arc before assignment for circular reference fixup.
@@ -2159,25 +2137,24 @@ impl Interpreter {
                 let old = self.locals[idx].clone();
                 assigned = self.array_assign_nil_container_default(name, &old, assigned);
             }
-            // Mark a genuine bound array SLICE (`@slice := @array[1,2]`, §4
-            // BLOCKERS.md test 15): its OWN elements are shared `ContainerRef`
-            // cells or deferred entry tokens from the bind-time slice promotion
-            // (`vm_var_index_ops.rs`).
-            // This marker is the ONLY safe trigger for the write-through
-            // behavior in `vm_var_assign_local.rs`/this file's non-bind path —
-            // "elements are cells" alone is NOT a safe signal, since unrelated
-            // machinery (e.g. `.grep`'s rw-topic element promotion) can also
-            // leave cell elements in a plain array that must NOT get the
-            // fixed-arity write-through treatment.
+            // Mark a genuine bound array SLICE (`@slice := @array[1,2]`,
+            // `@s := %h<a b>`, §4 BLOCKERS.md test 15): its OWN elements are
+            // shared `ContainerRef` cells or entry tokens. The mark lives on
+            // the bound value ([`ArrayData::bound_slice`], ADR-0097) and is
+            // the ONLY trigger for the write-through behavior in
+            // `vm_var_assign_local.rs`/this file's non-bind path — "elements
+            // are cells" alone is NOT a safe signal, since unrelated machinery
+            // (e.g. `.grep`'s rw-topic element promotion) can also leave cell
+            // elements in a plain array that must keep plain replace semantics.
             if is_bind
                 && name.starts_with('@')
                 && let ValueView::Array(items, ..) = assigned.view()
+                && !items.bound_slice
                 && items
                     .iter()
                     .any(|v| v.is_container_ref() || v.is_hash_entry_ref_value())
             {
-                self.env_mut()
-                    .insert(Self::bound_array_slice_marker_key(name), Value::TRUE);
+                assigned = assigned.with_bound_slice_flag();
             }
             // Preserve shaped array property on re-assignment, but only if the
             // new value is NOT already a shaped array (e.g. from Array.new(:shape(...)))
