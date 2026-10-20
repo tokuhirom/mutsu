@@ -2405,6 +2405,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     if !is_keyword(&name)
         && !is_declarator_head
         && !is_nullary_term_keyword
+        // A declared type is a complete term. It can be called with adjacent
+        // parentheses, but cannot gobble a following infix as a listop arg.
+        && (!crate::parser::stmt::simple::is_user_declared_type(&name)
+            || crate::parser::stmt::simple::is_user_declared_sub(&name))
         // An infix word (`before`, `eq`, `and`, ...) is refused as a listop
         // head UNLESS a `sub` of that exact name is declared and in scope —
         // this is term position (a fresh term is being parsed), so a
