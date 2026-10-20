@@ -84,9 +84,13 @@ impl Compiler {
             .flat_map(|types| types.iter())
             .filter(|ty| ty.imported_by(tags))
         {
-            let Some((package, _)) = ty.qualified.rsplit_once("::") else {
-                continue;
-            };
+            // A type a module declares outside any package is a `GLOBAL`
+            // one; its binding's source is the type itself
+            // (`exec_get_imported_var_op`).
+            let package = ty
+                .qualified
+                .rsplit_once("::")
+                .map_or(module, |(package, _)| package);
             let term = crate::parser::ExportedVar {
                 name: ty.name.clone(),
                 package: package.to_string(),

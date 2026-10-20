@@ -590,8 +590,23 @@ impl Interpreter {
                         &Symbol::intern(&crate::term_names::term_key(name.as_str())),
                     )
                     || self.package_granted_here(name.as_str())
+                    // A type an open block's `use` binds in its pad
+                    // (ADR-8751): the import writes no env alias for it. A
+                    // top-level routine the block calls does not see it.
+                    || (self.open_block_binds_import(name)
+                        && !self.env.frame_hides_unit_name(name))
             }
         }
+    }
+
+    /// Whether the `use` of an open import scope's block binds `name` in the
+    /// block's pad ([`ImportScopeSnapshot::block_bound_keys`]).
+    // Cost: O(s), s = open import scopes.
+    pub(crate) fn open_block_binds_import(&self, name: Symbol) -> bool {
+        self.module
+            .import_scope_stack
+            .iter()
+            .any(|scope| scope.block_bound_keys.contains(&name))
     }
 
     /// Whether the bare name `name` is a module's own declaration that is not
