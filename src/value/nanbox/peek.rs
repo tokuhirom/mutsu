@@ -727,6 +727,7 @@ impl NanBox {
                     crate::value::EnumValue::Generic(_) => DispatchShape::EnumGeneric,
                 })
             }
+            Classified::Kind(Kind::RakuAst) => Some(DispatchShape::RakuAstNode),
             // A built-in class's own instance: its class name is the shape's.
             // A user subclass has another name, so it has none.
             Classified::Kind(Kind::Instance) => {

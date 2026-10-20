@@ -290,13 +290,20 @@ pub(crate) enum DispatchShape {
     EnumStringy,
     /// A member of an enum with any other payload (opaque).
     EnumGeneric,
+    /// A RakuAST node (opaque): a value kind, answering the rows of the node
+    /// classes whose builders are rows.
+    RakuAstNode,
+    /// `RakuAST::Origin` (opaque).
+    RakuAstOrigin,
+    /// `RakuAST::Origin::Source` (opaque).
+    RakuAstOriginSource,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 92] = [
+    pub(crate) const ALL: [DispatchShape; 95] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -389,6 +396,9 @@ impl DispatchShape {
         DispatchShape::EnumNumeric,
         DispatchShape::EnumStringy,
         DispatchShape::EnumGeneric,
+        DispatchShape::RakuAstNode,
+        DispatchShape::RakuAstOrigin,
+        DispatchShape::RakuAstOriginSource,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched

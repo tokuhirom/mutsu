@@ -204,15 +204,16 @@ impl Interpreter {
         {
             return result;
         }
-        // `X::Promise::Broken`, `X::React::Died` and `X::Await::Died` are
-        // composed into the exception `Promise.result`, a dying `react` or
-        // `await` rethrows; the role's `gist` is a row, found by the role
-        // (ADR-11276, #11276). Asked here, ahead of the native `.gist` arms
-        // downstream that would answer the bare exception.
-        if let Some(owners) = crate::builtins::method_table::wrapper_role_owners_of(&target)
+        // A `Mixin` reaches the rows of the roles mixed into it ahead of its
+        // inner value's (ADR-11276, #11276): `X::Promise::Broken`,
+        // `X::React::Died` and `X::Await::Died`, composed into the exception
+        // `Promise.result`, a dying `react` or `await` rethrows, answer
+        // `gist` before the native `.gist` arms downstream that would answer
+        // the bare exception.
+        if let Some(owners) = crate::builtins::method_table::mixin_role_owners_of(&target, method)
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
-                owners,
+                &owners.iter().map(String::as_str).collect::<Vec<_>>(),
                 method,
                 &args,
                 || target.clone(),
@@ -947,20 +948,6 @@ impl Interpreter {
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
                 &["Attribute"],
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
-        }
-        // `RakuAST::Node.visit-children` and the `RakuAST::Origin` rows are
-        // rows of the method table, found by their owner: neither has a
-        // dispatch shape.
-        if let Some(owners) = crate::builtins::method_table::rakuast_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
                 method,
                 &args,
                 || target.clone(),
