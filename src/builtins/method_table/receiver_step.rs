@@ -131,6 +131,40 @@ fn list_step(target: &Value, method: &str, argc: usize) -> Option<Step> {
     Interpreter::channel_subclass_coercion(target, method).map(Step::Answer)
 }
 
+/// Whether [`step`] takes `method` on `target` away from the receiver as it
+/// stands (a redirect or an answer of its own), without building the
+/// redirected receiver: the table's entry declines such a call, so the entry
+/// that asked it runs the step instead and no row answers the receiver as
+/// one item (`\(1, 2).unique` reads the capture's list).
+// Cost: O(1) tag probes and short name scans; a `Backtrace` copies its frames.
+pub(crate) fn claims(target: &Value, method: &str) -> bool {
+    // A lazy Match is asked by its tag: `view()` would materialize it, and
+    // its accessors (`from`, `to`, `Str`, ...) are the grammar engine's hot
+    // calls.
+    if target.is_lazy_match_value() {
+        return method == "Hash" || crate::value::match_view::is_capture_list_method(method);
+    }
+    match target.view() {
+        ValueView::Scalar(_) => !matches!(method, "raku" | "perl"),
+        ValueView::Array(_, kind) if kind.is_itemized() => !observes_container(method),
+        ValueView::Hash(_) if target.hash_is_itemized() => !observes_container(method),
+        ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+            crate::runtime::utils::is_hashlike_any_list_method(method)
+        }
+        ValueView::Capture { .. } => {
+            method == "Hash" || crate::value::match_view::is_capture_list_method(method)
+        }
+        ValueView::Enum { .. } => Interpreter::enum_aggregate_base(target, method).is_some(),
+        ValueView::Instance { .. } => {
+            target.match_list_receiver(method).is_some()
+                || (crate::builtins::method_table::CHANNEL_LIST_COERCIONS.contains(&method)
+                    && crate::builtins::method_table::promise_channel_receiver_of(target)
+                        .is_some_and(|r| matches!(r.view(), ValueView::Channel(_))))
+        }
+        _ => target.is_match_instance() && target.match_list_receiver(method).is_some(),
+    }
+}
+
 /// [`step`], with the checks that need the interpreter: a `self.list` redirect
 /// yields to a method the receiver's own class (an `augment`, a grammar)
 /// declares, and a `Cool` method of a user `IO::Path` subclass reads its path

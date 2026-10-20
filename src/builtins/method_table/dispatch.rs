@@ -431,6 +431,12 @@ fn dispatch(
             }
         },
     };
+    // A receiver state the receiver step decides (a container, a hash-like
+    // receiver's or a Match's `self.list` methods, ...) is the entry's to
+    // normalize first (`receiver_step`); the row would read it as one item.
+    if super::receiver_step::claims(allomorph, method.as_str()) {
+        return None;
+    }
     let row = row(id);
     // The caller's veto, asked once the row is known and before the handler
     // runs: an interpreter row has effects, so it must not run and then be
