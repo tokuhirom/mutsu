@@ -857,6 +857,34 @@ nominal return constraint being mistaken for a definite return expression and
 sent to EVAL; #14148 records Config::BINDish's parenthesized `handles(<keys
 Bool>)` parser gap. The latter is the next concrete parser remainder.
 
+## 26. Campaign slice: parenthesized handles word lists (2026-10-20)
+
+The next named #7988 remainder, #14148, is Config::BINDish 0.0.18's
+`has %!blocks is Map is built(:bind) handles(<keys Bool>)`. Parenthesized
+handles items accepted quoted names and pairs but lacked the word-list form
+already accepted outside parentheses. Both paths now use the ordinary
+quote-word parser and the same static method-name lowering.
+
+A bounded `Visit` implementation flattens nested positional lists for that
+lowering, replacing a second copy of the literal/pair conversion. It preserves
+the written handles term for RakuAST: parentheses contain a quoted string with
+the `words` and `val` processors, including the original internal spacing.
+New static lists do not become expression-backed delegation specs or introduce
+runtime evaluation. Existing dynamic forms retain their previous positions;
+excessively deep lists are refused instead of exhausting the Rust stack.
+
+The regression files are `t/oo/trait/handles-parenthesized-wordlists.t` and
+`t/rakuast/rakuast-handles-wordlists.t` (15 assertions, checked against Rakudo
+2026.07 and both mutsu frontend modes). Internal tests pin static lowering,
+the nesting bound, and refusal to add a new nested dynamic-evaluation surface.
+
+The real Config::BINDish::Grammar load now advances past the line-64 parser
+failure to an independent metamodel type check: its GrammarHOW does not
+smartmatch Metamodel::ClassHOW, so AttrX::Mooish's attribute trait rejects it.
+The reduced comparison answers True on Rakudo and False on mutsu; #14154
+records this next, non-parser blocker. This parser slice does not claim that
+the complete distribution is at parity.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
