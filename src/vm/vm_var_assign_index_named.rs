@@ -190,7 +190,7 @@ impl Interpreter {
             SliceKeyTree::Leaf(k) => {
                 let v = vals.next().unwrap_or(Value::NIL);
                 Self::assign_array_multidim(container, std::slice::from_ref(k), v)?;
-                marks.push(Self::encode_bound_index(k));
+                marks.push(Self::encode_element_index(k));
                 Ok(())
             }
             SliceKeyTree::Nested(children, lazy_origin) => {
@@ -271,7 +271,7 @@ impl Interpreter {
             SliceKeyTree::Leaf(k) => {
                 let v = vals.next().unwrap_or(Value::NIL);
                 Self::assign_array_multidim(container, std::slice::from_ref(k), v.clone())?;
-                marks.push(Self::encode_bound_index(k));
+                marks.push(Self::encode_element_index(k));
                 Ok(v)
             }
             SliceKeyTree::Nested(children, _lazy_origin) => {
@@ -1620,7 +1620,7 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        let encoded_idx = Self::encode_bound_index(&idx);
+        let encoded_idx = Self::encode_element_index(&idx);
         // Slice 2b: is the existing element a `=` value share (`@aoa[i] = @row`)?
         // A non-bind reassignment to such an element REPLACES the shared cell
         // (raku value semantics) instead of writing through it. Precomputed here
@@ -1648,24 +1648,6 @@ impl Interpreter {
                 "Cannot bind to a native {} array",
                 crate::runtime::native_types::native_family_name(&constraint)
             )));
-        }
-        let is_bound_index = if bind_mode {
-            self.is_bound_index(&var_name, &encoded_idx)
-        } else {
-            false
-        };
-        if !bind_mode && self.is_bound_index(&var_name, &encoded_idx) {
-            // `:=`-bound elements are shared `ContainerRef` cells now (no
-            // sentinel back-references), so any remaining bound-index metadata
-            // for an existing non-cell element is stale (e.g. the binding was
-            // broken by splice or an array reset) — clean it up; the write
-            // proceeds either way (cell writes go through the cell arm).
-            if let Some(ValueView::Array(items, ..)) = self.env().get(&var_name).map(Value::view)
-                && let Some(i) = Self::index_to_usize(&idx)
-                && matches!(items.get(i), Some(v) if !v.is_container_ref())
-            {
-                self.remove_bound_index(&var_name, &encoded_idx);
-            }
         }
         let env_needs_slot_pull = match self.env().get(&var_name).map(Value::view) {
             None => true,
@@ -1922,9 +1904,6 @@ impl Interpreter {
                     let mut assigned_values: Vec<Value> = Vec::new();
                     let empty_slice = keys.is_empty();
                     if is_shaped {
-                        if bind_mode && is_bound_index {
-                            return Err(RuntimeError::assignment_ro(None));
-                        }
                         let depth = Self::array_depth(container);
                         if depth <= 1 && keys.len() > 1 {
                             // 1D shaped array with multiple indices: slice
@@ -1937,7 +1916,7 @@ impl Interpreter {
                                     std::slice::from_ref(key),
                                     v,
                                 )?;
-                                initialized_marks.push(Self::encode_bound_index(key));
+                                initialized_marks.push(Self::encode_element_index(key));
                             }
                         } else {
                             // Multidimensional indexing: @arr[0;0] = 'x'
@@ -2023,14 +2002,11 @@ impl Interpreter {
                             let v = Self::slice_rhs_value(&vals, i, &pad);
                             assigned_values.push(v.clone());
                             Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
-                            initialized_marks.push(Self::encode_bound_index(key));
+                            initialized_marks.push(Self::encode_element_index(key));
                         }
                     }
                     for encoded in initialized_marks {
                         self.mark_initialized_index(&var_name, encoded);
-                    }
-                    if bind_mode {
-                        self.mark_bound_index(&var_name, encoded_idx);
                     }
                     // A slice keeps the list it stored as its value, however
                     // short: `(@a[0,] = 5)` is `(5,)`, not `5`. Only a genuinely
@@ -2880,9 +2856,6 @@ impl Interpreter {
                         // Handled by the Hash arm above.
                     } else if matches!(container.view(), ValueView::Array(..)) {
                         if crate::runtime::utils::is_shaped_array(container) {
-                            if bind_mode && is_bound_index {
-                                return Err(RuntimeError::assignment_ro(None));
-                            }
                             Self::assign_array_multidim(
                                 container,
                                 std::slice::from_ref(&idx),
@@ -2926,7 +2899,7 @@ impl Interpreter {
                                     std::slice::from_ref(&key),
                                     v,
                                 )?;
-                                range_initialized_marks.push(Self::encode_bound_index(&key));
+                                range_initialized_marks.push(Self::encode_element_index(&key));
                             }
                         } else if matches!(idx.view(), ValueView::Num(f) if !f.is_finite()) {
                             // `@a[Inf] = ...` / `@a[NaN] = ...`: a non-finite
@@ -3041,12 +3014,6 @@ impl Interpreter {
                             return Err(RuntimeError::new("Index out of bounds"));
                         }
                         self.mark_initialized_index(&var_name, encoded_idx.clone());
-                        // A cell-bound element does not need the bound-index
-                        // side table — the `ContainerRef` cell is the alias
-                        // and write-through happens via the cell.
-                        if bind_mode && !stored_bind_cell {
-                            self.mark_bound_index(&var_name, encoded_idx.clone());
-                        }
                     } else if let ValueView::Package(sym) = container.view()
                         && matches!(sym.resolve().as_str(), "MixHash" | "BagHash" | "SetHash")
                     {

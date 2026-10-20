@@ -357,13 +357,12 @@ static SIGILLESS_READONLY_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// makes the (correct) clear run.
 static SCALAR_NO_CONTAINER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
-/// Monotonic, process-global flag for the per-element index metadata keys
-/// (`__mutsu_bound_index::*`, `__mutsu_elem_share::*`).
-/// Their probes run on *every* element write (`@a[i] = x`) and on `:exists`, and
-/// each would otherwise cost a `format!` plus a `Symbol::intern`ing env lookup.
-/// The keys only ever appear once the program `:=`-binds an element, `=`-shares a
-/// container into one, or `:delete`s an index — none of which the common program
-/// does. Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: every creation site
+/// Monotonic, process-global flag for the per-element share metadata key
+/// (`__mutsu_elem_share::*`).
+/// Its probes run on *every* element write (`@a[i] = x`), and each would
+/// otherwise cost an interned env lookup. The key only ever appears once the
+/// program `=`-shares a container into an element (`@aoa[i] = @row`), which
+/// the common program does not do. Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: every creation site
 /// flows through the String-keyed [`Env::insert`], the flag is monotonic, and an
 /// over-set only makes the (correct) probe run.
 static ELEM_INDEX_META_SEEN: AtomicBool = AtomicBool::new(false);
@@ -478,9 +477,7 @@ pub(crate) fn note_env_key(key: &str) {
             CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_scalar_bind_no_container::") {
             SCALAR_NO_CONTAINER_KEY_SEEN.store(true, Ordering::Relaxed);
-        } else if key.starts_with("__mutsu_bound_index::")
-            || key.starts_with("__mutsu_elem_share::")
-        {
+        } else if key.starts_with("__mutsu_elem_share::") {
             ELEM_INDEX_META_SEEN.store(true, Ordering::Relaxed);
         }
     }

@@ -247,15 +247,6 @@ impl Interpreter {
                 return None;
             }
         }
-        // Reject if any bound indices exist for this variable
-        // (e.g. `%h<a> := $foo` makes element writes propagate to $foo).
-        // Gated like the twin above: no bound element, no probe.
-        if crate::env::elem_index_meta_possible() {
-            let bound_key = crate::meta_ns::MetaNs::BoundIndex.key_for_str(var_name);
-            if self.env().contains_key_sym(bound_key) {
-                return None;
-            }
-        }
         // Check that the variable exists in env as a plain Hash
         // and that it has no container type metadata
         let env = self.env();

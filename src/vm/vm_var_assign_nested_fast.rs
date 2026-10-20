@@ -112,8 +112,8 @@ impl Interpreter {
             return None;
         }
         // The latch being true means a *name-keyed* side table may describe one
-        // of the two elements this store walks through (`__mutsu_bound_index::`,
-        // `__mutsu_elem_share::`). This lane knows nothing about those.
+        // of the two elements this store walks through (`__mutsu_elem_share::`).
+        // This lane knows nothing about it.
         if crate::env::elem_index_meta_possible() {
             return None;
         }
