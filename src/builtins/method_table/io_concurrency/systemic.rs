@@ -154,7 +154,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     attr!("Raku", "desc"),
     attr!("Raku", "version"),
     attr!("Raku", "signature"),
-    row!("Raku", "compiler", 0, Handler::Narrow(compiler)),
+    // A new `Compiler` object each call: an identity of its own.
+    row!(
+        "Raku",
+        "compiler",
+        0,
+        Handler::Narrow(compiler),
+        RowFlags::RANDOM
+    ),
     row!(
         "Raku",
         "legacy",

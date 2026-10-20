@@ -1547,7 +1547,7 @@ impl Interpreter {
         // HyperSeq/RaceSeq: the methods they declare are their rows
         // (ADR-11276 §9.137); every other method reads the sequence as its
         // `List`, below.
-        if let Some(owners) = crate::builtins::method_table::opaque_owners_of(&target)
+        if let Some(owners) = crate::builtins::method_table::hyper_seq_owners_of(&target)
             && let Some(result) =
                 crate::builtins::method_table::invoke_owner(self, owners, method, &args, || {
                     target.clone()

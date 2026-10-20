@@ -13,6 +13,17 @@ use crate::value::{RuntimeError, Value};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
+/// The owners of a hyper or race sequence's rows (its opaque shape's);
+/// `None` for any other value.
+// Cost: O(1), a tag probe.
+pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
+    use crate::value::DispatchShape;
+    match target.receiver_shape()? {
+        shape @ (DispatchShape::HyperSeq | DispatchShape::RaceSeq) => shape.opaque_owners(),
+        _ => None,
+    }
+}
+
 const OWN: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS);
 
 macro_rules! rows {

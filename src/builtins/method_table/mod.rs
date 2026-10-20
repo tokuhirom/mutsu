@@ -81,6 +81,7 @@ pub(crate) use collections::{
 pub(crate) use instances::code_methods::method_object_answer;
 pub(crate) use instances::enumeration::owners_of as enumeration_owners_of;
 pub(crate) use instances::hyper_seq::answers_as_itself as hyper_seq_answers_as_itself;
+pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::iterator::owners_of as iterator_owners_of;
@@ -143,10 +144,7 @@ pub(crate) use unadmitted::invoke_unadmitted;
 /// declined.
 // Cost: O(1), a tag probe and one hash lookup.
 pub(crate) fn opaque_owners_of(target: &crate::value::Value) -> Option<&'static [&'static str]> {
-    target
-        .receiver_shape()
-        .or_else(|| target.type_object_shape())?
-        .opaque_owners()
+    target.receiver_shape()?.opaque_owners()
 }
 
 /// [`opaque_owners_of`] for an instance of the class named `class`.
