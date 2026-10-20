@@ -10,7 +10,7 @@ impl Interpreter {
             let (head, tail) = (Symbol::intern(head), Symbol::intern(tail));
             let value = self
                 .lexical_type_binding_sym(head)
-                .or_else(|| self.type_name_binding(head.as_str()));
+                .or_else(|| self.term_binding_sym(head));
             let owner = match value.as_ref().map(Value::view) {
                 Some(ValueView::Package(owner)) => Some(owner),
                 _ if self.is_known_package(head.as_str())

@@ -266,6 +266,7 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
     matches!(
         name,
         "Backtrace::Frame"
+            | "Formatter::Syntax"
             // Control exceptions (always available core types)
             | "CX::Done"
             | "CX::Emit"
