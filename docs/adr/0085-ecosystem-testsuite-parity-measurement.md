@@ -908,6 +908,37 @@ heredoc condition. The real RakuPM::Author module loads with the complete
 checkout dependency closure on both interpreters. Load success alone does
 not establish whole-distribution test-suite parity.
 
+## 28. Campaign slice: imported terms and package declarations (2026-10-21)
+
+The next named #7988 remainder, #14179, is AttrX::Mooish 1.0.10's custom-HOW
+test. Its CustomHOW module contributes constants named `class` and `role`
+inside EXPORTHOW::SUPERSEDE; the primary parser consumed `role` as an
+imported value before recognizing the anonymous role passed to `.^mixin`.
+An exported same-named constant reproduces the problem too. Rakudo gives
+package declaration syntax precedence over those values, while an explicit
+categorical `term:<role>` still wins over declaration syntax.
+
+Primary dispatch now separates explicit declared terms from the imported
+value fallback, with class/role/grammar expressions between them. The parser
+retains the existing ImportedTerm source distinction through RakuAST, so a
+resolved imported `e` does not become the setting's numeric constant when
+lowered. Value import names are lexical to their importing block; possible
+hook re-exports are collected separately by a nested module-scan collector
+that restores its enclosing collection on every exit path. This preserves
+hook re-exports without leaving a block's imported names in its caller.
+
+The focused regressions contain 22 assertions checked on Rakudo 2026.07 and
+both mutsu frontend modes: private/exported declaration-name constants,
+anonymous/named declaration expressions, categorical-term precedence,
+lexical import scope, hook re-exports, public RakuAST shape and EVAL.
+
+The real custom-HOW test now executes its first subtest instead of refusing
+the line-185 role. Its remaining runtime findings are tracked independently:
+#14241 records the missing EXPORTHOW::SUPERSEDE replacement of built-in HOWs;
+#14242 reduces the attribute clearer's guarded proxy-construction recursion.
+The lazy-builder failure remains under #14162 / #13264. Clearing the parser
+refusal does not establish whole-distribution test-suite parity.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers

@@ -11,6 +11,7 @@ pub(crate) mod exported_types;
 pub(crate) mod exported_vars;
 mod import_tags;
 mod installed_repo;
+mod nested_imports;
 mod source_scan;
 use decl_scan::scan_module_decls;
 use dynamic_stash::probe_dynamic_exports;
@@ -133,13 +134,6 @@ struct ModuleScanResult {
 }
 
 thread_local! {
-    /// Exports of every module the scan in progress `use`d or `need`ed, so a
-    /// `sub EXPORT` hook module that re-exports an import
-    /// (`Map.new(Other::EXPORT::DEFAULT.WHO.pairs)`) can contribute them to
-    /// its own importer's parse. One scan owns the vector at a time:
-    /// `scan_module_source` parks the outer one and restores it.
-    static NESTED_IMPORT_EXPORTS: RefCell<Vec<InlineModuleExport>> =
-        const { RefCell::new(Vec::new()) };
     /// Scan results memoized by resolved module file path. Keyed by path, not
     /// module name, so a `use lib` that changes resolution mid-parse gets a
     /// fresh scan for the newly-resolved file.
@@ -334,7 +328,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
                 .then(|| scan.exported_types.as_slice().into()),
         );
         apply_scan_types(&scan, import_tags);
-        note_nested_import_exports(&scan.exports);
+        nested_imports::record(&scan);
         apply_module_exports(&scan.exports);
         if scan.dynamic_export_stash {
             apply_module_exports(&probe_dynamic_exports(module));
@@ -434,16 +428,6 @@ fn apply_scan_types(scan: &ModuleScanResult, import_tags: Option<&[String]>) {
     if scan.declares_export_hook {
         note_import_export_hook();
     }
-}
-
-/// Remember a nested import's exports for the enclosing scan; see
-/// [`NESTED_IMPORT_EXPORTS`].
-// Cost: O(e), e = number of exports of the imported module.
-fn note_nested_import_exports(exports: &[InlineModuleExport]) {
-    if exports.is_empty() {
-        return;
-    }
-    NESTED_IMPORT_EXPORTS.with(|c| c.borrow_mut().extend(exports.iter().cloned()));
 }
 
 /// Register a module's exported subs into the importer's current scope.
@@ -591,7 +575,7 @@ pub(crate) fn register_module_type_names(module: &str) {
     });
     if let Some(scan) = scan {
         apply_scan_types(&scan, None);
-        note_nested_import_exports(&scan.exports);
+        nested_imports::record(&scan);
     } else if !import_is_pragma_like(module) {
         note_type_index_incomplete();
     }
@@ -794,10 +778,8 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     let inline_exports_before: Vec<String> =
         INLINE_MODULE_EXPORTS.with(|m| m.borrow().keys().cloned().collect());
     let skips_before = super::super::partial_parse_skips();
-    let saved_nested_exports = NESTED_IMPORT_EXPORTS.with(|c| std::mem::take(&mut *c.borrow_mut()));
-    let (stmts, _) = crate::parser::parse_program_partial(source);
-    let nested_exports = NESTED_IMPORT_EXPORTS
-        .with(|c| std::mem::replace(&mut *c.borrow_mut(), saved_nested_exports));
+    let ((stmts, _), nested) =
+        nested_imports::collect(|| crate::parser::parse_program_partial(source));
     // A best-effort parse silently drops every statement it cannot parse — a
     // `class`/`constant` among them. The names in such a statement are missing
     // from this scan, so the importer's view of the module is partial and it
@@ -981,7 +963,8 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         // `need`ed exports (`Map.new(Other::EXPORT::DEFAULT.WHO.pairs)`,
         // Qwiratry::Query::Slang). The set is only known once that module is
         // scanned, so take it from there; a superset, like the rest.
-        for export in nested_exports {
+        value_terms.extend(nested.value_terms);
+        for export in nested.exports {
             exports.entry(export.name.clone()).or_insert(export);
         }
         for name in source_scan::unit_scope_routine_names(&code) {

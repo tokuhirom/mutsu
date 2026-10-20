@@ -1,7 +1,7 @@
 use super::term_literals::{
     can_name_type_smiley, is_fat_arrow_key, is_identifier_name, starts_with_type_smiley,
 };
-use crate::ast::Expr;
+use crate::ast::{Expr, spelled::Spelling};
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 
@@ -46,12 +46,17 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
         };
         return Ok((&input[consumed_len..], expr));
     }
+    Err(PError::expected("declared term symbol"))
+}
+
+pub(crate) fn imported_value_term(input: &str) -> PResult<'_, Expr> {
     // A sigilless value term a `use`d module exports (`my \vrai = True;`
     // inside its `sub EXPORT` hook, or a `constant ... is export`) lives in a
     // SEPARATE registry (`imported_value_terms`) from a locally declared one
-    // (`term_symbols`, checked above) — see `register_imported_value_term`'s
-    // doc. Without also trying it here, an imported term fell through to
-    // `identifier_or_call`'s general bareword parsing, which has no "is this
+    // (`term_symbols`, checked earlier in primary dispatch) — see
+    // `register_imported_value_term`'s doc. Without this alternative, an
+    // imported term fell through to `identifier_or_call`'s general bareword
+    // parsing, which has no "is this
     // a zero-arg term" exclusion of its own and defaults to a listop-call
     // head: French's `vrai et 2` misparsed as `vrai(et, 2)` and died
     // evaluating `et` as if it were a zero-arg call ("Unknown function: et").
@@ -64,7 +69,10 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
         && !(starts_with_type_smiley(rest) && can_name_type_smiley(name))
         && !(rest.starts_with('(') && crate::parser::stmt::simple::is_imported_function(name))
     {
-        return Ok((rest, Expr::BareWord(name.to_string())));
+        return Ok((
+            rest,
+            Expr::spelled(Expr::BareWord(name.to_string()), || Spelling::ImportedTerm),
+        ));
     }
     Err(PError::expected("declared term symbol"))
 }
