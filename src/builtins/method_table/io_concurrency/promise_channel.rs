@@ -2,10 +2,10 @@
 //!
 //! A promise and a channel are native value kinds (`ValueView::Promise`,
 //! `ValueView::Channel`) shared between threads; a vow is a `Promise::Vow`
-//! instance holding its promise. None has a dispatch shape: the rows are reached
-//! through their owner (`RowFlags::OWNER_ONLY`, `invoke_owner`) from the place in
-//! `call_method_with_values` that answered them by name before
-//! ([`owners_of`]), and a vow's from its native methods (`native_promise_vow`).
+//! instance holding its promise. Each has an opaque dispatch shape
+//! (`DispatchShape::is_opaque`), so every call entry reaches the rows through
+//! the table; an instance of a user subclass is answered on the promise or
+//! channel it carries ([`receiver_of`]).
 //! The implementations are `Interpreter` methods in `runtime/methods_promise.rs`.
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
@@ -22,7 +22,7 @@ macro_rules! row {
             name: $name,
             arity: $arity,
             handler: Handler::Interp($handler),
-            flags: RowFlags::OWNER_ONLY,
+            flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
             named: &[],
         }
     };
@@ -61,7 +61,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "elems",
         arity: 0,
         handler: Handler::Narrow(channel_elems),
-        flags: RowFlags::OWNER_ONLY,
+        // A live channel: another thread may send between two reads.
+        flags: RowFlags::EFFECTS,
         named: &[],
     },
     row!("Channel", "Supply", 0, channel_supply),
@@ -79,16 +80,6 @@ pub(crate) const PROMISE_PAYLOAD: &str = "__mutsu_promise_value";
 /// The attribute an instance of a user subclass of `Channel` keeps its native
 /// channel in (#13634).
 pub(crate) const CHANNEL_PAYLOAD: &str = "__mutsu_channel_value";
-
-/// The owners a promise's or a channel's rows are found under.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Promise(_) => Some(&["Promise"]),
-        ValueView::Channel(_) => Some(&["Channel"]),
-        _ => None,
-    }
-}
 
 /// The value the rows answer `target` on: a promise or a channel itself, or
 /// the native promise or channel an instance of a user subclass carries

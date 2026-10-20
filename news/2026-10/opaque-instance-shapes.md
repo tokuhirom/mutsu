@@ -4,12 +4,15 @@ An instance of a built-in class whose state lives in the interpreter or in its
 attributes (`Lock` and its kin, `Semaphore`, `Thread`, `Tap`, `Proc`, the
 sockets, `IO::CatHandle`, the schedulers, the encodings, the `CompUnit` and
 `Distribution` family, `WalkList`, `Routine::WrapHandle`,
-`HyperConfiguration`, `Pod::Block::Declarator`) now has an *opaque* dispatch
+`HyperConfiguration`, `Pod::Block::Declarator`, `Supply`, `Proc::Async`,
+`Promise::Vow`), and the value kinds `Promise`, `Channel`, `HyperSeq` and
+`RaceSeq`, now have an *opaque* dispatch
 shape (ADR-11276 slice 5). The shape names the owners its rows live under, so
 the method table answers it from every call entry through the one guard step,
 and the per-class `owners_of` hooks those call sites asked (`handle_owners_of`,
 `runtime_object_owners_of`, `compunit_owners_of`, `cathandle_owners_of`, the
-schedulers' and the encodings') are gone. A call the guard step declines finds
+schedulers', the encodings', `supply_owners_of`, `hyper_seq_owners_of`,
+`promise_channel_owners_of`) are gone. A call the guard step declines finds
 its row through the shape's owners at one place in the by-name dispatch.
 
 An opaque shape reaches only its own class's rows: what the class does not

@@ -1396,7 +1396,7 @@ impl Interpreter {
         // HyperSeq/RaceSeq: the methods they declare are their rows; `Mu`'s
         // introspection reads the sequence itself; every other method reads it
         // as its `List` (§9.137, §9.173).
-        if let Some(owners) = crate::builtins::method_table::hyper_seq_owners_of(&target)
+        if let Some(owners) = crate::builtins::method_table::opaque_owners_of(&target)
             && !crate::builtins::method_table::hyper_seq_answers_as_itself(method)
         {
             if let Some(result) = crate::builtins::method_table::invoke_owner(
@@ -1699,7 +1699,7 @@ impl Interpreter {
         if let Some(receiver) = crate::builtins::method_table::promise_channel_receiver_of(&target)
         {
             if let Some(owners) =
-                crate::builtins::method_table::promise_channel_owners_of(&receiver)
+                crate::builtins::method_table::opaque_owners_of(&receiver)
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,

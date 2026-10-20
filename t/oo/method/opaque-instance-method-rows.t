@@ -6,7 +6,7 @@ use Test;
 # from every call entry -- a direct call, a by-name call, a call on a temporary
 # -- and a method its class does not declare is answered as before.
 
-plan 22;
+plan 30;
 
 my $lock = Lock.new;
 is $lock.protect({ 42 }), 42, 'Lock.protect through the table';
@@ -53,3 +53,22 @@ class B is A { method m { 'B' } }
 is B.new.WALK(:name<m>).reverse()().join(','), 'A,B', 'WalkList.reverse';
 
 is (1..4).hyper(:batch(2)).configuration.batch, 2, 'HyperConfiguration.batch';
+
+my $supply = Supply.from-list(1, 2, 3);
+is $supply.map(* * 2).list, (2, 4, 6), 'Supply.map through the table';
+throws-like { Supply.tap }, X::Parameter::InvalidConcreteness, 'a Supply:D: row refuses the type object';
+
+my $promise = Promise.new;
+$promise.keep(5);
+is $promise.result, 5, 'Promise.keep/result';
+is await(Promise.in(0).then({ 3 })), 3, 'Promise.then';
+
+my $channel = Channel.new;
+$channel.send(9);
+is $channel.receive, 9, 'Channel.send/receive';
+$channel.close;
+ok $channel.closed, 'Channel.closed';
+
+my $hyper = (1..6).hyper(:batch(2));
+is $hyper.map(* + 1).List, (2..7).List, 'HyperSeq.map';
+ok (1..3).race.configuration.batch > 0, 'RaceSeq.configuration';

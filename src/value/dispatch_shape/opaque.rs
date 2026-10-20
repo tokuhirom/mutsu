@@ -77,6 +77,11 @@ pub(super) const fn opaque(
         S::DistributionPath => ("Distribution::Path", &["Distribution::Path"]),
         S::Supply => ("Supply", &["Supply"]),
         S::ProcAsync => ("Proc::Async", &["Proc::Async"]),
+        S::Promise => ("Promise", &["Promise"]),
+        S::PromiseVow => ("Promise::Vow", &["Promise::Vow"]),
+        S::Channel => ("Channel", &["Channel"]),
+        S::HyperSeq => ("HyperSeq", &["HyperSeq"]),
+        S::RaceSeq => ("RaceSeq", &["RaceSeq"]),
         _ => return None,
     })
 }

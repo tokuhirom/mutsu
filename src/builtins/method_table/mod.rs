@@ -81,7 +81,6 @@ pub(crate) use collections::{
 pub(crate) use instances::code_methods::method_object_answer;
 pub(crate) use instances::enumeration::owners_of as enumeration_owners_of;
 pub(crate) use instances::hyper_seq::answers_as_itself as hyper_seq_answers_as_itself;
-pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::iterator::owners_of as iterator_owners_of;
@@ -102,8 +101,7 @@ pub(crate) use io_concurrency::io_special::raku_row as io_special_raku;
 pub(crate) use io_concurrency::proc_async::owners_of as proc_async_owners_of;
 pub(crate) use io_concurrency::promise_channel;
 pub(crate) use io_concurrency::promise_channel::{
-    CHANNEL_LIST_COERCIONS, owners_of as promise_channel_owners_of,
-    receiver_of as promise_channel_receiver_of,
+    CHANNEL_LIST_COERCIONS, receiver_of as promise_channel_receiver_of,
 };
 pub(crate) use io_concurrency::supplier_scheduler;
 pub(crate) use io_concurrency::supplier_scheduler::owners_of as supplier_owners_of;
