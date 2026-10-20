@@ -1209,7 +1209,12 @@ impl Interpreter {
             "Kernel".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                // Its attributes: a type object refuses their accessors with
+                // "Cannot look up attributes" (#13952).
+                attributes: systemic_attributes(&[
+                    "name", "auth", "version", "signature", "desc", "release", "hardware",
+                    "arch", "bits",
+                ]),
                 native_methods: crate::builtins::method_table::systemic_names("Kernel")
                     .map(str::to_string)
                     .collect(),

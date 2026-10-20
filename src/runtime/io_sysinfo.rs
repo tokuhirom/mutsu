@@ -251,7 +251,7 @@ impl Interpreter {
     /// `update_raku_version_from_parser` (which mutates an
     /// already-materialized instance in place for a later parse in the same
     /// process, e.g. a nested `EVAL` with a different `use v6.x`).
-    fn language_version_value() -> Value {
+    pub(crate) fn language_version_value() -> Value {
         let lang_version = crate::parser::current_language_version();
         let parts: Vec<crate::value::VersionPart> = lang_version
             .split('.')
