@@ -86,23 +86,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("pid", Pid),
 ];
 
-/// `Proc::Async`'s rows for a `Proc::Async` instance; `None` for anything else.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Proc::Async"
-            || attributes.as_map().contains_key("__mutsu_proc_async_state") =>
-        {
-            Some(&["Proc::Async"])
-        }
-        _ => None,
-    }
-}
-
 // Cost: the method's own.
 fn call(
     interp: &mut Interpreter,

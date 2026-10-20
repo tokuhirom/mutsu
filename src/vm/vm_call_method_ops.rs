@@ -1416,7 +1416,7 @@ impl Interpreter {
             skip_native = true;
         }
         if !skip_native
-            && crate::builtins::method_table::proc_async_owners_of(&target).is_some_and(|owners| {
+            && crate::builtins::method_table::carried_state_owners_of(&target).is_some_and(|owners| {
                 // `Proc::Async`'s rows answer through the interpreter's owner
                 // lookup (ADR-11276 §9.128); the cascades must not.
                 owners.iter().any(|owner| {
