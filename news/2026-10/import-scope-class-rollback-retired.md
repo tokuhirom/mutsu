@@ -18,3 +18,6 @@ dropped was an import any more. With it disabled, `t/modules` and the
 whitelisted `roast/S11-modules` files stay green. So the class half of
 `ImportScope` is gone, together with `persistent_classes` (written only for it)
 and the O(C) term of the scope's exit.
+
+The `our`-class exception (c23a5b6e68) is reverted along with it: a class a
+block declares now outlives the block simply because nothing drops it.
