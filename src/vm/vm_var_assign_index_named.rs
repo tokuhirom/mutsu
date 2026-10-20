@@ -4943,30 +4943,6 @@ impl Interpreter {
             .then_some(existing)
     }
 
-    /// Step one subscript level down a container **by value**, for the
-    /// read-only pre-passes that resolve `*-1`-style subscripts and probe for
-    /// a mediating `Proxy`. Returns `None` when that level does not exist (or
-    /// is not a container), which the `*-1` caller treats as "length 0".
-    fn subscript_peek_step(container: &Value, key: &str, is_positional: bool) -> Option<Value> {
-        let container = container.deref_container();
-        match container.view() {
-            ValueView::Array(items, ..) if is_positional => key
-                .parse::<usize>()
-                .ok()
-                .and_then(|i| items.get(i).cloned()),
-            ValueView::Seq(items) if is_positional => key
-                .parse::<usize>()
-                .ok()
-                .and_then(|i| items.get(i).cloned()),
-            ValueView::Slip(items) if is_positional => key
-                .parse::<usize>()
-                .ok()
-                .and_then(|i| items.get(i).cloned()),
-            ValueView::Hash(map) => map.get(key).cloned(),
-            _ => None,
-        }
-    }
-
     pub(super) fn exec_index_assign_deep_nested_op(
         &mut self,
         code: &CompiledCode,
@@ -5133,9 +5109,15 @@ impl Interpreter {
         let (val, bind_source) = Self::unwrap_bind_index_value(val);
         let bind_source =
             bind_source.filter(|s| !s.contains("\x00idx\x00") && !s.starts_with(['@', '%']));
-        let bind_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = bind_source
-            .as_ref()
-            .map(|name| self.promote_bind_source_cell(name, val.clone()));
+        let bind_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> =
+            bind_source.as_ref().map(|name| {
+                if let Some(source) = self.env().get(name)
+                    && let ValueView::ContainerRef(cell) = source.view()
+                {
+                    return cell.clone();
+                }
+                self.promote_bind_source_cell(name, val.clone())
+            });
         // ADR-0040 slice 4: the leaf of a 3+-level chain is an element store
         // like any other (see the two-level op's hook above). A `:=` bind keeps
         // its bare source value, and a slice/junction innermost subscript is
@@ -5161,6 +5143,23 @@ impl Interpreter {
                 bind_cell.as_ref(),
             )?
         {
+            return Ok(());
+        }
+
+        if is_bind_value
+            && let Some(result) = self.bind_positional_path_receiver(
+                code,
+                &var_name,
+                &indices_val,
+                &positional_flags,
+                &bind_cell.as_ref().map_or_else(
+                    || val_unitemized.clone(),
+                    |cell| Value::container_ref(cell.clone()),
+                ),
+                bind_source.as_deref(),
+            )
+        {
+            self.stack.push(result?);
             return Ok(());
         }
 
