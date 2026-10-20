@@ -1510,3 +1510,8 @@ Subscript/method-expression sinks are refused at the RakuAST boundary, matching
 Rakudo 2026.07's routine-call-or-variable restriction. Append feed syntax stays
 refused because Rakudo has not implemented it. The executable contract is
 `t/rakuast/rakuast-declaration-feeds.t` and the existing feed operator suite.
+
+On the tested tree, 8,052 / 8,094 files pass the frontend survey, and all
+8,052 ratchet files / 83,488 assertions pass under the release binary. The
+16 added entries comprise the two feed tests and 14 refreshed-main tests;
+the remaining cause survey has 27 DIFF and 15 REFUSE files.
