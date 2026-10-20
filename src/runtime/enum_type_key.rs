@@ -48,4 +48,20 @@ impl Interpreter {
         self.resolve_type_in_current_package(name)
             .filter(|key| self.registry().enum_types.contains_key(key.as_str()))
     }
+
+    /// The MRO of the base type the enum `name` inherits from, as Rakudo
+    /// builds it (`enum E <a b>` is `(E Int Cool Any Mu)`): the catalog chain
+    /// of its first value's type. `None` when `name` names no enum, or its base
+    /// type has no catalog entry.
+    // Cost: O(d) to resolve the key (see `resolve_enum_type_key`), plus one
+    // catalog lookup.
+    pub(crate) fn enum_base_type_mro(&self, name: &str) -> Option<&'static [&'static str]> {
+        let key = self.resolve_enum_type_key(name)?;
+        let base: String = match &self.registry().enum_types.get(key.as_str())?.first()?.1 {
+            EnumValue::Int(_) => "Int".to_string(),
+            EnumValue::Str(_) => "Str".to_string(),
+            EnumValue::Generic(value) => crate::value::what_type_name(value),
+        };
+        Some(crate::builtin_types::catalog::builtin_type_info(&base)?.mro)
+    }
 }
