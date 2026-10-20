@@ -68,6 +68,9 @@ impl Interpreter {
                         key.with_str(|s| {
                             crate::env::is_user_variable_key(s)
                                 || s.starts_with(MetaNs::ModuleMerge.prefix())
+                                // An imported enum value's own key
+                                // namespace (#7914, #14214).
+                                || s.starts_with(crate::meta_ns::ENUM_BARE_PREFIX)
                         }) && !scope.shadowed_env_values.contains_key(*key)
                     })
                     .copied()

@@ -3,15 +3,15 @@
 //! `GLOBALish.WHO.merge-symbols($handle.globalish-package)` to publish the
 //! symbols a loaded unit declared (`CompUnit::Handle.globalish-package`).
 //!
-//! A `Stash` reached as a value is an instance; the class has no dispatch
-//! shape, so the rows are reached through their owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`) from the instance dispatch, as
-//! `Variable`'s are (§9.195). A `PseudoStash` (`MY::`) is not a `Stash` and
-//! declares no `merge-symbols`.
+//! A `Stash` reached as a value is an instance of the opaque shape
+//! `DispatchShape::Stash`: the table's owner lookup sees it, while the hash
+//! and associative paths (which read `dispatch_shape`, not `receiver_shape`)
+//! do not, so its indexing is unchanged. A `PseudoStash` (`MY::`) is not a
+//! `Stash` and declares no `merge-symbols`.
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 pub(super) static ROWS: &[MethodRow] = &[MethodRow {
     owner: "Stash",
@@ -21,15 +21,6 @@ pub(super) static ROWS: &[MethodRow] = &[MethodRow {
     flags: RowFlags::OWNER_ONLY,
     named: &[],
 }];
-
-/// The owners the rows reachable from `target` are found under: a `Stash`.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Instance { class_name, .. } if class_name == "Stash" => Some(&["Stash"]),
-        _ => None,
-    }
-}
 
 /// `Stash.merge-symbols(\globalish)`: makes the symbols the package carries
 /// resolvable (`Interpreter::merge_global_symbols`).
