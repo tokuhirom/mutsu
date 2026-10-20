@@ -151,7 +151,7 @@ impl Interpreter {
     }
 
     // Cost: O(c * d), as [`Self::lookup_in_running_package`].
-    fn toplevel_constant_marker(&self, name: &str) -> bool {
+    pub(crate) fn toplevel_constant_marker(&self, name: &str) -> bool {
         !self.module.module_toplevel.constant_markers.is_empty()
             && self
                 .lookup_in_running_package(&self.module.module_toplevel.constant_markers, name)

@@ -2196,14 +2196,11 @@ impl Compiler {
                             sym: Symbol::intern(&key),
                             key: key.to_string(),
                         });
-                        // Compile the value exactly as the in-band pair path
-                        // would: `compile_call_arg` wraps the whole pair expr
-                        // in with_escape + with_suppress_pair_capture, under
-                        // which the FatArrow compile is `left; right; MakePair`
-                        // — so the value side is a plain compile_expr.
-                        self.with_escape(escaping_args, |s| {
-                            s.with_suppress_pair_capture(true, |s| s.compile_expr(right))
-                        });
+                        // The extracted value remains an argument, including
+                        // its resolved variable container and declared type.
+                        // A source-name hint alone cannot identify a package
+                        // binding when the caller has a same-named lexical.
+                        self.compile_call_arg_with_escape(right, escaping_args);
                     } else {
                         self.pending_immutable_topic_block = immutable_topic_cb && i == 0;
                         // ADR-0067's argument producer for the parser-rewritten

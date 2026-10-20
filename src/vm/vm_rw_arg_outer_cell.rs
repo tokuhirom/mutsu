@@ -61,6 +61,9 @@ impl Interpreter {
             }
             return self.promote_package_lexical_to_cell(sym, stored);
         }
+        if let Some((_, cell)) = self.our_package_scalar_cell(name) {
+            return Some(Value::container_ref(cell));
+        }
         // Only a module routine's compunit lexical: a mainline sub's captured
         // cells (ADR-0024's `UNIT<mainline>` bucket) and a routine-nested
         // sub's aliases already reach `WrapVarRef` through their own capture

@@ -140,6 +140,14 @@ impl Interpreter {
         over_scalar: bool,
     ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
+        if self
+            .registry()
+            .compound_identity_bindings
+            .contains_key(&name_sym)
+            && let Some((package, member)) = crate::qualified::split_qualified(name_sym)
+        {
+            return Err(self.no_such_qualified_symbol(package.as_str(), member.as_str()));
+        }
         // A lexical `my class foo` is bound under its own `env` key space
         // (`lexical_type_key`) as well as the bare name a same-named `$foo`
         // shares (#12109). The bare binding is the ordinary resolution; the
@@ -912,6 +920,7 @@ impl Interpreter {
                 // = 1` creates the package `foo`, and `OUR::foo` must resolve
                 // to it rather than report a missing `&foo`.
                 && !self.package_namespace_exists(Interpreter::strip_pseudo_packages(name))
+                && !self.export_namespace_exists(name)
             {
                 // The last segment starts with lowercase, indicating a qualified
                 // function/sub call (e.g. `Our::Package::pkg`). If the prefix
@@ -931,8 +940,16 @@ impl Interpreter {
                         || self.package_namespace_exists(bare))
                 {
                     Value::package(Symbol::intern(self.resolve_core_type_alias(bare)))
-                } else {
+                } else if self.is_known_package(name)
+                    || self.has_type(name)
+                    || self.export_namespace_exists(name)
+                    || Self::is_builtin_type(name)
+                    || crate::core_type_names::contains(name)
+                    || crate::rakuast::is_registered_type_object(name)
+                {
                     Value::package(Symbol::intern(name))
+                } else {
+                    return Err(self.no_such_qualified_symbol(pkg, sym));
                 }
             }
         } else if name.chars().count() == 1 && !self.is_name_suppressed(name) {

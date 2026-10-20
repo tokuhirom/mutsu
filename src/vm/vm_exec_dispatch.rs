@@ -2788,6 +2788,18 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
+                // A bare package alias has its own canonical cell. Resolve it
+                // before a generic env-cell store can reach the caller's
+                // unrelated same-named lexical.
+                if !is_bind_ctx
+                    && !is_rebind
+                    && !fresh_binding_decl
+                    && bind_source.is_none()
+                    && self.our_package_scalar_write(&name, &val)
+                {
+                    *ip += 1;
+                    return Ok(());
+                }
                 if self.unit_scope_lexical_write(&name, Some(name_sym), &val) {
                     *ip += 1;
                     return Ok(());
@@ -6757,8 +6769,7 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts
-            // and one probe of the chunk's name index. One-shot per declaration.
+            // Cost: O(m), m = package name bytes.
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);
@@ -6777,13 +6788,36 @@ impl Interpreter {
                 self.set_current_package(name);
                 *ip += 1;
             }
-            // Cost: O(1) avg (O(R) copy-on-write when the registry Arc is shared, R = registry
+            // Cost: O(m + d + n) avg, m = name bytes, d = ancestor packages,
+            // n = their total name bytes
+            // (O(R) copy-on-write when the registry Arc is shared, R = registry
             // size; O(P) copy-on-write of the provenance table, P = attributed names, when a
             // module-attributed name is redeclared).
-            OpCode::SetPackageKind { name_idx, kind } => {
+            OpCode::SetPackageKind {
+                name_idx,
+                kind,
+                declare_ancestors,
+            } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                if *declare_ancestors {
+                    self.declare_package_ancestors(code.const_sym(*name_idx));
+                }
                 self.release_foreign_provenance(&name);
                 self.registry_mut().package_kinds.insert(name, *kind);
+                *ip += 1;
+            }
+            // Cost: O(a + c), a = trait name bytes, c = trait_mod:<is> candidates; excludes the callback body.
+            OpCode::ApplyPackageTrait {
+                package_idx,
+                trait_idx,
+                explicit_argument,
+            } => {
+                self.exec_apply_package_trait_op(
+                    code,
+                    *package_idx,
+                    *trait_idx,
+                    *explicit_argument,
+                )?;
                 *ip += 1;
             }
             // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts
@@ -7640,8 +7674,9 @@ impl Interpreter {
             OpCode::DeclareOurScalar {
                 slot,
                 qualified_idx,
+                constraint_idx,
             } => {
-                self.exec_declare_our_scalar_op(code, *slot, *qualified_idx);
+                self.exec_declare_our_scalar_op(code, *slot, *qualified_idx, *constraint_idx);
                 *ip += 1;
             }
             // Cost: O(1) amortized (name-index probes; see exec_set_var_dynamic_op), so a sub with

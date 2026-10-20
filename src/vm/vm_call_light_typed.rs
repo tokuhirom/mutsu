@@ -418,7 +418,10 @@ impl Interpreter {
                 bind_value!(npb.slot, true, seed);
                 continue;
             };
-            let v = v.clone();
+            // Extracted named values carry the same resolved VarRef as a
+            // positional argument. This light plan excludes rw/raw bindings;
+            // bind the supplied value rather than leaking its source cell.
+            let v = deref_arg(v).clone().into_deref();
             // An untyped named parameter is implicitly `Any` too (#10878).
             if matches!(
                 cf.param_fast_types.get(i),

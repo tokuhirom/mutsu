@@ -2061,9 +2061,13 @@ impl Compiler {
                             .our_locals
                             .push((slot as usize, qualified.clone()));
                         let qualified_idx = self.code.add_constant(Value::str(qualified));
+                        let constraint_idx = type_constraint
+                            .as_ref()
+                            .map(|tc| self.code.add_constant(Value::str(tc.clone())));
                         self.code.emit(OpCode::DeclareOurScalar {
                             slot,
                             qualified_idx,
+                            constraint_idx,
                         });
                     } else {
                         // For `our` we need a second copy of the value to store into the
@@ -3799,6 +3803,7 @@ impl Compiler {
                 name,
                 body,
                 kind,
+                custom_traits,
                 is_unit,
                 is_my,
             } => {
@@ -3825,7 +3830,9 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: true,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     // Keep the runtime package in step with the compiler's, so
                     // routines declared after this point register under
                     // `Foo::name` instead of leaking into `GLOBAL::` (PLAN 8.22).
@@ -3837,7 +3844,9 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: true,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     self.code.emit(OpCode::RegisterPackageStub { name_idx });
                 } else {
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
@@ -3850,7 +3859,9 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: !*is_my,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     // Clear any previous stub status for this package
                     self.code.emit(OpCode::ClearPackageStub { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
@@ -3928,9 +3939,10 @@ impl Compiler {
                 name,
                 body,
                 lexicals,
+                our_names,
                 decl,
             } => {
-                self.compile_package_runtime_body(*name, body, lexicals, *decl);
+                self.compile_package_runtime_body(*name, body, lexicals, our_names, *decl);
             }
 
             // ADR-0048 Phase 2: no phaser body takes a signature in raku

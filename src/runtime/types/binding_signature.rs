@@ -2482,7 +2482,14 @@ impl Interpreter {
                         // (named scalar params are readonly). A `$`-scalar source
                         // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
                         // by reference already, like the positional scalar source.
-                        let mut bound_value = val.clone();
+                        let mut bound_value = unwrap_varref_value(val.clone());
+                        // Only an rw/raw parameter aliases the supplied Scalar.
+                        // Ordinary and copy parameters bind its current value;
+                        // retaining the argument cell would make their local
+                        // stores (or a returned value) reach the caller.
+                        if !pd.binds_caller_container() {
+                            bound_value = bound_value.into_deref();
+                        }
                         // A named `%`-sigil parameter decontainerizes exactly
                         // like the positional one (`sub f(:%o)` bound from
                         // `f(o => %outer<a>)` is `{:b(1)}`, not `${:b(1)}`).
@@ -2673,7 +2680,7 @@ impl Interpreter {
                                         .first()
                                         .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
                                 });
-                            if let Some(src) = source_name {
+                            if let Some(src) = source_name.filter(|_| !bound_value.is_container_ref()) {
                                 rw_bindings.push((storage_name.to_string(), src.clone()));
                                 let descriptor = src.clone();
                                 let existing = self
@@ -3089,7 +3096,11 @@ impl Interpreter {
                             .or_else(|| {
                                 varref_from_value(&args[positional_idx]).map(|(name, _)| name)
                             });
-                        if let Some(source_name) = source_name {
+                        // A resolved lvalue already carries its authoritative
+                        // container. Re-resolving its spelling through the
+                        // callee env can select a same-named caller lexical;
+                        // that container also needs no by-name exit writeback.
+                        if let Some(source_name) = source_name.filter(|_| !arg_is_container_ref) {
                             // Write back to the root of a sigilless alias chain.
                             // The argument may itself be a `\name` parameter in
                             // the caller. Using the immediate source name here
@@ -3230,7 +3241,7 @@ impl Interpreter {
                                 .insert_sym_noting(alias_key, Value::str(source_name));
                             self.lexicals.sigilless_alias_seen = true;
                         } else if matches!(
-                            args[positional_idx].view(),
+                            args[positional_idx].unwrap_varref().view(),
                             ValueView::ContainerRef(_)
                                 | ValueView::HashEntryRef { .. }
                                 | ValueView::Proxy { .. }

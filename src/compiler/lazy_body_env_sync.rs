@@ -245,7 +245,7 @@ impl Compiler {
         }
         self.attr_decls_by_name_reads(&plan.attr_decls, &mut names)?;
         self.methods_by_name_reads(&plan.method_name_chunks, &plan.method_decls, &mut names)?;
-        let package = self.qualified_role_decl_name(&plan.name.resolve());
+        let package = self.declared_type_name(&plan.name.resolve(), plan.name_is_prequalified);
         for op in &plan.deferred_body_ops {
             match (op.kind, &op.chunk) {
                 (DeferredBodyOpKind::TokenRule, _) => {

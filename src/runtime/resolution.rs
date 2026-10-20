@@ -460,6 +460,8 @@ impl Interpreter {
             return None;
         }
         if crate::qualified::is_qualified_str(name) {
+            let identity = self.qualified_token_identity(Symbol::intern(name));
+            let name = identity.as_str();
             let mut defs = Vec::new();
             if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(name)) {
                 defs.extend(exact.clone());

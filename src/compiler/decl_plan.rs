@@ -256,7 +256,12 @@ impl Compiler {
         // closure nesting — see its doc comment), so no special-casing is
         // needed at this call site.
         let package_name = if name_expr.is_none() && !is_hoisted_shell {
-            Some(self.qualified_class_decl_name(&name.resolve(), *is_lexical, *decl_id))
+            Some(self.declared_class_storage_name(
+                &name.resolve(),
+                self.decl_name_is_prequalified(),
+                *is_lexical,
+                *decl_id,
+            ))
         } else {
             None
         };
@@ -285,6 +290,7 @@ impl Compiler {
         let body_plan = self.compile_class_body_plan(body, package_name.as_deref());
         self.code.add_class_decl_plan(
             stmt,
+            name_expr.is_none() && self.decl_name_is_prequalified(),
             name_chunk,
             trait_args,
             attr_decls,
@@ -838,7 +844,7 @@ impl Compiler {
         let package_name = if is_hoisted_shell {
             None
         } else {
-            Some(self.qualified_role_decl_name(&name.resolve()))
+            Some(self.declared_type_name(&name.resolve(), self.decl_name_is_prequalified()))
         };
         let lexical_type_name = custom_traits
             .iter()
@@ -900,11 +906,14 @@ impl Compiler {
         // that names it never ran). Always compute it.
         let deferred_body_ops = self.compile_role_deferred_body(
             body,
-            &package_name.unwrap_or_else(|| self.qualified_role_decl_name(&name.resolve())),
+            &package_name.unwrap_or_else(|| {
+                self.declared_type_name(&name.resolve(), self.decl_name_is_prequalified())
+            }),
         );
         let method_outer_lexical_slots = self.local_slots_by_name();
         self.code.add_role_decl_plan(
             stmt,
+            self.decl_name_is_prequalified(),
             trait_args,
             attr_decls,
             method_name_chunks,

@@ -80,7 +80,9 @@ pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, 
         });
         *field = node_field(Some("name"), name);
     }
-    if let Some(tags) = &header.export_tags {
+    if let Some(tags) = &header.export_tags
+        && !super::package_traits::has_export(&node)
+    {
         let export = Value::rakuast(Box::new(trait_is("export", export_argument(tags))));
         match node.fields.iter_mut().find(|f| f.name == Some("traits")) {
             Some(field) => {
@@ -202,6 +204,9 @@ pub(super) fn lower_with_header(
     use crate::ast::Stmt;
     let (stripped, mut header) = strip(node, node.class != RakuAstClass::Role)?;
     let mut stmt = lower(&stripped)?;
+    if let Stmt::Package { body, .. } = &mut stmt {
+        super::routine_source::retain(node, body)?;
+    }
     let name = match &stmt {
         Stmt::ClassDecl { name, .. } | Stmt::Package { name, .. } | Stmt::RoleDecl { name, .. } => {
             name.resolve()

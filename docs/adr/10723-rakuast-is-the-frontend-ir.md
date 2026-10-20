@@ -1515,3 +1515,71 @@ On the tested tree, 8,052 / 8,094 files pass the frontend survey, and all
 8,052 ratchet files / 83,488 assertions pass under the release binary. The
 16 added entries comprise the two feed tests and 14 refreshed-main tests;
 the remaining cause survey has 27 DIFF and 15 REFUSE files.
+
+### 6.85 S10: package scalar binding authority (2026-10-20)
+
+TRIR outer seeding now consults the declaring package's canonical `our`
+scalar cell after exact activation captures and before file/env fallbacks.
+The cell remains live rather than entering a value snapshot cache. The
+ordinary parser's incidental callsite marker had hidden this first-call
+binding error; RakuAST lowering need not recreate that marker.
+
+VM plain stores resolve the same cell before the generic bare-env write
+shortcut. Container arguments carry that cell through `WrapVarRef`; the
+parameter binder preserves an already-resolved lvalue instead of re-resolving
+its name and scheduling an unrelated name-based copyback. Readonly decisions
+and scalar constraints consult the target binding. `DeclareOurScalar` carries
+its own optional constraint constant, including an explicit absence, rather
+than attaching a caller's same-named type. Split runtime package bodies carry
+their own `our` aliases separately from their private lexicals: compilation
+hides caller slots for both, but binds only private lexicals from the static
+store. The cache format advances to 38.
+
+Class-body exit restores the bare aliases of top-level `our` declarations
+while preserving their qualified storage and changes to shared outer cells.
+The executable contract is `t/rakuast/rakuast-package-our-bindings.t`, with
+string and AST EVAL coverage measured against Rakudo 2026.07. Existing routine
+package-switch and in-file package-variable regressions exercise both
+frontends as well.
+
+Package declarations retain their written `is` traits and executable trait
+arguments in the internal AST. Conversion, construction and lowering preserve
+the same Module/Package fields, including written trait order beside export
+traits and unit bodies. The compiler evaluates arguments and emits
+`ApplyPackageTrait`, whose VM handler uses compiled `trait_mod:<is>` dispatch.
+Missing parents and unsupported core HOW operations raise the shared typed
+exceptions. Qualified declarations register their namespace ancestors;
+unresolved qualified terms fail instead of manufacturing package objects.
+Execution and conversion share the generated CORE type-name catalogue.
+Generated export namespaces have separate unit and qualified-package indexes;
+they do not become user package declarations or change custom EXPORT lookup.
+An ancestor vivified during a pending class's load does not replace its HOW.
+Class/role plans explicitly record compiler
+qualification instead of guessing it from a repeated package prefix.
+The matching method/body chunks use the same declaration-name provenance.
+Relative compound type identities remain distinct from their written package
+bindings; a registry identity does not manufacture another bareword binding.
+A reverse index resolves qualified regex subrules through the public grammar
+binding to that identity, for static patterns, callable token definitions and
+candidate-less protos. Binding changes invalidate the existing regex caches.
+Literal package stash subscripts remain index expressions rather than becoming
+qualified-name lookups, so an absent member yields Nil. EVAL's caller namespace
+classification includes the generated export indexes without declaring them
+as user packages.
+The static module scan reads retained literal stash assignments as export
+names without executing BEGIN or an initializer. Ancestor publication belongs
+to the package-kind operation and carries explicit public/private provenance.
+The existing relative-class regression now measures constructor dispatch
+against Rakudo instead of accepting a fabricated package value's name.
+Post-declaration checks include modules and packages, and semicolon forms
+raise the corresponding unit-scope syntax exceptions. These contracts are
+measured in `t/rakuast/rakuast-package-namespaces-traits.t`.
+
+Package/module declarations used as terms retain their declaration and lexical
+scope through the existing compiler value path. `roast/S10-packages/basic.t`
+now passes all 83 assertions through both frontends and joins the
+whitelist; its completed blocker entry is removed.
+
+Trait application uses the existing compiled declaration-registration timing;
+the remaining compile-time argument/callback scheduling gap is measured in
+#14146, including its pre-existing class reproduction.

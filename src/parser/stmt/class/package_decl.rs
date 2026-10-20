@@ -4,10 +4,10 @@ use crate::ast::Stmt;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+use super::package_unit_meta::{decl_adverb_meta_stmts, with_meta_stmts};
 use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char};
-use crate::parser::primary::var::is_pseudo_package;
-use crate::parser::stmt::{keyword, package_body_block, qualified_ident};
+use crate::parser::stmt::{keyword, qualified_ident};
 
 /// Build an X::Export::NameClash parse error for a symbol exported twice.
 pub(crate) fn export_name_clash_error(name: &str) -> PError {
@@ -20,47 +20,7 @@ pub(crate) fn export_name_clash_error(name: &str) -> PError {
     PError::fatal_with_exception(msg, Box::new(ex))
 }
 
-/// Check if a declaration name is a pseudo-package and return an error if so.
-/// In Raku, the action is always "package name" regardless of the specific declarator.
-pub(crate) fn check_pseudo_package_in_decl(name: &str) -> Result<(), PError> {
-    if is_pseudo_package(name) {
-        let action = "package name";
-        let msg = format!("Cannot use pseudo package {} in {}", name, action);
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("pseudo-package".to_string(), Value::str(name.to_string()));
-        attrs.insert("action".to_string(), Value::str(action.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
-        let ex = Value::make_instance(Symbol::intern("X::PseudoPackage::InDeclaration"), attrs);
-        return Err(PError::fatal_with_exception(msg, Box::new(ex)));
-    }
-    Ok(())
-}
-
-/// The `__MUTSU_SET_META__` calls for a declarator's `:ver`/`:auth`/`:api`
-/// adverbs. Other adverbs are not metadata and are dropped here, as they are in
-/// the block forms.
-fn decl_adverb_meta_stmts(name: &str, adverbs: Vec<(String, crate::ast::Expr)>) -> Vec<Stmt> {
-    adverbs
-        .into_iter()
-        .filter(|(k, _)| matches!(k.as_str(), "ver" | "auth" | "api"))
-        .map(|(k, v)| super::class_decl::meta_setter_stmt(name, &k, v))
-        .collect()
-}
-
-/// Pair a `unit class`/`unit role`/`unit grammar` declaration with the metadata
-/// setters its declarator adverbs produced. A `SyntheticBlock` is a non-lexical
-/// statement sequence, so the declaration keeps its compilation-unit scope; the
-/// declaration is always its *last* element, which is what `stmt_list` relies on
-/// when it absorbs the rest of the file into the declaration's body. Returns the
-/// bare declaration when there are no adverbs, so the overwhelmingly common
-/// shape is untouched.
-fn with_meta_stmts(mut meta_stmts: Vec<Stmt>, decl: Stmt) -> Stmt {
-    if meta_stmts.is_empty() {
-        return decl;
-    }
-    meta_stmts.push(decl);
-    Stmt::SyntheticBlock(meta_stmts)
-}
+pub(crate) use super::package_syntax::check_pseudo_package_in_decl;
 
 /// Parse `unit module` or `unit class` statement.
 pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
@@ -488,130 +448,41 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     check_pseudo_package_in_decl(&name)?;
     // Consume optional type adverbs (:ver<...>, :auth<...>, :api<...>) on the
     // unit package name, e.g. `unit module Foo:ver<0.0.12>:auth<zef:bar>;`.
-    let (rest, _traits) = parse_declarator_traits(rest)?;
+    let (rest, adverbs) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
     // Consume bareword traits such as `is export` / `is rw` / custom
     // `is Foo(...)` before the terminating semicolon, e.g.
     // `unit module App::Racoco::ConfigFile is export;`.
-    let (rest, export_tags) = parse_package_is_traits(rest)?;
+    let (rest, traits) = parse_package_is_traits(rest)?;
     let (rest, _) = opt_char(rest, ';');
+    let mut body = Vec::new();
+    crate::ast::routine_trait::attach(&mut body, traits.source);
     let package = Stmt::Package {
         name: Symbol::intern(&name),
-        body: Vec::new(),
+        body,
         kind,
+        custom_traits: traits.custom,
         is_unit: true,
         is_my: false,
     };
     // `unit module A::B::C is export;` publishes the short name `C` (the
     // package itself), as rakudo does for a qualified declarator name.
-    let export_tags = export_tags.filter(|_| name.contains("::"));
+    let export_tags = traits.export_tags.filter(|_| name.contains("::"));
     Ok((
         rest,
         crate::ast::package_header::wrap(
             package,
             &name,
             crate::ast::package_header::Header {
-                adverbs: Vec::new(),
+                adverbs,
                 export_tags,
             },
         ),
     ))
 }
 
-/// Consume a package declarator's bareword traits (`is export`, `is rw`, a
-/// custom `is Foo(...)`), returning the `is export` tags when present.
-pub(crate) fn parse_package_is_traits(input: &str) -> PResult<'_, Option<Vec<String>>> {
-    let mut rest = input;
-    let mut export_tags: Option<Vec<String>> = None;
-    while let Some(r) = keyword("is", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, trait_name) = crate::parser::stmt::ident(r)?;
-        if trait_name == "export" {
-            let mut tags = Vec::new();
-            super::class_decl::push_export_tags(r, &mut tags);
-            export_tags = Some(tags);
-        }
-        let r = skip_balanced_parens(r);
-        let (r, _) = ws(r)?;
-        rest = r;
-    }
-    Ok((rest, export_tags))
-}
+pub(crate) use super::package_block::{package_decl, package_decl_my};
+pub(crate) use super::package_traits::parse_package_is_traits;
 
-/// Parse `package` declaration.
-pub(crate) fn package_decl(input: &str) -> PResult<'_, Stmt> {
-    package_decl_with_scope(input, false)
-}
-
-/// Parse `my package` declaration (lexically scoped).
-pub(crate) fn package_decl_my(input: &str) -> PResult<'_, Stmt> {
-    package_decl_with_scope(input, true)
-}
-
-pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, Stmt> {
-    let rest = keyword("package", input).ok_or_else(|| PError::expected("package declaration"))?;
-    let (rest, _) = ws1(rest)?;
-    let (rest, name) = qualified_ident(rest)?;
-    check_pseudo_package_in_decl(&name)?;
-    let (rest, _traits) = parse_declarator_traits(rest)?;
-    let (rest, _) = ws(rest)?;
-    let (rest, body) = {
-        let _pkg = super::super::simple::push_package_path(&name);
-        package_body_block(rest)?
-    };
-    Ok((
-        rest,
-        Stmt::Package {
-            name: Symbol::intern(&name),
-            body,
-            kind: crate::ast::PackageKind::Package,
-            is_unit: false,
-            is_my,
-        },
-    ))
-}
-
-/// Parse `proto` declaration.
 #[cfg(test)]
-mod unit_repr_tests {
-    use super::*;
-
-    // `unit class`/`unit role` extend to the end of the file, so their
-    // angle-bracket trait parsing (`is repr<...>`, `is ctype<...>`) is
-    // exercised here directly rather than via a t/*.t script — see
-    // t/is-repr-angle-bracket-trait.t for the block-form (`class`/`role`)
-    // coverage of the same underlying `parse_trait_angle_arg` mechanism.
-
-    #[test]
-    fn unit_class_accepts_repr_angle_trait() {
-        let (_, stmt) = unit_module_stmt("unit class Foo is repr<CStruct>;").unwrap();
-        let Stmt::ClassDecl { repr, .. } = stmt else {
-            panic!("expected ClassDecl, got {stmt:?}");
-        };
-        assert_eq!(repr.as_deref(), Some("CStruct"));
-    }
-
-    #[test]
-    fn unit_class_accepts_ctype_angle_trait_as_custom_trait() {
-        let (_, stmt) = unit_module_stmt("unit class Foo is ctype<long>;").unwrap();
-        let Stmt::ClassDecl { custom_traits, .. } = stmt else {
-            panic!("expected ClassDecl, got {stmt:?}");
-        };
-        assert!(
-            custom_traits.iter().any(|(name, _)| name == "ctype"),
-            "expected a 'ctype' custom trait, got {custom_traits:?}"
-        );
-    }
-
-    #[test]
-    fn unit_role_accepts_ctype_angle_trait_as_custom_trait() {
-        let (_, stmt) = unit_module_stmt("unit role Foo is ctype<long>;").unwrap();
-        let Stmt::RoleDecl { custom_traits, .. } = stmt else {
-            panic!("expected RoleDecl, got {stmt:?}");
-        };
-        assert!(
-            custom_traits.iter().any(|(name, _)| name == "ctype"),
-            "expected a 'ctype' custom trait, got {custom_traits:?}"
-        );
-    }
-}
+mod unit_repr_tests;

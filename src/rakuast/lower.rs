@@ -1783,6 +1783,7 @@ fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         name: crate::symbol::Symbol::intern(&call_name_str(node)?),
         body: lower_package_body(lower_block(named_child(node, "body")?)?),
         kind,
+        custom_traits: super::package_traits::lower(node)?,
         is_unit: scope == "unit",
         is_my: scope == "my",
     })
@@ -4502,6 +4503,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::VarDeclarationTerm
         | RakuAstClass::VarDeclarationConstant
         | RakuAstClass::TypeEnum
+        | RakuAstClass::Module
+        | RakuAstClass::Package
         | RakuAstClass::Method
         | RakuAstClass::Submethod => Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?))),
         RakuAstClass::Sub if node.fields.iter().any(|f| f.name == Some("name")) => {

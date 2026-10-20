@@ -164,10 +164,12 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             name,
             body,
             kind: _,
+            custom_traits,
             is_unit: _,
             is_my: _,
         } => {
             v.visit_name(name.as_str(), NameKind::Decl);
+            traits(v, custom_traits);
             super::walk_stmts(v, body);
         }
         // The declaration itself is visited where the prologue keeps it.

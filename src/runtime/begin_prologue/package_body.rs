@@ -98,10 +98,16 @@ pub(super) fn split_package_decl(stmt: Stmt) -> (Stmt, Option<Stmt>) {
                     .into_iter()
                     .collect();
             lexicals.sort();
+            let mut our_names: Vec<String> =
+                crate::compiler::Compiler::package_body_our_names(body)
+                    .into_iter()
+                    .collect();
+            our_names.sort();
             let runtime = Stmt::PackageRuntimeBody {
                 name,
                 body: runtime,
                 lexicals,
+                our_names,
                 decl,
             };
             (stmt, Some(runtime))

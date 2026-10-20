@@ -29,7 +29,7 @@ mod trait_is_constructor;
 use constructor_positional::single_positional_class;
 mod convert;
 mod core_term_names;
-mod core_type_names;
+use crate::core_type_names;
 mod decl_compound_assign;
 mod decl_tail;
 mod decl_traits;
@@ -61,6 +61,7 @@ mod name_parts;
 mod named_param;
 mod origin;
 mod package_header;
+mod package_traits;
 mod parameter_destructure;
 mod parameter_shape;
 mod parameter_signature;
@@ -1795,6 +1796,11 @@ pub fn construct(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    if method == "new"
+        && let Some(result) = package_traits::construct(class_name, args)
+    {
+        return result.map(Some);
+    }
     if method == "new"
         && let Some(result) = control_signature::construct(class_name, args)
     {
@@ -3700,6 +3706,9 @@ fn class_from_name(class_name: &str) -> Option<RakuAstClass> {
 }
 
 fn constructor_is_supported(class: RakuAstClass) -> bool {
+    if matches!(class, RakuAstClass::Module | RakuAstClass::Package) {
+        return true;
+    }
     if control_signature::constructor_schema(class.printed_name()).is_some() {
         return true;
     }

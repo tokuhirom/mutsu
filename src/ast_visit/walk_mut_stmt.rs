@@ -138,13 +138,18 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             name: _,
             body,
             kind: _,
+            custom_traits,
             is_unit: _,
             is_my: _,
-        } => v.visit_stmts_mut(body),
+        } => {
+            traits_mut(v, custom_traits);
+            v.visit_stmts_mut(body);
+        }
         Stmt::PackageRuntimeBody {
             name: _,
             body,
             lexicals: _,
+            our_names: _,
             decl: _,
         } => v.visit_stmts_mut(body),
         Stmt::Return(e)

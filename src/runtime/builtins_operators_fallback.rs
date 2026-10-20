@@ -1386,7 +1386,7 @@ impl Interpreter {
         Some(qualified(pkg, rest).as_str().to_string())
     }
 
-    pub(super) fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
+    pub(crate) fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
         // An explicitly written `GLOBAL::` qualifier resolves through the
         // pseudo-package, and raku then names the symbol without its `&` sigil:
         // `GLOBAL::index(…)` is "Could not find symbol 'index' in 'GLOBAL'",

@@ -185,7 +185,8 @@ impl Interpreter {
     /// The type names the calling scope declares, for the RakuAST conversion of
     /// an EVAL string: the registry's types, plus the lexical ones (`my class
     /// P`), which live in the environment as the package they are stored under.
-    // Cost: O(r + e), r = registry types, e = environment entries.
+    // Cost: O(r + e + m + x*d), r = registry types, e = environment entries,
+    // m = loaded modules, x = export namespaces, d = EVAL ancestry (at most 64).
     pub(crate) fn eval_caller_type_names(&self) -> Vec<String> {
         let mut names: Vec<String> = self
             .collect_eval_user_type_names()
@@ -200,6 +201,21 @@ impl Interpreter {
         // A loaded module's package is global, whatever frame the `EVAL` runs
         // in (`require Test; ... eval-lives-ok 'Test'` from inside `Test`).
         names.extend(self.module.loaded_modules.iter().cloned());
+        // Generated EXPORT stashes are visible namespace objects without being
+        // user package declarations. Preserve their classification in EVAL.
+        names.extend(
+            self.module.package_export_namespaces.iter().map(|name| name.resolve()),
+        );
+        let unit = self.executing_unit_sym_for_module_load();
+        names.extend(self.module.unit_export_namespaces.iter().filter_map(|(owner, name)| {
+            if self.unit_chain_contains_unit(unit, *owner)
+                || self.unit_chain_contains_unit(self.current_unit, *owner)
+            {
+                Some(name.resolve())
+            } else {
+                None
+            }
+        }));
         names
     }
 

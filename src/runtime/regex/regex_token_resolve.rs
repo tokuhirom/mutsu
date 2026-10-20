@@ -372,6 +372,7 @@ impl Interpreter {
     /// candidate registered under this exact qualified name, including the proto
     /// variants and the ones the qualifier's ancestors contribute.
     fn collect_qualified_token_defs(&self, name_sym: Symbol) -> Vec<Arc<FunctionDef>> {
+        let name_sym = self.qualified_token_identity(name_sym);
         let name = name_sym.as_str();
         let mut out = Vec::new();
         if let Some(defs) = self.registry().token_defs.get(&name_sym) {

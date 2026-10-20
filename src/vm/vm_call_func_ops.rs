@@ -499,7 +499,13 @@ impl Interpreter {
             for e in &spec.entries {
                 let slot = &mut self.stack[base + e.pos as usize];
                 let val = std::mem::replace(slot, Value::NIL);
-                *slot = Value::pair(e.key.clone(), val);
+                // The VarRef is call-site provenance, not the Pair's value.
+                // Keep an already-resolved container inside it (rw binding),
+                // while native named-value readers receive the actual value.
+                *slot = Value::pair(
+                    e.key.clone(),
+                    crate::runtime::types::unwrap_varref_value(val),
+                );
             }
         }
         // `_inner`, not the wrapper: this frame's mask is already published by

@@ -185,6 +185,7 @@ impl Interpreter {
         let f5_gen_before = self.registry().method_generation;
         if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
+            name_is_prequalified,
             name_chunk,
             parents,
             class_is_rw,
@@ -222,7 +223,7 @@ impl Interpreter {
                 // `class GLOBAL::Foo` declares Foo in the global namespace
                 stripped.to_string()
             } else if current_package_sym == crate::symbol::wk::global_package()
-                || crate::qualified::is_inside_package(resolved_sym, current_package_sym)
+                || *name_is_prequalified
                 // `require "Foo.rakumod"` runs the file with the package set to
                 // `Foo` before `class Foo` is declared; only a class that is
                 // already registered (we are inside its body) makes a same-named
@@ -703,6 +704,9 @@ impl Interpreter {
                 source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias));
             let skip_identity_binding =
                 self.qualified_identity_binding_is_redundant(&qualified_name, &storage_name);
+            if !*is_lexical {
+                self.record_compound_type_binding(qualified_sym, resolved_sym);
+            }
             let env = self.env_mut();
             // NB: registering a type must NOT touch `$_`. A `class`/`role`
             // declaration is not an expression whose value becomes the topic,
@@ -1244,6 +1248,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if let Some(crate::opcode::CompiledRoleDeclPlan {
             name,
+            name_is_prequalified,
             type_params,
             type_param_defs,
             is_export,
@@ -1277,7 +1282,7 @@ impl Interpreter {
                 stripped.to_string()
             } else if current_package_sym == crate::symbol::wk::global_package()
                 || name_str == current_package
-                || crate::qualified::is_inside_package(name_sym, current_package_sym)
+                || *name_is_prequalified
             {
                 name_str.clone()
             } else {
@@ -1430,6 +1435,9 @@ impl Interpreter {
                 self.compile_role_methods(&qualified_name);
             }
             // See `exec_register_class_op`: a declaration does not set the topic.
+            if !is_mangled {
+                self.record_compound_type_binding(Symbol::intern(&qualified_name), name_sym);
+            }
             if is_mangled {
                 self.bind_lexical_role_names(&qualified_name, &source_qualified_name, &name_str);
             } else if !self
@@ -1440,7 +1448,7 @@ impl Interpreter {
                     Value::package(Symbol::intern(&qualified_name)),
                 );
             }
-            if !is_mangled && qualified_name != name_str && !name_is_qualified {
+            if !is_mangled && qualified_name != name_str {
                 self.env_mut().insert(
                     name_str.clone(),
                     Value::package(Symbol::intern(&qualified_name)),

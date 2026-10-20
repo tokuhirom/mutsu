@@ -125,6 +125,14 @@ impl Interpreter {
         let ValueView::ContainerRef(cell) = value.view() else {
             return;
         };
+        // Package cells received their declaration's metadata when created.
+        // Capturing one must not attach a same-named caller's constraint.
+        if self
+            .our_package_scalar_cell(name)
+            .is_some_and(|(_, own)| crate::gc::Gc::ptr_eq(&own, &cell))
+        {
+            return;
+        }
         // `my Str @a` / `my Int %h` record the ELEMENT type under the
         // sigiled name; a cell holding the whole aggregate must not check
         // `@a = ()` against it (the typed container checks its elements).

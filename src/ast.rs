@@ -2186,6 +2186,7 @@ pub(crate) enum Stmt {
         /// determines `package-kind` in the X::Attribute::Package error raised
         /// when a `has` attribute is declared in this package's body.
         kind: PackageKind,
+        custom_traits: Vec<(String, Option<Expr>)>,
         /// True for `unit module Foo;` / `unit package Foo;` where the scope
         /// extends to the rest of the enclosing scope, false for brace-scoped
         /// `package Foo { ... }`.
@@ -2205,6 +2206,9 @@ pub(crate) enum Stmt {
         /// The `my` lexicals the declaration's body declares, which `body`
         /// reads and writes through the package's static store.
         lexicals: Vec<String>,
+        /// The body's own package aliases, which shadow caller local slots
+        /// without becoming entries in the private lexical store.
+        our_names: Vec<String>,
         /// Which declaration the body belongs to, so the package name is
         /// qualified the way that declaration's own registration qualifies it.
         decl: PackageRuntimeDecl,

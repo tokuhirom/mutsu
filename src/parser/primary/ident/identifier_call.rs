@@ -1744,39 +1744,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 && let Some(end) = find_angle_subscript_end(after_bracket)
             {
                 let symbol = &after_bracket[..end];
-                if matches!(symbol.chars().next(), Some('$' | '@' | '%' | '&')) {
-                    let stash_name = format!("{full_name}::");
-                    return Ok((
-                        &after_bracket[end + 1..],
-                        Expr::Index {
-                            target: Box::new(Expr::PseudoStash(stash_name)),
-                            index: Box::new(stash_angle_index(symbol)),
-                            is_positional: false,
-                            spelling: Default::default(),
-                        },
-                    ));
-                }
-                // A bare key on a pseudo-package is a stash lookup, not a
-                // qualified type name: `MY::<Foo>` asks whether the current
-                // lexical scope contains `Foo`. Ordinary package names keep
-                // the `Foo::<Bar>` type-name interpretation below.
-                if crate::parser::primary::var::is_pseudo_package(&full_name) && !symbol.is_empty()
-                {
-                    let stash_name = format!("{full_name}::");
-                    return Ok((
-                        &after_bracket[end + 1..],
-                        Expr::Index {
-                            target: Box::new(Expr::PseudoStash(stash_name)),
-                            index: Box::new(stash_angle_index(symbol)),
-                            is_positional: false,
-                            spelling: Default::default(),
-                        },
-                    ));
-                }
-                full_name.push_str("::");
-                full_name.push_str(symbol);
-                r = &after_bracket[end + 1..];
-                continue;
+                // A bare key is also a stash lookup: an absent member is Nil,
+                // while a present nested type remains usable as a type object.
+                // Keep the subscript distinct from a qualified name.
+                return Ok((
+                    &after_bracket[end + 1..],
+                    Expr::Index {
+                        target: Box::new(Expr::PseudoStash(format!("{full_name}::"))),
+                        index: Box::new(stash_angle_index(symbol)),
+                        is_positional: false,
+                        spelling: crate::ast::IndexSpelling::Angle,
+                    },
+                ));
             }
             // Handle ::«SYMBOL» subscript syntax: the interpolating
             // word-quote spelling of `::<SYMBOL>`, needed when the symbol

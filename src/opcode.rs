@@ -996,8 +996,8 @@ pub(crate) enum OpCode {
         explicit_init: bool,
         typechecked: bool,
     },
-    /// `our $x = <expr>` for a plain untyped scalar (no `:=` bind, no type
-    /// constraint, no container sigil, not a `constant`): installs ONE shared
+    /// `our $x = <expr>` for a plain non-native scalar (no `:=` bind, no
+    /// container sigil, not a `constant`): installs ONE shared
     /// `ContainerRef` cell under the lexical local slot, the bare env name,
     /// and the package-qualified name (`qualified_idx`) — see
     /// `Interpreter::exec_declare_our_scalar_op`. `our $x` and `$Pkg::x` (or
@@ -1006,10 +1006,15 @@ pub(crate) enum OpCode {
     /// generic `ContainerRef` read/write-through chokepoints (`GetLocal`/
     /// `SetLocal`/`GetGlobal`/`SetGlobal`) — no bespoke sync code needed.
     /// Replaces the old two-store `Dup; SetLocalDecl(slot); SetGlobal(q)`
-    /// sequence for exactly this case; every other `our` shape (typed,
-    /// `@`/`%`/`&`-sigiled, `constant`, `:=` bound, or shadowing an outer
-    /// `constant`) keeps the old sequence unchanged.
-    DeclareOurScalar { slot: u32, qualified_idx: u32 },
+    /// sequence for exactly this case. `constraint_idx` names this declaration's
+    /// own scalar constraint, if any; caller metadata cannot supply one.
+    /// Native, aggregate, constant and bound declarations keep their existing
+    /// store sequence.
+    DeclareOurScalar {
+        slot: u32,
+        qualified_idx: u32,
+        constraint_idx: Option<u32>,
+    },
     /// The bind-source tag of a package-qualified scalar (`my $x := $Pkg::y`,
     /// #13941), in place of [`Self::WrapVarRef`]. Pops the value the read
     /// pushed; when the package variable lives in a shared `ContainerRef`
@@ -3946,11 +3951,19 @@ pub(crate) enum OpCode {
     },
     /// Register a package name so it's accessible as a Package value.
     RegisterPackage { name_idx: u32 },
+    /// Apply an `is` trait to an already registered module/package object.
+    /// The evaluated trait argument is on the stack.
+    ApplyPackageTrait {
+        package_idx: u32,
+        trait_idx: u32,
+        explicit_argument: bool,
+    },
     /// Record the declarator keyword (`package`/`module`/`grammar`) of a bare
     /// `Stmt::Package` so `.HOW` reports the matching metaclass.
     SetPackageKind {
         name_idx: u32,
         kind: crate::ast::PackageKind,
+        declare_ancestors: bool,
     },
     /// Register a lexically-scoped (`my`) package type object.
     /// Same as RegisterPackage but marks the name as block-declared
@@ -5609,6 +5622,8 @@ pub(crate) fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
 #[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledClassDeclPlan {
     pub(crate) name: Symbol,
+    /// The compiler has already made this literal declaration name absolute.
+    pub(crate) name_is_prequalified: bool,
     /// The compiled chunk producing a runtime-resolved type name
     /// (`class ::($name) {...}`). `None` for the ordinary literal-name form.
     pub(crate) name_chunk: Option<CompiledDeclExpr>,
@@ -6273,6 +6288,8 @@ pub(crate) fn deferred_body_op_declared_vars(stmt: &Stmt) -> Vec<Symbol> {
 #[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) name: Symbol,
+    /// The compiler has already made this declaration name absolute.
+    pub(crate) name_is_prequalified: bool,
     pub(crate) type_params: Vec<String>,
     #[bincode(with_serde)]
     pub(crate) type_param_defs: Vec<ParamDef>,
@@ -12724,6 +12741,7 @@ impl CompiledCode {
     pub(crate) fn add_class_decl_plan(
         &mut self,
         stmt: &Stmt,
+        name_is_prequalified: bool,
         name_chunk: Option<CompiledDeclExpr>,
         trait_args: Vec<Option<DeclTraitArg>>,
         attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
@@ -12785,6 +12803,7 @@ impl CompiledCode {
         let plan_idx = self.class_decl_plans.len() as u32;
         self.class_decl_plans.push(CompiledClassDeclPlan {
             name: *name,
+            name_is_prequalified,
             name_chunk,
             parents: parents.clone(),
             class_is_rw: *class_is_rw,
@@ -12818,6 +12837,7 @@ impl CompiledCode {
     pub(crate) fn add_role_decl_plan(
         &mut self,
         stmt: &Stmt,
+        name_is_prequalified: bool,
         trait_args: Vec<Option<DeclTraitArg>>,
         attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
@@ -12875,6 +12895,7 @@ impl CompiledCode {
         let plan_idx = self.role_decl_plans.len() as u32;
         self.role_decl_plans.push(CompiledRoleDeclPlan {
             name: *name,
+            name_is_prequalified,
             type_params: type_params.clone(),
             type_param_defs: type_param_defs.clone(),
             is_export: *is_export,

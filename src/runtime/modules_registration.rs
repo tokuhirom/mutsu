@@ -3,6 +3,7 @@ mod registration_class;
 mod registration_class_attr;
 mod registration_class_augment;
 mod registration_class_body;
+mod registration_class_body_aliases;
 mod registration_class_body_attr;
 mod registration_class_body_does;
 mod registration_class_body_exit;
