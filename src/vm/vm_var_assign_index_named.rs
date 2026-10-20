@@ -1294,7 +1294,6 @@ impl Interpreter {
         if declared_type.as_deref().is_some_and(|t| t == "Map") && !is_shadowing_user_class {
             let is_ro_constant_hash = var_name.starts_with('%')
                 && self.is_readonly(&var_name)
-                && !self.env().contains_key_sym(MetaNs::Bound.key(var_sym))
                 && matches!(
                     self.env().get(&var_name).map(Value::view),
                     Some(ValueView::Hash(_))
@@ -2657,23 +2656,14 @@ impl Interpreter {
                 } else {
                     None
                 };
-                // Pre-compute whether this %-sigiled variable was bound via `:=`.
-                // Bound hash variables are marked readonly, so we use that as a
-                // signal to allow in-place mutation (preserving shared identity).
-                // A `:=` bind also records a dedicated `__mutsu_bound::%name`
-                // marker (see `Stmt::MarkBoundContainer`), which distinguishes a
-                // writable bound hash from a `constant %M` — both are readonly,
-                // but only the former may be mutated in place.
+                // A readonly `%`-var is a `constant %M` (an immutable Map): a
+                // `:=` bind leaves its name writable (ADR-0097). Element
+                // assignment must die with X::Assignment::RO, mirroring raku
+                // and mutsu's own `constant @A` behavior. Only fire for a plain
+                // Hash value; immutable Set/Bag/Mix containers keep their
+                // dedicated RO paths below.
                 let is_readonly_hash_var = var_name.starts_with('%') && self.is_readonly(&var_name);
-                let is_bound_hash_var =
-                    is_readonly_hash_var && self.env().contains_key_sym(MetaNs::Bound.key(var_sym));
-                // A readonly `%`-var that was NOT `:=`-bound is a `constant %M`
-                // (an immutable Map): element assignment must die with
-                // X::Assignment::RO, mirroring raku and mutsu's own `constant @A`
-                // behavior. Only fire for a plain Hash value; immutable
-                // Set/Bag/Mix containers keep their dedicated RO paths below.
                 if is_readonly_hash_var
-                    && !is_bound_hash_var
                     && matches!(
                         self.env().get(&var_name).map(Value::view),
                         Some(ValueView::Hash(_))

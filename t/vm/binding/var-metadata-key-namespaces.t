@@ -45,8 +45,9 @@ plan 23;
     is $a, 9, 'a two-hop alias chain still reaches the root';
 }
 
-# __mutsu_bound:: -- a `:=`-bound container is mutable in place, unlike a
-# `constant`, and the readonly check tells them apart by this key.
+# A `:=`-bound container is mutable in place, unlike a `constant`. The bind
+# leaves the name writable (ADR-0097 retired the `__mutsu_bound::` key that
+# used to tell the two apart).
 {
     my @src = 1, 2, 3;
     my @bound := @src;

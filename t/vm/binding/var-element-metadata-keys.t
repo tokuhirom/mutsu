@@ -16,7 +16,7 @@ use Test;
 #     fills back in, or a readonly element that accepts a write; and
 #   * an env write that reaches `Env::insert_sym` instead of
 #     `Env::insert_sym_noting` skips `note_env_key`, the latch that arms the
-#     `elem_index_meta_possible()` / `bound_marker_possible()` fast-path probes.
+#     `elem_index_meta_possible()` / `bound_array_slice_possible()` fast-path probes.
 #     The value is then stored correctly and the reader never looks, for the
 #     rest of the process. Stage 2 of #8087 shipped exactly that bug and paid a
 #     CI cycle for it, which is why these are behavioural tests and not

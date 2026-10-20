@@ -124,7 +124,9 @@ pub(crate) fn interpreter_version() -> String {
     // 22: source spelling records gained labelled blocks and imported terms.
     // 26: `ModuleLoadFacts` gained `routine_enums` (#13010).
     // 27: `CompiledFunction` and `TrChunk` carry hidden-from-backtrace metadata.
-    const CACHE_FORMAT_VERSION: u32 = 27;
+    // 28: `Stmt::MarkBoundContainer` is gone (ADR-0097), shifting the `Stmt`
+    // discriminants after it.
+    const CACHE_FORMAT_VERSION: u32 = 28;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

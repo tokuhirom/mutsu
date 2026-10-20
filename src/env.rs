@@ -345,13 +345,6 @@ static SIGILLESS_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// over-set only makes the (correct) probe run.
 static SIGILLESS_READONLY_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
-/// Monotonic, process-global flag for `__mutsu_bound::*` keys (the `:=`-bound
-/// container markers consulted by `CheckReadOnly` on every whole-variable
-/// assignment). Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: every
-/// creation site flows through the String-keyed [`Env::insert`], the flag is
-/// monotonic, and an over-set only makes the (correct) check run.
-static BOUND_KEY_SEEN: AtomicBool = AtomicBool::new(false);
-
 /// Monotonic, process-global flag for `__mutsu_bound_array_slice::*` markers
 /// (sigilless multi-dim slice binds), consulted by
 /// `distribute_bound_multidim_slice` on every scalar `SetLocal`/assignment.
@@ -446,13 +439,6 @@ pub(crate) fn sigilless_meta_keys_possible() -> bool {
     SIGILLESS_META_KEY_SEEN.load(Ordering::Relaxed)
 }
 
-/// True if any `__mutsu_bound::*` marker may exist in some env. See
-/// [`BOUND_KEY_SEEN`].
-#[inline]
-pub(crate) fn bound_marker_possible() -> bool {
-    BOUND_KEY_SEEN.load(Ordering::Relaxed)
-}
-
 /// True if any `__mutsu_bound_array_slice::*` marker may exist in some env.
 /// See [`BOUND_SLICE_KEY_SEEN`].
 #[inline]
@@ -495,7 +481,7 @@ pub(crate) fn return_rebound_possible() -> bool {
     RETURN_REBOUND_SEEN.load(Ordering::Relaxed)
 }
 
-/// Flip [`CLOSURE_META_KEY_SEEN`] / [`BOUND_KEY_SEEN`] / [`PLACEHOLDER_KEY_SEEN`]
+/// Flip [`CLOSURE_META_KEY_SEEN`] / [`PLACEHOLDER_KEY_SEEN`] and the other latches
 /// if `key` is one of the tracked metadata keys. The outer `__mutsu_` / `^` gates
 /// keep this ~1 byte compare for ordinary lexical names (which never start with
 /// `_` or `^`).
@@ -521,8 +507,6 @@ pub(crate) fn note_env_key(key: &str) {
             || key.starts_with("__mutsu_predictive_seq_iter::")
         {
             CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
-        } else if key.starts_with("__mutsu_bound::") {
-            BOUND_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_array_slice::") {
             BOUND_SLICE_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_scalar_bind_no_container::") {
