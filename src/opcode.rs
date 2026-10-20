@@ -5600,6 +5600,8 @@ pub(crate) fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
 #[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledClassDeclPlan {
     pub(crate) name: Symbol,
+    /// The compiler has already made this literal declaration name absolute.
+    pub(crate) name_is_prequalified: bool,
     /// The compiled chunk producing a runtime-resolved type name
     /// (`class ::($name) {...}`). `None` for the ordinary literal-name form.
     pub(crate) name_chunk: Option<CompiledDeclExpr>,
@@ -6264,6 +6266,8 @@ pub(crate) fn deferred_body_op_declared_vars(stmt: &Stmt) -> Vec<Symbol> {
 #[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) name: Symbol,
+    /// The compiler has already made this declaration name absolute.
+    pub(crate) name_is_prequalified: bool,
     pub(crate) type_params: Vec<String>,
     #[bincode(with_serde)]
     pub(crate) type_param_defs: Vec<ParamDef>,
@@ -12715,6 +12719,7 @@ impl CompiledCode {
     pub(crate) fn add_class_decl_plan(
         &mut self,
         stmt: &Stmt,
+        name_is_prequalified: bool,
         name_chunk: Option<CompiledDeclExpr>,
         trait_args: Vec<Option<DeclTraitArg>>,
         attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
@@ -12776,6 +12781,7 @@ impl CompiledCode {
         let plan_idx = self.class_decl_plans.len() as u32;
         self.class_decl_plans.push(CompiledClassDeclPlan {
             name: *name,
+            name_is_prequalified,
             name_chunk,
             parents: parents.clone(),
             class_is_rw: *class_is_rw,
@@ -12809,6 +12815,7 @@ impl CompiledCode {
     pub(crate) fn add_role_decl_plan(
         &mut self,
         stmt: &Stmt,
+        name_is_prequalified: bool,
         trait_args: Vec<Option<DeclTraitArg>>,
         attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
@@ -12866,6 +12873,7 @@ impl CompiledCode {
         let plan_idx = self.role_decl_plans.len() as u32;
         self.role_decl_plans.push(CompiledRoleDeclPlan {
             name: *name,
+            name_is_prequalified,
             type_params: type_params.clone(),
             type_param_defs: type_param_defs.clone(),
             is_export: *is_export,

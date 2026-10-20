@@ -45,9 +45,15 @@ impl Interpreter {
             ))
     }
 
-    // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
+    // Cost: O(n + v), n = type name bytes, v = declared version value size.
     pub(crate) fn mop_ver(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             let name = self.mop_receiver_owner(&args[0]);
+            if matches!(
+                self.registry().package_kinds.get(&name),
+                Some(crate::ast::PackageKind::Package)
+            ) {
+                return Err(RuntimeError::meta_method_not_found("ver", &name));
+            }
             if let Some(meta) = self.types.type_metadata.get(&name)
                 && let Some(value) = meta.get("ver").cloned()
             {
@@ -62,14 +68,6 @@ impl Interpreter {
             }
             if name == "Grammar" {
                 return Ok(Value::str_from("6.e"));
-            }
-            // A bare `package` uses PackageHOW, which has no `.^ver` at all, so
-            // `P.^ver` must still throw X::Method::NotFound ("absent by design").
-            if matches!(
-                self.registry().package_kinds.get(&name),
-                Some(crate::ast::PackageKind::Package)
-            ) {
-                return Err(RuntimeError::meta_method_not_found("ver", &name));
             }
             // Core setting types report the language version they were
             // declared in (`Int.^ver` is v6.c). Checked before the class

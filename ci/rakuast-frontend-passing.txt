@@ -5089,6 +5089,7 @@ t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operators.t
 t/rakuast/rakuast-outer-slurpy-bindings.t
 t/rakuast/rakuast-package-indirect-lookup.t
+t/rakuast/rakuast-package-namespaces-traits.t
 t/rakuast/rakuast-package-our-bindings.t
 t/rakuast/rakuast-parameter-optional-traits.t
 t/rakuast/rakuast-paren-list-assign.t

@@ -33,9 +33,15 @@ my $built-package = RakuAST::Package.new(
 lives-ok { EVAL($built-package) }, 'hand-built package applies its custom trait';
 
 for
+    Q[Distribution::Resource.^name], 'Distribution::Resource',
+    Q[Distribution::Resources.^name], 'Distribution::Resources',
+    Q[CompUnit::DependencySpecification.^name], 'CompUnit::DependencySpecification',
+    Q[IO::Path::Unix.^name], 'IO::Path::Unix',
     Q[package NamespaceParent::Nested {}; NamespaceParent.gist], '(NamespaceParent)',
     Q[module NamespaceModule::Nested {}; NamespaceModule.gist], '(NamespaceModule)',
     Q[my $NamespaceScalar = 19; package NamespaceScalar::Nested {}; $NamespaceScalar], 19,
+    Q[module NamespaceRelative { class NamespaceRelative::Child { our $value = 17; method value { $value } } }; NamespaceRelative::Child.new.value], 17,
+    Q[module NamespaceRoleRelative { role NamespaceRoleRelative::Child { method value { 19 } } }; class NamespaceComposed does NamespaceRoleRelative::Child {}; NamespaceComposed.new.value], 19,
     Q[our $seen; multi sub trait_mod:<is>(Mu:U $target, :$shade!) { $seen = $shade }; module NamespacePaint is shade<blue> {}; $seen], 'blue',
     Q[our $seen; multi sub trait_mod:<is>(Mu:U $target, :$shade!) { $seen = $shade }; package NamespacePaintPackage is shade(42) {}; $seen], 42,
     Q[our $seen; multi sub trait_mod:<is>(Mu:U $target, :$shade!) { $seen = $shade }; module NamespacePaintFlag is shade {}; $seen], True

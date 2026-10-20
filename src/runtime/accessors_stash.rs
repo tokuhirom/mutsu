@@ -482,7 +482,11 @@ impl Interpreter {
     }
 
     pub(super) fn package_export_tag_parts(package: &str) -> Option<(&str, &str)> {
-        let (module, rest) = package.split_once("::EXPORT::")?;
+        let (module, rest) = if let Some(rest) = package.strip_prefix("EXPORT::") {
+            ("GLOBAL", rest)
+        } else {
+            package.split_once("::EXPORT::")?
+        };
         if module.is_empty()
             || rest.is_empty()
             || crate::qualified::is_qualified(Symbol::intern(rest))
@@ -493,7 +497,11 @@ impl Interpreter {
     }
 
     pub(super) fn package_export_module(package: &str) -> Option<&str> {
-        package.strip_suffix("::EXPORT")
+        if package == "EXPORT" {
+            Some("GLOBAL")
+        } else {
+            package.strip_suffix("::EXPORT")
+        }
     }
 
     pub(crate) fn qualify_stash_name(package: &str, symbol: &str) -> String {

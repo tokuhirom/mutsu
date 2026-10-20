@@ -514,15 +514,6 @@ impl Compiler {
         decl_id: u64,
     ) -> String {
         let base_package: &str = self.runtime_current_package();
-        let qualified = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
-            stripped.to_string()
-        } else if base_package == "GLOBAL"
-            || resolved_name.starts_with(&format!("{base_package}::"))
-        {
-            resolved_name.to_string()
-        } else {
-            format!("{base_package}::{resolved_name}")
-        };
         // ADR-0047 P1: every `my`/`our`-lexical class or grammar declaration
         // site with a nonzero `decl_id` registers under a MANGLED storage name
         // (`exec_register_class_op`, `Foo\u{0}<decl-id>`), not under its bare
@@ -540,31 +531,12 @@ impl Compiler {
         // This does not replicate the stub+full-definition continuation
         // special case (`lexical_class_pending_stub`) — a stub body has no
         // methods/our-decls of its own to qualify, so that gap is moot here.
-        if is_lexical && decl_id != 0 {
-            format!("{qualified}\u{0}{decl_id}")
-        } else {
-            qualified
-        }
-    }
-
-    /// The role-declaration equivalent of [`Self::qualified_class_decl_name`],
-    /// mirroring `exec_register_role_op`'s slightly different (but
-    /// equivalent for the unqualified-name case) qualification rule: a role
-    /// name that already contains `::` anywhere is left as-is, not just one
-    /// that starts with the current package prefix. Uses the same
-    /// state-scope `enclosing_package` fallback.
-    pub(super) fn qualified_role_decl_name(&self, resolved_name: &str) -> String {
-        let base_package: &str = self.runtime_current_package();
-        if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
-            stripped.to_string()
-        } else if resolved_name.contains("::")
-            || base_package == "GLOBAL"
-            || resolved_name == base_package
-        {
-            resolved_name.to_string()
-        } else {
-            format!("{base_package}::{resolved_name}")
-        }
+        self.declared_class_storage_name(
+            resolved_name,
+            resolved_name.starts_with(&format!("{base_package}::")),
+            is_lexical,
+            decl_id,
+        )
     }
 }
 

@@ -1150,6 +1150,7 @@ mod package_traits;
 mod proto_decl;
 mod require_stubs;
 mod type_alias_resolve;
+mod type_decl_names;
 mod type_decl_value;
 pub(crate) use hoist_nested_types::nested_type_decls;
 pub(crate) use package_runtime_body::CLASS_LEXICAL;

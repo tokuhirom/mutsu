@@ -140,6 +140,14 @@ impl Interpreter {
         over_scalar: bool,
     ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
+        if self
+            .registry()
+            .compound_identity_bindings
+            .contains_key(&name_sym)
+            && let Some((package, member)) = crate::qualified::split_qualified(name_sym)
+        {
+            return Err(self.no_such_qualified_symbol(package.as_str(), member.as_str()));
+        }
         // A lexical `my class foo` is bound under its own `env` key space
         // (`lexical_type_key`) as well as the bare name a same-named `$foo`
         // shares (#12109). The bare binding is the ordinary resolution; the
@@ -914,6 +922,7 @@ impl Interpreter {
                 } else if self.is_known_package(name)
                     || self.has_type(name)
                     || Self::is_builtin_type(name)
+                    || crate::core_type_names::contains(name)
                     || crate::rakuast::is_registered_type_object(name)
                 {
                     Value::package(Symbol::intern(name))

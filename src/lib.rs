@@ -12,6 +12,7 @@ pub(crate) mod chain_compare;
 mod compiled_lazy;
 mod compiled_operator;
 mod compiler;
+pub(crate) mod core_type_names;
 pub mod crash_report;
 pub(crate) mod decl_doc;
 pub mod doc_mode;

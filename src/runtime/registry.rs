@@ -354,6 +354,9 @@ pub(crate) struct Registry {
     /// the package-qualified `Foo::Bar::Foo::Bar`) and the outer class is no
     /// longer reachable by it. Maps the written name to that qualified name.
     pub(crate) compound_name_overrides: HashMap<String, String>,
+    /// A relative compound declaration's registry identity is not an extra
+    /// package binding. Maps that identity to the written binding it uses.
+    pub(crate) compound_identity_bindings: HashMap<Symbol, Symbol>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.

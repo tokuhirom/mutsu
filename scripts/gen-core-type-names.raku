@@ -3,9 +3,9 @@
 #
 # RakuAST resolves a bareword against the setting at parse time: a name that
 # is a type object there renders as `Type::Simple` (`X::AdHoc`, `IO::Path`).
-# src/rakuast/core_type_names.txt is this script's output; regenerate it with
+# src/core_type_names.txt is this script's output; regenerate it with
 #
-#   raku scripts/gen-core-type-names.raku > src/rakuast/core_type_names.txt
+#   raku scripts/gen-core-type-names.raku > src/core_type_names.txt
 #
 # and record the rakudo version in the file's header line.
 

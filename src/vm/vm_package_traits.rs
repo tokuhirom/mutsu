@@ -17,7 +17,8 @@ impl Interpreter {
         let known_type = self.has_type(name)
             || self.has_class(name)
             || self.has_role(name)
-            || Self::is_builtin_type(name);
+            || Self::is_builtin_type(name)
+            || crate::core_type_names::contains(name);
         let target = Value::package(code.const_sym(package_idx));
         let trait_argument = if known_type && !explicit_argument {
             Value::package(Symbol::intern(&self.canonical_class_parent_name(name)))

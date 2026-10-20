@@ -1533,7 +1533,7 @@ its own optional constraint constant, including an explicit absence, rather
 than attaching a caller's same-named type. Split runtime package bodies carry
 their own `our` aliases separately from their private lexicals: compilation
 hides caller slots for both, but binds only private lexicals from the static
-store. The cache format advances to 36.
+store. The cache format advances to 37.
 
 Class-body exit restores the bare aliases of top-level `our` declarations
 while preserving their qualified storage and changes to shared outer cells.
@@ -1550,9 +1550,22 @@ traits and unit bodies. The compiler evaluates arguments and emits
 Missing parents and unsupported core HOW operations raise the shared typed
 exceptions. Qualified declarations register their namespace ancestors;
 unresolved qualified terms fail instead of manufacturing package objects.
+Execution and conversion share the generated CORE type-name catalogue.
+Namespace entries retain module provenance so export stashes do not become
+program GLOBAL declarations. Class/role plans explicitly record compiler
+qualification instead of guessing it from a repeated package prefix.
+The matching method/body chunks use the same declaration-name provenance.
+Relative compound type identities remain distinct from their written package
+bindings; a registry identity does not manufacture another bareword binding.
+The existing relative-class regression now measures constructor dispatch
+against Rakudo instead of accepting a fabricated package value's name.
 Post-declaration checks include modules and packages, and semicolon forms
 raise the corresponding unit-scope syntax exceptions. These contracts are
 measured in `t/rakuast/rakuast-package-namespaces-traits.t`.
 
 `roast/S10-packages/basic.t` now passes all 83 assertions and joins the
 whitelist; its completed blocker entry is removed.
+
+Trait application uses the existing compiled declaration-registration timing;
+the remaining compile-time argument/callback scheduling gap is measured in
+#14146, including its pre-existing class reproduction.
