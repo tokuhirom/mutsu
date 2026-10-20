@@ -26,7 +26,7 @@ impl Interpreter {
             .unwrap_or(left);
         let updated = self.vm_does_values(composition_left, right)?;
         if let Some((owner, attr_name)) = attr_trait
-            && matches!(updated.view(), ValueView::Mixin(..))
+            && crate::value::attribute_class::is_composed_meta_object(&updated)
         {
             self.registry_mut()
                 .class_attribute_trait_objects
@@ -73,7 +73,8 @@ impl Interpreter {
         // Capture Mixin value for trait_mod writeback: when `$r does Role`
         // runs inside a trait_mod:<is>, the Mixin needs to propagate back
         // to the outer scope's `&name` variable.
-        if matches!(updated.view(), ValueView::Mixin(..)) && self.trait_mod_writeback_key.is_some()
+        if crate::value::attribute_class::is_composed_meta_object(&updated)
+            && self.trait_mod_writeback_key.is_some()
         {
             self.trait_mod_writeback_value = Some(updated.clone());
             // See `trait_mod_attr_writeback_value`'s doc comment: captured

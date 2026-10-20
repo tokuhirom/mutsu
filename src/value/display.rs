@@ -955,7 +955,7 @@ impl Value {
                 || class_name == "Submethod"
                 || class_name == "Sub"
                 || class_name == "Routine"
-                || class_name == "Attribute" =>
+                || crate::value::attribute_class::is_attribute_class(class_name) =>
             {
                 attributes
                     .as_map()

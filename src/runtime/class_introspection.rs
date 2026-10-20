@@ -453,11 +453,15 @@ impl Interpreter {
                     (local, role, attr, native)
                 } else if let Some(role_def) = registry.roles.get(cn.as_str()) {
                     // A punned role used as a parent class: its own methods
-                    // and attribute accessors sit at this MRO level.
-                    let local = role_def
-                        .methods
-                        .get(method_name)
-                        .is_some_and(|defs| defs.iter().any(|d| !d.is_private));
+                    // and attribute accessors sit at this MRO level. A stub
+                    // (`method m {...}`) only requires the method: a class
+                    // composing the role satisfies it with an inherited one,
+                    // a built-in parent's included (`Attribute+{R}`), so it
+                    // never answers the call itself.
+                    let local = role_def.methods.get(method_name).is_some_and(|defs| {
+                        defs.iter()
+                            .any(|d| !d.is_private && !Self::is_stub_routine_body(&d.body))
+                    });
                     let attr = role_def
                         .attributes
                         .iter()

@@ -884,6 +884,9 @@ impl Interpreter {
             if base == cn.as_str() || catalog_base == cn.as_str() {
                 return 0;
             }
+            if let Some(distance) = self.mixin_type_role_distance(cn.as_str(), base) {
+                return distance;
+            }
             // A builtin type modelled as an instance (`Instant`, `Duration`,
             // `IO::Path`, the Buf/Blob family, ...) ranks its roles too: `now`
             // is narrower as a `Real` than as a `Numeric`, and a `"x".encode`
@@ -1005,6 +1008,32 @@ impl Interpreter {
     /// (`class D does R3`, `role R3 does R2` -- `R3` is the narrower constraint
     /// for a `D`).
     // Cost: O(r * p), r = composed roles, p = role-parent edges walked per check.
+    /// The distance of the role `base` from an instance of the mixin type
+    /// `class` (`C+{R}`, stacked `C+{A}+{B}`) that `$obj does R` reblessed it
+    /// into: the roles a mixin level composes sit one step below it, beside
+    /// its base type, as for a `Mixin` value (see `type_hierarchy_distance`).
+    /// The class MRO lists them after `Mu`, which ranked `multi f(R $, $)`
+    /// behind `multi f(C $, Mu $)` for such an object. `None` when `class`
+    /// is no mixin type or composes no such role.
+    // Cost: O(l * r), l = stacked mixin levels, r = roles per level.
+    fn mixin_type_role_distance(&self, class: &str, base: &str) -> Option<usize> {
+        let registry = self.registry();
+        let mut level = class;
+        let mut depth = 0;
+        while self.types.published_mixins.may_hold(level) {
+            let roles = registry.class_composed_roles.get(level)?;
+            if roles.iter().any(|r| r == base) {
+                return Some(depth + 1);
+            }
+            if self.has_role(base) && roles.iter().any(|r| self.role_is_descendant_of(r, base)) {
+                return Some(depth + 2);
+            }
+            level = registry.classes.get(level)?.parents.first()?;
+            depth += 1;
+        }
+        None
+    }
+
     fn composed_role_distance(&self, roles: &[String], base: &str) -> usize {
         if roles
             .iter()

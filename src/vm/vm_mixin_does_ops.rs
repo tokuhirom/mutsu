@@ -351,7 +351,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name != "Attribute" {
+        if !crate::value::attribute_class::is_attribute_class(class_name) {
             return None;
         }
         let map = attributes.as_map();
@@ -488,7 +488,7 @@ impl Interpreter {
             self.record_attr_container_mixin(&owner, &attr_name, &result);
         }
         if let Some((owner, attr_name)) = attr_trait
-            && matches!(result.view(), ValueView::Mixin(..))
+            && crate::value::attribute_class::is_composed_meta_object(&result)
         {
             self.registry_mut()
                 .class_attribute_trait_objects
@@ -507,7 +507,9 @@ impl Interpreter {
         // LazyAttributeContainerHOW`, and it's the HOW-mixin's `compose` that
         // installs the lazy accessor). See `apply_attribute_traits` for the
         // other half: it must NOT assume this value is $attr's own mixin.
-        if matches!(result.view(), ValueView::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
+        if crate::value::attribute_class::is_composed_meta_object(&result)
+            && self.trait_mod_writeback_key.is_some()
+        {
             self.trait_mod_writeback_value = Some(result.clone());
             // Separately: capture this specific `does`'s result as the
             // ATTRIBUTE's own value only when it is not itself a `$class.HOW`
