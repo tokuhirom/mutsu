@@ -32,7 +32,8 @@ impl Interpreter {
     }
 
     /// [`Self::try_builtin_method_wrap`] for any call target: the class is the
-    /// instance's class or the built-in type of a plain value. A class with a
+    /// instance's class, the type a type object names, or the built-in type of
+    /// a plain value. A class with a
     /// user method of that name is left to the user-method wrap sites.
     ///
     // Cost: O(1) once `has_any_wrap_chains()` holds; the caller checks it.
@@ -58,13 +59,20 @@ impl Interpreter {
     ) -> Option<(String, Vec<(u64, Value)>)> {
         let class_name: String = match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
+            // A class method called on the type object (`DateTime.now`,
+            // `Date.today`) is wrapped under the type's own name (#13626).
+            ValueView::Package(name) => name.resolve(),
             _ => crate::runtime::utils::value_type_name(target).to_string(),
         };
         let chain = self.builtin_method_wrap_chain(&class_name, &method_sym.resolve())?;
         // A class declared in the program (its generated accessors too) is
         // wrapped at the user-method sites; running the chain here as well
         // would wrap twice.
-        if self.has_user_method_sym(&class_name, method_sym) || self.has_class(&class_name) {
+        // A built-in class the runtime registers (`DateTime`) is not one.
+        if self.has_user_method_sym(&class_name, method_sym)
+            || (self.has_class(&class_name)
+                && crate::builtin_types::catalog::builtin_type_info(&class_name).is_none())
+        {
             return None;
         }
         Some((class_name, chain))
