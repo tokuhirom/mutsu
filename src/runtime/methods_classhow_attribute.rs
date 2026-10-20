@@ -114,7 +114,7 @@ impl Interpreter {
         }
     }
 
-    fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
+    pub(super) fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
         let attr_name = &attr.name;
         let is_public = attr.is_public;
         let default = &attr.default;
