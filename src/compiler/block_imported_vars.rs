@@ -28,12 +28,7 @@ impl Compiler {
     /// right after the `UseModule` of a `use` below the unit's top level, so
     /// the package variable exists when the binding reads it.
     // Cost: O(v), v = the module's exported variables.
-    pub(super) fn bind_block_imported_vars(
-        &mut self,
-        module: &str,
-        tags: &[String],
-        set_idx: u32,
-    ) {
+    pub(super) fn bind_block_imported_vars(&mut self, module: &str, tags: &[String], set_idx: u32) {
         let module_idx = self.code.add_constant(Value::str(module.to_string()));
         for (key, hook, stmt) in Self::block_imported_var_bindings(module, tags) {
             let name_idx = self.code.add_constant(Value::str(key));
@@ -79,9 +74,7 @@ impl Compiler {
             .iter()
             .flat_map(|vars| vars.iter())
             .filter(|var| var.imported_by(tags))
-            .filter_map(|var| {
-                Some((var.export_key(), var.hook, Self::imported_var_binding(var)?))
-            })
+            .filter_map(|var| Some((var.export_key(), var.hook, Self::imported_var_binding(var)?)))
             .collect();
         // An exported type is a term of the block too (`my \Foo := M::Foo`),
         // whose value is the module's type object; its type positions in the

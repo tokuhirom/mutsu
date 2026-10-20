@@ -1,7 +1,7 @@
+use super::block_imported_vars::ImportedVarSource;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
-use super::block_imported_vars::ImportedVarSource;
 
 mod default;
 
