@@ -54,12 +54,9 @@ impl Interpreter {
     // reads it, O(1) amortized (`SeqBody::extend_gather_prefix`).
     pub(crate) fn gather_stream(&self, value: Value) -> Value {
         match Self::gather_stream_source(&value) {
-            Some(source) => {
-                Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_index_pipe(
-                    source,
-                    crate::value::IndexTransform::Identity,
-                )))
-            }
+            Some(source) => Value::lazy_list(crate::gc::Gc::new(
+                crate::value::LazyList::new_stream_pipe(source),
+            )),
             None => value,
         }
     }
