@@ -62,9 +62,7 @@ impl Compiler {
                 // `False`, `False`), so peel the synthetic `!` off the
                 // copy that is bound and re-apply it to the copy the
                 // loop tests.
-                self.compile_condition_expr(Self::loop_supplied_condition(
-                    cond_expr, is_until,
-                ));
+                self.compile_condition_expr(Self::loop_supplied_condition(cond_expr, is_until));
                 self.code.emit(OpCode::Dup);
                 if let Some(name) = condition_param {
                     self.emit_set_named_var(name);
