@@ -977,6 +977,14 @@ impl Interpreter {
         let find = |declared_only: bool| {
             let matches = |key: &&String| {
                 key.starts_with(&prefix)
+                    // The declaration itself, not a type nested in it
+                    // (`Outer\0<id>::Inner\0<id>` also starts with
+                    // `Outer\0`); a `[..]` suffix is a curried
+                    // specialization of the declaration.
+                    && !key[prefix.len()..]
+                        .split('[')
+                        .next()
+                        .is_some_and(crate::qualified::is_qualified_str)
                     && !(declared_only && is_curried_lexical_key(key, prefix.len()))
             };
             reg.classes

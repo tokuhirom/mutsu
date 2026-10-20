@@ -691,9 +691,9 @@ impl Registry {
     /// run — for 7,236 `resolve_lexical_type_key` calls, ~17,000 instructions
     /// apiece ([#8830]).
     ///
-    /// A key matches `"{unmangled}\u{0}"` exactly when its segment before the
-    /// FIRST NUL is `unmangled`, so the set of those segments answers the
-    /// question exactly rather than approximately, in one hash probe. Programs
+    /// A key matches `"{unmangled}\u{0}"` exactly when `unmangled` is the part
+    /// of the key before one of its NULs, so the set of those prefixes answers
+    /// the question exactly rather than approximately, in one hash probe. Programs
     /// that declare no `my class`/`my grammar` at all have an empty set and
     /// never scan again.
     ///
@@ -711,8 +711,13 @@ impl Registry {
                     .chain(self.roles.keys())
                     .chain(self.enum_types.keys())
                     .chain(self.subsets.keys())
-                    .filter_map(|key| key.split_once('\u{0}'))
-                    .map(|(bare, _)| Box::<str>::from(bare))
+                    .flat_map(|key| {
+                        // Every NUL-terminated prefix: a type nested in a
+                        // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
+                        // and a scan for `Outer\0<id>::Inner` is a prefix of it.
+                        key.match_indices('\u{0}')
+                            .map(|(at, _)| Box::<str>::from(&key[..at]))
+                    })
                     .collect()
             })
             .contains(unmangled)
@@ -2481,10 +2486,11 @@ mod tests {
     }
 
     /// A key with more than one NUL segment (`Store\u{0}1::Session\u{0}2`)
-    /// belongs to its FIRST segment, which is what `starts_with("{name}\0")`
-    /// tests.
+    /// belongs to every prefix that ends at one of its NULs, which is what
+    /// `starts_with("{name}\0")` tests: the lookup of a type nested in a
+    /// lexical class asks for `Store\u{0}1::Session` (#14143).
     #[test]
-    fn lexical_type_key_filter_uses_the_first_nul_segment() {
+    fn lexical_type_key_filter_uses_every_nul_prefix() {
         let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
         {
             let mut reg = RegistryWriteGuard::new(&lock, "test");
@@ -2493,6 +2499,8 @@ mod tests {
         }
         let reg = RegistryReadGuard::new(&lock, "test");
         assert!(reg.has_lexical_type_key_for("Store"));
-        assert!(!reg.has_lexical_type_key_for("Store\u{0}1::Session"));
+        assert!(reg.has_lexical_type_key_for("Store\u{0}1::Session"));
+        assert!(!reg.has_lexical_type_key_for("Store\u{0}1"));
+        assert!(!reg.has_lexical_type_key_for("Session"));
     }
 }
