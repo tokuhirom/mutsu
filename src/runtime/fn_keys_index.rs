@@ -210,10 +210,7 @@ impl Interpreter {
     // unqualified keys recorded for `base` (each probed once in the functions
     // map), independent of the registry's size.
     fn fn_keys_from_tail_index(&mut self, base: &'static str) -> Option<Arc<[Symbol]>> {
-        // `contains("::")`, not `is_qualified_str`: a categorical's bracket
-        // group can hold `::` (`term:<Foo::Baz>`) without qualifying it, and
-        // the tail index records no such member either.
-        if base.is_empty() || base.contains('/') || base.contains("::") {
+        if !crate::qualified_tail_index::lists_every_name_ending_in(base) {
             return None;
         }
         let index = &mut self.dispatch.fn_keys_index;
