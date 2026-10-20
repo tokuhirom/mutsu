@@ -618,12 +618,14 @@ impl Interpreter {
         // iterator to a fresh lazy Seq, which `is_lazy_pipe_source` turns into
         // a pull-on-demand stage (#10891).
         if matches!(method, "map" | "grep")
-            && body.is_lazy()
             && body.is_empty()
             && let Some(iterator) = body.take_iterator_source()?
         {
+            let lazy = body.is_lazy();
             let fresh = SeqBody::deferred(SeqSource::Iterator(iterator));
-            fresh.mark_lazy();
+            if lazy {
+                fresh.mark_lazy();
+            }
             return Ok(Value::seq_body(fresh));
         }
         // `.lazy`, `.map`, `.grep` and `.first` on a plain gather consume the
