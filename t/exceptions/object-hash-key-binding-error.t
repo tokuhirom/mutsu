@@ -1,6 +1,6 @@
 use Test;
 use MONKEY-SEE-NO-EVAL;
-plan 28;
+plan 33;
 
 my $message = 'Type check failed in binding to parameter \'key\'; expected Int but got Str ("a")';
 for
@@ -37,6 +37,15 @@ for '$alias<a>', '$alias<a>:exists', '$alias<a>:delete' -> $operation {
         X::TypeCheck::Binding::Parameter, message => $message,
         "$operation checks the aliased hash's own key type";
 }
+
+for '%h<a> = "x"', '%h<a b> = "x", "y"', '%h = "a" => "x"',
+    '%h{1, "a"} = 3, "x"' -> $operation {
+    throws-like { EVAL 'my Int %h{Int}; ' ~ $operation },
+        X::TypeCheck::Binding::Parameter, message => $message,
+        'a bad key is bound before its value is checked';
+}
+throws-like { EVAL 'my Int %h{Int}; %h{1, "a"} = "x", 2' },
+    X::TypeCheck::Assignment, 'an earlier bad value precedes a later bad key';
 
 is EVAL('my %h{Int}; %h{1} = 2; %h{1}'), 2,
     'a correctly typed key still stores and reads';

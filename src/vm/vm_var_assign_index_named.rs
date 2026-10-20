@@ -2168,25 +2168,25 @@ impl Interpreter {
                     }
                     other => other,
                 };
-                if let Some(constraint) = slice_constraint
-                    && !self.is_container_subclass(&constraint)
-                {
-                    for v in &vals {
-                        if !v.is_nil() && !self.type_matches_value(&constraint, v) {
-                            return Err(self.type_check_element_failure(&var_name, &constraint, v));
-                        }
+                let slice_constraint = slice_constraint.filter(|c| !self.is_container_subclass(c));
+                let key_constraint = loan_env!(self, var_hash_key_constraint(&var_name));
+                // A slice invokes the key parameter before storing each value.
+                // Validate in that order so a later bad key does not hide an
+                // earlier value failure, or vice versa.
+                for (i, key) in keys.iter().enumerate() {
+                    if let Some(constraint) = &key_constraint
+                        && !self.type_matches_value(constraint, key)
+                    {
+                        return Err(
+                            self.typecheck_binding_parameter_failure("key", constraint, key)
+                        );
                     }
-                }
-                // Check key type constraint for hash slice assignment
-                if let Some(key_constraint) = loan_env!(self, var_hash_key_constraint(&var_name)) {
-                    for key in keys.iter() {
-                        if !self.type_matches_value(&key_constraint, key) {
-                            return Err(self.typecheck_binding_parameter_failure(
-                                "key",
-                                &key_constraint,
-                                key,
-                            ));
-                        }
+                    if let Some(constraint) = &slice_constraint
+                        && let Some(value) = vals.get(i)
+                        && !value.is_nil()
+                        && !self.type_matches_value(constraint, value)
+                    {
+                        return Err(self.type_check_element_failure(&var_name, constraint, value));
                     }
                 }
                 // A `%h` an escaping closure captured is held in a shared

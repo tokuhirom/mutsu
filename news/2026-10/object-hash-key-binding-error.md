@@ -3,3 +3,5 @@ Object hashes now report a rejected key as
 expected type. Stores, binds, reads, existence checks, deletion, slices, and
 the explicit associative methods share the key parameter diagnostic. A
 failure of the stored value's type remains an assignment error.
+Slices check each key before its corresponding value, preserving which
+type failure is reported first.
