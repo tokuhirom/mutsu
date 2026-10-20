@@ -20,8 +20,8 @@
 mod chunks;
 mod codec;
 
-use codec::incomplete_error;
 pub(crate) use chunks::ChunkDecoder;
+use codec::incomplete_error;
 pub(crate) use codec::{Codec, Hold};
 
 use crate::builtins::grapheme_index::Units;
