@@ -356,7 +356,10 @@ pub(crate) fn owner_has_row(owner: &str, method: &str) -> bool {
 // Cost: O(r), r = rows (a scan; introspection only).
 pub(crate) fn owner_row_names(owner: &str) -> Vec<&'static str> {
     let mut names: Vec<&'static str> = Vec::new();
-    for row in ALL.iter().filter(|row| row.owner == owner && row.flags.in_force()) {
+    for row in ALL
+        .iter()
+        .filter(|row| row.owner == owner && row.flags.in_force())
+    {
         if !names.contains(&row.name) {
             names.push(row.name);
         }

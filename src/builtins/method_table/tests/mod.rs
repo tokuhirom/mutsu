@@ -457,7 +457,10 @@ fn rows_are_declared_by_rakudo() {
         // own kind, so the refusal is a row of each (ADR-11276 §9.41).
         .filter(|row| {
             !(row.name == "BIND-KEY"
-                && matches!(row.owner, "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"))
+                && matches!(
+                    row.owner,
+                    "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+                ))
         })
         // `is DEPRECATED` mixes a role declaring `DEPRECATED` into the
         // attribute; mutsu answers it on `Attribute` (ADR-11276 §9.161).
