@@ -24,6 +24,7 @@ pub(super) fn read_var(name: &str) -> Expr {
 
 pub(super) fn static_scalar(name: &str) -> Stmt {
     Stmt::VarDecl {
+        anonymous: false,
         name: name.to_string(),
         expr: Expr::Literal(crate::value::Value::NIL),
         type_constraint: None,

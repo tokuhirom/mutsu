@@ -2193,7 +2193,7 @@ fn compound_assignment_infix(
 }
 
 /// The attribute name of `$.name` as the statement parser spells an
-/// `$.name OP= EXPR` target: a method call on `__ANON_STATE__`, the bare-`$`
+/// `$.name OP= EXPR` target: a method call on `__ANON_STATE#`, the bare-`$`
 /// carrier the VM resolves to `self`. Rakudo 2026.09 builds the same
 /// `Var::Attribute::Public` it builds for `$.name` anywhere else.
 // Cost: O(1).
@@ -2206,9 +2206,7 @@ fn public_attribute_call(target: &Expr) -> Option<&str> {
             modifier: None,
             quoted: false,
             ..
-        } if args.is_empty()
-            && matches!(target.as_ref(), Expr::Var(v) if v == "__ANON_STATE__") =>
-        {
+        } if args.is_empty() && matches!(target.as_ref(), Expr::Var(v) if v == "__ANON_STATE#") => {
             Some(name.as_str())
         }
         _ => None,
@@ -2374,6 +2372,7 @@ fn var_decl_statement(
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
     let VarDeclParts {
         name,
+        anonymous,
         expr,
         type_constraint,
         is_state,
@@ -2488,7 +2487,7 @@ fn var_decl_statement(
     } else {
         (name, None)
     };
-    let mut decl = var_declaration(name, init, scope, type_name, twigil, None)?;
+    let mut decl = var_declaration(name, init, scope, type_name, twigil, None, anonymous)?;
     if let Some((_, key)) = keyed {
         super::keyed_hash::insert_shape(&mut decl, key)?;
     }
@@ -2566,6 +2565,7 @@ pub(super) fn does_declaration(
 /// the converter's recursion over `Stmt` (`make check-ast-walkers`).
 struct VarDeclParts<'a> {
     name: &'a str,
+    anonymous: bool,
     expr: &'a Expr,
     type_constraint: &'a Option<String>,
     is_state: bool,
@@ -2582,6 +2582,7 @@ struct VarDeclParts<'a> {
 
 fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
     let Stmt::VarDecl {
+        anonymous,
         name,
         expr,
         type_constraint,
@@ -2598,6 +2599,7 @@ fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
     };
     Ok(VarDeclParts {
         name,
+        anonymous: *anonymous,
         expr,
         type_constraint,
         is_state: *is_state,
@@ -2628,29 +2630,16 @@ pub(super) fn var_declaration(
     type_name: Option<&str>,
     twigil: Option<&str>,
     will_build: Option<&Expr>,
+    anonymous: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
-    // `state $ = 0` / `my $ = 0`: the parser names the anonymous scalar
-    // `__ANON_STATE__`; rakudo has no name. A `my` one keeps the default
-    // scope, which rakudo omits.
-    if sigil == "$"
-        && ((scope == Some("state")
-            && (desigil == "__ANON_STATE__" || crate::ast::anon_state::is_scalar(desigil)))
-            || (scope.is_none() && desigil == "__ANON_STATE__"))
-        && type_name.is_none()
+    // Provenance is carried by the declaration, never inferred from its name.
+    // A `my` anonymous scalar keeps the default scope, which Rakudo omits.
+    let is_anonymous = sigil == "$"
+        && anonymous
+        && (scope == Some("state") || scope.is_none())
         && twigil.is_none()
-        && will_build.is_none()
-    {
-        let initializer = match init {
-            None => None,
-            Some(Initializer::Assign(e)) => Some(RakuAstNode {
-                class: RakuAstClass::InitializerAssign,
-                fields: vec![node_field(None, convert_expr(e)?)],
-            }),
-            Some(_) => return Err(unsupported("anonymous state variable binding")),
-        };
-        return Ok(anonymous_declaration(scope, "$", initializer));
-    }
+        && will_build.is_none();
     // Field order matches raku: scope, type, sigil, twigil, desigilname, traits,
     // initializer — each omitted when absent (scope defaults to `my`; twigil and
     // traits appear only on attributes).
@@ -2658,17 +2647,22 @@ pub(super) fn var_declaration(
     if let Some(s) = scope {
         fields.push(leaf_field(Some("scope"), Value::str(s.to_string())));
     }
-    if let Some(t) = type_name {
+    if let Some(t) = type_name.filter(|_| !is_anonymous) {
         fields.push(node_field(Some("type"), build_type_node(t)?));
     }
     fields.push(leaf_field(Some("sigil"), Value::str(sigil.to_string())));
+    if let Some(t) = type_name.filter(|_| is_anonymous) {
+        fields.push(node_field(Some("type"), build_type_node(t)?));
+    }
     if let Some(tw) = twigil {
         fields.push(leaf_field(Some("twigil"), Value::str(tw.to_string())));
     }
-    fields.push(node_field(
-        Some("desigilname"),
-        name_from_identifier(desigil),
-    ));
+    if !is_anonymous {
+        fields.push(node_field(
+            Some("desigilname"),
+            name_from_identifier(desigil),
+        ));
+    }
     if let Some(wb) = will_build {
         // An attribute default (`has $.x = 5`) is a `Trait::WillBuild` (and also
         // an `initializer`, emitted below).
@@ -2705,7 +2699,11 @@ pub(super) fn var_declaration(
         fields.push(node_field(Some("initializer"), initializer));
     }
     Ok(RakuAstNode {
-        class: RakuAstClass::VarDeclarationSimple,
+        class: if is_anonymous {
+            RakuAstClass::VarDeclarationAnonymous
+        } else {
+            RakuAstClass::VarDeclarationSimple
+        },
         fields,
     })
 }
@@ -2785,7 +2783,7 @@ fn term_initializer(
     if let Stmt::VarDecl { name, .. } = &mut declarator
         && crate::parser::is_anon_sigilless_source(name)
     {
-        *name = "__ANON_STATE__".to_string();
+        *name = "__ANON_STATE#".to_string();
     }
     convert_expr(&Expr::DoStmt(Box::new(declarator)))
 }
@@ -6209,7 +6207,7 @@ pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, Ru
 pub(super) const TYPE_ONLY_PARAM: &str = "__type_only__";
 
 /// The parser's names for an anonymous `$` / `@` / `%` parameter.
-pub(super) const ANONYMOUS_SCALAR_PARAM: &str = "__ANON_STATE__";
+pub(super) const ANONYMOUS_SCALAR_PARAM: &str = "__ANON_STATE#";
 pub(super) const ANONYMOUS_ARRAY_PARAM: &str = "@__ANON_ARRAY__";
 pub(super) const ANONYMOUS_HASH_PARAM: &str = "%__ANON_HASH__";
 

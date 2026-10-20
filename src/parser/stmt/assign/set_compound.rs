@@ -80,6 +80,7 @@ pub(crate) fn build_set_compound_assign_expr(expr: Expr, set_tok: TokenKind, rhs
         };
         return Expr::desugar_block(vec![
             Stmt::VarDecl {
+                anonymous: false,
                 name: tmp_idx,
                 expr: (*index.clone()),
                 type_constraint: None,

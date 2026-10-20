@@ -37,6 +37,7 @@ pub(super) fn if_condition_check(condition: Expr, slot: &str) -> Vec<Stmt> {
     let slot_var = || Expr::Var(slot.to_string());
     vec![
         Stmt::VarDecl {
+            anonymous: false,
             name: slot.to_string(),
             expr: condition,
             type_constraint: None,

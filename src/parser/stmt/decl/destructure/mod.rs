@@ -115,7 +115,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 // A bare type in the list (`my ($a, Any, $b) = ...`) is an
                 // anonymous typed scalar placeholder, the same as `Any $`.
                 vars.push(DestructureVar {
-                    name: "__ANON_STATE__".to_string(),
+                    name: "__ANON_STATE#".to_string(),
                     is_slurpy: false,
                     is_optional: false,
                     is_named: false,

@@ -120,7 +120,7 @@ pub(crate) fn in_param_default() -> bool {
 pub(crate) fn is_anonymous_sigil_param(param: &ParamDef) -> bool {
     matches!(
         param.name.as_str(),
-        "__ANON_STATE__" | "__ANON_ARRAY__" | "__ANON_HASH__" | "__ANON_CODE__"
+        "__ANON_STATE#" | "__ANON_ARRAY__" | "__ANON_HASH__" | "__ANON_CODE__"
     )
 }
 

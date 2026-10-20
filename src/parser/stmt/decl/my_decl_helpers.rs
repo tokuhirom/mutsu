@@ -80,6 +80,7 @@ pub(crate) fn build_sigilless_bind_stmt(
     if let Expr::DoStmt(inner) = &expr
         && let Stmt::VarDecl {
             name: inner_name,
+            anonymous,
             is_our: false,
             is_dynamic: false,
             ..
@@ -87,7 +88,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         && !inner_name.starts_with(['@', '%', '&', '*'])
     {
         let mut inner_decl = inner.as_ref().clone();
-        let var_name = if inner_name == "__ANON_STATE__" {
+        let var_name = if *anonymous {
             let fresh = format!(
                 "{ANON_SIGILLESS_SRC_PREFIX}{}",
                 ANON_SIGILLESS_SRC_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -141,6 +142,7 @@ pub(crate) fn build_sigilless_bind_stmt(
         _ => false,
     };
     let decl = Stmt::VarDecl {
+        anonymous: false,
         name: name.clone(),
         expr,
         type_constraint,
@@ -233,6 +235,7 @@ pub(super) fn parse_sigilless_decl(
             sugar: false,
         };
         let decl = Stmt::VarDecl {
+            anonymous: false,
             name: name.clone(),
             expr,
             type_constraint,

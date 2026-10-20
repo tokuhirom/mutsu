@@ -174,12 +174,12 @@ impl Compiler {
     }
 
     /// The bare `$` of `method m is rw { $ }` is the implicit `state` variable
-    /// `__ANON_STATE_<id>__` (a real per-closure cell, unlike the method frame's
-    /// reserved `__ANON_STATE__` slot that aliases `self`), so it is a location
+    /// `__ANON_STATE#<id>__` (a real per-closure cell, unlike the method frame's
+    /// reserved `__ANON_STATE#` slot that aliases `self`), so it is a location
     /// the rw routine can hand back.
     // Cost: O(n), n = name length.
     fn is_minted_anon_state_name(name: &str) -> bool {
-        name.strip_prefix("__ANON_STATE_")
+        name.strip_prefix("__ANON_STATE#")
             .and_then(|r| r.strip_suffix("__"))
             .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
     }

@@ -597,7 +597,7 @@ impl Interpreter {
             // A bare `$` is an anonymous state scalar. It has no compiled local
             // slot, but a List must still hold its container, including when
             // its initial value is the Any type object.
-            if name.starts_with("__ANON_STATE_") {
+            if name.starts_with("__ANON_STATE#") {
                 let current = self.anon_state_value(name).unwrap_or(inner);
                 let cell = if current.is_container_ref() {
                     current

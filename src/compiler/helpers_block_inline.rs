@@ -170,7 +170,7 @@ impl Compiler {
                 // `given`/`when`/`with` block (e.g. a scalar pointy param
                 // without `is rw`) silently skipped the check that a
                 // non-tail-position assignment to the same variable enforces.
-                if matches!(op, AssignOp::Assign) && name != "__ANON_STATE__" {
+                if matches!(op, AssignOp::Assign) && name != "__ANON_STATE#" {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::CheckReadOnly(name_idx));
                 }

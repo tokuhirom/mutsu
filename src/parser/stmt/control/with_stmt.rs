@@ -247,6 +247,7 @@ pub(crate) fn with_then_branch(
                 // (`$obj.@list`), and knew nothing of hash fallback, `|`
                 // captures, renames or defaults.
                 with_body.push(Stmt::VarDecl {
+                    anonymous: false,
                     name: pname.clone(),
                     expr: tmp_var.clone(),
                     type_constraint: None,

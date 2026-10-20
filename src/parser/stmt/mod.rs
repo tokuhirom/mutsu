@@ -78,7 +78,7 @@ pub(super) use pub_shims::{
 thread_local! {
     static STMT_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Stmt>>> = RefCell::new(HashMap::new());
     static STMT_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
-    /// The anonymous-state names (`__ANON_STATE_<id>__`) each memoized statement
+    /// The anonymous-state names (`__ANON_STATE#<id>__`) each memoized statement
     /// minted into its ENCLOSING block's scope, keyed exactly like `STMT_MEMO`.
     ///
     /// A memo hit replays a statement parsed under a different — often

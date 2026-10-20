@@ -9,10 +9,10 @@
 
 use std::cell::RefCell;
 
-use super::lower::{leaf_str, lower_expr, named_child, named_child_or_positional, unsupported};
+use super::lower::{leaf_str, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, Stmt};
-use crate::value::{RuntimeError, Value};
+use crate::value::RuntimeError;
 
 struct Frame {
     is_routine_body: bool,
@@ -100,62 +100,34 @@ fn is_my(node: &RakuAstNode) -> Result<bool, RuntimeError> {
     }
 }
 
-/// The sigil and the `= EXPR` of an anonymous declaration. Only the `state`
-/// and `my` scopes the converter renders lower.
-fn parts(node: &RakuAstNode) -> Result<(String, Option<Expr>), RuntimeError> {
+/// Whether a node needs an explicit declaration rather than a fresh bare-sigil
+/// state cell. Initializers and type constraints are lowered once by the shared
+/// variable-declaration lowering.
+fn parts(node: &RakuAstNode) -> Result<(String, bool), RuntimeError> {
     is_my(node)?;
-    let sigil = leaf_str(node, "sigil")?;
-    let initializer = match node.fields.iter().find(|f| f.name == Some("initializer")) {
-        None => None,
-        Some(_) => {
-            let init = named_child(node, "initializer")?;
-            if init.class != RakuAstClass::InitializerAssign {
-                return Err(unsupported(node));
-            }
-            Some(lower_expr(named_child_or_positional(init)?)?)
-        }
-    };
-    Ok((sigil, initializer))
-}
-
-/// `state $ = EXPR` / `my $ = EXPR` / `state $`: the declaration the parser
-/// builds for the anonymous scalar, under its shared `__ANON_STATE__` name.
-fn declaration(initializer: Option<Expr>, is_state: bool) -> Stmt {
-    let has_initializer = initializer.is_some();
-    Stmt::VarDecl {
-        name: "__ANON_STATE__".to_string(),
-        expr: initializer.unwrap_or(Expr::Literal(Value::NIL)),
-        type_constraint: None,
-        is_state,
-        is_our: false,
-        is_dynamic: false,
-        is_export: false,
-        export_tags: Vec::new(),
-        custom_traits: if has_initializer {
-            vec![("__has_initializer".to_string(), None)]
-        } else {
-            Vec::new()
-        },
-        where_constraint: None,
-    }
+    Ok((
+        leaf_str(node, "sigil")?,
+        node.fields
+            .iter()
+            .any(|field| matches!(field.name, Some("initializer" | "type"))),
+    ))
 }
 
 /// An anonymous variable in expression position: `$++`, `@.push`, `state $ = 0`.
 // Cost: O(n), n = size of the initializer.
 pub(super) fn lower_term(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    if is_my(node)? {
-        return match parts(node)? {
-            (sigil, init) if sigil == "$" => Ok(Expr::DoStmt(Box::new(declaration(init, false)))),
-            _ => Err(unsupported(node)),
+    let (sigil, explicit) = parts(node)?;
+    if is_my(node)? || explicit {
+        return if sigil == "$" {
+            Ok(Expr::DoStmt(Box::new(super::lower::lower_var_decl(node)?)))
+        } else {
+            Err(unsupported(node))
         };
     }
-    match parts(node)? {
-        (sigil, None) if sigil == "$" => Ok(Expr::Var(mint_scalar())),
-        (sigil, None) if sigil == "@" => Ok(Expr::ArrayVar(crate::parser::fresh_anon_array_name())),
-        (sigil, None) if sigil == "%" => Ok(Expr::HashVar("__ANON_HASH__".to_string())),
-        (sigil, Some(init)) if sigil == "$" => {
-            Ok(Expr::DoStmt(Box::new(declaration(Some(init), true))))
-        }
+    match sigil.as_str() {
+        "$" => Ok(Expr::Var(mint_scalar())),
+        "@" => Ok(Expr::ArrayVar(crate::parser::fresh_anon_array_name())),
+        "%" => Ok(Expr::HashVar("__ANON_HASH__".to_string())),
         _ => Err(unsupported(node)),
     }
 }
@@ -163,9 +135,11 @@ pub(super) fn lower_term(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 /// An anonymous variable as a statement of its own: `state $ = 0;`.
 // Cost: O(n), n = size of the initializer.
 pub(super) fn lower_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    match parts(node)? {
-        (sigil, init) if sigil == "$" => Ok(declaration(init, !is_my(node)?)),
-        _ => Ok(Stmt::Expr(lower_term(node)?)),
+    let (sigil, _) = parts(node)?;
+    if sigil == "$" {
+        super::lower::lower_var_decl(node)
+    } else {
+        Ok(Stmt::Expr(lower_term(node)?))
     }
 }
 
@@ -176,7 +150,7 @@ pub(super) fn assign_target(node: &RakuAstNode) -> Result<String, RuntimeError> 
         return Err(unsupported(node));
     }
     match parts(node)? {
-        (sigil, None) if sigil == "$" => Ok(mint_scalar()),
+        (sigil, false) if sigil == "$" => Ok(mint_scalar()),
         _ => Err(unsupported(node)),
     }
 }

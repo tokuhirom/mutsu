@@ -117,6 +117,7 @@ fn build_chain_cmp_expr(
     let rest = build_chain_cmp_expr(operands, ops, index + 1, tmp_var);
     Expr::desugar_block(vec![
         Stmt::VarDecl {
+            anonymous: false,
             name: tmp_name,
             expr: operands[index + 1].clone(),
             type_constraint: None,

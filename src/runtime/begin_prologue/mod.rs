@@ -414,6 +414,7 @@ fn static_bind_decl(name: &str, type_constraint: Option<String>, is_dynamic: boo
         _ => Expr::Literal(crate::value::Value::NIL),
     };
     Stmt::VarDecl {
+        anonymous: false,
         name: name.to_string(),
         expr,
         type_constraint,

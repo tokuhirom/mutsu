@@ -292,7 +292,7 @@ pub(crate) fn var_name(input: &str) -> PResult<'_, String> {
             Ok((rest, format!("{}::", ident_name)))
         } else if input.starts_with('$') && twigil.is_empty() {
             // Anonymous scalar variable: bare $
-            Ok((r, "__ANON_STATE__".to_string()))
+            Ok((r, "__ANON_STATE#".to_string()))
         } else if input.starts_with('@') && twigil.is_empty() {
             Ok((r, "__ANON_ARRAY__".to_string()))
         } else if input.starts_with('%') && twigil.is_empty() {

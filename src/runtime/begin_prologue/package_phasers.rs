@@ -394,6 +394,7 @@ impl Mover<'_> {
 
 fn slot_decl(slot: &str) -> Stmt {
     Stmt::VarDecl {
+        anonymous: false,
         name: slot.to_string(),
         expr: Expr::Literal(crate::value::Value::NIL),
         type_constraint: None,

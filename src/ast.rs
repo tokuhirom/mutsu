@@ -2008,6 +2008,9 @@ pub(crate) struct NestedTypeShell {
 pub(crate) enum Stmt {
     VarDecl {
         name: String,
+        /// True only when the parser/lowerer created an unnamed declaration.
+        /// Source identifiers may legally resemble anonymous temporary names.
+        anonymous: bool,
         expr: Expr,
         type_constraint: Option<String>,
         is_state: bool,
@@ -2888,6 +2891,7 @@ pub(crate) fn expand_take_logical_tail(value: Expr, op: TokenKind, right: Expr) 
             right: right.clone(),
         })),
         Stmt::VarDecl {
+            anonymous: false,
             name,
             expr: value,
             type_constraint: None,
@@ -3327,6 +3331,7 @@ mod env_only_decl_tests {
     fn vardecl(name: &str) -> Stmt {
         Stmt::VarDecl {
             name: name.to_string(),
+            anonymous: false,
             expr: Expr::Literal(crate::value::Value::NIL),
             type_constraint: None,
             is_state: false,

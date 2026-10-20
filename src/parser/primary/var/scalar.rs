@@ -27,7 +27,7 @@ static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// clone. See `simple::take_anon_state_decls` for why that (rather than a
 /// parallel per-call store) is how the reset semantics are obtained. Also used
 /// by the assignment-statement parser for a bare-`$` assignment target, which
-/// otherwise collapsed every occurrence onto one shared `__ANON_STATE__` name.
+/// otherwise collapsed every occurrence onto one shared `__ANON_STATE#` name.
 pub(in crate::parser) fn mint_anon_state_name() -> String {
     let name = fresh_anon_state_name(crate::parser::stmt::simple::anon_state_is_per_call());
     crate::parser::stmt::simple::record_anon_state_name(&name);
@@ -42,9 +42,9 @@ pub(in crate::parser) fn mint_anon_state_name() -> String {
 pub(crate) fn fresh_anon_state_name(per_call: bool) -> String {
     let id = ANON_STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
     if per_call {
-        format!("__ANON_STATE_PC_{id}__")
+        format!("__ANON_STATE#PC_{id}__")
     } else {
-        format!("__ANON_STATE_{id}__")
+        format!("__ANON_STATE#{id}__")
     }
 }
 

@@ -2328,6 +2328,9 @@ pub fn construct(
     if class_name == "RakuAST::VarDeclaration::Simple" && method == "new" {
         return var_decl_constructor::construct(args).map(Some);
     }
+    if class_name == "RakuAST::VarDeclaration::Anonymous" && method == "new" {
+        return var_decl_constructor::construct_anonymous(args).map(Some);
+    }
     if class_name == "RakuAST::Class" && method == "new" {
         return class_constructor::construct(args).map(Some);
     }

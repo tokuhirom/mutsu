@@ -39,7 +39,7 @@ fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
 pub(crate) fn param_display_name(pd: &crate::ast::ParamDef) -> String {
     // An anonymous parameter (`$`, `$?`, `@?`, `%?`) carries a synthetic parser
     // placeholder as its name. Rakudo names it `<anon>` in a binding error, so
-    // leaking `$__ANON_OPTIONAL__` / `$__ANON_STATE__` into the message would
+    // leaking `$__ANON_OPTIONAL__` / `$__ANON_STATE#` into the message would
     // both be wrong and expose an internal spelling.
     if pd.name.is_empty() || crate::value::signature::is_anonymous_param_name(&pd.name) {
         return "<anon>".to_string();
@@ -123,7 +123,7 @@ impl Interpreter {
     /// The name the parameter's value is actually stored under. For a plain
     /// named param that is `pd.name`; for a rename param (`:min(:$minutes)`,
     /// `:version($)`) the value lives under the innermost leaf variable
-    /// (`minutes`, `__ANON_STATE__`) because the alias/param names are
+    /// (`minutes`, `__ANON_STATE#`) because the alias/param names are
     /// caller-facing keys only and are never bound as body variables.
     fn rename_leaf_value_name(pd: &ParamDef) -> Option<String> {
         if !pd.named_alias {
@@ -499,7 +499,7 @@ impl Interpreter {
         let mut defs = param_defs.to_vec();
         for pd in &mut defs {
             if pd.name == "__type_only__" {
-                pd.name = "__ANON_STATE__".to_string();
+                pd.name = "__ANON_STATE#".to_string();
             }
         }
         format!(":{}", Self::build_signature_string(&defs))

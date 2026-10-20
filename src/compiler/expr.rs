@@ -416,7 +416,7 @@ impl Compiler {
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     if self.constant_vars_in_scope.contains(name.as_str())
                         || name == "self"
-                        || name == "__ANON_STATE__"
+                        || name == "__ANON_STATE#"
                     {
                         // In-scope constants: the bare word IS the variable, so
                         // read directly from the local slot. (Out-of-scope

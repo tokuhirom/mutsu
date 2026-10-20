@@ -285,6 +285,7 @@ impl Interpreter {
             let (method_body, method_compiled) = match (named_invocant, lexical_self) {
                 (None, Some(outer_self)) => {
                     let mut body = vec![crate::ast::Stmt::VarDecl {
+                        anonymous: false,
                         name: "self".to_string(),
                         expr: crate::ast::Expr::Literal(outer_self),
                         type_constraint: None,
@@ -302,6 +303,7 @@ impl Interpreter {
                 (Some(inv_name), _) => {
                     let mut body = vec![
                         crate::ast::Stmt::VarDecl {
+                            anonymous: false,
                             name: inv_name.clone(),
                             expr: crate::ast::Expr::BareWord("self".to_string()),
                             type_constraint: None,

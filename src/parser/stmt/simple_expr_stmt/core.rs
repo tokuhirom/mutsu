@@ -374,6 +374,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let assigned_value = make_rhs(lhs_expr);
                 let stmt = Stmt::Expr(Expr::desugar_block(vec![
                     Stmt::VarDecl {
+                        anonymous: false,
                         name: tmp_idx,
                         expr: *index,
                         type_constraint: None,
@@ -694,6 +695,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } = stmt.as_ref()
         {
             let stmt = Stmt::VarDecl {
+                anonymous: false,
                 name: name.clone(),
                 expr,
                 type_constraint: type_constraint.clone(),
@@ -1208,6 +1210,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             };
             let expanded = Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    anonymous: false,
                     name: tmp_idx,
                     expr: (*index.clone()),
                     type_constraint: None,

@@ -166,7 +166,7 @@ impl Interpreter {
             .and_then(|key| cx.compiled_fns.get(&key))
             .filter(|cf| {
                 let expected_full_params: Vec<String> =
-                    ["self", "__ANON_STATE__", "?CLASS", "?ROLE"]
+                    ["self", "__ANON_STATE#", "?CLASS", "?ROLE"]
                         .iter()
                         .map(|s| s.to_string())
                         .chain(effective_params.iter().cloned())

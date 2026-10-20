@@ -321,7 +321,7 @@ fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
             return Ok(None);
         };
         let var_name = match target.as_ref() {
-            Expr::Var(name) if name == "__ANON_STATE__" || name == "self" => "self".to_string(),
+            Expr::Var(name) if name == "__ANON_STATE#" || name == "self" => "self".to_string(),
             Expr::Var(name) => name.clone(),
             Expr::BareWord(name) if name == "self" => "self".to_string(),
             _ => return Err(unsupported(node)),

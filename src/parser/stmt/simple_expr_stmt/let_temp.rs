@@ -289,10 +289,10 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
 
 /// The variable a `temp <invocant>.method …` saves: a plain scalar `$obj`, or
 /// `self` — spelled `self` or as the `$.attr` invocant carrier, which the
-/// parser leaves as the collapsed anonymous-state name `__ANON_STATE__`.
+/// parser leaves as the collapsed anonymous-state name `__ANON_STATE#`.
 fn temp_method_invocant_name(invocant: &Expr) -> Option<String> {
     match invocant {
-        Expr::Var(name) if name == "__ANON_STATE__" => Some("self".to_string()),
+        Expr::Var(name) if name == "__ANON_STATE#" => Some("self".to_string()),
         Expr::Var(name) => Some(name.clone()),
         Expr::BareWord(name) if name == "self" => Some("self".to_string()),
         _ => None,
@@ -367,7 +367,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_name: method_name.to_string(),
                     method_args: method_args.clone(),
                     value: args[3].clone(),
-                    is_attribute: matches!(&args[0], Expr::Var(name) if name == "__ANON_STATE__"),
+                    is_attribute: matches!(&args[0], Expr::Var(name) if name == "__ANON_STATE#"),
                 },
             );
         }
@@ -397,7 +397,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_name: method_name.resolve(),
                     method_args: method_args.clone(),
                     value: args[3].clone(),
-                    is_attribute: matches!(invocant.as_ref(), Expr::Var(name) if name == "__ANON_STATE__"),
+                    is_attribute: matches!(invocant.as_ref(), Expr::Var(name) if name == "__ANON_STATE#"),
                 },
             );
         }

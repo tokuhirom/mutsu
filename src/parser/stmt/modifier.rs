@@ -164,6 +164,7 @@ pub(crate) fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -
         let mut rewritten = Vec::new();
         for (idx, name) in placeholders.into_iter().enumerate() {
             rewritten.push(Stmt::VarDecl {
+                anonymous: false,
                 name,
                 expr: if idx == 0 {
                     cond.clone()

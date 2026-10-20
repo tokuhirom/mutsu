@@ -206,6 +206,7 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::VarDecl { .. }) => {
             let Stmt::VarDecl {
                 name,
+                anonymous,
                 type_constraint,
                 is_state,
                 is_our,
@@ -234,6 +235,7 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
                 }
             };
             Expr::DoStmt(Box::new(Stmt::VarDecl {
+                anonymous,
                 name,
                 expr: init,
                 type_constraint,

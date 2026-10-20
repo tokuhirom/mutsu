@@ -1430,3 +1430,53 @@ path, including its type-object default. The regression checks the measured
 node, EVAL of an undefined default, assignment of a defined value, and the
 existing NativeCall constructor test for the full smiley family. The frontend
 ratchet now lists 7,944 of 7,988 files.
+
+### 6.83 S10: anonymous declaration provenance (2026-10-20)
+
+`Stmt::VarDecl.anonymous` records whether the parser consumed a bare sigil,
+independently of the generated binding's spelling. The parser's implicit
+anonymous-state declarations and the RakuAST anonymous-declaration lowerer set
+the same flag; named RakuAST declarations clear it. Declaration rewrites carry
+the flag, including sigilless initializer splitting, statement modifiers,
+feeds, zip assignment, and call-assignment source forms. Conversion uses this
+provenance both to omit implicit declarations and to select
+`VarDeclaration::Anonymous`, so a legal source name such as
+`$__ANON_STATE_9000__` remains a `VarDeclaration::Simple` with its initializer.
+The serialized AST cache format is bumped for the new field.
+
+Execution also used the old identifier-shaped names as state-store and method
+invocant sentinels. Anonymous scalar storage now uses `__ANON_STATE#` (the
+shared anonymous/invocant slot), `__ANON_STATE#<id>__`, and
+`__ANON_STATE#PC_<id>__`. The `#` cannot occur in a source identifier. All
+parser, compiler, VM, and signature consumers use the same spellings, so named
+variables no longer enter anonymous-state read/write or per-call reset paths.
+The `VarDecl` flag remains necessary to distinguish an explicit anonymous
+declaration from its implicit state predeclaration, and travels through
+declaration rebuilding rather than being reconstructed from user text.
+
+Typed anonymous declarations now use the same initializer conversion and
+declaration lowering as named declarations, retaining `type`, assignment,
+binding, and call-assignment initializers without a second binder. Their
+constructor preserves the same fields and defaults to `my` scope. Compiler
+container decisions consume the declaration's anonymous flag, so an explicit
+name cannot opt into anonymous scalar wrapping or lose its type constraint.
+
+The lifecycle regression also exposed state-key collisions across separate
+EVAL compilations: package, variable name and bytecode offset did not identify
+a declaration uniquely. Both statement and expression declarations now mint
+their state site from `compiler::compile_session` (ADR-11756); a guard and its
+initializer share that site, and repeated calls of the compiled routine keep
+it. The key includes the session namespace, logical body package and bytecode
+offset, so alternate signatures sharing one logical body also share its state.
+Separate string and AST EVAL units receive distinct session namespaces.
+
+The focused dual-oracle regression covers explicit names resembling all three
+anonymous-state spellings, repeated `my` and `state` calls, actual anonymous
+declarations and implicit state, and a hand-built named declaration. This is
+declaration metadata on the existing lowered representation, not a new
+execution path or a converter reconstruction from a name.
+
+The tested tree passes 8,036 / 8,079 frontend files; all 8,036 listed files
+and 83,177 assertions pass the release ratchet. The 51 added list entries
+include refreshed-main coverage. The remaining survey has 27 DIFF and
+16 REFUSE files.

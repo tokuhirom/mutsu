@@ -243,12 +243,12 @@ impl Interpreter {
             // lexical (its saved env holds the name), else the callee slot index
             // clobbers an unrelated same-index local.
             //
-            // `__ANON_STATE__` (the anonymous `$`) is the exception: a method
+            // `__ANON_STATE#` (the anonymous `$`) is the exception: a method
             // frame also keeps a mirror of that key in its env (its implicit
-            // `__ANON_STATE__` param), so the ownership test passes for a
+            // `__ANON_STATE#` param), so the ownership test passes for a
             // method caller, and the callee's slot 0 would land on the caller's
             // `self`. An anonymous scalar is never a caller's variable.
-            if resolved_source != "__ANON_STATE__"
+            if resolved_source != "__ANON_STATE#"
                 && frame.saved_env.contains_key_own_tier(resolved_source)
                 && frame.saved_env.get(resolved_source).is_some_and(|saved| {
                     prior_binding

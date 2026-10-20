@@ -3398,7 +3398,7 @@ impl Compiler {
     /// stays excluded. Everything else keeps the both-store `SetVarType`:
     /// `our` (package-scoped, outlives the frame), dynamics (`$*x`, read
     /// cross-frame by design), an anonymous scalar (`my T $`, name
-    /// `__ANON_STATE__` — stored via `SetGlobal`/`GetGlobal` rather than a
+    /// `__ANON_STATE#` — stored via `SetGlobal`/`GetGlobal` rather than a
     /// local slot, immediately consumed into a `WrapTypedContainer` cell, so
     /// there is no per-declaration slot for a block/frame exit to scope;
     /// going through the env-only opcode here starved that read of the
@@ -3480,7 +3480,7 @@ impl Compiler {
             && (self.is_routine || self.lexically_in_routine || self.lexically_in_block)
             && !name.starts_with('&')
             && !name.starts_with('*')
-            && name != "__ANON_STATE__"
+            && name != "__ANON_STATE#"
             && !name.contains("::");
         // Bake the declaration-settled constraint onto the slot, so a store does
         // not re-derive from the env what the source said here (#8877). Only
@@ -3695,11 +3695,12 @@ impl Compiler {
     fn is_declared_native_arg(&self, arg: &Expr) -> bool {
         if let Expr::DoStmt(stmt) = arg
             && let Stmt::VarDecl {
+                anonymous: true,
                 name,
                 type_constraint: Some(type_constraint),
                 ..
             } = stmt.as_ref()
-            && name == "__ANON_STATE__"
+            && !name.starts_with(['@', '%', '&'])
             && crate::runtime::native_types::is_native_array_element_type(type_constraint)
         {
             return true;
@@ -4214,6 +4215,7 @@ impl Compiler {
             Stmt::SyntheticBlock(vec![
                 Stmt::MarkBind,
                 Stmt::VarDecl {
+                    anonymous: false,
                     name: cap.to_string(),
                     expr: Expr::MethodCall {
                         target: Box::new(Expr::Var(var.to_string())),

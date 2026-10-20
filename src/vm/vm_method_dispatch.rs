@@ -560,7 +560,7 @@ impl Interpreter {
             self.set_current_package_sym(owner_sym);
         }
 
-        // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods).
+        // Set self and __ANON_STATE# (used by `$.foo` desugaring inside methods).
         // Symbol-keyed: these fixed per-call keys are pre-interned well-known
         // symbols (`symbol::wk`), so a method entry no longer allocates a
         // `String` per key just to hand it to `Symbol::intern`. None of them is
@@ -1257,7 +1257,7 @@ impl Interpreter {
                 // them back clobbered a caller's explicit `@_` parameter.
                 matches!(
                     s,
-                    "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
+                    "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
                 ) || method_def.params.iter().any(|p| p == s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
@@ -2384,7 +2384,7 @@ impl Interpreter {
         self.inject_class_body_statics(owner_class);
         if skip_env_setup {
             let env = self.env_mut();
-            // 3 fixed keys below (`self`, `__ANON_STATE__`, `?CLASS`) plus
+            // 3 fixed keys below (`self`, `__ANON_STATE#`, `?CLASS`) plus
             // one per bound parameter -- see `Env::reserve`.
             env.reserve(3 + param_values.len());
             env.insert_sym(crate::symbol::wk::self_(), base.clone());
@@ -2575,7 +2575,7 @@ impl Interpreter {
             };
             for (i, local_name) in cc.locals.iter().enumerate() {
                 self.locals[i] = match local_name.as_str() {
-                    "self" | "__ANON_STATE__" => base.clone(),
+                    "self" | "__ANON_STATE#" => base.clone(),
                     "?CLASS" => class_val.clone(),
                     "?ROLE" => {
                         if let Some(ref role_name) = role_context {
@@ -2933,7 +2933,7 @@ impl Interpreter {
                 // excludes alias-carrying instances.
                 let class_body_static_names = self.lexicals.class_body_static_names.clone();
                 let is_method_local = |s: &str| -> bool {
-                    matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
+                    matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
                         || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                         // Env-only `my` declarations (no compiled slot, e.g.

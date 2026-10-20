@@ -168,6 +168,7 @@ mod tests {
 
     fn decl(name: &str, expr: Expr, traits: &[&str]) -> Stmt {
         Stmt::VarDecl {
+            anonymous: false,
             name: name.to_string(),
             expr,
             type_constraint: None,

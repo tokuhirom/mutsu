@@ -544,7 +544,7 @@ impl Interpreter {
                     // `positional_light_aggregate_args_admitted` gate refuses.
                     && (!pd.name.starts_with(['@', '%'])
                         || (i < 64 && cf.aggregate_positional_params & (1u64 << i) != 0))
-                    // Exclude internal/anonymous params (__ANON_STATE__, __type_only__, etc.)
+                    // Exclude internal/anonymous params (__ANON_STATE#, __type_only__, etc.)
                     && !pd.name.starts_with("__")
                     // Exclude dynamic variable params ($*var)
                     && !pd.name.starts_with('*')

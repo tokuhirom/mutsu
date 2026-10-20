@@ -157,6 +157,7 @@ fn try_split_decl_modifier(
 
 fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool) -> Option<Stmt> {
     let Stmt::VarDecl {
+        anonymous,
         name,
         expr,
         type_constraint,
@@ -192,6 +193,7 @@ fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool)
     let is_hash = name.starts_with('%');
     let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
     let decl = Stmt::VarDecl {
+        anonymous: *anonymous,
         name: name.clone(),
         expr: super::decl::default_decl_expr(is_array, is_hash, None, type_constraint.as_deref()),
         type_constraint: type_constraint.clone(),
@@ -389,6 +391,7 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, Runtim
             ) =>
             {
                 out.push(Stmt::VarDecl {
+                    anonymous: false,
                     name,
                     expr,
                     type_constraint: None,

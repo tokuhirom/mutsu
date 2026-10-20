@@ -35,6 +35,7 @@ where
         spelling: Default::default(),
     };
     let mut body = vec![Stmt::VarDecl {
+        anonymous: false,
         name: tmp_idx,
         expr: index,
         type_constraint: None,
@@ -82,6 +83,7 @@ fn compound_index_assign_op_expr(
     );
     let tmp_idx_expr = Expr::Var(tmp_idx.clone());
     let mut body = vec![Stmt::VarDecl {
+        anonymous: false,
         name: tmp_idx,
         expr: index,
         type_constraint: None,
@@ -140,6 +142,7 @@ fn short_circuit_subscript_assign(
         TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
     );
     body.push(Stmt::VarDecl {
+        anonymous: false,
         name: tmp_lhs.clone(),
         expr: lhs_expr,
         type_constraint: None,
@@ -226,6 +229,7 @@ pub(crate) fn build_compound_assign_expr(
             let outer = compound_index_assign_op_expr(*target, tmp_expr, is_positional, op, rhs);
             return Ok(Expr::desugar_block(vec![
                 Stmt::VarDecl {
+                    anonymous: false,
                     name: tmp_idx,
                     expr: *index,
                     type_constraint: None,
@@ -321,6 +325,7 @@ pub(crate) fn build_compound_assign_expr(
                     TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
                 );
                 body.push(Stmt::VarDecl {
+                    anonymous: false,
                     name: tmp.clone(),
                     expr: dim,
                     type_constraint: None,

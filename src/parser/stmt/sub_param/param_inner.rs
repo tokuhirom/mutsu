@@ -857,7 +857,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let (r3, _) = ws(r3)?;
             let (r3, _) = parse_char(r3, ')')?;
             // If it's a single simple variable param, use its name; otherwise sub-signature.
-            // An anonymous scalar `$` parses to the name `__ANON_STATE__`; it is still a
+            // An anonymous scalar `$` parses to the name `__ANON_STATE#`; it is still a
             // plain single variable, so accept it here (as the sigil-prefixed anonymous
             // `@__ANON_ARRAY__` / `%__ANON_HASH__` already are). Without this, a named
             // parameter with an anonymous scalar and a trailing sub-signature —
@@ -865,7 +865,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             // and the outer sub-signature went unparsed.
             if sub_params.len() == 1
                 && sub_params[0].sub_signature.is_none()
-                && (!sub_params[0].name.starts_with("__") || sub_params[0].name == "__ANON_STATE__")
+                && (!sub_params[0].name.starts_with("__") || sub_params[0].name == "__ANON_STATE#")
             {
                 let mut p = super::helpers::make_param(alias_name);
                 p.named = true;

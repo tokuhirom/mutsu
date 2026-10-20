@@ -9972,7 +9972,7 @@ impl CompiledCode {
     /// writeback corrupts the rw attribute update — #3658).
     pub(crate) fn is_non_lexical_name(name: &str) -> bool {
         name == "self"
-            || name == "__ANON_STATE__"
+            || name == "__ANON_STATE#"
             || name == "?CLASS"
             || name == "?ROLE"
             || name == "_"

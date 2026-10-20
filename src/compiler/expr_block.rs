@@ -172,12 +172,14 @@ impl Compiler {
                 name,
                 expr,
                 is_state,
+                anonymous,
                 is_our,
                 is_dynamic: ast_is_dynamic,
                 type_constraint,
                 custom_traits,
                 ..
             } => {
+                let anonymous_scalar = *anonymous && !name.starts_with(['@', '%', '&']);
                 // `use variables :D/:U`'s implicit smiley (#9990).
                 let pragma_type_constraint = self
                     .variables_pragma_constraint(
@@ -352,13 +354,11 @@ impl Compiler {
                     // container and the initializer store on a later call
                     // would overwrite the persisted value.
                     let state_guard = if preapply_default {
-                        let key = format!(
-                            "__state_{}::{}@{}",
-                            self.current_package,
+                        let key_sym = super::compile_session::state_key(
+                            &self.current_package,
                             name,
-                            self.code.ops.len()
+                            self.code.ops.len(),
                         );
-                        let key_sym = crate::symbol::Symbol::intern(&key);
                         let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym, 0));
                         Some((guard_idx, key_sym))
                     } else {
@@ -393,8 +393,7 @@ impl Compiler {
                         self.code.ops[guard_idx] = OpCode::StateVarInitGuard(key_sym, ip as u32);
                         key_sym
                     } else {
-                        let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
-                        crate::symbol::Symbol::intern(&key)
+                        super::compile_session::state_key(&self.current_package, name, ip)
                     };
                     self.code.state_locals.push((slot as usize, key_sym));
                     self.code.emit(OpCode::StateVarInit(slot, key_sym));
@@ -705,7 +704,7 @@ impl Compiler {
                         self.code.emit(OpCode::MarkVarDeclContext);
                         // A `constant` (including the anonymous `(constant $ =
                         // EXPR)` form, which compiles to `is_our: true` with
-                        // name `__ANON_STATE__`) publishes via `SetGlobalRaw`,
+                        // name `__ANON_STATE#`) publishes via `SetGlobalRaw`,
                         // exactly like the statement-position path (stmt.rs) —
                         // `raw_mode` is what makes the general SetGlobal
                         // handler skip Scalar-container itemization for a
@@ -802,7 +801,7 @@ impl Compiler {
                                 && !name.starts_with('@')
                                 && !name.starts_with('%')
                                 && !name.starts_with('&')
-                                && name != "__ANON_STATE__"
+                                && !anonymous_scalar
                             {
                                 // Untyped `(my $x = Nil)` with an EXPLICIT Nil
                                 // initializer: assignment of Nil resets a fresh
@@ -920,7 +919,7 @@ impl Compiler {
                 // above.
                 if !name.starts_with('@')
                     && !name.starts_with('%')
-                    && name != "__ANON_STATE__"
+                    && !anonymous_scalar
                     && let Some(tc) = type_constraint
                 {
                     let svt_name_idx = self.code.add_constant(Value::str(name.clone()));
@@ -942,7 +941,7 @@ impl Compiler {
                 // turned a flattening consumer (e.g. a `Z` zip, or binding into a
                 // typed positional parameter) into a one-item read of the whole
                 // aggregate.
-                if name == "__ANON_STATE__"
+                if anonymous_scalar
                     && type_constraint.is_none()
                     && !is_constant_decl
                     && std::mem::take(&mut self.anon_scalar_as_cell)
@@ -951,10 +950,9 @@ impl Compiler {
                     // itself, writable (see `Compiler::anon_scalar_as_cell`).
                     let tc_idx = self.code.add_constant(Value::str("Mu".to_string()));
                     self.code.emit(OpCode::WrapTypedContainer(tc_idx));
-                } else if name == "__ANON_STATE__" && type_constraint.is_none() && !is_constant_decl
-                {
+                } else if anonymous_scalar && type_constraint.is_none() && !is_constant_decl {
                     self.code.emit(OpCode::WrapScalar);
-                } else if name == "__ANON_STATE__"
+                } else if anonymous_scalar
                     && !is_constant_decl
                     && let Some(tc) = type_constraint
                     && !matches!(tc.as_str(), "Any" | "Mu" | "")
@@ -1035,7 +1033,7 @@ impl Compiler {
                 // sigil and where it excludes the anonymous bare `@`/`%`.
                 let scalar_default = has_default_trait && is_nil_init && !sigil_container;
                 let container_trait = has_named_trait && sigil_container && name.len() > 1;
-                if name != "__ANON_STATE__" && (scalar_default || container_trait) {
+                if !anonymous_scalar && (scalar_default || container_trait) {
                     self.code.emit(OpCode::Pop);
                     self.emit_get_named_var(name);
                 }

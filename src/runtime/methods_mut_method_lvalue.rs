@@ -1305,7 +1305,7 @@ impl Interpreter {
                         // `self.attr OP= v` has no itemization and does die.
                         // Measured against raku v2026.07; the simple `$.attr = v`
                         // takes the `AssignExpr` path and dies there.
-                        if target_var == Some("__ANON_STATE__") {
+                        if target_var == Some("__ANON_STATE#") {
                             return Ok(value);
                         }
                         return Err(RuntimeError::new(format!(

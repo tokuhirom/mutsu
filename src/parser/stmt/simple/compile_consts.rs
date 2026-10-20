@@ -82,7 +82,7 @@ pub(crate) fn current_scope_anon_state_names_from(from: usize) -> Vec<String> {
 }
 
 /// Take the current scope's pending anonymous-state names and turn each into an
-/// implicit `state $__ANON_STATE_<id>__;` declaration.
+/// implicit `state $__ANON_STATE#<id>__;` declaration.
 ///
 /// In Raku a bare `$` IS a `state` variable of the block it appears in, so the
 /// cell belongs to that block's *clone*: re-entering the enclosing scope

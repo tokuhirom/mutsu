@@ -42,6 +42,7 @@ pub(crate) fn next_tmp_name() -> String {
 /// still evaluating an effectful subscript only once.
 pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) -> Expr {
     let decl = Stmt::VarDecl {
+        anonymous: false,
         name: tmp_name.to_string(),
         expr: cond_expr,
         type_constraint: None,

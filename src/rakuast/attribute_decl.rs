@@ -107,6 +107,7 @@ pub(super) fn convert(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> 
         } else {
             explicit_default
         },
+        false,
     )?;
     if let Some(key) = hash_key_type {
         if let Some(expression) = hash_key_type_expr {

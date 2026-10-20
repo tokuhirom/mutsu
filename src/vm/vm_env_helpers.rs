@@ -1763,7 +1763,7 @@ impl Interpreter {
             return Some(v);
         }
         // Anonymous scalar placeholders (from bare `$`) are invocation-local.
-        if name.starts_with("__ANON_STATE_") {
+        if name.starts_with("__ANON_STATE#") {
             return None;
         }
         // Fall back to shared_vars for cross-thread visibility of variables
@@ -1865,7 +1865,7 @@ impl Interpreter {
     /// qualified or unqualified form (all of which need a `::` this name cannot
     /// contain), nor an `&infix:<...>` operator alias; it has no `*` twigil, so it
     /// has no `$*x`/`*x` dynamic-alias pair; and it is not a compiler-internal
-    /// `__ANON_STATE_*`. What is left is the carrier log, the (latched)
+    /// `__ANON_STATE#*`. What is left is the carrier log, the (latched)
     /// placeholder probe, and one Symbol-keyed insert -- which is what a
     /// `my $x = ...` in a hot loop should cost.
     pub(super) fn set_env_plain_lexical(&mut self, name: &str, sym: Option<Symbol>, value: Value) {
@@ -1977,7 +1977,7 @@ impl Interpreter {
         if let Some(set) = self.carrier_writes.as_mut() {
             set.insert(name.to_string());
         }
-        if name.starts_with("__ANON_STATE_") {
+        if name.starts_with("__ANON_STATE#") {
             self.env_mut().insert(name.to_string(), value);
             return;
         }

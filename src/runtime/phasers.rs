@@ -572,6 +572,7 @@ fn is_shaped_decl(init_expr: &Expr, custom_traits: &[(String, Option<Expr>)]) ->
 
 pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     let Stmt::VarDecl {
+        anonymous,
         name,
         expr: init_expr,
         type_constraint,
@@ -673,6 +674,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
             None => (static_default, custom_traits.clone()),
         };
     let static_decl = Stmt::VarDecl {
+        anonymous: *anonymous,
         name: name.clone(),
         expr: static_default,
         type_constraint: type_constraint.clone(),

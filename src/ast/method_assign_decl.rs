@@ -11,6 +11,7 @@ pub(crate) const METHOD_ASSIGN_DECL_TRAIT: &str = "__method_assign_decl";
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MethodAssignDecl {
     pub(crate) name: String,
+    pub(crate) anonymous: bool,
     pub(crate) type_constraint: Option<String>,
     pub(crate) is_state: bool,
     pub(crate) is_our: bool,
@@ -101,6 +102,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
         // call reads the slot the declaration just bound (#13273).
         return vec![
             Stmt::VarDecl {
+                anonymous: form.anonymous,
                 name: form.name.clone(),
                 expr: fresh_container(&form.name),
                 type_constraint: None,
@@ -127,6 +129,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
         custom_traits.push(("__has_initializer".to_string(), None));
     }
     vec![Stmt::VarDecl {
+        anonymous: form.anonymous,
         name: form.name.clone(),
         expr: call,
         type_constraint: form.type_constraint.clone(),

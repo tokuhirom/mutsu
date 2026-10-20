@@ -23,6 +23,7 @@ pub(crate) fn expand(signature: Expr, rhs: Expr) -> Option<Stmt> {
     let temp_name = format!("__sig_bind_tmp_{id}");
     let bound_name = format!("{temp_name}_bound");
     let decl = |name: String, expr: Expr| Stmt::VarDecl {
+        anonymous: false,
         name,
         expr,
         type_constraint: None,
