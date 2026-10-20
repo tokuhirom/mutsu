@@ -75,10 +75,9 @@ pub(super) fn grow(
     // argument whole (#14232).
     let args = if op == Op::Append
         && args.len() == 1
-        && saved_meta
-            .as_ref()
-            .is_some_and(|meta| crate::runtime::native_types::is_native_array_element_type(&meta.value_type))
-    {
+        && saved_meta.as_ref().is_some_and(|meta| {
+            crate::runtime::native_types::is_native_array_element_type(&meta.value_type)
+        }) {
         vec![crate::value::flat::deitemize_flat_operand(&args[0])]
     } else {
         args
