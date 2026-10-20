@@ -116,6 +116,14 @@ impl Compiler {
                 .chain(self.enclosing_sigilless.iter())
                 .cloned(),
         );
+        // So is a `my constant` of the enclosing scope, which lives in a slot
+        // under its term key (`\C`): read by name, it is in the method's
+        // declaration-time capture, and outlives the scope (#14068).
+        method_compiler.enclosing_sigilless.extend(self.local_map.keys().filter_map(|key| {
+            key.strip_prefix(crate::term_names::TERM_PREFIX)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+        }));
         method_compiler.class_body_static_code_vars = self.class_body_static_code_vars.clone();
         method_compiler.variables_pragma = self.variables_pragma;
         // A `my class NAME` shadowing an outer `constant NAME` is what a bare
