@@ -1,8 +1,18 @@
 use Test;
-plan 52;
+plan 56;
 
 class BoundObject {
     has $.value is rw = 1;
+}
+{
+    role BoundRole { method bound-answer { 7 } }
+    my $routine := sub { 1 };
+    my $alias := $routine;
+    $routine does BoundRole;
+    is $routine.bound-answer, 7, 'a value-bound routine can receive a role';
+    is $alias.bound-answer, 7, 'the routine alias sees the composed role';
+    is $routine.VAR.^name, $routine.^name, 'composition preserves the value binding';
+    dies-ok { $routine = 5 }, 'composition does not make the value binding assignable';
 }
 {
     my $o := BoundObject.new;

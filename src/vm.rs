@@ -307,6 +307,7 @@ pub(crate) mod vm_misc_typecheck;
 pub(crate) mod vm_misc_typed_range;
 mod vm_mixin_container_store;
 mod vm_mixin_does_ops;
+mod vm_mixin_does_var;
 mod vm_module_ops;
 mod vm_multi_plan_light_call;
 mod vm_named_method_binding;

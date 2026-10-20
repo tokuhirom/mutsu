@@ -13,3 +13,6 @@ writeback boundary, rather than selecting the first same-named local slot.
 The separate scalar-bind container-identity namespace, its global latch and
 its per-slot key memo are retired. Value binds use their readonly binding kind;
 Proxy bindings retain their assignable container semantics.
+
+Applying a role to a value-bound routine updates the object through its
+existing binding cell, preserving aliases and the binding's readonly kind.
