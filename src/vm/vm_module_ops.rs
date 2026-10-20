@@ -115,6 +115,12 @@ impl Interpreter {
         let name = Self::const_str(code, name_idx);
         let value = self
             .exported_var_value(module, name)
+            // An exported type the module declared outside any package.
+            .or_else(|| {
+                (!name.starts_with(['$', '@', '%', '&', '\\'])
+                    && self.has_type_or_package_kind(name))
+                .then(|| Value::package(crate::symbol::Symbol::intern(name)))
+            })
             .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
         self.stack.push(value);
     }
