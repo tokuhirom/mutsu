@@ -450,9 +450,13 @@ impl Interpreter {
         // validation, as rakudo does at BEGIN time, so the hook's real import
         // set is in scope; this split only approximates it (#13441).
         let hook = imported.imports_through_export_hook;
+        // A term a hook bound in the import sets of the blocks the `EVAL`
+        // runs in (ADR-8751): a bare word of the snippet reads it.
+        let hook_terms = self.active_lexical_import_hook_terms();
         self.check_eval_unit_routines(stmts, |name| {
             imported.types.contains(name)
                 || (hook && name.starts_with(|c: char| c.is_lowercase()))
+                || hook_terms.iter().any(|term| term == name)
         })
     }
 

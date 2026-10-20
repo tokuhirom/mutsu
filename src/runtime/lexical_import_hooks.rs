@@ -94,6 +94,9 @@ impl Interpreter {
             Symbol::intern(&crate::runtime::term_names::term_key(key)),
             value.clone(),
         );
+        // A top-level routine the block calls does not see it, not even
+        // through an `EVAL` (`hide_unit_names_from_frame`).
+        self.note_block_bound_import(key);
         true
     }
 
@@ -105,6 +108,9 @@ impl Interpreter {
             return None;
         }
         let key = crate::runtime::term_names::term_key_sym(name);
+        if self.env.frame_hides_unit_name(key) {
+            return None;
+        }
         chain.iter().find_map(|id| {
             self.module
                 .lexical_import_hook_values
@@ -126,6 +132,7 @@ impl Interpreter {
             .iter()
             .filter_map(|id| self.module.lexical_import_hook_values.get(id))
             .flat_map(|values| values.keys())
+            .filter(|key| !self.env.frame_hides_unit_name(**key))
             .filter_map(|key| {
                 crate::runtime::term_names::term_spelling(&key.resolve()).map(str::to_string)
             })
