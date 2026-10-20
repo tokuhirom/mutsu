@@ -35,22 +35,35 @@ impl Interpreter {
         combinator: &str,
         args: &[Value],
     ) -> Result<Vec<SharedPromise>, RuntimeError> {
+        // An instance of a user subclass of `Promise` is the promise it carries.
+        let promise_of = |value: &Value| match value.view() {
+            ValueView::Promise(promise) => Some(promise.clone()),
+            _ => {
+                crate::builtins::method_table::promise_channel::receiver_of(value).and_then(
+                    |inner| match inner.view() {
+                        ValueView::Promise(promise) => Some(promise.clone()),
+                        _ => None,
+                    },
+                )
+            }
+        };
         let mut promises = Vec::new();
         for arg in args {
             let arg = arg.deref_container();
-            match arg.view() {
-                ValueView::Promise(promise) => promises.push(promise.clone()),
-                _ if arg.as_list_items().is_some() => {
-                    for item in arg.as_list_items().unwrap().iter() {
-                        let item = item.deref_container();
-                        if let ValueView::Promise(promise) = item.view() {
-                            promises.push(promise.clone());
-                        } else {
-                            return Err(Self::promise_combinator_error(combinator));
+            if let Some(promise) = promise_of(&arg) {
+                promises.push(promise);
+                continue;
+            }
+            match arg.as_list_items() {
+                Some(items) => {
+                    for item in items.iter() {
+                        match promise_of(&item.deref_container()) {
+                            Some(promise) => promises.push(promise),
+                            None => return Err(Self::promise_combinator_error(combinator)),
                         }
                     }
                 }
-                _ => return Err(Self::promise_combinator_error(combinator)),
+                None => return Err(Self::promise_combinator_error(combinator)),
             }
         }
         Ok(promises)
