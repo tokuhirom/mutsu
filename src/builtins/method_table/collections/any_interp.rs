@@ -200,6 +200,14 @@ fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
     all
 }
 
+/// `Any`'s methods that read `self.iterator` (measured against Rakudo 2026.09
+/// on a plain class declaring only `iterator`): a receiver that brings its own
+/// `iterator` answers them from its elements (ADR-11276 §9.148).
+pub(crate) const ANY_VIA_ITERATOR: [&str; 18] = [
+    "head", "tail", "first", "skip", "grep", "map", "sort", "min", "max", "minmax", "sum",
+    "unique", "squish", "rotor", "batch", "Seq", "repeated", "toggle",
+];
+
 /// Whether `Any`'s row cannot serve this receiver: an associative or quantity
 /// receiver reads as its pairs, which the pure cascades build for
 /// `squish`/`eager`/`produce` and the interpreter's own routines do not.

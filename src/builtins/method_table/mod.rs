@@ -67,7 +67,7 @@ mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
-pub(crate) use collections::any_interp::MAP_NAMED;
+pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
 pub(crate) use collections::from_iterator::owners_of as from_iterator_owners_of;
@@ -98,6 +98,7 @@ pub(crate) use io_concurrency::encoding::{
 };
 pub(crate) use io_concurrency::handle_names;
 pub(crate) use io_concurrency::io_path_lexical::basename as io_path_basename;
+pub(crate) use io_concurrency::io_path_parts::pairs as io_path_parts_pairs;
 pub(crate) use io_concurrency::io_special::raku_row as io_special_raku;
 pub(crate) use io_concurrency::proc_async::owners_of as proc_async_owners_of;
 pub(crate) use io_concurrency::promise_channel;

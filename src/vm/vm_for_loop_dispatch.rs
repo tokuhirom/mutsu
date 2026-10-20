@@ -636,7 +636,7 @@ impl Interpreter {
             return false;
         };
         let cn = class_name.as_str().to_string();
-        if attributes.contains_key("__mutsu_array_storage") {
+        if attributes.contains_key("__mutsu_array_storage") || cn == "IO::Path::Parts" {
             return true;
         }
         if self.class_does_role(&cn, "Iterable")
@@ -685,6 +685,10 @@ impl Interpreter {
         &mut self,
         iterable: &Value,
     ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        // `IO::Path::Parts` is `Iterable`, its `iterator` the three part pairs.
+        if let Some(pairs) = crate::builtins::method_table::io_path_parts_pairs(iterable) {
+            return Ok(Some(pairs));
+        }
         // A role-punned instance stores its iterator method in the composed
         // role, not in the wrapped class's method table.  List assignment of
         // such an Iterable (for example `@ = DataFrame`) must therefore use
@@ -750,6 +754,9 @@ impl Interpreter {
         &mut self,
         iterable: &Value,
     ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        if let Some(pairs) = crate::builtins::method_table::io_path_parts_pairs(iterable) {
+            return Ok(Some(pairs));
+        }
         let ValueView::Instance {
             class_name,
             attributes,

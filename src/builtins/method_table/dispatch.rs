@@ -40,6 +40,11 @@ fn call(
     } else {
         None
     };
+    // `Any`'s methods written on `self.iterator` read the elements of a
+    // receiver whose class declares its own `iterator` (`IO::Path::Parts`'s
+    // pairs), not the receiver as one item.
+    let iterated = iterated_receiver(row, target);
+    let target = iterated.as_ref().unwrap_or(target);
     // #12456: user code runs over the elements, so run on a snapshot instead.
     let snapshot = crate::value::container_read::snapshot_read_receiver(row.name, target);
     let target = snapshot.as_ref().unwrap_or(target);
@@ -56,6 +61,21 @@ fn call(
     // stack truncated its text; raise instead of answering with it.
     answer
         .map(|(result, rerunnable)| (crate::value::render_guard::check_render(result), rerunnable))
+}
+
+/// The List of elements `Any`'s row reads from a built-in receiver with an
+/// `iterator` of its own (an `IO::Path::Parts` iterates its three pairs), when
+/// `row` is one of `Any`'s methods written on `self.iterator`; `None` for every
+/// other row or receiver.
+// Cost: O(1) for any row but `Any`'s; O(m) name scan otherwise, m = 18.
+fn iterated_receiver(row: &MethodRow, target: &Value) -> Option<Value> {
+    if row.owner != "Any" {
+        return None;
+    }
+    let pairs = super::io_path_parts_pairs(target)?;
+    super::ANY_VIA_ITERATOR
+        .contains(&row.name)
+        .then(|| Value::array(pairs))
 }
 
 /// Run row `id`'s handler, or `None` when a narrowing row does not bind

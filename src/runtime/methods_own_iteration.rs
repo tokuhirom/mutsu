@@ -16,11 +16,7 @@
 
 use super::*;
 
-/// `Any`'s methods that read `self.iterator`.
-const VIA_ITERATOR: [&str; 18] = [
-    "head", "tail", "first", "skip", "grep", "map", "sort", "min", "max", "minmax", "sum", "unique",
-    "squish", "rotor", "batch", "Seq", "repeated", "toggle",
-];
+use crate::builtins::method_table::ANY_VIA_ITERATOR as VIA_ITERATOR;
 
 /// `Any`'s methods that read `self.list` (besides those of [`VIA_ITERATOR`],
 /// which reach it through `Any.iterator`).
