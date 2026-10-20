@@ -545,7 +545,7 @@ impl Interpreter {
     }
 
     /// Create a Collation instance with the given level settings.
-    pub(super) fn make_collation_instance(
+    pub(crate) fn make_collation_instance(
         primary: i64,
         secondary: i64,
         tertiary: i64,

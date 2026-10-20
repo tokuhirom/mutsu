@@ -505,6 +505,7 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     ),
     // raku: `Label.^mro` is `(Label Any Mu)`; it does no role.
     row!("Label", mro: ["Label", "Any", "Mu"], roles: [], owner: ""),
+    row!("Collation", mro: ["Collation", "Any", "Mu"], roles: [], owner: ""),
     // ---- Match/Capture ----
     row!(
         "Match",

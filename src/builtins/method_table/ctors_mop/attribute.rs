@@ -26,7 +26,12 @@ macro_rules! row {
             name: $name,
             arity: $arity,
             handler: $handler,
-            flags: RowFlags::OWNER_ONLY,
+            flags: if $arity == 0 {
+                RowFlags::NONE
+            } else {
+                // The arguments are user objects (`get_value($obj)`).
+                RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS)
+            },
             named: &[],
         }
     };
@@ -50,16 +55,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("get_value", 1, Handler::Interp(get_value)),
     row!("set_value", 2, Handler::Interp(set_value)),
 ];
-
-/// The owners the rows reachable from `target` are found under: an
-/// `Attribute` metaobject.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Instance { class_name, .. } if class_name == "Attribute" => Some(&["Attribute"]),
-        _ => None,
-    }
-}
 
 /// Runs `f` on the metaobject's facts; `None` for a receiver that is no
 /// instance.
