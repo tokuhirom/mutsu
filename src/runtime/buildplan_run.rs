@@ -147,21 +147,17 @@ impl Interpreter {
                     self.plan_bind_attr(instance, task, value);
                 }
             }
-            REQUIRED => {
-                if !inited() {
-                    let why = task
-                        .payload
-                        .as_ref()
-                        .filter(|p| matches!(p.view(), ValueView::Str(_)))
-                        .map(|p| p.to_string_value());
-                    return Err(RuntimeError::attribute_required(&task.name, why.as_deref()));
-                }
+            REQUIRED if !inited() => {
+                let why = task
+                    .payload
+                    .as_ref()
+                    .filter(|p| matches!(p.view(), ValueView::Str(_)))
+                    .map(|p| p.to_string_value());
+                return Err(RuntimeError::attribute_required(&task.name, why.as_deref()));
             }
-            DEFAULT_OBJ..=DEFAULT_STR => {
-                if !inited() {
-                    let value = self.plan_default_value(instance, task)?;
-                    self.plan_bind_attr(instance, task, value);
-                }
+            DEFAULT_OBJ..=DEFAULT_STR if !inited() => {
+                let value = self.plan_default_value(instance, task)?;
+                self.plan_bind_attr(instance, task, value);
             }
             _ => {}
         }
