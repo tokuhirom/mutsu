@@ -482,6 +482,9 @@ impl Interpreter {
         }
         declared.extend(types.types);
         declared.extend(types.packages);
+        // The terms a hook bound in the import sets of the blocks the `EVAL`
+        // runs in (ADR-8751): the snippet's bare words read them.
+        declared.extend(self.active_lexical_import_hook_terms());
         if let Some((name, _)) = self.first_undeclared_name(stmts, &declared, false) {
             let suggestions = self.suggest_type_names(&name);
             return Err(RuntimeError::undeclared_type_symbols(
