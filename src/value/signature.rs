@@ -80,6 +80,10 @@ pub(crate) struct SigParam {
     pub(crate) sub_signature: Option<Vec<SigParam>>,
     pub(crate) outer_sub_signature: Option<Vec<SigParam>>,
     pub(crate) traits: Vec<String>,
+    /// The trait-mutated `Parameter` of the declaration this was converted
+    /// from (`crate::value::param_trait_meta`). Not serialized.
+    #[serde(skip)]
+    pub(crate) trait_meta: crate::value::param_trait_meta::ParamTraitMeta,
     pub(crate) code_signature: Option<Box<SigInfo>>,
     pub(crate) where_constraint: Option<Box<Expr>>,
     pub(crate) default_expr: Option<Box<Expr>>,
@@ -560,38 +564,6 @@ pub(crate) fn cache_sub_signature(key: SubSignatureKey, signature: Value) {
     map.insert(key, signature);
 }
 
-/// The mixin type a custom parameter trait leaves on the `Parameter` it is
-/// handed, keyed by trait name.
-///
-/// `Signature.params` materializes a fresh `Parameter` on every access (there is
-/// no stored object to mix into), so a role a trait composed at declaration time
-/// would die with the throwaway the trait candidate was called on. Instead
-/// `check_param_custom_traits` records the type the object was reblessed into,
-/// and every later materialization of a parameter carrying that trait is born as
-/// that type. This replays the trait's effect *on the parameter* only — nothing
-/// else its body did.
-static PARAM_TRAIT_MIXIN_TYPES: Mutex<Option<HashMap<String, Symbol>>> = Mutex::new(None);
-
-/// Record that the trait `trait_name` reblesses the `Parameter` it is applied to
-/// into `mixin_type`.
-pub(crate) fn register_param_trait_mixin_type(trait_name: &str, mixin_type: Symbol) {
-    let mut guard = PARAM_TRAIT_MIXIN_TYPES.lock().unwrap();
-    guard
-        .get_or_insert_with(HashMap::new)
-        .insert(trait_name.to_string(), mixin_type);
-}
-
-/// The type a materialized `Parameter` should be born as, given the traits its
-/// declaration carries. `None` when no trait composed anything.
-fn param_trait_mixin_type(traits: &[String]) -> Option<Symbol> {
-    if traits.is_empty() {
-        return None;
-    }
-    let guard = PARAM_TRAIT_MIXIN_TYPES.lock().unwrap();
-    let map = guard.as_ref()?;
-    traits.iter().rev().find_map(|t| map.get(t).copied())
-}
-
 /// Whether a parameter name is one of the synthetic placeholders the parser
 /// gives an *anonymous* parameter (`$`, `$?`, `@?`, `%?`, a bare `::T` capture,
 /// a subsignature carrier). The parameter has no user-visible name, so both
@@ -700,6 +672,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
         } else {
             p.traits.clone()
         },
+        trait_meta: p.trait_meta.clone(),
         code_signature: p
             .code_signature
             .as_ref()
@@ -866,18 +839,36 @@ fn sig_param_to_parameter_instance_with_owner(
     owner_key: &Option<String>,
     interp: Option<&dyn SubsetBases>,
 ) -> Value {
+    if let Some(object) = p.trait_meta.get() {
+        return object;
+    }
     // Build the base parameter attrs
     let mut attrs = build_parameter_attrs(p, interp);
     // Inject owner sub key for doc comment lookup
     if let Some(key) = owner_key {
         attrs.insert("__mutsu_owner_sub".to_string(), Value::str(key.clone()));
     }
-    Value::make_instance(parameter_class_for(p), attrs)
+    Value::make_instance(Symbol::intern("Parameter"), attrs)
 }
 
+/// The `Parameter` for `p`: the object its custom traits mutated when one
+/// ran (`crate::value::param_trait_meta`), else a fresh one.
 fn sig_param_to_parameter_instance(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Value {
+    if let Some(object) = p.trait_meta.get() {
+        return object;
+    }
     let attrs = build_parameter_attrs(p, interp);
-    Value::make_instance(parameter_class_for(p), attrs)
+    Value::make_instance(Symbol::intern("Parameter"), attrs)
+}
+
+/// A fresh `Parameter` for the declaration `p`, never the one a trait
+/// mutated: the object a custom trait candidate is handed.
+pub(crate) fn fresh_parameter_value_from_param_def(
+    p: &ParamDef,
+    interp: Option<&dyn SubsetBases>,
+) -> Value {
+    let attrs = build_parameter_attrs(&param_def_to_sig_param(p), interp);
+    Value::make_instance(Symbol::intern("Parameter"), attrs)
 }
 
 /// Build a standalone `Parameter` Value that knows which routine declared it,
@@ -891,13 +882,6 @@ pub(crate) fn make_parameter_value_for_owner(
     interp: Option<&dyn SubsetBases>,
 ) -> Value {
     sig_param_to_parameter_instance_with_owner(param, &Some(owner_key.to_string()), interp)
-}
-
-/// The type a materialized `Parameter` is born as: `Parameter`, or the mixin
-/// type a custom trait on the declaration composed (see
-/// [`PARAM_TRAIT_MIXIN_TYPES`]).
-fn parameter_class_for(p: &SigParam) -> Symbol {
-    param_trait_mixin_type(&p.traits).unwrap_or_else(|| Symbol::intern("Parameter"))
 }
 
 /// The base nominal type of a builtin subset, or `None` for any other type

@@ -144,6 +144,7 @@ pub(crate) fn placeholder_defs_are_plain(param_defs: &[ParamDef]) -> bool {
 // Cost: O(t), t = the parameter's trait count.
 pub(crate) fn def_is_plain_positional(pd: &ParamDef) -> bool {
     let ParamDef {
+        trait_meta: _,
         name: _,
         default,
         multi_invocant: _,
