@@ -2133,7 +2133,7 @@ impl Interpreter {
             // Mark a genuine bound array SLICE (`@slice := @array[1,2]`,
             // `@s := %h<a b>`, §4 BLOCKERS.md test 15): its OWN elements are
             // shared `ContainerRef` cells or entry tokens. The mark lives on
-            // the bound value ([`ArrayData::bound_slice`], ADR-0097) and is
+            // the bound value (`ArrayData::bound_slice`, ADR-0097) and is
             // the ONLY trigger for the write-through behavior in
             // `vm_var_assign_local.rs`/this file's non-bind path — "elements
             // are cells" alone is NOT a safe signal, since unrelated machinery

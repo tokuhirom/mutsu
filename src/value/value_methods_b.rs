@@ -56,7 +56,7 @@ impl Value {
     }
 
     /// A fresh `List` of `cells` marked as a `:=`-bound slice
-    /// ([`ArrayData::bound_slice`]).
+    /// (`ArrayData::bound_slice`).
     // Cost: O(1) beyond moving `cells`.
     pub fn bound_slice_array(cells: Vec<Value>) -> Value {
         let mut data = ArrayData::new(cells);
@@ -82,7 +82,7 @@ impl Value {
     }
 
     /// Whether this value (seen through a container cell) is an array marked
-    /// by [`mark_bound_slice`](Self::mark_bound_slice).
+    /// by [`Value::bound_slice_array`] or [`Value::with_bound_slice_flag`].
     // Cost: O(1).
     pub fn is_bound_slice(&self) -> bool {
         match self.view() {
