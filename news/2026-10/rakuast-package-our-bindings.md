@@ -40,6 +40,9 @@ Body chunks use that same provenance, and relative compound type identities
 remain distinct from their written bindings. Generated namespaces preserve
 custom EXPORT lookup, and a vivified ancestor does not replace a pending
 class's HOW.
+Literal stash subscripts retain their lookup semantics: a nested type is a
+type object, while an absent key yields Nil. EVAL also retains the namespace
+classification of visible generated export stashes.
 The declaration-phase timing of trait arguments remains tracked in #14146.
 
 This is a Stage 1 S10 slice of #7564, tracked by #14111 and ADR-10723.

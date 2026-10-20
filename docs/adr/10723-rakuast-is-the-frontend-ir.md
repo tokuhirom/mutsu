@@ -1559,6 +1559,10 @@ qualification instead of guessing it from a repeated package prefix.
 The matching method/body chunks use the same declaration-name provenance.
 Relative compound type identities remain distinct from their written package
 bindings; a registry identity does not manufacture another bareword binding.
+Literal package stash subscripts remain index expressions rather than becoming
+qualified-name lookups, so an absent member yields Nil. EVAL's caller namespace
+classification includes the generated export indexes without declaring them
+as user packages.
 The existing relative-class regression now measures constructor dispatch
 against Rakudo instead of accepting a fabricated package value's name.
 Post-declaration checks include modules and packages, and semicolon forms

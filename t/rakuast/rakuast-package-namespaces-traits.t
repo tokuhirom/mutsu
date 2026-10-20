@@ -3,6 +3,10 @@ use MONKEY-SEE-NO-EVAL;
 use Test;
 
 multi sub trait_mod:<is>(Mu:U $target, :$paint!) { }
+sub namespace-export-check is export { 42 }
+
+lives-ok { EVAL('EXPORT::DEFAULT') }, 'EVAL sees its caller export namespace';
+lives-ok { EVAL(q[EVAL('EXPORT::DEFAULT')]) }, 'nested EVAL retains the lexical export namespace';
 
 my $module = Q[module NamespaceShape is paint<blue> is export {}].AST.statements[0].expression;
 isa-ok $module, RakuAST::Module, 'module declaration shape';
@@ -32,6 +36,11 @@ my $built-package = RakuAST::Package.new(
 );
 lives-ok { EVAL($built-package) }, 'hand-built package applies its custom trait';
 
+my $stash-index = Q[class NamespaceStashShape {}; NamespaceStashShape::<Missing>].AST.statements[1].expression;
+isa-ok $stash-index.operand, RakuAST::Term::Name, 'stash lookup retains its namespace operand';
+isa-ok $stash-index.postfix, RakuAST::Postcircumfix::LiteralHashIndex,
+    'a missing stash key remains a subscript rather than a qualified name';
+
 for
     Q[Distribution::Resource.^name], 'Distribution::Resource',
     Q[Distribution::Resources.^name], 'Distribution::Resources',
@@ -42,6 +51,9 @@ for
     Q[my $NamespaceScalar = 19; package NamespaceScalar::Nested {}; $NamespaceScalar], 19,
     Q[my $p = my package NamespaceValue {}; $p === NamespaceValue], True,
     Q[my $p = my module NamespaceModuleValue {}; $p === NamespaceModuleValue], True,
+    Q[class NamespaceStash { class Child {} }; (NamespaceStash::<Child> === NamespaceStash::Child) && !NamespaceStash::<Missing>.defined], True,
+    Q[class NamespaceStashBind { class Child {} }; NamespaceStashBind::<Child> := 42; (NamespaceStashBind::<Child> == 42) && (NamespaceStashBind::Child.^name eq 'NamespaceStashBind::Child')], True,
+    Q[class NamespaceStashAlias {}; my $value = 7; NamespaceStashAlias::<Value> := $value; $value = 9; NamespaceStashAlias::<Value>], 9,
     Q[module NamespaceRelative { class NamespaceRelative::Child { our $value = 17; method value { $value } } }; NamespaceRelative::Child.new.value], 17,
     Q[module NamespaceRoleRelative { role NamespaceRoleRelative::Child { method value { 19 } } }; class NamespaceComposed does NamespaceRoleRelative::Child {}; NamespaceComposed.new.value], 19,
     Q[our $seen; multi sub trait_mod:<is>(Mu:U $target, :$shade!) { $seen = $shade }; module NamespacePaint is shade<blue> {}; $seen], 'blue',

@@ -3,14 +3,23 @@
 use super::*;
 
 impl Interpreter {
-    // Cost: O(n), n = namespace name bytes, two index probes.
+    // Cost: O(n + d), n = namespace name bytes, d = EVAL ancestry (at most 64).
     pub(crate) fn export_namespace_exists(&self, name: &str) -> bool {
         let name = Symbol::intern(Self::strip_pseudo_packages(name));
-        self.module.package_export_namespaces.contains(&name)
-            || self
-                .module
-                .unit_export_namespaces
-                .contains(&(self.executing_unit_sym_for_module_load(), name))
+        if self.module.package_export_namespaces.contains(&name) {
+            return true;
+        }
+        for anchor in [self.executing_unit_sym_for_module_load(), self.current_unit] {
+            let mut unit = Some(anchor);
+            for _ in 0..64 {
+                let Some(owner) = unit else { break };
+                if self.module.unit_export_namespaces.contains(&(owner, name)) {
+                    return true;
+                }
+                unit = crate::runtime::eval_unit_parent(owner);
+            }
+        }
+        false
     }
 
     // Cost: O(t * n), t = export tags, n = package and tag name bytes.
