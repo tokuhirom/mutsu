@@ -2483,10 +2483,11 @@ mod tests {
     }
 
     /// A key with more than one NUL segment (`Store\u{0}1::Session\u{0}2`)
-    /// belongs to its FIRST segment, which is what `starts_with("{name}\0")`
-    /// tests.
+    /// belongs to every prefix that ends at one of its NULs, which is what
+    /// `starts_with("{name}\0")` tests: the lookup of a type nested in a
+    /// lexical class asks for `Store\u{0}1::Session` (#14143).
     #[test]
-    fn lexical_type_key_filter_uses_the_first_nul_segment() {
+    fn lexical_type_key_filter_uses_every_nul_prefix() {
         let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
         {
             let mut reg = RegistryWriteGuard::new(&lock, "test");
@@ -2495,6 +2496,8 @@ mod tests {
         }
         let reg = RegistryReadGuard::new(&lock, "test");
         assert!(reg.has_lexical_type_key_for("Store"));
-        assert!(!reg.has_lexical_type_key_for("Store\u{0}1::Session"));
+        assert!(reg.has_lexical_type_key_for("Store\u{0}1::Session"));
+        assert!(!reg.has_lexical_type_key_for("Store\u{0}1"));
+        assert!(!reg.has_lexical_type_key_for("Session"));
     }
 }
