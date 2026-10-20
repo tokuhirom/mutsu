@@ -4502,6 +4502,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::VarDeclarationTerm
         | RakuAstClass::VarDeclarationConstant
         | RakuAstClass::TypeEnum
+        | RakuAstClass::Module
+        | RakuAstClass::Package
         | RakuAstClass::Method
         | RakuAstClass::Submethod => Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?))),
         RakuAstClass::Sub if node.fields.iter().any(|f| f.name == Some("name")) => {

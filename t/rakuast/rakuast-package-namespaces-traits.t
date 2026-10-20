@@ -40,6 +40,8 @@ for
     Q[package NamespaceParent::Nested {}; NamespaceParent.gist], '(NamespaceParent)',
     Q[module NamespaceModule::Nested {}; NamespaceModule.gist], '(NamespaceModule)',
     Q[my $NamespaceScalar = 19; package NamespaceScalar::Nested {}; $NamespaceScalar], 19,
+    Q[my $p = my package NamespaceValue {}; $p === NamespaceValue], True,
+    Q[my $p = my module NamespaceModuleValue {}; $p === NamespaceModuleValue], True,
     Q[module NamespaceRelative { class NamespaceRelative::Child { our $value = 17; method value { $value } } }; NamespaceRelative::Child.new.value], 17,
     Q[module NamespaceRoleRelative { role NamespaceRoleRelative::Child { method value { 19 } } }; class NamespaceComposed does NamespaceRoleRelative::Child {}; NamespaceComposed.new.value], 19,
     Q[our $seen; multi sub trait_mod:<is>(Mu:U $target, :$shade!) { $seen = $shade }; module NamespacePaint is shade<blue> {}; $seen], 'blue',

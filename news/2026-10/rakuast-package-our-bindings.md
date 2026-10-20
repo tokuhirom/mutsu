@@ -27,7 +27,9 @@ through compiled multi dispatch, including arguments, source order beside
 export traits, unit bodies and hand-built AST nodes. Qualified declarations
 create their ancestor namespaces; unresolved qualified terms, post-declared
 modules/packages and illegal semicolon forms raise their proper exceptions.
-All 83 assertions of `roast/S10-packages/basic.t` now pass, and the file joins
+Package/module declarations also work as expression values, retaining lexical
+scope (`my $p = my package P {}`). All 83 assertions of
+`roast/S10-packages/basic.t` now pass through both frontends, and the file joins
 the whitelist.
 
 The runtime and AST conversion share the generated CORE type-name catalogue.

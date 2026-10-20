@@ -1565,7 +1565,9 @@ Post-declaration checks include modules and packages, and semicolon forms
 raise the corresponding unit-scope syntax exceptions. These contracts are
 measured in `t/rakuast/rakuast-package-namespaces-traits.t`.
 
-`roast/S10-packages/basic.t` now passes all 83 assertions and joins the
+Package/module declarations used as terms retain their declaration and lexical
+scope through the existing compiler value path. `roast/S10-packages/basic.t`
+now passes all 83 assertions through both frontends and joins the
 whitelist; its completed blocker entry is removed.
 
 Trait application uses the existing compiled declaration-registration timing;

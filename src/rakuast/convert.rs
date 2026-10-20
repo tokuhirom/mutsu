@@ -3710,6 +3710,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if matches!(
                 stmt.as_ref(),
                 Stmt::ClassDecl { .. }
+                    | Stmt::Package { .. }
                     | Stmt::RoleDecl { .. }
                     | Stmt::VarDecl { .. }
                     | Stmt::SubDecl { .. }
