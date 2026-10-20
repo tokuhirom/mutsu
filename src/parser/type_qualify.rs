@@ -19,7 +19,7 @@
 //! unit declares; any other name is left alone, for the run time to resolve
 //! (a top-level or imported type, a `my`-scoped one, a type capture).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, VisitMut, walk_expr_mut, walk_param_mut, walk_stmt, walk_stmt_mut};
@@ -38,10 +38,13 @@ pub(crate) fn qualify_program(stmts: &mut [Stmt]) {
         declared: decls.declared,
         lexical: decls.lexical,
         packages: Vec::new(),
+        scopes: Vec::new(),
     };
-    for stmt in stmts.iter_mut() {
-        pass.visit_stmt_mut(stmt);
-    }
+    pass.in_scope(stmts, |pass, stmts| {
+        for stmt in stmts.iter_mut() {
+            pass.visit_stmt_mut(stmt);
+        }
+    });
 }
 
 /// The package a statement opens: its name, or `None` for a `my`-scoped
@@ -180,13 +183,57 @@ struct Qualify<'d> {
     declared: HashSet<String>,
     lexical: HashSet<String>,
     packages: Vec<Option<&'d str>>,
+    /// The `my` classes each open statement list declares inside a package,
+    /// by source name, with the storage name the run time registers them
+    /// under (`Pkg::Name\u{0}<decl-id>`, ADR-0047).
+    scopes: Vec<HashMap<String, String>>,
 }
 
 impl Qualify<'_> {
+    /// Runs `f` over `body` with the `my` classes it declares in scope.
+    // Cost: O(b), b = statements of `body`, plus `f`.
+    fn in_scope<B: ?Sized>(&mut self, body: &mut B, f: impl FnOnce(&mut Self, &mut B))
+    where
+        B: AsRef<[Stmt]>,
+    {
+        let mut scope = HashMap::new();
+        if let Some(prefix) = prefix(&self.packages) {
+            let mut pending: Vec<&Stmt> = body.as_ref().iter().collect();
+            while let Some(stmt) = pending.pop() {
+                match stmt {
+                    Stmt::ClassDecl {
+                        name,
+                        is_lexical: true,
+                        decl_id,
+                        ..
+                    } if *decl_id != 0 => {
+                        // A stub and its definition are one class: the
+                        // stub's site names it.
+                        scope
+                            .entry(name.as_str().to_string())
+                            .and_modify(|full: &mut String| {
+                                *full = format!("{prefix}::{name}\u{0}{decl_id}")
+                            })
+                            .or_insert_with(|| format!("{prefix}::{name}\u{0}{decl_id}"));
+                    }
+                    // A traited declaration is wrapped with its metadata.
+                    Stmt::SyntheticBlock(inner) => pending.extend(inner.iter().rev()),
+                    _ => {}
+                }
+            }
+        }
+        self.scopes.push(scope);
+        f(self, body);
+        self.scopes.pop();
+    }
+
     /// The innermost declared `P::name` for the bare `name`, from the open
     /// packages outwards.
     // Cost: O(d * |name|), d = package nesting depth.
     fn resolve(&self, name: &str) -> Option<String> {
+        if let Some(full) = self.scopes.iter().rev().find_map(|scope| scope.get(name)) {
+            return Some(full.clone());
+        }
         for depth in (1..=self.packages.len()).rev() {
             let Some(prefix) = prefix(&self.packages[..depth]) else {
                 continue;
@@ -269,6 +316,12 @@ impl Qualify<'_> {
 }
 
 impl VisitMut for Qualify<'_> {
+    fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
+        self.in_scope(body, |pass, body| {
+            crate::ast_visit::walk_stmts_mut(pass, body)
+        });
+    }
+
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
         match stmt {
             Stmt::VarDecl {
