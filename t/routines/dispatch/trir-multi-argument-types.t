@@ -31,8 +31,8 @@ is str-param('text'), 'str', 'a str parameter retains its dispatch type';
 is str-local('text'), 'str', 'a routine-local str retains its dispatch type';
 is boxed-str('text'), 'plain', 'an untyped Str parameter stays boxed';
 
-sub take-value($value) { $value }
 sub num-value(num $value) { take-value($value) }
+sub take-value($value) { $value }
 is num-value(1.25e0), 1.25e0, 'a generic call boxes num bits as Num';
 is num-value(1.25e0), 1.25e0, 'an observed generic link also boxes num correctly';
 
