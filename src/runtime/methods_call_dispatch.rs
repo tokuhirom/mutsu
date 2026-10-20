@@ -833,22 +833,6 @@ impl Interpreter {
         {
             return self.dispatch_instance_and_fallback(target, method, args);
         }
-        // A built-in iterator's protocol methods are rows of the `Iterator` and
-        // `PredictiveIterator` roles, found by their owner (ADR-11276 §9.126).
-        // They commit through the instance's shared attribute cell, so an
-        // iterator held in an array element or a temporary advances in place
-        // and every alias sees the step.
-        if let Some(owners) = crate::builtins::method_table::iterator_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
-        }
         // DateTime/Date formatter rendering. The formatter runs against this
         // invocant on every stringification (nothing is cached), so a value
         // derived by `.utc`, `.later`, `.clone`, `+` ... renders its own

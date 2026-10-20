@@ -37,6 +37,7 @@
 //!   decodes `Package("Int")`; only a row flagged `TYPE_OBJECT_OK` answers it.
 
 mod instances;
+pub(super) mod iterator_kind;
 mod opaque;
 
 use crate::symbol::Symbol;
@@ -283,6 +284,11 @@ pub(crate) enum DispatchShape {
     RakuSystemic,
     /// `Compiler` (opaque).
     Compiler,
+    /// A built-in iterator that is not a `PredictiveIterator` (opaque; the
+    /// shape is decoded from the instance's attributes, `iterator_kind.rs`).
+    Iterator,
+    /// A built-in iterator that knows its count (opaque).
+    PredictiveIterator,
     /// A member of an `Int`-valued enum (opaque): a value kind, answering the
     /// rows of the roles Rakudo composes into the enum type.
     EnumNumeric,
@@ -303,7 +309,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 95] = [
+    pub(crate) const ALL: [DispatchShape; 97] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -399,6 +405,8 @@ impl DispatchShape {
         DispatchShape::RakuAstNode,
         DispatchShape::RakuAstOrigin,
         DispatchShape::RakuAstOriginSource,
+        DispatchShape::Iterator,
+        DispatchShape::PredictiveIterator,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched

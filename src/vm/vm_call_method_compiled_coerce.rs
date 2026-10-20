@@ -206,7 +206,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let owners = crate::builtins::method_table::iterator_owners_of(target)?;
+        let owners = crate::builtins::method_table::opaque_owners_of(target)?;
         crate::builtins::method_table::invoke_owner(self, owners, method, args, || target.clone())
     }
 }
