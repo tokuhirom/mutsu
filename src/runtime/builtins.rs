@@ -683,7 +683,6 @@ impl Interpreter {
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
             "__mutsu_sig_bind" => self.builtin_sig_bind(&args),
             "__mutsu_list_assign_rhs" => self.builtin_list_assign_rhs(&args),
-            "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),
             "__mutsu_record_shaped_array_dims" => self.builtin_record_shaped_array_dims(&args),
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
             "__mutsu_feed_append" => self.builtin_feed_append(&args),

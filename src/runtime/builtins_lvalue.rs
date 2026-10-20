@@ -1,6 +1,5 @@
 use super::*;
 use crate::value::container_lock::ContainerStructGuard;
-use crate::meta_ns::MetaNs;
 use crate::value::ArrayKind;
 
 impl Interpreter {
@@ -951,6 +950,12 @@ impl Interpreter {
         Ok(Value::hash(out))
     }
 
+    /// `(*, @a) = RHS`: the array takes the whole right-hand side (from the
+    /// skipped offset the parser already applied), as every first array of a
+    /// list assignment does, bound or not. The helper call stays in the AST
+    /// so RakuAST can recover the written `(*, @a)` shape
+    /// (`rakuast::star_lvalue`).
+    // Cost: O(1).
     pub(super) fn builtin_star_lvalue_rhs(
         &mut self,
         args: &[Value],
@@ -960,52 +965,7 @@ impl Interpreter {
                 "__mutsu_star_lvalue_rhs expects target name and rhs value",
             ));
         }
-        let target_name = args[0].to_string_value();
-        let marker_key = MetaNs::BoundArrayLen.owned_key_for_str(&target_name);
-        let Some(limit) = self.env.get(&marker_key).and_then(|v| match v.view() {
-            ValueView::Int(i) if i >= 0 => usize::try_from(i).ok(),
-            _ => None,
-        }) else {
-            return Ok(args[1].clone());
-        };
-
-        let mut items = crate::runtime::value_to_list(&args[1]);
-        if items.len() > limit {
-            items.truncate(limit);
-        }
-        Ok(Value::real_array(items))
-    }
-
-    pub(super) fn builtin_record_bound_array_len(
-        &mut self,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        if args.len() != 1 {
-            return Err(RuntimeError::new(
-                "__mutsu_record_bound_array_len expects target name",
-            ));
-        }
-        let target_name = args[0].to_string_value();
-        if !target_name.starts_with('@') {
-            return Ok(Value::NIL);
-        }
-        // For gather-based LazyLists with coroutine support, skip recording
-        // the length since it's unknown (the list is lazy / possibly infinite).
-        if let Some(ValueView::LazyList(ll)) = self.env.get(&target_name).map(Value::view)
-            && ll.coroutine.is_some()
-        {
-            return Ok(Value::NIL);
-        }
-        let bound_len = self
-            .env
-            .get(&target_name)
-            .map(|v| crate::runtime::value_to_list(v).len() as i64)
-            .unwrap_or(0);
-        self.env.insert(
-            MetaNs::BoundArrayLen.owned_key_for_str(&target_name),
-            Value::int(bound_len),
-        );
-        Ok(Value::NIL)
+        Ok(args[1].clone())
     }
 
     pub(super) fn builtin_record_shaped_array_dims(
