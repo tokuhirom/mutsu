@@ -129,39 +129,12 @@ impl Interpreter {
         self.module.imported_routine_aliases = imported_routine_aliases;
         self.module.imported_exported_proto_tags = imported_exported_proto_tags;
         self.reinstate_module_functions(&mut functions, is_eval);
-        // Collect our-scoped functions that were newly added during this block
-        // (not present in the snapshot) that need to persist after scope restoration.
-        // Preserve functions defined in the current package (original behavior)
-        // OR functions newly registered during this block (so nested package
-        // declarations like `{ package Foo { our sub bar {} } }` survive). We
-        // distinguish "newly registered during this block" by tracking the set
-        // of our_scoped_functions keys that existed at snapshot time.
-        let current_pkg = self.current_package();
-        let mut new_our: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
-        // Collect under a read guard, which drops before the writes below
-        // (read->write on the same lock would deadlock).
-        {
-            let registry = self.registry();
-            for (key, def) in registry.our_scoped_functions.iter() {
-                if functions.contains_key(key) {
-                    continue;
-                }
-                let def_pkg = def.package.resolve();
-                // Always preserve same-package subs (original behavior).
-                if def_pkg == current_pkg {
-                    new_our.push((*key, def.clone()));
-                    continue;
-                }
-                // Also preserve subs that were newly added to our_scoped_functions
-                // during this block (i.e. their key was not in the snapshot). This
-                // covers nested `package Foo { our sub bar {} }` blocks. Subs from
-                // module loading (`use Foo`) are typically already in the snapshot
-                // by the time the block is restored, so they are not preserved here.
-                if !our_scoped_keys.contains_key(key) {
-                    new_our.push((*key, def.clone()));
-                }
-            }
-        }
+        // The our-scoped subs that survive the restore: the current package's,
+        // and those this block registered itself (so nested package
+        // declarations like `{ package Foo { our sub bar {} } }` survive).
+        // Subs from module loading (`use Foo`) are typically already in the
+        // snapshot by the time the block is restored, so they are not kept.
+        let new_our = self.our_scoped_to_reinstate(&functions, &our_scoped_keys);
         // In EVAL context, a `grammar`/`token`/`rule` declared inside the EVAL'd
         // code registers its class (which IS merged back into `registry.classes`
         // by the caller) plus its tokens here. Restoring `token_defs`/`proto_tokens`
@@ -323,7 +296,7 @@ impl Interpreter {
         // In EVAL context, our-scoped functions should NOT leak into the outer lexical
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
         if !is_eval {
-            for (key, def) in new_our {
+            for (key, def) in new_our.iter().map(|(k, d)| (*k, d.clone())) {
                 // Re-inserted AFTER the diff above, and sourced from
                 // `our_scoped_functions` rather than from either diffed map, so
                 // this key may be in neither — name it explicitly or its base
