@@ -408,6 +408,9 @@ impl Interpreter {
                     || self.has_multi_function_unindexed(name)
                     || self.has_proto(name));
             if registered
+                // A routine an enclosing block's `use` bound lexically
+                // (ADR-8751): an `EVAL` in that block calls it.
+                || self.lexically_imported_routine(name)
                 || self.env().contains_key(&format!("&{}", name))
                 || self.env().contains_key(name.as_str())
                 || self.get_our_var(name).is_some()

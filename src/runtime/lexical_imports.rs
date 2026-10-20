@@ -429,6 +429,9 @@ impl Interpreter {
     /// innermost first: what a lookup by a run-time name sees.
     // Cost: O(s), s = open import scopes' sets.
     pub(crate) fn active_lexical_import_chain(&self) -> Vec<Symbol> {
+        if let Some(chain) = &self.module.eval_import_chain {
+            return chain.clone();
+        }
         self.module
             .import_scope_stack
             .iter()
@@ -436,6 +439,69 @@ impl Interpreter {
             .flat_map(|scope| scope.lexical_sets.iter().rev())
             .copied()
             .collect()
+    }
+
+    /// The import sets an `EVAL` called from the running frame starts inside,
+    /// innermost first: the sets of the `use`-blocks open in this frame (a
+    /// scope a routine this frame was called from opened is outside it), then
+    /// the chain the running code's `EVAL` sites were compiled under. Code
+    /// that records no `EVAL` site keeps every open set.
+    // Cost: O(s + e), s = open import scopes' sets, e = the code's EVAL site chains.
+    pub(crate) fn eval_lexical_import_chain(&self) -> Vec<Symbol> {
+        let Some(code) = self.running_code() else {
+            return self.active_lexical_import_chain();
+        };
+        let mut sites = code.eval_site_chains.iter();
+        let Some(first) = sites.next() else {
+            return self.active_lexical_import_chain();
+        };
+        // The frame this EVAL runs in: the innermost routine or closure,
+        // not an inlined bare block.
+        let frame_depth = self
+            .routine_stack()
+            .iter()
+            .rposition(|f| !f.is_inlined_block)
+            .map_or(0, |i| i + 1);
+        let mut chain: Vec<Symbol> = self
+            .module
+            .import_scope_stack
+            .iter()
+            .rev()
+            .filter(|scope| scope.routine_depth >= frame_depth)
+            .flat_map(|scope| scope.lexical_sets.iter().rev())
+            .copied()
+            .collect();
+        // Innermost first, so the sets every EVAL site shares are a suffix.
+        let mut common: &[Symbol] = first;
+        for site in sites {
+            let shared = common
+                .iter()
+                .rev()
+                .zip(site.iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count();
+            common = &common[common.len() - shared..];
+        }
+        for set in common {
+            if !chain.contains(set) {
+                chain.push(*set);
+            }
+        }
+        chain
+    }
+
+    /// Whether an open block's `use` bound the routine `name` lexically, for
+    /// the sets an `EVAL` running now starts inside.
+    // Cost: O(s), s = open import scopes' sets.
+    pub(crate) fn lexically_imported_routine(&self, name: &str) -> bool {
+        if self.module.import_scope_stack.is_empty() && self.module.eval_import_chain.is_none() {
+            return false;
+        }
+        let chain = self.active_lexical_import_chain();
+        !chain.is_empty()
+            && self
+                .lexical_import_binding(&chain, Symbol::intern(name))
+                .is_some()
     }
 
     /// The code object `&name` is lexically imported as in an open block, for

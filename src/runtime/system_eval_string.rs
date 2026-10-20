@@ -54,6 +54,10 @@ impl Interpreter {
         &mut self,
         body: impl FnOnce(&mut Self) -> Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
+        // The sets lexically around the `EVAL` call, taken before the unit's
+        // own frames exist; the unit's by-name lookups read them.
+        let eval_chain = self.eval_lexical_import_chain();
+        let saved_eval_chain = self.module.eval_import_chain.replace(eval_chain);
         let routine_snapshot = self.snapshot_routine_registry();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately
@@ -198,6 +202,7 @@ impl Interpreter {
         } else {
             self.env.remove("__mutsu_in_eval");
         }
+        self.module.eval_import_chain = saved_eval_chain;
         self.module.fatal_mode = saved_fatal_mode;
         self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
         self.module.monkey_typing = saved_monkey_typing;

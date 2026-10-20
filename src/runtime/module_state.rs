@@ -431,6 +431,11 @@ pub(crate) struct ModuleState {
     /// dispatcher (ADR-8751 stage 2). A built-in op compiled under an import
     /// chain asks the chain only while one exists (#13906).
     pub(crate) lexical_operator_import_sets: HashSet<Symbol>,
+    /// While an EVAL'd unit runs: the import sets lexically around the `EVAL`
+    /// call (`Interpreter::eval_lexical_import_chain`), innermost first. A
+    /// by-name lookup in the unit reads them instead of the sets of the
+    /// `use`-blocks open around the call, which the EVAL cannot see.
+    pub(crate) eval_import_chain: Option<Vec<Symbol>>,
     /// The routine-table version an import scope's exit last found free of
     /// a module-declared `GLOBAL::MAIN` candidate
     /// (`drop_foreign_global_main_candidates`), so a later exit over the same
@@ -642,6 +647,7 @@ impl ModuleState {
             lexical_import_sets: HashMap::new(),
             lexical_import_hook_values: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
+            eval_import_chain: None,
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
             lexical_operator_candidate_defs: Default::default(),
@@ -733,6 +739,7 @@ impl ModuleState {
             lexical_import_sets: self.lexical_import_sets.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
+            eval_import_chain: self.eval_import_chain.clone(),
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),
             lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),
