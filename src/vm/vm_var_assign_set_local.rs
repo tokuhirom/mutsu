@@ -4,13 +4,6 @@ use crate::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {
-    /// Env key marking a variable as a genuine bound array SLICE (`@slice :=
-    /// @array[1,2]`, §4 BLOCKERS.md test 15) — set only at the exact bind
-    /// moment that produces an array of per-element `ContainerRef` cells, and
-    /// cleared on every redeclaration of the same name. See the write-through
-    /// checks in `vm_var_assign_local.rs` and this file's non-bind path for
-    /// why "elements are cells" alone is not a safe trigger.
-
     /// True when a `$`-sigil `:=` bind SOURCE has no assignable container
     /// behind it, so a later `$x = v` through the bound name is rakudo's
     /// X::AdHoc "Cannot assign to an immutable value".
