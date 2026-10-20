@@ -830,6 +830,33 @@ The targeted Red remeasurement on 2026-09-15 (mutsu `04e87f887`, Rakudo
 `create-resultseq` failure to `raku_also_fails`.  The SQLite and migration
 leads remain independent.
 
+## 25. Campaign slice: imported value terms preserve qualified names (2026-10-20)
+
+The refreshed #7988 expectation-dump cluster contains eight distributions.
+GEOS 0.0.5 still failed to load `GEOS::Geometry` at
+`GEOS::Geometry.new`: the imported value-term parser consumed the `GEOS`
+prefix and left `::Geometry` as a second term. A standalone fixture exporting
+a value `A` beside a separately declared `A::B` reproduces the same failure
+without NativeCall. The local term-symbol path already refuses a match followed
+by `::`; the imported value-term path now applies that same boundary rule.
+
+The focused regression is
+`t/modules/import-export/imported-term-qualified-name.t`. Its six assertions
+pass under Rakudo 2026.07 and both mutsu frontend modes. The existing RakuAST
+frontend passing list was also exercised: 8,034 files passed on debug, and the
+18 files hitting debug timeouts or performance ceilings passed on release
+(204 assertions).
+
+The three-attempt bubblewrap remeasurement at `6a5a319ad9` loads all five GEOS
+modules, including Geometry, Reader and Writer. Its seven test files are
+`no_baseline` on this host because Rakudo cannot locate `libgeos_c.so`; this
+records a verified load-level parser fix, not whole-suite parity.
+
+Two independent findings remain separate: #14145 records Iter::Able's private
+nominal return constraint being mistaken for a definite return expression and
+sent to EVAL; #14148 records Config::BINDish's parenthesized `handles(<keys
+Bool>)` parser gap. The latter is the next concrete parser remainder.
+
 ## Alternatives considered
 
 - **Keep sampling instead of sweeping the corpus.** A random sample answers
