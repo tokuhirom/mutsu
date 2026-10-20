@@ -87,6 +87,7 @@ pub(super) const fn opaque(
         S::Vm => ("VM", &["VM"]),
         S::RakuSystemic => ("Raku", &["Raku"]),
         S::Compiler => ("Compiler", &["Compiler"]),
+        S::Stash => ("Stash", &["Stash"]),
         // An enum member by its payload kind: the roles Rakudo composes into
         // every enum type, the more specific first (ADR-11276 §9.125).
         S::EnumNumeric => ("NumericEnumeration", &["NumericEnumeration", "Enumeration"]),
