@@ -625,8 +625,14 @@ impl RuntimeError {
     /// Create a Failure wrapping an X::OutOfRange exception.
     /// Used when operations should soft-fail (return Failure) rather than throw.
     pub(crate) fn out_of_range_failure(what: &str, got: Value, range: &str) -> Value {
+        // The positional callers (`Index`, `start`) read "Index out of range";
+        // any other `what` names itself, as `X::OutOfRange.message` does.
+        let head = match what {
+            "Index" | "start" => "Index",
+            other => other,
+        };
         let msg = format!(
-            "Index out of range. Is: {}, should be in {}",
+            "{head} out of range. Is: {}, should be in {}",
             got.to_string_value(),
             range
         );
