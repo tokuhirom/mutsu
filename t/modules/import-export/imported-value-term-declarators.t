@@ -1,7 +1,7 @@
 use Test;
 use MONKEY-SEE-NO-EVAL;
 use lib 't/lib';
-plan 11;
+plan 14;
 
 {
     use PrivateDeclarationConstants;
@@ -29,6 +29,15 @@ plan 11;
         'named grammar expressions retain declaration syntax';
     is e + 1, 43, 'an imported value still shadows a core constant';
 }
+
+ok abs(e - 2.718281828459045) < 1e-12,
+    'a block-local value import does not hide the outer setting constant';
+{
+    use ReexportDeclarationConstant;
+    is e, 42, 'an export hook can re-export a value imported inside a module block';
+}
+ok abs(e - 2.718281828459045) < 1e-12,
+    'a re-exported value remains local to the importing block';
 
 dies-ok {
     EVAL('sub term:<role>() { 42 }; my $r = role { method value { 7 } }; $r.new.value')

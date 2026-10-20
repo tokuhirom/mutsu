@@ -3218,13 +3218,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 let Expr::BareWord(name) = &spelled.expr else {
                     return Err(unsupported("imported term spelling without a value lookup"));
                 };
-                if let Some(node) = bareword::convert(name) {
-                    return Ok(node);
-                }
-                Ok(RakuAstNode {
-                    class: RakuAstClass::TermName,
-                    fields: vec![node_field(None, name_from_identifier(name))],
-                })
+                Ok(super::term_name::imported(name))
             }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),

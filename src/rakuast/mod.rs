@@ -1,14 +1,9 @@
 //! RakuAST — a reflection/model layer over the internal AST (ADR-0011).
 //!
-//! Phase 1: read-only introspection. `Str.AST` parses source, converts the
-//! internal `Stmt`/`Expr` AST into a [`RakuAstNode`] tree (wrapped in
-//! `Value::RakuAst`), whose `.gist`/`.raku`/`.Str` renders the
-//! `RakuAST::*.new(...)` constructor form and whose `.^name` returns the
-//! printed class name.
-//!
-//! RakuAST is deliberately NOT mutsu's compiler IR — it is a model layer that
-//! maps to/from the internal AST. See docs/adr/0011 for the full design and
-//! phasing (construction, EVAL, macros are later phases).
+//! `Str.AST` converts the internal AST into a [`RakuAstNode`] tree, whose
+//! rendering exposes RakuAST constructors. EVAL lowers those nodes to the
+//! existing compiler input. ADR-10723 proposes making this model the frontend
+//! IR; its round-trip mode currently exercises that boundary.
 
 mod anon_state;
 mod atomic_op;
@@ -93,6 +88,7 @@ mod subscript_adverb;
 mod substitution;
 mod symbolic_deref;
 mod temporize;
+mod term_name;
 mod thunk;
 mod type_args;
 mod type_build;

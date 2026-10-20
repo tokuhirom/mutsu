@@ -3397,7 +3397,7 @@ pub(super) fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNo
 /// bareword. Shared by `Term::Enum` and `Term::Name`, which rakudo both
 /// resolve against the setting.
 // Cost: O(1).
-fn term_identifier_expr(name: &str) -> Expr {
+pub(super) fn term_identifier_expr(name: &str) -> Expr {
     match name {
         "True" | "False" => {
             let value = Value::truth(name == "True");
@@ -3437,35 +3437,6 @@ fn term_identifier_expr(name: &str) -> Expr {
             Expr::Literal(Value::num(std::f64::consts::E))
         }
         _ => Expr::BareWord(name.to_string()),
-    }
-}
-
-fn lower_term_name(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    match name_parts::name_shape(node).ok_or_else(|| unsupported(node))? {
-        NameShape::Identifier(name) => Ok(match super::label_context::lookup(&name) {
-            Some(value) if !name_parts::has_leading_empty(node) => Expr::Literal(value),
-            _ => term_identifier_expr(&name),
-        }),
-        NameShape::Stash(stash) => Ok(Expr::PseudoStash(stash)),
-        NameShape::Indirect {
-            expr,
-            tail,
-            trailing,
-        } => {
-            let head = Box::new(lower_expr(expr)?);
-            if tail.is_empty() && !trailing {
-                return Ok(Expr::IndirectTypeLookup(head));
-            }
-            let tail = tail
-                .iter()
-                .flat_map(|seg| ["::", seg.as_str()])
-                .collect::<String>();
-            Ok(Expr::IndirectTypeLookupTail {
-                head,
-                tail: tail.into_boxed_str(),
-                trailing,
-            })
-        }
     }
 }
 
@@ -4695,7 +4666,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         {
             lookup
         }
-        RakuAstClass::TermName => lower_term_name(named_child_or_positional(node)?),
+        RakuAstClass::TermName => super::term_name::lower(node),
         // `.method(...)` on the topic: the same method call `$_.method(...)`
         // compiles to.
         RakuAstClass::TermTopicCall => {

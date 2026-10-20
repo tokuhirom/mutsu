@@ -37,6 +37,11 @@ High-impact groups in current order:
 
 ## Expression precedence (low -> high)
 
+In primary expression dispatch, explicit declared terms precede class, role
+and grammar expressions, which in turn precede imported value terms. This
+keeps categorical terms authoritative while a same-named imported constant
+does not consume a package declaration's keyword before its body is parsed.
+
 Inline statement-modifier parsing stops before an explicit semicolon. The
 enclosing statement or semilist owns that separator; expression prefixes such
 as `try` must still see it so a following conditional starts a new statement.
