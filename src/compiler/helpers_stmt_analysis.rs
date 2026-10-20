@@ -242,6 +242,14 @@ impl Compiler {
         self.seed_lexical_import_chain(common.to_vec());
     }
 
+    /// Open the import sets of the top-level `use`s of an `EVAL`'d unit
+    /// `stmts` for the whole unit (ADR-8751): what such a `use` imports is
+    /// lexical to the EVAL, so it binds as a block's `use` does.
+    // Cost: O(s), s = top-level statements.
+    pub(crate) fn enter_eval_unit_lexical_uses(&mut self, stmts: &[Stmt]) {
+        self.enter_lexical_use_block(stmts);
+    }
+
     /// Start this (EVAL) unit inside the import sets `innermost_first` of the
     /// blocks running around its `EVAL` call (ADR-8751).
     pub(crate) fn seed_lexical_import_chain(&mut self, innermost_first: Vec<Symbol>) {
