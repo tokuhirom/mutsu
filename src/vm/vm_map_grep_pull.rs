@@ -165,12 +165,15 @@ impl Interpreter {
             *pos = items.len();
             return Ok(true);
         }
+        let group = map_group_size(func.as_ref(), mode);
         while out.produced.len() - produced_base < needed && *pos < items.len() {
             let missing = needed - (out.produced.len() - produced_base);
             // A grep runs until it has the missing matches (one loop run for
-            // the whole pull, #11515); a map needs exactly one source element
-            // per element missing.
-            let end = (*pos + missing).min(items.len());
+            // the whole pull, #11515); a map needs one call, of `group` source
+            // elements, per element missing (#14196).
+            let end = pos
+                .saturating_add(missing.saturating_mul(group))
+                .min(items.len());
             let max_matches = mode.is_grep().then_some(missing);
             let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
             self.async_state.map_grep_last_depth = None;
@@ -535,7 +538,9 @@ impl Interpreter {
 }
 
 /// Whether a deferred `.map`/`.grep` can be run a chunk of its source at a
-/// time (see [`Interpreter::pull_map_grep_prefix`]).
+/// time (see [`Interpreter::pull_map_grep_prefix`]). A multi-parameter map
+/// can: its chunks are cut at whole groups ([`map_group_size`]). A grep with
+/// several parameters, a slurpy parameter and a `FIRST`/`LAST` phaser cannot.
 // Cost: O(s), s = top-level statements of the callback's body.
 pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMode) -> bool {
     if let MapGrepMode::MapRw(source) = mode
@@ -551,13 +556,6 @@ pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMo
         // element at a time and keeps no state between elements.
         return true;
     };
-    let positional = data
-        .param_defs
-        .iter()
-        .filter(|pd| !pd.named && !pd.is_invocant)
-        .count()
-        .max(data.params.len())
-        .saturating_sub(data.assumed_positional.len());
     let slurpy = data.param_defs.iter().any(|pd| pd.slurpy);
     let loop_phaser = data.body.iter().any(|stmt| {
         matches!(
@@ -568,5 +566,32 @@ pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMo
             }
         )
     });
-    positional <= 1 && !slurpy && !loop_phaser
+    (callback_positionals(func) <= 1 || !mode.is_grep()) && !slurpy && !loop_phaser
+}
+
+/// How many positional parameters `func`, a `.map`/`.grep` callback, binds
+/// per call; 1 for a callable that is not a `Sub` (it takes one element).
+// Cost: O(p), p = parameters.
+fn callback_positionals(func: &Value) -> usize {
+    let ValueView::Sub(data) = func.view() else {
+        return 1;
+    };
+    data.param_defs
+        .iter()
+        .filter(|pd| !pd.named && !pd.is_invocant)
+        .count()
+        .max(data.params.len())
+        .saturating_sub(data.assumed_positional.len())
+}
+
+/// The source elements one call of a `.map` callback consumes, so a prefix
+/// pull cuts its chunks at whole groups (`.map(-> $a, $b { ... })` takes two
+/// per call, as Rakudo's iterator pulls them). A grep tests one element at a
+/// time.
+// Cost: O(p), p = parameters.
+pub(super) fn map_group_size(func: Option<&Value>, mode: &MapGrepMode) -> usize {
+    if mode.is_grep() {
+        return 1;
+    }
+    func.map_or(1, callback_positionals).max(1)
 }
