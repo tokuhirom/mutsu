@@ -49,6 +49,9 @@ for
 for
     Q[my $x = NamespaceLateModule; module NamespaceLateModule {}], X::Undeclared::Symbols,
     Q[my $x = NamespaceLatePackage; package NamespaceLatePackage {}], X::Undeclared::Symbols,
+    Q[my $x = NamespaceLateExport; module NamespaceLateExport is export {}], X::Undeclared::Symbols,
+    Q[my $x = NamespaceLateVersion; module NamespaceLateVersion:ver<1.0> {}], X::Undeclared::Symbols,
+    Q[my $x = NamespaceLatePackageExport; package NamespaceLatePackageExport is export {}], X::Undeclared::Symbols,
     Q[NamespaceAbsent::Child], X::AdHoc,
     Q[module NamespaceUnknown is NamespaceNoParent {}], X::Inheritance::UnknownParent,
     Q[package NamespaceUnknownPackage is NamespaceNoParent {}], X::Inheritance::UnknownParent,

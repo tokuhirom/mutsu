@@ -36,7 +36,7 @@ impl Interpreter {
         // that declares it (first declaration wins).
         let mut decl_index: HashMap<String, usize> = HashMap::new();
         for (i, stmt) in stmts.iter().enumerate() {
-            match stmt {
+            match crate::ast::package_header::declaration(stmt).unwrap_or(stmt) {
                 Stmt::ClassDecl { name, .. }
                 | Stmt::RoleDecl { name, .. }
                 | Stmt::SubsetDecl { name, .. }
