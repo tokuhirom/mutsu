@@ -193,9 +193,6 @@ pub(crate) enum MetaNs {
     /// neither outlives the block nor is erased by a later, unrelated
     /// same-named declaration (#10796).
     VarDefault,
-    /// `__mutsu_var_source_name::<name>` — the variable a `$_`-ish alias was
-    /// derived from, so a write can be routed back to it.
-    VarSourceName,
     /// `__mutsu_lexical_dynamic::<*name>` — set in the frame that declared a
     /// lexical `my $*name`: that binding is the frame's own, not the
     /// process-level dynamic `PROCESS::<$name>` reports.
@@ -287,7 +284,6 @@ impl MetaNs {
         MetaNs::SharedDirty,
         MetaNs::VarMeta,
         MetaNs::VarDefault,
-        MetaNs::VarSourceName,
         MetaNs::LexicalDynamic,
         MetaNs::AttrAlias,
         MetaNs::Role,
@@ -343,7 +339,6 @@ impl MetaNs {
             MetaNs::SharedDirty => "__mutsu_shared_dirty::",
             MetaNs::VarMeta => "__mutsu_var_meta::",
             MetaNs::VarDefault => "__mutsu_var_default::",
-            MetaNs::VarSourceName => crate::symbol::VAR_SOURCE_META_PREFIX,
             MetaNs::LexicalDynamic => "__mutsu_lexical_dynamic::",
             MetaNs::AttrAlias => "__mutsu_attr_alias::",
             MetaNs::Role => "__mutsu_role__",
@@ -603,7 +598,6 @@ mod tests {
             (MetaNs::SharedDirty, "__mutsu_shared_dirty::@a"),
             (MetaNs::VarMeta, "__mutsu_var_meta::@a"),
             (MetaNs::VarDefault, "__mutsu_var_default::@a"),
-            (MetaNs::VarSourceName, "__mutsu_var_source_name::@a"),
             (MetaNs::LexicalDynamic, "__mutsu_lexical_dynamic::@a"),
             (MetaNs::AttrAlias, "__mutsu_attr_alias::@a"),
             (MetaNs::Role, "__mutsu_role__@a"),

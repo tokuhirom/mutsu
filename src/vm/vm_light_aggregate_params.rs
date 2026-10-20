@@ -162,20 +162,4 @@ impl Interpreter {
         }
         self.bind_param_type_constraint_sym(name, sym, typed.as_deref());
     }
-
-    /// Record the container-descriptor name (`.VAR.name`) of a light-bound
-    /// plain `@x`/`%x` parameter, as the general binder does: the caller's
-    /// sigiled variable name when the argument is one, else `"element"` (a
-    /// literal or computed container is a fresh one in rakudo). Text::CSV
-    /// gates its output mode on `@kh.VAR.name ne "element"`.
-    // Cost: O(1).
-    pub(super) fn bind_light_aggregate_source(&mut self, sym: Symbol, source: Option<&str>) {
-        let source = source
-            .filter(|s| s.starts_with(['@', '%']))
-            .unwrap_or("element");
-        self.env_mut().insert_sym(
-            crate::meta_ns::MetaNs::VarSourceName.key(sym),
-            Value::str(source.to_string()),
-        );
-    }
 }

@@ -58,7 +58,6 @@ impl Encode for CompiledCode {
             succeed_passes_through,
             reads_topic,
             mentions_native_scalar_type_name,
-            names_var_method,
             uses_routine_state,
             sets_routine_state,
             source_line,
@@ -215,7 +214,6 @@ impl Encode for CompiledCode {
         succeed_passes_through.encode(encoder)?;
         reads_topic.encode(encoder)?;
         mentions_native_scalar_type_name.encode(encoder)?;
-        names_var_method.encode(encoder)?;
         uses_routine_state.encode(encoder)?;
         sets_routine_state.encode(encoder)?;
         source_line.encode(encoder)?;
@@ -361,7 +359,6 @@ impl Decode<DecodeCtx> for CompiledCode {
             succeed_passes_through: Decode::decode(decoder)?,
             reads_topic: Decode::decode(decoder)?,
             mentions_native_scalar_type_name: Decode::decode(decoder)?,
-            names_var_method: Decode::decode(decoder)?,
             uses_routine_state: Decode::decode(decoder)?,
             sets_routine_state: Decode::decode(decoder)?,
             source_line: Decode::decode(decoder)?,

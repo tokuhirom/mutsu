@@ -1,5 +1,4 @@
 use super::*;
-use crate::meta_ns::MetaNs;
 
 /// Does this legacy-path placeholder/signature param list contain a *plain
 /// positional* param — a real signature name like `p` (from a pointy block
@@ -3154,9 +3153,12 @@ impl Interpreter {
                                     .first()
                                     .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
                             // A sigilless source is named by its term key
-                            // (`\c`, ADR-12441).
+                            // (`\c`, ADR-12441); a dynamic one by its twigil
+                            // (`*OUT`), whose declaration's cell the
+                            // parameter aliases (`f(my $*OUT)`, #11196).
                             let source_is_plain_scalar = source_name
                                 .strip_prefix(crate::runtime::term_names::TERM_PREFIX)
+                                .or_else(|| source_name.strip_prefix('*'))
                                 .unwrap_or(&source_name)
                                 .as_bytes()
                                 .first()
@@ -3207,17 +3209,6 @@ impl Interpreter {
                                 && !raw_readonly_source
                             {
                                 rw_shared_cell_key = Some(source_name.clone());
-                            }
-                            // A dynamic variable (`f(my $*OUT)`) is not boxed
-                            // into a shared cell here, but the parameter still
-                            // aliases its container, whose descriptor names it:
-                            // record the name for `.VAR.name` (#11196; Tee's
-                            // `Tee($file, my $*OUT)` keys on it).
-                            if param_is_plain_scalar && source_name.starts_with('*') {
-                                self.env.insert(
-                                    MetaNs::VarSourceName.owned_key_for_str(&storage_name),
-                                    Value::str(format!("${source_name}")),
-                                );
                             }
                             // Set up a sigilless alias so that subsequent `:=`
                             // bindings (e.g. `$a := $arg`) can transitively
@@ -4141,14 +4132,13 @@ impl Interpreter {
             }
         }
         // Rakudo's container-descriptor `.name` for `@`/`%` parameters
-        // (`@kh.VAR.name`): a param aliasing a caller's named container reports
-        // the CALLER's sigiled name; every other binding (unsupplied default,
-        // literal argument, slurpy, `is copy` — all fresh containers) reports
-        // "element". Text::CSV's `method CSV` gates its whole out/headers
-        // defaulting on `@kh.VAR.name ne "element"` (its rakudo#2483
-        // workaround), so answering the param's own syntactic name here
-        // silently rewrote csv()'s output mode into AoH. Recorded as frame env
-        // metadata; the `.VAR` reflector prefers it over the syntactic name.
+        // (`@kh.VAR.name`) is the name of the container the param aliases: the
+        // caller's `my @x` (named by its declaration), an attribute (named
+        // here, see `Value::name_attribute_container`), or "element" for every
+        // unnamed one (unsupplied default, literal argument, slurpy, `is copy`).
+        // Text::CSV's `method CSV` gates its whole out/headers defaulting on
+        // `@kh.VAR.name ne "element"` (its rakudo#2483 workaround). The name
+        // lives on the container, so the `.VAR` reflector reads it there.
         for pd in param_defs {
             if !(pd.name.starts_with('@') || pd.name.starts_with('%'))
                 || pd.name[1..].starts_with(['!', '.'])
@@ -4166,12 +4156,10 @@ impl Interpreter {
                                 .then(|| src.clone())
                         })
                 })
-                .flatten()
-                .unwrap_or_else(|| "element".to_string());
-            self.env.insert(
-                MetaNs::VarSourceName.owned_key_for_str(&pd.name),
-                Value::str(source),
-            );
+                .flatten();
+            if let Some(bound) = self.env.get_mut(&pd.name) {
+                bound.name_attribute_container(source.as_deref());
+            }
         }
         self.fold_rw_writeback_slots(&rw_bindings, &arg_source_slots);
         Ok(rw_bindings)

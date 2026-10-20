@@ -128,7 +128,8 @@ pub(crate) fn interpreter_version() -> String {
     // discriminants after it.
     // 29: `BindingDesc` lost `deleted_index_sym` (ADR-0097).
     // 30: `BindingDesc` lost `bound_slice_sym` (ADR-0097).
-    const CACHE_FORMAT_VERSION: u32 = 30;
+    // 31: `CompiledCode` lost `names_var_method` (ADR-0097).
+    const CACHE_FORMAT_VERSION: u32 = 31;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

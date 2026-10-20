@@ -656,6 +656,33 @@ impl Value {
             });
         }
     }
+    /// Name an attribute's `@`/`%` container after the attribute (`@!a`) when
+    /// it is passed to a parameter and carries no descriptor name yet: rakudo's
+    /// attribute container is named by its attribute, so `f(@!a)`'s
+    /// `@kh.VAR.name` reports "@!a". `source` is the argument's variable name;
+    /// any other source (a `my` variable, which its declaration already named,
+    /// or a literal / param / `:=`-bound container, which rakudo reports as
+    /// "element") leaves the container as it is.
+    // TODO: name the container where the attribute is initialized, as `my` and
+    // `state` declarations do; attributes reach storage through several
+    // construction paths (defaults, `.new` args, `BUILD`), so the name is
+    // supplied at the first pass-by-binding instead.
+    // Cost: O(1).
+    pub(crate) fn name_attribute_container(&mut self, source: Option<&str>) {
+        let Some(source) =
+            source.filter(|s| s.starts_with(['@', '%']) && s[1..].starts_with(['!', '.']))
+        else {
+            return;
+        };
+        let unnamed = match self.view() {
+            ValueView::Array(data, _) => data.descriptor_name.is_none(),
+            ValueView::Hash(data) => data.descriptor_name.is_none(),
+            _ => false,
+        };
+        if unnamed {
+            self.stamp_descriptor_name(&format!("{}!{}", &source[..1], &source[2..]));
+        }
+    }
     /// Create a true Array value with a single explicitly-assigned index
     /// recorded in the embedded `initialized` set (used when autovivifying a
     /// missing variable via `@a[i] = …`, so the autovivification gaps below `i`

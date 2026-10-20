@@ -219,8 +219,8 @@ pub(crate) mod flags {
     /// treat it on their own terms.
     pub(crate) const ROUTINE_OWNED: u16 = 1 << 1;
     /// A *shadow metadata* key: `__mutsu_type::<name>` (a typed lexical's
-    /// constraint) or `__mutsu_var_source_name::<name>` (the caller variable a
-    /// `@`/`%`/raw parameter was bound from). Nothing can observe one except
+    /// constraint) or `__mutsu_hash_key_type::<name>` (an object hash's key
+    /// type). Nothing can observe one except
     /// through `<name>` itself, so every consumer decides it by that subject
     /// ([`super::Symbol::shadow_meta_subject`]).
     pub(crate) const SHADOW_META: u16 = 1 << 2;
@@ -323,9 +323,6 @@ pub(crate) mod flags {
 /// so the two cannot drift.
 pub(crate) const TYPE_META_PREFIX: &str = "__mutsu_type::";
 
-/// The `__mutsu_var_source_name::` prefix `flags::SHADOW_META` also marks.
-pub(crate) const VAR_SOURCE_META_PREFIX: &str = "__mutsu_var_source_name::";
-
 /// The `__mutsu_hash_key_type::` prefix `flags::SHADOW_META` also marks: an
 /// object hash's declared key type (`my %h{Int}`), which is as much frame
 /// state as its value type (#13139).
@@ -334,11 +331,7 @@ pub(crate) const HASH_KEY_META_PREFIX: &str = "__mutsu_hash_key_type::";
 /// Every shadow-metadata prefix, for the consumers that build a subject's
 /// shadow keys (the closure capture's probe and hidden sets). Only a `%` name
 /// can carry the hash-key one ([`shadow_meta_prefixes_for`]).
-pub(crate) const SHADOW_META_PREFIXES: [&str; 3] = [
-    TYPE_META_PREFIX,
-    VAR_SOURCE_META_PREFIX,
-    HASH_KEY_META_PREFIX,
-];
+pub(crate) const SHADOW_META_PREFIXES: [&str; 2] = [TYPE_META_PREFIX, HASH_KEY_META_PREFIX];
 
 /// The shadow-metadata prefixes a subject spelled `name` can have keys under:
 /// all of them for a `%` name, all but the hash-key one otherwise.
@@ -348,7 +341,7 @@ pub(crate) fn shadow_meta_prefixes_for(name: &str) -> &'static [&'static str] {
     if name.starts_with('%') {
         &SHADOW_META_PREFIXES
     } else {
-        &SHADOW_META_PREFIXES[..2]
+        &SHADOW_META_PREFIXES[..1]
     }
 }
 
@@ -453,10 +446,7 @@ fn compute_flags(s: &str) -> u16 {
     if s == "_" {
         f |= flags::ROUTINE_OWNED;
     }
-    if s.starts_with(TYPE_META_PREFIX)
-        || s.starts_with(VAR_SOURCE_META_PREFIX)
-        || s.starts_with(HASH_KEY_META_PREFIX)
-    {
+    if s.starts_with(TYPE_META_PREFIX) || s.starts_with(HASH_KEY_META_PREFIX) {
         f |= flags::SHADOW_META;
     }
     if s.starts_with(NQP_OP_PREFIX) {
@@ -1110,7 +1100,6 @@ impl Symbol {
         let text = self.as_str();
         let subject = Symbol::intern(
             text.strip_prefix(TYPE_META_PREFIX)
-                .or_else(|| text.strip_prefix(VAR_SOURCE_META_PREFIX))
                 .or_else(|| text.strip_prefix(HASH_KEY_META_PREFIX))?,
         );
         store_subject(idx, subject);
@@ -1572,15 +1561,8 @@ mod tests {
         let meta = Symbol::intern(&format!("{HASH_KEY_META_PREFIX}%kh"));
         assert_eq!(meta.flags() & flags::SHADOW_META, flags::SHADOW_META);
         assert_eq!(meta.shadow_meta_subject(), Some(Symbol::intern("%kh")));
-        assert_eq!(shadow_meta_prefixes_for("%kh").len(), 3);
-        assert_eq!(shadow_meta_prefixes_for("@kh").len(), 2);
-    }
-
-    #[test]
-    fn var_source_shadow_meta_has_its_variable_as_subject() {
-        let meta = Symbol::intern(&format!("{VAR_SOURCE_META_PREFIX}@kh"));
-        assert_eq!(meta.flags() & flags::SHADOW_META, flags::SHADOW_META);
-        assert_eq!(meta.shadow_meta_subject(), Some(Symbol::intern("@kh")));
+        assert_eq!(shadow_meta_prefixes_for("%kh").len(), 2);
+        assert_eq!(shadow_meta_prefixes_for("@kh").len(), 1);
     }
 
     #[test]
