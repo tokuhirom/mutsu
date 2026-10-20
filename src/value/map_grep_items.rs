@@ -161,6 +161,18 @@ impl MapGrepItems {
         }
     }
 
+    /// Whether a source read up to `pos` has nothing left: every element is
+    /// read and, for a chain, the upstream has run dry too (its `len` counts
+    /// only what the upstream produced so far).
+    // Cost: O(1).
+    pub(crate) fn drained_at(&self, pos: usize) -> bool {
+        pos >= self.len()
+            && match self {
+                MapGrepItems::Chain(chain) => chain.exhausted(),
+                _ => true,
+            }
+    }
+
     /// Run `f` over the source elements as they are now. A live Array is read
     /// under its container stripe, so `f` must not run user code.
     // Cost: O(1) plus `f`'s cost.

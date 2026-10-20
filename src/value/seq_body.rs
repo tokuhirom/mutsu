@@ -543,7 +543,7 @@ impl SeqBody {
                 plan,
             } => {
                 let pos = pos + progress.consumed;
-                if pos >= items.len() {
+                if items.drained_at(pos) {
                     SeqSource::Reified
                 } else {
                     SeqSource::MapGrep {
@@ -618,7 +618,7 @@ impl SeqBody {
         let exhausted = match &pulled {
             Ok(exhausted) => *exhausted,
             Err(_) => {
-                matches!(&source, SeqSource::MapGrep { items, pos, .. } if *pos >= items.len())
+                matches!(&source, SeqSource::MapGrep { items, pos, .. } if items.drained_at(*pos))
             }
         };
         self.lock_state().source = if exhausted {
