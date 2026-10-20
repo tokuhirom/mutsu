@@ -8,7 +8,7 @@ use super::*;
 
 impl Interpreter {
     /// A named hash uses its declaration; a scalar alias uses embedded metadata.
-    // Cost: O(d), d = declaration record lookup depth; O(1) for a scalar alias.
+    // Cost: O(d + k), d = record lookup depth, k = constraint spelling length.
     pub(super) fn object_hash_key_type_for_place(
         &mut self,
         name: &str,
@@ -18,17 +18,18 @@ impl Interpreter {
         if name.starts_with('%') {
             loan_env!(self, var_hash_key_constraint_sym(name, name_sym))
         } else {
-            container.map(Value::deref_container).and_then(|value| {
-                match value.view() {
+            container
+                .map(Value::deref_container)
+                .and_then(|value| match value.view() {
                     ValueView::Hash(hash) => hash.key_type.clone(),
                     _ => None,
-                }
-            })
+                })
         }
     }
 
     /// Normalize an associative index, then validate its object-hash keys.
-    // Cost: O(n * T + S), n = keys, T = key type check, S = user Str call cost.
+    // Cost: O(k + n * T + S), k = constraint length, n = keys,
+    // T = key constraint/diagnostic cost, S = user Str call cost.
     pub(crate) fn prepare_hash_subscript_index(
         &mut self,
         target: &Value,
@@ -66,7 +67,8 @@ impl Interpreter {
     }
 
     /// Validate scalar or slice keys without inspecting unrelated hash values.
-    // Cost: O(n * T), n = subscript keys, T = the key constraint's type check.
+    // Cost: O(k + n * T), k = constraint length, n = subscript keys,
+    // T = key constraint/diagnostic cost.
     pub(crate) fn validate_object_hash_index(
         &mut self,
         target: &Value,
