@@ -3,7 +3,7 @@
 //! Each `$conn.Supply` tap owns a [`SocketReader`]: the connection's stream
 //! (shared with `tcp_stream_map`, not a `dup`ed descriptor, so a connection
 //! costs one fd as in rakudo — #12981), the channel its chunks go to, and the
-//! text decoder's carry-over state. What drives the reads differs by platform:
+//! text decoder's carry-over state (the shared `ChunkDecoder`). What drives the reads differs by platform:
 //!
 //! - On Unix (with `libc`) one process-wide reactor thread watches every
 //!   reader's socket with `poll(2)` and reads a socket only when it is
@@ -19,6 +19,7 @@
 
 use super::SupplyEvent;
 use super::supply_channel::SupplySender;
+use crate::builtins::stream_decoder::{ChunkDecoder, Codec};
 use crate::runtime::{Interpreter, RuntimeError};
 use crate::value::Value;
 use std::net::TcpStream;
@@ -51,15 +52,12 @@ pub(super) struct SocketReader {
     #[cfg(all(unix, feature = "libc"))]
     pub(super) fd: std::os::fd::RawFd,
     tx: SupplySender,
-    is_bin: bool,
-    enc: String,
-    // Text mode carries decoding state across reads: TCP splits wherever it
-    // likes, so a read can end mid-UTF-8-sequence (`pending_bytes`) or
-    // mid-grapheme (`pending_text`, e.g. a "u" whose COMBINING DOT ABOVE is
-    // in the next packet). Emitting either half on its own is wrong, so both
-    // are held back until the next read resolves them or the stream ends.
-    pending_bytes: Vec<u8>,
-    pending_text: String,
+    /// The text decoder (`None` for a `.Supply(:bin)` of raw `Buf`s). TCP
+    /// splits wherever it likes, so a read can end mid-sequence or
+    /// mid-grapheme (a "u" whose COMBINING DOT ABOVE is in the next packet);
+    /// the shared chunk decoder holds either back until the next read
+    /// settles it or the stream ends (#11783).
+    decoder: Option<ChunkDecoder>,
 }
 
 impl SocketReader {
@@ -74,10 +72,11 @@ impl SocketReader {
             #[cfg(all(unix, feature = "libc"))]
             fd,
             tx,
-            is_bin,
-            enc,
-            pending_bytes: Vec::new(),
-            pending_text: String::new(),
+            // An encoding the decoder does not know reads as UTF-8, as it
+            // did before the shared decoder.
+            decoder: (!is_bin).then(|| {
+                ChunkDecoder::new(Codec::from_label(&enc).unwrap_or(Codec::Utf8), false)
+            }),
         }
     }
 
@@ -93,44 +92,53 @@ impl SocketReader {
     pub(super) fn handle_read(&mut self, read: std::io::Result<usize>, buf: &[u8]) -> ReadOutcome {
         match read {
             Ok(0) | Err(_) => {
-                if !self.is_bin && !self.pending_text.is_empty() {
-                    let _ = self.tx.send(SupplyEvent::Emit(Value::str(std::mem::take(
-                        &mut self.pending_text,
-                    ))));
+                if let Some(decoder) = &mut self.decoder {
+                    match decoder.finish() {
+                        Ok(text) => {
+                            self.emit_text(text);
+                        }
+                        Err(e) => return self.quit(&e),
+                    }
                 }
                 let _ = self.tx.send(SupplyEvent::Done);
                 ReadOutcome::Finished
             }
             Ok(n) => {
-                let value = if self.is_bin {
-                    Some(Interpreter::make_buf(buf[..n].to_vec()))
-                } else {
-                    match Interpreter::decode_socket_chunk(
-                        &buf[..n],
-                        &self.enc,
-                        &mut self.pending_bytes,
-                        &mut self.pending_text,
-                    ) {
-                        Ok(text) => text.map(Value::str),
-                        // Not UTF-8: Raku quits the Supply with the decode
-                        // failure rather than substituting replacement
-                        // characters.
-                        Err(()) => {
-                            let _ = self.tx.send(SupplyEvent::Quit(
-                                Interpreter::malformed_utf8_exception(),
-                            ));
-                            return ReadOutcome::Finished;
+                let Some(decoder) = &mut self.decoder else {
+                    let chunk = Interpreter::make_buf(buf[..n].to_vec());
+                    if self.tx.send(SupplyEvent::Emit(chunk)).is_err() {
+                        return ReadOutcome::Finished;
+                    }
+                    return ReadOutcome::More;
+                };
+                match decoder.feed(&buf[..n]) {
+                    Ok(text) => {
+                        if self.emit_text(text) {
+                            ReadOutcome::More
+                        } else {
+                            ReadOutcome::Finished
                         }
                     }
-                };
-                if let Some(value) = value
-                    && self.tx.send(SupplyEvent::Emit(value)).is_err()
-                {
-                    return ReadOutcome::Finished;
+                    // Bytes the encoding cannot decode quit the Supply with
+                    // the decoder's error, as in Rakudo, rather than
+                    // substituting replacement characters.
+                    Err(e) => self.quit(&e),
                 }
-                ReadOutcome::More
             }
         }
+    }
+
+    /// Emit decoded text, unless it is empty. `false` when nobody listens.
+    // Cost: O(1).
+    fn emit_text(&self, text: String) -> bool {
+        text.is_empty() || self.tx.send(SupplyEvent::Emit(Value::str(text))).is_ok()
+    }
+
+    /// Quit the Supply with a decoding error.
+    // Cost: O(1).
+    fn quit(&self, e: &RuntimeError) -> ReadOutcome {
+        let _ = self.tx.send(SupplyEvent::Quit(e.exception_value()));
+        ReadOutcome::Finished
     }
 }
 
