@@ -414,6 +414,12 @@ impl Interpreter {
                         let remaining = remaining_args(p);
                         for arg in &remaining {
                             let arg = unwrap_varref_value(arg.clone());
+                            // A named argument (`:with<x>`) is not part of
+                            // `*@b`, so a `where .all ~~ Callable` on it must
+                            // not see the Pair.
+                            if !pd.double_slurpy && arg.is_string_pair_value() {
+                                continue;
+                            }
                             if !pd.double_slurpy {
                                 if let ValueView::Array(arr, kind) = arg.view()
                                     && !kind.is_itemized()

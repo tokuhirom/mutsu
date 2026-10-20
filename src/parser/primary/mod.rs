@@ -578,6 +578,9 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(number::integer(input));
         try_primary!(number::generic_radix(input));
         try_primary!(number::unicode_numeric_literal(input));
+        // A declarator registered through a `use`d module's EXPORTHOW::DECLARE
+        // block, as a term: `(model Foo { })`, `given model C is table<c> { } { }`.
+        try_primary!(declare_keyword_term(input));
         // User-declared term symbols must be checked before keyword literals so
         // that e.g. `\term:<e²ˣ>` shadows the built-in constant `e`.
         try_primary!(ident::declared_term_symbol(input));
@@ -651,6 +654,17 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     }
     PRIMARY_MEMO.store(input, &result);
     result
+}
+
+/// [`crate::parser::stmt::class::declare_decl`] in expression position: the
+/// declaration is a statement evaluated for its type object, as for
+/// `(class Foo { })`.
+fn declare_keyword_term(input: &str) -> PResult<'_, Expr> {
+    if crate::parser::stmt::simple::declare_keyword_names().is_empty() {
+        return Err(PError::expected("declarator term"));
+    }
+    let (rest, stmt) = crate::parser::stmt::class::declare_term_decl(input)?;
+    Ok((rest, Expr::DoStmt(Box::new(stmt))))
 }
 
 #[cfg(test)]
