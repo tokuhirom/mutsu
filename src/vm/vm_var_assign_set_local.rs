@@ -226,7 +226,7 @@ impl Interpreter {
             // living in `@` array context so gist/`.WHAT` render
             // `[...]`/`Array` rather than `(...)`/`Seq`.
             ValueView::LazyList(list) if list.coroutine.is_some() || list.is_genuinely_lazy() => {
-                Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+                self.lazy_array_value(&list, name)
             }
             ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
             ValueView::Seq(body) if body.is_io_lines_source() => {
@@ -1897,7 +1897,7 @@ impl Interpreter {
                         // a pipe over one) is `.is-lazy` False and
                         // materializes eagerly.
                         if list.preserve_lazy_on_array_assign() {
-                            Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+                            self.lazy_array_value(&list, name)
                         } else {
                             let forced = self.force_lazy_list_vm(&list)?;
                             Value::real_array(self.decay_nil_vec_elements(forced))

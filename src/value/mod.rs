@@ -3897,6 +3897,18 @@ pub(crate) struct LazyList {
     /// fresh array starts without any (ADR-0097; it was the
     /// `__mutsu_deleted_index::` env key).
     pub(crate) deleted_indices: Mutex<Option<std::collections::HashSet<usize>>>,
+    /// The `is default(...)` value and element type of the `@` array this list
+    /// was placed in (`my Int @t = lazy 1..*`): the container descriptor an
+    /// eager `ArrayData` carries, so `Array.default`/`.of` answer from the
+    /// value and survive the list leaving its variable (#14101).
+    pub(crate) descriptor: Option<Arc<LazyArrayDescriptor>>,
+}
+
+/// See [`LazyList::descriptor`].
+#[derive(Debug)]
+pub(crate) struct LazyArrayDescriptor {
+    pub(crate) default: Option<Value>,
+    pub(crate) value_type: Option<String>,
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under

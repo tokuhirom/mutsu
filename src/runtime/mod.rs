@@ -2556,6 +2556,15 @@ pub(crate) fn embedded_container_type_info(value: &Value) -> Option<ContainerTyp
         ValueView::Set(items, _) => embedded_type_info!(items),
         ValueView::Bag(items, _) => embedded_type_info!(items),
         ValueView::Hash(items) => Interpreter::hashdata_type_info(&items),
+        // A lazy `@` array carries its element type (#14101).
+        ValueView::LazyList(list) => {
+            let value_type = list.descriptor.as_deref()?.value_type.clone()?;
+            Some(ContainerTypeInfo {
+                value_type,
+                key_type: None,
+                declared_type: None,
+            })
+        }
         _ => None,
     }
 }

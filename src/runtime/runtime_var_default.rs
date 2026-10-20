@@ -131,6 +131,17 @@ impl Interpreter {
     /// The `is default(...)` value of the variable `name` resolves to in the
     /// current scope, if it was declared with one.
     // Cost: O(1) expected.
+    /// `list` placed in the `@` array variable `name`: tagged with array
+    /// context and carrying the variable's `is default(...)` value and element
+    /// type, so `Array.default`/`.of` answer from the value (#14101).
+    // Cost: O(1) lookups plus the clone `with_array_context` makes.
+    pub(crate) fn lazy_array_value(&self, list: &crate::value::LazyList, name: &str) -> Value {
+        Value::lazy_list(crate::gc::Gc::new(list.with_array_descriptor(
+            self.var_default(name).cloned(),
+            self.var_type_constraint(name),
+        )))
+    }
+
     pub(crate) fn var_default(&self, name: &str) -> Option<&Value> {
         if is_attr_twigil_name(name) {
             if self.types.attr_var_defaults.is_empty() {
