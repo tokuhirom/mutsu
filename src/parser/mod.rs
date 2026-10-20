@@ -1,5 +1,6 @@
 pub(crate) mod core_type_fold;
 pub(crate) mod decl_doc;
+mod type_qualify;
 mod expr;
 // ADR-0033: `crate::whatever_curry::build_closure` (the WhateverCode closure
 // construction that moved out of the parser) needs these priming-scope
@@ -943,6 +944,11 @@ fn parse_program_keeping(
             // once every scope's bindings are known.
             stmt::simple::settle_core_type_fold();
             crate::whatever_curry::mark::mark_program(&mut stmts);
+            // A bare type name in a type position takes the package it is
+            // written in (ADR-12529 §2.1). `.AST` keeps the source spelling.
+            if !keep_spelling {
+                type_qualify::qualify_program(&mut stmts);
+            }
             // `use trace` hooks hold their statement's source offset until the
             // whole unit's statement attempts are known.
             stmt::trace::number_statements(&mut stmts);

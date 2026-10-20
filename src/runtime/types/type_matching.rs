@@ -263,10 +263,18 @@ impl Interpreter {
             // A lexical role (`my role R1[::T]`) is registered under its
             // declaration-site storage name (ADR-0047); `R1[Int]` names it
             // by the source spelling the env binds to that name.
+            // An imported parameterized role (`Box[P]` for the exporter's
+            // `ParamRoleExporter::Box`) takes its package alias, as a plain
+            // name does below.
             let resolved_base = if base.contains('\u{0}') {
                 base.to_string()
             } else {
-                self.lexical_env_remap_name(base)
+                let remapped = self.lexical_env_remap_name(base);
+                if remapped == base && !crate::qualified::is_qualified_str(base) {
+                    self.package_type_alias(base).unwrap_or(remapped)
+                } else {
+                    remapped
+                }
             };
             if resolved_inner != inner || resolved_base != base {
                 return Some(format!("{}[{}]", resolved_base, resolved_inner));
