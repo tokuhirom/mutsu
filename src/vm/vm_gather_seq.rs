@@ -23,6 +23,23 @@ impl Interpreter {
         }
     }
 
+    /// Elements `from..needed` of a gather's inner coroutine list (fewer when
+    /// it finishes first), running the body only as far as that takes. The
+    /// pull [`crate::value::SeqBody::extend_gather_prefix`] appends.
+    // Cost: O(needed - from) for the copy, plus running the body to its
+    // `needed`-th `take`.
+    pub(crate) fn pull_gather_window(
+        &mut self,
+        list: &Value,
+        from: usize,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        match list.view() {
+            ValueView::LazyList(ll) => self.force_lazy_list_vm_window(&ll, from, needed),
+            _ => Ok(Vec::new()),
+        }
+    }
+
     /// An operand a consumer reads by streaming a `LazyList` (the zip and
     /// cross metaoperators): a plain gather `Seq` is handed over as its inner
     /// coroutine list, which those consumers already pull on demand. The

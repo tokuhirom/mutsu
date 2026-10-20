@@ -69,20 +69,19 @@ impl Interpreter {
                 Ok(Some(Value::num(s)))
             }
             // A lazy `Seq.new($iterator)` source is pulled only as far as
-            // `idx` (#10891); any other Seq is read as it stands.
-            // TODO: both arms publish the whole prefix as a new generation
-            // per pull, so pulling element by element is quadratic; the
-            // generation store needs an append-only form first (ADR-11678
-            // §8.5).
-            // A plain gather is pulled the same way, through its body's prefix
-            // (ADR-11678): the Seq is cached and stays readable.
+            // `idx` (#10891); any other Seq is read as it stands. A plain
+            // gather is pulled the same way, through its body's prefix
+            // (ADR-11678): the Seq is cached and stays readable. Both arms
+            // append only the new elements, so a pull per element is linear.
             ValueView::Seq(body) => {
                 if idx >= body.len() && body.unpulled_iterator().is_some() {
                     body.extend_from_iterator(idx + 1, |iterator, count| {
                         self.pull_iterator_prefix_to_vec(iterator, count)
                     })?;
                 } else if idx >= body.len() && body.is_gather_source() {
-                    body.extend_gather_prefix(idx + 1, |list, n| self.pull_gather_prefix(list, n))?;
+                    body.extend_gather_prefix(idx + 1, |list, from, n| {
+                        self.pull_gather_window(list, from, n)
+                    })?;
                 }
                 Ok(body.get(idx).cloned())
             }
