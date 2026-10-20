@@ -1,6 +1,6 @@
 use Test;
 
-plan 4;
+plan 9;
 
 # A real TCP stream splits wherever it likes, so a text-mode `.Supply` has to
 # carry decoding state across reads: a read can end mid-UTF-8-sequence or
@@ -66,3 +66,34 @@ sub echo-once(*%listen-opts) {
     $client.close;
     $tap.close;
 }
+
+# The Supply decodes with the shared streaming decoder (#11783): its errors
+# are the decoder's, an incomplete sequence at the end of the stream quits,
+# and a socket translates no `\r\n`. Expected values are the `raku` output.
+sub run-one(Blob $bytes, *%opts) {
+    my $result = Channel.new;
+    my $listener = IO::Socket::Async.listen('127.0.0.1', 0, |%opts);
+    my $tap = $listener.tap(-> $conn {
+        my $text = '';
+        $conn.Supply.tap(-> $chunk { $text ~= $chunk },
+            done => { $result.send("done:" ~ $text.raku) },
+            quit => { $result.send("quit:" ~ .message) });
+    });
+    my $client = await IO::Socket::Async.connect('127.0.0.1', await $tap.socket-port);
+    await $client.write($bytes);
+    $client.close;
+    my $r = $result.receive;
+    $tap.close;
+    $r
+}
+is run-one(Buf.new(0x61, 0xFF, 0x62)), 'quit:Malformed UTF-8 near byte ff',
+    'malformed UTF-8 quits with the decoder error';
+is run-one(Buf.new(0x61, 0xD0)),
+    'quit:Incomplete character near bytes d0 at the end of a stream',
+    'an incomplete sequence at the end of the stream quits';
+is run-one("a\r\nb".encode), 'done:"a\r\nb"', 'a socket keeps \r\n';
+is run-one(Buf.new(0x61, 0xE9), enc => 'ascii'),
+    'quit:Will not decode invalid ASCII (code point (233) > 127 found)',
+    'an :enc<ascii> socket rejects a high byte';
+is run-one(Buf.new(0x61, 0xE9), enc => 'latin-1'), 'done:"aé"',
+    'an :enc<latin-1> socket decodes every byte';

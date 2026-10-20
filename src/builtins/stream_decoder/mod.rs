@@ -17,9 +17,11 @@
 //! separator, `n` chars), as MoarVM's decoder does with its stopper, so the
 //! bytes behind that point stay raw.
 
+mod chunks;
 mod codec;
 
 use codec::incomplete_error;
+pub(crate) use chunks::ChunkDecoder;
 pub(crate) use codec::{Codec, Hold};
 
 use crate::builtins::grapheme_index::Units;
