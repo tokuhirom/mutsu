@@ -18,16 +18,47 @@ impl Interpreter {
             .then(|| owner.to_string())
     }
 
+    /// Whether `receiver` (owned by `owner`) is a role type object or one
+    /// candidate of a role group, as `.^candidates` hands it out: `Some` with
+    /// the candidate's index when it is one, `Some(None)` for the role
+    /// itself, `None` for anything else (a class, an instance).
+    // Cost: O(1), a few registry probes.
+    pub(super) fn role_candidate_receiver(
+        &self,
+        receiver: &Value,
+        owner: &str,
+    ) -> Option<Option<usize>> {
+        if let ValueView::Instance { attributes, .. } = receiver.view()
+            && let Some(idx) = attributes.as_map().get("__mutsu_role_candidate_idx")
+            && self.registry().role_candidates.contains_key(owner)
+        {
+            return Some(match idx.view() {
+                ValueView::Int(i) => usize::try_from(i).ok(),
+                _ => None,
+            });
+        }
+        self.mop_receiver_role(receiver, owner).map(|_| None)
+    }
+
     /// `R.^methods`: the methods the role itself declares. Rakudo generates a
     /// public attribute's accessor only when a class composes the role, and a
     /// role's `does`/`also does` parents keep their own methods (each is
     /// listed by `R.^roles[N].^methods`), so neither appears here. A
     /// `submethod` does (`(m BUILD)`).
     // Cost: O(m), m = methods the role (with its composed parents) holds.
-    pub(super) fn role_own_method_objects(&self, role_name: &str, include_private: bool) -> Vec<Value> {
+    pub(super) fn role_own_method_objects(
+        &self,
+        role_name: &str,
+        candidate: Option<usize>,
+        include_private: bool,
+    ) -> Vec<Value> {
         let mut result = Vec::new();
         let registry = self.registry();
-        let Some(role_def) = registry.roles.get(role_name) else {
+        let role_def = candidate
+            .and_then(|idx| registry.role_candidates.get(role_name)?.get(idx))
+            .map(|cand| &cand.role_def)
+            .or_else(|| registry.roles.get(role_name));
+        let Some(role_def) = role_def else {
             return result;
         };
         let mut names: Vec<&String> = role_def.methods.keys().collect();
@@ -59,11 +90,22 @@ impl Interpreter {
 
     /// `R.^attributes`: the attributes declared in the role's own body. Those
     /// of a `does`/`also does` parent are copied into the role's definition
-    /// for composition, but Rakudo reports them only on the parent.
-    // Cost: O(a), a = attributes the role (with its composed parents) holds.
-    pub(super) fn role_own_attribute_objects(&self, role_name: &str) -> Vec<Value> {
+    /// for composition, but Rakudo reports them only on the parent. For the
+    /// candidate `candidate` of the role group `role_name` (an index into
+    /// `.^candidates`, which carries it as `__mutsu_role_candidate_idx`), or
+    /// for the role registered under the name when `None` or out of range.
+    // Cost: O(a), a = attributes the candidate (with its composed parents) holds.
+    pub(super) fn role_candidate_own_attribute_objects(
+        &self,
+        role_name: &str,
+        candidate: Option<usize>,
+    ) -> Vec<Value> {
         let registry = self.registry();
-        let Some(role_def) = registry.roles.get(role_name) else {
+        let role_def = candidate
+            .and_then(|idx| registry.role_candidates.get(role_name)?.get(idx))
+            .map(|cand| &cand.role_def)
+            .or_else(|| registry.roles.get(role_name));
+        let Some(role_def) = role_def else {
             return Vec::new();
         };
         let own: Vec<_> = role_def

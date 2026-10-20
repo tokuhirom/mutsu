@@ -30,8 +30,12 @@ impl Interpreter {
             return self.classhow_methods_tree(&class_name, private);
         }
 
-        if let Some(role) = self.mop_receiver_role(invocant, &class_name) {
-            return Ok(Value::array(self.role_own_method_objects(&role, private)));
+        if let Some(candidate) = self.role_candidate_receiver(invocant, &class_name) {
+            return Ok(Value::array(self.role_own_method_objects(
+                &class_name,
+                candidate,
+                private,
+            )));
         }
 
         let mut result = Vec::new();
