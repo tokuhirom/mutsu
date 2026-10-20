@@ -323,14 +323,14 @@ impl Interpreter {
         // than the raw-capture placeholder every genuinely-native method
         // falls back to. Without this, `G.^lookup('foo').signature` answered
         // `:(G $:: |)` where rakudo answers `:(G $:: $x, *%_)` (#8318).
-        let sig_info = match declared_params {
-            Some(params) => Self::regex_routine_sig_info(owner, params),
-            None => crate::value::signature::synthesize_native_signature(owner),
+        let signature = match declared_params {
+            Some(params) => crate::value::signature::make_signature_value(
+                Self::regex_routine_sig_info(owner, params),
+                Some(self),
+            ),
+            None => crate::value::signature::native_signature_value(owner, self),
         };
-        attrs.insert(
-            "signature".to_string(),
-            crate::value::signature::make_signature_value(sig_info, Some(self)),
-        );
+        attrs.insert("signature".to_string(), signature);
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
         // `Code.line`/`Code.file`: a native method implemented in Rust has no

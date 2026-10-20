@@ -785,6 +785,26 @@ pub(crate) fn make_signature_value(info: SigInfo, interp: Option<&dyn SubsetBase
     make_signature_value_with_owner(info, None, interp)
 }
 
+thread_local! {
+    /// The synthesized signature of a native method, one per owner: Rakudo
+    /// answers the same `Method` (hence one `Signature`) for every lookup, and
+    /// each fresh value would stay in `SIG_REGISTRY` for the life of the process.
+    static NATIVE_SIGNATURES: std::cell::RefCell<std::collections::HashMap<String, Value>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The `Signature` of a native method owned by `owner`, built once per owner
+/// and thread.
+// Cost: O(1) after the first call per owner; O(p) to build, p = parameters.
+pub(crate) fn native_signature_value(owner: &str, interp: &dyn SubsetBases) -> Value {
+    if let Some(cached) = NATIVE_SIGNATURES.with(|c| c.borrow().get(owner).cloned()) {
+        return cached;
+    }
+    let value = make_signature_value(synthesize_native_signature(owner), Some(interp));
+    NATIVE_SIGNATURES.with(|c| c.borrow_mut().insert(owner.to_string(), value.clone()));
+    value
+}
+
 /// Create a Signature Value from SigInfo, with an optional owner sub key
 /// for parameter doc comment lookup.
 pub(crate) fn make_signature_value_with_owner(
