@@ -53,9 +53,8 @@ impl Interpreter {
             OpCode::TypeCheck(tc_idx, var_name_idx, ..) => {
                 // An `@`/`%` declaration's check runs per element; resuming it
                 // would leave a half-built aggregate.
-                let scalar = var_name_idx.is_none_or(|idx| {
-                    !Self::const_str(code, idx).starts_with(['@', '%'])
-                });
+                let scalar = var_name_idx
+                    .is_none_or(|idx| !Self::const_str(code, idx).starts_with(['@', '%']));
                 if !scalar {
                     return Err(err);
                 }
