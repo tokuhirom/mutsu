@@ -7183,8 +7183,7 @@ impl Interpreter {
             // body; the close is O(1) for a table the body did not write. For the routine table
             // it did, the close is O(x), x = keys its imports installed, when only those imports
             // wrote it, else O(F), F = registered routines (the rollback filter); either way the
-            // first write in the body copies the shared table, O(F). A written class table is
-            // O(C), C = registered classes. Rakudo: O(1) -- see #9170.
+            // first write in the body copies the shared table, O(F). Rakudo: O(1) -- see #9170.
             OpCode::ImportScope { body_end } => {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }

@@ -49,9 +49,9 @@ pub(crate) struct ModuleVisibility {
     /// under that namespace (`OpenSSL::Version`).
     pub(crate) unit_package_names: std::sync::Arc<HashSet<Symbol>>,
     /// Every class/role registry key a module's own body registered, under
-    /// any module. An import scope's class rollback keeps them: escaped
-    /// instances and the module's own code need them, and whether their name
-    /// resolves somewhere is the ADR-11136 gate's call, not the registry's.
+    /// any module. They stay registered: escaped instances and the module's
+    /// own code need them, and whether their name resolves somewhere is the
+    /// ADR-11136 gate's call, not the registry's.
     pub(crate) module_declared_types: std::sync::Arc<HashSet<String>>,
     /// #7797: for a compunit that successfully `use`d/`need`d/`require`d a
     /// module, the top-level package names (same first-segment granularity

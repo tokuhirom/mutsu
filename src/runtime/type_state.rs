@@ -91,14 +91,6 @@ pub(crate) struct TypeState {
     /// Per-`(class, attribute)` memo of `self_attr_type_constraint`, keyed by
     /// the same `registry_write_gen` (ADR-0121). See `vm_attr_type_constraint`.
     pub(crate) attr_type_constraint_cache: std::cell::RefCell<crate::vm::AttrTypeConstraintCache>,
-    /// Class registry keys that are not lexical imports, so an import scope's
-    /// class rollback (`pop_import_scope`) must keep them: a loaded module's
-    /// own un-namespaced class (`unit class RS3Base;` -- the rollback already
-    /// keeps every `A::B`-qualified one) and every type a
-    /// `Metamodel::*HOW.new_type` minted at run time, and every `our` class a
-    /// block that imports something declares. Like `loaded_modules`, never
-    /// rolled back.
-    pub(crate) persistent_classes: std::sync::Arc<HashSet<String>>,
     /// Classes/roles hidden from package stash lookups (e.g. `Example2::.keys`).
     /// Populated when a `use X::Y` loads modules whose dependency chain neither
     /// declares a class matching the module name nor includes a `package X {}`
@@ -297,7 +289,6 @@ impl TypeState {
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
             numeric_bridge_probe: Default::default(),
             attr_type_constraint_cache: Default::default(),
-            persistent_classes: Default::default(),
             package_stash_hidden: Default::default(),
             predictive_seq_iters: HashMap::new(),
             subset_predicate_cache: HashMap::new(),
@@ -357,7 +348,6 @@ impl TypeState {
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
             numeric_bridge_probe: Default::default(),
             attr_type_constraint_cache: Default::default(),
-            persistent_classes: self.persistent_classes.clone(),
             package_stash_hidden: self.package_stash_hidden.clone(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
             subset_predicate_cache: HashMap::new(),

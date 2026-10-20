@@ -90,7 +90,6 @@ impl Interpreter {
             let reg = self.registry();
             crate::runtime::ImportScopeSnapshot {
                 functions: std::sync::Arc::clone(&reg.functions),
-                classes: reg.classes.clone(),
                 proto_subs: reg.proto_subs_snapshot(),
                 proto_functions: std::sync::Arc::clone(&reg.proto_functions),
                 shadowed_functions: HashMap::new(),
@@ -365,60 +364,6 @@ impl Interpreter {
         })
     }
 
-    /// Restore function/class/proto registries to the last saved snapshot,
-    /// removing any entries added since the push.
-    /// The class registry keys an import scope's rollback keeps: everything
-    /// registered before the scope, every `A::B`-qualified class (a loaded
-    /// module's own, see below), every class a module's body declared
-    /// (`module_declared_types`, ADR-11136), every type minted at run time by
-    /// `new_type` (`persistent_classes`), and -- transitively -- every class
-    /// one of those names as a parent. The last rule is what keeps
-    /// `sub f { use Base; my $c := ....new_type(...); $c.^add_parent(Base); $c }`
-    /// working after `f` returns: the imported *name* `Base` is lexical to
-    /// `f`, but the class object is still the escaping type's parent (#9532).
-    // Cost: O(C + P), C = registered classes, P = parent edges walked.
-    fn classes_outliving_import_scope(
-        &self,
-        class_snapshot: &crate::runtime::registry::ClassTable,
-    ) -> HashSet<String> {
-        let reg = self.registry();
-        let mut keep: HashSet<String> = reg
-            .classes
-            .keys()
-            .filter(|key| {
-                class_snapshot.contains_key(*key)
-                    || self.types.persistent_classes.contains(*key)
-                    || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
-                    // A lexical `my class` is stored under its mangled,
-                    // per-declaration name (ADR-0047 P1: `P\u{0}<decl-id>`),
-                    // which no other scope can spell, so it is no import
-                    // alias to roll back. Dropping it broke a module's own
-                    // `my class` the moment the block that FIRST loaded the
-                    // module closed: a later `use` re-ran the module's
-                    // EXPORT, whose `P.new` then found no class.
-                    || key.contains('\u{0}')
-                    // A class a module's body declared stays registered:
-                    // escaped instances and the module's own code need it, and
-                    // whether its name resolves here is the ADR-11136 gate's
-                    // call, not the registry's.
-                    || self.module.module_visibility.module_declared_types.contains(*key)
-            })
-            .cloned()
-            .collect();
-        let mut work: Vec<String> = keep.iter().cloned().collect();
-        while let Some(name) = work.pop() {
-            let Some(def) = reg.classes.get(&name) else {
-                continue;
-            };
-            for parent in &def.parents {
-                if reg.classes.contains_key(parent) && keep.insert(parent.clone()) {
-                    work.push(parent.clone());
-                }
-            }
-        }
-        keep
-    }
-
     /// Whether `key` is a `GLOBAL::MAIN` candidate key (`GLOBAL::MAIN` or
     /// `GLOBAL::MAIN/<signature>`), the program's own MAIN slot.
     // Cost: O(k), k = key length.
@@ -535,13 +480,13 @@ impl Interpreter {
     // table itself). A written routine table is O(x + k), x = keys the scope's
     // imports installed, k = interned `GLOBAL::MAIN/…` names, when the scope's
     // logged imports were its only writes, else O(F), F = registered routines
-    // (the rollback filter); a written class table is O(C), C = registered
-    // classes. Rakudo: O(1) -- see #9170.
+    // (the rollback filter). The class table is never rolled back: a class
+    // an import registered is the module's own, and a name it exports binds
+    // lexically (ADR-8751). Rakudo: O(1) -- see #9170.
     pub(crate) fn pop_import_scope(&mut self) {
         if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let crate::runtime::ImportScopeSnapshot {
                 functions: func_snapshot,
-                classes: class_snapshot,
                 proto_subs: proto_sub_snapshot,
                 proto_functions: proto_fn_snapshot,
                 shadowed_functions,
@@ -580,7 +525,6 @@ impl Interpreter {
                         &self.registry().proto_subs_snapshot(),
                     )
                     && std::sync::Arc::ptr_eq(&proto_fn_snapshot, &self.registry().proto_functions)
-                    && class_snapshot.shares_with(&self.registry().classes)
                     && shadowed_functions.is_empty()
                     && shadowed_proto_functions.is_empty();
             // Remove functions added since the push, EXCEPT a module's own
@@ -710,20 +654,6 @@ impl Interpreter {
                                 .map(Symbol::intern)
                                 .is_some_and(|file| Some(file) != program_path))
                     }));
-            }
-            // Same exception for classes: a module's own package-qualified
-            // classes (`ScanCacheHelper::ScanCacheThing`) persist as long as the
-            // module is loaded. `loaded_modules` is never rolled back, so a
-            // later block-scoped re-`use` of the module is a no-op that cannot
-            // re-register them — dropping them here left `.new` on the class
-            // dying with X::Method::NotFound in the second block
-            // (t/module-reuse-class-in-block.t). Bare imported aliases are
-            // still removed with the import scope.
-            if scope_classes && !class_snapshot.shares_with(&self.registry().classes) {
-                let keep = self.classes_outliving_import_scope(&class_snapshot);
-                self.registry_mut()
-                    .classes
-                    .retain(|key, _| keep.contains(key));
             }
             // `proto sub name(|) is export` imports under the importing package
             // (`GLOBAL::skip`) into BOTH proto tables, and `has_proto` reads the
