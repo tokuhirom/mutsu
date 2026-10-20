@@ -56,10 +56,7 @@ impl<'ast> Visit<'ast> for ReturnScan {
 /// branch or a ternary arm) leave the result unsunk. The traits are the
 /// caller's to check (`returns_container`).
 // Cost: O(n), n = size of the body outside nested code objects.
-pub(crate) fn result_is_decontainerized(
-    param_defs: &[ParamDef],
-    stmts: &[Stmt],
-) -> bool {
+pub(crate) fn result_is_decontainerized(param_defs: &[ParamDef], stmts: &[Stmt]) -> bool {
     let mut scan = ReturnScan::default();
     walk_stmts(&mut scan, stmts);
     !scan.found && !tail_is_readonly_param(param_defs, stmts)
@@ -87,9 +84,7 @@ fn tail_is_readonly_param(param_defs: &[ParamDef], stmts: &[Stmt]) -> bool {
 fn expr_is_readonly_param(param_defs: &[ParamDef], expr: &Expr) -> bool {
     match expr {
         Expr::Var(name) => param_defs.iter().any(|pd| {
-            !pd.sigilless
-                && pd.name == *name
-                && !pd.traits.iter().any(|t| t == "rw" || t == "copy")
+            !pd.sigilless && pd.name == *name && !pd.traits.iter().any(|t| t == "rw" || t == "copy")
         }),
         Expr::Ternary {
             then_expr,

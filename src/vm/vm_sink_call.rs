@@ -22,7 +22,11 @@ impl Interpreter {
     // Cost: O(1) when the value has no user `sink` (a tag probe, then one
     // method-table lookup for an instance); otherwise O(d) for the method
     // lookup, d = MRO depth, plus one routine lookup by name.
-    pub(crate) fn sunk_call_result_runs_sink(&mut self, code: &CompiledCode, name_idx: u32) -> bool {
+    pub(crate) fn sunk_call_result_runs_sink(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> bool {
         let Some(value) = self.stack.last() else {
             return false;
         };
@@ -37,12 +41,10 @@ impl Interpreter {
         }
         let name = code.constants[name_idx as usize].to_string_value();
         self.resolve_function(&name).is_some_and(|def| {
-            !def.is_rw
-                && !def.is_raw
-                && {
-                    let facts = Self::routine_body_facts(&def);
-                    !facts.uses_return_rw && facts.result_is_decontainerized
-                }
+            !def.is_rw && !def.is_raw && {
+                let facts = Self::routine_body_facts(&def);
+                !facts.uses_return_rw && facts.result_is_decontainerized
+            }
         })
     }
 }
