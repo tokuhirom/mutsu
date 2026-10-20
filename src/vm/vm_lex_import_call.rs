@@ -83,6 +83,27 @@ impl Interpreter {
         Ok(true)
     }
 
+    /// Push the term a `sub EXPORT` hook bound in one of the import sets of
+    /// chain `chain_idx` for the bare word read at `ip + 1` (a `GetBareWord`,
+    /// or the term half of a `GetExportTermOrJump`), and return the ip to go
+    /// on at. `None`, having done nothing, when no set binds the term.
+    pub(super) fn exec_lex_import_term_site(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+        chain_idx: u32,
+    ) -> Option<usize> {
+        let (name_idx, next) = match code.ops.get(ip + 1)? {
+            OpCode::GetBareWord(name_idx) => (*name_idx, ip + 2),
+            OpCode::GetExportTermOrJump { name_idx, end } => (*name_idx, *end as usize),
+            _ => return None,
+        };
+        let chain = code.lexical_import_chains.get(chain_idx as usize)?;
+        let value = self.lexical_import_hook_term(chain, code.const_sym(name_idx))?;
+        self.stack.push(value);
+        Some(next)
+    }
+
     /// Run the binary `InfixFunc` at `ip + 1` through the routine one of the
     /// import sets of chain `chain_idx` binds `infix:<op>` (`name_idx`) to.
     /// Returns `false`, having done nothing, when no set binds it.

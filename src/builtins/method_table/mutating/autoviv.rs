@@ -110,10 +110,18 @@ fn grow(
     // An `Array` type object in a named binding (`my Array $a; $a.push(1)`)
     // vivifies as an undefined `Any` does.
     let array_type = matches!(value.view(), ValueView::Package(name) if name == "Array");
+    // A role's type object is not an `Any` (`my Positional $p; $p.push(1)`
+    // matches no `Any:U` candidate), so it is not vivified.
+    let role_type = matches!(value.view(), ValueView::Package(name)
+        if interp.is_role_type_name(&name.resolve()));
     match value.view() {
         ValueView::Nil => {}
         ValueView::Package(name) if name == "Any" || name == "Mu" => {}
-        ValueView::Package(_) if array_type && place.name().is_some() => {}
+        // Any other type object a named binding holds (`my Int $x`, `my $x =
+        // Foo`) is an undefined invocant too: the binding vivifies through
+        // an ordinary assignment, whose type check refuses an `Array` into
+        // `my Int $x` (`X::TypeCheck::Assignment`), as Rakudo's does (#13823).
+        ValueView::Package(_) if place.name().is_some() && !role_type => {}
         ValueView::Int(_)
         | ValueView::Num(_)
         | ValueView::Str(_)
@@ -145,7 +153,20 @@ fn grow(
             }
             return Some(Err(RuntimeError::assignment_ro_type_object(&type_name)));
         }
-        let vivified = match interp.vivify_binding(&name, Value::real_array(Vec::new())) {
+        // The vivification is an assignment to the binding, so it obeys the
+        // binding's type: `my Int $x; $x.push(3)` refuses the `Array`.
+        let fresh = Value::real_array(Vec::new());
+        if !name.starts_with(['@', '%', '&'])
+            && let Some(constraint) = interp.binding_store_constraint(place.code(), &name)
+            && !interp.type_matches_value(&constraint, &fresh)
+        {
+            return Some(Err(interp.type_check_assignment_failure(
+                &name,
+                &constraint,
+                &fresh,
+            )));
+        }
+        let vivified = match interp.vivify_binding(&name, fresh) {
             Ok(vivified) => vivified,
             Err(err) => return Some(Err(err)),
         };

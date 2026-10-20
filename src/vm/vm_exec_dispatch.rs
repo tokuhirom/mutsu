@@ -5469,7 +5469,9 @@ impl Interpreter {
             // Cost: O(c) probe, c = enclosing `use`-blocks; on a hit O(a) plus the callee's
             // body, a = arguments; on a miss nothing (the `CallFunc` at ip + 1 runs).
             OpCode::LexImportCall { chain_idx } => {
-                if self.exec_lex_import_call_site(code, *ip, *chain_idx, compiled_fns)? {
+                if let Some(next) = self.exec_lex_import_term_site(code, *ip, *chain_idx) {
+                    *ip = next;
+                } else if self.exec_lex_import_call_site(code, *ip, *chain_idx, compiled_fns)? {
                     *ip += 2;
                 } else {
                     *ip += 1;

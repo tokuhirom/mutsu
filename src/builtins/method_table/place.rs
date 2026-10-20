@@ -155,6 +155,16 @@ impl<'a> ReceiverPlace<'a> {
         }
     }
 
+    /// The VM chunk whose local slots mirror the binding, when the call came
+    /// through the VM.
+    // Cost: O(1).
+    pub(crate) fn code(&self) -> Option<&'a CompiledCode> {
+        match self {
+            ReceiverPlace::Var { code, .. } => *code,
+            ReceiverPlace::Detached(_) => None,
+        }
+    }
+
     /// The receiver as the call read it. It is a snapshot: [`Self::assign`]
     /// does not update it.
     // Cost: O(1).

@@ -115,4 +115,23 @@ impl Interpreter {
             _ => None,
         }
     }
+
+    /// The constraint a store into the binding `name` checks against, for a
+    /// method-table row that writes a receiver's binding (`Any.push`
+    /// autovivifying `my Int $x`, #13823): read off the slot `code`
+    /// declares when the call came through the VM (ADR-13757), else by name.
+    // Cost: as `slot_type_constraint`, plus a slot lookup by name, O(l),
+    // l = `code`'s locals.
+    pub(crate) fn binding_store_constraint(
+        &mut self,
+        code: Option<&CompiledCode>,
+        name: &str,
+    ) -> Option<String> {
+        if let Some(code) = code
+            && let Some(idx) = self.find_local_slot(code, name)
+        {
+            return self.slot_type_constraint(code, idx, name, None);
+        }
+        self.var_type_constraint(name)
+    }
 }

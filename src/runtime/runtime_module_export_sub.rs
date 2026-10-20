@@ -396,6 +396,11 @@ impl Interpreter {
         if sigil != Some('&') && self.bind_hook_export_lexically(&key, &value) {
             return;
         }
+        if sigil.is_none_or(|c| c.is_alphanumeric() || c == '_')
+            && self.bind_hook_term_lexically(&key, &value)
+        {
+            return;
+        }
         // Install into env under the key the reader looks up. A `$scalar` read
         // compiles to a bare (sigil-stripped) `GetGlobal` — the same key an
         // `our $x` module global lands under — so the sigil must be dropped for

@@ -11,7 +11,7 @@
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
 use crate::runtime::Interpreter;
-use crate::runtime::nqp_ops_list::{ITERATION_BUFFER_ITEMS, is_iteration_buffer};
+use crate::runtime::nqp_ops_list::ITERATION_BUFFER_ITEMS;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -57,13 +57,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Seq", 0, Handler::Narrow(seq)),
     row!("iterator", 0, Handler::Interp(iterator)),
 ];
-
-/// The owners the rows reachable from `target` are found under: an
-/// `IterationBuffer` or an instance of a subclass of it.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    is_iteration_buffer(target).then_some(&["IterationBuffer"])
-}
 
 /// The elements of the list a buffer holds.
 // Cost: O(n), n = elements (copied).

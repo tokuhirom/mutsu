@@ -47,6 +47,7 @@
 //! over the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
 pub(crate) mod allomorph;
+pub(crate) mod carried_state;
 mod collections;
 mod ctors_mop;
 mod dispatch;
@@ -68,10 +69,10 @@ mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
+pub(crate) use carried_state::owners_of as carried_state_owners_of;
 pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
-pub(crate) use collections::iteration_buffer::owners_of as iteration_buffer_owners_of;
 pub(crate) use collections::sampling::callable_count as sampling_callable_count;
 pub(crate) use collections::{
     any_enum_views, clone as collection_clone, lazy, list, list_aggregate, positional, quanthash,
@@ -94,13 +95,11 @@ pub(crate) use io_concurrency::handle_names;
 pub(crate) use io_concurrency::io_path_lexical::basename as io_path_basename;
 pub(crate) use io_concurrency::io_path_parts::pairs as io_path_parts_pairs;
 pub(crate) use io_concurrency::io_special::raku_row as io_special_raku;
-pub(crate) use io_concurrency::proc_async::owners_of as proc_async_owners_of;
 pub(crate) use io_concurrency::promise_channel;
 pub(crate) use io_concurrency::promise_channel::{
     CHANNEL_LIST_COERCIONS, receiver_of as promise_channel_receiver_of,
 };
 pub(crate) use io_concurrency::supplier_scheduler;
-pub(crate) use io_concurrency::supplier_scheduler::owners_of as supplier_owners_of;
 pub(crate) use io_concurrency::systemic::names as systemic_names;
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
