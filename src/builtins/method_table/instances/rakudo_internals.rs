@@ -107,7 +107,9 @@ fn mergesort_str(_: &Value, args: &[Value]) -> Answer {
         return None;
     };
     let ValueView::Array(items, ..) = list.view() else {
-        return None;
+        return Some(Err(RuntimeError::new(
+            "Rakudo::Sorting.MERGESORT-str expects a native str array".to_string(),
+        )));
     };
     let mut keys: Vec<String> = items.iter().map(|v| v.to_string_value()).collect();
     keys.sort_by(|a, b| crate::builtins::str_prim::str_order(a, b));

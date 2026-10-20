@@ -432,6 +432,8 @@ fn rows_are_declared_by_rakudo() {
     // A `REVISION_E` row is checked against what Rakudo declares under 6.e.
     let _revision = RevisionE::enter();
     let undeclared: Vec<String> = rows()
+        // Rakudo declares no `raku` on `Label`; the rendering is mutsu's own.
+        .filter(|row| !(row.owner == "Label" && row.name == "raku"))
         // `IS-MACOS` is the companion mutsu gives `IS-WIN`; Rakudo declares none.
         .filter(|row| !(row.owner == "Rakudo::Internals" && row.name == "IS-MACOS"))
         // `DESTROY` is a submethod: Rakudo's `.^method_table` does not list it.
