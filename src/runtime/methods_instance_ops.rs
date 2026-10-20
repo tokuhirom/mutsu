@@ -2291,6 +2291,27 @@ impl Interpreter {
                     }
                     _ => {}
                 }
+                // A subset's type object answers the methods of its base
+                // (`my subset S of R; S.COERCE(..)` reaches `R`'s).
+                let subset_base = match target.view() {
+                    ValueView::Package(name) => {
+                        let key = name.resolve();
+                        let base = self
+                            .registry()
+                            .subsets
+                            .get(key.as_str())
+                            .map(|d| d.base.clone());
+                        base.filter(|b| *b != key)
+                    }
+                    _ => None,
+                };
+                if let Some(base) = subset_base {
+                    return self.call_method_with_values(
+                        Value::package(Symbol::intern(&base)),
+                        method,
+                        args,
+                    );
+                }
                 // Rakudo words a `Str` invocant's miss `for string 'abc'`.
                 let text = match target.view() {
                     ValueView::Str(s) => Some(s.to_string()),

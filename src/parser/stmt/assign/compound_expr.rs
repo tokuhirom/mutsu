@@ -187,6 +187,60 @@ pub(crate) fn build_compound_assign_expr(
                 param_sigilless: false,
             }
         }
+        // `(@a[$i] OP= x) OP2= y`: the inner expansion is an opaque block, so
+        // bind the subscript once and apply both operators to that element.
+        Expr::CompoundAssign {
+            target: inner_target,
+            op: inner_op,
+            rhs: inner_rhs,
+            ..
+        } if matches!(inner_target.as_ref(), Expr::Index { .. })
+            && CompoundAssignOp::from_op_name(inner_op.trim_end_matches('=')).is_some() =>
+        {
+            let Expr::Index {
+                target,
+                index,
+                is_positional,
+                ..
+            } = *inner_target
+            else {
+                unreachable!("guarded by the match arm");
+            };
+            let inner_cop = CompoundAssignOp::from_op_name(inner_op.trim_end_matches('='))
+                .expect("guarded by the match arm");
+            let tmp_idx = format!(
+                "__mutsu_idx_{}",
+                TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+            );
+            let tmp_expr = Expr::Var(tmp_idx.clone());
+            let inner = build_compound_assign_expr(
+                Expr::Index {
+                    target: target.clone(),
+                    index: Box::new(tmp_expr.clone()),
+                    is_positional,
+                    spelling: Default::default(),
+                },
+                inner_cop,
+                *inner_rhs,
+            )?;
+            let outer = compound_index_assign_op_expr(*target, tmp_expr, is_positional, op, rhs);
+            return Ok(Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: tmp_idx,
+                    expr: *index,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(inner),
+                Stmt::Expr(outer),
+            ]));
+        }
         Expr::CompoundAssign { expanded, .. } => {
             // The source marker is transparent to the execution AST. Reuse the
             // established nested-assignment handling when another compound op
