@@ -530,7 +530,7 @@ fn instance_shape_of_type_object(target: &Value) -> Option<DispatchShape> {
 /// the built-in class it is a form of ([`answer_shapeless`]): Rakudo declares
 /// them on `List`, `Seq` and `Map`, not on `Any` (`5.lazy` is
 /// `X::Method::NotFound`).
-const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
+const ITERABLE_FOR_SHAPELESS: [&str; 4] = ["lazy", "race", "hyper", "lazy-if"];
 
 /// The container methods `Array` and `Hash` declare, which an array or hash
 /// with no settled shape (a typed, shaped or lazy one) answers from its own
@@ -836,6 +836,7 @@ pub(crate) fn shapeless_row(
                     | "comb"
                     | "flat"
                     | "isa"
+                    | "lazy-if"
                     | "AT-POS"
                     | "EXISTS-POS"
                     | "AT-KEY"
@@ -991,7 +992,9 @@ pub(crate) fn shapeless_row(
         // `Iterable.hyper` does (the `hyperize` dist reads
         // `Iterable.hyper.configuration`).
         ValueView::Package(name) if iterable && name == "Iterable" => Symbol::intern("List"),
-        _ if iterable => return None,
+        // `lazy-if` is `Any`'s too: a receiver `Iterable` does not reach answers
+        // from `Any`'s row, which is the receiver itself.
+        _ if iterable && !list => return None,
         ValueView::Array(..) if container => Symbol::intern("Array"),
         ValueView::Hash(_) if container => Symbol::intern("Hash"),
         _ if container => return None,
