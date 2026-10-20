@@ -2648,7 +2648,6 @@ pub(crate) struct ImportScopeSnapshot {
     /// snapshot is a reference to the very table (O(1), #9170), and a table
     /// still identical to it at the pop was not written in the scope.
     pub(crate) functions: Arc<function_table::FunctionTable>,
-    pub(crate) classes: registry::ClassTable,
     pub(crate) proto_subs: Arc<registry::ProtoSubSet>,
     pub(crate) proto_functions: Arc<registry::ProtoFunctionMap>,
     /// Function definitions hidden by an imported proto/multi family in this

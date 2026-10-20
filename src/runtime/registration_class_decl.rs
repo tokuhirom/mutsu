@@ -205,22 +205,6 @@ impl Interpreter {
             body_plan,
             is_hoisted_shell,
         } = modifiers;
-        // An `our`-scoped class the running code declares inside a block that
-        // imports something is the package's, not the import scope's: it
-        // outlives the block (`{ import Foo; class C does Bar {} }; C.new`),
-        // so the scope's class rollback must keep it. A module that loads
-        // while the block runs declares its own types (`module_declared_types`).
-        if !is_lexical
-            && self
-                .module
-                .import_scope_stack
-                .last()
-                .is_some_and(|scope| scope.unit == self.executing_unit_sym_for_module_load())
-            && self.module.module_load_stack.is_empty()
-        {
-            crate::runtime::cow_table_mut(&mut self.types.persistent_classes)
-                .insert(name.to_string());
-        }
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
         // `is ::Foo` means the same as `is Foo` in Raku.
