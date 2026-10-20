@@ -263,18 +263,10 @@ impl Interpreter {
             // A lexical role (`my role R1[::T]`) is registered under its
             // declaration-site storage name (ADR-0047); `R1[Int]` names it
             // by the source spelling the env binds to that name.
-            // An imported parameterized role (`Box[P]` for the exporter's
-            // `ParamRoleExporter::Box`) takes its package alias, as a plain
-            // name does below.
             let resolved_base = if base.contains('\u{0}') {
                 base.to_string()
             } else {
-                let remapped = self.lexical_env_remap_name(base);
-                if remapped == base && !crate::qualified::is_qualified_str(base) {
-                    self.package_type_alias(base).unwrap_or(remapped)
-                } else {
-                    remapped
-                }
+                self.lexical_env_remap_name(base)
             };
             if resolved_inner != inner || resolved_base != base {
                 return Some(format!("{}[{}]", resolved_base, resolved_inner));
@@ -729,6 +721,15 @@ impl Interpreter {
             && let Some(resolved_constraint) = self.try_resolved_type_capture_name(constraint)
         {
             return self.type_matches_value_why(&resolved_constraint, value, why);
+        }
+        // An imported parameterized role written bare (`Box[P]` for the
+        // exporter's `ParamRoleExporter::Box`) is checked under its package
+        // alias. Only the check takes it: a declaration's type object is
+        // built from the spelling.
+        if constraint.contains('[')
+            && let Some(aliased) = self.parameterized_package_alias(constraint)
+        {
+            return self.type_matches_value_why(&aliased, value, why);
         }
         // Hot-path fast accept (ADR-0004 J3): a concrete value whose exact tag /
         // class matches the bare constraint name. Sound unless a user `subset`
