@@ -85,6 +85,9 @@ mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
 mod signature_literal;
+mod source_identifier;
+#[cfg(test)]
+mod source_identifier_tests;
 mod star_lvalue;
 mod subscript_adverb;
 mod substitution;

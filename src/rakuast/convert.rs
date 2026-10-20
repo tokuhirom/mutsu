@@ -16,6 +16,7 @@ use super::origin;
 use super::placeholder::{is_placeholder_name, placeholder_node};
 use super::routine_source::return_type_spelling;
 pub(super) use super::routine_source::routine_node;
+use super::source_identifier::{named_routine_call, written_identifier, written_variable};
 use super::{
     RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, bareword, decl_traits,
     hash_literal, name_parts, routine_traits, subscript_adverb,
@@ -3155,6 +3156,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `<a b  c>`: rakudo keeps the raw text of a word list, whitespace
         // included, as one word-quote (ADR-12199).
         Expr::Spelled(spelled) => match &spelled.spelling {
+            Spelling::SourceIdentifier => written_identifier(&spelled.expr),
             Spelling::ArraySections(sections) => {
                 let fields = sections
                     .iter()
@@ -3381,12 +3383,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     fields,
                 });
             }
-            let mut node = call_name(name.as_str(), args, listop)?;
-            if matches!(expr, Expr::UserRoutineCall { .. }) {
-                node.fields
-                    .push(super::declared_routines::user_call_field());
-            }
-            Ok(node)
+            named_routine_call(expr, name.as_str(), args, listop)
         }
         Expr::Var(name) => {
             if let Some(capture) = super::match_vars::convert_positional(name) {
@@ -6611,43 +6608,7 @@ pub(super) fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
     {
         return anonymous_declaration(Some("state"), sigil, None);
     }
-    // A `$!x` private attribute is a `Var::Attribute` of the whole spelling; a
-    // `$.x` public one a `Var::Attribute::Public` whose `name` is the whole
-    // spelling too (measured on 2026.09).
-    if name.len() > 1 && name.starts_with('!') {
-        return RakuAstNode {
-            class: RakuAstClass::VarAttribute,
-            fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
-        };
-    }
-    if name.len() > 1 && name.starts_with('.') {
-        return RakuAstNode {
-            class: RakuAstClass::VarAttributePublic,
-            fields: vec![leaf_field(
-                Some("name"),
-                Value::str(format!("{sigil}{name}")),
-            )],
-        };
-    }
-    if name.len() > 1 && name.starts_with('*') {
-        return RakuAstNode {
-            class: RakuAstClass::VarDynamic,
-            fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
-        };
-    }
-    if name_parts::is_qualified_identifier(name) {
-        return RakuAstNode {
-            class: RakuAstClass::VarPackage,
-            fields: vec![
-                node_field(Some("name"), name_parts::qualified_name(name)),
-                leaf_field(Some("sigil"), Value::str(sigil.to_string())),
-            ],
-        };
-    }
-    RakuAstNode {
-        class: RakuAstClass::VarLexical,
-        fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
-    }
+    written_variable(sigil, name)
 }
 
 /// `Infix`/`Prefix` — a single positional operator string (e.g. `Infix.new("+")`).
@@ -7029,7 +6990,7 @@ fn listop_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, Runtime
     call_name(name, args, true)
 }
 
-fn call_name(
+pub(super) fn call_name(
     name: &str,
     args: &[Expr],
     without_parentheses: bool,
