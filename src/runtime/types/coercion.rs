@@ -494,6 +494,31 @@ impl Interpreter {
                 value
             };
             let resolved_target = self.resolve_constraint_alias(target);
+            // A subset target (`my subset S of N where ...; my S() $x`)
+            // coerces to its refinee and then checks the refinement, as
+            // Rakudo's coercion protocol does: a value already in the subset
+            // stays, any other goes through the refinee's own coercion
+            // (`N.COERCE`), and a result outside the subset is impossible.
+            let subset_base = self
+                .registry()
+                .subsets
+                .get(&*resolved_target)
+                .map(|subset| subset.base.clone());
+            if let Some(base) = subset_base
+                && base != *resolved_target
+            {
+                if self.type_matches_value(&resolved_target, &intermediate) {
+                    return Ok(intermediate);
+                }
+                let coerced = self.try_coerce_value_for_constraint(
+                    &format!("{base}()"),
+                    intermediate.clone(),
+                )?;
+                if self.type_matches_value(&resolved_target, &coerced) {
+                    return Ok(coerced);
+                }
+                return Err(coerce_impossible_error(target, &intermediate));
+            }
             // Rakudo runs a user target's `COERCE`/`new` with `$*COERCION-TYPE`
             // bound to the coercion type itself (`C1(Any)`, not `C1`) — roast
             // `S12-coercion/coercion-methods.t`. Builtin targets (`Bool(Mu)`,
