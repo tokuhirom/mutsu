@@ -5,7 +5,10 @@ use crate::symbol::Symbol;
 /// The generated callable is transparent for lexical scoping, while explicit
 /// source closures/blocks remain boundaries of their own.
 // Cost: O(n), n = size of `body` outside nested scopes.
-pub(super) fn collect_whatever_expr_decls(body: &[Stmt], out: &mut std::collections::HashSet<String>) {
+pub(super) fn collect_whatever_expr_decls(
+    body: &[Stmt],
+    out: &mut std::collections::HashSet<String>,
+) {
     struct DeclScan<'a> {
         out: &'a mut std::collections::HashSet<String>,
     }
