@@ -7160,7 +7160,7 @@ impl Interpreter {
             }
 
             // -- Block scope --
-            // Cost: O(R) plus the body, R = routine-registry entries snapshotted and diffed (see exec_routine_scope_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(1) plus the body in the steady state of a repeated call; O(R) on a first run or a memo miss, R = routine-registry entries (see restore_routine_registry_impl). Rakudo: O(1) -- see #9170.
             OpCode::RoutineScope { body_end } => {
                 self.exec_routine_scope_op(code, *body_end, ip, compiled_fns)?;
             }

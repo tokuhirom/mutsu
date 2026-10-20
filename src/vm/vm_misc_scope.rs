@@ -499,8 +499,10 @@ impl Interpreter {
     /// Run `[ip+1..body_end)` with the routine registry saved and restored, so a
     /// `sub` declared inside stops being callable when the range ends. See
     /// `OpCode::RoutineScope`.
-    // Cost: O(R) per execution plus the body, R = routine-registry entries (our-scoped
-    // subs, tokens, import aliases) snapshotted and diffed. Rakudo: O(1) -- see #9170.
+    // Cost: O(1) per execution plus the body when the body declares no routine, and
+    // in the steady state of a repeated call that does (see
+    // `restore_routine_registry_impl`); O(R) on a first run or a memo miss, R =
+    // routine-registry entries. Rakudo: O(1) -- see #9170.
     pub(super) fn exec_routine_scope_op(
         &mut self,
         code: &CompiledCode,
