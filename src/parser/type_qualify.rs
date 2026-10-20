@@ -435,9 +435,8 @@ impl VisitMut for Qualify<'_> {
     }
 
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
-        match expr {
-            Expr::AnonSubParams { return_type, .. } => self.qualify_opt(return_type),
-            _ => {}
+        if let Expr::AnonSubParams { return_type, .. } = expr {
+            self.qualify_opt(return_type);
         }
         walk_expr_mut(self, expr);
     }
