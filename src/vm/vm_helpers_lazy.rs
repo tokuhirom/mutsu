@@ -627,19 +627,17 @@ impl Interpreter {
             return Ok(Value::seq_body(fresh));
         }
         // `.lazy`, `.map`, `.grep` and `.first` on a plain gather consume the
-        // Seq, as Rakudo's do, and stream its coroutine: hand the inner gather list on
-        // to the `LazyList` paths that drive it (ADR-11678 §2.3).
+        // Seq, as Rakudo's do, and stream it: the `LazyList` paths drive a
+        // pipe that pulls the Seq one element at a time (ADR-11678 §2.3). On a
+        // cached Seq `.map`/`.grep`/`.first` pipe over it, leaving it readable.
         if matches!(method, "lazy" | "map" | "grep" | "first")
-            && let Some(list) = body.take_gather_source()
+            && body.is_gather_source()
+            && (method != "lazy" || body.shared_gather_source().is_none())
         {
-            return Ok(list);
-        }
-        // ... and on a cached one they pipe over the shared coroutine list,
-        // leaving the Seq readable.
-        if matches!(method, "map" | "grep" | "first")
-            && let Some(list) = body.shared_gather_source()
-        {
-            return Ok(list);
+            let stream = self.gather_stream(target.clone());
+            if matches!(stream.view(), ValueView::LazyList(_)) {
+                return Ok(stream);
+            }
         }
         // `.map`/`.grep` on a not-yet-run `.map`/`.grep` Seq chains onto its
         // source (`MapGrepItems::Chain`, #11176) instead of running the
@@ -777,11 +775,11 @@ impl Interpreter {
             }
             // A plain gather: the iterator resumes the coroutine per
             // `pull-one` (ADR-11678 §2.4).
-            if let Some(list) = body
-                .take_gather_source()
-                .or_else(|| body.shared_gather_source())
-            {
-                return self.dispatch_iterator_method(list);
+            if body.is_gather_source() {
+                let stream = self.gather_stream(target.clone());
+                if matches!(stream.view(), ValueView::LazyList(_)) {
+                    return self.dispatch_iterator_method(stream);
+                }
             }
             // A not-yet-finished `.map`/`.grep`: the iterator streams the
             // source, running the callback once per element it hands out

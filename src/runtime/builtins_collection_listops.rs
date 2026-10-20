@@ -371,9 +371,9 @@ impl Interpreter {
                     self.touch_flat_operand(item)?;
                 }
             }
-            // A plain gather argument arrives as its coroutine list (ADR-11678):
-            // run it, and touch the gathers it took.
-            ValueView::LazyList(list) if list.is_gather_coroutine() && !list.is_genuinely_lazy() => {
+            // A plain gather argument arrives as a pipe over its Seq
+            // (ADR-11678): run it, and touch the gathers it took.
+            ValueView::LazyList(list) if list.seq_stream_source().is_some() => {
                 for item in &self.force_lazy_list_vm(&list)? {
                     self.touch_flat_operand(item)?;
                 }
@@ -384,14 +384,13 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_flat(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // A plain gather's coroutine list is flattened as it is pulled
-        // (ADR-11678), so an infinite gather works.
+        // A plain gather (streamed to `flat` as a pipe over its Seq) is
+        // flattened as it is pulled (ADR-11678), so an infinite gather works.
         if let [arg] = args
             && let ValueView::LazyList(ll) = arg.view()
-            && ll.is_gather_coroutine()
-            && !ll.is_genuinely_lazy()
+            && let Some(seq) = ll.seq_stream_source()
         {
-            return Ok(Self::lazy_flat_gather(arg.clone()));
+            return Ok(Self::lazy_flat_gather(seq));
         }
         for arg in args {
             // The sole operand is un-itemized before it is flattened (see

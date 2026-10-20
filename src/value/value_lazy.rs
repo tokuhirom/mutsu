@@ -250,6 +250,22 @@ impl LazyList {
             && self.lazy_pipe.is_none()
     }
 
+    /// The Seq a stream pipe ([`LazyList::new_stream_pipe`]) hands through,
+    /// as `Interpreter::gather_stream` builds one over a gather: a pipe with
+    /// no callback, no adaptor and the `Identity` transform, over a `Seq`.
+    /// `None` for every other list.
+    // Cost: O(1), one lock read.
+    pub(crate) fn seq_stream_source(&self) -> Option<Value> {
+        let spec = self.lazy_pipe.as_ref()?;
+        let spec = spec.lock().unwrap_or_else(|e| e.into_inner());
+        (matches!(spec.index_transform, Some(IndexTransform::Identity))
+            && spec.adaptor.is_none()
+            && spec.source_idx == 0
+            && spec.source.is_seq_value()
+            && !self.is_lazy_marked())
+        .then(|| spec.source.clone())
+    }
+
     /// Whether this list's gather coroutine has run to completion.
     // Cost: O(1), one lock read.
     pub(crate) fn gather_finished(&self) -> bool {

@@ -41,23 +41,45 @@ impl Interpreter {
     }
 
     /// An operand a consumer reads by streaming a `LazyList` (the zip and
-    /// cross metaoperators): a plain gather `Seq` is handed over as its inner
-    /// coroutine list, which those consumers already pull on demand. The
-    /// consumer consumes the Seq, as Rakudo's iterating operators do
-    /// ([`crate::value::SeqBody::take_gather_source`]); a cached Seq shares
-    /// its list instead. Every other value is returned unchanged.
+    /// cross metaoperators, a triangle reduction, `.map`/`.grep`/`.first`/
+    /// `.lazy`, the streaming builtin routines): a plain gather `Seq` becomes
+    /// a pipe that pulls it one element at a time, which those consumers
+    /// already drive on demand. An uncached Seq is consumed, as Rakudo's
+    /// iterating operators consume it: its coroutine moves into a fresh body
+    /// only the pipe can reach. A cached Seq stays readable: the pipe reads
+    /// through it. Either way the coroutine list itself stays inside the
+    /// Seq's adapter (ADR-11678 §2.2 invariant 1). Every other value is
+    /// returned unchanged.
+    // Cost: O(1); each element is pulled through the body when the pipe
+    // reads it, O(1) amortized (`SeqBody::extend_gather_prefix`).
+    pub(crate) fn gather_stream(&self, value: Value) -> Value {
+        match Self::gather_stream_source(&value) {
+            Some(source) => Value::lazy_list(crate::gc::Gc::new(
+                crate::value::LazyList::new_stream_pipe(source),
+            )),
+            None => value,
+        }
+    }
+
+    /// The Seq a [`Self::gather_stream`] pipe pulls: a fresh body that took
+    /// over an uncached gather's coroutine (leaving `value` consumed), or a
+    /// cached gather `value` itself. `None` for every other value.
     // Cost: O(1).
-    pub(crate) fn gather_operand(&self, value: Value) -> Value {
+    fn gather_stream_source(value: &Value) -> Option<Value> {
         if !value.is_seq_value() {
-            return value;
+            return None;
         }
-        match value.view() {
-            ValueView::Seq(body) => body
-                .take_gather_source()
-                .or_else(|| body.shared_gather_source())
-                .unwrap_or(value),
-            _ => value,
+        let ValueView::Seq(body) = value.view() else {
+            return None;
+        };
+        if let Some(list) = body.take_gather_source() {
+            let fresh = crate::value::SeqBody::deferred(crate::value::SeqSource::Gather(list));
+            // The pipe re-reads earlier elements (an overlapping `rotor`, a
+            // cross product's inner operand), so the private body keeps them.
+            fresh.mark_cache_requested();
+            return Some(Value::seq_body(fresh));
         }
+        body.shared_gather_source().map(|_| value.clone())
     }
 
     /// The operand of a reduction `[op] value`, read as
@@ -91,8 +113,8 @@ impl Interpreter {
     /// raise `X::Seq::Consumed`) and a consumed one raises at once. A plain
     /// gather is pulled whole through its body like any other Seq, so the
     /// inner coroutine list stays private (ADR-11678 §2.2), unless `stream`
-    /// is set: then it is handed over as its coroutine list through
-    /// [`Self::gather_operand`] (consuming the Seq), for the consumers that
+    /// is set: then it is handed over as a pipe that pulls it, through
+    /// [`Self::gather_stream`] (consuming the Seq), for the consumers that
     /// pull an infinite gather on demand. A lazy non-gather Seq
     /// (`Seq.new($iterator)`) and every non-`Seq` value are returned
     /// unchanged, for the lazy paths below. A `$`-itemized Seq is iterated
@@ -114,7 +136,7 @@ impl Interpreter {
         }
         if body.is_gather_source() {
             if stream {
-                return Ok(self.gather_operand(value));
+                return Ok(self.gather_stream(value));
             }
         } else if body.is_lazy() {
             return Ok(value);
@@ -146,9 +168,9 @@ impl Interpreter {
         }
     }
 
-    /// `flat` over a gather's coroutine list (the §8.2 Stream class hands
-    /// `flat` the stolen list): a `Seq` that pulls the list one element at a
-    /// time and flattens each, descending into the nested Seqs and gathers it
+    /// `flat` over a streamed gather (the §8.2 Stream class hands `flat` the
+    /// pipe [`Self::gather_stream`] builds, `.flat` the Seq it pulls): a `Seq`
+    /// that pulls `list` one element at a time and flattens each, descending into the nested Seqs and gathers it
     /// took. Rakudo's `flat` reads its input lazily, so an infinite gather
     /// works (`flat(gather { loop {...} }).head(3)`), and the result is a
     /// plain Seq, not a lazy one. The flattening pipe stays inside the Seq's
@@ -161,7 +183,7 @@ impl Interpreter {
         )))
     }
 
-    /// `.flat` on a plain gather: the gather's coroutine list flattened as it
+    /// `.flat` on a plain gather: the gather's elements flattened as it
     /// is pulled ([`Self::lazy_flat_gather`]), consuming the Seq as Rakudo's
     /// `.flat` does (a cached one stays readable). `None` for every other
     /// call, which dispatches as usual.
@@ -175,8 +197,7 @@ impl Interpreter {
         if method != "flat" || !args.is_empty() || !Self::is_gather_seq(target) {
             return None;
         }
-        let list = self.gather_operand(target.clone());
-        matches!(list.view(), ValueView::LazyList(_)).then(|| Self::lazy_flat_gather(list))
+        Self::gather_stream_source(target).map(Self::lazy_flat_gather)
     }
 
     /// The arguments of builtin routine `name` with every plain gather `Seq`
@@ -271,7 +292,7 @@ impl Interpreter {
         let body = std::sync::Arc::clone(&body);
         match read {
             GatherRead::Pass => Ok(value),
-            GatherRead::Stream => Ok(self.gather_operand(value)),
+            GatherRead::Stream => Ok(self.gather_stream(value)),
 
             GatherRead::Consume => {
                 let (items, outcome) = self.take_seq_body(&body)?;
