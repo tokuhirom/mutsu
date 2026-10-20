@@ -435,20 +435,6 @@ impl Interpreter {
             return Ok(Value::package(Symbol::intern(&type_name)));
         }
 
-        // `Collation.set` writes the instance's shared cell, so every alias of
-        // the variable sees it (ADR-11276 §9.131).
-        if let Some(owners) = crate::builtins::method_table::collation_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
-        }
-
         // A receiver-mutating built-in method answered from its row
         // (ADR-11276 §9.23): `BagHash.add`/`remove` and the QuantHash mutators
         // (`SetHash.set`/`unset`, `.grab`, `.grabpairs`) write the shared node

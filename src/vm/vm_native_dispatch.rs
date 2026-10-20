@@ -489,27 +489,6 @@ impl Interpreter {
         // `substr-eq`) or declared on the method's rows; a name no row binds is
         // dropped (`method_table::implicit_named`).
         let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
-        // The table was asked with the named argument it does not declare
-        // (`255.fmt(:zzz)`), so it is asked again without it, behind the same
-        // veto: the method's arm is gone from the cascade.
-        if let Some(stripped) = stripped.as_deref()
-            && let Some(result) = crate::builtins::method_table::try_dispatch_in(
-                self,
-                |vm| {
-                    !vm.native_lever_a_user_override_sym(target, method_sym)
-                        && !crate::builtins::method_table::early_entry_defers(
-                            vm,
-                            target,
-                            method_sym.as_str(),
-                        )
-                },
-                target,
-                method_sym,
-                stripped,
-            )
-        {
-            return Some(result);
-        }
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
         // The pure `unique`/`repeated`/`squish` compare elements by `.WHICH`
         // and cannot run a user `WHICH`, so deposit it first
@@ -549,50 +528,6 @@ impl Interpreter {
         } else {
             return None;
         };
-
-        // For gather-based LazyList, .List and .values preserve laziness
-        // by returning the LazyList itself (which can be forced on demand).
-        if result.is_none()
-            && let ValueView::LazyList(ll) = target.view()
-            && ll.coroutine.is_some()
-            && matches!(method_name, "List" | "values")
-        {
-            return Some(Ok(target.clone()));
-        }
-
-        // `.Slip` on a not-yet-forced `gather` LazyList: its cache is empty, so
-        // the pure coercion above answered `Empty`; force the body here.
-        // TODO: rakudo keeps `(gather { ... }).Slip` lazy; an infinite gather
-        // is forced eagerly here and would hang.
-        if method_name == "Slip"
-            && args.is_empty()
-            && let ValueView::LazyList(ll) = target.view()
-            && ll.coroutine.is_some()
-            && ll.cache.lock().is_ok_and(|cache| cache.is_none())
-        {
-            return Some(self.force_lazy_list_vm(&ll).map(Value::slip));
-        }
-
-        // Handle .Slip/.List/.Seq on scan-based LazyList by forcing elements via Interpreter.
-        if result.is_none()
-            && let ValueView::LazyList(ll) = target.view()
-            && ll.scan_spec.is_some()
-            && matches!(method_name, "Slip" | "List" | "Seq" | "Array")
-        {
-            match self.force_lazy_list_vm(&ll) {
-                Ok(items) => {
-                    let val = match method_name {
-                        "Slip" => Value::slip(items),
-                        "List" => Value::array(items),
-                        "Seq" => Value::seq(items),
-                        "Array" => Value::real_array(items),
-                        _ => unreachable!(),
-                    };
-                    return Some(Ok(val));
-                }
-                Err(e) => return Some(Err(e)),
-            }
-        }
 
         // For Hash values with declared_type "Map", override gist/raku/perl
         // to use Map.new((...)) format instead of {...} format. (Method-name

@@ -113,9 +113,6 @@ pub(crate) enum MetaNs {
     /// `__mutsu_state_key::<name>` — the shared cell a `state` variable
     /// resolves to.
     State,
-    /// `__mutsu_bound_index::<name>` — an element of this container is itself
-    /// `:=`-bound, so an element store must not replace the container.
-    BoundIndex,
     /// `__mutsu_atomic_arr::<name>` — the cross-thread lane a shared `@a`
     /// resolves to in the shared store.
     AtomicArr,
@@ -133,9 +130,6 @@ pub(crate) enum MetaNs {
     /// `__mutsu_atomic_value::<id>` — the shared-store slot an atomic scalar's
     /// value lives in. Keyed by id, not by a variable name.
     AtomicValue,
-    /// `__mutsu_bound_array_slice::<name>` — the name is a genuine bound array
-    /// slice (`@slice := @a[1,2]`).
-    BoundArraySlice,
     /// `__mutsu_bound_decont::<name>` — a `$x := @a` scalar that must
     /// decontainerize on read.
     BoundDecont,
@@ -149,9 +143,6 @@ pub(crate) enum MetaNs {
     /// this module's GLOBAL into the scope (ADR-11136). Lives in the block's
     /// env tier, so it ends with the block and a closure keeps it.
     ModuleMerge,
-    /// `__mutsu_elem_share::<name>` — the set of this container's indices that
-    /// hold a shared cell an element store must write *through*.
-    ElemShare,
     /// `__mutsu_eval_role::<qualified-name>` — a role declared inside an `EVAL`
     /// with `my` scope.
     EvalRole,
@@ -272,19 +263,16 @@ impl MetaNs {
         MetaNs::Type,
         MetaNs::HashKeyType,
         MetaNs::State,
-        MetaNs::BoundIndex,
         MetaNs::AtomicArr,
         MetaNs::AtomicHash,
         MetaNs::CallableId,
         MetaNs::ArrayShare,
         MetaNs::AtomicName,
         MetaNs::AtomicValue,
-        MetaNs::BoundArraySlice,
         MetaNs::BoundDecont,
         MetaNs::Compunit,
         MetaNs::ConstantVar,
         MetaNs::ModuleMerge,
-        MetaNs::ElemShare,
         MetaNs::EvalRole,
         MetaNs::FfState,
         MetaNs::GatherSelfRef,
@@ -331,19 +319,16 @@ impl MetaNs {
             MetaNs::Type => crate::symbol::TYPE_META_PREFIX,
             MetaNs::HashKeyType => crate::symbol::HASH_KEY_META_PREFIX,
             MetaNs::State => "__mutsu_state_key::",
-            MetaNs::BoundIndex => "__mutsu_bound_index::",
             MetaNs::AtomicArr => "__mutsu_atomic_arr::",
             MetaNs::AtomicHash => "__mutsu_atomic_hash::",
             MetaNs::CallableId => "__mutsu_callable_id::",
             MetaNs::ArrayShare => "__mutsu_array_share::",
             MetaNs::AtomicName => "__mutsu_atomic_name::",
             MetaNs::AtomicValue => "__mutsu_atomic_value::",
-            MetaNs::BoundArraySlice => "__mutsu_bound_array_slice::",
             MetaNs::BoundDecont => "__mutsu_bound_decont::",
             MetaNs::Compunit => "__mutsu_compunit::",
             MetaNs::ConstantVar => "__mutsu_constant_var::",
             MetaNs::ModuleMerge => "__mutsu_module_merge::",
-            MetaNs::ElemShare => "__mutsu_elem_share::",
             MetaNs::EvalRole => "__mutsu_eval_role::",
             MetaNs::FfState => "__mutsu_ff_state::",
             MetaNs::GatherSelfRef => "__mutsu_gather_self_ref::",
@@ -570,12 +555,12 @@ mod tests {
     #[test]
     fn the_memo_returns_the_same_symbol_and_namespaces_do_not_collide() {
         let name = Symbol::intern("%h");
-        assert_eq!(MetaNs::BoundIndex.key(name), MetaNs::BoundIndex.key(name));
+        assert_eq!(MetaNs::Type.key(name), MetaNs::Type.key(name));
         assert_ne!(
-            MetaNs::BoundIndex.key(name),
-            MetaNs::BoundArraySlice.key(name),
+            MetaNs::Type.key(name),
+            MetaNs::HashKeyType.key(name),
             "the memo is keyed by (namespace, name); a name-only key would \
-             hand `__mutsu_bound_array_slice::` the `__mutsu_bound_index::` entry"
+             hand `__mutsu_hash_key_type::` the `__mutsu_type::` entry"
         );
     }
 
@@ -596,17 +581,14 @@ mod tests {
             (MetaNs::Type, "__mutsu_type::@a"),
             (MetaNs::HashKeyType, "__mutsu_hash_key_type::@a"),
             (MetaNs::State, "__mutsu_state_key::@a"),
-            (MetaNs::BoundIndex, "__mutsu_bound_index::@a"),
             (MetaNs::AtomicArr, "__mutsu_atomic_arr::@a"),
             (MetaNs::AtomicHash, "__mutsu_atomic_hash::@a"),
             (MetaNs::ArrayShare, "__mutsu_array_share::@a"),
             (MetaNs::AtomicName, "__mutsu_atomic_name::@a"),
             (MetaNs::AtomicValue, "__mutsu_atomic_value::@a"),
-            (MetaNs::BoundArraySlice, "__mutsu_bound_array_slice::@a"),
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
             (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
-            (MetaNs::ElemShare, "__mutsu_elem_share::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),
             (MetaNs::GatherSelfRef, "__mutsu_gather_self_ref::@a"),
             (MetaNs::MethodValue, "__mutsu_method_value::@a"),
@@ -760,10 +742,9 @@ mod tests {
             );
             assert!(seen.insert(p), "{ns:?} duplicates another prefix");
         }
-        // No prefix may be a prefix of another: `__mutsu_bound_index::` vs
-        // `__mutsu_bound_array_slice::`, `__mutsu_role__` vs `__mutsu_role_seq__`,
-        // `__mutsu_attr__` vs `__mutsu_attr_trait__` all come within one
-        // character of colliding. `MixinOverrides::seed_missing_attributes`
+        // No prefix may be a prefix of another: `__mutsu_role__` vs
+        // `__mutsu_role_seq__`, `__mutsu_attr__` vs `__mutsu_attr_trait__` all
+        // come within one character of colliding. `MixinOverrides::seed_missing_attributes`
         // really does enumerate the registry with `strip_prefix`, so an
         // ambiguous table there would hand one namespace another's entries.
         for &a in MetaNs::ALL {

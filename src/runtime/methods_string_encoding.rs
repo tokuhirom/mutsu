@@ -1,6 +1,40 @@
 use super::*;
 
 impl Interpreter {
+    /// Shared replacement policy for `Str.encode` and builtin encoders.
+    pub(super) fn encoding_replacement(value: Option<&Value>) -> Option<String> {
+        match value.map(Value::view) {
+            Some(ValueView::Bool(false)) | None => None,
+            Some(ValueView::Bool(true)) => Some("?".to_string()),
+            _ => value.map(Value::to_string_value),
+        }
+    }
+
+    /// Encode to a buffer whose element width matches the encoding's contract.
+    // Cost: O(n + p + r), n = input bytes, p = replacement bytes, r = output bytes.
+    pub(crate) fn encode_string_buffer(
+        &self,
+        input: &str,
+        encoding: &str,
+        replacement: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        let encoding = self
+            .find_encoding(encoding)
+            .map(|e| e.name.as_str())
+            .unwrap_or(encoding)
+            .to_lowercase();
+        let class = match encoding.as_str() {
+            "utf16" | "utf-16" => "utf16",
+            "utf8" | "utf-8" => "utf8",
+            _ => "Blob[uint8]",
+        };
+        let bytes = self.encode_with_encoding_and_replacement(input, &encoding, replacement)?;
+        Ok(crate::value::value_buf::make_buf_from_raw_bytes(
+            Symbol::intern(class),
+            bytes,
+        ))
+    }
+
     pub(super) fn translate_newlines_for_encode(&self, input: &str) -> String {
         match self.io.newline_mode {
             NewlineMode::Lf => input.to_string(),
@@ -30,6 +64,19 @@ impl Interpreter {
             .to_lowercase();
 
         if let Some(repl) = replacement {
+            // Unicode encodings represent every input character; encoding_rs
+            // deliberately encodes UTF-16 labels as UTF-8, so do not send the
+            // UTF-16 replacement path through its encoder.
+            if matches!(
+                encoding.as_str(),
+                "utf8" | "utf-8" | "utf8-c8" | "utf16" | "utf-16"
+                    | "utf16le" | "utf-16le" | "utf16be" | "utf-16be"
+            ) {
+                return self.encode_with_encoding(input, &encoding);
+            }
+            // A replacement is text in the target codec, and must itself be
+            // encodable, even when the input needs no replacement.
+            let repl_encoded = self.encode_with_encoding(repl, &encoding)?;
             match encoding.as_str() {
                 "ascii" => {
                     return Ok(input
@@ -38,7 +85,7 @@ impl Interpreter {
                             if (ch as u32) <= 0x7F {
                                 vec![ch as u8]
                             } else {
-                                repl.as_bytes().to_vec()
+                                repl_encoded.clone()
                             }
                         })
                         .collect());
@@ -50,18 +97,13 @@ impl Interpreter {
                             if (ch as u32) <= 0xFF {
                                 vec![ch as u8]
                             } else {
-                                repl.as_bytes().to_vec()
+                                repl_encoded.clone()
                             }
                         })
                         .collect());
                 }
                 _ => {
                     if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
-                        // Pre-encode the replacement string in the target encoding
-                        let repl_encoded = {
-                            let (enc_bytes, _, _) = enc.encode(repl);
-                            enc_bytes.into_owned()
-                        };
                         let mut result = Vec::new();
                         for ch in input.chars() {
                             let s = ch.to_string();

@@ -154,10 +154,11 @@ verify it is deconted there (a complement of the same shape as the `deref_contai
      The compiler (`element_share_bind_value` in `compiler/expr_closure.rs`) detects `@var[single subscript] = @containervar`,
      wraps the RHS in `__mutsu_bind_index_value`, and compiles it to **the same bytecode as a bind** (the bind mechanism does
      the cell installation + source promotion as-is) + emits the new opcode `MarkElementShare`. The VM consumes
-     `element_share_pending` in `exec_index_assign_expr_named_op` and, after the store, sets an **element-keyed marker**
-     `__mutsu_elem_share::<var>` (a Hash of encoded-index; `mark_element_share`/`is_element_share`/`clear_element_share` —
-     the per-variable marker of scalar 2a extended to per-element). **The single difference between `=` and `:=` = replace vs
-     write-through on reassignment** is branched into replace via the `elem_is_value_share` gate at the 3 write-through
+     `element_share_pending` in `exec_index_assign_expr_named_op` and, after the store, re-tags the element's word as the
+     itemized `ContainerRef` flavour (`itemize_shared_element`). That word is the share mark (`Value::is_element_share_word`;
+     it replaced the name-keyed `__mutsu_elem_share::<var>` table in 2026-10, ADR-0097, so a later `:=` bind -- a plain
+     word -- clears it and `@a.push(@b)`, which stores the same word, is covered too). **The single difference between `=`
+     and `:=` = replace vs write-through on reassignment** is branched into replace via that word test at the 3 write-through
      chokepoints (array `arr[i]` cell branch = the old BLOCKER around line ~3836 / hash slow `hash_insert_through` / hash fast
      `try_fast_hash_element_assign` = bails on ContainerRef and sends to slow) (precompute happens before the container borrow,
      marker clear after the store).

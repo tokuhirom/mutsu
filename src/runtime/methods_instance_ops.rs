@@ -834,12 +834,10 @@ impl Interpreter {
                 return result;
             }
 
-            // `Attribute`'s, `Variable`'s and `Stash`'s methods are rows of the
-            // method table, found by their owner (ADR-11276 §9.121, §9.195,
-            // §9.198).
-            if let Some(owners) = crate::builtins::method_table::attribute_owners_of(&target)
-                .or_else(|| crate::builtins::method_table::variable_owners_of(&target))
-                .or_else(|| crate::builtins::method_table::stash_owners_of(&target))
+            // `Stash`'s methods are rows of the method table, found by their
+            // owner (ADR-11276 §9.198): a `Stash` has no dispatch shape, since
+            // a shape would hide its associative indexing from the hash paths.
+            if let Some(owners) = crate::builtins::method_table::stash_owners_of(&target)
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,

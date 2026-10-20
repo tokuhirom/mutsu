@@ -20,14 +20,6 @@ impl Interpreter {
             return Ok(false);
         }
         let indices = self.resolve_multidim_indices_for_assign(&target, dims)?;
-        let encoded = indices
-            .iter()
-            .map(Value::to_string_value)
-            .collect::<Vec<_>>()
-            .join(";");
-        if self.is_bound_index(var_name, &encoded) {
-            return Err(RuntimeError::assignment_ro(None));
-        }
         if crate::value::readonly_cells_possible()
             && let Some(bound) = Self::multidim_readonly_slot(&target, &indices)
         {
@@ -352,7 +344,7 @@ impl Interpreter {
                 .collect_multi_dim_leaf_cells(&deref_target, &dims, &mut cells)
                 .is_some()
             {
-                self.stack.push(Value::array(cells));
+                self.stack.push(Value::bound_slice_array(cells));
                 return Ok(());
             }
         } else if let Some(cell) = self.multi_dim_scalar_autoviv_cell(&target, &dims) {
@@ -1281,16 +1273,6 @@ impl Interpreter {
         // use the outermost length, not the inner container's).
         let target_val = self.env().get(&var_name).cloned().unwrap_or(Value::NIL);
         let resolved_dims = self.resolve_multidim_indices_for_assign(&target_val, &dims)?;
-
-        // Check if the index is bound (read-only)
-        let encoded_idx = resolved_dims
-            .iter()
-            .map(|d| d.to_string_value())
-            .collect::<Vec<_>>()
-            .join(";");
-        if self.is_bound_index(&var_name, &encoded_idx) {
-            return Err(RuntimeError::assignment_ro(None));
-        }
 
         // Check if target is a shaped array - use bounds-checked assignment.
         // The shape lives on the array itself (`ArrayData.shape`), so a

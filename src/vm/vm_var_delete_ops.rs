@@ -89,13 +89,12 @@ impl Interpreter {
     /// `var_name` does once the slots hold the hole marker, shared by the
     /// plain `:delete` and its adverb companions (`:v:delete`, #11320):
     /// drop the slots from the `initialized` set (which `:exists` reads,
-    /// through `ArrayData::hole_at` or a lazy array's `deleted_indices`) and
-    /// the bound-index set, and trim trailing holes.
+    /// through `ArrayData::hole_at` or a lazy array's `deleted_indices`), and
+    /// trim trailing holes.
     // Cost: O(k + n), k = addressed indices, n = array length (the first
     // delete materializes the `initialized` set; the trim walks the tail).
     pub(crate) fn finish_array_slot_delete(&mut self, var_name: &str, idx: &Value) {
         self.unmark_initialized_indices(var_name, idx);
-        self.unmark_bound_indices(var_name, idx);
         self.trim_trailing_array_holes(var_name);
     }
 

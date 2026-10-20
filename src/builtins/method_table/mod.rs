@@ -78,10 +78,7 @@ pub(crate) use collections::{
     range, render as collection_render, render_names as collection_render_names,
     rotate as collection_rotate, terminals,
 };
-pub(crate) use ctors_mop::attribute::owners_of as attribute_owners_of;
-pub(crate) use ctors_mop::variable::owners_of as variable_owners_of;
 pub(crate) use instances::code_methods::method_object_answer;
-pub(crate) use instances::collation::owners_of as collation_owners_of;
 pub(crate) use instances::compunit::owners_of as compunit_owners_of;
 pub(crate) use instances::enumeration::owners_of as enumeration_owners_of;
 pub(crate) use instances::hyper_seq::answers_as_itself as hyper_seq_answers_as_itself;

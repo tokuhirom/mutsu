@@ -176,6 +176,7 @@ impl ArrayData {
             initialized: None,
             descriptor_name: None,
             nqp_elem: NqpElemKind::Object,
+            bound_slice: false,
         }
     }
 
@@ -332,6 +333,8 @@ impl Clone for ArrayData {
             initialized: self.initialized.clone(),
             descriptor_name: self.descriptor_name.clone(),
             nqp_elem: self.nqp_elem,
+            // A clone is a new container, not the binding's: never inherit.
+            bound_slice: false,
         }
     }
 }
