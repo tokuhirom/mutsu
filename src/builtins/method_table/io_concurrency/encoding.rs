@@ -59,7 +59,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         "Encoding::Encoder::Builtin",
         "encode-chars",
         1,
-        Handler::Narrow(encode_chars)
+        Handler::Interp(encode_chars)
     ),
     row!(
         "Encoding::Decoder::Builtin",
@@ -198,13 +198,13 @@ fn decoder(_: &mut Interpreter, target: &Value, _: &[Value], named: Named<'_>) -
 }
 
 /// `Encoding::Encoder::Builtin.encode-chars($str)`.
-// Cost: O(n), n = bytes of the encoding.
-fn encode_chars(target: &Value, args: &[Value]) -> Answer {
+// Cost: O(n + p + r), n = input bytes, p = replacement bytes, r = output bytes.
+fn encode_chars(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_>) -> Answer {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
     let map = attributes.as_map();
-    Some(Interpreter::encode_chars(
+    Some(interp.encode_chars(
         &text(target, "encoding"),
         map.get("replacement"),
         &args[0].to_string_value(),

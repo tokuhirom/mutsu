@@ -1,9 +1,6 @@
 use super::*;
-use crate::symbol::Symbol;
 use crate::value::ValueView;
-use crate::value::value_buf::{
-    buf_bytes_or_empty, set_buf_bytes, set_buf_elems, with_buf_elems,
-};
+use crate::value::value_buf::{buf_bytes_or_empty, with_buf_elems};
 
 impl Interpreter {
     /// Interpreter-native `.encode` (a `Cool` scalar -> `Buf`) and `.decode`
@@ -175,8 +172,7 @@ impl Interpreter {
         }
     }
 
-    // Cost: O(n), n = chars of the invocant (optional normalization, then one
-    // encoding pass).
+    // Cost: O(n + p + r), n = input bytes, p = replacement bytes, r = output bytes.
     pub(crate) fn dispatch_encode(
         &mut self,
         target: &Value,
@@ -213,51 +209,15 @@ impl Interpreter {
         // stringified it to `"False"` and used THAT as the replacement text,
         // so `.encode('ascii', :!replacement)` silently substituted bytes
         // from "False" for every non-ASCII codepoint instead of throwing.
-        let replacement = match Self::named_value(args, "replacement") {
-            Some(v) if matches!(v.view(), ValueView::Bool(false)) => None,
-            Some(v) if matches!(v.view(), ValueView::Bool(true)) => Some("?".to_string()),
-            Some(v) => Some(v.to_string_value()),
-            None => None,
-        };
-        let normalized_encoding = self
-            .find_encoding(&encoding)
-            .map(|e| e.name.as_str().to_lowercase())
-            .unwrap_or_else(|| encoding.to_lowercase());
+        let replacement_value = Self::named_value(args, "replacement");
+        let replacement = Self::encoding_replacement(replacement_value.as_ref());
         let raw_input = target.to_string_value();
         let input = match positionals.get(1).map(|v| v.to_string_value()) {
             Some(nf) => Self::normalize_for_encode(&raw_input, &nf),
             None => raw_input,
         };
         let translated = self.translate_newlines_for_encode(&input);
-        // The class has to be settled before the storage is: it is what says
-        // how wide an element is (`utf16` holds 16-bit code units, the rest
-        // bytes), and the storage now carries that width rather than
-        // re-deriving it from the name on every read.
-        let is_utf16 = matches!(normalized_encoding.as_str(), "utf-16" | "utf16");
-        let type_name = if is_utf16 {
-            "utf16"
-        } else if matches!(normalized_encoding.as_str(), "utf-8" | "utf8") {
-            "utf8"
-        } else {
-            "Blob[uint8]"
-        };
-        let class_sym = Symbol::intern(type_name);
-        let mut attrs = crate::value::AttrMap::new();
-        if is_utf16 {
-            let units: Vec<Value> = translated
-                .encode_utf16()
-                .map(|u| Value::int(u as i64))
-                .collect();
-            set_buf_elems(&mut attrs, class_sym, units);
-        } else {
-            let bytes = self.encode_with_encoding_and_replacement(
-                &translated,
-                &encoding,
-                replacement.as_deref(),
-            )?;
-            set_buf_bytes(&mut attrs, class_sym, &bytes);
-        }
-        Ok(Value::make_instance(class_sym, attrs))
+        self.encode_string_buffer(&translated, &encoding, replacement.as_deref())
     }
 
     pub(super) fn dispatch_decode(
