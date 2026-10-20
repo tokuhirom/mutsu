@@ -11,7 +11,7 @@ impl Interpreter {
     /// Deliberately an ALLOWLIST, and the conservative direction is to mark
     /// LESS: anything container-like or written-through (`ContainerRef`,
     /// `Proxy` STORE, a deferred `HashEntryRef` bind, an `is raw` result, a
-    /// real `Array`/`Hash`, an instance with rw attributes) must stay writable,
+    /// real `Array`/`Hash`) must stay writable,
     /// and an overlooked kind here turns into a hard runtime error.
     ///
     /// Two families qualify. A pure immutable SCALAR is bound to the value
@@ -21,7 +21,8 @@ impl Interpreter {
     /// rakudo's scalar assignment needs one: `my $x := (1, 2, 3); $x = 5` dies
     /// exactly like `my $x := 5` does. (`@`/`%` targets never reach here; they
     /// alias the whole container and `@a = ...` is a STORE, not an assignment
-    /// into a Scalar.) The `IterationEnd` sentinel is a third, singleton case.
+    /// into a Scalar.) An object is also a value: its attributes can remain
+    /// mutable while the directly bound name cannot replace the object.
     fn bind_source_has_no_container(v: &Value) -> bool {
         match v.view() {
             ValueView::Int(_)
@@ -42,10 +43,7 @@ impl Interpreter {
             | ValueView::LazyList(_)
             | ValueView::Slip(_) => true,
             ValueView::Array(_, kind) => kind.is_immutable_list(),
-            // The `IterationEnd` sentinel is an attribute-less `Mu` object:
-            // `$p := IterationEnd` binds the object itself, so `$p =:=
-            // IterationEnd` holds and `$p = 5` dies as in rakudo.
-            ValueView::Instance { id, .. } => id == crate::value::ITERATION_END_ID,
+            ValueView::Instance { .. } => true,
             _ => false,
         }
     }
@@ -125,7 +123,7 @@ impl Interpreter {
             | ValueView::Rat(..)
             | ValueView::Complex(..)
             | ValueView::Package(_) => true,
-            ValueView::Instance { id, .. } => id == crate::value::ITERATION_END_ID,
+            ValueView::Instance { .. } => true,
             _ => false,
         }
     }
