@@ -1372,7 +1372,9 @@ impl Interpreter {
                 if let ValueView::Array(keys, ..) = index.view() {
                     for k in keys.iter() {
                         if !key_unconstrained && !self.type_matches_value(&key_type, k) {
-                            return Err(self.typecheck_binding_parameter_failure("key", &key_type, k));
+                            return Err(
+                                self.typecheck_binding_parameter_failure("key", &key_type, k)
+                            );
                         }
                     }
                     let default = self.typed_container_default(&hash_val);

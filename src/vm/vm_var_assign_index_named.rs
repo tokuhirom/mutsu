@@ -5826,10 +5826,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 let idx = if let Some(constraint) = arc.key_type.clone() {
-                    loan_env!(
-                        self,
-                        prepare_object_hash_key(&constraint, idx.clone())
-                    )?
+                    loan_env!(self, prepare_object_hash_key(&constraint, idx.clone()))?
                 } else {
                     idx.clone()
                 };
