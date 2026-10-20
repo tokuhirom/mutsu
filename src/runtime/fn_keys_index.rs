@@ -199,8 +199,8 @@ impl Interpreter {
     /// (`qualified_tail_index::names_ending_in`) and the unqualified keys the
     /// index recorded for `base`, rather than a pass over the functions map,
     /// or `None` when the tail index cannot be trusted to list them all: a
-    /// base name spelled with `/` or `::` (the tail index cuts a member at its
-    /// first `/` and records no member holding `::`).
+    /// base name spelled with `/` or `::` anywhere (the tail index cuts a
+    /// member at its first `/` and records no member holding `::`).
     ///
     /// An unqualified key reaches the record the way every key change reaches
     /// the index: its eviction names it (a family rewrite names one key of the
@@ -210,7 +210,10 @@ impl Interpreter {
     // unqualified keys recorded for `base` (each probed once in the functions
     // map), independent of the registry's size.
     fn fn_keys_from_tail_index(&mut self, base: &'static str) -> Option<Arc<[Symbol]>> {
-        if base.is_empty() || base.contains('/') || crate::qualified::is_qualified_str(base) {
+        // `contains("::")`, not `is_qualified_str`: a categorical's bracket
+        // group can hold `::` (`term:<Foo::Baz>`) without qualifying it, and
+        // the tail index records no such member either.
+        if base.is_empty() || base.contains('/') || base.contains("::") {
             return None;
         }
         let index = &mut self.dispatch.fn_keys_index;
