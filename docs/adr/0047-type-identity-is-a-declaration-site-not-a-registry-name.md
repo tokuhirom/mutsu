@@ -272,6 +272,26 @@ Each phase is independently landable and independently verifiable.
   is *necessary but not sufficient*: the compiled path has a separate, un-root-caused
   async regression (see the todo file named in S4).
 
+## Role-body signature and alias bindings (#14085, 2026-10-20)
+
+A nested lexical role's declaration-site key must survive into its users'
+stored signatures. Multi subs now resolve nominal parameter names against
+their declaring package, as ordinary subs already did. After a role's eager
+nested declarations register, its current candidate's method signatures also
+resolve those keys; generic role parameters remain symbolic for composition.
+
+Role-owned type-only bindings are persisted alongside body statics without
+boxing them as scalar variables. Eager declaration and class composition
+restore the temporary source-name aliases after saving the owning scope's
+bindings. A same-named scalar stays a separate writable container.
+
+Type-only reads use the running frame, its eligible declaring capture and
+its static outer, rather than intervening callers (ADR-12529). This applies
+even while the argument binder temporarily relaxes ordinary env lookup.
+The regression pins recursive multi dispatch, signature introspection,
+parameterizations, distinct declaration sites, caller shadows and local role
+parents in `t/oo/role/local-role-parameter-identity.t`.
+
 P1 and P2 were landed even though P3 is deferred: S2 is a silent wrong answer
 and does not involve `subtest` at all.
 

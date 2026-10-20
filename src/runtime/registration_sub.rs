@@ -1168,8 +1168,8 @@ impl Interpreter {
                 }
             }
         }
-        // Type aliases, as for the return type above. A multi keeps its
-        // spellings for the reason given in the loop above.
+        // Type aliases, as for the return type above. Multi candidates retain
+        // their existing alias-spelling registration behavior.
         if !multi
             && resolve_aliases
             && let Some(defs) = self.canonical_signature_param_types(&effective_param_defs)

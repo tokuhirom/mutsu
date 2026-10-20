@@ -7,7 +7,8 @@ use super::*;
 impl Interpreter {
     /// Fix the current candidate's nominal signature types while its nested
     /// declarations are known, as class method registration already does.
-    // Cost: O(p * d), p = signature types, d = declaring package depth.
+    // Cost: O(s + p * d), s = method metadata/retained AST size,
+    // p = signature types, d = declaring package depth.
     pub(crate) fn resolve_role_signature_types(
         &mut self,
         owner: &str,
