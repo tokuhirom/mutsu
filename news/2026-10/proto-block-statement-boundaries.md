@@ -7,3 +7,6 @@ mistaking embedded-comment text for a separator.
 
 Fatal syntax errors inside proto bodies now remain errors instead of being
 discarded by the raw-body recovery path.
+
+The regex engine's proto-dispatch corpus uses explicit declaration separators
+so that its syntax and expected output are also valid under Rakudo.
