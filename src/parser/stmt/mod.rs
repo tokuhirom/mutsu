@@ -11,6 +11,7 @@ mod modifier_tail;
 mod pub_shims;
 pub(super) mod simple;
 pub(crate) mod simple_expr_stmt;
+mod statement_boundary;
 mod stmtlist;
 pub(crate) mod sub;
 pub(crate) mod sub_param;

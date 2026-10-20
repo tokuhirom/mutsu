@@ -5,6 +5,9 @@
 //! and best-effort partial parsing for module loading. Re-exported from
 //! `mod.rs` at their original visibility.
 
+use super::statement_boundary::{
+    has_statement_separator, is_block_ending_stmt, routine_decl_continuation_follows,
+};
 use super::unit_use_hoist::hoist_unit_uses;
 use super::*;
 use crate::parser::parse_result::PError;
@@ -279,79 +282,6 @@ fn skip_to_next_statement(input: &str) -> Option<&str> {
     None
 }
 
-/// Check if a statement ends with a block (closing `}`).
-/// These "statement-ending blocks" can omit the semicolon only if followed
-/// by a newline, semicolon, closing brace, comma, or end-of-input.
-fn is_block_ending_stmt(stmt: &Stmt) -> bool {
-    match stmt {
-        // Sub declarations only count if they have a body (not forward declarations).
-        // sub_decl does NOT call parse_statement_modifier, so trailing separators
-        // remain in the rest for us to check.
-        Stmt::SubDecl { body, .. } => !body.is_empty(),
-        // `when`/`default` block statements take a `{...}` body and, unlike
-        // `if`/`for`/etc., are not followed by any same-line continuation
-        // keyword (no `else`/`elsif`) and do not consume trailing statement
-        // modifiers. So `when 1 { } when 2 { }` on one line (no `;`) is a
-        // "Strange text after block" error in Raku, matching `given $x { ... }`.
-        Stmt::When { .. } | Stmt::Default(_) => true,
-        // A direct method declaration ends with its body. Lexical and
-        // package-qualified methods are excluded because `my_decl` parses their
-        // trailing statement modifier before returning them here. The `is_my`
-        // flag also marks direct submethods, which the declaration parser handles
-        // without `my_decl`.
-        Stmt::MethodDecl {
-            is_my: false,
-            is_our: false,
-            ..
-        }
-        | Stmt::MethodDecl {
-            is_submethod: true,
-            is_our: false,
-            ..
-        } => true,
-        // Stmt::Block, Stmt::If, Stmt::For, ClassDecl, RoleDecl, Package, etc. are
-        // also excluded for similar reasons -- they may go through paths that consume
-        // trailing separators before returning to stmt_list_with_mode.
-        _ => false,
-    }
-}
-
-/// A method declaration's value can itself be followed by a postfix on the
-/// same line (for example, the `}.list` in a class body).
-fn method_decl_postfix_follows(stmt: &Stmt, rest: &str) -> bool {
-    matches!(
-        stmt,
-        Stmt::MethodDecl {
-            is_my: false,
-            is_our: false,
-            ..
-        } | Stmt::MethodDecl {
-            is_submethod: true,
-            is_our: false,
-            ..
-        }
-    ) && rest.starts_with('.')
-}
-
-/// Check that the remaining input has a proper statement separator
-/// (newline, semicolon, comma, closing brace, or end-of-input)
-/// before any non-whitespace code on the same line.
-fn has_statement_separator(rest: &str) -> bool {
-    for ch in rest.chars() {
-        match ch {
-            // Horizontal whitespace -- keep scanning
-            ' ' | '\t' => continue,
-            // Valid separators: newline, semicolon, closing brace, comma,
-            // or `#` (start of line comment, effectively end-of-statement)
-            '\n' | '\r' | ';' | '}' | ',' | '#' => return true,
-            // Any other non-whitespace on the same line -> missing separator
-            _ => return false,
-        }
-    }
-    // End of input is a valid separator
-    true
-}
-
 pub(crate) fn stmt_list_with_mode(
     input: &str,
     allow_mainline_capture: bool,
@@ -570,6 +500,8 @@ pub(crate) fn stmt_list_with_mode(
         let attempt = trace::begin(r, line, allow_mainline_capture && stmts.is_empty());
         match statement(r) {
             Ok((r, stmt)) => {
+                let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
+                let consumed = consumed_raw.trim_end();
                 // In Raku, after a statement-ending block (e.g. `sub f { 3 }`),
                 // a semicolon, newline, closing brace, or end-of-input is required
                 // before the next statement.  `sub f { 3 } sub g { 3 }` on a
@@ -582,14 +514,11 @@ pub(crate) fn stmt_list_with_mode(
                 if let Some(err) = super::modifier::pending_extra_modifier_error(r_ws) {
                     return Err(err);
                 }
-                if is_block_ending_stmt(&stmt)
+                if is_block_ending_stmt(&stmt, consumed)
                     && !has_statement_separator(r)
-                    && !method_decl_postfix_follows(&stmt, r_ws)
+                    && !routine_decl_continuation_follows(&stmt, r_ws)
                 {
-                    return Err(PError::fatal(
-                        "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
-                            .to_string(),
-                    ));
+                    return Err(super::statement_boundary::missing_block_separator());
                 }
                 // A statement that stopped short of a separator on the same line
                 // left a term behind: `my $x = (1,2) cross (3,4)`, where `cross`
@@ -601,8 +530,6 @@ pub(crate) fn stmt_list_with_mode(
                 // error is the precise one (`1, => 2` is an infix in term
                 // position, `multi sub foo;` a unit-scoped sub, `for 1, 2 {` a
                 // missing block); either way nothing is silently split.
-                let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
-                let consumed = consumed_raw.trim_end();
                 if !consumed.ends_with(';')
                     && !consumed.ends_with('}')
                     && !consumed_raw[consumed.len()..].contains(['\n', '\r'])

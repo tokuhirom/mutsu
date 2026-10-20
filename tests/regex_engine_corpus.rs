@@ -835,7 +835,7 @@ t,t
 );
 corpus_case!(
     proto_dispatch_through_frames,
-    r#"grammar P { token TOP { <value>+ % ',' } proto token value {*} token value:sym<num> { \d+ } token value:sym<word> { <[a..z]>+ } token value:sym<list> { '[' ~ ']' <value>* % ',' } token value:sym<t> { 'true' } }; class A { method TOP($/) { make $<value>.map(*.made).join('|') }; method value:sym<num>($/) { make "N$/" }; method value:sym<word>($/) { make "W$/" }; method value:sym<list>($/) { make "L(" ~ $<value>.map(*.made).join(",") ~ ")" }; method value:sym<t>($/) { make "T" } }; my $m = P.parse("12,ab,[1,2,[x]],true", :actions(A.new)); say $m.so; say $m.made; say $m<value>.elems; say P.parse("12,,3").so; say P.subparse("12,ab,").Str; say P.parse("trueish,1").so"#,
+    r#"grammar P { token TOP { <value>+ % ',' }; proto token value {*}; token value:sym<num> { \d+ }; token value:sym<word> { <[a..z]>+ }; token value:sym<list> { '[' ~ ']' <value>* % ',' }; token value:sym<t> { 'true' } }; class A { method TOP($/) { make $<value>.map(*.made).join('|') }; method value:sym<num>($/) { make "N$/" }; method value:sym<word>($/) { make "W$/" }; method value:sym<list>($/) { make "L(" ~ $<value>.map(*.made).join(",") ~ ")" }; method value:sym<t>($/) { make "T" } }; my $m = P.parse("12,ab,[1,2,[x]],true", :actions(A.new)); say $m.so; say $m.made; say $m<value>.elems; say P.parse("12,,3").so; say P.subparse("12,ab,").Str; say P.parse("trueish,1").so"#,
     r#"True
 N12|Wab|L(N1,N2,L(Wx))|T
 4
