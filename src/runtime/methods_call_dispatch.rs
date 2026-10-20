@@ -620,19 +620,6 @@ impl Interpreter {
         {
             return Ok(Value::str(rendered));
         }
-        // `List.from-iterator` and `Array.from-iterator` are rows of their
-        // type objects (ADR-11276 §9.164).
-        if let Some(owners) = crate::builtins::method_table::from_iterator_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
-        }
         // `Rakudo::Internals::JSON.from-json` / `.to-json`: a core Rakudo class
         // routed to the native JSON implementation (used by OpenSSL, JSON::JWT).
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {

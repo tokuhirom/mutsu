@@ -53,6 +53,7 @@ mod methods_distribution_cur_resolve;
 mod methods_distribution_helpers;
 mod methods_enum_dispatch;
 mod methods_enum_roles;
+mod methods_type_object_class;
 mod methods_enumhow;
 mod methods_format;
 mod methods_grammar;
