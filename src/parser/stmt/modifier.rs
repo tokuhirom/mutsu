@@ -328,8 +328,11 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         }
 
         // If there's a semicolon, the statement is terminated — no more modifiers
-        if let Some(stripped) = rest.strip_prefix(';') {
-            return Ok((stripped, current_stmt));
+        // The enclosing statement or semilist owns this separator. In a
+        // statement-prefix term such as `try`, consuming it here would make
+        // the next conditional look like another modifier on the prefix.
+        if rest.starts_with(';') {
+            return Ok((rest, current_stmt));
         }
 
         // If at end of input or block, return as-is

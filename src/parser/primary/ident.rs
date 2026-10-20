@@ -8,6 +8,7 @@ mod supply;
 pub(crate) use anon_sub::{anon_method_expr, anon_method_expr_declared, folded_invocant};
 pub(crate) use supply::supply_block;
 mod term_literals;
+mod statement_terminator;
 mod term_symbols;
 
 pub(super) use circumfix::declared_circumfix_op;
