@@ -16,7 +16,7 @@
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
@@ -107,24 +107,3 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// `Channel`'s subclasses carry their payloads), so `Supplier`'s rows answer
 /// it like any supplier.
 pub(crate) const SUPPLIER_SUBCLASS: &str = "__mutsu_supplier_subclass";
-
-/// The owner whose rows answer `target`: `Supplier` for a supplier (a
-/// `Supplier::Preserving` or an instance of a user subclass included); `None`
-/// for anything else. A scheduler has an opaque shape
-/// (`method_table::opaque_owners_of`).
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-    else {
-        return None;
-    };
-    Some(match class_name.as_str() {
-        "Supplier" | "Supplier::Preserving" => &["Supplier"],
-        _ if attributes.as_map().contains_key(SUPPLIER_SUBCLASS) => &["Supplier"],
-        _ => return None,
-    })
-}

@@ -818,22 +818,6 @@ impl Interpreter {
                 ));
             }
 
-            // `IterationBuffer`'s methods are rows of the method table, found by
-            // their owner (ADR-11276 §9.121). A subclass's own `BIND-POS`/`push`/...
-            // (ValueList's throwing ones) override them.
-            if let Some(owners) = crate::builtins::method_table::iteration_buffer_owners_of(&target)
-                && !self.has_user_method(&class_name.resolve(), method)
-                && let Some(result) = crate::builtins::method_table::invoke_owner(
-                    self,
-                    owners,
-                    method,
-                    &args,
-                    || target.clone(),
-                )
-            {
-                return result;
-            }
-
             // `Stash`'s methods are rows of the method table, found by their
             // owner (ADR-11276 §9.198): a `Stash` has no dispatch shape, since
             // a shape would hide its associative indexing from the hash paths.
@@ -905,7 +889,9 @@ impl Interpreter {
             // schedulers' and the handle classes' methods are rows, found by their
             // owner; they commit through the instance's shared cell (ADR-11276
             // §9.128, §9.130, §9.132, §9.133, §9.157).
-            if let Some(owners) = self.io_concurrency_owners_of(&target)
+            // A method the subclass declares itself wins over the row.
+            if let Some(owners) = self.carried_state_owners_of(&target)
+                && !self.has_user_method(&class_name.resolve(), method)
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,
