@@ -656,6 +656,17 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     result
 }
 
+/// [`crate::parser::stmt::class::declare_decl`] in expression position: the
+/// declaration is a statement evaluated for its type object, as for
+/// `(class Foo { })`.
+fn declare_keyword_term(input: &str) -> PResult<'_, Expr> {
+    if crate::parser::stmt::simple::declare_keyword_names().is_empty() {
+        return Err(PError::expected("declarator term"));
+    }
+    let (rest, stmt) = crate::parser::stmt::class::declare_term_decl(input)?;
+    Ok((rest, Expr::DoStmt(Box::new(stmt))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1416,15 +1427,4 @@ mod tests {
             Expr::Call { ref name, ref args, .. } if name == "QX" && args.len() == 1
         ));
     }
-}
-
-/// [`crate::parser::stmt::class::declare_decl`] in expression position: the
-/// declaration is a statement evaluated for its type object, as for
-/// `(class Foo { })`.
-fn declare_keyword_term(input: &str) -> PResult<'_, Expr> {
-    if crate::parser::stmt::simple::declare_keyword_names().is_empty() {
-        return Err(PError::expected("declarator term"));
-    }
-    let (rest, stmt) = crate::parser::stmt::class::declare_term_decl(input)?;
-    Ok((rest, Expr::DoStmt(Box::new(stmt))))
 }
