@@ -36,6 +36,7 @@ mod runtime_module;
 mod runtime_module_export_aliases;
 mod runtime_module_export_sub;
 mod runtime_module_exports;
+mod runtime_module_import_owner_family;
 mod runtime_output;
 pub(crate) mod runtime_shared_vars;
 mod runtime_thread;

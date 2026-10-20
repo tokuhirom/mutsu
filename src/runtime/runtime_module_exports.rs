@@ -482,6 +482,9 @@ impl Interpreter {
     // Cost: O(k + c), k = interned names of the family (the family index), c =
     // its candidates removed.
     fn shadow_imported_proto_family(&mut self, target_single: &str) {
+        if self.import_target_declares_family(target_single) {
+            return;
+        }
         let should_shadow = match self.module.import_scope_stack.last_mut() {
             Some(snapshot) => snapshot
                 .shadowed_proto_names
