@@ -701,7 +701,7 @@ pub(crate) use method_site::MethodSiteCaches;
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{
-    MapGrepMode, PrefixSource, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
+    MapGrepMode, PrefixSource, PullOut, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
     seq_method_never_touches,
 };
 pub(crate) use type_decl_site::TypeDeclSiteCaches;
@@ -742,7 +742,6 @@ pub(crate) use enum_display::{
     enum_display_name, is_package_enum_declared_name, note_enum_display_name,
 };
 pub(crate) use error::LazyBacktraceText;
-pub(crate) use error::SeqPullProgress;
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlinePayload, CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)
