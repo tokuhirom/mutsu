@@ -560,9 +560,7 @@ impl Interpreter {
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();
         let declared = if code.declares_slot(idx) {
-            self.own_var_type_constraint_value_sym(
-                name_sym.unwrap_or_else(|| Symbol::intern(name)),
-            )
+            self.own_var_type_constraint_value_sym(name_sym.unwrap_or_else(|| Symbol::intern(name)))
         } else {
             self.var_type_constraint_value_for(name, name_sym)
         };

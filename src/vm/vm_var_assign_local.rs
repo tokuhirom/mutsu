@@ -338,7 +338,8 @@ impl Interpreter {
         // before it is stored, so the embedded `HashData` metadata (or array
         // side-table entry) is carried by every copy below.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = self.slot_type_constraint(code, idx, name, code.local_sym(idx))
+            && let Some(value_type) =
+                self.slot_type_constraint(code, idx, name, code.local_sym(idx))
         {
             let info = crate::runtime::ContainerTypeInfo {
                 declared_type: if name.starts_with('@')
