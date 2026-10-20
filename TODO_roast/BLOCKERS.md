@@ -136,7 +136,6 @@ unless noted.
 | No oracle | `S02-names/pseudo-6d.t` | aborts at 56/159 (2026-10-14, unchanged since 2026-10-02) | SORRY (`::=` NYI) | Until #10657 mutsu SORRYd at parse time on `::($our)::A43` (an indirect name with a static tail). It now runs 56 tests on release and stops at line 188, where `::($our)::A43` is a `Failure` (the autovivifying bind on line 186 is fudged out) and `.WHO` throws — raku throws there too. A debug build panics earlier, after test 41, on the ADR-0097 §15 env/slot invariant at `$OUR::x30 := $x` (#10731). Beyond that: `::("CALLER")::<$*bar>` CALLER pseudo-package deref unsupported. Even on v2026.06 rakudo SORRYs because `::=` binding is unimplemented |
 | No oracle | `S02-names/pseudo-6e.t` | runs 77/202, 30 failing (2026-10-14, unchanged since 2026-10-02) | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Parses since #10657; fails the root/`MY::` binding subtests (`Can bind via root`, `MY::classname`, failed tests 1, 5, 8-11, 13-15, 18, 24-25, 28-30, 32-33) and stops at 77. Still SORRY on v2026.06 |
 | No oracle | `S02-names-vars/names.t` | **153/156, runs to the end**; notok 144, 147, 148 | SORRY (unfudged line) | Now runs the whole file (it used to abort at line 153). Failing: 144 "no Null PMC access when printing a variable typed as ::foo" (line 142); 147/148 — `my module foo {}; sub foo() {…}` in one scope: bare `foo` must be the module type object (`.HOW ~~ Metamodel::ModuleHOW`) and `foo()` a coercion type (`Metamodel::CoercionHOW`), while `&foo()` calls the sub (149 passes). raku SORRYs on a fudge-dependent line (a bare `$`). The `can use compile-time variables in names` subtest (BEGIN-time adverb interpolation, `news/2026-09/begin-time-adverb-value-interpolation.md`) now runs and passes |
-| No oracle | `S10-packages/basic.t` | **74/83**, notok 8 (2, 14, 15, 20, 21, 30, 53, 57); dies at 83 | 6/83 (mutsu far ahead; same on v2026.09) | Error-detection edges for package declarations (see the investigation note). Test 83 (`use lib` accepts IO::Path objects) dies with `Unknown function: plan` inside the subtest — state left by earlier parts of the file breaks name resolution, #13473 |
 | No oracle | `S12-attributes/trusts.t` | 9/15, notok 4-9 (2026-10-14, unchanged) | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06. Failing set shifted 2026-07-15 (private-attr wrong-class throw): tests 4-9 read `$!an_A` which class B never declares (throws now, matching rakudo semantics — likely a typo for the lexical `$an_A` in the test), while the class-C "untrusted access dies" tests now pass |
 | No oracle | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 (aborts: `Dynamic variable $*OS not found`) | 0/8 (aborts too, `$*OS`; same on v2026.09) | `-I` + `@*INC` + `$*OS` introspection (is_run subprocess) |
 | No oracle | `S32-basics/xxPOS.t` | aborts at 11/64 | 53/64 (raku also aborts; same on v2026.09) | Stops at test 12 because the loop's sigilless `-> \a` is overwritten by the later `my $a` in the same body — #13474 (see the investigation note) |
@@ -181,14 +180,6 @@ completed fix history lives in `news/`.
   assertions are **stale old-Rakudo expectations that mutsu correctly diverges from** — do NOT
   "fix" them (stale line numbers from an older file layout; `Control::Caller()` gist format;
   unqualified `subname`). `caller` is not even a routine in modern Rakudo.
-- **`S10-packages/basic.t`** — remaining fails (2026-10-14): 2, 14, 15, 20, 21, 30, 53, 57, and
-  83 dies (#13473). Of the old 12-21 block (reference to a grammar/module/role/class/package
-  BEFORE its definition must die with the name in the message) only 14/15/20/21 are left; they
-  need a general compile-time undeclared-symbol check; the EVAL-path registry check is gated to
-  `::`-qualified names because simple names leak into the global registry from block-scoped
-  decls (the lexical-scope-leak / dual-store limitation — same family as my-6e.t). Tests 2/30
-  (nested-package autovivification), 53 (`module M is Nonexistent`), 57 ("Too late for
-  semicolon form") are each their own package-semantics gap.
 - **`S32-basics/xxPOS.t`** — blocker 1 (file-stopper at test 12): **sigilless variable naming
   collision**, now narrowed to the pointy-block form (#13474). The plain
   `my \a = (1,2,3); my $a = 45; say a;` case is fixed (prints `(1 2 3)`), and so is a sub param

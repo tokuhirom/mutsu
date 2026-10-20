@@ -1146,6 +1146,7 @@ mod nqp_p6_forms;
 mod numeric_operand_names;
 mod outer_ref;
 mod package_runtime_body;
+mod package_traits;
 mod proto_decl;
 mod require_stubs;
 mod type_alias_resolve;

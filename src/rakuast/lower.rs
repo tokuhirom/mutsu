@@ -1783,6 +1783,7 @@ fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         name: crate::symbol::Symbol::intern(&call_name_str(node)?),
         body: lower_package_body(lower_block(named_child(node, "body")?)?),
         kind,
+        custom_traits: super::package_traits::lower(node)?,
         is_unit: scope == "unit",
         is_my: scope == "my",
     })

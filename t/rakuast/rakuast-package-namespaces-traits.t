@@ -1,0 +1,68 @@
+use experimental :rakuast;
+use MONKEY-SEE-NO-EVAL;
+use Test;
+
+multi sub trait_mod:<is>(Mu:U $target, :$paint!) { }
+
+my $module = Q[module NamespaceShape is paint<blue> is export {}].AST.statements[0].expression;
+isa-ok $module, RakuAST::Module, 'module declaration shape';
+is $module.traits.elems, 2, 'custom and export traits are retained';
+is $module.traits[0].name.canonicalize, 'paint', 'written trait order is retained';
+isa-ok $module.traits[0].argument, RakuAST::QuotedString, 'angle argument retains words quoting';
+is $module.traits[1].name.canonicalize, 'export', 'export occurs once in written position';
+my $package = Q[package NamespacePackage is paint(42) {}].AST.statements[0].expression;
+isa-ok $package, RakuAST::Package, 'package declaration shape';
+isa-ok $package.traits[0].argument, RakuAST::Circumfix::Parentheses, 'parenthesized trait argument shape';
+my $unit = Q[unit module NamespaceUnit is paint; 42].AST.statements[0].expression;
+is $unit.scope, 'unit', 'unit module scope';
+is $unit.traits[0].name.canonicalize, 'paint', 'unit trait survives body absorption';
+is $unit.body.body.statement-list.statements.elems, 1, 'unit body retains its runtime statement';
+
+my $built = RakuAST::Module.new(
+    name => RakuAST::Name.from-identifier('NamespaceBuilt'),
+    traits => (RakuAST::Trait::Is.new(name => RakuAST::Name.from-identifier('paint')),),
+    body => RakuAST::Block.new(body => RakuAST::Blockoid.new(RakuAST::StatementList.new))
+);
+lives-ok { EVAL($built) }, 'hand-built module applies its custom trait through normal dispatch';
+isa-ok RakuAST::Module.new.body, RakuAST::Block, 'module constructor supplies an empty body';
+isa-ok RakuAST::Package.new.body, RakuAST::Block, 'package constructor supplies an empty body';
+my $built-package = RakuAST::Package.new(
+    name => RakuAST::Name.from-identifier('NamespaceBuiltPackage'),
+    traits => (RakuAST::Trait::Is.new(name => RakuAST::Name.from-identifier('paint')),)
+);
+lives-ok { EVAL($built-package) }, 'hand-built package applies its custom trait';
+
+for
+    Q[package NamespaceParent::Nested {}; NamespaceParent.gist], '(NamespaceParent)',
+    Q[module NamespaceModule::Nested {}; NamespaceModule.gist], '(NamespaceModule)',
+    Q[my $NamespaceScalar = 19; package NamespaceScalar::Nested {}; $NamespaceScalar], 19,
+    Q[our $seen; multi sub trait_mod:<is>(Mu:U $target, :$shade!) { $seen = $shade }; module NamespacePaint is shade<blue> {}; $seen], 'blue',
+    Q[our $seen; multi sub trait_mod:<is>(Mu:U $target, :$shade!) { $seen = $shade }; package NamespacePaintPackage is shade(42) {}; $seen], 42,
+    Q[our $seen; multi sub trait_mod:<is>(Mu:U $target, :$shade!) { $seen = $shade }; module NamespacePaintFlag is shade {}; $seen], True
+    -> $source, $expected {
+    is EVAL($source.AST), $expected, 'round-trip namespace semantics: ' ~ $source;
+    my $ordinary-expected = $expected ~~ Str ?? $expected.subst('Namespace', 'OrdinaryNamespace', :g) !! $expected;
+    is EVAL($source.subst('Namespace', 'OrdinaryNamespace', :g)), $ordinary-expected,
+        'ordinary namespace semantics: ' ~ $source;
+}
+
+for
+    Q[my $x = NamespaceLateModule; module NamespaceLateModule {}], X::Undeclared::Symbols,
+    Q[my $x = NamespaceLatePackage; package NamespaceLatePackage {}], X::Undeclared::Symbols,
+    Q[NamespaceAbsent::Child], X::AdHoc,
+    Q[module NamespaceUnknown is NamespaceNoParent {}], X::Inheritance::UnknownParent,
+    Q[package NamespaceUnknownPackage is NamespaceNoParent {}], X::Inheritance::UnknownParent,
+    Q[module NamespaceBuiltinParent is Hash {}], X::Method::NotFound,
+    Q[package NamespaceBuiltinPackage is Hash {}], X::Method::NotFound,
+    Q[module NamespaceRw is rw {}], X::Method::NotFound,
+    Q[package NamespaceHidden is hidden {}], X::Method::NotFound,
+    Q[my package NamespaceOuter { package Nested; 42 }], X::UnitScope::TooLate
+    -> $source, $exception {
+    throws-like { EVAL($source.subst('Namespace', 'OrdinaryNamespace', :g)) }, $exception, 'ordinary declaration validation: ' ~ $source;
+    throws-like { EVAL($source.AST) }, $exception, 'AST declaration validation: ' ~ $source;
+}
+
+throws-like { EVAL('package NamespaceSemicolon; 42') }, X::UnitScope::MustHaveUnit,
+    'top-level semicolon package requires unit';
+
+done-testing;

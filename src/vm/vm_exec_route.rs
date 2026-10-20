@@ -319,6 +319,7 @@ impl Interpreter {
             | OpCode::PackageScope { .. }
             | OpCode::Reduction(..)
             | OpCode::RegisterPackage { .. }
+            | OpCode::ApplyPackageTrait { .. }
             | OpCode::RegisterPackageMy { .. }
             | OpCode::Return
             | OpCode::ReturnFromNonRoutine(..)

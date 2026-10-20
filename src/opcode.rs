@@ -3942,6 +3942,13 @@ pub(crate) enum OpCode {
     },
     /// Register a package name so it's accessible as a Package value.
     RegisterPackage { name_idx: u32 },
+    /// Apply an `is` trait to an already registered module/package object.
+    /// The evaluated trait argument is on the stack.
+    ApplyPackageTrait {
+        package_idx: u32,
+        trait_idx: u32,
+        explicit_argument: bool,
+    },
     /// Record the declarator keyword (`package`/`module`/`grammar`) of a bare
     /// `Stmt::Package` so `.HOW` reports the matching metaclass.
     SetPackageKind {

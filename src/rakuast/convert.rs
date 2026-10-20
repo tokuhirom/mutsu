@@ -1616,6 +1616,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             name,
             body,
             kind,
+            custom_traits,
             is_unit,
             is_my,
         } => {
@@ -1638,7 +1639,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Some("body"),
                 block_node(&crate::parser::unhoist_nested_methods(body))?,
             ));
-            Ok(Some(statement_expression(RakuAstNode { class, fields })))
+            let mut node = RakuAstNode { class, fields };
+            super::package_traits::apply(&mut node, custom_traits, body)?;
+            Ok(Some(statement_expression(node)))
         }
         // `subset S of T where P` -> `RakuAST::Type::Subset`. The `of T` base
         // type is a `Trait::Of` in the `traits` list (raku models it exactly as
@@ -7465,16 +7468,18 @@ fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
         is_unit: true,
         is_my,
         body,
+        custom_traits,
     } = declaration
     else {
         return None;
     };
-    if !body.is_empty() {
+    if body.iter().any(|stmt| !stmt.is_marker()) {
         return None;
     }
     let package = Stmt::Package {
         name: *name,
-        body: rest.to_vec(),
+        body: body.iter().cloned().chain(rest.iter().cloned()).collect(),
+        custom_traits: custom_traits.clone(),
         kind: *kind,
         is_unit: true,
         is_my: *is_my,

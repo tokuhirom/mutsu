@@ -3781,6 +3781,7 @@ impl Compiler {
                 name,
                 body,
                 kind,
+                custom_traits,
                 is_unit,
                 is_my,
             } => {
@@ -3808,6 +3809,7 @@ impl Compiler {
                         name_idx,
                         kind: *kind,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     // Keep the runtime package in step with the compiler's, so
                     // routines declared after this point register under
                     // `Foo::name` instead of leaking into `GLOBAL::` (PLAN 8.22).
@@ -3820,6 +3822,7 @@ impl Compiler {
                         name_idx,
                         kind: *kind,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     self.code.emit(OpCode::RegisterPackageStub { name_idx });
                 } else {
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
@@ -3833,6 +3836,7 @@ impl Compiler {
                         name_idx,
                         kind: *kind,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     // Clear any previous stub status for this package
                     self.code.emit(OpCode::ClearPackageStub { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {

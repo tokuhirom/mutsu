@@ -2177,6 +2177,7 @@ pub(crate) enum Stmt {
         /// determines `package-kind` in the X::Attribute::Package error raised
         /// when a `has` attribute is declared in this package's body.
         kind: PackageKind,
+        custom_traits: Vec<(String, Option<Expr>)>,
         /// True for `unit module Foo;` / `unit package Foo;` where the scope
         /// extends to the rest of the enclosing scope, false for brace-scoped
         /// `package Foo { ... }`.

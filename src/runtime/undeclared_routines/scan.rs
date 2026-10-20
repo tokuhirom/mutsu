@@ -194,6 +194,11 @@ fn term_name(bare: &str) -> Option<&str> {
 
 impl<'ast> Visit<'ast> for Scan {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if let Stmt::Package { name, .. } = stmt {
+            for parent in crate::qualified::package_ancestors(*name).skip(1) {
+                self.declared.insert(parent.as_str().to_owned());
+            }
+        }
         // The `EVAL` scan keeps walking after a bail: its declarations also
         // feed the undeclared-name check (`scope_blind_declared_names`).
         if self.bail && !self.eval {

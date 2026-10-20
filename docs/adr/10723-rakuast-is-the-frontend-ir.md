@@ -1533,7 +1533,7 @@ its own optional constraint constant, including an explicit absence, rather
 than attaching a caller's same-named type. Split runtime package bodies carry
 their own `our` aliases separately from their private lexicals: compilation
 hides caller slots for both, but binds only private lexicals from the static
-store. The cache format advances to 35.
+store. The cache format advances to 36.
 
 Class-body exit restores the bare aliases of top-level `our` declarations
 while preserving their qualified storage and changes to shared outer cells.
@@ -1541,3 +1541,18 @@ The executable contract is `t/rakuast/rakuast-package-our-bindings.t`, with
 string and AST EVAL coverage measured against Rakudo 2026.07. Existing routine
 package-switch and in-file package-variable regressions exercise both
 frontends as well.
+
+Package declarations retain their written `is` traits and executable trait
+arguments in the internal AST. Conversion, construction and lowering preserve
+the same Module/Package fields, including written trait order beside export
+traits and unit bodies. The compiler evaluates arguments and emits
+`ApplyPackageTrait`, whose VM handler uses compiled `trait_mod:<is>` dispatch.
+Missing parents and unsupported core HOW operations raise the shared typed
+exceptions. Qualified declarations register their namespace ancestors;
+unresolved qualified terms fail instead of manufacturing package objects.
+Post-declaration checks include modules and packages, and semicolon forms
+raise the corresponding unit-scope syntax exceptions. These contracts are
+measured in `t/rakuast/rakuast-package-namespaces-traits.t`.
+
+`roast/S10-packages/basic.t` now passes all 83 assertions and joins the
+whitelist; its completed blocker entry is removed.

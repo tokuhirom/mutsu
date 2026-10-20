@@ -27,6 +27,7 @@ mod eval_check;
 mod eval_decl_scans;
 mod eval_import_scope;
 mod eval_name_scans;
+mod eval_post_declared_types;
 mod eval_package_exports;
 mod eval_routine_magicals;
 mod eval_type_scans;

@@ -6749,10 +6749,11 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts
-            // and one probe of the chunk's name index. One-shot per declaration.
+            // Cost: O(m + d + n), m = name bytes, d = ancestor packages, n = their total name bytes.
+            // One-shot per declaration; ancestor names use the cached name index.
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                self.declare_package_ancestors(code.const_sym(*name_idx));
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 if !self.qualified_identity_binding_is_redundant(&name, &name) {
@@ -6776,6 +6777,20 @@ impl Interpreter {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.release_foreign_provenance(&name);
                 self.registry_mut().package_kinds.insert(name, *kind);
+                *ip += 1;
+            }
+            // Cost: O(a + c), a = trait name bytes, c = trait_mod:<is> candidates; excludes the callback body.
+            OpCode::ApplyPackageTrait {
+                package_idx,
+                trait_idx,
+                explicit_argument,
+            } => {
+                self.exec_apply_package_trait_op(
+                    code,
+                    *package_idx,
+                    *trait_idx,
+                    *explicit_argument,
+                )?;
                 *ip += 1;
             }
             // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts

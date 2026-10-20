@@ -352,11 +352,13 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     // `module FcName is export { ... }` (FontConfig::Raw) publishes the module
     // to the enclosing compunit's importers, like `class ... is export`.
-    let (rest, export_tags) = super::package_decl::parse_package_is_traits(rest)?;
-    let (rest, body) = {
+    let (rest, package_traits) = super::package_decl::parse_package_is_traits(rest)?;
+    super::package_syntax::require_block(rest, "module")?;
+    let (rest, mut body) = {
         let _pkg = super::super::simple::push_package_path(&name);
         package_body_block(rest)?
     };
+    crate::ast::routine_trait::attach(&mut body, package_traits.source);
     // Two `is export` declarations of the same symbol in one module clash.
     if let Some(clash) = find_export_name_clash(&body) {
         return Err(export_name_clash_error(&clash));
@@ -374,6 +376,7 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         name: Symbol::intern(&name),
         body,
         kind: crate::ast::PackageKind::Module,
+        custom_traits: package_traits.custom,
         is_unit: false,
         is_my: false,
     };
@@ -384,7 +387,7 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
             &name,
             crate::ast::package_header::Header {
                 adverbs,
-                export_tags,
+                export_tags: package_traits.export_tags,
             },
         ),
     ))

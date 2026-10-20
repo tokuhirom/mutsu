@@ -14,12 +14,20 @@ and type constraints follow the actual binding. Package scalar declarations
 carry their own constraint in bytecode instead of inheriting same-named
 caller metadata. Split package bodies also carry their own `our` aliases, so
 their runtime initializers cannot reuse a caller's same-named slot. The
-precompilation cache format is now 35.
+precompilation cache format is now 36.
 
 Class-body `our` declarations retain package storage while restoring their
 bare lexical aliases when the body exits. Changes through an outer shared
 alias remain visible. The regression exercises both string and AST EVAL,
 first and repeated calls, nested packages, classes, parameters, aliases and
 typed or readonly caller variables against Rakudo 2026.07.
+
+Module and package declarations also preserve and execute their `is` traits
+through compiled multi dispatch, including arguments, source order beside
+export traits, unit bodies and hand-built AST nodes. Qualified declarations
+create their ancestor namespaces; unresolved qualified terms, post-declared
+modules/packages and illegal semicolon forms raise their proper exceptions.
+All 83 assertions of `roast/S10-packages/basic.t` now pass, and the file joins
+the whitelist.
 
 This is a Stage 1 S10 slice of #7564, tracked by #14111 and ADR-10723.

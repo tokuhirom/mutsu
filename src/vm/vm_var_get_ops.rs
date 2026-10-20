@@ -911,8 +911,14 @@ impl Interpreter {
                         || self.package_namespace_exists(bare))
                 {
                     Value::package(Symbol::intern(self.resolve_core_type_alias(bare)))
-                } else {
+                } else if self.is_known_package(name)
+                    || self.has_type(name)
+                    || Self::is_builtin_type(name)
+                    || crate::rakuast::is_registered_type_object(name)
+                {
                     Value::package(Symbol::intern(name))
+                } else {
+                    return Err(self.no_such_qualified_symbol(pkg, sym));
                 }
             }
         } else if name.chars().count() == 1 && !self.is_name_suppressed(name) {
