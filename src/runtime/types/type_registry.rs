@@ -984,7 +984,7 @@ impl Interpreter {
                     && !key[prefix.len()..]
                         .split('[')
                         .next()
-                        .is_some_and(|rest| rest.contains("::"))
+                        .is_some_and(crate::qualified::is_qualified_str)
                     && !(declared_only && is_curried_lexical_key(key, prefix.len()))
             };
             reg.classes
