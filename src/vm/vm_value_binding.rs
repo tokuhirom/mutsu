@@ -9,6 +9,7 @@ impl Interpreter {
     /// Every other scalar value binds as the value itself, including code,
     /// buffers and objects with mutable attributes. Whole aggregate containers
     /// and type objects have their separate declaration/error rules below.
+    // Cost: O(1).
     pub(super) fn bind_source_has_no_container(v: &Value) -> bool {
         match v.view() {
             ValueView::ContainerRef(_)
@@ -64,6 +65,7 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1).
     pub(super) fn bind_source_is_non_scalar_container(v: &Value) -> bool {
         matches!(
             v.view(),
@@ -83,6 +85,7 @@ impl Interpreter {
     /// which deliberately excludes `Package` — because the two shapes raise
     /// DIFFERENT exceptions ([`crate::ast::ReadonlyKind::TypeObject`] vs.
     /// `::Immutable`) even though both leave the name with no container.
+    // Cost: O(1).
     pub(super) fn bind_source_is_type_object(v: &Value) -> bool {
         matches!(v.view(), ValueView::Package(_))
     }
@@ -145,6 +148,25 @@ impl Interpreter {
             Some(crate::ast::ReadonlyKind::Immutable)
         } else {
             None
+        }
+    }
+
+    /// Classify a declaration's source without consulting a name marker.
+    // Cost: O(1).
+    pub(super) fn value_declaration_readonly_kind(
+        value: &Value,
+        source: Option<&str>,
+    ) -> Option<crate::ast::ReadonlyKind> {
+        match source {
+            None if Self::bind_source_is_itemized_aggregate(value) => {
+                Some(crate::ast::ReadonlyKind::Alias)
+            }
+            None => Self::rebound_value_kind(value).or_else(|| {
+                Self::bind_source_is_non_scalar_container(value)
+                    .then_some(crate::ast::ReadonlyKind::Immutable)
+            }),
+            Some(name) if name.starts_with(['@', '%']) => Some(crate::ast::ReadonlyKind::Immutable),
+            Some(_) => None,
         }
     }
 }

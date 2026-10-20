@@ -1958,23 +1958,7 @@ impl Interpreter {
                     && was_scalar_bind
                     && !name.starts_with(['@', '%', '&'])
                 {
-                    if bind_source.is_none() {
-                        if Self::bind_source_is_itemized_aggregate(&raw_val) {
-                            Some(crate::ast::ReadonlyKind::Alias)
-                        } else {
-                            Self::rebound_value_kind(&raw_val).or_else(|| {
-                                Self::bind_source_is_non_scalar_container(&raw_val)
-                                    .then_some(crate::ast::ReadonlyKind::Immutable)
-                            })
-                        }
-                    } else if bind_source
-                        .as_deref()
-                        .is_some_and(|source| source.starts_with(['@', '%']))
-                    {
-                        Some(crate::ast::ReadonlyKind::Immutable)
-                    } else {
-                        None
-                    }
+                    Self::value_declaration_readonly_kind(&raw_val, bind_source.as_deref())
                 } else {
                     None
                 };
