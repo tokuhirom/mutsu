@@ -145,9 +145,16 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::RakudoInternals => type_sample("Rakudo::Internals"),
         DispatchShape::RakudoSorting => type_sample("Rakudo::Sorting"),
         DispatchShape::BacktraceFrame => backtrace_frame_sample(),
-        DispatchShape::Attribute => instance_sample("Attribute"),
+        DispatchShape::Attribute => {
+            // `DEPRECATED` answers only an attribute the trait marked.
+            let mut attributes = crate::value::AttrMap::new();
+            attributes.insert("DEPRECATED".to_string(), Value::str_from("use y"));
+            Value::make_instance(Symbol::intern("Attribute"), attributes)
+        }
         DispatchShape::Variable => instance_sample("Variable"),
-        DispatchShape::Collation => crate::runtime::Interpreter::make_collation_instance(1, 1, 1, 1),
+        DispatchShape::Collation => {
+            crate::runtime::Interpreter::make_collation_instance(1, 1, 1, 1)
+        }
         DispatchShape::Label => crate::value::label::make_label("FOO", "x.raku", 3, "", ""),
         DispatchShape::Backtrace => {
             let mut attributes = crate::value::AttrMap::new();

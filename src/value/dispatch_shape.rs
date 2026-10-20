@@ -470,8 +470,13 @@ impl DispatchShape {
         if const_str_eq(owner, "Mu") {
             // An `IO::Path::Parts` renders as an object (`IO::Path::Parts<id>`),
             // which only the interpreter's default representation answers.
-            if matches!(self, DispatchShape::IoPathParts)
-                && (const_str_eq(method, "Str") || const_str_eq(method, "Stringy"))
+            if matches!(
+                self,
+                DispatchShape::IoPathParts
+                    | DispatchShape::Collation
+                    | DispatchShape::Variable
+                    | DispatchShape::Attribute
+            ) && (const_str_eq(method, "Str") || const_str_eq(method, "Stringy"))
             {
                 return false;
             }
@@ -484,6 +489,9 @@ impl DispatchShape {
                     | DispatchShape::CompUnitDepSpec
                     | DispatchShape::Backtrace
                     | DispatchShape::IoPathParts
+                    | DispatchShape::Variable
+                    | DispatchShape::Collation
+                    | DispatchShape::Attribute
             ) && (const_str_eq(method, "gist") || const_str_eq(method, "raku"))
             {
                 return false;
