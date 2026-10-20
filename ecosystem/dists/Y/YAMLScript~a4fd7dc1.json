@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.53,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.94,
+        "secs": 1.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
       "cmp": "no_baseline",
       "path": "t/01-load.rakutest",
       "raku": {
-        "first_failure": "Shared library file 'libys.so.0.2.30' not found",
+        "first_failure": "Shared library file 'libys.so.0.3.6' not found",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.62,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -50,10 +50,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-19",
+    "date": "2026-10-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5fdb286f",
+    "mutsu_commit": "86ede3c8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -62,7 +62,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/Y/AM/YAMLSCRIPT/a924c236c532c0cb0619e3858feeb322813adf5e.tar.gz"
+    "url": "https://360.zef.pm/Y/AM/YAMLSCRIPT/8de147220525e74437fb1b7571e046b6bb461c69.tar.gz"
   },
   "status": "green",
   "totals": {
@@ -72,5 +72,5 @@
     "parity_files": 1,
     "regressed_files": 0
   },
-  "version": "0.2.30"
+  "version": "0.3.6"
 }

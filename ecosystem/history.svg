@@ -31,7 +31,7 @@
 </style>
 <rect class="bg" width="100%" height="100%"/>
 <text class="title" x="78" y="34">mutsu ecosystem parity against rakudo</text>
-<text class="subtitle" x="78" y="55">latest sweep 2026-10-20  ·  1641 of 1649 distributions measured  ·  8 blocked on dependencies  ·  baseline rakudo 2026.09</text>
+<text class="subtitle" x="78" y="55">latest sweep 2026-10-20  ·  1643 of 1650 distributions measured  ·  7 blocked on dependencies  ·  baseline rakudo 2026.09</text>
 <line class="grid" x1="78" y1="548.0" x2="1070" y2="548.0"/>
 <text class="tick" x="68" y="552.0" text-anchor="end">0%</text>
 <line class="grid" x1="78" y1="500.6" x2="1070" y2="500.6"/>
@@ -62,11 +62,11 @@
 <text class="tick" x="205.2" y="570" text-anchor="middle">2026-09-16</text>
 <text class="tick" x="332.4" y="570" text-anchor="middle">2026-09-21</text>
 <text class="tick" x="485.0" y="570" text-anchor="middle">2026-09-27</text>
-<text class="tick" x="612.2" y="570" text-anchor="middle">2026-10-02</text>
-<text class="tick" x="790.2" y="570" text-anchor="middle">2026-10-09</text>
+<text class="tick" x="637.6" y="570" text-anchor="middle">2026-10-03</text>
+<text class="tick" x="815.6" y="570" text-anchor="middle">2026-10-10</text>
 <text class="tick" x="917.4" y="570" text-anchor="middle">2026-10-14</text>
 <text class="tick" x="1070.0" y="570" text-anchor="middle">2026-10-20</text>
-<polyline class="series-a" points="78.0,352.7 78.0,353.2 103.4,341.3 128.9,341.3 154.3,336.6 179.7,331.9 205.2,312.9 230.6,304.8 256.1,301.0 281.5,294.9 306.9,286.8 332.4,276.9 357.8,269.3 383.2,262.7 408.7,257.9 434.1,247.5 459.5,237.1 485.0,228.0 535.8,224.3 535.8,218.6 561.3,220.5 612.2,209.6 612.2,202.0 637.6,172.1 663.0,168.8 713.9,170.2 739.3,163.6 764.8,157.9 790.2,153.6 815.6,147.0 815.6,139.9 841.1,136.1 891.9,133.7 917.4,133.7 917.4,133.2 942.8,131.4 968.3,130.9 993.7,134.2 1019.1,130.9 1070.0,130.9" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-a" points="78.0,352.7 78.0,353.2 103.4,341.3 128.9,341.3 154.3,336.6 179.7,331.9 205.2,312.9 230.6,304.8 256.1,301.0 281.5,294.9 306.9,286.8 332.4,276.9 357.8,269.3 383.2,262.7 408.7,257.9 434.1,247.5 459.5,237.1 485.0,228.0 535.8,224.3 535.8,218.6 561.3,220.5 612.2,209.6 612.2,202.0 637.6,172.1 663.0,168.8 713.9,170.2 739.3,163.6 764.8,157.9 790.2,153.6 815.6,147.0 815.6,139.9 841.1,136.1 891.9,133.7 917.4,133.7 917.4,133.2 942.8,131.4 968.3,130.9 993.7,134.2 1019.1,130.9 1070.0,130.9 1070.0,136.6" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-a" cx="78.0" cy="352.7" r="3.4" stroke="none"/>
 <circle class="series-a" cx="78.0" cy="353.2" r="3.4" stroke="none"/>
 <circle class="series-a" cx="103.4" cy="341.3" r="3.4" stroke="none"/>
@@ -107,10 +107,11 @@
 <circle class="series-a" cx="993.7" cy="134.2" r="3.4" stroke="none"/>
 <circle class="series-a" cx="1019.1" cy="130.9" r="3.4" stroke="none"/>
 <circle class="series-a" cx="1070.0" cy="130.9" r="3.4" stroke="none"/>
-<text class="value series-a" x="1079.0" y="134.9" stroke="none">88.0%</text>
+<circle class="series-a" cx="1070.0" cy="136.6" r="3.4" stroke="none"/>
+<text class="value series-a" x="1079.0" y="140.6" stroke="none">86.8%</text>
 <line class="series-a" x1="1094" y1="80.0" x2="1118" y2="80.0" stroke-width="3.2"/>
 <text class="legend" x="1124" y="84.0">dist parity (published)</text>
-<polyline class="series-b" points="78.0,293.9 78.0,294.9 103.4,294.4 128.9,287.3 154.3,283.0 179.7,275.5 205.2,270.2 230.6,264.5 256.1,261.2 281.5,252.7 306.9,244.2 332.4,236.1 357.8,229.0 383.2,216.7 408.7,208.1 434.1,202.0 459.5,202.9 485.0,199.1 535.8,195.3 535.8,184.4 561.3,183.0 612.2,171.6 612.2,162.2 637.6,154.6 663.0,143.7 713.9,145.6 739.3,138.5 764.8,139.4 790.2,138.0 815.6,131.8 815.6,127.6 841.1,125.2 891.9,122.8 917.4,126.6 917.4,125.2 942.8,119.0 968.3,125.2 993.7,127.1 1019.1,124.7 1070.0,123.3" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-b" points="78.0,293.9 78.0,294.9 103.4,294.4 128.9,287.3 154.3,283.0 179.7,275.5 205.2,270.2 230.6,264.5 256.1,261.2 281.5,252.7 306.9,244.2 332.4,236.1 357.8,229.0 383.2,216.7 408.7,208.1 434.1,202.0 459.5,202.9 485.0,199.1 535.8,195.3 535.8,184.4 561.3,183.0 612.2,171.6 612.2,162.2 637.6,154.6 663.0,143.7 713.9,145.6 739.3,138.5 764.8,139.4 790.2,138.0 815.6,131.8 815.6,127.6 841.1,125.2 891.9,122.8 917.4,126.6 917.4,125.2 942.8,119.0 968.3,125.2 993.7,127.1 1019.1,124.7 1070.0,123.3 1070.0,125.2" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-b" cx="78.0" cy="293.9" r="2.6" stroke="none"/>
 <circle class="series-b" cx="78.0" cy="294.9" r="2.6" stroke="none"/>
 <circle class="series-b" cx="103.4" cy="294.4" r="2.6" stroke="none"/>
@@ -151,10 +152,11 @@
 <circle class="series-b" cx="993.7" cy="127.1" r="2.6" stroke="none"/>
 <circle class="series-b" cx="1019.1" cy="124.7" r="2.6" stroke="none"/>
 <circle class="series-b" cx="1070.0" cy="123.3" r="2.6" stroke="none"/>
-<text class="value series-b" x="1079.0" y="127.3" stroke="none">89.6%</text>
+<circle class="series-b" cx="1070.0" cy="125.2" r="2.6" stroke="none"/>
+<text class="value series-b" x="1079.0" y="129.2" stroke="none">89.2%</text>
 <line class="series-b" x1="1094" y1="101.0" x2="1118" y2="101.0" stroke-width="2.0"/>
 <text class="legend" x="1124" y="105.0">file parity (steers the work)</text>
-<polyline class="series-c" points="78.0,252.2 78.0,248.9 103.4,242.3 128.9,231.8 154.3,229.9 179.7,229.0 205.2,226.2 230.6,224.7 256.1,223.8 281.5,219.0 306.9,216.7 332.4,212.9 357.8,186.8 383.2,180.2 408.7,153.2 434.1,150.3 459.5,152.2 485.0,151.7 535.8,128.5 535.8,126.6 561.3,124.7 612.2,119.5 612.2,116.7 637.6,109.5 663.0,106.7 713.9,107.2 739.3,101.5 764.8,94.4 790.2,90.1 815.6,88.7 815.6,88.2 841.1,86.8 891.9,86.3 917.4,87.7 917.4,96.3 942.8,94.9 968.3,97.2 993.7,97.7 1019.1,96.3 1070.0,95.8" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-c" points="78.0,252.2 78.0,248.9 103.4,242.3 128.9,231.8 154.3,229.9 179.7,229.0 205.2,226.2 230.6,224.7 256.1,223.8 281.5,219.0 306.9,216.7 332.4,212.9 357.8,186.8 383.2,180.2 408.7,153.2 434.1,150.3 459.5,152.2 485.0,151.7 535.8,128.5 535.8,126.6 561.3,124.7 612.2,119.5 612.2,116.7 637.6,109.5 663.0,106.7 713.9,107.2 739.3,101.5 764.8,94.4 790.2,90.1 815.6,88.7 815.6,88.2 841.1,86.8 891.9,86.3 917.4,87.7 917.4,96.3 942.8,94.9 968.3,97.2 993.7,97.7 1019.1,96.3 1070.0,95.8 1070.0,96.3" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-c" cx="78.0" cy="252.2" r="2.6" stroke="none"/>
 <circle class="series-c" cx="78.0" cy="248.9" r="2.6" stroke="none"/>
 <circle class="series-c" cx="103.4" cy="242.3" r="2.6" stroke="none"/>
@@ -195,7 +197,8 @@
 <circle class="series-c" cx="993.7" cy="97.7" r="2.6" stroke="none"/>
 <circle class="series-c" cx="1019.1" cy="96.3" r="2.6" stroke="none"/>
 <circle class="series-c" cx="1070.0" cy="95.8" r="2.6" stroke="none"/>
-<text class="value series-c" x="1079.0" y="99.8" stroke="none">95.4%</text>
+<circle class="series-c" cx="1070.0" cy="96.3" r="2.6" stroke="none"/>
+<text class="value series-c" x="1079.0" y="100.3" stroke="none">95.3%</text>
 <line class="series-c" x1="1094" y1="122.0" x2="1118" y2="122.0" stroke-width="2.0"/>
 <text class="legend" x="1124" y="126.0">assertion parity</text>
 </svg>

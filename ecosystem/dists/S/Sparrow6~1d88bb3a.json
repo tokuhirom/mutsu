@@ -31,7 +31,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,29 +41,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.06,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-sparrow6-runner.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 46.64,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,12 +58,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/02-sparrow6-repo.t",
+      "path": "t/01-sparrow6-runner.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 8.92,
+        "secs": 35.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -97,7 +75,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.69,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-sparrow6-repo.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 6.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 33.8,
+        "secs": 25.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -160,10 +160,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-19",
+    "date": "2026-10-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5fdb286f",
+    "mutsu_commit": "86ede3c8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

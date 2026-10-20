@@ -18,6 +18,7 @@
       "Syntax::Highlighters",
       "Term::termios",
       "Terminal::ANSI",
+      "Terminal::Getpass",
       "Terminal::WCWidth",
       "Terminal::Width",
       "Test::META",
@@ -33,7 +34,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.32,
+        "secs": 3.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,7 +44,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 33.04,
+        "secs": 45.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,7 +56,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.37,
+        "secs": 0.27,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +66,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.89,
+        "secs": 0.72,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -77,10 +78,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-19",
+    "date": "2026-10-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5fdb286f",
+    "mutsu_commit": "86ede3c8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

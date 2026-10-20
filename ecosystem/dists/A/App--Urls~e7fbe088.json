@@ -1,49 +1,24 @@
 {
-  "deps": {
-    "bundled_would_supply": [],
-    "mode": "flat-closure",
-    "resolved": [
-      "Config::INI",
-      "DBIish",
-      "Distribution::Builder::MakeFromJSON",
-      "ECMA262Regex",
-      "Email::Valid",
-      "File::Directory::Tree",
-      "File::Temp",
-      "Inline::Perl5",
-      "JSON::Fast",
-      "NativeHelpers::Blob",
-      "NativeLibs",
-      "Net::DNS",
-      "OO::Monitors",
-      "System::Query",
-      "Term::termios",
-      "Terminal::ANSI",
-      "Terminal::Getpass"
-    ],
-    "unresolved": [
-      "DBI"
-    ]
-  },
   "dist": "App::Urls",
   "files": [],
   "measured": {
     "attempts": 3,
-    "date": "2026-10-19",
+    "date": "2026-10-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5fdb286f",
+    "mutsu_commit": "86ede3c8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
+  "note": "harness error: AbsoluteLinkError: '.inputrc' is a link to an absolute path",
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/A/PP/APP_URLS/75c23b84866d360b331f3a8150c2d6de6943cee2.tar.gz"
+    "url": "https://360.zef.pm/A/PP/APP_URLS/5be7c432629ce413269dd83e0c8e832aae67a3c8.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "skipped",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
@@ -51,5 +26,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.1.4"
+  "version": "0.1.8"
 }

@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.21,
+        "secs": 0.25,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.96,
+        "secs": 1.39,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.49,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,51 +49,53 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 19.43,
+        "secs": 32.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
-        "nok": 0,
-        "ok": 99,
-        "plan": 99,
-        "secs": 5.05,
+        "first_failure": "No such method 'instruments' for invocant of type 'Any'",
+        "nok": 2,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/020-drumkit.t",
       "raku": {
         "nok": 0,
         "ok": 99,
         "plan": 99,
-        "secs": 1.24,
+        "secs": 1.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 6.3,
+        "first_failure": "No such method 'version' for invocant of type 'Any'",
+        "nok": 2,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/030-song.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.16,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,10 +111,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-19",
+    "date": "2026-10-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5fdb286f",
+    "mutsu_commit": "86ede3c8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,13 +125,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/UD/AUDIO_HYDROGEN/81627387cb2425d013de3435a26101662857e816.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 107,
     "baseline_files": 4,
-    "mutsu_assertions": 107,
-    "parity_files": 4,
-    "regressed_files": 0
+    "mutsu_assertions": 5,
+    "parity_files": 2,
+    "regressed_files": 2
   },
   "version": "0.0.7"
 }

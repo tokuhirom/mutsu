@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.92,
+        "secs": 3.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 14.21,
+        "secs": 95.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.43,
+        "secs": 2.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.27,
+        "secs": 3.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.17,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.89,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 18.26,
+        "secs": 13.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -121,7 +121,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 119.63,
+        "secs": 92.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -135,7 +135,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.37,
+        "secs": 9.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -149,7 +149,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.72,
+        "secs": 8.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -163,7 +163,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.58,
+        "secs": 6.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -177,7 +177,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.35,
+        "secs": 9.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -191,7 +191,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.03,
+        "secs": 9.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -205,7 +205,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 27,
-        "secs": 6.8,
+        "secs": 6.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -219,7 +219,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.9,
+        "secs": 6.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -233,7 +233,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.19,
+        "secs": 7.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -247,7 +247,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.1,
+        "secs": 7.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -261,7 +261,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.88,
+        "secs": 7.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -275,7 +275,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.36,
+        "secs": 6.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -289,7 +289,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.53,
+        "secs": 6.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -303,7 +303,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.57,
+        "secs": 9.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -317,7 +317,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.95,
+        "secs": 8.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -331,29 +331,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.5,
+        "secs": 9.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 7.13,
+        "first_failure": "Cannot look up attributes in a PDF::Font::Loader::Type1::Stream type object. Did you forget a '.new'?",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/type1-stream.t",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 5.11,
+        "secs": 4.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -367,7 +368,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.5,
+        "secs": 8.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -381,7 +382,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.6,
+        "secs": 6.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -404,10 +405,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-19",
+    "date": "2026-10-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5fdb286f",
+    "mutsu_commit": "86ede3c8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -418,13 +419,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/DF/PDF_FONT_LOADER/0b4e8f687d04825d7f059380a312d80b215c8be7.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 27,
     "baseline_files": 4,
-    "mutsu_assertions": 27,
-    "parity_files": 4,
-    "regressed_files": 0
+    "mutsu_assertions": 17,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "0.8.15"
 }

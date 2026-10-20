@@ -11,11 +11,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at dist/t/01-basic.rakutest:22]",
+        "first_failure": "No such method 'value' for invocant of type",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.13,
+        "ok": 2,
+        "plan": 7,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 4.62,
+        "secs": 3.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +39,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-19",
+    "date": "2026-10-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5fdb286f",
+    "mutsu_commit": "86ede3c8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -57,7 +57,7 @@
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
+    "mutsu_assertions": 2,
     "parity_files": 0,
     "regressed_files": 1
   },

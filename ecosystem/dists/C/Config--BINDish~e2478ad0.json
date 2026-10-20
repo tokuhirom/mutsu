@@ -22,24 +22,277 @@
     "unresolved": []
   },
   "dist": "Config::BINDish",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/005-misc.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/010-grammar.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/0130-same-name.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/020-grammar-user-extensions.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/030-action-ast.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/040-explicit-struct.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/041-explicit-bug-1.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/041-explicit-bug-2.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/050-ext-inet.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/051-ext-module.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/060-expandable.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/070-file.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/080-include.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/090-directives.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/100-reservations.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/110-operators.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/120-defaults.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/121-expand-defaults.rakutest",
+      "raku": {
+        "first_failure": "Type 'test-hub' is not declared",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Config::BINDish": "Failed to parse module 'Config::BINDish::Grammar': Confused. Two terms in a row [at Config/BINDish/Grammar.rakumod:64]",
-    "Config::BINDish::AST": "Failed to parse module 'Config::BINDish::Grammar': Confused. Two terms in a row [at Config/BINDish/Grammar.rakumod:64]",
-    "Config::BINDish::Actions": "Failed to parse module 'Config::BINDish::Grammar': Confused. Two terms in a row [at Config/BINDish/Grammar.rakumod:64]",
+    "Config::BINDish": "ok",
+    "Config::BINDish::AST": "ok",
+    "Config::BINDish::Actions": "ok",
     "Config::BINDish::Expandable": "raku_also_fails",
-    "Config::BINDish::Grammar": "Failed to parse module 'Config::BINDish::Grammar': Confused. Two terms in a row [at Config/BINDish/Grammar.rakumod:64]",
+    "Config::BINDish::Grammar": "ok",
     "Config::BINDish::INET": "raku_also_fails",
-    "Config::BINDish::Ops": "Failed to parse module 'Config::BINDish::Grammar': Confused. Two terms in a row [at Config/BINDish/Grammar.rakumod:64]",
+    "Config::BINDish::Ops": "ok",
     "Config::BINDish::Test": "raku_also_fails",
     "Config::BINDish::X": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-19",
+    "date": "2026-10-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5fdb286f",
+    "mutsu_commit": "86ede3c8",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -50,7 +303,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/ON/CONFIG_BINDISH/35c811494feb02682a91e3d56b9421415ce4dd16.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
