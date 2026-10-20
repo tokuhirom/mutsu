@@ -29,8 +29,9 @@ pub(crate) enum Step {
     /// The call's answer, which needs no row (`.VAR` of a container, a
     /// `Channel` subclass's list coercion, a `Match`'s `.List`).
     Answer(Result<Value, RuntimeError>),
-    /// `.raku` (or `.item`/`.self`) of a `$`-container: the container itself is
-    /// the receiver, which the entry renders with its own renderer.
+    /// `.raku` (or `.item`/`.self`, or `.VAR` of an itemized aggregate) of a
+    /// `$`-container: the container itself is the receiver, which the entry
+    /// answers with its own renderer or descriptor.
     Itself,
 }
 
@@ -79,10 +80,10 @@ pub(crate) fn step(target: &Value, method: &str, argc: usize) -> Option<Step> {
         // An itemized Array/List is a `Scalar` container too: the kind flip
         // keeps the same backing data, so a mutator still writes through.
         ValueView::Array(items, kind) if kind.is_itemized() => {
-            if method == "VAR" {
-                return Some(Step::Answer(Ok(Value::package(Symbol::intern("Scalar")))));
-            }
-            if observes_container(method) {
+            // `.VAR` of an itemized aggregate is the container's own question:
+            // the VM's variable descriptor answers it where the call came from
+            // a variable, and the by-name entry answers `Scalar` otherwise.
+            if method == "VAR" || observes_container(method) {
                 return Some(Step::Itself);
             }
             Some(Step::Redirect(
@@ -93,10 +94,7 @@ pub(crate) fn step(target: &Value, method: &str, argc: usize) -> Option<Step> {
         // The Hash half: its itemization is a flag on the same `HashData`
         // (ADR-0040), cleared over the same `Gc` (#10744).
         ValueView::Hash(_) if target.hash_is_itemized() => {
-            if method == "VAR" {
-                return Some(Step::Answer(Ok(Value::package(Symbol::intern("Scalar")))));
-            }
-            if observes_container(method) {
+            if method == "VAR" || observes_container(method) {
                 return Some(Step::Itself);
             }
             Some(Step::Redirect(
@@ -146,8 +144,12 @@ pub(crate) fn claims(target: &Value, method: &str) -> bool {
     }
     match target.view() {
         ValueView::Scalar(_) => !matches!(method, "raku" | "perl"),
-        ValueView::Array(_, kind) if kind.is_itemized() => !observes_container(method),
-        ValueView::Hash(_) if target.hash_is_itemized() => !observes_container(method),
+        ValueView::Array(_, kind) if kind.is_itemized() => {
+            method != "VAR" && !observes_container(method)
+        }
+        ValueView::Hash(_) if target.hash_is_itemized() => {
+            method != "VAR" && !observes_container(method)
+        }
         ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
             crate::runtime::utils::is_hashlike_any_list_method(method)
         }

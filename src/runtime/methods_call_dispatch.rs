@@ -598,6 +598,11 @@ impl Interpreter {
                 if let ValueView::Scalar(inner) = target.view() {
                     return self.render_scalar_container_raku(&target, inner);
                 }
+                // `$(...)` and `$(%h)` are `Scalar` containers for
+                // introspection, sharing the aggregate's storage.
+                if method == "VAR" {
+                    return Ok(Value::package(Symbol::intern("Scalar")));
+                }
             }
             None => {}
         }
