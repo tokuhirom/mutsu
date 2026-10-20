@@ -357,6 +357,8 @@ pub(crate) struct Registry {
     /// A relative compound declaration's registry identity is not an extra
     /// package binding. Maps that identity to the written binding it uses.
     pub(crate) compound_identity_bindings: HashMap<Symbol, Symbol>,
+    /// Reverse index for consumers resolving a published binding to its type.
+    pub(crate) compound_binding_identities: HashMap<Symbol, Symbol>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.

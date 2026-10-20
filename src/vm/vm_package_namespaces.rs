@@ -34,20 +34,60 @@ impl Interpreter {
         } else {
             identity
         };
+        let old_identity = self
+            .registry()
+            .compound_binding_identities
+            .get(&binding)
+            .copied();
         if crate::qualified::is_qualified(written) && identity != written && identity != binding {
             if self.registry().compound_identity_bindings.get(&identity) != Some(&binding) {
-                self.registry_mut()
+                let previous = self
+                    .registry_mut()
                     .compound_identity_bindings
                     .insert(identity, binding);
+                if let Some(previous) = previous
+                    && self.registry().compound_binding_identities.get(&previous) == Some(&identity)
+                {
+                    self.registry_mut()
+                        .compound_binding_identities
+                        .remove(&previous);
+                }
             }
+            self.registry_mut()
+                .compound_binding_identities
+                .insert(binding, identity);
         } else if self
             .registry()
             .compound_identity_bindings
             .contains_key(&identity)
         {
-            self.registry_mut()
+            let old_binding = self
+                .registry_mut()
                 .compound_identity_bindings
                 .remove(&identity);
+            if let Some(binding) = old_binding
+                && self.registry().compound_binding_identities.get(&binding) == Some(&identity)
+            {
+                self.registry_mut()
+                    .compound_binding_identities
+                    .remove(&binding);
+            }
+        }
+        if identity == binding {
+            self.registry_mut()
+                .compound_binding_identities
+                .remove(&binding);
+        }
+        if old_identity
+            != self
+                .registry()
+                .compound_binding_identities
+                .get(&binding)
+                .copied()
+        {
+            // Qualified subrule parses may have folded the old binding's tokens.
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     }
 

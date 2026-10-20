@@ -1559,6 +1559,9 @@ qualification instead of guessing it from a repeated package prefix.
 The matching method/body chunks use the same declaration-name provenance.
 Relative compound type identities remain distinct from their written package
 bindings; a registry identity does not manufacture another bareword binding.
+A reverse index resolves qualified regex subrules through the public grammar
+binding to that identity, for static patterns, callable token definitions and
+candidate-less protos. Binding changes invalidate the existing regex caches.
 Literal package stash subscripts remain index expressions rather than becoming
 qualified-name lookups, so an absent member yields Nil. EVAL's caller namespace
 classification includes the generated export indexes without declaring them

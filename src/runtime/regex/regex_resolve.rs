@@ -12,6 +12,19 @@ thread_local! {
 }
 
 impl Interpreter {
+    /// A qualified subrule names the grammar's public binding, while its
+    /// token definitions belong to the grammar's logical type identity.
+    // Cost: O(1) expected after the qualified name's first memoized split/build.
+    pub(in crate::runtime) fn qualified_token_identity(&self, name: Symbol) -> Symbol {
+        if let Some((owner, member)) = crate::qualified::split_qualified(name)
+            && let Some(identity) = self.registry().compound_binding_identities.get(&owner)
+        {
+            crate::qualified::qualified(*identity, member)
+        } else {
+            name
+        }
+    }
+
     pub(in crate::runtime) fn clear_pending_goal_failure() {
         PENDING_REGEX_GOAL_FAILURE.with(|slot| {
             *slot.borrow_mut() = None;
@@ -352,6 +365,8 @@ impl Interpreter {
     pub(crate) fn has_proto_token_in_pkg(&self, name: &str, pkg: Symbol) -> bool {
         let name_sym = Symbol::intern(name);
         if crate::qualified::is_qualified(name_sym) {
+            let identity = self.qualified_token_identity(name_sym);
+            let name = identity.as_str();
             return self.registry().proto_tokens.contains(name)
                 || self.registry().has_proto("", name);
         }
@@ -376,6 +391,7 @@ impl Interpreter {
         &self,
         name: Symbol,
     ) -> Vec<(String, Symbol, Option<String>)> {
+        let name = self.qualified_token_identity(name);
         let mut out = Vec::new();
         // Callers pass a qualified name, so the split always succeeds.
         if let Some((qual_pkg_sym, token_name)) = crate::qualified::split_qualified(name) {

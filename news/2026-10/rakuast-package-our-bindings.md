@@ -40,6 +40,10 @@ Body chunks use that same provenance, and relative compound type identities
 remain distinct from their written bindings. Generated namespaces preserve
 custom EXPORT lookup, and a vivified ancestor does not replace a pending
 class's HOW.
+Qualified regex subrules resolve the grammar's public binding to its logical
+identity, including candidate-less protos. The reverse index invalidates regex
+lookup caches when a declaration changes the binding; external grammars can
+keep calling nested grammars such as `DateTime::Parse::Grammar`.
 Literal stash subscripts retain their lookup semantics: a nested type is a
 type object, while an absent key yields Nil. EVAL also retains the namespace
 classification of visible generated export stashes.
