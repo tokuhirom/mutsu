@@ -825,6 +825,12 @@ impl Interpreter {
             if self.types.user_declared_classes.contains(&name) {
                 continue;
             }
+            // A Proxy subclass whose own `new` `callwith`s `Proxy.new`
+            // (AttrX::Mooish's `AttrProxy`) gets an instance of itself, with
+            // its attributes, as Rakudo's `nqp::create(self)` gives.
+            if name == "Proxy" && class_name != "Proxy" {
+                return Some(self.construct_proxy_subclass(&class_name, args));
+            }
             if let Some(res) = self.try_native_builtin_construct(*cn, args) {
                 // An Instance-shaped builtin (`Date`, `DateTime`, `Buf`, ...)
                 // is minted under the ANCESTOR's name because that is the name

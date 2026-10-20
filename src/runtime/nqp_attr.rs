@@ -31,8 +31,9 @@ pub(crate) struct NqpAttrName {
     /// attribute store, so only the generic body answers it.
     pub(crate) container_storage: bool,
     /// The name is `$!do` or `$!signature`: on a code object it is the
-    /// routine's body or bound signature (`runtime::code_do_attr`), which
-    /// only the interpreter can answer.
+    /// routine's body or bound signature (`runtime::code_do_attr`); or it is
+    /// `@!BUILDPLAN` / `@!BUILDALLPLAN`, a class HOW's construction plan
+    /// (`runtime::buildplan_attr`). Only the interpreter can answer either.
     pub(crate) code_do: bool,
 }
 
@@ -47,7 +48,10 @@ impl NqpAttrName {
             read_key: Symbol::intern(Interpreter::nqp_attr_bare(name)),
             write_key: (!write.is_empty()).then(|| Symbol::intern(write)),
             container_storage: matches!(write, "storage" | "reified" | "descriptor"),
-            code_do: matches!(name, "$!do" | "$!signature"),
+            code_do: matches!(
+                name,
+                "$!do" | "$!signature" | "@!BUILDPLAN" | "@!BUILDALLPLAN"
+            ),
         }
     }
 }

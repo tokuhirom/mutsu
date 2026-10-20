@@ -140,6 +140,7 @@ impl Interpreter {
             source_line: None,
             source_file: None,
             default_is_seed: false,
+            default_is_trait: false,
         };
         let class_def =
             |name: &str, attributes: Vec<ClassAttributeDef>, methods: &[&str]| ClassDef {

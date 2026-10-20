@@ -688,6 +688,10 @@ pub(crate) struct ClassAttributeDef {
     /// stores it as the slot's seed, which `nqp::attrinited` reports as not
     /// initialized (ADR-0121 D4).
     pub(crate) default_is_seed: bool,
+    /// `default` is the value of an `is default(...)` trait with no written
+    /// initializer: it seeds the slot, but the attribute has no build value
+    /// (`.build` is `Mu`) and its BUILDPLAN entry is a no-op.
+    pub(crate) default_is_trait: bool,
 }
 
 /// Attribute declarations with the same bare name but different sigils are

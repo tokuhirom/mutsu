@@ -1013,6 +1013,9 @@ impl Interpreter {
             {
                 self.mop_compose(vec![Value::package(Symbol::intern(&storage_name))])?;
             }
+            // A HOW mixin overriding `create_BUILDPLAN` / `publish_method_cache`
+            // (AttrX::Mooish) has them called as the class composes (ADR-14162).
+            self.run_how_compose_overrides(&storage_name)?;
 
             // Slice F: write the deferred body's outer-lexical mutations through
             // to this caller frame's local slots (`register_class_decl` ran the

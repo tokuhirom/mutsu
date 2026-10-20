@@ -283,6 +283,7 @@ impl Interpreter {
                         source_line: None,
                         source_file: None,
                         default_is_seed: false,
+                        default_is_trait: false,
                     });
                     if let Some(tc) = type_constraint {
                         class_def.attribute_types.insert(bare_name, tc);
