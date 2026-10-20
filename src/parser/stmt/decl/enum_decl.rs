@@ -126,12 +126,12 @@ pub(crate) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("enum", input).ok_or_else(|| PError::expected("enum declaration"))?;
     let (rest, _) = ws1(rest)?;
     // Anonymous enum: `enum < foo bar >` or `enum :: < foo bar >`
-    if rest.starts_with('<') || rest.starts_with('(') {
+    if rest.starts_with(['<', '(', '\u{ab}']) {
         return parse_anon_enum_body(rest);
     }
     if let Some(r) = rest.strip_prefix("::") {
         let (r, _) = ws(r)?;
-        if r.starts_with('<') || r.starts_with('(') {
+        if r.starts_with(['<', '(', '\u{ab}']) {
             return parse_anon_enum_body(r);
         }
     }

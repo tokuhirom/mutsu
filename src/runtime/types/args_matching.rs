@@ -918,6 +918,37 @@ impl Interpreter {
                     return false;
                 }
 
+                // A named `is rw` param, like a positional one, only binds a
+                // writable argument (`:x($var)`); a literal `:x(5)` makes the
+                // candidate inapplicable so a sibling `is copy` multi wins.
+                if arg_val.is_some() && pd.traits.iter().any(|t| t == "rw") {
+                    let writable = args.iter().enumerate().any(|(idx, a)| {
+                        let inner = a.unwrap_varref();
+                        let ValueView::Pair(key, val) = inner.view() else {
+                            return false;
+                        };
+                        if !keys.iter().any(|n| n == key) {
+                            return false;
+                        }
+                        self.pending_call_arg_sources
+                            .as_ref()
+                            .and_then(|sources| sources.get(idx))
+                            .and_then(|name| name.as_ref())
+                            .is_some_and(|encoded| encoded.contains('='))
+                            || varref_from_value(a).is_some()
+                            || varref_from_value(val).is_some()
+                            || matches!(
+                                val.view(),
+                                ValueView::ContainerRef(_)
+                                    | ValueView::HashEntryRef { .. }
+                                    | ValueView::Proxy { .. }
+                            )
+                    });
+                    if !writable {
+                        return false;
+                    }
+                }
+
                 // An unsupplied optional named param binds its type object, which
                 // is `:U` (undefined). A `:D` (definite) smiley therefore fails to
                 // bind unless a default supplies a defined value — so the candidate
