@@ -274,7 +274,7 @@ pub(super) fn is_anonymous_named(node: &RakuAstNode) -> bool {
 /// An inner level of an alias chain: no marker of its own, optional (the
 /// outermost level says whether the parameter as a whole is required).
 fn bare_level(name: &str, named: bool, like: &ParamDef) -> ParamDef {
-    ParamDef {
+    ParamDef { trait_meta: Default::default(),
         name: name.to_string(),
         default: None,
         multi_invocant: like.multi_invocant,

@@ -196,10 +196,14 @@ impl Interpreter {
     /// `$obj does R` where `$obj` is a real object: rebless it into `C+{R}` in
     /// place. Returns `None` when the value is not an instance (an `Int`, a
     /// `Str`, an already-wrapped `Mixin`), leaving those to the wrapper path.
+    ///
+    /// Each role comes as `extract_role_application` gives it: its name, its
+    /// arguments, and whether those are type arguments (`R[Int]`) rather than
+    /// the initializer of the role's one public attribute (`R(5)`).
     pub(crate) fn does_rebless_instance(
         &mut self,
         left: &Value,
-        roles: &[(String, Vec<Value>)],
+        roles: &[(String, Vec<Value>, bool)],
     ) -> Result<Option<Value>, RuntimeError> {
         let ValueView::Instance {
             class_name,
@@ -247,16 +251,27 @@ impl Interpreter {
         // RoleDef, so those keep the wrapper path.
         if roles
             .iter()
-            .any(|(name, _)| !self.registry().roles.contains_key(name))
+            .any(|(name, _, _)| !self.registry().roles.contains_key(name))
         {
             return Ok(None);
         }
-        // A parameterised mixin (`$o does R[Int]`, `$o does R(5)`) still needs
-        // the wrapper's per-object type-argument and attribute-seed bookkeeping.
-        if roles.iter().any(|(_, args)| !args.is_empty()) {
-            return Ok(None);
+        // A parameterised mixin (`$o does R[Int]`) still needs the wrapper's
+        // per-object type-argument bookkeeping. An initializer (`$o does
+        // R(5)`) is the value of the role's one public attribute, which the
+        // mixed-in object holds like any other (#13528): a `Parameter` a
+        // trait mutated keeps `HasMCPType($mcp-type)`'s value that way.
+        let mut initializers: Vec<(String, Value)> = Vec::new();
+        for (name, args, parametric) in roles {
+            match (args.as_slice(), parametric) {
+                ([], _) => {}
+                ([value], false) => match self.role_single_public_attribute(name) {
+                    Some(attr) => initializers.push((attr, value.clone())),
+                    None => return Ok(None),
+                },
+                _ => return Ok(None),
+            }
         }
-        let role_names: Vec<String> = roles.iter().map(|(name, _)| name.clone()).collect();
+        let role_names: Vec<String> = roles.iter().map(|(name, _, _)| name.clone()).collect();
         // `ensure_mixin_class` below composes each fresh role into the
         // synthesized `base+{roles}` type via `register_class_decl`, which
         // runs each role's deferred body exactly once per (class, role) --
@@ -279,11 +294,24 @@ impl Interpreter {
         // (or the sigil-appropriate empty container) unless the object carries it
         // already.
         self.seed_mixin_role_attributes(&attributes, &role_names, &reblessed)?;
+        for (attr, value) in initializers {
+            attributes.insert(attr.as_str(), value);
+        }
         // 6.e runs a composed role's BUILD/TWEAK on the object it was mixed into.
         for name in &role_names {
             self.run_mixin_role_build(&reblessed, &attributes, name)?;
         }
         Ok(Some(reblessed))
+    }
+
+    /// The name of `role`'s one public attribute, which `$obj does R(value)`
+    /// initializes; `None` when it has none or several.
+    // Cost: O(a), a = the role's attributes.
+    fn role_single_public_attribute(&self, role: &str) -> Option<String> {
+        let registry = self.registry();
+        let mut public = registry.roles.get(role)?.attributes.iter().filter(|a| a.is_public);
+        let attr = public.next()?;
+        public.next().is_none().then(|| attr.name.clone())
     }
 
     /// Copy the composed roles' submethods onto the mixin type.

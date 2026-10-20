@@ -53,6 +53,7 @@ pub(crate) trait VisitMut {
 // Cost: O(n), n = size of the parameter's subtree.
 pub(crate) fn walk_param_mut<V: VisitMut + ?Sized>(v: &mut V, p: &mut ParamDef) {
     let ParamDef {
+        trait_meta: _,
         name: _,
         default,
         multi_invocant: _,

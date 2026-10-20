@@ -30,7 +30,7 @@ pub(crate) fn fold_parenthesised_pointy_params(sub_params: Vec<ParamDef>) -> Vec
 
 /// Helper to construct a default ParamDef with only required fields.
 pub(crate) fn make_param(name: String) -> ParamDef {
-    ParamDef {
+    ParamDef { trait_meta: Default::default(),
         type_capture: None,
         name,
         default: None,

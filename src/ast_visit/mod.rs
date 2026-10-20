@@ -166,6 +166,7 @@ pub(crate) trait Visit<'ast> {
 // sub-signatures).
 pub(crate) fn walk_param<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, p: &'ast ParamDef) {
     let ParamDef {
+        trait_meta: _,
         name,
         default,
         multi_invocant: _,

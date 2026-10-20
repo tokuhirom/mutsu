@@ -5314,7 +5314,7 @@ pub(crate) fn body_uses_return_rw(stmts: &[Stmt]) -> bool {
 }
 
 fn implicit_legacy_param(name: &str) -> ParamDef {
-    ParamDef {
+    ParamDef { trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),
         default: None,

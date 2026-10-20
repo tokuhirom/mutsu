@@ -196,7 +196,7 @@ pub(crate) fn parse_optional_role_type_params(
                 && let Some(default) = type_capture_default(rest_after_name.trim_start())
             {
                 params.push(name.clone());
-                param_defs.push(ParamDef {
+                param_defs.push(ParamDef { trait_meta: Default::default(),
                     type_capture: None,
                     name,
                     default,
@@ -235,7 +235,7 @@ pub(crate) fn parse_optional_role_type_params(
                     && rest_after_expr.trim().is_empty()
                 {
                     params.push(name.clone());
-                    param_defs.push(ParamDef {
+                    param_defs.push(ParamDef { trait_meta: Default::default(),
                         type_capture: None,
                         name: format!("__type_capture__{}", name),
                         default: Some(default_expr),

@@ -621,6 +621,7 @@ pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) use serde_support::PortableValue;
 pub(crate) mod attribute_class;
+pub(crate) mod param_trait_meta;
 pub(crate) mod signature;
 mod signature_smartmatch;
 pub(crate) mod split_lines;

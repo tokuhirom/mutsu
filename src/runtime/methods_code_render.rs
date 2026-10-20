@@ -61,7 +61,7 @@ impl Interpreter {
                 } else {
                     params
                         .into_iter()
-                        .map(|name| ParamDef {
+                        .map(|name| ParamDef { trait_meta: Default::default(),
                             type_capture: None,
                             name,
                             default: None,
