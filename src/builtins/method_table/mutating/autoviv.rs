@@ -125,6 +125,24 @@ fn grow(
     if let Some(name) = place.name() {
         let name = name.to_string();
         if let Some(type_name) = containerless_type_object(interp, &name, value) {
+            // A bare `Array` type object has no container to vivify: Rakudo's
+            // vivification calls `STORE` on `Array:U`, which no candidate binds
+            // (#13888). Any other type object is read-only.
+            if array_type {
+                return Some(Err(
+                    crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+                        "STORE",
+                        "Array",
+                        false,
+                        "Array:D",
+                        &[
+                            "(Array:D $:: Iterable:D \\iterable, *%_ --> Array:D)".to_string(),
+                            "(Array:D $:: QuantHash:D \\qh, *%_ --> Array:D)".to_string(),
+                            "(Array:D $:: Mu \\item, *%_ --> Array:D)".to_string(),
+                        ],
+                    ),
+                ));
+            }
             return Some(Err(RuntimeError::assignment_ro_type_object(&type_name)));
         }
         let vivified = match interp.vivify_binding(&name, Value::real_array(Vec::new())) {
