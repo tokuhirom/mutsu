@@ -282,6 +282,22 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
         return Ok(make_duration_from_value(super::temporal::tai_rat(&modded)));
     }
     let (mut l, mut r) = crate::runtime::coerce_numeric(left, right);
+    // An `Int` over a non-`Int` `Real` takes Rakudo's `Real, Real` candidate,
+    // `$a - ($a div $b) * $b`, whose `div` coerces `$b` to `Int` first, so
+    // `7 mod 2.5` is `-0.5`, not the floored remainder (#14119).
+    if matches!(l.view(), ValueView::Int(_) | ValueView::BigInt(_))
+        && match r.view() {
+            ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => true,
+            ValueView::Num(f) => f.is_finite(),
+            _ => false,
+        }
+    {
+        let quotient = super::int_div(&l, &r);
+        if matches!(quotient.view(), ValueView::Int(_) | ValueView::BigInt(_)) {
+            return Ok(super::arith_sub(l, arith_mul(quotient, r)));
+        }
+        return Ok(quotient);
+    }
     // Mixed Num/Rat modulo should use floating semantics; routing through
     // exact-rational reduction loses expected precision behavior for cases like
     // 1.01 % 0.2 (should be ~0.01).
