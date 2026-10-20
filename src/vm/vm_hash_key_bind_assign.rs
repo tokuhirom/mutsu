@@ -111,7 +111,7 @@ impl Interpreter {
         idx: &Value,
         positional: bool,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
-        if !crate::value::cell_metadata_possible() {
+        if !crate::value::cell_metadata_possible() && !crate::value::readonly_cells_possible() {
             return None;
         }
         let idx = match idx.view() {
@@ -136,8 +136,10 @@ impl Interpreter {
         let ValueView::ContainerRef(cell) = slot.view() else {
             return None;
         };
-        (crate::value::lookup_cell_constraint(&cell).is_some() || cell.default_value().is_some())
-            .then(|| cell.clone())
+        (cell.is_readonly()
+            || crate::value::lookup_cell_constraint(&cell).is_some()
+            || cell.default_value().is_some())
+        .then(|| cell.clone())
     }
 
     /// The value a plain element assignment of `val` through `cell` stores. An
@@ -152,6 +154,9 @@ impl Interpreter {
         cell: &crate::gc::Gc<crate::value::ContainerCell>,
         val: Value,
     ) -> Result<Value, RuntimeError> {
+        if cell.is_readonly() {
+            return Err(RuntimeError::immutable_value());
+        }
         let val = if val.is_nil() {
             self.cell_nil_reset_value(cell)
         } else {

@@ -664,7 +664,9 @@ pub(crate) use map_grep_items::{MapGrepChain, MapGrepItems};
 mod pure_cursor;
 pub(crate) use list_gen::{ListGen, PositionalMode};
 pub(crate) use pure_cursor::PureCursor;
+mod container_ref_flavor;
 mod element_share_holder;
+use container_ref_flavor::ContainerRefFlavor;
 mod hash_slot;
 mod value_methods_a;
 mod value_methods_b;
@@ -2732,9 +2734,9 @@ pub(in crate::value) enum ValueRepr {
     /// Prevents one level of flattening in list/array context.
     Scalar(Box<Value>),
     /// A shared mutable Scalar container for `:=` binding.
-    /// Two variables bound together share the same `ContainerRef`. The bool is
-    /// a per-holder itemization flag; it does not change the shared cell.
-    ContainerRef(Gc<crate::value::ContainerCell>, bool),
+    /// Two variables bound together share the same `ContainerRef`. Its flavor
+    /// is per holder and never changes the shared cell.
+    ContainerRef(Gc<crate::value::ContainerCell>, ContainerRefFlavor),
     /// An explicit view of a `ContainerRef` returned by `.VAR`.
     ///
     /// It carries the same cell identity as `ContainerRef`, but stays distinct
@@ -3020,11 +3022,14 @@ impl Value {
     }
     #[inline]
     pub(in crate::value) fn ContainerRef(cell: Gc<crate::value::ContainerCell>) -> Value {
-        Value::from_repr(ValueRepr::ContainerRef(cell, false))
+        Value::from_repr(ValueRepr::ContainerRef(cell, ContainerRefFlavor::Plain))
     }
     #[inline]
     pub(in crate::value) fn ContainerRefItemized(cell: Gc<crate::value::ContainerCell>) -> Value {
-        Value::from_repr(ValueRepr::ContainerRef(cell, true))
+        Value::from_repr(ValueRepr::ContainerRef(
+            cell,
+            ContainerRefFlavor::SharedItemized,
+        ))
     }
     #[inline]
     pub(in crate::value) fn ContainerView(cell: Gc<crate::value::ContainerCell>) -> Value {

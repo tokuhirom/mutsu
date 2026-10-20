@@ -993,24 +993,7 @@ impl Compiler {
             && let Expr::ArrayLiteral(dimensions) = index
             && let Some(name) = self.index_assign_target_name(target)
         {
-            // Semicolon dimensions are nested scalar subscripts for binding.
-            // Route through the deep lvalue op, which already preserves the
-            // source cell while walking ordinary nested containers.
-            self.compile_bind_index_value(value);
-            for dimension in dimensions.iter().rev() {
-                self.compile_expr(dimension);
-            }
-            let name_idx = self.code.add_constant(Value::str(name));
-            let flags = vec![Value::truth(outer_positional); dimensions.len()];
-            let flags_idx = self.code.add_constant(Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(flags)),
-                crate::value::ArrayKind::Array,
-            ));
-            self.code.emit(OpCode::IndexAssignDeepNested {
-                name_idx,
-                depth: dimensions.len() as u32,
-                positional_flags_idx: flags_idx,
-            });
+            self.compile_multidim_value_bind(name, dimensions, value, outer_positional);
             return;
         }
         if let Some(name) = self.index_assign_target_name(target) {
@@ -1053,8 +1036,12 @@ impl Compiler {
                 concat_append: false,
                 element_share: share_value.is_some(),
             });
-        } else if let Some((name, chain)) = self.index_assign_deep_nested_target(target) {
-            // Deep nested index assignment (3+ levels): @a[i][j][k]... = val
+        } else if let Some((name, chain)) = self
+            .index_assign_deep_nested_target(target)
+            .or_else(|| binding.then(|| self.index_chain_target(target)).flatten())
+        {
+            // All chained binds use the cell-preserving walk. Ordinary
+            // assignments use it for three or more subscript levels.
             // chain contains (index_expr, is_positional) from innermost to outermost
             // We also have the IndexAssign's own (index, outer_positional) as the final level.
             let depth = (chain.len() + 1) as u32; // +1 for the outermost from IndexAssign

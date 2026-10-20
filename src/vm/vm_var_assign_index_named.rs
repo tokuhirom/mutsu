@@ -2548,9 +2548,6 @@ impl Interpreter {
                     String,
                     crate::gc::Gc<crate::value::ContainerCell>,
                 )> = None;
-                // Whether the bind stored a shared cell at the element (skips
-                // the bound-index side table — the cell IS the alias).
-                let mut stored_bind_cell = false;
                 // Pre-read the bind source before the mutable container borrow.
                 // An element source (`:= @b[j]`) arrives already promoted to a
                 // shared cell by IndexAutovivifyLazyTerminal; a source variable
@@ -2852,11 +2849,18 @@ impl Interpreter {
                         // Handled by the Hash arm above.
                     } else if matches!(container.view(), ValueView::Array(..)) {
                         if crate::runtime::utils::is_shaped_array(container) {
-                            Self::assign_array_multidim(
+                            Self::store_shaped_index(
                                 container,
-                                std::slice::from_ref(&idx),
-                                val.clone(),
+                                &idx,
+                                &val,
+                                bind_mode,
+                                bind_cell.as_ref().map(|(_, cell)| cell),
                             )?;
+                            if bind_mode && let Some((source_install, cell)) = &bind_cell {
+                                pending_source_cell = source_install
+                                    .as_ref()
+                                    .map(|name| (name.clone(), cell.clone()));
+                            }
                         } else if let Some((slice_indices, vals)) = &range_slice {
                             container
                                 .with_array_mut(|items, _| -> Result<(), RuntimeError> {
@@ -2952,7 +2956,6 @@ impl Interpreter {
                                         // `resolve_array_entry`; writes go
                                         // through the cell arm below.
                                         arr[i] = Value::container_ref(cell.clone());
-                                        stored_bind_cell = true;
                                         if let Some(source_name) = source_install {
                                             pending_source_cell =
                                                 Some((source_name.clone(), cell.clone()));
@@ -5128,7 +5131,8 @@ impl Interpreter {
         let is_bind_value =
             matches!(val.view(), ValueView::Pair(n, _) if n == "__mutsu_bind_index_value");
         let (val, bind_source) = Self::unwrap_bind_index_value(val);
-        let bind_source = bind_source.filter(|s| !s.contains("\x00idx\x00"));
+        let bind_source =
+            bind_source.filter(|s| !s.contains("\x00idx\x00") && !s.starts_with(['@', '%']));
         let bind_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = bind_source
             .as_ref()
             .map(|name| self.promote_bind_source_cell(name, val.clone()));
@@ -5255,6 +5259,10 @@ impl Interpreter {
         // node `current` points into alive for the rest of the walk.
         let mut object_step_containers: Vec<Box<Value>> = Vec::new();
 
+        // Binding through a newly vivified intermediate receives a value;
+        // binding through an existing slot can preserve its source Scalar.
+        let mut binding_creates_path = false;
+
         // Walk through indices[0..depth-1], autovivifying intermediate containers
         for level in 0..depth {
             let key = &indices[level];
@@ -5331,6 +5339,7 @@ impl Interpreter {
                                         | ValueView::ContainerRef(..)
                                 );
                                 if needs_viv {
+                                    binding_creates_path = true;
                                     arr[i] = Self::fresh_autoviv_container(next_positional);
                                 }
                                 Ok(&mut arr[i] as *mut Value)
@@ -5343,6 +5352,7 @@ impl Interpreter {
                     } else if let Some(next) = cur.with_hash_mut(|hash_arc| {
                         let hash = crate::value::gc_data_mut(hash_arc);
                         if !hash.contains_key(key.as_str()) {
+                            binding_creates_path = true;
                             hash.insert(
                                 key.clone(),
                                 Self::fresh_autoviv_container(next_positional),
@@ -5385,6 +5395,7 @@ impl Interpreter {
                             continue;
                         }
                         // Autovivify the root itself if needed
+                        binding_creates_path = true;
                         if is_positional {
                             *cur = Value::real_array(Vec::new());
                         } else {
@@ -5427,8 +5438,22 @@ impl Interpreter {
                 // source's cell.
                 let leaf_val = bind_cell
                     .as_ref()
-                    .map(|c| Value::container_ref(c.clone()))
-                    .unwrap_or_else(|| val.clone());
+                    .filter(|_| !binding_creates_path)
+                    .map(|c| Value::container_ref_bound_itemized(c.clone()))
+                    .unwrap_or_else(|| {
+                        if is_bind_value {
+                            // An indexed RHS already owns its promoted leaf
+                            // cell. Existing paths bind that cell, including
+                            // cyclic structures whose leaf is later replaced.
+                            if !binding_creates_path {
+                                Value::bound_element(val.clone())
+                            } else {
+                                Value::bound_element(val.deref_container())
+                            }
+                        } else {
+                            val.clone()
+                        }
+                    });
                 unsafe {
                     let cur = &mut *current;
                     // #7556 C2's bare-valued-List row (3+ level chain twin of
@@ -5453,7 +5478,7 @@ impl Interpreter {
                                 }
                                 let arr = crate::value::gc_data_mut(arr_arc);
                                 Self::autoviv_resize_tracking(arr, i, native_fill.clone())?;
-                                if bind_cell.is_some() {
+                                if is_bind_value {
                                     arr[i] = leaf_val.clone();
                                 } else {
                                     Value::assign_element_slot(&mut arr[i], leaf_val.clone());
@@ -5466,7 +5491,7 @@ impl Interpreter {
                     } else if cur
                         .with_hash_mut(|hash_arc| {
                             let hash = crate::value::gc_data_mut(hash_arc);
-                            if bind_cell.is_some() {
+                            if is_bind_value {
                                 hash.insert(key.clone(), leaf_val.clone());
                             } else {
                                 Value::hash_insert_through(hash, key.clone(), leaf_val.clone());
@@ -5504,7 +5529,7 @@ impl Interpreter {
 
         // Write the shared cell back to the source variable so both sides alias
         // the same container (the symmetric counterpart of the leaf store above).
-        if let (Some(src), Some(cell)) = (bind_source, bind_cell) {
+        if !binding_creates_path && let (Some(src), Some(cell)) = (bind_source, bind_cell) {
             let cell_val = Value::container_ref(cell);
             self.set_env_with_main_alias(&src, cell_val.clone());
             self.update_local_if_exists(code, &src, &cell_val);
