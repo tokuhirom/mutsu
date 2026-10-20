@@ -761,6 +761,24 @@ pub(crate) fn answer_shapeless(
     if method == "comb" && args.len() == 2 {
         return None;
     }
+    // A user subset's type object coerces as the type it refines
+    // (`subset S of Int; S.Int` is `Int.Int` of the invocant `S`), so a
+    // coercion that answers its invocant answers the subset's type object
+    // (#14045). `UInt` and the subsets' bases are resolved the same way.
+    if let crate::value::ValueView::Package(name) = target.view()
+        && COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str())
+        && let Some(interp) = interp.as_deref()
+    {
+        let base = interp.resolve_subset_base_type(name.as_str());
+        if base != name.as_str() {
+            let base = Value::package(Symbol::intern(&base));
+            if let Some((Ok(answer), _)) = call(row(id), None, &base, args, Named::NONE)
+                && answer == base
+            {
+                return Some(Ok(target.clone()));
+            }
+        }
+    }
     // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91) and
     // `Cool.UInt` reads `$*TOLERANCE` for a `Complex` (§9.92); the other rows
     // found here are pure.
@@ -1150,9 +1168,18 @@ pub(crate) fn shapeless_row(
         ValueView::Array(..) if coerce => cool,
         ValueView::Package(name) if coerce => {
             // `UInt`, the one built-in subset, is not in the catalog: it is
-            // an `Int`.
+            // an `Int`; a user subset is the type it refines (`subset S of
+            // Int` coerces as `Int`, #14045).
             let name = name.resolve();
-            let class = if name == "UInt" { "Int" } else { name.as_ref() };
+            let refined;
+            let class = if name == "UInt" {
+                "Int"
+            } else if let Some(interp) = interp.as_deref() {
+                refined = interp.resolve_subset_base_type(&name);
+                refined.as_str()
+            } else {
+                name.as_ref()
+            };
             crate::builtin_types::catalog::builtin_type_mro_strs(class)?
                 .contains(&"Cool")
                 .then_some(cool)?
