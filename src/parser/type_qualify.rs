@@ -155,10 +155,10 @@ struct PackageTypes<'a> {
 
 impl<'a> Visit<'a> for PackageTypes<'a> {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
-        if let Some(prefix) = prefix(&self.packages) {
-            if let Some(name) = declared_type(stmt) {
-                self.declared.insert(format!("{prefix}::{name}"));
-            }
+        if let Some(prefix) = prefix(&self.packages)
+            && let Some(name) = declared_type(stmt)
+        {
+            self.declared.insert(format!("{prefix}::{name}"));
         }
         if let Some(name) = lexical_type(stmt) {
             self.local_names.insert(name.to_string());
@@ -199,10 +199,11 @@ struct Qualify<'d> {
 impl Qualify<'_> {
     /// Runs `f` over `body` with the `my` classes it declares in scope.
     // Cost: O(b), b = statements of `body`, plus `f`.
-    fn in_scope<B: ?Sized>(&mut self, body: &mut B, f: impl FnOnce(&mut Self, &mut B))
-    where
-        B: AsRef<[Stmt]>,
-    {
+    fn in_scope<B: ?Sized + AsRef<[Stmt]>>(
+        &mut self,
+        body: &mut B,
+        f: impl FnOnce(&mut Self, &mut B),
+    ) {
         let mut scope = HashMap::new();
         if let Some(prefix) = prefix(&self.packages) {
             let mut pending: Vec<&Stmt> = body.as_ref().iter().collect();
