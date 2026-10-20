@@ -385,7 +385,8 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         match parse_single_modifier(rest, current_stmt.clone())? {
             Some((r, modified)) => {
                 // Did this modifier's condition end with a `{ ... }` block?
-                let cond_consumed = &rest[..rest.len() - r.len()];
+                let cond_consumed =
+                    crate::parser::primary::source_tail(rest, r).map_or("", |tail| tail.before());
                 let cond_ends_block = cond_consumed.trim_end().ends_with('}')
                     && !super::modifier_tail::modifier_operand_ends_with_subscript(&modified);
                 current_stmt = modified;

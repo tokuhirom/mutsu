@@ -23,8 +23,8 @@ use crate::parser::primary::ident::predicates::{
     is_zero_arg_callable_builtin, keyword_as_function_error, looks_like_binding, parens_then_block,
     starts_with_term_keyword, try_extend_colon_name,
 };
-use crate::parser::primary::ident::supply::supply_block;
 use crate::parser::primary::ident::statement_terminator::restore_statement_terminator;
+use crate::parser::primary::ident::supply::supply_block;
 use crate::parser::primary::misc::{
     anon_class_expr, anon_grammar_expr, anon_role_expr, mark_anon_package_decl, parse_block_body,
     parse_block_body_routine, parse_tracked_block_body,
@@ -140,7 +140,6 @@ fn strip_null_decl_name_marker(input: &str) -> &str {
     }
     ws(after_colons).map(|(r, _)| r).unwrap_or(after_colons)
 }
-
 
 /// Consume the distribution selectors (`:ver<…>` / `:ver(…)`, `:auth<…>`,
 /// `:api<…>`, and `:v<…>` — Raku's short spelling of `:ver<…>`) that may follow

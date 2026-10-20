@@ -10,7 +10,7 @@ use super::statement_boundary::{
 };
 use super::unit_use_hoist::hoist_unit_uses;
 use super::*;
-use crate::parser::parse_result::PError;
+use crate::parser::{parse_result::PError, primary::source_tail};
 
 /// Parse a block: { stmts }
 /// Pushes/pops a lexical import scope so that `use` inside a block
@@ -500,7 +500,7 @@ pub(crate) fn stmt_list_with_mode(
         let attempt = trace::begin(r, line, allow_mainline_capture && stmts.is_empty());
         match statement(r) {
             Ok((r, stmt)) => {
-                let consumed_raw = &input_before_stmt[..input_before_stmt.len() - r.len()];
+                let consumed_raw = source_tail(input_before_stmt, r).map_or("", |t| t.before());
                 let consumed = consumed_raw.trim_end();
                 // In Raku, after a statement-ending block (e.g. `sub f { 3 }`),
                 // a semicolon, newline, closing brace, or end-of-input is required

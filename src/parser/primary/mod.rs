@@ -19,8 +19,10 @@ mod number;
 pub(crate) use number::{decimal_literal_value, numeric_literal_value};
 pub(in crate::parser) mod quote_adverbs;
 pub(crate) mod regex;
+mod source_regions;
 pub(in crate::parser) mod string;
 pub(crate) mod var;
+pub(in crate::parser) use source_regions::{register_leaked_region_with_jump, source_tail};
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::{PError, PResult, update_best_error};
@@ -105,6 +107,7 @@ impl SourceOrigin {
 /// A leaked string region from heredoc parsing, with a line-number jump.
 #[derive(Clone)]
 struct LeakedRegion {
+    source: &'static str,
     ptr: usize,
     len: usize,
     /// Byte offset where the line number jumps (after rest_of_line + \n).
@@ -265,35 +268,6 @@ pub(in crate::parser) fn snapshot_source_state() -> SourceState {
 pub(in crate::parser) fn restore_source_state(state: SourceState) {
     ORIGINAL_SOURCE.with(|s| *s.borrow_mut() = state.original);
     LEAKED_REGIONS.with(|r| *r.borrow_mut() = state.leaked);
-}
-
-/// Register a leaked string region from heredoc parsing with a line-jump.
-/// `jump_offset` is the byte offset within the leaked string where a line jump occurs.
-/// Before the jump, line numbers start at `line_before_jump`.
-/// After the jump, line numbers start at `line_after_jump`.
-/// `before_src` and `after_src` are the slices the halves before and after
-/// the jump were copied from.
-pub(in crate::parser) fn register_leaked_region_with_jump(
-    leaked: &str,
-    jump_offset: usize,
-    line_before_jump: i64,
-    line_after_jump: i64,
-    before_src: &str,
-    after_src: &str,
-) {
-    let newlines = newline_index(leaked);
-    LEAKED_REGIONS.with(|r| {
-        r.borrow_mut().push(LeakedRegion {
-            ptr: leaked.as_ptr() as usize,
-            len: leaked.len(),
-            jump_offset,
-            line_before_jump,
-            line_after_jump,
-            newlines,
-            before_src: before_src.as_ptr() as usize,
-            after_src: after_src.as_ptr() as usize,
-        });
-    });
 }
 
 /// The byte offset in the original source that the parser position `input`
