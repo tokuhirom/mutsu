@@ -718,6 +718,7 @@ impl NanBox {
             Classified::Kind(Kind::Channel) => Some(DispatchShape::Channel),
             Classified::Kind(Kind::HyperSeq) => Some(DispatchShape::HyperSeq),
             Classified::Kind(Kind::RaceSeq) => Some(DispatchShape::RaceSeq),
+            Classified::Kind(Kind::RakuAst) => Some(DispatchShape::RakuAstNode),
             // A built-in class's own instance: its class name is the shape's.
             // A user subclass has another name, so it has none.
             Classified::Kind(Kind::Instance) => {
