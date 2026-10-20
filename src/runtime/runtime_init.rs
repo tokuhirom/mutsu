@@ -2503,7 +2503,6 @@ impl Interpreter {
             .map(|(name, def)| (name, def.into()))
             .collect::<rustc_hash::FxHashMap<_, _>>()
             .into();
-        registry.seed_builtin_method_entries();
         // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
         // now lives in the shared Registry instead of an Interpreter field).
         let ccr = &mut registry.class_composed_roles;

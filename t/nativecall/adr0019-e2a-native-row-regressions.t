@@ -7,10 +7,8 @@ plan 17;
 # handler-ID attempt hit -- a type object dispatching a catalog method, a user
 # `is Array` subclass's storage delegation, `Map`'s Hash-owned methods, a
 # gather-based `Seq` vs an eager `Array`, `Failure`'s must-not-silently-dispatch
-# contract, `Rat`/`FatRat`, and allomorph (`IntStr`) dispatch. `native_method_row`
-# rows are not load-bearing yet (E2a is recognition-metadata only), so this file
-# guards today's real dispatch behavior -- the contract E4b's cutover must not
-# break once native rows start driving real decisions.
+# contract, `Rat`/`FatRat`, and allomorph (`IntStr`) dispatch. It guards the real
+# dispatch behavior the method rows (ADR-11276) must keep.
 
 # 1) Type object receiving a catalog method (Str.gist / Int.raku): the pure
 # arity cascade must still recognize the call when the receiver is a type

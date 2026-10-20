@@ -302,7 +302,7 @@ impl Interpreter {
                         && !is_our_only
                         && !decl.is_private
                         && let Some(message) =
-                            crate::builtins::native_method_row::augment_core_method_conflict(
+                            crate::builtins::method_introspection::augment_core_method_conflict(
                                 name,
                                 &resolved_method_name,
                                 decl.multi,
@@ -689,7 +689,7 @@ impl Interpreter {
                         ..
                     } = other
                         && let Some(message) =
-                            crate::builtins::native_method_row::augment_core_method_conflict(
+                            crate::builtins::method_introspection::augment_core_method_conflict(
                                 name,
                                 &proto_name.resolve(),
                                 false,

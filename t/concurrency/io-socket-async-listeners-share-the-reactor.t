@@ -9,9 +9,18 @@ plan 5;
 my $task-dir = '/proc/self/task'.IO;
 # The scheduler's `pool` workers grow lazily (the `await`s below run on the
 # pool), so they are not counted: a listener must add no thread of its own
-# (#13089).
+# (#13089). A thread starts with its creator's name and renames itself
+# only once it runs, so a thread spawned from the interpreter thread (a
+# `pool` worker, the reactor's `sock-conn`) reads as a second `mutsu-main`
+# for a moment: the sample waits until every thread has its own name.
 sub thread-count() {
-    $task-dir.dir.grep({ (try .add('comm').slurp.chomp) ne 'pool' }).elems
+    my @names;
+    for ^200 {
+        @names = $task-dir.dir.map({ (try .add('comm').slurp.chomp) // '' });
+        last if @names.grep('mutsu-main') <= 1;
+        sleep 0.01;
+    }
+    @names.grep({ $_ ne 'pool' }).elems
 }
 
 my @taps;

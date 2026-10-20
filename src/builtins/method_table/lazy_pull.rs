@@ -418,7 +418,7 @@ mod tests {
         let undeclared: Vec<String> = PULLS
             .iter()
             .filter(|p| {
-                !crate::builtins::native_method_row::native_method_declared(p.owner, p.name)
+                !crate::builtins::method_introspection::native_method_declared(p.owner, p.name)
             })
             .map(|p| format!("{}.{}", p.owner, p.name))
             .collect();

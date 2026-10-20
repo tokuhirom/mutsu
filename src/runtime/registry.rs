@@ -60,7 +60,6 @@ pub(crate) struct MethodEntryKey {
 
 #[derive(Clone, Default)]
 pub(crate) struct MethodEntry {
-    pub(crate) builtin: Option<crate::builtins::builtin_type_methods::BuiltinMethodEntry>,
     pub(crate) user_candidates: Vec<MethodDef>,
     /// Visibility of the auto-generated accessor for a `has $.x`/`has $!x`
     /// attribute this class declares directly, keyed by attribute name under
@@ -709,63 +708,18 @@ impl Registry {
 }
 
 impl Registry {
-    /// Install the static built-in catalog when a registry is constructed.
-    /// This is data-only initialization: it must not invoke native handlers.
-    pub(crate) fn seed_builtin_method_entries(&mut self) {
-        use crate::builtins::builtin_type_methods::{
-            BUILTIN_METHOD_OWNERS, builtin_method_entries,
-        };
-
-        for owner in BUILTIN_METHOD_OWNERS {
-            // Interned once per owner, not once per entry: every entry of
-            // `owner`'s table names the same owner (#10961).
-            let canonical_owner =
-                crate::builtins::builtin_type_methods::canonical_builtin_owner(owner);
-            let owner_sym = Symbol::intern(canonical_owner);
-            for entry in builtin_method_entries(owner) {
-                debug_assert_eq!(entry.owner, canonical_owner);
-                let key = MethodEntryKey {
-                    owner: owner_sym,
-                    name: Symbol::intern(entry.name),
-                };
-                let slot = self.method_entries.entry(key).or_default();
-                debug_assert!(slot.builtin.is_none(), "duplicate built-in method entry");
-                slot.builtin = Some(entry);
-            }
-        }
-        self.bump_method_generation();
-    }
-
+    /// The `.^methods` names of the built-in `type_name`, in introspection
+    /// order (`builtin_type_methods::builtin_type_method_names`, ADR-14032).
+    // Cost: see `method_introspection::introspectable_names_for_owner`.
     pub(crate) fn builtin_method_names(&self, type_name: &str) -> Vec<&'static str> {
-        let owner = crate::builtins::builtin_type_methods::canonical_builtin_owner(type_name);
-        if owner.is_empty() {
-            return Vec::new();
-        }
-        let owner = Symbol::intern(owner);
-        let mut entries: Vec<_> = self
-            .method_entries
-            .iter()
-            .filter_map(|(key, entry)| (key.owner == owner).then_some(entry.builtin).flatten())
-            .collect();
-        entries.sort_unstable_by_key(|entry| entry.order);
-        entries.into_iter().map(|entry| entry.name).collect()
+        crate::builtins::builtin_type_methods::builtin_type_method_names(type_name)
     }
 
-    /// Whether `type_name`'s own built-in catalog rows declare `method_name`
-    /// -- the membership test [`Self::builtin_method_names`] answers, without
-    /// listing every row of the owner.
-    // Cost: O(1) hash probe.
+    /// Whether the built-in `type_name` lists `method_name` among
+    /// [`Self::builtin_method_names`], without listing them.
+    // Cost: see `method_introspection::introspectable_name_listed`.
     pub(crate) fn declares_builtin_method(&self, type_name: &str, method_name: &str) -> bool {
-        let owner = crate::builtins::builtin_type_methods::canonical_builtin_owner(type_name);
-        if owner.is_empty() {
-            return false;
-        }
-        self.method_entries
-            .get(&MethodEntryKey {
-                owner: Symbol::intern(owner),
-                name: Symbol::intern(method_name),
-            })
-            .is_some_and(|entry| entry.builtin.is_some())
+        crate::builtins::builtin_type_methods::builtin_type_method_listed(type_name, method_name)
     }
 
     /// Whether `owner` (a class, or a role, whose methods live on its
@@ -2301,31 +2255,10 @@ mod tests {
     }
 
     #[test]
-    fn builtin_method_catalog_is_registry_owned_and_ordered() {
-        let mut registry = Registry::default();
-        registry.seed_builtin_method_entries();
-
-        assert_eq!(
-            registry.builtin_method_names("Str"),
-            crate::builtins::builtin_type_methods::introspected_type_method_names("Str")
-        );
-        assert!(matches!(
-            registry.method_entries.get(&MethodEntryKey {
-                owner: Symbol::intern("Str"),
-                name: Symbol::intern("chars"),
-            }),
-            Some(MethodEntry {
-                builtin: Some(_),
-                ..
-            })
-        ));
-    }
-
-    #[test]
     fn builtin_method_catalog_resolves_type_aliases() {
-        let mut registry = Registry::default();
-        registry.seed_builtin_method_entries();
-
+        let registry = Registry::default();
+        assert!(registry.builtin_method_names("Str").contains(&"chars"));
+        assert!(registry.declares_builtin_method("Str", "chars"));
         assert_eq!(
             registry.builtin_method_names("FatRat"),
             registry.builtin_method_names("Rat")
@@ -2337,9 +2270,8 @@ mod tests {
     }
 
     #[test]
-    fn user_override_shares_the_builtin_method_entry() {
+    fn a_user_override_of_a_builtin_name_is_an_ordinary_entry() {
         let mut registry = Registry::default();
-        registry.seed_builtin_method_entries();
         let seeded_generation = registry.method_generation;
         let method = MethodDef {
             syms: Default::default(),
@@ -2382,22 +2314,20 @@ mod tests {
                 name: Symbol::intern("chars"),
             })
             .expect("Str.chars entry");
-        assert!(entry.builtin.is_some());
         assert_eq!(entry.user_candidates.len(), 1);
 
         let override_generation = registry.method_generation;
         registry.classes.remove("Str");
         registry.clear_user_methods_for_owner(Symbol::intern("Str"));
         assert!(registry.method_generation > override_generation);
-        let entry = registry
-            .method_entries
-            .get(&MethodEntryKey {
+        assert!(
+            !registry.method_entries.contains_key(&MethodEntryKey {
                 owner: Symbol::intern("Str"),
                 name: Symbol::intern("chars"),
-            })
-            .expect("built-in entry survives user removal");
-        assert!(entry.builtin.is_some());
-        assert!(entry.user_candidates.is_empty());
+            }),
+            "a user row is dropped with its last candidate"
+        );
+        assert!(registry.declares_builtin_method("Str", "chars"));
     }
 
     fn dummy_proto_def(owner: &str, name: &str) -> FunctionDef {

@@ -339,6 +339,34 @@ pub(crate) fn owner_declares(owner: &str, method: Symbol) -> bool {
     })
 }
 
+/// Whether `owner` has a row for `method` that exists in the program's language
+/// revision, at any arity and of any kind (a deferral base included): what
+/// introspection asks of an owner (ADR-14032).
+// Cost: O(k), k = rows named `method`.
+pub(crate) fn owner_has_row(owner: &str, method: &str) -> bool {
+    NAMES.binary_search(&method).is_ok_and(|name| {
+        rows_named(name)
+            .iter()
+            .any(|&id| ALL[usize::from(id)].owner == owner && ALL[usize::from(id)].flags.in_force())
+    })
+}
+
+/// The names of the rows `owner` declares, in registration order, each once:
+/// the method table of an owner Rakudo's snapshot does not list (ADR-14032).
+// Cost: O(r), r = rows (a scan; introspection only).
+pub(crate) fn owner_row_names(owner: &str) -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = Vec::new();
+    for row in ALL
+        .iter()
+        .filter(|row| row.owner == owner && row.flags.in_force())
+    {
+        if !names.contains(&row.name) {
+            names.push(row.name);
+        }
+    }
+    names
+}
+
 /// Whether some row named `method`, of any owner, binds the named argument
 /// `key`: one that lists it, or one that binds every named argument
 /// ([`RowFlags::ANY_NAMED`]). A name no row binds is one the method swallows

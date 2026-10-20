@@ -587,7 +587,8 @@ WIDE_FOCUS_SOURCES = (
     "src/builtins/method_table/",
     "src/builtins/methods_0arg/",
     "src/builtins/methods_narg/",
-    "src/builtins/native_method_row_table.rs",
+    "src/builtins/method_introspection.rs",
+    "src/builtins/rakudo_method_tables.txt",
 )
 WIDE_FOCUS_DIRS = ("t/oo", "t/types", "t/collections")
 
@@ -910,7 +911,7 @@ def self_test(root: str) -> int:
     check("quick gate: a built-in method change widens the focus",
           wide_focus(["src/builtins/method_table/scalars/render.rs"]) == list(WIDE_FOCUS_DIRS)
           and wide_focus(["src/builtins/methods_0arg/mod.rs"]) == list(WIDE_FOCUS_DIRS)
-          and wide_focus(["src/builtins/native_method_row_table.rs"]) == list(WIDE_FOCUS_DIRS))
+          and wide_focus(["src/builtins/rakudo_method_tables.txt"]) == list(WIDE_FOCUS_DIRS))
     check("quick gate: another change keeps the focus narrow",
           wide_focus(["src/parser/mod.rs", "t/oo/x.t", "docs/adr/0126.md"]) == [])
     check("ranges", compress_ranges([1, 2, 3, 5, 7, 8]) == "1-3, 5, 7-8")

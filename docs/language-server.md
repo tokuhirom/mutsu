@@ -88,10 +88,9 @@ Today the server reports:
 
 Unknown *method* names are not reported. `$x.foo` cannot be judged without
 knowing what `$x` is, and mutsu's AST carries no type information — the same
-reason it carries no positions. The existing `(owner, name)` catalog
-(`src/builtins/native_method_row.rs`) cannot stand in for that: it is
-deliberately conservative, so absence from it means "unclassified", not "mutsu
-does not have it", and reporting absence as a defect would be a false positive.
+reason it carries no positions. The built-in method introspection
+(`src/builtins/method_introspection.rs`) cannot stand in for that: it answers
+per owner, and without the receiver's type a missing name is not a defect.
 See the ADR's S2 findings.
 
 ## Symbols and definitions

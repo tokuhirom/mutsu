@@ -39,8 +39,7 @@ use super::{ClassAttributeDef, ClassDef};
 /// holding true (`registry.rs`'s former inline retain condition, now shared
 /// -- ADR-0019 F4c design note (3)).
 fn entry_is_live(entry: &MethodEntry) -> bool {
-    entry.builtin.is_some()
-        || !entry.user_candidates.is_empty()
+    !entry.user_candidates.is_empty()
         || entry.accessor.is_some()
         || entry.proto.is_some()
 }

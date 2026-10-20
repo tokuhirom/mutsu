@@ -913,12 +913,12 @@ impl Interpreter {
             // (`List.^can('of')` finds `Positional.of` as List's), so a role the
             // catalog composes at this level counts as declared by the level.
             if defs.is_none()
-                && (crate::builtins::native_method_row::native_method_declared(cn, method_name)
+                && (crate::builtins::method_introspection::native_method_declared(cn, method_name)
                     || crate::builtin_types::catalog::builtin_type_roles_strs(cn)
                         .iter()
                         .any(|role| {
                             crate::builtin_types::catalog::composes_role_at(&mro_strs, m, role)
-                                && crate::builtins::native_method_row::native_method_declared(
+                                && crate::builtins::method_introspection::native_method_declared(
                                     role.split_once('[').map_or(*role, |(base, _)| base),
                                     method_name,
                                 )

@@ -1153,11 +1153,15 @@ pub(crate) fn shapeless_row(
     } else {
         arity
     };
-    super::owner_row(owner, method, arity).or_else(|| {
-        coerce
-            .then(|| super::owner_row(mu_owner, method, arity))
-            .flatten()
-    })
+    // `Cool`'s owner-only rows (`Cool.Int`, which `.^can` lists) are never
+    // the coercion fallback's answer.
+    super::owner_row(owner, method, arity)
+        .filter(|&id| owner != cool || !super::row(id).flags.contains(RowFlags::OWNER_ONLY))
+        .or_else(|| {
+            coerce
+                .then(|| super::owner_row(mu_owner, method, arity))
+                .flatten()
+        })
 }
 
 /// The named arguments `row` is handed for a call passing `named`: the ones it

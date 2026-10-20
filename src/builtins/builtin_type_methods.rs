@@ -9,18 +9,12 @@
 //! must never execute native methods merely to discover their names. The runtime
 //! registry copies these entries once and serves introspection from that table.
 //!
-//! ## Single source of truth (ADR-0019 Phase F box F3)
+//! ## Single source of truth (ADR-14032)
 //!
-//! [`builtin_type_method_names`] reads the name list straight off
-//! `native_method_row::RAW_ROWS`'s `INTROSPECTABLE`-flagged rows for the
-//! folded owner, in table order -- there is no longer a hand-maintained
-//! per-type name slice in this file. `RAW_ROWS` carries many more
-//! dispatch-recognized names per owner than `.^methods` actually lists (real
-//! Rakudo does not enumerate every internal/dispatch-only name); the
-//! `INTROSPECTABLE` bit marks exactly the raku-verified genuine
-//! `.^methods` entries (F3 step 2's owner-by-owner triage). Add a new
-//! genuine introspection name by setting that bit on its row in
-//! `native_method_row_table.rs`, not by adding a slice here.
+//! [`builtin_type_method_names`] reads Rakudo's `.^methods` list for the
+//! folded owner from the committed snapshot, kept to the names a method row
+//! reaches (`method_introspection::introspectable_names_for_owner`). There is
+//! no hand-maintained name list in this file or anywhere else.
 //! `t/can-methods-drift.t` guards the callable/introspectable contract.
 
 #[cfg(test)]
@@ -36,7 +30,7 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
     if owner.is_empty() {
         return Vec::new();
     }
-    crate::builtins::native_method_row::introspectable_names_for_owner(owner)
+    crate::builtins::method_introspection::introspectable_names_for_owner(owner)
 }
 
 /// Whether `method` is one of [`builtin_type_method_names`]`(type_name)`,
@@ -45,12 +39,11 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
 pub(crate) fn builtin_type_method_listed(type_name: &str, method: &str) -> bool {
     let owner = canonical_builtin_owner(type_name);
     !owner.is_empty()
-        && crate::builtins::native_method_row::introspectable_name_listed(owner, method)
+        && crate::builtins::method_introspection::introspectable_name_listed(owner, method)
 }
 
-/// A representative sample VALUE for a *concrete* built-in type, used by
-/// `native_method_row.rs`'s inverse-probe tests to confirm a `RAW_ROWS` row's
-/// claimed arity is actually backed by the real native dispatch cascade.
+/// A representative sample VALUE for a *concrete* built-in type, for the tests
+/// below that probe the native dispatch on it.
 /// Abstract types (`Any`/`Mu`/`Cool`) and types without an easily-constructed
 /// instance return `None`.
 #[cfg(test)]
@@ -207,19 +200,10 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     arities
 }
 
-/// One canonical built-in type×method entry. User candidates will use the same shape once
-/// ADR-0019's registry migration lands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct BuiltinMethodEntry {
-    pub(crate) owner: &'static str,
-    pub(crate) name: &'static str,
-    /// Stable catalog order used by `.^methods`.
-    pub(crate) order: u16,
-}
-
-/// Built-in owners whose method entries are installed into the runtime registry.
+/// The built-in owners whose `.^methods` the introspection catalog answers.
 /// Aliases such as `FatRat` and `Method` resolve through [`canonical_builtin_owner`]
 /// and therefore do not need duplicate table rows.
+#[cfg(test)]
 pub(crate) const BUILTIN_METHOD_OWNERS: &[&str] = &[
     "Str",
     "Int",
@@ -240,20 +224,6 @@ pub(crate) const BUILTIN_METHOD_OWNERS: &[&str] = &[
     "Mu",
     "Blob",
 ];
-
-/// The canonical built-in method entries for one owner type. Both dispatch admission and
-/// introspection consume this static type×method catalog.
-pub(crate) fn builtin_method_entries(type_name: &str) -> Vec<BuiltinMethodEntry> {
-    builtin_type_method_names(type_name)
-        .into_iter()
-        .enumerate()
-        .map(|(order, name)| BuiltinMethodEntry {
-            owner: canonical_builtin_owner(type_name),
-            name,
-            order: order as u16,
-        })
-        .collect()
-}
 
 pub(crate) fn canonical_builtin_owner(type_name: &str) -> &'static str {
     match type_name {
@@ -281,10 +251,7 @@ pub(crate) fn canonical_builtin_owner(type_name: &str) -> &'static str {
 
 #[cfg(test)]
 pub(crate) fn introspected_type_method_names(type_name: &str) -> Vec<&'static str> {
-    builtin_method_entries(type_name)
-        .into_iter()
-        .map(|entry| entry.name)
-        .collect()
+    builtin_type_method_names(type_name)
 }
 
 /// Introspectable instance attributes for built-in types, as
@@ -380,8 +347,7 @@ mod tests {
     fn native_probe_recognizes_per_type_methods() {
         // A type's own native methods must be recognized on its sample, and a
         // method belonging to a different type must be rejected -- this
-        // per-value discrimination is what `native_method_arities` gives
-        // `RAW_ROWS`'s inverse-probe tests in `native_method_row.rs`.
+        // per-value discrimination is what `native_method_arities` gives.
         let s = builtin_sample_value("Str").unwrap();
         assert_ne!(
             native_method_arities(&s, "chars"),
@@ -438,29 +404,10 @@ mod tests {
     }
 
     #[test]
-    fn method_catalog_is_keyed_by_owner_and_name() {
-        let entries = builtin_method_entries("Str");
-        let mut keys = std::collections::HashSet::new();
-        for entry in entries {
-            assert_eq!(entry.owner, "Str");
-            assert!(
-                keys.insert((entry.owner, entry.name)),
-                "duplicate catalog entry for Str×{}",
-                entry.name
-            );
-        }
-        let chars = builtin_method_entries("Str")
-            .into_iter()
-            .find(|entry| entry.name == "chars")
-            .expect("Str×chars entry");
-        assert_eq!(chars.order, 0);
-    }
-
-    #[test]
     fn str_methods_exclude_universal_mu_any_methods() {
         // The universal Mu/Any methods (say/WHAT/defined/...) are reported via
-        // the Any/Mu lists on `:all`, NOT `Str`'s own -- `RAW_ROWS`'s
-        // `INTROSPECTABLE` rows for `Str` must not include any of them.
+        // the Any/Mu lists on `:all`, NOT `Str`'s own -- Rakudo's `Str.^methods`
+        // does not list any of them.
         let str_methods = builtin_type_method_names("Str");
         for forbidden in [
             "say", "put", "print", "note", "WHAT", "WHERE", "defined", "so", "not",

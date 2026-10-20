@@ -5,8 +5,9 @@ Prints, for the working tree:
 
   * the quoted-name arms still in the dispatch cascades, per layer and file;
   * the registered rows, per owner group and handler kind;
-  * the recognition-table rows (`native_method_row_table.rs`) that still have no
-    registered row, per owner group.
+  * the methods Rakudo declares on an owner (`rakudo_method_tables.txt`, the
+    snapshot introspection reads, ADR-14032) that have no registered row there, per
+    owner group.
 
 It is a report, not a gate: ADR-11276 §9 records why a shared counter that every
 parallel PR must keep equal coupled unrelated PRs and was dropped. Slices end when
@@ -78,11 +79,11 @@ def arms_in(path, with_lines=False):
 
 
 def method_names():
-    """Every name a built-in method has: the recognition table's and the Rakudo snapshot's.
+    """Every name a built-in method has: the Rakudo snapshot's.
 
     An arm none of whose names is one is not a method dispatch: a named-argument key
     (`"i" | "ignorecase"`), an encoding or a type name, a message string."""
-    names = {name for _owner, name in recognition_rows()}
+    names = set()
     path = os.path.join(ROOT, "src/builtins/rakudo_method_tables.txt")
     for line in open(path, encoding="utf-8"):
         fields = line.rstrip("\n").split("\t")
@@ -131,25 +132,6 @@ def report_arms():
     return all_names
 
 
-def recognition_rows():
-    """`(owner, name) -> (arity_bits, flag_bits)` from the recognition table."""
-    path = os.path.join(ROOT, "src/builtins/native_method_row_table.rs")
-    text = open(path, encoding="utf-8").read()
-    rows = {}
-    for owner, name, arity, flags in re.findall(r'\("([^"]+)",\s*"([^"]+)",\s*(\d+),\s*(\d+)\)', text):
-        rows.setdefault((owner, name), (int(arity), int(flags)))
-    return rows
-
-
-def kind_of(arity_bits, flag_bits):
-    """The planning estimate of ADR §10.2: Pure, Interp or Mut."""
-    if flag_bits & 2:  # MUTATES_RECEIVER
-        return "Mut"
-    if flag_bits & 4 or arity_bits & 7 == 0:  # SPECIAL, or no pure arity
-        return "Interp"
-    return "Pure"
-
-
 def registered_rows(args):
     if args.rows_from:
         text = open(args.rows_from, encoding="utf-8").read()
@@ -184,20 +166,17 @@ def report_rows(args):
     print(f"total registered rows: {len(registered)}")
 
     have = {(owner, name) for owner, name, *_ in registered}
-    print("\n== Recognition-table rows with no registered row ==")
-    remaining = collections.defaultdict(collections.Counter)
-    table = recognition_rows()
-    for (owner, name), (arity_bits, flag_bits) in table.items():
-        if (owner, name) not in have:
-            remaining[group_of(owner)][kind_of(arity_bits, flag_bits)] += 1
-    kinds = ["Pure", "Interp", "Mut"]
-    print(f"{'group':14} " + " ".join(f"{k:>7}" for k in kinds) + f" {'total':>7}")
-    grand = 0
-    for group in sorted(remaining, key=lambda g: -sum(remaining[g].values())):
-        counts = remaining[group]
-        grand += sum(counts.values())
-        print(f"{group:14} " + " ".join(f"{counts[k]:7d}" for k in kinds) + f" {sum(counts.values()):7d}")
-    print(f"remaining: {grand} of {len(table)} recognition rows")
+    print("\n== Methods Rakudo declares with no registered row at that owner ==")
+    remaining = collections.Counter()
+    total = 0
+    for owner, names in declared_by_rakudo().items():
+        for name in names:
+            total += 1
+            if (owner, name) not in have:
+                remaining[group_of(owner)] += 1
+    for group, count in sorted(remaining.items(), key=lambda item: -item[1]):
+        print(f"{group:14} {count:7d}")
+    print(f"remaining: {sum(remaining.values())} of {total} declared pairs")
 
 
 def arm_files_by_name():
@@ -217,58 +196,43 @@ def declared_by_rakudo():
     path = os.path.join(ROOT, "src/builtins/rakudo_method_tables.txt")
     for line in open(path, encoding="utf-8"):
         fields = line.rstrip("\n").split("\t")
-        if fields[0] == "declared":
-            declared[fields[1]] = set(fields[2:])
+        if fields[0] in ("declared", "declared.e"):
+            declared.setdefault(fields[1], set()).update(n for n in fields[2:] if n)
     return declared
 
 
 def report_inventory(args):
-    """A slice's first commit (ADR §10.4): every recognition row of its owners that has no registered row.
+    """A slice's first commit (ADR §10.4): every method Rakudo declares on its owners that has no registered row.
 
     `--inventory` takes owner names or group names (see GROUPS), comma-separated. The rows are
     printed per owner, then per method name, which is how a slice cuts its families: one handler
     answers a name for every owner and shape that has it, and the cascade arms for that name go.
 
     Only a pair Rakudo *declares* on the owner can be registered there (the unit test
-    `rows_are_declared_by_rakudo` enforces it). The others (`Array.keys`, declared on `List`)
-    are `inherited`: they are served by the ancestor's row once the receiver's shape inherits it.
+    `rows_are_declared_by_rakudo` enforces it); an inherited one is served by the ancestor's row.
     """
     owners = []
     for item in args.inventory.split(","):
         owners += GROUPS[item].split() if item in GROUPS else [item]
     registered, _raw = registered_rows(args)
     have = {(owner, name) for owner, name, *_ in registered}
-    declared = declared_by_rakudo()
     files_of = arm_files_by_name()
     per_owner = collections.defaultdict(list)
     per_name = collections.defaultdict(list)
-    for (owner, name), (arity_bits, flag_bits) in sorted(recognition_rows().items()):
-        if owner in owners and (owner, name) not in have:
-            kind = kind_of(arity_bits, flag_bits)
-            is_declared = name in declared.get(owner, ())
-            per_owner[owner].append((name, kind, is_declared))
-            per_name[name].append((owner, kind, is_declared))
-    print("== Inventory: unregistered rows per owner (declared = Rakudo declares it there) ==")
-    total = collections.Counter()
+    for owner, names in sorted(declared_by_rakudo().items()):
+        if owner not in owners:
+            continue
+        for name in sorted(names):
+            if (owner, name) not in have:
+                per_owner[owner].append(name)
+                per_name[name].append(owner)
+    print("== Inventory: Rakudo-declared methods with no row, per owner ==")
     for owner in owners:
-        kinds = collections.Counter(kind for _name, kind, is_declared in per_owner[owner] if is_declared)
-        inherited = sum(1 for _name, _kind, is_declared in per_owner[owner] if not is_declared)
-        total.update(kinds)
-        total["inherited"] += inherited
-        print(
-            f"{owner:10} declared {sum(kinds.values()):4d}  "
-            + " ".join(f"{k} {kinds[k]}" for k in sorted(kinds))
-            + f"   inherited-only {inherited}"
-        )
-    print(f"total declared {sum(v for k, v in total.items() if k != 'inherited')}, inherited-only {total['inherited']}, {len(per_name)} distinct names")
-    print("\n== Inventory: per method name (declared rows, kinds, owners; inherited-only owners in brackets; cascade files with an arm) ==")
-    for name, rows in sorted(per_name.items(), key=lambda item: (-len(item[1]), item[0])):
-        declared_rows = [(o, k) for o, k, d in rows if d]
-        inherited_owners = [o for o, _k, d in rows if not d]
-        kinds = "".join(sorted({k[0] for _o, k in declared_rows})) or "-"
-        owners_text = " ".join(o for o, _k in declared_rows)
-        extra = f" [{' '.join(inherited_owners)}]" if inherited_owners else ""
-        print(f"{name:16} {len(declared_rows):3d} {kinds:3} {owners_text}{extra}  <{','.join(sorted(files_of.get(name, [])))}>")
+        print(f"{owner:10} {len(per_owner[owner]):4d}")
+    print(f"total {sum(len(v) for v in per_owner.values())}, {len(per_name)} distinct names")
+    print("\n== Inventory: per method name (owners; cascade files with an arm) ==")
+    for name, row_owners in sorted(per_name.items(), key=lambda item: (-len(item[1]), item[0])):
+        print(f"{name:16} {len(row_owners):3d} {' '.join(row_owners)}  <{','.join(sorted(files_of.get(name, [])))}>")
 
 
 def main():
