@@ -537,8 +537,7 @@ impl Compiler {
             // value.
             // The `_nd` ("no decont") ops look at the container itself, so
             // they too are handed the variable's shared cell.
-            if (op == "bindpos" && i == 2
-                || matches!(op, "isconcrete_nd" | "clone_nd") && i == 0)
+            if (op == "bindpos" && i == 2 || matches!(op, "isconcrete_nd" | "clone_nd") && i == 0)
                 && let Some(cell) = self.return_rw_container_name(arg)
             {
                 self.emit_wrap_var_ref(&cell);

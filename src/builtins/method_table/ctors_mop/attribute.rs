@@ -213,12 +213,12 @@ fn auto_viv_container(target: &Value, _args: &[Value]) -> Answer {
             "%" => Value::hash(crate::value::ValueMap::default()),
             _ => {
                 let default = match meta.as_map().get("type").map(Value::view) {
-                    Some(ValueView::Package(name)) if name != "Mu" => {
-                        Value::package(name)
-                    }
+                    Some(ValueView::Package(name)) if name != "Mu" => Value::package(name),
                     _ => Value::package(Symbol::intern("Any")),
                 };
-                Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(default)))
+                Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                    default,
+                )))
             }
         })
     })

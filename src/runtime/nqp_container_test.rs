@@ -115,7 +115,7 @@ impl Interpreter {
     pub(crate) fn nqp_op_keeps_proxy_operands(id: u16) -> bool {
         matches!(
             crate::runtime::nqp_op_ids::nqp_op_name(id),
-            "iscont" | "iscont_i" | "iscont_n" | "iscont_s" | "isrwcont" | "decont"
+            "iscont" | "iscont_i" | "iscont_n" | "iscont_s" | "isrwcont" | "decont" | "istype_nd"
         )
     }
 }
