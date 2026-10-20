@@ -162,6 +162,7 @@ impl Interpreter {
                 out: RoleCompositionOutcome::default(),
                 is_hoisted_shell: crate::runtime::HoistedShell::No,
                 pending_attrs: &[],
+                class_body_plan: &[],
             };
             self.compose_role_into_class(&mut cx, &role_name, base_role_name, false, resolved)?;
             cx.out
@@ -256,7 +257,7 @@ impl Interpreter {
     /// are referenced by composed methods, so we must keep their
     /// effects on the env (only clean up the type capture markers).
     /// Put `key` back to `saved` (or remove it when it was unset).
-    fn restore_env_entry(env: &mut crate::env::Env, key: &str, saved: Option<Value>) {
+    pub(super) fn restore_env_entry(env: &mut crate::env::Env, key: &str, saved: Option<Value>) {
         match saved {
             Some(value) => {
                 env.insert(key.to_string(), value);
@@ -783,6 +784,14 @@ impl Interpreter {
                 role_param_values.keys().map(|k| k.to_string()).collect();
             declared.extend(bound.iter().cloned());
             self.persist_role_body_lexicals_except(cx.name, &declared, &bound);
+            if role_lexical_package.is_none() {
+                self.register_role_body_subs_per_composer(
+                    cx.name,
+                    cx.class_body_plan,
+                    role,
+                    &declared,
+                )?;
+            }
         }
         // Rename each newly-declared nested class to its
         // per-composition parameterized name and record an alias so a
