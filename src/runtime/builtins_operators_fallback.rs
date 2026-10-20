@@ -531,6 +531,9 @@ impl Interpreter {
                 }
             }
         }
+        if let Some(callable) = self.call_me_routine_for_name(name) {
+            return self.call_method_with_values(callable, "CALL-ME", args.to_vec());
+        }
         if let Some((proto_name, proto_def)) = self.resolve_proto_function_with_alias(name) {
             return self.call_proto_function(&proto_name, &proto_def, args);
         }

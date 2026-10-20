@@ -1481,6 +1481,9 @@ impl Interpreter {
             for name in &leaked_packages {
                 self.env.remove(name);
             }
+            // The module's trait-composed routines' `&name` write-backs are
+            // its own lexicals, not the importer's (#12907).
+            self.drop_module_trait_routine_bindings(&before_env_keys);
             // A `unit` compunit's own file-scope `constant`s and enum values are
             // package symbols of that compunit in rakudo, not names the importer
             // sees bare (#7787). The module body ran in the CALLER's env, so drop
