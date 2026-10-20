@@ -1,5 +1,5 @@
 use Test;
-use lib $?FILE.IO.parent(3).add('lib').Str;
+use lib $?FILE.IO.parent(2).add('lib').Str;
 
 plan 8;
 
