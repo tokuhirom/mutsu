@@ -297,6 +297,41 @@ pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
     Err(PError::expected("declare declaration"))
 }
 
+/// [`declare_decl`] as a term, which also accepts the anonymous spellings
+/// (`model :: is table<t> { }`, `model { }`) and a `my`/`our` prefix
+/// (`given my model { }`).
+pub(crate) fn declare_term_decl(input: &str) -> PResult<'_, Stmt> {
+    let (body_input, is_lexical) = match keyword("my", input).or_else(|| keyword("our", input)) {
+        Some(r) => (ws1(r)?.0, keyword("my", input).is_some()),
+        None => (input, false),
+    };
+    for kw in super::super::simple::declare_keyword_names() {
+        if super::super::simple::declare_keyword_is_role(&kw) {
+            continue;
+        }
+        let Some(rest) = keyword(&kw, body_input) else {
+            continue;
+        };
+        let (rest, _) = ws(rest)?;
+        let anonymous = rest.starts_with('{')
+            || (rest.starts_with("::")
+                && !rest[2..].starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '('))
+            || keyword("is", rest).is_some()
+            || keyword("does", rest).is_some();
+        if !anonymous {
+            continue;
+        }
+        let (rest, mut stmt) = class_decl_body_opt(rest, is_lexical, true)?;
+        if let Some(Stmt::ClassDecl { custom_traits, .. }) =
+            crate::ast::package_header::declaration_mut(&mut stmt)
+        {
+            custom_traits.push(declare_how_marker(kw));
+        }
+        return Ok((rest, stmt));
+    }
+    declare_decl(input)
+}
+
 /// Parse `augment class ClassName { ... }` declaration (monkey-patching).
 /// Also handles `augment role RoleName { ... }` (always illegal — roles are
 /// closed) and the anonymous form `augment class { ... }` (X::Anon::Augment).
@@ -463,8 +498,23 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse the body of a class declaration (after `class` keyword and whitespace).
 pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
+    class_decl_body_opt(input, is_lexical, false)
+}
+
+/// [`class_decl_body`], optionally for the anonymous spelling (`kw :: is T { }`
+/// / `kw { }`): the declaration gets a fresh internal name, as `class { }`
+/// does in expression position.
+pub(crate) fn class_decl_body_opt(
+    input: &str,
+    is_lexical: bool,
+    anonymous: bool,
+) -> PResult<'_, Stmt> {
     let mut leading_colons = false;
-    let (rest, name, name_expr) = if let Some(after_colons) = input.strip_prefix("::") {
+    let (rest, name, name_expr) = if anonymous {
+        let after = input.strip_prefix("::").unwrap_or(input);
+        let (after, _) = ws(after)?;
+        (after, crate::parser::primary::next_anon_class_name(), None)
+    } else if let Some(after_colons) = input.strip_prefix("::") {
         // Check if this is `::Ident` (forward stub) or `::(expr)` (indirect name)
         if after_colons.starts_with('(') {
             let (rest, (name, expr)) = parse_indirect_decl_name(input)?;
