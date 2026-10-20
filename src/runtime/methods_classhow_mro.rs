@@ -22,6 +22,11 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.resolve())
                 .collect()
+        } else if let Some(base) = self.enum_base_type_mro(&class_name) {
+            // An enum type inherits from its base type (#13667).
+            std::iter::once(class_name.clone())
+                .chain(base.iter().map(|name| name.to_string()))
+                .collect()
         } else if let Some(mro) = self.registry().role_pun_mro(&class_name) {
             // A role with an `is P` class parent: its pun inherits P's chain.
             mro.iter().map(|s| s.resolve()).collect()
