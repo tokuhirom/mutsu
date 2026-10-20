@@ -51,11 +51,14 @@ impl Interpreter {
     /// `%h.DELETE-KEY($key)` on a hash value: remove the entry and return the
     /// value it held, or the hash's `is default(...)` value (else its element
     /// type object) when the key was absent.
+    // Cost: O(T + k) expected, T = key type check/coercion, k = key string length.
     pub(crate) fn hash_delete_key_value(
         &mut self,
         target: &Value,
         key_arg: &Value,
     ) -> Result<Value, RuntimeError> {
+        let prepared = self.prepare_hash_key_arg(target, key_arg.clone())?;
+        let key_arg = &prepared;
         refuse_map_removal(target)?;
         let ValueView::Hash(map) = target.view() else {
             return Ok(Value::NIL);

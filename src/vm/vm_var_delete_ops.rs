@@ -649,6 +649,9 @@ impl Interpreter {
             return Ok(());
         }
         // Fast path for simple hash delete
+        if let Some(target) = self.env().get(&var_name).cloned() {
+            self.validate_object_hash_index(&target, &idx)?;
+        }
         if let Some(result) = self.try_fast_hash_delete(code, &var_name, slot, &idx) {
             self.stack.push(result?);
             return Ok(());
@@ -944,32 +947,6 @@ impl Interpreter {
         Ok(())
     }
 
-    /// The stored form of `idx` for deleting from `target` when `target` is an
-    /// object hash (`Hash[V, K]`, `my %h{K}`): its entries are keyed by the
-    /// key's WHICH or encoded form, not by its string value, so a delete
-    /// through a `$` holding it (no variable metadata, unlike the named op)
-    /// must look it up the same way.
-    // Cost: O(k) for the key's WHICH/encoding, k = size of the key.
-    fn object_hash_delete_key(&mut self, target: &Value, idx: Value) -> Value {
-        let ValueView::Hash(map) = target.view() else {
-            return idx;
-        };
-        if map.key_type.is_none()
-            || matches!(
-                idx.view(),
-                ValueView::Whatever | ValueView::Nil | ValueView::Array(..) | ValueView::Package(_)
-            )
-        {
-            return idx;
-        }
-        let which = self.which_key(&idx);
-        if map.contains_key(&which) {
-            Value::str(which)
-        } else {
-            Value::str(Value::hash_key_encode(&idx))
-        }
-    }
-
     pub(super) fn exec_delete_index_expr_op(&mut self) -> Result<(), RuntimeError> {
         let idx = self.stack.pop().unwrap_or(Value::NIL);
         Self::throw_if_failure(&idx)?;
@@ -986,6 +963,7 @@ impl Interpreter {
         // a `$` (`Map.new(...)`, which reaches this op rather than the named
         // one) refuses here just as `my %h is Map` does there.
         crate::runtime::refuse_map_removal(&target)?;
+        self.validate_object_hash_index(&target, &idx)?;
         let idx = self.object_hash_delete_key(&target, idx);
         let result = Self::delete_from_container(&mut target, idx, "Any")?;
         self.stack.push(result);

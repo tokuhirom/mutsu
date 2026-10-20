@@ -159,7 +159,7 @@ impl Interpreter {
                 _ => target,
             };
             if kind != SubscriptKind::Positional {
-                idx = self.hash_key_through_user_str(&target, idx)?;
+                idx = self.prepare_hash_subscript_index(&target, idx)?;
             }
             // A nested single-dim slice (`@a[(3, (30, (5,)))]:exists`) preserves
             // its index-tree shape in the result, so it recurses rather than

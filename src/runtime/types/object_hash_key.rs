@@ -3,22 +3,32 @@
 use super::*;
 
 impl Interpreter {
+    /// Apply the key parameter's constraint from the hash itself.
+    // Cost: O(T + k), T = matching/coercion cost, k = constraint spelling length.
+    pub(crate) fn prepare_hash_key_arg(
+        &mut self,
+        hash: &Value,
+        key: Value,
+    ) -> Result<Value, RuntimeError> {
+        let hash = hash.deref_container();
+        match self.hash_key_type(hash.descalarize()) {
+            Some(constraint) => self.prepare_object_hash_key(&constraint, key),
+            None => Ok(key),
+        }
+    }
+
     // Cost: O(k + T), k = constraint spelling length, T = matching/coercion cost.
     pub(crate) fn prepare_object_hash_key(
         &mut self,
         constraint: &str,
         key: Value,
-        variable: Option<&str>,
     ) -> Result<Value, RuntimeError> {
         if constraint == "Mu" {
             return Ok(key);
         }
         let key = self.coerce_key_for_constraint(constraint, key)?;
         if !self.type_matches_value(constraint, &key) {
-            return Err(match variable {
-                Some(name) => self.type_check_element_failure(name, constraint, &key),
-                None => self.type_check_binding_failure(constraint, &key),
-            });
+            return Err(self.typecheck_binding_parameter_failure("key", constraint, &key));
         }
         Ok(key)
     }

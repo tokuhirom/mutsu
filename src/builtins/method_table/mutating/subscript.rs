@@ -67,8 +67,7 @@ fn read_only(typename: &str, value: &Value) -> RuntimeError {
 
 /// `Hash.ASSIGN-KEY($key, $value)`: store `$value` under `$key`, an object
 /// hash keying by `.WHICH` and remembering the key object. Answers `$value`.
-// Cost: O(1) expected (one hash insert; an object hash also records its key
-// object).
+// Cost: O(T + k) expected, T = key type check/coercion, k = key string length.
 pub(super) fn hash_assign_key(
     interp: &mut Interpreter,
     place: &mut ReceiverPlace<'_>,
@@ -76,21 +75,25 @@ pub(super) fn hash_assign_key(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     let mut hash = container(place);
+    let key_arg = match interp.prepare_hash_key_arg(&hash, args[0].clone()) {
+        Ok(key) => key,
+        Err(error) => return Some(Err(error)),
+    };
     let value = args[1].clone();
     let written = hash.with_hash_mut(|gc| -> Result<(), RuntimeError> {
         let data = crate::value::gc_data_mut(gc);
         let object_hash = data.key_type.is_some();
         let key = if object_hash {
-            crate::runtime::utils::value_which_key(&args[0])
+            crate::runtime::utils::value_which_key(&key_arg)
         } else {
-            args[0].to_string_value()
+            key_arg.to_string_value()
         };
         // An entry `BIND-KEY`-bound to a bare value refuses assignment.
         Interpreter::check_assign_key_writable(data, &key)?;
         if object_hash {
             data.original_keys
                 .get_or_insert_with(ValueMap::default)
-                .insert(key.clone(), args[0].clone());
+                .insert(key.clone(), key_arg.clone());
         }
         Value::hash_insert_through(&mut data.map, key, value.clone());
         Ok(())
@@ -103,7 +106,7 @@ pub(super) fn hash_assign_key(
 
 /// `Hash.DELETE-KEY($key)`: remove the pair and answer what it held (the hash's
 /// default or its value type object when the key was absent).
-// Cost: O(1) expected (one hash probe and one removal).
+// Cost: O(T + k) expected, T = key type check/coercion, k = key string length.
 fn hash_delete_key(
     interp: &mut Interpreter,
     place: &mut ReceiverPlace<'_>,
@@ -111,6 +114,10 @@ fn hash_delete_key(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     let mut hash = container(place);
+    let key_arg = match interp.prepare_hash_key_arg(&hash, args[0].clone()) {
+        Ok(key) => key,
+        Err(error) => return Some(Err(error)),
+    };
     if let Err(error) = refuse_map_removal(&hash) {
         return Some(Err(error));
     }
@@ -119,9 +126,9 @@ fn hash_delete_key(
     };
     // An object hash stores `.WHICH` keys; a plain hash the stringified key.
     let key = if map.key_type.is_some() {
-        crate::runtime::utils::value_which_key(&args[0])
+        crate::runtime::utils::value_which_key(&key_arg)
     } else {
-        args[0].to_string_value()
+        key_arg.to_string_value()
     };
     let old = if map.contains_key(&key) {
         interp.resolve_hash_entry(&map, &key)
