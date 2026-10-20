@@ -1056,6 +1056,14 @@ impl Interpreter {
             return Some(pkg.to_string());
         }
         let name_sym = crate::symbol::Symbol::intern(name);
+        // Rakudo looks a bare type name up lexically, then in GLOBAL, and
+        // only then in the current package: a GLOBAL `role DS` hides a loaded
+        // `class P::DS` inside `P` (Zef's `DependencySpecification`). The
+        // types a unit declares in its own packages are its lexicals, which
+        // the parse already qualified (`parser::type_qualify`).
+        if !crate::qualified::is_qualified(name_sym) && self.has_type_direct(name) {
+            return None;
+        }
         // Walk the REAL enclosing scopes: a compound-declared package jumps
         // straight to the package it was declared in. Inside a file-scope
         // `class LLM::Chat::Template::Jinja2`, `LLM::Chat` is not a scope, so
