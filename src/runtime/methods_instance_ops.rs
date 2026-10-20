@@ -1455,7 +1455,7 @@ impl Interpreter {
             // (ADR-11276 §9.196). Its other methods are attribute accessors that
             // legitimately need an instance, and keep that error.
             if let Some(owners) =
-                crate::builtins::method_table::systemic_owners_of(name.resolve().as_str())
+                crate::builtins::method_table::opaque_class_owners(name.resolve().as_str())
                 && owners.iter().any(|owner| {
                     crate::builtins::method_table::owner_row(
                         Symbol::intern(owner),

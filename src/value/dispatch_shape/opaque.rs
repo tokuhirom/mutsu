@@ -82,10 +82,18 @@ pub(super) const fn opaque(
         S::Channel => ("Channel", &["Channel"]),
         S::HyperSeq => ("HyperSeq", &["HyperSeq"]),
         S::RaceSeq => ("RaceSeq", &["RaceSeq"]),
+        S::Distro => ("Distro", &["Distro"]),
+        S::Kernel => ("Kernel", &["Kernel"]),
+        S::Vm => ("VM", &["VM"]),
+        S::RakuSystemic => ("Raku", &["Raku"]),
+        S::Compiler => ("Compiler", &["Compiler"]),
         _ => return None,
     })
 }
 
 /// The built-in classes whose instances have an opaque shape, beyond the one
 /// each shape is named after: `Lock::Soft` is answered by `Lock`'s methods.
-pub(super) const ALIASES: [(&str, DispatchShape); 1] = [("Lock::Soft", DispatchShape::Lock)];
+pub(super) const ALIASES: [(&str, DispatchShape); 2] = [
+    ("Lock::Soft", DispatchShape::Lock),
+    ("Perl", DispatchShape::RakuSystemic),
+];

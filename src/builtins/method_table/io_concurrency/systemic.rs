@@ -2,8 +2,8 @@
 //! `VM`, `Raku` (and its old name `Perl`) and `Compiler`, the objects behind
 //! `$*DISTRO`, `$*KERNEL`, `$*VM`, `$*RAKU` and `$*RAKU.compiler`.
 //!
-//! None of them has a shape, so every row is reached through its owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`). Most methods read the attribute of
+//! Each has an opaque dispatch shape (`DispatchShape::is_opaque`), so every
+//! call entry reaches the rows through the table. Most methods read the attribute of
 //! their name, which the runtime filled from the running process when it built
 //! the object; the others compute their answer through one `Interpreter`
 //! method each. A method Rakudo does not declare on the class (`Distro.raku`)
@@ -25,7 +25,7 @@ macro_rules! attr {
             handler: Handler::Narrow(|target, _| attribute(target, $name)),
             // An attribute needs an instance: the type object's call raises
             // Rakudo's "Cannot look up attributes in a ... type object".
-            flags: RowFlags::OWNER_ONLY,
+            flags: RowFlags::NONE,
             named: &[],
         }
     };
@@ -38,7 +38,7 @@ macro_rules! row {
             name: $name,
             arity: $arity,
             handler: $handler,
-            flags: RowFlags::OWNER_ONLY,
+            flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
             named: &[],
         }
     };
@@ -48,7 +48,7 @@ macro_rules! row {
             name: $name,
             arity: $arity,
             handler: $handler,
-            flags: RowFlags::OWNER_ONLY.or($flags),
+            flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS).or($flags),
             named: &[],
         }
     };
@@ -101,7 +101,8 @@ pub(super) static ROWS: &[MethodRow] = &[
         "free-memory",
         0,
         Handler::Narrow(free_memory),
-        RowFlags::TYPE_OBJECT_OK
+        // It changes between two reads.
+        RowFlags::TYPE_OBJECT_OK.or(RowFlags::RANDOM)
     ),
     row!(
         "Kernel",
@@ -187,20 +188,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Compiler", "gist", 0, Handler::Narrow(name_and_version)),
     row!("Compiler", "Str", 0, Handler::Narrow(name)),
 ];
-
-/// The owners a `Systemic` receiver's methods are looked up in, for an
-/// instance or type object of `class` (`Perl` is the old name of `Raku`).
-// Cost: O(1).
-pub(crate) fn owners_of(class: &str) -> Option<&'static [&'static str]> {
-    Some(match class {
-        "Distro" => &["Distro"],
-        "Kernel" => &["Kernel"],
-        "VM" => &["VM"],
-        "Raku" | "Perl" => &["Raku"],
-        "Compiler" => &["Compiler"],
-        _ => return None,
-    })
-}
 
 /// The methods `owner` declares here: the native methods of the class
 /// `runtime_init` registers (`Perl` is `Raku`), so that list cannot drift from

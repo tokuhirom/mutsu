@@ -659,7 +659,7 @@ impl Interpreter {
             }
             // The `Systemic` classes' methods are rows (ADR-11276 §9.155).
             class @ ("Distro" | "Kernel" | "Perl" | "Raku" | "Compiler" | "VM") => {
-                let owners = crate::builtins::method_table::systemic_owners_of(class)
+                let owners = crate::builtins::method_table::opaque_class_owners(class)
                     .unwrap_or(&[]);
                 crate::builtins::method_table::invoke_owner(self, owners, method, &args, || {
                     Value::make_instance(Symbol::intern(class_name), attributes.clone())

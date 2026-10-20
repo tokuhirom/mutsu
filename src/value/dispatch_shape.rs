@@ -273,13 +273,23 @@ pub(crate) enum DispatchShape {
     HyperSeq,
     /// `RaceSeq` (opaque): a value kind.
     RaceSeq,
+    /// `Distro` (opaque).
+    Distro,
+    /// `Kernel` (opaque).
+    Kernel,
+    /// `VM` (opaque).
+    Vm,
+    /// `Raku` (and `Perl`) (opaque).
+    RakuSystemic,
+    /// `Compiler` (opaque).
+    Compiler,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 84] = [
+    pub(crate) const ALL: [DispatchShape; 89] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -364,6 +374,11 @@ impl DispatchShape {
         DispatchShape::Channel,
         DispatchShape::HyperSeq,
         DispatchShape::RaceSeq,
+        DispatchShape::Distro,
+        DispatchShape::Kernel,
+        DispatchShape::Vm,
+        DispatchShape::RakuSystemic,
+        DispatchShape::Compiler,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
