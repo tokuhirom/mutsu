@@ -44,10 +44,11 @@ pub(crate) struct FnKeysIndexState {
     /// Base names evicted since the index became complete: entries unknown.
     /// Spelled as slices of interned keys, so they are `'static`.
     dirty: rustc_hash::FxHashSet<&'static str>,
-    /// Some registry key the index has seen since it became complete is not
-    /// package-qualified, so the qualified-name tail index does not list
-    /// every key of a base name and a dirty one is refilled by a pass.
-    unqualified_keys: bool,
+    /// The registry keys the index has seen since it became complete that are
+    /// not package-qualified, per base name. The qualified-name tail index
+    /// lists qualified names only, so a dirty base name is refilled from it
+    /// plus these (#9170).
+    unqualified_by_base: rustc_hash::FxHashMap<&'static str, rustc_hash::FxHashSet<Symbol>>,
     /// Debug-only: what [`Interpreter::audit_fn_keys_base`] has already compared
     /// against a fresh scan, per base name — the functions-map version it was
     /// compared under and the very index entry that was compared. Empty (and
@@ -139,7 +140,12 @@ impl Interpreter {
         if self.dispatch.fn_keys_index.complete {
             self.dispatch.fn_keys_index.dirty.insert(base);
             if !crate::qualified::is_qualified(key) {
-                self.dispatch.fn_keys_index.unqualified_keys = true;
+                self.dispatch
+                    .fn_keys_index
+                    .unqualified_by_base
+                    .entry(base)
+                    .or_default()
+                    .insert(key);
             }
         }
         evicted
@@ -165,8 +171,8 @@ impl Interpreter {
                 return keys;
             }
             self.build_fn_keys_index(None);
-        } else if self.dispatch.fn_keys_index.dirty.contains(base) {
-            if let Some(keys) = self.fn_keys_from_tail_index(base) {
+        } else if let Some(&dirty_base) = self.dispatch.fn_keys_index.dirty.get(base) {
+            if let Some(keys) = self.fn_keys_from_tail_index(dirty_base) {
                 self.dispatch.fn_keys_index.dirty.remove(base);
                 self.dispatch.fn_keys_by_base.insert(base_sym, keys.clone());
                 return keys;
@@ -190,29 +196,39 @@ impl Interpreter {
     }
 
     /// `base`'s registry keys read from the qualified-name tail index
-    /// (`qualified_tail_index::names_ending_in`) rather than a pass over the
-    /// functions map, or `None` when the tail index cannot be trusted to list
-    /// them all: a base name spelled with `/` or `::` (the tail index cuts a
-    /// member at its first `/` and records no member holding `::`), or a map
-    /// that held an unqualified key since the index became complete (the tail
-    /// index lists qualified names only).
-    // Cost: O(k), k = interned qualified names ending in `base` (each probed
-    // once in the functions map), independent of the registry's size.
-    fn fn_keys_from_tail_index(&self, base: &str) -> Option<Arc<[Symbol]>> {
-        if self.dispatch.fn_keys_index.unqualified_keys
-            || base.is_empty()
-            || base.contains('/')
-            || crate::qualified::is_qualified_str(base)
-        {
+    /// (`qualified_tail_index::names_ending_in`) and the unqualified keys the
+    /// index recorded for `base`, rather than a pass over the functions map,
+    /// or `None` when the tail index cannot be trusted to list them all: a
+    /// base name spelled with `/` or `::` (the tail index cuts a member at its
+    /// first `/` and records no member holding `::`).
+    ///
+    /// An unqualified key reaches the record the way every key change reaches
+    /// the index: its eviction names it (a family rewrite names one key of the
+    /// family, and the family shares the base name). Recorded keys no longer
+    /// registered are dropped here.
+    // Cost: O(k + u), k = interned qualified names ending in `base`, u =
+    // unqualified keys recorded for `base` (each probed once in the functions
+    // map), independent of the registry's size.
+    fn fn_keys_from_tail_index(&mut self, base: &'static str) -> Option<Arc<[Symbol]>> {
+        if base.is_empty() || base.contains('/') || crate::qualified::is_qualified_str(base) {
             return None;
         }
-        let registry = self.registry();
-        let keys: Vec<Symbol> = crate::qualified_tail_index::names_ending_in(base)
+        let index = &mut self.dispatch.fn_keys_index;
+        let registry =
+            crate::runtime::registry::RegistryReadGuard::new(&self.types.registry, "registry");
+        let mut keys: Vec<Symbol> = crate::qualified_tail_index::names_ending_in(base)
             .into_iter()
             .filter(|key| {
                 registry.functions.contains_key(key) && function_key_base_name(key.as_str()) == base
             })
             .collect();
+        if let Some(unqualified) = index.unqualified_by_base.get_mut(base) {
+            unqualified.retain(|key| registry.functions.contains_key(key));
+            keys.extend(unqualified.iter().copied());
+            if unqualified.is_empty() {
+                index.unqualified_by_base.remove(base);
+            }
+        }
         Some(Arc::from(keys))
     }
 
@@ -222,7 +238,8 @@ impl Interpreter {
     // Cost: O(r), r = registered functions.
     fn build_fn_keys_index(&mut self, only: Option<&rustc_hash::FxHashSet<&'static str>>) {
         let mut by_base: rustc_hash::FxHashMap<&'static str, Vec<Symbol>> = Default::default();
-        let mut unqualified = false;
+        let mut unqualified: rustc_hash::FxHashMap<&'static str, rustc_hash::FxHashSet<Symbol>> =
+            Default::default();
         if let Some(only) = only {
             for base in only {
                 by_base.insert(base, Vec::new());
@@ -232,10 +249,10 @@ impl Interpreter {
             let registry = self.registry();
             crate::vm::vm_stats::record_fn_keys_base_scan(registry.functions.len());
             for key in registry.functions.keys() {
-                if !crate::qualified::is_qualified(*key) {
-                    unqualified = true;
-                }
                 let base = function_key_base_name(key.as_str());
+                if !crate::qualified::is_qualified(*key) {
+                    unqualified.entry(base).or_default().insert(*key);
+                }
                 match only {
                     Some(_) => {
                         if let Some(keys) = by_base.get_mut(base) {
@@ -252,9 +269,9 @@ impl Interpreter {
                 .insert(Symbol::intern(base), Arc::from(keys));
         }
         // A partial pass (`only`) still visits every key, so it re-derives
-        // the flag for the whole map too.
+        // the unqualified-key record for the whole map too.
         self.dispatch.fn_keys_index.complete = true;
-        self.dispatch.fn_keys_index.unqualified_keys = unqualified;
+        self.dispatch.fn_keys_index.unqualified_by_base = unqualified;
         self.dispatch.fn_keys_index.dirty.clear();
     }
 }
@@ -313,6 +330,44 @@ mod tests {
             "the pass refilled the other dirty names too"
         );
         assert!(i.dispatch.fn_keys_index.dirty.is_empty());
+    }
+
+    /// An unqualified registry key does not make every later dirty base name
+    /// refill by a pass (#9170): the index records unqualified keys per base
+    /// name and adds them to what the tail index lists.
+    #[test]
+    fn an_unqualified_key_is_refilled_without_a_pass() {
+        let mut i = Interpreter::new();
+        i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
+            .expect("setup program runs");
+        i.invalidate_fn_resolution();
+        i.fn_keys_for_base("alpha");
+        i.fn_keys_for_base("beta");
+        assert!(i.dispatch.fn_keys_index.complete);
+
+        // An unqualified key of `alpha`, announced as every write is.
+        let def = {
+            let alpha = i.fn_keys_for_base("alpha");
+            i.registry().functions.get(&alpha[0]).cloned().unwrap()
+        };
+        let bare = Symbol::intern("alpha");
+        i.registry_mut().functions_mut().insert(bare, def);
+        i.invalidate_fn_resolution_for_keys([bare]);
+        let beta = i.fn_keys_for_base("beta");
+        i.invalidate_fn_resolution_for_keys([beta[0]]);
+
+        // Both dirty names refill on their own: no pass ran, which would have
+        // refilled the other one as well.
+        let alpha = i.fn_keys_for_base("alpha");
+        assert!(alpha.contains(&bare), "the unqualified key is listed");
+        assert_eq!(&*alpha, &*i.collect_fn_keys_for_base("alpha"));
+        assert!(!indexed(&i, "beta"), "only the looked-up name is refilled");
+        assert_eq!(&*i.fn_keys_for_base("beta"), &*beta);
+
+        // A recorded key that is gone again is not listed.
+        i.registry_mut().functions_mut().remove(&bare);
+        i.invalidate_fn_resolution_for_keys([bare]);
+        assert!(!i.fn_keys_for_base("alpha").contains(&bare));
     }
 
     /// The debug audit compares an index entry with a full scan only when the
