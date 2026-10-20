@@ -257,6 +257,15 @@ impl Interpreter {
             let aliases = Arc::make_mut(&mut self.module.imported_routine_aliases);
             aliases.extend(replay.routine_aliases.iter().copied());
         }
+        // The names the block binds itself stay hidden from a routine
+        // written outside it, as on the first run.
+        let id_text = id.resolve();
+        for name in crate::runtime::lexical_imports::id_section(
+            &id_text,
+            crate::runtime::lexical_imports::BLOCK_VARS_MARK,
+        ) {
+            self.note_block_bound_import(&name.resolve());
+        }
         true
     }
 }

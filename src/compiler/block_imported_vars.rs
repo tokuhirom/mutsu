@@ -56,13 +56,37 @@ impl Compiler {
     /// of `module` with `tags` imports, by the parse-time scan of the module.
     // Cost: O(v), v = the module's exported variables.
     fn block_imported_var_bindings(module: &str, tags: &[String]) -> Vec<(String, Stmt)> {
-        let Some(vars) = crate::parser::scanned_exported_vars(module) else {
-            return Vec::new();
-        };
-        vars.iter()
+        let mut bindings: Vec<(String, Stmt)> = crate::parser::scanned_exported_vars(module)
+            .iter()
+            .flat_map(|vars| vars.iter())
             .filter(|var| var.imported_by(tags))
             .filter_map(|var| Some((var.export_key(), Self::imported_var_binding(var)?)))
-            .collect()
+            .collect();
+        // An exported type is a term of the block too (`my \Foo := M::Foo`),
+        // whose value is the module's type object; its type positions in the
+        // block were qualified at parse time (`parser::type_qualify`).
+        for ty in crate::parser::scanned_exported_types(module)
+            .iter()
+            .flat_map(|types| types.iter())
+            .filter(|ty| ty.imported_by(tags))
+        {
+            let Some((package, _)) = ty.qualified.rsplit_once("::") else {
+                continue;
+            };
+            let term = crate::parser::ExportedVar {
+                name: ty.name.clone(),
+                package: package.to_string(),
+                tags: ty.tags.clone(),
+                term: true,
+            };
+            if bindings.iter().any(|(key, _)| *key == ty.name) {
+                continue;
+            }
+            if let Some(stmt) = Self::imported_var_binding(&term) {
+                bindings.push((ty.name.clone(), stmt));
+            }
+        }
+        bindings
     }
 
     /// `my <name> := <sigil><package>::<name>` for the exported variable

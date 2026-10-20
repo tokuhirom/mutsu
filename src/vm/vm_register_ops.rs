@@ -758,6 +758,10 @@ impl Interpreter {
                     || (capture_syms.contains(sym)
                         && sym.with_str(|name| {
                             crate::env::is_plain_user_lexical(name)
+                                // A sigilless binding or constant of the
+                                // declaring scope (`my \T`, a block's
+                                // imported type) lives under its term key.
+                                || name.starts_with(crate::term_names::TERM_PREFIX)
                                 || (name.starts_with(['@', '%', '&', '$'])
                                     && crate::env::is_user_variable_key(name))
                         }))

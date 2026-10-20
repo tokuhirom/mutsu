@@ -2682,6 +2682,12 @@ pub(crate) struct ImportScopeSnapshot {
     /// written for the first time inside a `use`-containing block — see
     /// `pop_import_scope`'s doc comment for the regression that caused.
     pub(crate) imported_env_keys: rustc_hash::FxHashSet<Symbol>,
+    /// The names the block declares itself for this scope's imports (its
+    /// pad bindings of imported variables, constants and types, ADR-8751),
+    /// with their term keys. The import writes no env key for them, but a
+    /// routine written outside the block must not see them through its
+    /// caller's frame either (`hide_unit_names_from_frame`).
+    pub(crate) block_bound_keys: rustc_hash::FxHashSet<Symbol>,
     /// The value each of `imported_env_keys` held before this scope first
     /// imported over it, for the keys that already had one. The block's
     /// import shadows that outer binding, so `pop_import_scope` puts it back

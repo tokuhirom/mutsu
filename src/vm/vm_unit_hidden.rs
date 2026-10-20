@@ -35,12 +35,11 @@ impl Interpreter {
         let hidden = match &code.unit_hidden_lexicals {
             Some(hidden) => hidden,
             None => {
-                if !self
-                    .module
-                    .import_scope_stack
-                    .iter()
-                    .any(|scope| scope.scope_classes && !scope.imported_env_keys.is_empty())
-                {
+                if !self.module.import_scope_stack.iter().any(|scope| {
+                    scope.scope_classes
+                        && !(scope.imported_env_keys.is_empty()
+                            && scope.block_bound_keys.is_empty())
+                }) {
                     return;
                 }
                 empty = Arc::new(rustc_hash::FxHashSet::default());
@@ -72,6 +71,7 @@ impl Interpreter {
                         }) && !scope.shadowed_env_values.contains_key(*key)
                     })
                     .copied()
+                    .chain(scope.block_bound_keys.iter().copied())
             })
             .collect();
         let hidden = if imported.is_empty() {
