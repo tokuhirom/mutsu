@@ -28,4 +28,4 @@ pub(in crate::parser) use loop_control::{control_flow_slip_args, loop_control_li
 pub(crate) use loop_control::{is_loop_control_label, loop_control_expr};
 pub(in crate::parser) use predicates::{is_infix_word_op, is_keyword};
 pub(super) use term_literals::{class_literal, keyword_literal, whatever};
-pub(super) use term_symbols::declared_term_symbol;
+pub(super) use term_symbols::{declared_term_symbol, imported_value_term};

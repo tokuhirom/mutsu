@@ -585,6 +585,11 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         // User-declared term symbols must be checked before keyword literals so
         // that e.g. `\term:<e²ˣ>` shadows the built-in constant `e`.
         try_primary!(ident::declared_term_symbol(input));
+        // Declaration syntax precedes imported values, but explicit terms win.
+        try_primary!(misc::anon_role_expr(input));
+        try_primary!(misc::anon_class_expr(input));
+        try_primary!(misc::anon_grammar_expr(input));
+        try_primary!(ident::imported_value_term(input));
         try_primary!(string::single_quoted_string(input));
         try_primary!(string::smart_single_quoted_string(input));
         try_primary!(string::double_quoted_string(input));
@@ -625,12 +630,6 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         // ::Foo class literal (type object reference)
         try_primary!(ident::class_literal(input));
         try_primary!(misc::colonpair_expr(input));
-        // anonymous role: role { ... }
-        try_primary!(misc::anon_role_expr(input));
-        // anonymous class: class { ... }
-        try_primary!(misc::anon_class_expr(input));
-        // anonymous grammar: grammar { ... }
-        try_primary!(misc::anon_grammar_expr(input));
 
         // Indirect object notation (`new Foo:`): tried after every other
         // primary form so it can never shadow labels/adverbs/method calls.
