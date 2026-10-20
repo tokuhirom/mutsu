@@ -16,7 +16,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if binding {
             let bound = source
-                .map(|cell| Value::container_ref(cell.clone()))
+                .map(|cell| Value::container_ref_bound_itemized(cell.clone()))
                 .unwrap_or_else(|| Value::bound_element(value.clone()));
             Self::bind_array_multidim(target, std::slice::from_ref(index), bound)
         } else {

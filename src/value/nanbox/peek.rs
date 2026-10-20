@@ -593,7 +593,9 @@ impl NanBox {
     pub(in crate::value) fn is_container_ref(&self) -> bool {
         matches!(
             classify(self.0.get()),
-            Classified::Kind(Kind::ContainerRef | Kind::ContainerRefItemized)
+            Classified::Kind(
+                Kind::ContainerRef | Kind::ContainerRefItemized | Kind::ContainerRefBoundItemized
+            )
         )
     }
 
@@ -604,6 +606,15 @@ impl NanBox {
         matches!(
             classify(self.0.get()),
             Classified::Kind(Kind::ContainerRefItemized)
+        )
+    }
+
+    /// An itemized `:=` holder, whose stores keep the alias alive.
+    #[inline]
+    pub(in crate::value) fn is_container_ref_bound_itemized(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(Kind::ContainerRefBoundItemized)
         )
     }
 
@@ -780,6 +791,7 @@ impl NanBox {
                     | Kind::LazyList
                     | Kind::ContainerRef
                     | Kind::ContainerRefItemized
+                    | Kind::ContainerRefBoundItemized
                     | Kind::ContainerView
                     | Kind::HashEntryRef
                     | Kind::LazyThunk
@@ -850,6 +862,7 @@ impl NanBox {
             Classified::Kind(
                 Kind::ContainerRef
                     | Kind::ContainerRefItemized
+                    | Kind::ContainerRefBoundItemized
                     | Kind::ContainerView
                     | Kind::Proxy
                     | Kind::HashEntryRef
@@ -871,6 +884,7 @@ impl NanBox {
             Classified::Kind(
                 Kind::ContainerRef
                     | Kind::ContainerRefItemized
+                    | Kind::ContainerRefBoundItemized
                     | Kind::ContainerView
                     | Kind::Proxy
                     | Kind::HashEntryRef
@@ -939,6 +953,7 @@ impl NanBox {
                     | Kind::RaceSeq
                     | Kind::ContainerRef
                     | Kind::ContainerRefItemized
+                    | Kind::ContainerRefBoundItemized
                     | Kind::ContainerView
                     | Kind::HashEntryRef
                     | Kind::Scalar
@@ -1031,9 +1046,9 @@ impl NanBox {
                 // comparison must not split them (as it must not split the
                 // two Hash tags).
                 Kind::Slip | Kind::SlipItemized => VARIANT_KIND_BASE + Kind::Slip as u8,
-                Kind::ContainerRef | Kind::ContainerRefItemized => {
-                    VARIANT_KIND_BASE + Kind::ContainerRef as u8
-                }
+                Kind::ContainerRef
+                | Kind::ContainerRefItemized
+                | Kind::ContainerRefBoundItemized => VARIANT_KIND_BASE + Kind::ContainerRef as u8,
                 Kind::SetImm | Kind::SetMut => VARIANT_SET,
                 Kind::BagImm | Kind::BagMut => VARIANT_BAG,
                 Kind::MixImm | Kind::MixMut => VARIANT_MIX,
@@ -1231,7 +1246,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                 ValueView::WeakSub(RefGuard::from_reconstructed(take_weak::<SubData>(bits)))
             }
             Kind::LazyList => ValueView::LazyList(gc_guard(bits)),
-            Kind::ContainerRef | Kind::ContainerRefItemized => {
+            Kind::ContainerRef | Kind::ContainerRefItemized | Kind::ContainerRefBoundItemized => {
                 ValueView::ContainerRef(gc_guard(bits))
             }
             Kind::ContainerView => ValueView::ContainerView(gc_guard(bits)),

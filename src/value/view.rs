@@ -354,7 +354,9 @@ impl Value {
         if matches!(value.view(), ValueView::ContainerRef(_)) {
             return value;
         }
-        Value::container_ref(Gc::new(crate::value::ContainerCell::new_readonly(value)))
+        Value::container_ref_bound_itemized(Gc::new(crate::value::ContainerCell::new_readonly(
+            value,
+        )))
     }
 
     /// Construct an itemized `ContainerRef` holder from an existing cell.

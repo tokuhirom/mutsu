@@ -226,16 +226,16 @@ impl NanBox {
             ValueRepr::CustomType(d) => pack_arc(Kind::CustomType, Arc::new(*d)),
             ValueRepr::CustomTypeInstance(d) => pack_arc(Kind::CustomTypeInstance, Arc::new(*d)),
             ValueRepr::Scalar(inner) => pack_arc(Kind::Scalar, Arc::new(*inner)),
-            ValueRepr::ContainerRef(cell, itemized) => {
+            ValueRepr::ContainerRef(cell, flavor) => {
                 // The single point every ContainerRef word passes through, so
                 // this counts every cell ever made (`CONTAINER_CELLS`,
                 // a `MUTSU_VM_STATS` statistic).
                 note_container_cell();
                 pack_gc(
-                    if itemized {
-                        Kind::ContainerRefItemized
-                    } else {
-                        Kind::ContainerRef
+                    match flavor {
+                        ContainerRefFlavor::Plain => Kind::ContainerRef,
+                        ContainerRefFlavor::SharedItemized => Kind::ContainerRefItemized,
+                        ContainerRefFlavor::BoundItemized => Kind::ContainerRefBoundItemized,
                     },
                     cell,
                 )

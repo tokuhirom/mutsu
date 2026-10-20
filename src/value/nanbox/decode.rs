@@ -213,14 +213,17 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::Sub => ValueRepr::Sub(unsafe { take_gc::<SubData>(bits) }),
         Kind::WeakSub => ValueRepr::WeakSub(unsafe { take_weak::<SubData>(bits) }),
         Kind::LazyList => ValueRepr::LazyList(unsafe { take_gc::<LazyList>(bits) }),
-        Kind::ContainerRef => ValueRepr::ContainerRef(
-            unsafe { take_gc::<crate::value::ContainerCell>(bits) },
-            false,
-        ),
-        Kind::ContainerRefItemized => ValueRepr::ContainerRef(
-            unsafe { take_gc::<crate::value::ContainerCell>(bits) },
-            true,
-        ),
+        Kind::ContainerRef | Kind::ContainerRefItemized | Kind::ContainerRefBoundItemized => {
+            // SAFETY: all three holder tags pack a Gc<ContainerCell>; the
+            // consuming decoder owns exactly the reference reconstructed here.
+            let cell = unsafe { take_gc::<crate::value::ContainerCell>(bits) };
+            let flavor = match kind {
+                Kind::ContainerRefItemized => ContainerRefFlavor::SharedItemized,
+                Kind::ContainerRefBoundItemized => ContainerRefFlavor::BoundItemized,
+                _ => ContainerRefFlavor::Plain,
+            };
+            ValueRepr::ContainerRef(cell, flavor)
+        }
         Kind::ContainerView => {
             ValueRepr::ContainerView(unsafe { take_gc::<crate::value::ContainerCell>(bits) })
         }

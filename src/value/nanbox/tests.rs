@@ -198,10 +198,14 @@ fn array_kind_and_container_flags_travel_in_the_tag() {
 #[test]
 fn container_ref_cell_identity_survives() {
     let cell = Gc::new(crate::value::ContainerCell::new(Value::int(7)));
-    for itemized in [false, true] {
-        match roundtrip(ValueRepr::ContainerRef(cell.clone(), itemized)) {
-            ValueRepr::ContainerRef(back, back_itemized) => {
-                assert_eq!(back_itemized, itemized);
+    for flavor in [
+        ContainerRefFlavor::Plain,
+        ContainerRefFlavor::SharedItemized,
+        ContainerRefFlavor::BoundItemized,
+    ] {
+        match roundtrip(ValueRepr::ContainerRef(cell.clone(), flavor)) {
+            ValueRepr::ContainerRef(back, back_flavor) => {
+                assert_eq!(back_flavor, flavor);
                 assert!(Gc::ptr_eq(&back, &cell), ":= binding identity preserved");
                 *back.lock().unwrap() = Value::int(9);
             }
@@ -229,9 +233,12 @@ fn container_ref_itemization_is_holder_local() {
 #[test]
 fn container_ref_itemized_roundtrips_as_the_same_value_repr_variant() {
     let cell = Gc::new(crate::value::ContainerCell::new(Value::int(3)));
-    match roundtrip(ValueRepr::ContainerRef(cell.clone(), true)) {
+    match roundtrip(ValueRepr::ContainerRef(
+        cell.clone(),
+        ContainerRefFlavor::SharedItemized,
+    )) {
         ValueRepr::ContainerRef(back, itemized) => {
-            assert!(itemized);
+            assert_eq!(itemized, ContainerRefFlavor::SharedItemized);
             assert!(Gc::ptr_eq(&back, &cell), ":= binding identity preserved");
         }
         other => panic!("decoded as {other:?}"),
@@ -583,7 +590,7 @@ fn every_variant_roundtrips_losslessly() {
         ValueRepr::Scalar(Box::new(Value::int(11))),
         ValueRepr::ContainerRef(
             Gc::new(crate::value::ContainerCell::new(Value::int(3))),
-            false,
+            ContainerRefFlavor::Plain,
         ),
         ValueRepr::LazyThunk(Arc::new(LazyThunkData {
             thunk: Value::NIL,

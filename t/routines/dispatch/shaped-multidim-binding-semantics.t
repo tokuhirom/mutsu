@@ -1,5 +1,5 @@
 use Test;
-plan 36;
+plan 44;
 
 {
     my @s[2;2];
@@ -110,4 +110,34 @@ plan 36;
     is @one[0], 11, 'rebinding through a shaped array alias updates the shared slot';
     @one[0] = 12;
     is $y, 12, 'the alias-installed binding writes through the new source';
+}
+{
+    my $source = [1,2];
+    my @n = [1,2], [3,4];
+    @n[0][1] := $source;
+    is @n[0][1].raku, '$[1, 2]', 'an aggregate bound through a Scalar stays itemized';
+    @n[0][1] = [7,8];
+    is $source.raku, '$[7, 8]', 'an itemized bound holder writes through instead of detaching';
+}
+{
+    my $x = 1;
+    my %fresh;
+    %fresh<a><b> := $x;
+    $x = 2;
+    is %fresh<a><b>, 1, 'a newly vivified intermediate receives a bound value';
+    dies-ok { %fresh<a><b> = 3 }, 'the value bound through vivification is readonly';
+    my %existing = a => {};
+    %existing<a><b> := $x;
+    $x = 4;
+    is %existing<a><b>, 4, 'an existing intermediate preserves a source Scalar';
+    %existing<a><b> = 5;
+    is $x, 5, 'the existing-path binding writes through its source';
+}
+{
+    my @source = 1,2;
+    my %h;
+    %h<a><b> := @source;
+    dies-ok { %h<a><b> = 3 }, 'binding a whole Array does not invent a writable Scalar';
+    @source.push(3);
+    is %h<a><b>.raku, '$[1, 2, 3]', 'the bound aggregate retains its identity and itemization';
 }

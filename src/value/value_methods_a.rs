@@ -1287,7 +1287,7 @@ impl Value {
 
     /// Whether this `ContainerRef` holder carries the itemized flavour.
     pub fn container_ref_is_itemized(&self) -> bool {
-        self.0.is_container_ref_itemized()
+        self.0.is_container_ref_itemized() || self.0.is_container_ref_bound_itemized()
     }
 
     /// Whether this element word is a `=` value share of a container

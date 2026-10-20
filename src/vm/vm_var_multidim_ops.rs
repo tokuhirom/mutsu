@@ -21,7 +21,7 @@ impl Interpreter {
         }
         let indices = self.resolve_multidim_indices_for_assign(&target, dims)?;
         let value = bind_cell
-            .map(|cell| Value::container_ref(cell.clone()))
+            .map(|cell| Value::container_ref_bound_itemized(cell.clone()))
             .unwrap_or_else(|| Value::bound_element(source.deref_container()));
         self.mutate_named_container(code, var_name, false, move |_slf, container| {
             Self::bind_array_multidim(container, &indices, value)

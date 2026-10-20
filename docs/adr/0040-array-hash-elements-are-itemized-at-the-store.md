@@ -1272,4 +1272,32 @@ Pinned by `t/routines/signature/destructure-keeps-source-itemization.t`.
 
 ---
 
+## 12. Bound element holders keep itemization without value-sharing semantics (#14053, 2026-10-20)
+
+The three-level binding exception recorded in §8 is removed by an itemized
+binding holder, `ContainerRefBoundItemized`. It points to exactly the same
+`Gc<ContainerCell>` as the source's plain word, so the source stays bare and
+an element read is itemized without wrapping the shared cell in a `Scalar`.
+Its tag is distinct from the `ContainerRefItemized` value-sharing holder:
+assignment to a value-shared element replaces the holder, while assignment
+through a bound element writes through its source cell.
+
+Owned decoding preserves all three holder flavors. Borrowed views,
+clone/drop and GC tracing use the same cell payload mapping for all three;
+the shared cell itself gains no state. The ordinary local-read and store
+tag guards recognize the new binding holder as a container.
+
+Two-level chained bindings now use the same cell-preserving walk as deeper
+bindings. An intermediate created by vivification receives a bound value,
+while an existing path can retain its source Scalar. Binding an aggregate
+itself keeps its identity without inventing a writable Scalar around it.
+The readonly check consults the leaf cell, and a later bind replaces that
+cell instead of assigning through it.
+
+The holder roundtrip and write-through/detachment tests, the itemization
+corpus, and `t/routines/dispatch/shaped-multidim-binding-semantics.t` pin
+these distinctions.
+
+---
+
 *If the mechanism judgment changes later, supersede this ADR rather than rewriting it.*
