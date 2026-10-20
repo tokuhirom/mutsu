@@ -38,7 +38,7 @@ pub(crate) const BLOCK_VARS_MARK: &str = "\u{1}vars:";
 
 /// The names listed after `mark` in the set id `id`, up to the next mark.
 // Cost: O(n), n = length of `id`.
-fn id_section(id: &str, mark: &str) -> HashSet<Symbol> {
+pub(super) fn id_section(id: &str, mark: &str) -> HashSet<Symbol> {
     id.split_once(mark)
         .map(|(_, rest)| {
             rest.split('\u{1}')
@@ -376,6 +376,18 @@ impl Interpreter {
             && capture.unit == importer
         {
             capture.amp_env_keys.insert(key);
+        }
+    }
+
+    /// Record that the innermost import scope's block declares the import
+    /// `name` itself (a variable, constant or type it binds in its pad), so
+    /// a routine written outside the block hides it like an imported env key.
+    // Cost: O(|name|).
+    pub(crate) fn note_block_bound_import(&mut self, name: &str) {
+        let term = crate::runtime::term_names::term_key(name);
+        if let Some(top) = self.module.import_scope_stack.last_mut() {
+            top.block_bound_keys.insert(Symbol::intern(name));
+            top.block_bound_keys.insert(Symbol::intern(&term));
         }
     }
 

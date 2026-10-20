@@ -266,6 +266,15 @@ impl Qualify<'_> {
         }
     }
 
+    /// The type a block's `use` imports under the bare `name`, unless a
+    /// nearer `my` class of that name hides it (whose storage name carries
+    /// its declaration id).
+    // Cost: O(s), s = open statement lists.
+    fn resolve_import(&self, name: &str) -> Option<String> {
+        let full = self.scopes.iter().rev().find_map(|scope| scope.get(name))?;
+        (!full.contains('\u{0}')).then(|| full.clone())
+    }
+
     /// The innermost declared `P::name` for the bare `name`, from the open
     /// packages outwards.
     // Cost: O(d * |name|), d = package nesting depth.
@@ -301,6 +310,11 @@ impl Qualify<'_> {
     /// names in a parameterization or coercion (`R:D`, `Box[R]`, `R(Str)`).
     // Cost: O(s * d), s = length of the spelling.
     fn qualify(&self, spelling: &mut String) {
+        self.qualify_with(spelling, Self::resolve);
+    }
+
+    /// [`Self::qualify`] by `resolve`.
+    fn qualify_with(&self, spelling: &mut String, resolve: fn(&Self, &str) -> Option<String>) {
         let bytes = spelling.as_bytes();
         let mut out = String::with_capacity(spelling.len());
         let mut changed = false;
@@ -336,7 +350,7 @@ impl Qualify<'_> {
             // A smiley (`:D`) or a type capture (`::T`) follows a colon.
             let after_colon = start > 0 && bytes[start - 1] == b':';
             match (!after_colon && !word.contains("::"))
-                .then(|| self.resolve(word))
+                .then(|| resolve(self, word))
                 .flatten()
             {
                 Some(q) => {
@@ -377,6 +391,23 @@ impl VisitMut for Qualify<'_> {
             | Stmt::HasDecl {
                 type_constraint, ..
             } => self.qualify_opt(type_constraint),
+            // A class's parents and roles a block's `use` imports.
+            Stmt::ClassDecl {
+                parents,
+                does_parents,
+                ..
+            } => {
+                for parent in parents.iter_mut().chain(does_parents.iter_mut()) {
+                    self.qualify_with(parent, Self::resolve_import);
+                }
+            }
+            Stmt::DoesDecl { name, .. } => {
+                let mut spelling = name.as_str().to_string();
+                self.qualify_with(&mut spelling, Self::resolve_import);
+                if spelling != name.as_str() {
+                    *name = crate::symbol::Symbol::intern(&spelling);
+                }
+            }
             Stmt::SubDecl { return_type, .. }
             | Stmt::MethodDecl { return_type, .. }
             | Stmt::ProtoDecl { return_type, .. } => self.qualify_opt(return_type),

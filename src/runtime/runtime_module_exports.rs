@@ -1341,6 +1341,7 @@ impl Interpreter {
             }
             // The importing block declares it itself (ADR-8751).
             if self.block_binds_imported_var(&name) {
+                self.note_block_bound_import(&name);
                 continue;
             }
             let target = name.clone();
