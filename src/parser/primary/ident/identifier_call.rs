@@ -23,6 +23,7 @@ use crate::parser::primary::ident::predicates::{
     is_zero_arg_callable_builtin, keyword_as_function_error, looks_like_binding, parens_then_block,
     starts_with_term_keyword, try_extend_colon_name,
 };
+use crate::parser::primary::ident::statement_terminator::restore_statement_terminator;
 use crate::parser::primary::ident::supply::supply_block;
 use crate::parser::primary::misc::{
     anon_class_expr, anon_grammar_expr, anon_role_expr, mark_anon_package_decl, parse_block_body,
@@ -138,37 +139,6 @@ fn strip_null_decl_name_marker(input: &str) -> &str {
         return input;
     }
     ws(after_colons).map(|(r, _)| r).unwrap_or(after_colons)
-}
-
-/// When `do STMT` parses its inner statement via the full statement parser, a
-/// statement modifier (`do $_ for @list`) or assignment consumes the trailing
-/// `;`. In expression context the `;` belongs to the *outer* statement, so if it
-/// were swallowed the surrounding expression parser would keep going and treat a
-/// following listop (`my @a = do $_ for 2..4; say @a`) as an infix operator on
-/// the `do` result. A block-valued conditional can likewise consume the
-/// newline which separates the outer statement from the next expression. Give
-/// either terminator back to the outer parser.
-fn restore_do_stmt_terminator<'a>(orig: &'a str, after: &'a str) -> &'a str {
-    let consumed = orig.len().saturating_sub(after.len());
-    if consumed > 0 && orig.as_bytes()[consumed - 1] == b';' {
-        &orig[consumed - 1..]
-    } else if consumed > 0 {
-        // The statement parser also consumes a newline after a block-valued
-        // `do if`/`do for`. Keep it visible to the outer expression parser so
-        // the next line is recognized as a new statement, not an adjacent term.
-        let consumed_source = &orig[..consumed];
-        let trailing_ws_start = consumed_source
-            .char_indices()
-            .rev()
-            .find(|(_, ch)| !ch.is_whitespace())
-            .map_or(0, |(idx, ch)| idx + ch.len_utf8());
-        if consumed_source[trailing_ws_start..].contains(['\n', '\r']) {
-            return &orig[trailing_ws_start..];
-        }
-        after
-    } else {
-        after
-    }
 }
 
 /// Consume the distribution selectors (`:ver<…>` / `:ver(…)`, `:auth<…>`,
@@ -911,7 +881,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 if is_ctrl(r)
                     && let Ok((r_after, stmt)) = crate::parser::stmt::statement_pub(r)
                 {
-                    let r_after = restore_do_stmt_terminator(r, r_after);
+                    let r_after = restore_statement_terminator(r, r_after);
                     return Ok((
                         r_after,
                         Expr::spelled(Expr::DoStmt(Box::new(stmt)), || Spelling::BareStatement),
@@ -920,7 +890,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
             // do STMT — wrap an assignment or other statement
             if let Ok((r_after, stmt)) = crate::parser::stmt::statement_pub(r) {
-                let r_after = restore_do_stmt_terminator(r, r_after);
+                let r_after = restore_statement_terminator(r, r_after);
                 return Ok((
                     r_after,
                     Expr::spelled(Expr::DoStmt(Box::new(stmt)), || Spelling::BareStatement),
@@ -1050,7 +1020,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     // or the enclosing listop keeps reading its argument list
                     // across the `;` (`undefine temp $b; say 2` became
                     // `undefine(temp $b say 2)`). Same reason the `do` arm does it.
-                    let r = restore_do_stmt_terminator(input, r);
+                    let r = restore_statement_terminator(input, r);
                     return Ok((r, Expr::DoStmt(Box::new(stmt))));
                 }
             }
@@ -1509,7 +1479,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 // gather expression must stop before it — otherwise the rest
                 // of the line (`my @a = gather do {…}; say "x"`) is misread
                 // as an infix on the gather.
-                let r_after = restore_do_stmt_terminator(r, r_after);
+                let r_after = restore_statement_terminator(r, r_after);
                 // `gather do { ... }` is `gather { ... }`: the do-block is the
                 // whole body, so inline its statements. This also lets the
                 // lazy-gather coroutine suspend at each take (it can only
@@ -1635,7 +1605,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // start <statement> — wrap the next statement in a block
             if let Ok((r_after, stmt)) = crate::parser::stmt::statement_pub(r) {
                 // Give back a consumed statement terminator (see the gather arm).
-                let r_after = restore_do_stmt_terminator(r, r_after);
+                let r_after = restore_statement_terminator(r, r_after);
                 return Ok((
                     r_after,
                     Expr::spelled(
@@ -2220,7 +2190,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     {
         // As for `gather`, the statement parse eats the terminating `;` but the
         // supply expression must stop before it.
-        let r_after = restore_do_stmt_terminator(r, r_after);
+        let r_after = restore_statement_terminator(r, r_after);
         if let crate::ast::Stmt::Expr(Expr::DoBlock {
             body, label: None, ..
         }) = &stmt

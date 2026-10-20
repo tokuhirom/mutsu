@@ -371,14 +371,14 @@ fn assign_stmt_reports_missing_method_name_for_mutating_call() {
 #[test]
 fn assign_stmt_parses_zip_compound_assign() {
     let (rest, stmt) = assign::assign_stmt("$a Z+= 2;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     assert!(matches!(stmt, Stmt::Assign { .. }));
 }
 
 #[test]
 fn assign_stmt_parses_comma_compound_assign() {
     let (rest, stmt) = assign::assign_stmt("%h ,= 1;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     assert!(matches!(stmt, Stmt::Assign { .. }));
 }
 
@@ -387,7 +387,7 @@ fn assign_stmt_scalar_item_assignment_stops_at_comma() {
     // `$x = 1, 2` is `($x = 1), 2`: only the first element is assigned, and
     // the rest become a sink-context comma list.
     let (rest, stmt) = assign::assign_stmt("$x = 1, 2;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     match stmt {
         Stmt::Expr(Expr::ArrayLiteral(items)) => {
             assert_eq!(items.len(), 2);
@@ -406,7 +406,7 @@ fn assign_stmt_scalar_item_assignment_stops_at_comma() {
 fn assign_stmt_scalar_plain_assignment_has_no_comma() {
     // Without a trailing comma the assignment is a plain `Stmt::Assign`.
     let (rest, stmt) = assign::assign_stmt("$x = 1;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     assert!(matches!(
         stmt,
         Stmt::Assign { name, expr, .. }
@@ -418,7 +418,7 @@ fn assign_stmt_scalar_plain_assignment_has_no_comma() {
 fn assign_stmt_array_list_assignment_absorbs_comma() {
     // `@a = 1, 2` keeps the comma-absorbing RHS (list assignment).
     let (rest, stmt) = assign::assign_stmt("@a = 1, 2;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     assert!(matches!(
         stmt,
         Stmt::Assign { name, expr, .. }

@@ -41,7 +41,7 @@ fn assign_expr_bracket_metaop_leaves_following_call_args() {
 #[test]
 fn assign_stmt_parses_nested_bracket_metaop_assign() {
     let (rest, stmt) = assign::assign_stmt("$x [R[+]]= 1;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     match stmt {
         Stmt::Assign { expr, .. } => match expr {
             Expr::MetaOp { meta, op, .. } => {
@@ -88,7 +88,7 @@ fn assign_expr_parses_unbracketed_cross_metaop_assign() {
 #[test]
 fn assign_stmt_parses_unbracketed_cross_metaop_assign() {
     let (rest, stmt) = assign::assign_stmt("@a X*= 10;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     match stmt {
         Stmt::Expr(Expr::MetaOp {
             meta, op, ref left, ..
@@ -104,7 +104,7 @@ fn assign_stmt_parses_unbracketed_cross_metaop_assign() {
 #[test]
 fn assign_stmt_parses_unbracketed_cross_plain_assign() {
     let (rest, stmt) = assign::assign_stmt("@a X= 10;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     match stmt {
         Stmt::Assign { name, expr, .. } => {
             assert_eq!(name, "@a");
@@ -241,7 +241,7 @@ fn known_call_stmt_parses_unicode_and_ascii_minus_angle_complex_args() {
 fn known_call_stmt_keeps_chained_assignment_as_single_argument() {
     simple::register_module_exports("Test");
     let (rest, stmt) = simple::known_call_stmt("is $x = $y = $z, 18;").unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     match stmt {
         Stmt::Call { name, args, .. } => {
             assert_eq!(name, "is");
@@ -266,7 +266,7 @@ fn known_call_stmt_splits_assignment_from_following_test_args() {
         "is $ = bar(), \"NoModule::bar\", \"can import symbol not inside module\";",
     )
     .unwrap();
-    assert_eq!(rest, "");
+    assert_eq!(rest, ";");
     match stmt {
         Stmt::Call { name, args, .. } => {
             assert_eq!(name, "is");
@@ -375,7 +375,7 @@ fn done_parses_as_react_done_stmt() {
 #[test]
 fn done_with_semicolon_parses_as_react_done_stmt() {
     let (rest, stmt) = simple::known_call_stmt("done;").unwrap();
-    assert!(rest.is_empty(), "rest should be empty, got: {rest:?}");
+    assert_eq!(rest, ";");
     assert!(
         matches!(stmt, Stmt::ReactDone),
         "expected ReactDone, got: {stmt:?}"
