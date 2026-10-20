@@ -187,6 +187,7 @@ impl Interpreter {
                 if self.types.lexical_class_pending.get(&qualified) == Some(&storage) {
                     self.types.lexical_class_pending.remove(&qualified);
                 }
+                self.types.lexical_class_awaiting.remove(&storage);
             }
         }
     }
@@ -215,12 +216,19 @@ impl Interpreter {
     /// class is never reused this way, even if some enclosing scope is still
     /// open — only a genuinely incomplete declaration is a continuation
     /// target.
+    ///
+    /// "Still a stub" is the stub statement having run in this scope without
+    /// its completion (`lexical_class_awaiting`), not only the registry's stub
+    /// flag: when the scope runs again (a role body re-run for another
+    /// composition), the stub statement finds the class already completed and
+    /// registers nothing, yet the definition after it still completes that
+    /// same class.
+    // Cost: O(1).
     pub(crate) fn lexical_class_pending_stub(&self, qualified: &str) -> Option<String> {
         let storage = self.types.lexical_class_pending.get(qualified)?;
-        self.registry()
-            .class_stubs
-            .contains(storage)
-            .then(|| storage.clone())
+        (self.types.lexical_class_awaiting.contains(storage)
+            || self.registry().class_stubs.contains(storage))
+        .then(|| storage.clone())
     }
 
     /// The storage name an earlier `my role` declaration of `qualified` in the

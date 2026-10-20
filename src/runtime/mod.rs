@@ -175,6 +175,22 @@ pub(crate) fn seed_native_subclass_payloads(
             .unwrap_or_default();
         attrs.insert("__mutsu_str_value", Value::str(payload));
     }
+    // An `is Attribute` subclass is a metaobject too: `Attribute.new`'s named
+    // arguments are its facts, which the `Attribute` rows read.
+    if class_mro.iter().any(|name| name == "Attribute") && !attrs.contains_key("__mutsu_attr_name")
+    {
+        for (key, value) in
+            crate::runtime::methods_object_dispatch_new::attribute_facts_from_args(args)
+        {
+            if matches!(
+                key.as_str(),
+                "name" | "__mutsu_attr_name" | "type" | "__mutsu_attr_owner" | "has_accessor"
+            ) && !attrs.contains_key(key.as_str())
+            {
+                attrs.insert(key.as_str(), value);
+            }
+        }
+    }
     // An `is IterationBuffer` subclass keeps its elements in a reserved array
     // attribute, which nqp code (`nqp::push(self, ...)`) writes into from the
     // first statement of a method. `nqp::create` seeds it (`create_instance`),

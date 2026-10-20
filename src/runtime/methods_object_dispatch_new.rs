@@ -34,6 +34,38 @@ pub(crate) fn default_new_accepts_positionals(class_mro: &[Symbol]) -> bool {
     })
 }
 
+/// The facts `Attribute.new(:name, :type, :package, ...)` records on the
+/// metaobject, as the attribute entries of the instance: the `Attribute`
+/// rows read them (`method_table::ctors_mop::attribute`). A user subclass of
+/// `Attribute` records the same facts next to its own attributes
+/// (`seed_native_subclass_payloads`).
+// Cost: O(a), a = arguments.
+pub(crate) fn attribute_facts_from_args(args: &[Value]) -> impl Iterator<Item = (String, Value)> + '_ {
+    args.iter().flat_map(|arg| {
+        let ValueView::Pair(key, value) = arg.view() else {
+            return Vec::new();
+        };
+        match key.as_str() {
+            "name" => {
+                // Storage key is the BARE name (sigil+twigil stripped),
+                // matching `^add_attribute`'s class slots and every other
+                // Attribute builder — so `get_value`/`set_value` read and
+                // write the instance's actual attribute slot.
+                let bare = value
+                    .to_string_value()
+                    .trim_start_matches(|c: char| "$.!@%&".contains(c))
+                    .to_string();
+                vec![
+                    ("name".to_string(), value.clone()),
+                    ("__mutsu_attr_name".to_string(), Value::str(bare)),
+                ]
+            }
+            "package" => vec![("__mutsu_attr_owner".to_string(), value.clone())],
+            other => vec![(other.to_string(), value.clone())],
+        }
+    })
+}
+
 /// Build a typed `X::Constructor::Positional` for a default constructor that
 /// was handed positional arguments (e.g. `Mu.new(1)`). The `type` attribute is
 /// the type object so the test matcher `type => Foo` accepts it.
@@ -2311,41 +2343,8 @@ impl Interpreter {
                     "Bool" => Ok(Value::FALSE),
                     "Attribute" => {
                         // Attribute.new(:name<...>, :type(Int), :package<Foo>)
-                        let mut attrs = HashMap::new();
-                        for arg in &args {
-                            if let ValueView::Pair(key, value) = arg.view() {
-                                match key.as_str() {
-                                    "name" => {
-                                        let n = value.to_string_value();
-                                        attrs.insert("name".to_string(), value.clone());
-                                        // Storage key is the BARE name (sigil+twigil
-                                        // stripped), matching `^add_attribute`'s class
-                                        // slots and every other Attribute builder — so
-                                        // `get_value`/`set_value` read and write the
-                                        // instance's actual attribute slot.
-                                        let bare = n
-                                            .trim_start_matches(|c: char| "$.!@%&".contains(c))
-                                            .to_string();
-                                        attrs.insert(
-                                            "__mutsu_attr_name".to_string(),
-                                            Value::str(bare),
-                                        );
-                                    }
-                                    "type" => {
-                                        attrs.insert("type".to_string(), value.clone());
-                                    }
-                                    "package" => {
-                                        attrs.insert(
-                                            "__mutsu_attr_owner".to_string(),
-                                            value.clone(),
-                                        );
-                                    }
-                                    other => {
-                                        attrs.insert(other.to_string(), value.clone());
-                                    }
-                                }
-                            }
-                        }
+                        let attrs: HashMap<String, Value> =
+                            attribute_facts_from_args(&args).collect();
                         Ok(Value::make_instance(Symbol::intern("Attribute"), attrs))
                     }
                     "Semaphore" => {

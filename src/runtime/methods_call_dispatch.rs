@@ -994,6 +994,28 @@ impl Interpreter {
         {
             return result;
         }
+        // An instance of a user subclass of `Attribute` (`class CosOfAttr is
+        // Attribute does R {}`, PDF) is a metaobject too: it carries the facts
+        // its constructor was given (`seed_native_subclass_payloads`), so the
+        // `Attribute` rows answer it. The subclass has no dispatch shape, so
+        // the rows are found by their owner, after its own methods declined.
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && class_name != "Attribute"
+            && crate::builtins::method_table::owner_declares("Attribute", Symbol::intern(method))
+            && self
+                .classhow_mro_unhidden_names(&target)
+                .iter()
+                .any(|name| name == "Attribute")
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                &["Attribute"],
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return result;
+        }
         // `RakuAST::Node.visit-children` and the `RakuAST::Origin` rows are
         // rows of the method table, found by their owner: neither has a
         // dispatch shape.

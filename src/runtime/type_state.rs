@@ -242,6 +242,13 @@ pub(crate) struct TypeState {
     /// just popped) at `pop_lexical_class_scope` so the map can never answer a
     /// query with an entry from an already-exited scope.
     pub(crate) lexical_class_pending_scopes: Vec<Vec<(String, String)>>,
+    /// Storage names of the `my class C { ... }` stubs an open scope executed
+    /// whose full definition has not run yet. A re-executed scope (a role body
+    /// run again for each composition, a loop body) finds its stub already
+    /// completed in the registry, so `class_stubs` alone cannot say that the
+    /// next same-named declaration completes it (see
+    /// `lexical_class_pending_stub`).
+    pub(crate) lexical_class_awaiting: HashSet<String>,
     /// Metadata for Seq values produced by `squish` with callbacks, used to
     /// provide callback-aware iterator behavior.
     pub(crate) squish_iterator_meta: HashMap<usize, SquishIteratorMeta>,
@@ -313,6 +320,7 @@ impl TypeState {
             lexical_class_scopes: Vec::new(),
             lexical_class_pending: HashMap::new(),
             lexical_class_pending_scopes: Vec::new(),
+            lexical_class_awaiting: HashSet::new(),
             squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
@@ -381,6 +389,7 @@ impl TypeState {
             lexical_class_scopes: self.lexical_class_scopes.clone(),
             lexical_class_pending: self.lexical_class_pending.clone(),
             lexical_class_pending_scopes: self.lexical_class_pending_scopes.clone(),
+            lexical_class_awaiting: self.lexical_class_awaiting.clone(),
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
