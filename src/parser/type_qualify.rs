@@ -31,7 +31,7 @@ pub(crate) fn qualify_program(stmts: &mut [Stmt]) {
     for stmt in stmts.iter() {
         decls.visit_stmt(stmt);
     }
-    if !decls.opens_package {
+    if !decls.opens_package && !decls.block_use {
         return;
     }
     let mut pass = Qualify {
@@ -151,6 +151,9 @@ struct PackageTypes<'a> {
     local_names: HashSet<String>,
     packages: Packages<'a>,
     opens_package: bool,
+    /// A `use` below the unit's top level was seen.
+    block_use: bool,
+    depth: usize,
 }
 
 impl<'a> Visit<'a> for PackageTypes<'a> {
@@ -168,8 +171,10 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
         {
             self.local_names.insert(name.clone());
         }
+        self.block_use |= self.depth > 0 && matches!(stmt, Stmt::Use { .. });
         let opened = opened_package(stmt);
         self.opens_package |= opened.is_some();
+        self.depth += 1;
         match opened {
             // A `unit` package holds the rest of the unit: it stays open.
             Some((name, true)) => {
@@ -183,6 +188,7 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
             }
             None => walk_stmt(self, stmt),
         }
+        self.depth -= 1;
     }
 }
 
@@ -190,9 +196,10 @@ struct Qualify<'d> {
     declared: HashSet<String>,
     local_names: HashSet<String>,
     packages: Vec<Option<&'d str>>,
-    /// The `my` classes each open statement list declares inside a package,
-    /// by source name, with the storage name the run time registers them
-    /// under (`Pkg::Name\u{0}<decl-id>`, ADR-0047).
+    /// The types each open statement list binds lexically, by source name:
+    /// the types a block's `use` imports, under their qualified names, and
+    /// the `my` classes it declares inside a package, under the storage name
+    /// the run time registers them by (`Pkg::Name\u{0}<decl-id>`, ADR-0047).
     scopes: Vec<HashMap<String, String>>,
 }
 
@@ -233,6 +240,30 @@ impl Qualify<'_> {
         self.scopes.push(scope);
         f(self, body);
         self.scopes.pop();
+    }
+
+    /// A `use` in a block binds the types it imports in the block's pad, for
+    /// the statements after it (ADR-8751): a type name resolves at compile
+    /// time, in source order. The unit's own top level is no block, and its
+    /// imports stay the run time's.
+    // Cost: O(t), t = the module's exported types.
+    fn note_block_use(&mut self, stmt: &Stmt) {
+        let Stmt::Use {
+            module,
+            arg: None,
+            tags,
+            ..
+        } = stmt
+        else {
+            return;
+        };
+        let Some(types) = super::stmt::simple::scanned_exported_types(module) else {
+            return;
+        };
+        let scope = self.scopes.last_mut().expect("an open scope");
+        for ty in types.iter().filter(|ty| ty.imported_by(tags)) {
+            scope.insert(ty.name.clone(), ty.qualified.clone());
+        }
     }
 
     /// The innermost declared `P::name` for the bare `name`, from the open
@@ -331,7 +362,10 @@ impl Qualify<'_> {
 impl VisitMut for Qualify<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
         self.in_scope(body, |pass, body| {
-            crate::ast_visit::walk_stmts_mut(pass, body)
+            for stmt in body.iter_mut() {
+                pass.note_block_use(stmt);
+                pass.visit_stmt_mut(stmt);
+            }
         });
     }
 

@@ -30,6 +30,8 @@ use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use std::collections::HashMap;
 
+mod declare_keywords;
+mod exported_type;
 mod stash_expr;
 
 /// The declarations [`scan_module_decls`] found.
@@ -60,6 +62,9 @@ pub(super) struct ModuleDecls {
     /// The `our` variables the module exports from its package spine
     /// (`exported_vars.rs`).
     pub(super) exported_vars: Vec<super::exported_vars::ExportedVar>,
+    /// The types the module exports from its package spine
+    /// (`exported_types.rs`).
+    pub(super) exported_types: Vec<super::exported_types::ExportedType>,
     /// Whether the module exports a variable that is no `exported_vars` entry:
     /// an `our` declared directly in an `EXPORT::<tag>` stash (exported by
     /// construction), an `is export` one off the package spine, or an `our`
@@ -154,49 +159,6 @@ impl DeclScan {
             });
     }
 
-    /// `EXPORTHOW::DECLARE` entries can be constants (`constant kw = SomeHOW`)
-    /// or class declarations (`class DECLARE::kw is Metamodel::ClassHOW { }`).
-    /// The latter is registered as a type object, so runtime HOW lookup checks
-    /// the type registry as well as the env.
-    fn collect_declare_keywords(&mut self, exporthow_body: &[Stmt]) {
-        for inner in exporthow_body {
-            match inner {
-                Stmt::ClassDecl { name, .. } => {
-                    let name = name.resolve();
-                    if let Some(keyword) = name.strip_prefix("DECLARE::") {
-                        self.out
-                            .declare_keywords
-                            .push((keyword.to_string(), package_type_name("EXPORTHOW", &name)));
-                    }
-                }
-                Stmt::Package { name, body, .. } if name.resolve() == "DECLARE" => {
-                    for decl in body {
-                        match decl {
-                            Stmt::VarDecl {
-                                name,
-                                expr: Expr::BareWord(how_type),
-                                custom_traits,
-                                ..
-                            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
-                                self.out
-                                    .declare_keywords
-                                    .push((name.clone(), how_type.clone()));
-                            }
-                            Stmt::ClassDecl { name, .. } if !name.resolve().contains("::") => {
-                                self.out.declare_keywords.push((
-                                    name.resolve(),
-                                    package_type_name("EXPORTHOW::DECLARE", &name.resolve()),
-                                ));
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
     fn collect_enum_values(
         &mut self,
         variants: &[(String, Option<Expr>)],
@@ -267,11 +229,18 @@ impl<'ast> Visit<'ast> for DeclScan {
                 self.enter_package(stmt, composed, *is_unit, String::new());
             }
             Stmt::RoleDecl {
-                name, is_export, ..
+                name,
+                is_export,
+                export_tags,
+                custom_traits,
+                ..
             } => {
                 let name = name.resolve();
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
+                }
+                if *is_export && !custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                    self.export_type(&name, export_tags);
                 }
                 let composed = package_type_name(&self.prefix, &name);
                 // `role A::B is export` imports `B`, as a class does.
@@ -311,10 +280,19 @@ impl<'ast> Visit<'ast> for DeclScan {
             // A subset is a type name the importer can write as a bare `when`
             // matcher (`when Base64Binary { }`, from FHIR::Base), so it travels
             // with the module exactly like a class does.
-            Stmt::SubsetDecl { name, is_my, .. } => {
+            Stmt::SubsetDecl {
+                name,
+                is_my,
+                is_export,
+                export_tags,
+                ..
+            } => {
                 if self.spine || !*is_my {
                     let name = name.resolve();
                     self.push_type(compose_type_name(&self.prefix, &name), name, false);
+                }
+                if *is_export && !*is_my {
+                    self.export_type(&name.resolve(), export_tags);
                 }
             }
             Stmt::EnumDecl {
@@ -328,6 +306,9 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if self.spine || !*is_my {
                     let name = name.resolve();
                     self.push_type(compose_type_name(&self.prefix, &name), name, true);
+                }
+                if *is_export && !*is_my {
+                    self.export_type(&name.resolve(), export_tags);
                 }
                 // `is export` imports a qualified enum under its short name, as
                 // it does a class (`my enum M::Endian is export` makes
@@ -506,13 +487,25 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // An exported qualified type is imported under its short name
                 // too (`class A::B::C is export { }` imports `C`).
                 if let Some((decl, header)) = crate::ast::package_header::unwrap(stmt)
-                    && header.export_tags.is_some()
+                    && let Some(tags) = &header.export_tags
                     && let Stmt::ClassDecl { name, .. }
                     | Stmt::RoleDecl { name, .. }
                     | Stmt::Package { name, .. } = decl
-                    && let Some((_, short)) = name.resolve().rsplit_once("::")
                 {
-                    self.out.type_names.push(short.to_string());
+                    let name = name.resolve();
+                    if let Some((_, short)) = name.rsplit_once("::") {
+                        self.out.type_names.push(short.to_string());
+                    }
+                    let lexical = matches!(
+                        decl,
+                        Stmt::ClassDecl {
+                            is_lexical: true,
+                            ..
+                        }
+                    ) || matches!(decl, Stmt::Package { is_my: true, .. });
+                    if !lexical {
+                        self.export_type(&name, tags);
+                    }
                 }
                 walk_stmt(self, stmt)
             }
