@@ -159,8 +159,14 @@ impl Compiler {
                 append,
                 ..
             } => {
-                let lowered =
-                    crate::parser::lower_feed_node((**source).clone(), (**sink).clone(), *append);
+                if !append && self.compile_feed_tap(source, sink) {
+                    return;
+                }
+                let lowered = super::expr_feed::lower_feed_node(
+                    (**source).clone(),
+                    (**sink).clone(),
+                    *append,
+                );
                 self.compile_expr(&lowered);
             }
             // m/regex/ -- compile as $_ ~~ /regex/, matching against $_

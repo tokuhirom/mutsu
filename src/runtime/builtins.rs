@@ -686,7 +686,6 @@ impl Interpreter {
             "__mutsu_feed_whatever" => self.builtin_feed_whatever(&args),
             "__mutsu_feed_append" => self.builtin_feed_append(&args),
             "__mutsu_feed_append_whatever" => self.builtin_feed_append_whatever(&args),
-            "__mutsu_feed_array_assign" => self.builtin_feed_array_assign(&args),
             "__mutsu_reverse_xx" => self.builtin_reverse_xx(&args),
             "__mutsu_reverse_andthen" => self.builtin_reverse_andthen(&args),
             "__mutsu_andthen_finalize" => self.builtin_andthen_finalize(&args),

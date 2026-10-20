@@ -474,6 +474,12 @@ const SHADOWABLE_STATEMENTS: [&str; 14] = [
 ];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // A feed keeps declarations as operands until compiler lowering. The
+    // loose-tail declaration splitter would turn a leftwards sink into an
+    // initializer executed on every modifier iteration.
+    if let Some(feed) = super::feed_op::lower(node) {
+        return Ok(Stmt::Expr(feed?));
+    }
     if node
         .fields
         .iter()

@@ -2,6 +2,12 @@ use super::*;
 
 impl Compiler {
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
+        if Self::is_feed_modifier(stmt)
+            && let Some(rewritten) = self.hoist_feed_sinks(stmt)
+        {
+            self.compile_expr_do_stmt(&rewritten);
+            return;
+        }
         match stmt {
             // `proto method NAME(...) {*}` as a term (`my constant
             // &proto-handler = proto method handler(|) {*}`,

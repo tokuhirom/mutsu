@@ -22,25 +22,19 @@ use super::super::super::helpers::ws1;
 pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let rest = input;
 
-    // Feed initialization: my @a <== expr / my @a <<== expr
+    // Keep a declaration feed intact until compiler lowering, like `==> my @a`.
     if let Some(rest) = rest
         .strip_prefix("<==")
         .or_else(|| rest.strip_prefix("<<=="))
     {
         let (rest, _) = ws(rest)?;
-        let (rest, mut expr) = parse_assign_expr_or_comma(rest)?;
-        if s.is_array {
-            expr = Expr::Call {
-                name: Symbol::intern("__mutsu_feed_array_assign"),
-                args: vec![expr],
-                listop: false,
-            };
-        }
-        let expr = if let Some(dims) = s.shape_dims {
-            shaped_array_new_with_data_expr(dims, expr)
-        } else {
-            expr
-        };
+        let (rest, source) = parse_assign_expr_or_comma(rest)?;
+        let expr = default_decl_expr(
+            s.is_array,
+            s.is_hash,
+            s.shape_dims.as_deref(),
+            s.type_constraint.as_deref(),
+        );
         let stmt = Stmt::VarDecl {
             anonymous: s.anonymous,
             name: s.name,
@@ -54,6 +48,12 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             custom_traits: s.custom_traits,
             where_constraint: s.where_constraint,
         };
+        let stmt = Stmt::Expr(Expr::Feed {
+            source: Box::new(source),
+            sink: Box::new(Expr::DoStmt(Box::new(stmt))),
+            append: input.starts_with("<<=="),
+            left_is_source: false,
+        });
         if s.apply_modifier {
             return parse_statement_modifier(rest, stmt);
         }

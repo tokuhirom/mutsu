@@ -1480,3 +1480,33 @@ The tested tree passes 8,036 / 8,079 frontend files; all 8,036 listed files
 and 83,177 assertions pass the release ratchet. The 51 added list entries
 include refreshed-main coverage. The remaining survey has 27 DIFF and
 16 REFUSE files.
+
+### 6.84 S10: declaration feeds and native variable taps (2026-10-20)
+
+Both directions retain declaration sinks inside `Expr::Feed` until compiler
+lowering, so conversion exposes `ApplyListInfix(Feed, operands)` rather than
+the old `__mutsu_feed_array_assign` initializer. Feed lowering precedes the
+generic loose-tail declaration split: a sink is part of the feed, not a
+declaration initializer wrapped around it. `ApplyListInfix.new` preserves a
+validated list of operand nodes, including hand-built declaration feeds.
+
+The compiler evaluates a variable feed's source once, appends through the
+existing native method table, discards the append result and returns the
+original source. A raw compiler temporary and zen deitemization let a
+scalar-held aggregate iterate into the sink without changing the original
+expression result. Callable sinks retain ordinary argument evaluation order;
+their existing arguments precede the appended source argument. The compiler
+owns callable and legacy append-feed expansion; parsing retains the feed.
+
+A typed mutable AST visitor hoists bare declaration sinks outside transparent
+statement modifiers while leaving their appends in the modified body. It
+stops at actual lexical scopes. Thus a false condition still installs the
+typed declaration, and a loop accumulates successive inputs. `state` keeps
+its own once-only declaration machinery and appends on each invocation.
+
+The old feed-assignment runtime helper is removed. Array append and prepend
+reject a single infinite range through their common native growth operation.
+Subscript/method-expression sinks are refused at the RakuAST boundary, matching
+Rakudo 2026.07's routine-call-or-variable restriction. Append feed syntax stays
+refused because Rakudo has not implemented it. The executable contract is
+`t/rakuast/rakuast-declaration-feeds.t` and the existing feed operator suite.

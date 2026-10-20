@@ -16,6 +16,21 @@ use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
 
+// Cost: O(1), apart from the parenthesization wrappers of the operand.
+fn valid_sink(sink: &Expr) -> bool {
+    match sink.peel_parens() {
+        Expr::Var(_)
+        | Expr::ArrayVar(_)
+        | Expr::HashVar(_)
+        | Expr::CodeVar(_)
+        | Expr::Call { .. }
+        | Expr::CallOn { .. }
+        | Expr::BareWord(_) => true,
+        Expr::DoStmt(stmt) => matches!(stmt.as_ref(), crate::ast::Stmt::VarDecl { .. }),
+        _ => false,
+    }
+}
+
 /// The operands of the feed chain `source -> sink` in written order.
 // Cost: O(n), n = operands of the chain.
 fn written_operands<'a>(source: &'a Expr, sink: &'a Expr, to_right: bool) -> Vec<&'a Expr> {
@@ -64,7 +79,18 @@ pub(super) fn convert(
         return Err(unsupported_expr("append feed operator"));
     }
     let mut nodes = Vec::new();
-    for operand in written_operands(source, sink, left_is_source) {
+    let operands = written_operands(source, sink, left_is_source);
+    let source_index = if left_is_source {
+        0
+    } else {
+        operands.len() - 1
+    };
+    for (index, operand) in operands.into_iter().enumerate() {
+        if index != source_index && !valid_sink(operand) {
+            return Err(unsupported_expr(
+                "feed sink must be a routine call or appendable variable",
+            ));
+        }
         nodes.push(Value::rakuast(Box::new(convert_expr(operand)?)));
     }
     let feed = RakuAstNode {
@@ -118,6 +144,14 @@ fn fold(node: &RakuAstNode, infix: &RakuAstNode) -> Result<Expr, RuntimeError> {
         operands.push(lower_expr(child)?);
     }
     if operands.len() < 2 {
+        return Err(unsupported(node));
+    }
+    let source_index = if to_right { 0 } else { operands.len() - 1 };
+    if operands
+        .iter()
+        .enumerate()
+        .any(|(index, operand)| index != source_index && !valid_sink(operand))
+    {
         return Err(unsupported(node));
     }
     let feed = |source: Expr, sink: Expr| Expr::Feed {

@@ -1101,6 +1101,7 @@ mod expr_block_decl_helpers;
 mod expr_call;
 mod expr_closure;
 mod expr_data;
+mod expr_feed;
 mod expr_helpers;
 mod expr_incdec_nested;
 mod expr_incdec_ternary;

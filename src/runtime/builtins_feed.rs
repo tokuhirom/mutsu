@@ -85,26 +85,6 @@ impl Interpreter {
         Ok(appended)
     }
 
-    pub(super) fn builtin_feed_array_assign(
-        &mut self,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let value = args.first().cloned().unwrap_or(Value::NIL);
-        let int_max = i64::MAX;
-        let infinite = match value.view() {
-            ValueView::Range(_, end) | ValueView::RangeExcl(_, end) => end == int_max,
-            ValueView::GenericRange { end, .. } => end.to_f64().is_infinite(),
-            ValueView::Int(end) => end == int_max,
-            _ => false,
-        };
-        if infinite {
-            return Err(RuntimeError::new(
-                "Cannot eagerly assign an infinite feed source to an array",
-            ));
-        }
-        Ok(crate::runtime::coerce_to_array(value))
-    }
-
     pub(super) fn builtin_reverse_xx(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() != 2 {
             return Err(RuntimeError::new(
