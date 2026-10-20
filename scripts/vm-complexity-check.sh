@@ -53,6 +53,9 @@ CASES=(
     # loop body otherwise lands in the timed region (the control case shows it).
     'bare block { my } vs routine registry|500|1|use MONKEY-SEE-NO-EVAL; EVAL (^NN).map({ "our sub rs$_ \{ $_ \}" }).join(";"); my $t = 0;|for ^5000 { { my $y = 1; $t += $y } }'
     'routine-scoped use vs routine registry|2000|1|SUBS sub ru { use Test; 1 }; my $t = 0;|for ^1000 { $t += ru() }'
+    # A block sub is re-installed per iteration; its name's key list is
+    # refilled from the tail index, not a registry pass (#9170).
+    'bare block { sub } vs routine registry|1000|1|use MONKEY-SEE-NO-EVAL; EVAL (^NN).map({ "our sub rs$_ \{ $_ \}" }).join(";"); my $t = 0;|for ^3000 { { sub g { 1 }; $t += g() } }'
     'bare block { my } vs grammar tokens|500|1|use MONKEY-SEE-NO-EVAL; EVAL "grammar GG \{ " ~ (^NN).map({ "token t$_ \{ a \}" }).join(";") ~ " \}"; my $t = 0;|for ^5000 { { my $y = 1; $t += $y } }'
     'bare block { my } vs block size|500|1|my $never = 0; my $s = 0; my $t = 0;|for ^5000 { { my $y = 1; $t += $y; if $never { STMTS } } }'
     'loop body vs untaken-branch size (control)|500|1|my $never = 0; my $s = 0; my $t = 0;|for ^5000 { $t += 1; if $never { STMTS } }'

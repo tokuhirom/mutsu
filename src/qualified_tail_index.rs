@@ -263,6 +263,15 @@ pub(crate) fn names_ending_in(bare: &str) -> Vec<Symbol> {
     caught_up_lookup(&TAIL_INDEX, bare, record_members)
 }
 
+/// Whether [`names_ending_in`] can list every qualified name ending in `bare`:
+/// the index records a member only up to its first `/` and never one holding
+/// `::`, so a spelling with either (`infix:</>`, `term:<Foo::Baz>`) has
+/// entries it does not record.
+// Cost: O(|bare|).
+pub(crate) fn lists_every_name_ending_in(bare: &str) -> bool {
+    !bare.is_empty() && !bare.contains('/') && !bare.contains("::")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
