@@ -250,7 +250,10 @@ impl Interpreter {
             }
             let eager = match &op.raw {
                 // An exported `my constant`/`my $x` is a compile-time
-                // declaration too (#9981).
+                // declaration too (#9981), and so is every `constant`: Rakudo
+                // initializes it when the body is compiled, so a `sub` of the
+                // role body exported to an importer that never composes the
+                // role reads it (CSS::Units' `%Dimension`, #13279).
                 Stmt::VarDecl {
                     is_export: true, ..
                 }
@@ -261,17 +264,21 @@ impl Interpreter {
                 | Stmt::SubsetDecl { .. } => {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
+                Stmt::VarDecl { custom_traits, .. } if is_constant_decl(custom_traits) => {
+                    !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
+                }
                 // A sigilless or bind declaration arrives as the group
                 // `role_body_plan` keeps whole.
                 Stmt::SyntheticBlock(inner)
                     if crate::ast::scope_members(inner).any(|s| {
-                        matches!(
-                            s,
+                        match s {
                             Stmt::VarDecl {
-                                is_export: true,
+                                is_export,
+                                custom_traits,
                                 ..
-                            }
-                        )
+                            } => *is_export || is_constant_decl(custom_traits),
+                            _ => false,
+                        }
                     }) =>
                 {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
@@ -378,4 +385,10 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     };
     m.visit_stmt(stmt);
     m.found
+}
+
+/// Whether a `VarDecl`'s traits mark it a `constant` declaration.
+// Cost: O(t), t = the declaration's traits.
+fn is_constant_decl(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits.iter().any(|(name, _)| name == "__constant")
 }
