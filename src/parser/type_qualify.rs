@@ -252,9 +252,12 @@ impl Qualify<'_> {
             // `Path` names `URI::Path`). The parser's type registry does not
             // tell a type from a `my` type or a type-valued constant (`my
             // constant CArray is export = NativeCall::Types::CArray`), so a
-            // name the unit declares as one of those is left alone.
+            // name the unit declares as one of those is left alone. A
+            // package's stash is consulted after GLOBAL, as in rakudo: a
+            // `DS` role in GLOBAL wins over a loaded `P::DS` inside `P`.
             if self.declared.contains(&candidate)
                 || (!self.local_names.contains(name)
+                    && !super::stmt::simple::is_user_declared_type(name)
                     && super::stmt::simple::is_user_declared_type(&candidate))
             {
                 return Some(candidate);
