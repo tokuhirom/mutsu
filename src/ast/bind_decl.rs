@@ -164,6 +164,7 @@ fn structural_hash(stmt: &Stmt) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::value::Value;
 
     fn decl(name: &str, expr: Expr, traits: &[&str]) -> Stmt {
         Stmt::VarDecl {
