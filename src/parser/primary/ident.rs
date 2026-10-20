@@ -8,6 +8,7 @@ mod supply;
 pub(crate) use anon_sub::{anon_method_expr, anon_method_expr_declared, folded_invocant};
 pub(crate) use supply::supply_block;
 mod term_literals;
+mod term_symbols;
 
 pub(super) use circumfix::declared_circumfix_op;
 pub(super) fn identifier_or_call(
@@ -25,4 +26,5 @@ pub(in crate::parser) use listop::{
 pub(in crate::parser) use loop_control::{control_flow_slip_args, loop_control_listop_arg_start};
 pub(crate) use loop_control::{is_loop_control_label, loop_control_expr};
 pub(in crate::parser) use predicates::{is_infix_word_op, is_keyword};
-pub(super) use term_literals::{class_literal, declared_term_symbol, keyword_literal, whatever};
+pub(super) use term_literals::{class_literal, keyword_literal, whatever};
+pub(super) use term_symbols::declared_term_symbol;

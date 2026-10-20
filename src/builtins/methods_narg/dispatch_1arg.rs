@@ -49,20 +49,20 @@ fn native_method_1arg_cascade(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    // Scalar containers are transparent for method dispatch (no .VAR at this
-    // arity): the held value is a call of its own, which asks the table first,
-    // so the decline step below sees the receiver the table was asked about.
-    let settled = target.descalarize();
-    if !std::ptr::eq(settled, target) {
-        return native_method_1arg(settled, method_sym, arg);
-    }
-    // A method call decontainerizes an itemized Hash receiver (`$map`, an
-    // element read out of an Array) the same way, as the 0-arg entry and
-    // `call_method_with_values` do (#10744): the table refuses the itemized
-    // form, so the plain hash is asked again.
-    // Cost: O(1), a tag probe (`hash_is_itemized` is false for every non-Hash).
-    if target.hash_is_itemized() {
-        return native_method_1arg(&target.clone().with_hash_itemized(false), method_sym, arg);
+    // The receiver step every entry runs (ADR-11276 §2.4,
+    // `method_table::receiver_step`): the held value of a container, a
+    // hash-like receiver's pairs, ... is a call of its own, which asks the
+    // table first, so the decline step below sees the receiver the table was
+    // asked about.
+    // Cost: O(1) tag probes for a receiver in no such state.
+    match crate::builtins::method_table::receiver_step::step(target, method, 1) {
+        Some(crate::builtins::method_table::receiver_step::Step::Redirect(receiver, _)) => {
+            return native_method_1arg(&receiver, method_sym, arg);
+        }
+        Some(crate::builtins::method_table::receiver_step::Step::Answer(answer)) => {
+            return Some(answer);
+        }
+        Some(crate::builtins::method_table::receiver_step::Step::Itself) | None => {}
     }
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
     // payload (`builtins::native_base`).

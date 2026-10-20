@@ -302,6 +302,12 @@ fn every_row_is_reached_and_answers() {
             } else {
                 sample(shape)
             };
+            // A receiver the receiver step redirects for this name (a Hash's
+            // `self.list` methods read its pairs) is never asked of the row as
+            // it stands: the table's entry declines it (`receiver_step::claims`).
+            if super::receiver_step::claims(&target, row.name) {
+                continue;
+            }
             let result = try_dispatch(&target, Symbol::intern(row.name), &args);
             if !row.handler.is_pure() {
                 // An interpreter row is answered by the entries that have an

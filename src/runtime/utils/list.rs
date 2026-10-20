@@ -114,6 +114,13 @@ pub(crate) fn hashlike_receiver_as_pairs_list(target: &Value, method: &str) -> O
     ))
 }
 
+/// Whether `method` is one of `Any`'s `self.list.METHOD` methods a hash-like
+/// receiver answers on its pairs ([`hashlike_receiver_as_pairs_list`]).
+// Cost: O(m), m = names in the list.
+pub(crate) fn is_hashlike_any_list_method(method: &str) -> bool {
+    HASHLIKE_ANY_LIST_METHODS.contains(&method)
+}
+
 /// True when a subscript range dimension has no usable finite end: `1..*` /
 /// `1^..Inf` style (a Whatever end lowers to `Inf`, and an integer-range end of
 /// `i64::MAX` is the same thing forced through an int range). Expanding such a
