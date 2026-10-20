@@ -1,5 +1,6 @@
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::builtins::method_table::receiver_step::Step;
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 
 pub(crate) mod coercion;
@@ -135,16 +136,6 @@ pub(crate) fn native_method_0arg(
     if let Some(result) = crate::builtins::method_table::answer(target, method_sym, &[]) {
         return Some(result);
     }
-    // A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
-    // captures (ADR-11276 §9.98), as the interpreter's entries do
-    // (`Interpreter::match_list_receiver`, which also asks the grammar).
-    // Cost: O(1) unless the receiver is a Match and the name one of those.
-    if let Some(list) = target.match_list_receiver(method_sym.as_str()) {
-        if crate::value::match_view::match_list_answers_itself(method_sym.as_str()) {
-            return Some(Ok(list));
-        }
-        return native_method_0arg(&list, method_sym);
-    }
     native_method_0arg_cascade(target, method_sym)
 }
 
@@ -179,30 +170,26 @@ pub(crate) fn native_method_0arg_cascade(
     // zero-argument native method in the interpreter.
     let method: &str = method_sym.as_str();
 
-    // A method call decontainerizes its invocant, so an itemized Hash receiver
-    // (a `$`-held hash, an element read out of an Array/Hash, `.item`, `$(%h)`)
-    // is just the hash here: `$s.cache` / `.permutations` operate on its Pairs,
-    // not on the hash as ONE item (#10744). Every VM call op and the interpreter
-    // reach this one entry, so it is settled once rather than per op. The flag
-    // is cleared over the SAME `HashData` `Gc`; `raku`/`perl`/`item`/`self`
-    // observe the container itself (as in the Array arm of
-    // `Interpreter::call_method_with_values`) and `VAR` is never a native call.
-    // Cost: O(1), a tag probe (`hash_is_itemized` is false for every non-Hash).
-    if target.hash_is_itemized() && !matches!(method, "raku" | "item" | "self" | "VAR") {
-        return native_method_0arg(&target.clone().with_hash_itemized(false), method_sym);
-    }
-
-    // `Hash`/`Map` and the QuantHashes inherit `reverse`/`unique`/`squish`/
-    // `eager`/`Supply`/`minmax` from `Any`, which defines each as
-    // `self.list.METHOD` (#10758): on such a receiver the invocant is its
-    // list of Pairs. The interpreter entry
-    // (`call_method_with_values`) does the same for the methods that take
-    // arguments, and checks for a user `augment` first; this is the
-    // zero-argument native twin every VM call op reaches.
-    // Cost: O(1) for any other receiver or an unlisted method (one `view()`
-    // probe); O(e) for a listed method on a hash-like receiver, e = entries.
-    if let Some(pairs) = crate::runtime::utils::hashlike_receiver_as_pairs_list(target, method) {
-        return native_method_0arg(&pairs, method_sym);
+    // The receiver step every entry runs (ADR-11276 §2.4,
+    // `method_table::receiver_step`): a `Scalar` or an itemized `Array`/`Hash`
+    // is transparent but for the methods that observe the container, a
+    // hash-like receiver and a `Match` answer `Any`'s `self.list.METHOD`
+    // methods on their list, an enum member its base's.
+    // Cost: O(1) tag probes for a receiver in no such state.
+    match crate::builtins::method_table::receiver_step::step(target, method, 0) {
+        Some(Step::Redirect(receiver, _)) => return native_method_0arg(&receiver, method_sym),
+        Some(Step::Answer(answer)) => return Some(answer),
+        Some(Step::Itself) => {
+            if let ValueView::Scalar(inner) = target.view() {
+                // An itemized lazy sequence renders the prefix it pulls,
+                // which only the interpreter can.
+                if matches!(inner.view(), ValueView::LazyList(_)) {
+                    return None;
+                }
+                return Some(Ok(Value::str(raku_repr::raku_value(target))));
+            }
+        }
+        None => {}
     }
 
     // A lazy Match the table has no shape for (a grammar cursor) answers
@@ -223,31 +210,6 @@ pub(crate) fn native_method_0arg_cascade(
     // than answering out of the descriptor's attribute map.
     if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method) {
         return None;
-    }
-
-    // Scalar containers are transparent for method dispatch (except .VAR and
-    // .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper so an itemized
-    // aggregate shows its `$` sigil (`${a=>1}.raku` → `${:a(1)}`); decontainer-
-    // izing first would strip it. `.gist` never shows the sigil, so delegating
-    // to the inner value is already correct.
-    if let ValueView::Scalar(inner) = target.view() {
-        if method == "VAR" {
-            return Some(Ok(Value::package(crate::symbol::Symbol::intern("Scalar"))));
-        }
-        if method == "raku" {
-            // An itemized lazy sequence renders the prefix it pulls, which
-            // only the interpreter can (its `Scalar` branch).
-            if matches!(inner.view(), ValueView::LazyList(_)) {
-                return None;
-            }
-            return Some(Ok(Value::str(raku_repr::raku_value(target))));
-        }
-        let inner = if inner.is_container_ref() {
-            inner.deref_container()
-        } else {
-            inner.clone()
-        };
-        return native_method_0arg(&inner, method_sym);
     }
 
     // Seq consumed/cached state checks.
@@ -774,7 +736,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
         // `Any`'s list methods (`self.list.METHOD`) were answered on the
         // positional captures before the call reached here
-        // (`Interpreter::match_list_receiver`, §9.98); every other name is
+        // (`method_table::receiver_step`, §9.98); every other name is
         // answered on the Match itself, never on its matched string (§9.96):
         // a row of `Mu`, `Any`, `Capture` or `Cool` it reaches, or the generic
         // arms below. `.so` of a zero-width match is True (#9180), and a name

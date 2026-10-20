@@ -59,6 +59,7 @@ mod lazy_refusal;
 pub(crate) mod lazy_stream;
 mod mutating;
 mod place;
+pub(crate) mod receiver_step;
 mod row;
 pub(crate) mod scalars;
 mod table;
