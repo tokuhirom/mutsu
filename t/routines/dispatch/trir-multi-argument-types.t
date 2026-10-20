@@ -1,5 +1,5 @@
 use Test;
-plan 15;
+plan 16;
 
 multi choose-int(int $x) { 'int' }
 multi choose-int($x) { 'plain' }
@@ -41,6 +41,10 @@ sub relay-num(num $value is rw) { set-num($value) }
 my num $changed = 1.25e0;
 relay-num($changed);
 is $changed, 4.5e0, 'a generic num rw argument writes back floating-point bits';
+
+sub replace-num(num $value is rw) { $value = 6.5e0 }
+replace-num($changed);
+is $changed, 6.5e0, 'the outer typed call boundary also preserves num rw bits';
 
 sub num-ceiling(num $value) { ceiling($value) }
 is num-ceiling(1.25e0).^name, 'Num', 'native provenance also reaches a core routine';

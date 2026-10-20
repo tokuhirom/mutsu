@@ -99,7 +99,11 @@ impl TrKind {
         if self == TrKind::Num {
             value.as_num().map(|number| number.to_bits() as i64)
         } else {
-            value.as_int()
+            match value.view() {
+                crate::value::ValueView::Int(number) => Some(number),
+                crate::value::ValueView::Bool(boolean) => Some(i64::from(boolean)),
+                _ => None,
+            }
         }
     }
 }
