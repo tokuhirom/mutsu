@@ -11,16 +11,12 @@
 //!
 //! The built-in classes mutsu keeps as an instance follow the same rule:
 //! `Backtrace` and a buffer-backed `CArray` have a `list` of their own, an
-//! `IterationBuffer` and an `IO::Path::Parts` an `iterator`. A receiver that declares the method itself
+//! `IterationBuffer` an `iterator`. A receiver that declares the method itself
 //! is not redirected.
 
 use super::*;
 
-/// `Any`'s methods that read `self.iterator`.
-const VIA_ITERATOR: [&str; 18] = [
-    "head", "tail", "first", "skip", "grep", "map", "sort", "min", "max", "minmax", "sum", "unique",
-    "squish", "rotor", "batch", "Seq", "repeated", "toggle",
-];
+use crate::builtins::method_table::ANY_VIA_ITERATOR as VIA_ITERATOR;
 
 /// `Any`'s methods that read `self.list` (besides those of [`VIA_ITERATOR`],
 /// which reach it through `Any.iterator`).
@@ -153,9 +149,6 @@ impl Interpreter {
                 if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
                     return Some(Source::Iterator { iterable: false });
                 }
-                if class == "IO::Path::Parts" {
-                    return Some(Source::Iterator { iterable: true });
-                }
                 self.class_source(&class)
             }
             _ => None,
@@ -191,9 +184,6 @@ impl Interpreter {
                 };
                 return Ok(Value::array(items));
             }
-        }
-        if let Some(pairs) = crate::builtins::method_table::io_path_parts_pairs(target) {
-            return Ok(Value::array(pairs));
         }
         match source {
             Source::List => {

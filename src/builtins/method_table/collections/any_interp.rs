@@ -200,6 +200,14 @@ fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
     all
 }
 
+/// `Any`'s methods that read `self.iterator` (measured against Rakudo 2026.09
+/// on a plain class declaring only `iterator`): a receiver that brings its own
+/// `iterator` answers them from its elements (ADR-11276 §9.148).
+pub(crate) const ANY_VIA_ITERATOR: [&str; 18] = [
+    "head", "tail", "first", "skip", "grep", "map", "sort", "min", "max", "minmax", "sum",
+    "unique", "squish", "rotor", "batch", "Seq", "repeated", "toggle",
+];
+
 /// Whether `Any`'s row cannot serve this receiver: an associative or quantity
 /// receiver reads as its pairs, which the pure cascades build for
 /// `squish`/`eager`/`produce` and the interpreter's own routines do not.
@@ -215,18 +223,16 @@ fn reads_as_pairs(target: &Value, name: &str) -> bool {
 /// Whether the VM's native entry must leave `map`/`grep`/`first` to the
 /// interpreter, which runs its receiver probes (`call_method_with_values`)
 /// before it asks the table again: a receiver whose elements live behind a
-/// user `iterator`, an `IterationBuffer` or an `IO::Path::Parts` (read as their
-/// elements), or a lazy source a `map`/`grep` turns into a pipeline stage. The
-/// decision belongs to that early entry, not to the row: once the probes have
-/// run, the row is the method (ADR-11276 §9.134).
+/// user `iterator` or an `IterationBuffer` (read as their elements), or a lazy
+/// source a `map`/`grep` turns into a pipeline stage. The decision belongs to
+/// that early entry, not to the row: once the probes have run, the row is the
+/// method (ADR-11276 §9.134).
 // Cost: O(1) tag probes; O(m) method-table lookups for an instance, m = MRO length.
 pub(crate) fn early_entry_defers(interp: &mut Interpreter, target: &Value, name: &str) -> bool {
     if !matches!(name, "map" | "grep" | "first") {
         return false;
     }
-    if crate::runtime::nqp_ops_list::is_iteration_buffer(target)
-        || crate::builtins::method_table::io_path_parts_pairs(target).is_some()
-    {
+    if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
         return true;
     }
     match target.view() {

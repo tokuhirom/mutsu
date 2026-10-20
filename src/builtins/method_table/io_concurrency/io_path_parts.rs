@@ -6,7 +6,7 @@
 //! position (a `volume`, `dirname`, `basename` pair) or by name, and the three
 //! pairs in that order; `iterator` iterates those pairs. Every other list
 //! method is `Any`'s: those Rakudo writes on `self.iterator` (`map`, `head`,
-//! `sort`, ...) read the pairs ([`pairs`], through `own_iteration_view`),
+//! `sort`, ...) read the pairs ([`pairs`], through `dispatch::call`),
 //! those on `self.list` read the object as one item (`$parts.elems` is `1`),
 //! and `.hash`/`.Hash`/`.Map` read its parts by name
 //! (`map_hash_coerce::hash_contents`).
