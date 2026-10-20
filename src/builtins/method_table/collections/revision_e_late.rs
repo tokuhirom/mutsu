@@ -41,7 +41,37 @@ pub(super) static ROWS: &[MethodRow] = &[
     late_e!("Str", "nomark", 0, E, nomark),
     late_e!("IO::Path", "stem", 0, E, stem),
     late_e!("IO::Path", "stem", 1, E.or(RowFlags::ANY_ARGS), stem),
+    late_e!("Mu", "Callable", 1, E.or(RowFlags::TYPE_OBJECT_OK), mu_callable),
+    late_e!("Grammar", "locprepost", 0, E, grammar_locprepost),
+    late_e!("Grammar", "typed_exception", 1, E.or(RowFlags::ANY_ARGS), grammar_typed_exception),
+    late_e!("Grammar", "SETFAIL", 1, E.or(RowFlags::ANY_ARGS).or(RowFlags::TYPE_OBJECT_OK), grammar_setfail),
 ];
+
+/// `Mu.Callable($method)`: the method object `.^find_method($method)` answers.
+// Cost: O(m), m = the members of the type the lookup reads.
+fn mu_callable(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    Some(i.mu_callable(t, args))
+}
+
+/// `Grammar.locprepost`: the text around the cursor, `[$pre, $post]`.
+// Cost: O(n), n = characters of the parsed text.
+fn grammar_locprepost(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    Some(i.grammar_locprepost(t))
+}
+
+/// `Grammar.typed_exception(X::Comp $ex, *%opts)`.
+// Cost: O(n), n = characters of the parsed text.
+fn grammar_typed_exception(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    let all: Vec<Value> = args.iter().chain(named.pairs()).cloned().collect();
+    Some(i.grammar_typed_exception(t, &all, None))
+}
+
+/// `Grammar.SETFAIL($failed, :$filename)`.
+// Cost: O(n), n = characters of the parsed text.
+fn grammar_setfail(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    let all: Vec<Value> = args.iter().chain(named.pairs()).cloned().collect();
+    Some(i.grammar_setfail(t, &all))
+}
 
 /// `Any.snip(*@conditions)`: the invocant's elements cut into lists, each
 /// ending before the first element that fails its condition; the conditions
