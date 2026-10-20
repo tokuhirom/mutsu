@@ -323,6 +323,11 @@ impl Compiler {
         let param_local = param
             .as_ref()
             .and_then(|p| self.local_map.get(p.as_str()).copied());
+        // The loop parameter rebinds the name's slot, so a call argument
+        // naming it is no longer the routine's readonly parameter (#13782).
+        for name in param.iter().chain(params.iter()) {
+            self.readonly_scalar_params.remove(name.as_str());
+        }
         // The VM carries a loop parameter's type in `ForLoopSpec` for bind-time
         // checking, but the compiler's call-site provenance mask also needs to
         // know that a native loop parameter is native when it is passed to a

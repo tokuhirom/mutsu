@@ -891,6 +891,7 @@ impl Compiler {
         if matches!(op, TokenKind::FatArrow)
             && !self.suppress_pair_capture
             && let Some(name) = Self::scalar_container_alias_name(right)
+            && !self.is_readonly_param_operand(right)
         {
             let name = name.to_string();
             self.compile_expr(left);
