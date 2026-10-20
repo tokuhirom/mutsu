@@ -591,6 +591,10 @@ pub(crate) struct Registry {
     /// The last answer to "which `our` subs does a restore put back" for an
     /// untouched our-scoped table (`runtime::our_scoped_restore`, #9170).
     pub(crate) our_scoped_restore_memo: crate::runtime::our_scoped_restore::OurScopedRestoreMemo,
+    /// The module-registered routine set and the functions-map version every
+    /// key of it was last found in (`reinstate_module_functions`, #9170).
+    pub(crate) module_functions_present:
+        Option<(std::sync::Arc<std::collections::HashSet<Symbol>>, u64)>,
     /// How many times [`Registry::functions`] was written or replaced: every
     /// `functions_mut` borrow, `install_function` and wholesale restore counts
     /// one. Never decreases, so an import scope that logged its own writes can

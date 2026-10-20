@@ -1,12 +1,15 @@
 use Test;
+use lib 't/lib';
 
 # A block that declares a routine rolls the routine table back on exit, but an
 # `our sub` outlives its block. The restore's answer to "which `our` subs come
 # back" is memoized while the our-scoped table is untouched (#9170), so a loop
 # body asks it once, not once per `our` sub per iteration. These pin that the
-# memoized answer is the one the full check gives.
+# memoized answer is the one the full check gives. The same holds for the
+# routines a module load registered: a restore puts back those its map lacks,
+# and remembers the last map that lacked none.
 
-plan 7;
+plan 8;
 
 our sub top-our { 'top' }
 
@@ -48,3 +51,10 @@ package Other {
     }
 }
 is Other::call-in-loop(), 'other,other', 'inside another package';
+
+my &from-module;
+{ use BlockRestoreModuleHelper; &from-module = &outer-call; }
+my @mod;
+for ^3 { { sub local-two { 2 } }; @mod.push: from-module() }
+is @mod.join(','), 'inner!,inner!,inner!',
+    'a module first loaded in a block keeps its own routines across later block exits';

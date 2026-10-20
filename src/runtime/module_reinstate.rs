@@ -50,12 +50,37 @@ impl Interpreter {
     /// (see `Registry::functions`): the reinstatement is collected first and
     /// the map copied only if there is actually something to put back, so the
     /// common "nothing was declared" caller pays no copy at all.
+    ///
+    /// The usual answer is "nothing is missing", and a loop body that declares
+    /// a routine restores the same map on every iteration. So the last map
+    /// version every tracked key was found in is remembered with the tracked
+    /// set itself (`Registry::module_functions_present`, #9170); a restore to
+    /// that version under that set returns at once.
+    // Cost: O(1) when the restored map is the last one every tracked key was
+    // found in; otherwise O(m), m = routines module loads registered.
     pub(crate) fn reinstate_module_functions(
-        &self,
+        &mut self,
         functions: &mut std::sync::Arc<crate::runtime::function_table::FunctionTable>,
         include_global_aliases: bool,
     ) {
         if self.module.module_registered_functions.is_empty() {
+            return;
+        }
+        let tracked = &self.module.module_registered_functions;
+        if self
+            .registry()
+            .module_functions_present
+            .as_ref()
+            .is_some_and(|(set, version)| {
+                std::sync::Arc::ptr_eq(set, tracked) && *version == functions.version()
+            })
+        {
+            return;
+        }
+        if tracked.iter().all(|key| functions.contains_key(key)) {
+            // Holding the set keeps its address from naming another one.
+            let present = (tracked.clone(), functions.version());
+            self.registry_mut().module_functions_present = Some(present);
             return;
         }
         let mut missing: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
