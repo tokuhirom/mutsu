@@ -609,6 +609,8 @@ impl Compiler {
     /// Promise and run later on another thread), so the locals it captures and
     /// mutates must be promoted to shared `ContainerRef` cells (escape analysis).
     pub(super) fn compile_call_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        // Read-and-clear at entry, like `bind_target_direct` below.
+        let is_call_arg = std::mem::take(&mut self.call_arg_direct);
         // `f(++$p)` where `$p` is one of THIS routine's native `is rw`
         // parameters: `$p` is a native reference to the caller's location, and
         // rakudo's native `prefix:<++>` writes through it and hands the
@@ -875,7 +877,7 @@ impl Compiler {
             // not a source resolved by name later (#13941).
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::WrapPackageVarRef { name_idx });
-        } else if !is_bind_target && self.is_readonly_param_operand(arg) {
+        } else if is_call_arg && self.is_readonly_param_operand(arg) {
             // A readonly `$` parameter is a value, not a container: tagging it
             // would let an `is rw` parameter bind it and write into this frame
             // (#13782). Untagged, the binder refuses it with
@@ -1115,6 +1117,11 @@ impl Compiler {
     ) {
         // `f(@a[1] = v)`: bind the element's container when the callee wants
         // one, else pass the assignment's value (see `compile_gated_assigned_arg`).
+        if self.is_readonly_param_operand(arg) {
+            self.call_arg_direct = true;
+            self.compile_call_arg_with_escape(arg, escaping);
+            return;
+        }
         if let Some(callee_name) = callee
             && positional.is_some()
             && !callee_name.starts_with("__mutsu_")

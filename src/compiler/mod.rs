@@ -1667,6 +1667,13 @@ pub(crate) struct Compiler {
     /// subscript's promoted cell in a per-site `__mutsu_bind_index_ref_N`
     /// `VarRef`, so `SetLocal` sees a bind.
     bind_target_direct: bool,
+    /// When true, the *immediate* upcoming `compile_call_arg` call compiles a
+    /// genuine routine-call argument (`compile_named_callee_arg`), so a
+    /// readonly parameter operand gets no container tag (#13782). One-shot,
+    /// like `bind_target_direct`: a `:=` source compiled through
+    /// `compile_call_arg` keeps its tag, which the binder reads to make the
+    /// alias readonly.
+    call_arg_direct: bool,
     /// When true, a scalar root of the source indexed assignment in a nested
     /// indexed bind must be promoted to a shared container before its path is
     /// evaluated. Ordinary bind chains retain their deferred-local fast path.
@@ -2122,6 +2129,7 @@ impl Compiler {
             rw_tail_branch: false,
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,
+            call_arg_direct: false,
             compile_nested_index_bind_source: false,
             suppress_multidim_bind_ref_arg: false,
             mint_named_pair: false,

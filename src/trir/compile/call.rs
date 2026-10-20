@@ -174,13 +174,15 @@ impl TrirCompiler<'_> {
                     }
                 }
                 // A readonly parameter of this routine is a value, not a
-                // container: it goes over as its value, so an `is rw`
-                // parameter refuses it as it refuses a literal (#13782).
-                _ if matches!(a, Expr::Var(n) if self.is_readonly_param(n)) => {
-                    if want_kind.is_some() {
-                        self.note_decline(|| "a readonly parameter passed `is rw`".to_string());
-                        return None;
-                    }
+                // container: a resolved callee's `is rw` parameter would get
+                // a reference to its slot, so decline and let the untyped
+                // call refuse it (#13782). A generic callee gets the slot,
+                // which `exec_trir_generic_call` hands over as a value.
+                _ if want_kind.is_some()
+                    && matches!(a, Expr::Var(n) if self.is_readonly_param(n)) =>
+                {
+                    self.note_decline(|| "a readonly parameter passed `is rw`".to_string());
+                    return None;
                 }
                 _ => {
                     // `f($pos)` — the variable itself.
