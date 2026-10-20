@@ -1292,21 +1292,16 @@ impl Interpreter {
             return Err(RuntimeError::assignment_ro(None));
         }
 
-        // Check if target is a shaped array - use bounds-checked assignment
-        // See the element-store twin: gated on the monotonic latch so a program
-        // with no shaped-array declaration never builds the key.
-        let has_declared_shape = crate::env::shaped_array_dims_possible() && {
-            let declared_shape_key = crate::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&var_name);
-            self.env().contains_key_sym(declared_shape_key)
-        };
+        // Check if target is a shaped array - use bounds-checked assignment.
+        // The shape lives on the array itself (`ArrayData.shape`), so a
+        // `:=`-bound shaped array carries it too (ADR-0097).
         // Read through a capture cell: an escaping closure's `@a[3;3]` is a
         // shared `ContainerRef`, which `mutate_named_container` below writes
         // through -- the bounds check has to see the same array (#9488).
-        let is_shaped = has_declared_shape
-            || self
-                .env()
-                .get(&var_name)
-                .is_some_and(|v| crate::runtime::utils::is_shaped_array(&v.deref_container()));
+        let is_shaped = self
+            .env()
+            .get(&var_name)
+            .is_some_and(|v| crate::runtime::utils::is_shaped_array(&v.deref_container()));
 
         // A slot a multi-index `BIND-POS` bound to a bare value holds a
         // read-only cell (`Value::bound_element`, #10984). Rakudo reports a

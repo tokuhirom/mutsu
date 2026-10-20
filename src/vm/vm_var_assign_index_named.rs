@@ -425,14 +425,6 @@ impl Interpreter {
             .as_deref()
             .unwrap_or(&original_var_name)
             .to_string();
-        // The symbol `var_name`'s own metadata keys are derived from. Reuses
-        // the constant-pool symbol in the overwhelmingly common no-alias case,
-        // so the hot path hashes no string at all; only a resolved alias (a
-        // DIFFERENT name from the one the bytecode names) has to intern.
-        let var_sym = match sigilless_alias_target.as_deref() {
-            None => original_var_sym,
-            Some(target) => Symbol::intern(target),
-        };
         // A SetHash element assignment evaluates to the key's Bool existence, not
         // the assigned value (`$sh<k> = 2` is `Bool::True`); set in the Set store
         // arm and applied at the final result push.
@@ -501,15 +493,6 @@ impl Interpreter {
         let _target_is_mixhash = declared_type.as_deref().is_some_and(|t| t == "MixHash");
         let _target_is_baghash = declared_type.as_deref().is_some_and(|t| t == "BagHash");
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
-        // Gated on the monotonic latch: a program that never declares a shaped
-        // array (`my @a[2;3]`) can hold no such key, and this probe runs on
-        // EVERY element store. `MetaNs::key` memoizes the key symbol per
-        // (namespace, name), but the latch skips even that lookup and the env
-        // probe behind it.
-        let has_declared_shape = crate::env::shaped_array_dims_possible()
-            && self
-                .env()
-                .contains_key_sym(MetaNs::ShapedArrayDims.key(var_sym));
         let mut idx = self.stack.pop().unwrap_or(Value::NIL);
         // ADR-0058: the INDEX may itself be a not-yet-run `.map`/`.grep` Seq
         // (`@n[@n.map(*+0)] = <a b>.sort`, `roast/S32-list/seq.t` #12/#14).
@@ -1929,7 +1912,7 @@ impl Interpreter {
                     && matches!(container.view(), ValueView::Array(..))
                 {
                     let is_shaped =
-                        has_declared_shape || crate::runtime::utils::is_shaped_array(container);
+                        crate::runtime::utils::is_shaped_array(container);
                     let mut initialized_marks: Vec<String> = Vec::new();
                     let mut nested_result: Option<Value> = None;
                     // The values a flat slice assignment actually stored, in slot
@@ -2897,7 +2880,7 @@ impl Interpreter {
                     if handled_as_hash {
                         // Handled by the Hash arm above.
                     } else if matches!(container.view(), ValueView::Array(..)) {
-                        if has_declared_shape || crate::runtime::utils::is_shaped_array(container) {
+                        if crate::runtime::utils::is_shaped_array(container) {
                             if bind_mode && is_bound_index {
                                 return Err(RuntimeError::assignment_ro(None));
                             }

@@ -116,9 +116,6 @@ pub(crate) enum MetaNs {
     /// `__mutsu_bound_index::<name>` — an element of this container is itself
     /// `:=`-bound, so an element store must not replace the container.
     BoundIndex,
-    /// `__mutsu_shaped_array_dims::<name>` — the declared dimensions of a
-    /// shaped array (`my @a[4;4]`).
-    ShapedArrayDims,
     /// `__mutsu_atomic_arr::<name>` — the cross-thread lane a shared `@a`
     /// resolves to in the shared store.
     AtomicArr,
@@ -276,7 +273,6 @@ impl MetaNs {
         MetaNs::HashKeyType,
         MetaNs::State,
         MetaNs::BoundIndex,
-        MetaNs::ShapedArrayDims,
         MetaNs::AtomicArr,
         MetaNs::AtomicHash,
         MetaNs::CallableId,
@@ -336,7 +332,6 @@ impl MetaNs {
             MetaNs::HashKeyType => crate::symbol::HASH_KEY_META_PREFIX,
             MetaNs::State => "__mutsu_state_key::",
             MetaNs::BoundIndex => "__mutsu_bound_index::",
-            MetaNs::ShapedArrayDims => "__mutsu_shaped_array_dims::",
             MetaNs::AtomicArr => "__mutsu_atomic_arr::",
             MetaNs::AtomicHash => "__mutsu_atomic_hash::",
             MetaNs::CallableId => "__mutsu_callable_id::",
@@ -602,7 +597,6 @@ mod tests {
             (MetaNs::HashKeyType, "__mutsu_hash_key_type::@a"),
             (MetaNs::State, "__mutsu_state_key::@a"),
             (MetaNs::BoundIndex, "__mutsu_bound_index::@a"),
-            (MetaNs::ShapedArrayDims, "__mutsu_shaped_array_dims::@a"),
             (MetaNs::AtomicArr, "__mutsu_atomic_arr::@a"),
             (MetaNs::AtomicHash, "__mutsu_atomic_hash::@a"),
             (MetaNs::ArrayShare, "__mutsu_array_share::@a"),
