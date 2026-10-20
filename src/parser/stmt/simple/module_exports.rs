@@ -17,7 +17,8 @@ use dynamic_stash::probe_dynamic_exports;
 use enum_values::import_admits;
 use export_hook::{
     collect_export_hook_literal_keys, collect_export_hook_operator_subs,
-    collect_export_hook_value_keys, collect_export_hook_value_terms, collect_unit_scope_routines,
+    collect_export_hook_type_keys, collect_export_hook_value_keys,
+    collect_export_hook_value_terms, collect_unit_scope_routines,
     declares_export_sub,
 };
 pub(crate) use import_tags::register_import_tags;
@@ -107,6 +108,11 @@ struct ModuleScanResult {
     /// as `declares_export_hook`.
     #[serde(default)]
     hook_value_keys: Vec<String>,
+    /// The type names a `sub EXPORT` hook hands out under literal keys
+    /// (`export_hook::collect_export_hook_type_keys`). Defaulted for the
+    /// same cache-compatibility reason as `declares_export_hook`.
+    #[serde(default)]
+    hook_type_keys: Vec<String>,
     /// `module Foo { sub bar is export }` blocks declared *inside* the scanned
     /// module. The nested parse registers these in the process-wide inline
     /// export table, which — unlike the scopes — the scan does not restore, so
@@ -319,6 +325,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
                 Some(scan.exported_vars.as_slice().into())
             },
         );
+        exported_types::record_hook_type_keys(module, &scan.hook_type_keys);
         if scan.unlisted_exported_vars || scan.declares_export_hook {
             exported_vars::record_incomplete(module);
         }
@@ -935,12 +942,21 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // Approximate its export set with the routines it declares in its own unit
     // scope, which is what the dominant `UNIT::`-grep idiom exports verbatim
     // (ADR-0087).
+    let mut hook_type_keys = Vec::new();
     let hook_value_keys = if declares_export_hook {
         collect_export_hook_value_keys(&stmts)
     } else {
         Vec::new()
     };
     if declares_export_hook {
+        // A type the hook hands out under a literal key
+        // (`'MyAlias' => Int`) is a type name to the importer's parse.
+        hook_type_keys = collect_export_hook_type_keys(&stmts);
+        for key in &hook_type_keys {
+            if !type_names.contains(key) {
+                type_names.push(key.clone());
+            }
+        }
         collect_unit_scope_routines(&stmts, &mut exports);
         // A third idiom: `is export`-tagged declarations made LOCALLY inside
         // the hook's own body rather than at the module's unit scope
@@ -1022,6 +1038,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         exported_types: decls.exported_types,
         unlisted_exported_vars: decls.unlisted_exported_vars,
         hook_value_keys,
+        hook_type_keys,
         inline_module_exports,
         // Filled in by `find_and_scan_module`, which owns the dependency frame
         // and the file stamp.
