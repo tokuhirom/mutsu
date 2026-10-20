@@ -107,8 +107,30 @@ pub(crate) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
 }
 
 /// Public accessor for stmt_list (used by primary.rs for block expressions).
+///
+/// An expression block's statements carry a `Stmt::SetLine` marker wherever
+/// the line changes from the line the block's body opens on, so a call from
+/// its third line records that line, not the line of the statement that built
+/// the block (`callframe(N).line`, a backtrace; #13627). Statements on the
+/// opening line get none, so a one-line block keeps the bare body shape the
+/// block-shape matchers (WhateverCode, hash/block, double closure) expect.
+// Cost: O(s + l), s = statements of the body, l = its line lookups.
 pub(crate) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
-    stmt_list_with_mode(input, false, false)
+    let mut line = crate::parser::primary::is_within_original_source(input)
+        .then(|| crate::parser::primary::current_line_number(input));
+    let (rest, stmts) = stmt_list_with_mode(input, false, true)?;
+    let stmts = stmts
+        .into_iter()
+        .filter(|stmt| match stmt {
+            Stmt::SetLine(next) if line == Some(*next) => false,
+            Stmt::SetLine(next) => {
+                line = Some(*next);
+                true
+            }
+            _ => true,
+        })
+        .collect();
+    Ok((rest, stmts))
 }
 
 /// Parse a nested statement list while retaining source-line markers.
