@@ -62,7 +62,12 @@ impl Interpreter {
                     .unwrap_or_else(|| self.typed_container_default(receiver)),
                 // Reading through a still-missing intermediate location does
                 // not commit its deferred vivification to the owning container.
-                ValueView::Package(ty) if ty == crate::symbol::wk::any() => {
+                ValueView::Package(ty)
+                    if !self.has_user_method(
+                        ty.as_str(),
+                        if *is_positional { "AT-POS" } else { "AT-KEY" },
+                    ) =>
+                {
                     Value::package(crate::symbol::wk::any())
                 }
                 _ => return None,

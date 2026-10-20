@@ -1,6 +1,6 @@
 use Test;
 
-plan 22;
+plan 24;
 
 my $source = 1;
 {
@@ -44,6 +44,9 @@ my $source = 1;
     throws-like { @a[0][1] := $source }, X::Multi::NoMatch,
         'an Array type object is not a concrete row';
     is @a.elems, 0, 'typed row failure does not grow the array';
+    throws-like { @a[0][1][2] := $source }, X::Multi::NoMatch,
+        'a typed missing prefix also refuses a deeper positional bind';
+    is @a.elems, 0, 'the typed prefix stays absent at greater depth';
 }
 {
     my @a;
