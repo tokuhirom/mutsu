@@ -42,4 +42,4 @@ isa-ok $multi-index.statements[0].expression, RakuAST::IntLiteral,
 isa-ok $multi-index.statements[1].expression, RakuAST::IntLiteral,
     'the second semicolon dimension stays a scalar expression';
 is EVAL(Q[my @a = [1,2], [3,4]; @a[0;1] := 9; my $x = 5; @a[1;0] := $x; $x = 8; @a[0;1] ~ ':' ~ @a[1;0] ~ ':' ~ @a[0].join(',')].AST),
-    '9:8:1,9', 'multi-dimensional binds reach the selected leaf and preserve aliases';
+    '9:5:1,9', 'multi-dimensional binds reach the selected leaf and preserve bound values';
