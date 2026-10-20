@@ -23,11 +23,19 @@ use super::*;
 /// It walks the argument's elements, which another thread may be pushing to
 /// (an array passed to a routine from several `start` blocks), so the walk
 /// excludes structural writers (ADR-0068, #13016).
-// Cost: O(n), n = the array's elements (the walk stops at the first non-cell).
+///
+/// A one-dimensional slice argument (`f(@a[0, 2])`, #13786) arrives already
+/// flagged by its producer ([`crate::value::Value::bound_slice_array`]), which
+/// identifies it without reading its contents, an empty selection included.
+// Cost: O(1) for a flagged slice; O(n), n = the array's elements, otherwise
+// (the walk stops at the first non-cell).
 fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
     let crate::value::ValueView::Array(items, ..) = value.view() else {
         return false;
     };
+    if value.is_bound_slice() {
+        return true;
+    }
     let _structure =
         crate::value::container_lock::ContainerStructGuard::acquire_for(None, value);
     !items.is_empty() && items.iter().all(crate::value::Value::is_container_ref)
