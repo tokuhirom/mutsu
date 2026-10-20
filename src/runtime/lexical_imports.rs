@@ -64,7 +64,7 @@ pub(crate) struct LexicalImportCapture {
     /// The compunit doing the importing: a module loaded by this `use`
     /// records its own `use`s through the same hooks, and those are not
     /// this block's imports.
-    unit: Symbol,
+    pub(super) unit: Symbol,
     /// `(package, name)` of each routine alias the import installed.
     routines: Vec<(Symbol, Symbol)>,
     /// The `&name` env keys the import wrote (a `sub EXPORT` hook binds its
@@ -90,10 +90,10 @@ pub(crate) struct LexicalImportCapture {
     /// The values a `sub EXPORT` hook returned for names in `block_vars`
     /// (their declaration keys), which the block's bindings read
     /// (`ModuleState::lexical_import_hook_values`).
-    hook_values: HashMap<Symbol, Value>,
+    pub(super) hook_values: HashMap<Symbol, Value>,
     /// The plain routines a `sub EXPORT` hook returned, by name: bound in
     /// the set as they are, with no env alias.
-    hook_routines: HashMap<Symbol, Value>,
+    pub(super) hook_routines: HashMap<Symbol, Value>,
 }
 
 impl Interpreter {
@@ -159,64 +159,6 @@ impl Interpreter {
         !capture.block_vars.is_empty()
             && capture.unit == self.executing_unit_sym_for_module_load()
             && capture.block_vars.contains(&Symbol::intern(name))
-    }
-
-    /// Whether the importing block declares the name a `sub EXPORT` hook
-    /// returned under `key` (`$x`, `@a`, `vrai`) itself, and if so keep
-    /// `value` for its binding (`OpCode::GetHookExport`): the import then
-    /// writes no env alias for it (ADR-8751).
-    // Cost: O(|key|).
-    pub(crate) fn bind_hook_export_lexically(&mut self, key: &str, value: &Value) -> bool {
-        let decl_key = match key.chars().next() {
-            Some('$') => key[1..].to_string(),
-            Some('@' | '%') => key.to_string(),
-            _ => crate::runtime::term_names::term_key(key),
-        };
-        if !self.block_binds_imported_var(&decl_key) {
-            return false;
-        }
-        self.note_block_bound_import(key.strip_prefix('$').unwrap_or(key));
-        if let Some(capture) = self.module.lexical_import_capture.as_mut() {
-            capture
-                .hook_values
-                .insert(Symbol::intern(&decl_key), value.clone());
-        }
-        true
-    }
-
-    /// Whether the running import binds the routine `name` a `sub EXPORT`
-    /// hook returned (`'&name' => ...`) in its lexical import set, and if so
-    /// keep `value` for it: the import then writes no env alias for it
-    /// (ADR-8751). Only a plain routine of the importing compunit's block
-    /// qualifies; an operator or a term keeps the env alias, which its
-    /// built-in op or bareword reads.
-    // Cost: O(|name|).
-    pub(crate) fn bind_hook_routine_lexically(&mut self, name: &str, value: &Value) -> bool {
-        if name.contains(':') || !matches!(value.view(), ValueView::Sub(_)) {
-            return false;
-        }
-        let importer = self.executing_unit_sym_for_module_load();
-        let Some(capture) = self.module.lexical_import_capture.as_mut() else {
-            return false;
-        };
-        if capture.unit != importer {
-            return false;
-        }
-        capture
-            .hook_routines
-            .insert(Symbol::intern(name), value.clone());
-        true
-    }
-
-    /// The value a `sub EXPORT` hook returned for the declaration key `name`
-    /// in the `use` that fills lexical import set `set`.
-    // Cost: O(1).
-    pub(crate) fn lexical_import_hook_value(&self, set: Symbol, name: Symbol) -> Option<Value> {
-        self.module
-            .lexical_import_hook_values
-            .get(&set)?
-            .get(&name)
-            .cloned()
     }
 
     /// Whether the running import binds the multi family `name` (its

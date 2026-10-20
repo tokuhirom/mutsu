@@ -308,6 +308,10 @@ impl Compiler {
                 // through a run-time `sub EXPORT` hook (#9339): prefer a term
                 // the hook installed under this name, else make the call.
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                // A term a block's `use` bound in its import set (ADR-8751).
+                if let Some(chain_idx) = self.lexical_import_chain_idx(*name) {
+                    self.code.emit(OpCode::LexImportCall { chain_idx });
+                }
                 let op_idx = self
                     .code
                     .emit(OpCode::GetExportTermOrJump { name_idx, end: 0 });
