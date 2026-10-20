@@ -86,7 +86,6 @@ pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::iterator::owners_of as iterator_owners_of;
 pub(crate) use instances::rakuast_node::origin_value;
 pub(crate) use instances::routine::owners_of as routine_owners_of;
-pub(crate) use instances::stash::owners_of as stash_owners_of;
 pub(crate) use instances::{backtrace, code, exception, failure, regex_match, signature, supply};
 pub(crate) use io_concurrency::encoding::{
     DECODER_OWNERS as ENCODING_DECODER_OWNERS, names as encoding_names,

@@ -283,6 +283,9 @@ pub(crate) enum DispatchShape {
     RakuSystemic,
     /// `Compiler` (opaque).
     Compiler,
+    /// `Stash` (opaque): its associative indexing stays with the hash paths,
+    /// which read [`Value::dispatch_shape`](crate::value::Value::dispatch_shape).
+    Stash,
     /// A member of an `Int`-valued enum (opaque): a value kind, answering the
     /// rows of the roles Rakudo composes into the enum type.
     EnumNumeric,
@@ -303,7 +306,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 95] = [
+    pub(crate) const ALL: [DispatchShape; 96] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -399,6 +402,7 @@ impl DispatchShape {
         DispatchShape::RakuAstNode,
         DispatchShape::RakuAstOrigin,
         DispatchShape::RakuAstOriginSource,
+        DispatchShape::Stash,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched

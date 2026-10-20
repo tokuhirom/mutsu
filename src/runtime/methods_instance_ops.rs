@@ -834,21 +834,6 @@ impl Interpreter {
                 return result;
             }
 
-            // `Stash`'s methods are rows of the method table, found by their
-            // owner (ADR-11276 §9.198): a `Stash` has no dispatch shape, since
-            // a shape would hide its associative indexing from the hash paths.
-            if let Some(owners) = crate::builtins::method_table::stash_owners_of(&target)
-                && let Some(result) = crate::builtins::method_table::invoke_owner(
-                    self,
-                    owners,
-                    method,
-                    &args,
-                    || target.clone(),
-                )
-            {
-                return result;
-            }
-
             // IO::Spec methods — delegate to the Package-based handler (the
             // path methods are class methods). Repr methods stay on the
             // instance: `IO::Spec::Unix.new.gist` is `IO::Spec::Unix.new`
