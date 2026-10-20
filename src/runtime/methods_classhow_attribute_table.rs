@@ -10,7 +10,15 @@ impl Interpreter {
     fn own_attribute_table(&mut self, receiver: &Value) -> ValueMap {
         let owner_class = self.mop_receiver_owner(receiver);
         let mut table = ValueMap::default();
-        for value in self.collect_attribute_objects(&owner_class, true) {
+        // A role, or one candidate of a role group (`R.^candidates[0]`):
+        // its own attributes, which the class registry does not hold
+        // (Config::BINDish's `Container.^candidates[0]
+        // .^get_attribute_for_usage('$!payload')`, #14186).
+        let own = match self.role_candidate_receiver(receiver, &owner_class) {
+            Some(candidate) => self.role_candidate_own_attribute_objects(&owner_class, candidate),
+            None => self.collect_attribute_objects(&owner_class, true),
+        };
+        for value in own {
             let name = match value.view() {
                 ValueView::Instance { attributes, .. } => {
                     attributes.as_map().get("name").map(Value::to_string_value)
