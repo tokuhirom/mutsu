@@ -309,6 +309,7 @@ mod vm_mixin_container_store;
 mod vm_mixin_does_ops;
 mod vm_module_ops;
 mod vm_multi_plan_light_call;
+mod vm_named_method_binding;
 mod vm_native_dispatch;
 mod vm_native_extrema;
 mod vm_native_first;

@@ -392,11 +392,13 @@ impl Compiler {
                 arg_sources_idx,
             });
         } else {
+            let target_slot = self.local_map.get(&target_name).copied();
             let target_name_idx = self.code.add_constant(Value::str(target_name));
             self.code.emit(OpCode::CallMethodMut {
                 name_idx,
                 arity,
                 target_name_idx,
+                target_slot,
                 modifier_idx,
                 quoted,
                 arg_sources_idx,
@@ -462,6 +464,7 @@ impl Compiler {
                     name_idx,
                     arity,
                     target_name_idx: tmp_target_idx,
+                    target_slot: None,
                     modifier_idx,
                     quoted,
                     arg_sources_idx: None,
@@ -979,10 +982,12 @@ impl Compiler {
         }
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
         if let Some(var_name) = target_var_name {
+            let target_slot = self.local_map.get(&var_name).copied();
             let target_name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::CallMethodDynamicMut {
                 arity,
                 target_name_idx,
+                target_slot,
                 modifier_idx,
                 quoted,
                 arg_sources_idx,

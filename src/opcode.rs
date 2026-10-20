@@ -2661,6 +2661,8 @@ pub(crate) enum OpCode {
         name_idx: u32,
         arity: u32,
         target_name_idx: u32,
+        /// The receiver binding resolved at this call site; None for a free name.
+        target_slot: Option<u32>,
         modifier_idx: Option<u32>,
         /// When true, the method name was quoted (e.g. `."DEFINITE"()`),
         /// bypassing pseudo-method macros.
@@ -2683,6 +2685,8 @@ pub(crate) enum OpCode {
     CallMethodDynamicMut {
         arity: u32,
         target_name_idx: u32,
+        /// The receiver binding resolved at this call site; None for a free name.
+        target_slot: Option<u32>,
         modifier_idx: Option<u32>,
         quoted: bool,
         /// ADR-0054 S3: `|EXPR` positions (and, incidentally, rw-arg source

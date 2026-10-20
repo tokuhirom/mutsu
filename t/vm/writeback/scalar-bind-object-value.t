@@ -1,5 +1,5 @@
 use Test;
-plan 23;
+plan 25;
 
 class BoundObject {
     has $.value is rw = 1;
@@ -15,13 +15,16 @@ class BoundObject {
 }
 {
     my $o := BoundObject.new;
+    my $reflect = 'VAR';
     {
         my $o = 5;
         is $o.VAR.^name, 'Scalar', 'a shadowing ordinary declaration owns a Scalar';
+        is $o."$reflect"().^name, 'Scalar', 'a dynamic reflector uses the shadowing receiver slot';
         $o = 6;
         is $o, 6, 'the shadowing Scalar remains writable';
     }
     is $o.VAR.^name, 'BoundObject', 'leaving a shadow restores the outer binding identity';
+    is $o."$reflect"().^name, 'BoundObject', 'dynamic reflection uses the restored outer binding';
     dies-ok { $o = 7 }, 'leaving a shadow retains the outer immutable object bind';
 }
 {
