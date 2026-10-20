@@ -10,7 +10,12 @@ pub(crate) use supply::supply_block;
 mod term_literals;
 
 pub(super) use circumfix::declared_circumfix_op;
-pub(super) use identifier_call::identifier_or_call;
+pub(super) fn identifier_or_call(
+    input: &str,
+) -> crate::parser::parse_result::PResult<'_, crate::ast::Expr> {
+    identifier_call::identifier_or_call(input)
+        .map(|(rest, expr)| (rest, crate::ast::Expr::source_identifier(expr, input)))
+}
 pub(crate) use identifier_call::slipped_control_stmt;
 pub(crate) use listop::{TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers};
 pub(in crate::parser) use listop::{

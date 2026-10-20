@@ -6,6 +6,9 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 
 use super::helpers::literal_str;
+
+#[path = "interp_var_index.rs"]
+mod index;
 /// Split a subscript's content on commas that are at the top nesting level
 /// (outside `[]`/`{}`/`()`/`<>` and string quotes), so `"@a[1,2]"` /
 /// `"%h{$x, $y}"` interpolation builds a slice rather than parsing only the
@@ -115,198 +118,7 @@ pub(crate) fn try_interpolate_var<'a>(
     parts: &mut Vec<Expr>,
     current: &mut String,
 ) -> Option<&'a str> {
-    let parse_one_postcircumfix_index = |input: &'a str, target: Expr| -> (Expr, &'a str) {
-        // A `.`-prefixed postcircumfix calls the same operator via method
-        // syntax (`$m.<x>` same as `$m<x>`, `@a.[1]` same as `@a[1]`,
-        // `%h.<a>` same as `%h<a>`) — strip the dot before matching so the
-        // branches below see the bracket form directly. Only strip it when
-        // an opener actually follows, so an ordinary `.method` call (handled
-        // by `try_parse_interp_method_call`) is left untouched.
-        let input = match input.strip_prefix('.') {
-            Some(after_dot)
-                if after_dot.starts_with(['<', '[', '{']) || after_dot.starts_with('\u{00AB}') =>
-            {
-                after_dot
-            }
-            _ => input,
-        };
-        // Double angle bracket indexing: $var<<key>> (must be checked before single <)
-        if let Some(after_dlt) = input.strip_prefix("<<")
-            && let Some(end) = after_dlt.find(">>")
-        {
-            let content = &after_dlt[..end];
-            let index = parse_shell_words_index(content);
-            return (
-                Expr::Index {
-                    target: Box::new(target),
-                    index: Box::new(index),
-                    is_positional: false,
-                    spelling: Default::default(),
-                },
-                &after_dlt[end + 2..],
-            );
-        }
-        // French guillemet indexing: $var«key»
-        if let Some(after_guillemet) = input.strip_prefix('\u{00AB}')
-            && let Some(end) = after_guillemet.find('\u{00BB}')
-        {
-            let content = &after_guillemet[..end];
-            let index = parse_shell_words_index(content);
-            return (
-                Expr::Index {
-                    target: Box::new(target),
-                    index: Box::new(index),
-                    is_positional: false,
-                    spelling: Default::default(),
-                },
-                &after_guillemet[end + '\u{00BB}'.len_utf8()..],
-            );
-        }
-        // Angle bracket indexing: $var<key>
-        if let Some(after_lt) = input.strip_prefix('<')
-            && let Some(end) = after_lt.find('>')
-        {
-            let content = &after_lt[..end];
-            let words: Vec<&str> = content.split_whitespace().collect();
-            let index = if words.len() <= 1 {
-                Expr::Literal(literal_str(
-                    words.first().copied().unwrap_or("").to_string(),
-                ))
-            } else {
-                Expr::ArrayLiteral(
-                    words
-                        .into_iter()
-                        .map(|w| Expr::Literal(literal_str(w.to_string())))
-                        .collect(),
-                )
-            };
-            return (
-                Expr::Index {
-                    target: Box::new(target),
-                    index: Box::new(index),
-                    is_positional: false,
-                    spelling: Default::default(),
-                },
-                &after_lt[end + 1..],
-            );
-        }
-        // Square bracket indexing: $var[expr]
-        if let Some(after_bracket) = input.strip_prefix('[')
-            && let Some(end) = after_bracket.find(']')
-        {
-            let content = after_bracket[..end].trim();
-            // Parse the index expression. A top-level comma makes it a slice
-            // (`@a[1,2]`), which the non-interpolated parser represents as an
-            // `ArrayLiteral` of the elements; split on top-level commas and build
-            // the same so `"@a[1,2]"` interpolates both elements (and a trailing
-            // `.method` chains correctly).
-            let parse_one = |s: &str| -> Expr {
-                let s = s.trim();
-                if let Ok(n) = s.parse::<i64>() {
-                    Expr::Literal(Value::int(n))
-                } else if let Ok((_, expr)) = crate::parser::expr::expression(s) {
-                    expr
-                } else {
-                    Expr::Literal(literal_str(s.to_string()))
-                }
-            };
-            let parts = split_top_level_commas(content);
-            let index = if parts.len() > 1 {
-                Expr::ArrayLiteral(parts.iter().map(|p| parse_one(p)).collect())
-            } else {
-                parse_one(content)
-            };
-            // The subscript is a `semilist`: its statements are numbered for
-            // `use trace` like those of one written outside a string.
-            if let Some(semilist) = crate::parser::stmt::trace::semilist_open(after_bracket) {
-                semilist.close_at(&after_bracket[end..]);
-            }
-            return (
-                Expr::Index {
-                    target: Box::new(target),
-                    index: Box::new(index),
-                    is_positional: true,
-                    spelling: Default::default(),
-                },
-                &after_bracket[end + 1..],
-            );
-        }
-        // Curly brace indexing: %hash{expr}
-        if let Some(after_brace) = input.strip_prefix('{') {
-            // Find matching closing brace respecting nesting
-            let mut depth = 1usize;
-            let mut brace_end = None;
-            for (idx, ch) in after_brace.char_indices() {
-                if ch == '{' {
-                    depth += 1;
-                } else if ch == '}' {
-                    depth -= 1;
-                    if depth == 0 {
-                        brace_end = Some(idx);
-                        break;
-                    }
-                }
-            }
-            if let Some(end) = brace_end {
-                let content = after_brace[..end].trim();
-                if !content.is_empty() {
-                    // A top-level comma makes it a hash slice (`%h{'a','c'}`):
-                    // build an ArrayLiteral of the keys, matching the
-                    // non-interpolated parser, so all selected values interpolate.
-                    let parts = split_top_level_commas(content);
-                    let index = if parts.len() > 1 {
-                        let elems: Option<Vec<Expr>> = parts
-                            .iter()
-                            .map(|p| {
-                                crate::parser::expr::expression(p.trim())
-                                    .ok()
-                                    .map(|(_, e)| e)
-                            })
-                            .collect();
-                        elems.map(Expr::ArrayLiteral)
-                    } else {
-                        crate::parser::expr::expression(content)
-                            .ok()
-                            .map(|(_, e)| e)
-                    };
-                    if let Some(index) = index {
-                        // The subscript is a `semilist`: its statements are
-                        // numbered for `use trace` like those of one written
-                        // outside a string.
-                        if let Some(semilist) =
-                            crate::parser::stmt::trace::semilist_open(after_brace)
-                        {
-                            semilist.close_at(&after_brace[end..]);
-                        }
-                        return (
-                            Expr::Index {
-                                target: Box::new(target),
-                                index: Box::new(index),
-                                is_positional: false,
-                                spelling: Default::default(),
-                            },
-                            &after_brace[end + 1..],
-                        );
-                    }
-                }
-            }
-        }
-        (target, input)
-    };
-    // Interpolated variables use the same postcircumfix chaining rules as
-    // ordinary expressions: `@units[*-1]<plural>` is an index followed by an
-    // associative lookup, not an index plus literal `<plural>` text.
-    let parse_postcircumfix_index = |mut input: &'a str, mut target: Expr| {
-        loop {
-            let (next_target, remainder) = parse_one_postcircumfix_index(input, target);
-            if remainder.len() == input.len() {
-                return (next_target, remainder);
-            }
-            target = next_target;
-            input = remainder;
-        }
-    };
-
+    use index::parse_postcircumfix_index;
     if rest.starts_with('$') && rest.len() > 1 {
         let next = rest.as_bytes()[1] as char;
         // Special variable $/ (match variable)
@@ -487,8 +299,10 @@ pub(crate) fn try_interpolate_var<'a>(
             // An interpolated `$self` is the user lexical, not the `self` term —
             // it takes the reserved key like every other `$`-sigiled `self`
             // (ADR-0061).
-            let (expr, var_rest) =
-                parse_postcircumfix_index(var_rest, crate::ast::scalar_var_expr(var_name));
+            let (expr, var_rest) = parse_postcircumfix_index(
+                var_rest,
+                Expr::source_identifier(crate::ast::scalar_var_expr(var_name), rest),
+            );
             // Handle postcircumfix call interpolation: "$var()" / "$var(args)"
             let (expr, var_rest) = try_parse_interp_call(var_rest, expr);
             // Handle method call interpolation: "$var.method()" or "$var.method"
@@ -565,7 +379,7 @@ pub(crate) fn try_interpolate_var<'a>(
             });
         }
         if let Some((name, after_name)) = split_interp_var_name(&rest[1..]) {
-            let expr = Expr::ArrayVar(name.to_string());
+            let expr = Expr::source_identifier(Expr::ArrayVar(name.to_string()), rest);
             let mut remainder = after_name;
             // Zen-slice interpolation: "@arr[]" and "@arr.[]" should interpolate the array value
             let mut consumed = false;
@@ -600,7 +414,7 @@ pub(crate) fn try_interpolate_var<'a>(
             return Some(result);
         }
         if let Some((name, tail)) = split_interp_var_name(&rest[1..]) {
-            let expr = Expr::HashVar(name.to_string());
+            let expr = Expr::source_identifier(Expr::HashVar(name.to_string()), rest);
             // Zen-slice: %hash{} should stringify the whole hash
             if let Some(r) = tail.strip_prefix("{}") {
                 if !current.is_empty() {
