@@ -656,6 +656,7 @@ impl Interpreter {
         Self::inject_iterator_role_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         Self::inject_precomp_api_prelude(&code, &mut stmts);
+        Self::inject_formatter_syntax_prelude(&code, &mut stmts);
         Self::inject_container_descriptor_prelude(&code, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.

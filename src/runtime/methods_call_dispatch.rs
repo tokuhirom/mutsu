@@ -1035,9 +1035,6 @@ impl Interpreter {
         ) {
             return result;
         }
-        if let Some(result) = self.formatter_syntax_parse(&target, method, &args) {
-            return result;
-        }
         // `Match.make` is a row (ADR-11276 §9.164).
         if let Some(result) =
             crate::builtins::method_table::regex_match::make_answer(self, &target, method, &args)
