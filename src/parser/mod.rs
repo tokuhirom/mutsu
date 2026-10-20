@@ -43,7 +43,8 @@ pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::modifier::for_modifier_loop_params;
 pub(crate) use stmt::modifier::rewrite_placeholder_block_modifier_stmt;
 pub(crate) use stmt::simple::{
-    ExportedVar, scanned_exported_types, scanned_hook_type_keys, scanned_exported_vars, scanned_exported_vars_complete,
+    ExportedVar, scanned_exported_types, scanned_exported_vars, scanned_exported_vars_complete,
+    scanned_hook_type_keys,
 };
 pub(crate) use stmt::sub::{INDIRECT_DECL_NAME, op_prec_trait};
 

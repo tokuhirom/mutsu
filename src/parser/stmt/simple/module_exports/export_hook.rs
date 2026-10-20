@@ -377,7 +377,9 @@ impl<'ast> crate::ast_visit::Visit<'ast> for LiteralTypeKeys {
             && let crate::ast::Expr::Literal(key) = left.as_ref()
             && let Some(key) = key.as_str()
             && key.starts_with(|c: char| c.is_uppercase())
-            && key.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ':')
+            && key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ':')
             && let crate::ast::Expr::BareWord(value) = right.as_ref()
             && value.starts_with(|c: char| c.is_uppercase())
             && !self.names.iter().any(|name| name == key)
