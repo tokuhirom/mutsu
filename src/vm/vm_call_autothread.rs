@@ -660,7 +660,8 @@ impl Interpreter {
             } else {
                 2usize
             };
-            let pd = crate::ast::ParamDef { trait_meta: Default::default(),
+            let pd = crate::ast::ParamDef {
+                trait_meta: Default::default(),
                 type_capture: None,
                 name: String::new(),
                 default: None,

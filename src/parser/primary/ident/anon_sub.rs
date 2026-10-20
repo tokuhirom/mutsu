@@ -4,7 +4,8 @@ use crate::parser::parse_result::{PResult, parse_char};
 use crate::parser::primary::misc::parse_block_body_routine_with_params;
 
 pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
-    crate::ast::ParamDef { trait_meta: Default::default(),
+    crate::ast::ParamDef {
+        trait_meta: Default::default(),
         type_capture: None,
         name: "self".to_string(),
         default: None,

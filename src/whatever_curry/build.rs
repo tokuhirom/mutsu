@@ -12,7 +12,8 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 
 pub(crate) fn make_wc_param(name: String) -> ParamDef {
-    ParamDef { trait_meta: Default::default(),
+    ParamDef {
+        trait_meta: Default::default(),
         type_capture: None,
         name,
         default: None,

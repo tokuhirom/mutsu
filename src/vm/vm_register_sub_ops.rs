@@ -36,10 +36,7 @@ impl Interpreter {
                 // Every trait of the declaration mutates the same object: the
                 // one the first trait got, kept on the declaration.
                 let param_val = p.trait_meta.get().unwrap_or_else(|| {
-                    crate::value::signature::fresh_parameter_value_from_param_def(
-                        p,
-                        Some(&*self),
-                    )
+                    crate::value::signature::fresh_parameter_value_from_param_def(p, Some(&*self))
                 });
                 // A trait written with its own argument (`is option<!>`,
                 // `is encoded('utf8')`) must hand that value to the candidate

@@ -87,7 +87,8 @@ fn has_explicit_named_slurpy(param_defs: &[ParamDef]) -> bool {
 /// The implicit `*%_` slurpy every non-`is hidden` method signature gets
 /// unless the declaration already has an explicit named slurpy.
 pub(crate) fn implicit_method_named_slurpy_param() -> ParamDef {
-    ParamDef { trait_meta: Default::default(),
+    ParamDef {
+        trait_meta: Default::default(),
         type_capture: None,
         name: "%_".to_string(),
         default: None,
@@ -136,7 +137,8 @@ pub(crate) fn effective_method_param_defs(
 /// before the body would run) and the die is what the caller actually
 /// observes, regardless of how many arguments they happened to pass.
 fn implicit_method_positional_slurpy_param() -> ParamDef {
-    ParamDef { trait_meta: Default::default(),
+    ParamDef {
+        trait_meta: Default::default(),
         type_capture: None,
         name: "@_".to_string(),
         default: None,

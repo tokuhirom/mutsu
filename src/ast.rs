@@ -350,7 +350,8 @@ impl ParamDef {
     /// The plain sigilless parameter `\name`: untyped, no default, no traits.
     // Cost: O(|name|).
     pub(crate) fn sigilless_term(name: &str) -> Self {
-        ParamDef { trait_meta: Default::default(),
+        ParamDef {
+            trait_meta: Default::default(),
             type_capture: None,
             name: name.to_string(),
             default: None,
@@ -3203,7 +3204,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             .collect::<Vec<_>>();
             let param_defs = legacy_params
                 .iter()
-                .map(|name| ParamDef { trait_meta: Default::default(),
+                .map(|name| ParamDef {
+                    trait_meta: Default::default(),
                     type_capture: None,
                     name: name.clone(),
                     default: None,
@@ -3257,7 +3259,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             .map(|name| {
                 // Named placeholders use `:` twigil: $:f, @:f, %:f
                 let is_named = name.contains(':');
-                ParamDef { trait_meta: Default::default(),
+                ParamDef {
+                    trait_meta: Default::default(),
                     type_capture: None,
                     name: name.clone(),
                     default: None,
@@ -3287,7 +3290,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             .collect();
         if uses_hash_underscore {
             params.push("%_".to_string());
-            param_defs.push(ParamDef { trait_meta: Default::default(),
+            param_defs.push(ParamDef {
+                trait_meta: Default::default(),
                 type_capture: None,
                 name: "%_".to_string(),
                 default: None,

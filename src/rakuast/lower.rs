@@ -2474,7 +2474,8 @@ pub(super) const ANONYMOUS_CAPTURE: &str = "_capture";
 
 /// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
 pub(super) fn positional_param(name: &str) -> ParamDef {
-    ParamDef { trait_meta: Default::default(),
+    ParamDef {
+        trait_meta: Default::default(),
         type_capture: None,
         name: name.to_string(),
         default: None,
