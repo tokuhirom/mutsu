@@ -743,6 +743,40 @@ impl Interpreter {
         {
             return Err(RuntimeError::assignment_ro_value(value));
         }
+        // A positional write on a plain Hash (`%h[0] = 42`): a Hash does not do
+        // `Positional`, so this is the inherited `Any.ASSIGN-POS`/`BIND-POS`.
+        // Index 0 is the hash itself (`STORE`, so an odd list dies with
+        // `X::Hash::Store::OddNumber`); any other index is `X::OutOfRange`;
+        // a bind is `X::Bind`.
+        if is_positional
+            && self.stack.len() >= 2
+            && let ValueView::Int(index) = self.stack[self.stack.len() - 1].view()
+            && let Some(target) = target_slot
+                .and_then(|slot| self.locals.get(slot as usize).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
+                .map(|value| value.deref_container().descalarize().clone())
+            && let ValueView::Hash(gc) = target.view()
+            && gc.declared_type.as_deref() != Some("Map")
+        {
+            let rhs = self.stack[self.stack.len() - 2].clone();
+            if let ValueView::Pair(marker, _) = rhs.view()
+                && marker.as_str() == "__mutsu_bind_index_value"
+            {
+                return Err(RuntimeError::bind("Hash"));
+            }
+            self.stack.truncate(self.stack.len() - 2);
+            if index != 0 {
+                return Err(RuntimeError::out_of_range(
+                    "Index",
+                    Value::int(index),
+                    "0..0",
+                ));
+            }
+            let rhs = rhs.deref_container();
+            self.store_into_hash(&gc, &rhs)?;
+            self.stack.push(rhs);
+            return Ok(());
+        }
         let var_sym = code.const_sym(name_idx);
         if let Some(value) = self
             .env()
