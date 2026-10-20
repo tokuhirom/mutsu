@@ -13,8 +13,8 @@
 //! arguments back as one list.
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
-use crate::runtime::Interpreter;
 use super::promise_channel::PROMISE_PAYLOAD;
+use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
 type Answer = Option<Result<Value, RuntimeError>>;
@@ -101,12 +101,14 @@ fn subclass_instance(i: &mut Interpreter, target: &Value, answer: Answer) -> Ans
     if class == "Promise" || !matches!(promise.view(), ValueView::Promise(_)) {
         return answer;
     }
-    Some(i.call_method_with_values(target.clone(), "new", Vec::new()).map(|instance| {
-        if let ValueView::Instance { attributes, .. } = instance.view() {
-            attributes.with_attr_mut(PROMISE_PAYLOAD, |payload| *payload = promise.clone());
-        }
-        instance
-    }))
+    Some(
+        i.call_method_with_values(target.clone(), "new", Vec::new())
+            .inspect(|instance| {
+                if let ValueView::Instance { attributes, .. } = instance.view() {
+                    attributes.with_attr_mut(PROMISE_PAYLOAD, |payload| *payload = promise.clone());
+                }
+            }),
+    )
 }
 
 /// `Promise.start(&code, :$scheduler)`.
