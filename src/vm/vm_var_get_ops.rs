@@ -148,18 +148,14 @@ impl Interpreter {
         // `EVAL`, which has no slot map). It is NOT consulted otherwise: it can
         // outlive the scope that made the bare binding invisible (module
         // visibility, suppressed names), which the ordinary path still honours.
-        let lexical_type = if self.registry().has_lexical_type_key_for(name) {
+        let lexical_type = if let Some(binding) = self.lexical_type_binding_sym(name_sym) {
             let taken_over = over_scalar
                 || !matches!(
                     self.env().get(name).map(Value::view),
                     None | Some(ValueView::Package(_))
                 );
-            match self
-                .env()
-                .get(&crate::term_names::lexical_type_key(name))
-                .map(Value::view)
-            {
-                Some(ValueView::Package(storage)) if taken_over => Some(storage),
+            match binding.view() {
+                ValueView::Package(storage) if taken_over => Some(storage),
                 _ => None,
             }
         } else {

@@ -5,6 +5,146 @@
 use super::*;
 
 impl Interpreter {
+    /// Fix the current candidate's nominal signature types while its nested
+    /// declarations are known, as class method registration already does.
+    // Cost: O(s + p * d), s = method metadata/retained AST size,
+    // p = signature types, d = declaring package depth.
+    pub(crate) fn resolve_role_signature_types(
+        &mut self,
+        owner: &str,
+        role_id: u64,
+    ) -> Result<(), RuntimeError> {
+        let methods = self
+            .registry()
+            .role_candidates
+            .get(owner)
+            .and_then(|candidates| {
+                candidates
+                    .iter()
+                    .find(|candidate| candidate.role_def.role_id == role_id)
+            })
+            .map(|candidate| {
+                (
+                    candidate.role_def.methods.clone(),
+                    candidate.type_params.clone(),
+                )
+            });
+        let Some((mut methods, type_params)) = methods else {
+            return Ok(());
+        };
+        for overloads in methods.values_mut() {
+            for method in overloads {
+                self.resolve_owned_param_types(owner, &mut method.param_defs, &type_params, 0)?;
+                if let Some(return_type) = method.return_type.as_mut() {
+                    *return_type =
+                        self.resolve_role_owned_type_name(owner, return_type, &type_params);
+                }
+            }
+        }
+        let mut registry = self.registry_mut();
+        if let Some(role) = registry.roles.get_mut(owner)
+            && role.role_id == role_id
+        {
+            role.methods = methods.clone();
+        }
+        if let Some(candidates) = registry.role_candidates.get_mut(owner) {
+            for candidate in candidates {
+                if candidate.role_def.role_id == role_id {
+                    candidate.role_def.methods = methods.clone();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // Cost: O(p * d), p = signature types, d = declaring package depth.
+    fn resolve_owned_param_types(
+        &self,
+        owner: &str,
+        params: &mut [crate::ast::ParamDef],
+        type_params: &[String],
+        depth: usize,
+    ) -> Result<(), RuntimeError> {
+        const MAX_SIGNATURE_DEPTH: usize = 128;
+        if depth >= MAX_SIGNATURE_DEPTH {
+            return Err(RuntimeError::new(
+                "Signature nesting exceeds the interpreter limit (128)",
+            ));
+        }
+        for param in params {
+            if let Some(constraint) = param.type_constraint.as_mut() {
+                *constraint = self.resolve_role_owned_type_name(owner, constraint, type_params);
+            }
+            if let Some(params) = param.sub_signature.as_mut() {
+                self.resolve_owned_param_types(owner, params, type_params, depth + 1)?;
+            }
+            if let Some(params) = param.outer_sub_signature.as_mut() {
+                self.resolve_owned_param_types(owner, params, type_params, depth + 1)?;
+            }
+            if let Some((params, return_type)) = param.code_signature.as_mut() {
+                self.resolve_owned_param_types(owner, params, type_params, depth + 1)?;
+                if let Some(return_type) = return_type {
+                    *return_type =
+                        self.resolve_role_owned_type_name(owner, return_type, type_params);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // Cost: O(n + p), n = type spelling length, p = role type parameters.
+    fn resolve_role_owned_type_name(&self, owner: &str, name: &str, params: &[String]) -> String {
+        let (base, _) = crate::runtime::types::strip_type_smiley(name);
+        if params.iter().any(|param| param == base) {
+            name.to_string()
+        } else {
+            self.resolve_method_type_name(owner, name)
+        }
+    }
+
+    /// Save the name bindings a role's nested type declarations will replace.
+    /// Registry definitions keep their declaration-site identities; only the
+    /// temporary aliases used while running the body are restored afterwards.
+    // Cost: O(s), s = declared names in the body.
+    pub(crate) fn save_role_type_bindings(
+        &self,
+        owner: &str,
+        ops: &[crate::opcode::DeferredBodyOp],
+    ) -> Vec<(Symbol, Option<Value>)> {
+        let mut keys = HashSet::new();
+        for op in ops {
+            if !matches!(op.kind, crate::opcode::DeferredBodyOpKind::TypeDecl) {
+                continue;
+            }
+            for name in &op.declared_vars {
+                keys.insert(*name);
+                let short = crate::qualified::unqualified_part(*name);
+                keys.insert(short);
+                keys.insert(crate::term_names::lexical_type_key_sym(short));
+                if !crate::qualified::is_qualified(*name) {
+                    keys.insert(crate::qualified::qualified(Symbol::intern(owner), *name));
+                }
+            }
+        }
+        keys.into_iter()
+            .map(|key| (key, self.env().get_sym(key).cloned()))
+            .collect()
+    }
+
+    // Cost: O(s), s = saved name bindings.
+    pub(crate) fn restore_role_type_bindings(&mut self, saved: Vec<(Symbol, Option<Value>)>) {
+        for (key, value) in saved {
+            match value {
+                Some(value) => {
+                    self.env_mut().insert_sym(key, value);
+                }
+                None => {
+                    self.env_mut().remove_sym(key);
+                }
+            }
+        }
+    }
+
     /// Register every lexical TYPE declaration (`my class`, `my grammar`, `my
     /// role`, `my token`/`rule`/`regex`, `my enum`) declared directly in a
     /// role body when the role is declared, rather than waiting for a later
@@ -101,6 +241,8 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let parameterized = !type_params.is_empty();
         let saved_package = self.current_package().to_string();
+        let saved_types = self.save_role_type_bindings(role_name, deferred_body_ops);
+        let mut declared_types = HashSet::new();
         self.set_current_package(role_name.to_string());
         for op in deferred_body_ops {
             if !wanted(&op.raw) {
@@ -140,8 +282,15 @@ impl Interpreter {
                 continue;
             }
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
+                self.restore_role_type_bindings(saved_types);
                 self.set_current_package(saved_package);
                 return Err(error);
+            }
+            if matches!(op.kind, crate::opcode::DeferredBodyOpKind::TypeDecl) {
+                Self::collect_role_body_declared_names(
+                    std::slice::from_ref(op),
+                    &mut declared_types,
+                );
             }
             // A lexical `my class C is export` carries its tags on an internal
             // marker (see `class_decl`); publish it the way an exported subset is.
@@ -177,6 +326,8 @@ impl Interpreter {
                 self.register_exported_var(pkg, short, tags);
             }
         }
+        self.persist_role_body_lexicals(role_name, &declared_types);
+        self.restore_role_type_bindings(saved_types);
         self.set_current_package(saved_package);
         Ok(())
     }

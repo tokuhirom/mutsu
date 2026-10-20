@@ -90,4 +90,17 @@ impl Interpreter {
         self.term_binding_sym(name_sym)
             .or_else(|| self.env().get_sym(name_sym).cloned())
     }
+
+    /// A lexical declaration's type identity, independent of a same-named scalar.
+    // Cost: O(1) expected after the type-namespace key's first memoized lookup.
+    pub(crate) fn lexical_type_binding_sym(&self, name: Symbol) -> Option<Value> {
+        if crate::qualified::is_qualified(name) {
+            return None;
+        }
+        let key = lexical_type_key_sym(name);
+        self.env()
+            .get_lexical_type_binding(key, name)
+            .cloned()
+            .or_else(|| self.package_chain_var_fallback(key))
+    }
 }

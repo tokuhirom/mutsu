@@ -23,6 +23,7 @@ mod registration_role_body;
 mod registration_role_body_lexical;
 mod registration_role_decl;
 mod registration_role_method;
+mod registration_role_parent;
 mod registration_role_same_name;
 pub(crate) mod registration_sub;
 mod registration_subset;

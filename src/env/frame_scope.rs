@@ -11,6 +11,63 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 
 impl Env {
+    /// A type namespace binding in this frame or its lexical outer, never
+    /// in an intervening caller. Parameter binding uses this even while
+    /// ordinary parameter/default lookups temporarily ignore static links.
+    // Cost: O(d + l), d = frame/static-outer tiers, l = lexical capture layers.
+    pub(crate) fn get_lexical_type_binding(&self, key: Symbol, name: Symbol) -> Option<&Value> {
+        if crate::symbol::env_key_probe(key) == crate::symbol::EnvKeyProbe::Absent {
+            return None;
+        }
+        let mut current = self;
+        loop {
+            if let Some(value) = current.inner.get(&key) {
+                return Some(value);
+            }
+            if current.is_tombstoned(key) {
+                return None;
+            }
+            if current.frame_root {
+                if let Some(super::static_link::StaticLink::UnitOuter {
+                    target,
+                    activation,
+                    capture_first,
+                    capture_names,
+                }) = current.inner.static_link()
+                {
+                    if let Some(value) = activation.as_ref().and_then(|capture| capture.get(&key)) {
+                        return Some(value);
+                    }
+                    let captures_type = *capture_first
+                        || capture_names
+                            .as_ref()
+                            .is_some_and(|names| names.contains(&name) || names.contains(&key));
+                    if captures_type
+                        && let Some(value) = current
+                            .fallback
+                            .as_deref()
+                            .and_then(|capture| capture.get(&key))
+                    {
+                        return Some(value);
+                    }
+                    return target.get_sym(key);
+                }
+                if !current.outer_is_unit {
+                    return current
+                        .fallback
+                        .as_deref()
+                        .and_then(|capture| capture.get(&key));
+                }
+                return current
+                    .outer_is_unit
+                    .then_some(current.parent.as_deref())
+                    .flatten()
+                    .and_then(|parent| Self::program_scope_from(parent).get_sym(key));
+            }
+            current = current.parent.as_deref()?;
+        }
+    }
+
     /// `key`'s binding in the running call frame's own tiers: from this env
     /// down to and including the frame root, never a caller's tier or a
     /// capture. The whole chain when no tier is a frame root (the program

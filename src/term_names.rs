@@ -158,9 +158,26 @@ pub(crate) const LEXICAL_TYPE_PREFIX: char = '\u{1}';
 /// is in scope once the scalar overwrites it (#12109). Readers that must find
 /// the type consult this key first.
 pub(crate) fn lexical_type_key(name: &str) -> String {
-    let mut key = String::with_capacity(name.len() + 1);
-    key.push(LEXICAL_TYPE_PREFIX);
-    key.push_str(name);
+    lexical_type_key_sym(Symbol::intern(name)).resolve()
+}
+
+/// The memoized type-namespace key for an already interned source name.
+// Cost: O(1) after the first lookup; O(n) once, n = name length.
+pub(crate) fn lexical_type_key_sym(name: Symbol) -> Symbol {
+    thread_local! {
+        static KEYS: std::cell::RefCell<std::collections::HashMap<Symbol, Symbol>> =
+            std::cell::RefCell::new(std::collections::HashMap::new());
+    }
+    if let Some(key) = KEYS.with(|keys| keys.borrow().get(&name).copied()) {
+        return key;
+    }
+    let key = name.with_str(|name| {
+        let mut key = String::with_capacity(name.len() + 1);
+        key.push(LEXICAL_TYPE_PREFIX);
+        key.push_str(name);
+        Symbol::intern(&key)
+    });
+    KEYS.with(|keys| keys.borrow_mut().insert(name, key));
     key
 }
 
