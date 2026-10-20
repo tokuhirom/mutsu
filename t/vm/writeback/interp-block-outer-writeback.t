@@ -35,7 +35,7 @@ plan 9;
 {
     my $r = "{ my $z = 9; $z }";
     is $r, "9", "inner my block value";
-    nok (try { $z }).defined, "inner my does not leak to outer scope";
+    nok (try EVAL q[$z]).defined, "inner my does not leak to outer scope";
 }
 
 # `state` declared inside an interp block in nested loops is per-instance
