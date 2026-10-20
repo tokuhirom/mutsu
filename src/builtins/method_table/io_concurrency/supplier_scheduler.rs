@@ -107,4 +107,3 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// `Channel`'s subclasses carry their payloads), so `Supplier`'s rows answer
 /// it like any supplier.
 pub(crate) const SUPPLIER_SUBCLASS: &str = "__mutsu_supplier_subclass";
-

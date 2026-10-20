@@ -47,6 +47,7 @@
 //! over the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
 pub(crate) mod allomorph;
+pub(crate) mod carried_state;
 mod collections;
 mod ctors_mop;
 mod dispatch;
@@ -58,7 +59,6 @@ pub(crate) mod lazy_pull;
 mod lazy_refusal;
 pub(crate) mod lazy_stream;
 mod mutating;
-pub(crate) mod carried_state;
 mod place;
 pub(crate) mod receiver_step;
 mod row;
@@ -69,6 +69,7 @@ mod unadmitted;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
+pub(crate) use carried_state::owners_of as carried_state_owners_of;
 pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
@@ -104,7 +105,6 @@ pub(crate) use io_concurrency::promise_channel::{
     CHANNEL_LIST_COERCIONS, receiver_of as promise_channel_receiver_of,
 };
 pub(crate) use io_concurrency::supplier_scheduler;
-pub(crate) use carried_state::owners_of as carried_state_owners_of;
 pub(crate) use io_concurrency::systemic::names as systemic_names;
 pub(crate) use scalars::{
     blob, coerce, complex_math, numeric_base, numeric_coerce, numify, real, real_misc, str,
