@@ -729,7 +729,7 @@ impl Interpreter {
             attributes,
             ..
         } = target.view()
-            && class_name == "Attribute"
+            && crate::value::attribute_class::is_attribute_class(class_name)
         {
             let am = attributes.as_map();
             let owner = am.get("__mutsu_attr_owner").map(Value::to_string_value);
@@ -833,7 +833,7 @@ impl Interpreter {
                     }
                     k.push(base_name);
                     k
-                } else if class_name == "Attribute" {
+                } else if crate::value::attribute_class::is_attribute_class(class_name) {
                     // Attribute objects: look up by "ClassName::$!attrname"
                     let mut k = Vec::new();
                     if let Some(ValueView::Str(attr_name)) =

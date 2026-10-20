@@ -513,10 +513,10 @@ impl Interpreter {
         // `owner_sym` was interned for the method-class frame push above.
         self.env_mut()
             .insert_sym(crate::symbol::wk::class_decl(), Value::package(owner_sym));
-        if let Some(role_name) = role_context {
+        if let Some(role_name) = &role_context {
             self.env_mut().insert_sym(
                 crate::symbol::wk::role_decl(),
-                Value::package(crate::symbol::Symbol::intern(&role_name)),
+                Value::package(crate::symbol::Symbol::intern(role_name)),
             );
         } else {
             self.env_mut().remove_sym(crate::symbol::wk::role_decl());
@@ -540,24 +540,8 @@ impl Interpreter {
         // `t/oo/method/class-body-use-import-visible-in-method.t` pins
         // (#8883, no inheritance involved there either).
         let saved_package = self.current_package_sym();
-        if self.has_class_scoped_subs(owner_class) || self.class_has_method_type_decls(owner_class)
-        {
-            self.set_current_package_sym(owner_sym);
-        } else if self.class_has_package_lexicals(owner_class) {
-            // The class body declared `my` statics; set current_package to the
-            // owner class so a method read resolves them via package_scope_lexical.
-            self.set_current_package_sym(owner_sym);
-        } else if crate::qualified::is_qualified(owner_sym)
-            || self.package_has_deferred_use_imports(owner_class)
-        {
-            // The class is declared inside a package (`class Searcher` inside
-            // `unit module NL` registers as `NL::Searcher`), OR it is a FLAT
-            // (non-namespaced) role/class whose own deferred `use` body
-            // imported a routine under its own bare name (#8646 shape 1) —
-            // either way, anchor the package to the owner so bare-name
-            // lookup can walk outwards to (or start at) the enclosing
-            // module's/role's own routines — see `bare_name_packages`.
-            self.set_current_package_sym(owner_sym);
+        if let Some(package) = self.method_body_package(owner_class, owner_sym, method_def) {
+            self.set_current_package_sym(package);
         }
 
         // Set self and __ANON_STATE# (used by `$.foo` desugaring inside methods).
@@ -2018,34 +2002,13 @@ impl Interpreter {
         // switches it (rare) — the unconditional save cloned a String per call.
         // See the matching comment in `call_compiled_method`: keyed on
         // `owner_class`, not the dynamic `receiver_class_name` (#9008).
-        let saved_package: Option<Symbol> = if self.has_class_scoped_subs(owner_class)
-            || self.class_has_method_type_decls(owner_class)
-        {
-            let saved = self.current_package_sym();
-            self.set_current_package_sym(owner_sym);
-            Some(saved)
-        } else if self.class_has_package_lexicals(owner_class) {
-            // The class body declared `my` statics; set current_package to the
-            // owner class so a method read resolves them via package_scope_lexical.
-            let saved = self.current_package_sym();
-            self.set_current_package_sym(owner_sym);
-            Some(saved)
-        } else if crate::qualified::is_qualified(owner_sym)
-            || self.package_has_deferred_use_imports(owner_class)
-        {
-            // The class is declared inside a package (`class Searcher` inside
-            // `unit module NL` registers as `NL::Searcher`), OR it is a FLAT
-            // (non-namespaced) role/class whose own deferred `use` body
-            // imported a routine under its own bare name (#8646 shape 1) —
-            // either way, anchor the package to the owner so bare-name
-            // lookup can walk outwards to (or start at) the enclosing
-            // module's/role's own routines — see `bare_name_packages`.
-            let saved = self.current_package_sym();
-            self.set_current_package_sym(owner_sym);
-            Some(saved)
-        } else {
-            None
-        };
+        let saved_package: Option<Symbol> = self
+            .method_body_package(owner_class, owner_sym, method_def)
+            .map(|package| {
+                let saved = self.current_package_sym();
+                self.set_current_package_sym(package);
+                saved
+            });
 
         // Compute role context without touching env
         let role_context: Option<String> = if owner_is_role {

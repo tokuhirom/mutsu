@@ -725,10 +725,17 @@ impl DispatchShape {
 
     /// The shape of an `Instance` of the built-in class `class`, for the
     /// shapes whose values are instances.
-    // Cost: O(1), one hash lookup.
+    // Cost: O(1), one hash lookup (plus a fixed-length prefix compare on a
+    // miss).
     #[inline]
     pub(crate) fn from_instance_class(class: Symbol) -> Option<DispatchShape> {
-        instance_shapes().get(&class).copied()
+        instance_shapes().get(&class).copied().or_else(|| {
+            // An `Attribute` reblessed by `$attr does R` keeps answering the
+            // meta-object's own methods; the mixin type's role methods win
+            // over them through the user-override check every row entry makes.
+            crate::value::attribute_class::is_attribute_class(class)
+                .then_some(DispatchShape::Attribute)
+        })
     }
 }
 

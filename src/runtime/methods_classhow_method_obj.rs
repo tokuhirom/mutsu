@@ -799,7 +799,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && class_name == "Attribute"
+            && crate::value::attribute_class::is_attribute_class(class_name)
             && attributes.as_map().contains_key("DEPRECATED")
         {
             return vec![Value::routine_parts(

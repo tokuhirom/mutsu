@@ -104,7 +104,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name != "Attribute" {
+        if !crate::value::attribute_class::is_attribute_class(class_name) {
             return None;
         }
         let named = |want: &str| {

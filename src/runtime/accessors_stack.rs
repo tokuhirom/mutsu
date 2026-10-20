@@ -796,7 +796,7 @@ impl Interpreter {
         // check would otherwise report them absent (Injector's
         // `$attr does Injector::Injected::Attribute`).
         if let ValueView::Instance { class_name, .. } = value.view()
-            && class_name == "Attribute"
+            && crate::value::attribute_class::is_attribute_class(class_name)
             && Self::is_attribute_mop_method(method)
         {
             return true;

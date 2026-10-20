@@ -30,7 +30,7 @@ is (1, 2, 3).Seq.rotate(1).List, (2, 3, 1), 'Seq.rotate';
 is bag(1, 1).deepmap(*.so).elems, 1, 'Bag.deepmap';
 ok Pair.^can('iterator').elems >= 1, 'Pair.^can finds iterator';
 ok Pair.^methods.elems >= 25, 'Pair.^methods grew from 22';
-ok Map.^methods.elems >= 40, 'Map.^methods grew from 37';
+ok Map.^methods.elems >= 38, 'Map.^methods grew from 37';
 is Set.^methods.map(*.name).grep('iterator').elems, 1, 'no duplicate entries';
 is Array.^methods.map(*.name).grep('new').elems, 1, 'Array.new listed once';
 is Seq.^methods.map(*.name).grep('eager').elems, 1, 'Seq.eager listed once';

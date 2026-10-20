@@ -2219,7 +2219,7 @@ impl Interpreter {
             // Attribute ~~ Str: `Str.ACCEPTS(Any:D)` compares `.Str`, which is
             // the attribute's name (`.^attributes.first('$!parent')`).
             (ValueView::Instance { class_name, attributes, .. }, ValueView::Str(s))
-                if class_name == "Attribute" =>
+                if crate::value::attribute_class::is_attribute_class(class_name) =>
             {
                 attributes
                     .as_map()

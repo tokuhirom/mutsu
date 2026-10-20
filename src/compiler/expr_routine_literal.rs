@@ -204,15 +204,11 @@ impl Compiler {
         // `Method`, which is a `Routine` — `return` returns from it and
         // `.^name` answers `Method`.
         //
-        // The `SetLine` probe below is the older heuristic ("pointy blocks
-        // inject a SetLine as the first body statement"). It is kept as a
-        // fallback for the closures the compiler and runtime synthesize, which
-        // reach here without a source spelling to record.
-        let is_pointy = !declarator.is_routine()
-            || (!method_literal
-                && body
-                    .first()
-                    .is_some_and(|s| matches!(s, crate::ast::Stmt::SetLine(_))));
+        // Every construction site records the spelling (the synthesized
+        // closures record `Block`), so no body-shape guess is needed: a
+        // routine's body starts with a `SetLine` marker as any multi-line
+        // block's does (#13627).
+        let is_pointy = !declarator.is_routine();
         // Block params have Mu (not Any) as their implicit nominal type;
         // mark them here so an unpassed untyped optional seeds Mu.
         let marked_defs: Vec<crate::ast::ParamDef>;

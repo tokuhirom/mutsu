@@ -292,6 +292,7 @@ mod vm_map_grep_chain;
 mod vm_map_grep_pull;
 mod vm_map_grep_pure;
 pub(crate) mod vm_meta_ops;
+pub(crate) mod vm_method_body_package;
 pub(crate) mod vm_method_call_attrs;
 pub(crate) mod vm_method_dispatch;
 mod vm_method_finalize;
