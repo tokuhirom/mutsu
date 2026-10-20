@@ -15,7 +15,7 @@ my str @s = "a", "b";
 is @s.list.WHAT.^name, 'List', 'str array';
 
 my Int @e = 1, 2;
-is @e.list.WHAT.^name, 'Array', 'a boxed typed Array is its own list';
+is @e.list.WHAT.^name, 'Array[Int]', 'a boxed typed Array is its own list';
 my @p = 1, 2;
 is @p.list.WHAT.^name, 'Array', 'a plain Array too';
 is @b.elems, 2, 'the native array itself is untouched';
