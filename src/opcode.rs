@@ -7772,6 +7772,8 @@ pub(crate) struct LocalSlotIndex {
     state_names: rustc_hash::FxHashSet<String>,
     /// `our_locals` grouped by qualified package name, slots in declaration order.
     our_slots: rustc_hash::FxHashMap<String, Vec<usize>>,
+    /// Slots by their `:=` alias env key ([`CompiledCode::alias_sym`]).
+    by_alias: rustc_hash::FxHashMap<Symbol, Vec<u32>>,
 }
 
 /// A plain user variable name (as opposed to an internal `__mutsu_*` key, a
@@ -8813,6 +8815,9 @@ impl CompiledCode {
                 if name == "/" || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit())) {
                     index.match_names.push(slot);
                 }
+                if let Some(alias) = self.alias_sym(idx) {
+                    index.by_alias.entry(alias).or_default().push(slot);
+                }
             }
             for (_, key) in &self.state_locals {
                 let key = key.resolve();
@@ -8841,6 +8846,16 @@ impl CompiledCode {
         self.local_slot_index()
             .by_sym
             .get(&sym)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Every local slot whose `:=` alias env key is `alias`, in slot order.
+    // Cost: O(1) amortized (one hash probe; the O(L) index is built on first use).
+    pub(crate) fn alias_slots_of(&self, alias: Symbol) -> &[u32] {
+        self.local_slot_index()
+            .by_alias
+            .get(&alias)
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }

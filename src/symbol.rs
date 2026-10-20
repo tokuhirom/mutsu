@@ -565,8 +565,16 @@ pub(crate) fn mark_env_key(sym: Symbol) {
     }
     // A slot beyond the table's reach has nothing to record, and needs none:
     // `maybe_env_key` answers `true` for such an id anyway.
-    if let Some(slot) = flag_slot(sym.0 as usize) {
-        slot.fetch_or(flags::EVER_ENV_KEY, Ordering::Relaxed);
+    match flag_slot(sym.0 as usize) {
+        Some(slot) => {
+            let before = slot.fetch_or(flags::EVER_ENV_KEY, Ordering::Relaxed);
+            // The thread that set the bit logs the key, so each key once.
+            if f & flags::SIGILLESS_ALIAS_KEY != 0 && before & flags::EVER_ENV_KEY == 0 {
+                crate::alias_key_log::note(sym, true);
+            }
+        }
+        None if f & flags::SIGILLESS_ALIAS_KEY != 0 => crate::alias_key_log::note(sym, false),
+        None => {}
     }
 }
 
