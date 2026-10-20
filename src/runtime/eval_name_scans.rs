@@ -176,6 +176,8 @@ struct UndeclaredName<'a> {
     /// declared anywhere is never reported).
     declared: &'a HashSet<String>,
     found: Option<String>,
+    /// The unit is at language revision 6.e (`use v6.e.PREVIEW`).
+    revision_6e: bool,
     /// Judge only capitalised (type-like) names. The mainline leaves a
     /// lowercase term to the undeclared-routine check: rakudo reports one as
     /// an undeclared routine, and the parser leaves several lowercase
@@ -207,7 +209,7 @@ impl UndeclaredName<'_> {
         // below 6.e a name nothing in the unit declares is undeclared.
         if matches!(name, "Format" | "Formatter" | "Formatter::Syntax")
             && !self.declared.contains(name)
-            && !crate::parser::current_language_version().starts_with("6.e")
+            && !self.revision_6e
         {
             return false;
         }
@@ -305,10 +307,19 @@ impl Interpreter {
         declared: &HashSet<String>,
         type_like_only: bool,
     ) -> Option<(String, i64)> {
+        let revision_6e = crate::parser::current_language_version().starts_with("6.e")
+            || stmts.iter().any(|stmt| {
+                matches!(
+                    stmt,
+                    Stmt::Use { module, arg: Some(Expr::Literal(version)), .. }
+                        if module == "v6" && version.to_string_value().starts_with("6.e")
+                )
+            });
         let mut scan = UndeclaredName {
             interp: self,
             declared,
             found: None,
+            revision_6e,
             type_like_only,
             line: 1,
             found_line: 1,
