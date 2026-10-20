@@ -7,6 +7,9 @@ use crate::ast::HandleSpec;
 /// Parse a single handle spec item (colon-pair, word list, regex, wildcard, etc.)
 fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> PResult<'a, ()> {
     let r = input;
+    if r.starts_with('<') {
+        return parse_handle_word_list(r, specs);
+    }
     // Capture slips in a parenthesized list, e.g. `|SomeType.methods`.
     // The slip itself is only syntax here; declaration composition expands the
     // resulting value into individual method names.
@@ -134,22 +137,9 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
         let (rest, expr) = expression(r)?;
         specs.push(HandleSpec::Expr(Box::new(expr)));
         *rest_out = rest;
-    } else if let Some(r_inner) = r.strip_prefix('<') {
-        // Word list: <a b c>
-        let mut cursor = r_inner;
-        loop {
-            let (r_ws, _) = ws(cursor)?;
-            cursor = r_ws;
-            if let Some(r_end) = cursor.strip_prefix('>') {
-                *rest_out = r_end;
-                break;
-            }
-            let (r_name, method_name) = take_while1(cursor, |c: char| {
-                c.is_alphanumeric() || c == '_' || c == '-'
-            })?;
-            specs.push(HandleSpec::Name(method_name.to_string()));
-            cursor = r_name;
-        }
+    } else if r.starts_with('<') {
+        let (rest, ()) = parse_handle_word_list(r, specs)?;
+        *rest_out = rest;
     } else if let Some(after_star) = r.strip_prefix('*') {
         // Wildcard: *
         specs.push(HandleSpec::Wildcard);
@@ -205,6 +195,15 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
     Ok(())
 }
 
+// Cost: O(n), n = word-list source bytes.
+fn parse_handle_word_list<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> PResult<'a, ()> {
+    let (rest, term) = crate::parser::primary::angle_list(input)?;
+    let names = handle_specs_from_term(&term)
+        .ok_or_else(|| PError::expected("method names in handles word list"))?;
+    specs.extend(names);
+    Ok((rest, ()))
+}
+
 /// The written term of one `handles` clause that spans `input` up to `rest`,
 /// when reading it as a term rebuilds exactly the clause's `specs`; `None`
 /// for a spelling the term does not capture.
@@ -248,91 +247,138 @@ pub(in crate::parser) fn handles_clause_term(
     same.then_some(term)
 }
 
-/// The specs a `handles` term names: method names, rename pairs, regexes,
-/// dynamic expressions, or every method. `None` for any other term.
+/// The specs a `handles` term names, flattening nested positional lists.
+/// Spelled quote words and parentheses retain their original AST alongside
+/// these static names, so the parser and RakuAST lowering share one rule.
 // Cost: O(n), n = size of the term.
 pub(crate) fn handle_specs_from_term(term: &crate::ast::Expr) -> Option<Vec<HandleSpec>> {
-    use crate::ast::Expr;
-    // Parentheses are transparent: `handles ('a', 'b')` names the same list.
-    // So is the spelling a word list `<a b>` keeps for RakuAST (ADR-12199).
-    let term = match term.peel_parens() {
-        Expr::PositionalPair(inner) => inner.peel_parens(),
-        other => other,
+    use crate::ast_visit::Visit;
+    let mut collector = HandleTerms {
+        specs: Vec::new(),
+        depth: 0,
+        valid: true,
     };
-    match term {
-        Expr::Whatever => Some(vec![HandleSpec::Wildcard]),
-        Expr::BareWord(name) => Some(vec![HandleSpec::Name(name.clone())]),
-        Expr::Literal(value) => Some(vec![HandleSpec::Name(value.as_str()?.to_string())]),
-        Expr::Binary {
-            left,
-            op: crate::token_kind::TokenKind::FatArrow,
-            right,
-            ..
-        } => {
-            let exposed = match left.as_ref() {
-                Expr::BareWord(key) => key.clone(),
-                Expr::Literal(key) => key.as_str()?.to_string(),
-                _ => return None,
-            };
-            let Expr::Literal(value) = right.as_ref() else {
-                return None;
-            };
-            Some(vec![HandleSpec::Rename {
-                exposed,
-                target: value.as_str()?.to_string(),
-            }])
+    collector.visit_expr(term);
+    collector.valid.then_some(collector.specs)
+}
+
+struct HandleTerms {
+    specs: Vec<HandleSpec>,
+    depth: usize,
+    valid: bool,
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for HandleTerms {
+    fn visit_expr(&mut self, term: &'ast crate::ast::Expr) {
+        use crate::ast::Expr;
+        // RakuAST can construct a deeper list than the source parser allows.
+        // Refuse it with the caller's catchable parse/lowering error rather
+        // than overflowing the Rust stack.
+        if !self.valid || self.depth >= 128 {
+            self.valid = false;
+            return;
         }
-        Expr::ArrayLiteral(items) => {
-            let mut specs = Vec::with_capacity(items.len());
-            for item in items {
-                match item {
-                    Expr::BareWord(name) => specs.push(HandleSpec::Name(name.clone())),
-                    Expr::Literal(value) => {
-                        specs.push(HandleSpec::Name(value.as_str()?.to_string()))
-                    }
-                    Expr::Binary {
-                        left,
-                        op: crate::token_kind::TokenKind::FatArrow,
-                        right,
-                        ..
-                    } => {
-                        let exposed = match left.as_ref() {
-                            Expr::BareWord(key) => key.clone(),
-                            Expr::Literal(key) => key.as_str()?.to_string(),
-                            _ => return None,
-                        };
-                        let Expr::Literal(value) = right.as_ref() else {
-                            return None;
-                        };
-                        specs.push(HandleSpec::Rename {
-                            exposed,
-                            target: value.as_str()?.to_string(),
-                        });
-                    }
-                    Expr::Unary {
-                        op: crate::token_kind::TokenKind::Pipe,
-                        expr,
-                        ..
-                    } => specs.push(HandleSpec::Expr(Box::new((**expr).clone()))),
-                    _ => return None,
+        self.depth += 1;
+        let term = match term.peel_parens() {
+            Expr::PositionalPair(inner) => inner.peel_parens(),
+            other => other,
+        };
+        match term {
+            Expr::ArrayLiteral(_) => crate::ast_visit::walk_expr(self, term),
+            Expr::Whatever => self.specs.push(HandleSpec::Wildcard),
+            Expr::BareWord(name) => self.specs.push(HandleSpec::Name(name.clone())),
+            Expr::Literal(value) => {
+                if let Some(name) = handle_method_name(value) {
+                    self.specs.push(HandleSpec::Name(name));
+                } else {
+                    self.valid = false;
                 }
             }
-            Some(specs)
-        }
-        // Variable-backed lists and hashes are the written terms of dynamic
-        // `handles @names` / `handles %names` clauses. Preserve the expression
-        // so RakuAST and the compiler evaluate the same delegation source.
-        Expr::Var(_)
-        | Expr::ArrayVar(_)
-        | Expr::HashVar(_)
-        | Expr::MethodCall { .. }
-        | Expr::Call { .. } => Some(vec![HandleSpec::Expr(Box::new(term.clone()))]),
-        Expr::RegexLiteral { value, .. } => match value.view() {
-            crate::value::ValueView::Regex(pattern) => {
-                Some(vec![HandleSpec::Regex(pattern.to_string())])
+            Expr::Binary {
+                left,
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+                ..
+            } => {
+                let exposed = match left.as_ref() {
+                    Expr::BareWord(name) => Some(name.clone()),
+                    Expr::Literal(value) => handle_method_name(value),
+                    _ => None,
+                };
+                let target = match right.as_ref() {
+                    Expr::Literal(value) => handle_method_name(value),
+                    _ => None,
+                };
+                if let (Some(exposed), Some(target)) = (exposed, target) {
+                    self.specs.push(HandleSpec::Rename { exposed, target });
+                } else {
+                    self.valid = false;
+                }
             }
-            _ => None,
-        },
-        _ => None,
+            Expr::Unary {
+                op: crate::token_kind::TokenKind::Pipe,
+                expr,
+                ..
+            } => self
+                .specs
+                .push(HandleSpec::Expr(Box::new((**expr).clone()))),
+            // These are existing dynamic handles forms. Quote-word lists
+            // above become static names and never enter runtime evaluation.
+            Expr::Var(_)
+            | Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::MethodCall { .. }
+            | Expr::Call { .. } => self.specs.push(HandleSpec::Expr(Box::new(term.clone()))),
+            Expr::RegexLiteral { value, .. } => match value.view() {
+                crate::value::ValueView::Regex(pattern) => {
+                    self.specs.push(HandleSpec::Regex(pattern.to_string()));
+                }
+                _ => self.valid = false,
+            },
+            _ => self.valid = false,
+        }
+        self.depth -= 1;
+    }
+}
+
+fn handle_method_name(value: &crate::value::Value) -> Option<String> {
+    if let Some(name) = value.as_str() {
+        return Some(name.to_string());
+    }
+    // Numeric quote words are Str allomorphs: keep their written name rather
+    // than the numeric component (for example, `<1e2>` names `1e2`).
+    if let crate::value::ValueView::Mixin(inner, mixins) = value.view()
+        && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+    {
+        return mixins.get("Str")?.as_str().map(str::to_string);
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::Expr;
+    use crate::value::Value;
+
+    #[test]
+    fn nested_handle_lists_produce_static_names() {
+        let term = Expr::ArrayLiteral(vec![
+            Expr::Literal(Value::str("keys".to_string())),
+            Expr::ArrayLiteral(vec![Expr::Literal(Value::str("Bool".to_string()))]),
+        ]);
+        let specs = handle_specs_from_term(&term).expect("static nested list");
+        assert!(
+            matches!(&specs[..], [HandleSpec::Name(a), HandleSpec::Name(b)] if a == "keys" && b == "Bool")
+        );
+    }
+
+    #[test]
+    fn excessively_nested_handle_lists_are_refused() {
+        let mut term = Expr::Literal(Value::str("keys".to_string()));
+        for _ in 0..129 {
+            term = Expr::ArrayLiteral(vec![term]);
+        }
+        assert!(handle_specs_from_term(&term).is_none());
     }
 }
