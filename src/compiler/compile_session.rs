@@ -35,9 +35,14 @@ const SESSION_BITS: u32 = 64 - ORDINAL_BITS;
 
 /// A declaration site belongs to its compilation, including separately
 /// compiled EVAL units whose package, name and instruction offset coincide.
+/// Signature alternates intentionally share their logical body package and
+/// offset within that compilation, so they must receive the same key.
 // Cost: O(p + n), p = package length, n = variable name length.
-pub(super) fn state_key(package: &str, name: &str) -> crate::symbol::Symbol {
-    crate::symbol::Symbol::intern(&format!("__state_{package}::{name}@{}", mint()))
+pub(super) fn state_key(package: &str, name: &str, offset: usize) -> crate::symbol::Symbol {
+    let session = SESSIONS
+        .with(|sessions| sessions.borrow().last().map(|session| session.id))
+        .unwrap_or_else(counter_session);
+    crate::symbol::Symbol::intern(&format!("__state_{package}::{name}@{session}/{offset}"))
 }
 /// The reserved half of the session space for content-addressed sessions.
 /// Counter sessions stay below it.

@@ -1466,7 +1466,9 @@ EVAL compilations: package, variable name and bytecode offset did not identify
 a declaration uniquely. Both statement and expression declarations now mint
 their state site from `compiler::compile_session` (ADR-11756); a guard and its
 initializer share that site, and repeated calls of the compiled routine keep
-it. Separate string and AST EVAL units receive distinct sites.
+it. The key includes the session namespace, logical body package and bytecode
+offset, so alternate signatures sharing one logical body also share its state.
+Separate string and AST EVAL units receive distinct session namespaces.
 
 The focused dual-oracle regression covers explicit names resembling all three
 anonymous-state spellings, repeated `my` and `state` calls, actual anonymous

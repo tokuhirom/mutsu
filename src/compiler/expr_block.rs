@@ -354,8 +354,11 @@ impl Compiler {
                     // container and the initializer store on a later call
                     // would overwrite the persisted value.
                     let state_guard = if preapply_default {
-                        let key_sym =
-                            super::compile_session::state_key(&self.current_package, name);
+                        let key_sym = super::compile_session::state_key(
+                            &self.current_package,
+                            name,
+                            self.code.ops.len(),
+                        );
                         let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym, 0));
                         Some((guard_idx, key_sym))
                     } else {
@@ -390,7 +393,7 @@ impl Compiler {
                         self.code.ops[guard_idx] = OpCode::StateVarInitGuard(key_sym, ip as u32);
                         key_sym
                     } else {
-                        super::compile_session::state_key(&self.current_package, name)
+                        super::compile_session::state_key(&self.current_package, name, ip)
                     };
                     self.code.state_locals.push((slot as usize, key_sym));
                     self.code.emit(OpCode::StateVarInit(slot, key_sym));

@@ -1550,7 +1550,11 @@ impl Compiler {
                 // needs its StateVarInit to run on every call.
                 let state_guard_idx = if *is_state && !Self::expr_has_state_decl(expr) {
                     // Guard and initializer share one compilation-owned site.
-                    let key_sym = super::compile_session::state_key(&self.current_package, name);
+                    let key_sym = super::compile_session::state_key(
+                        &self.current_package,
+                        name,
+                        self.code.ops.len(),
+                    );
                     let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym, 0));
                     Some((guard_idx, key_sym))
                 } else {
@@ -1973,8 +1977,11 @@ impl Compiler {
                         if preapply_container_default {
                             self.emit_state_array_store_into_defaulted(slot);
                         }
-                        let key_sym =
-                            super::compile_session::state_key(&self.current_package, name);
+                        let key_sym = super::compile_session::state_key(
+                            &self.current_package,
+                            name,
+                            self.code.ops.len(),
+                        );
                         self.code.state_locals.push((slot as usize, key_sym));
                         self.code.emit(OpCode::StateVarInit(slot, key_sym));
                     }
