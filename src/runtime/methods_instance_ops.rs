@@ -907,12 +907,7 @@ impl Interpreter {
             // schedulers' and the handle classes' methods are rows, found by their
             // owner; they commit through the instance's shared cell (ADR-11276
             // §9.128, §9.130, §9.132, §9.133, §9.157).
-            if let Some(owners) = crate::builtins::method_table::proc_async_owners_of(&target)
-                .or_else(|| crate::builtins::method_table::supply_owners_of(&target))
-                .or_else(|| crate::builtins::method_table::cathandle_owners_of(&target))
-                .or_else(|| crate::builtins::method_table::supplier_scheduler_owners_of(&target))
-                .or_else(|| self.encoding_owners_of(&target))
-                .or_else(|| crate::builtins::method_table::handle_owners_of_instance(&target))
+            if let Some(owners) = self.io_concurrency_owners_of(&target)
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,

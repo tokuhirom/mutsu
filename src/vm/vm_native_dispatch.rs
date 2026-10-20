@@ -421,12 +421,6 @@ impl Interpreter {
                 return None;
             }
         }
-        if let Some(result) = self.try_rakudo_internals_method(target, method_name, args) {
-            return Some(result);
-        }
-        if let Some(result) = self.try_rakudo_sorting_method(target, method_name, args) {
-            return Some(result);
-        }
         if let Some(result) = self.try_core_type_object_method(target, method_name, args) {
             return Some(result);
         }

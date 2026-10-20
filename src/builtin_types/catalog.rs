@@ -75,6 +75,8 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     // it is a role here, as everywhere in this catalog.
     row!("Format", mro: ["Format", "Str", "Cool", "Any", "Mu"], roles: ["Stringy", "Callable"], owner: ""),
     row!("Formatter", mro: ["Formatter", "Any", "Mu"], roles: [], owner: ""),
+    row!("Rakudo::Internals", mro: ["Rakudo::Internals", "Any", "Mu"], roles: [], owner: ""),
+    row!("Rakudo::Sorting", mro: ["Rakudo::Sorting", "Any", "Mu"], roles: [], owner: ""),
     // ---- Native types (NativeHOW): each is a subtype of its boxed type, so
     // `int32 ~~ Int` and `num ~~ Num` hold and the boxed type's methods answer.
     // raku: `int32.^mro` is `int32, Int, Cool, Any, Mu`; NativeHOW has no `.^roles`.
@@ -501,6 +503,8 @@ static CATALOG: &[BuiltinTypeInfo] = &[
         roles: [],
         owner: "",
     ),
+    // raku: `Label.^mro` is `(Label Any Mu)`; it does no role.
+    row!("Label", mro: ["Label", "Any", "Mu"], roles: [], owner: ""),
     // ---- Match/Capture ----
     row!(
         "Match",

@@ -205,12 +205,6 @@ pub(crate) fn native_method_0arg_cascade(
         return native_method_0arg(&pairs, method_sym);
     }
 
-    // A loop `Label` (`FOO.name`, `FOO.next`, ...); see `builtins/label.rs`.
-    // Cost: O(1) to decline any other receiver (one `view()` probe).
-    if let Some(result) = crate::builtins::label::label_method_0arg(target, method) {
-        return Some(result);
-    }
-
     // A lazy Match the table has no shape for (a grammar cursor) answers
     // `Match`'s rows here, straight from the capture node, so the probe
     // gauntlet in between (each a `view()`, which would materialize the Match)
