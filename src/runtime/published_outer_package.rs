@@ -33,6 +33,12 @@ impl Interpreter {
         let entry = (short.as_str().to_string(), outer.as_str().to_string());
         // The program's own publications are filed under the empty name.
         let module = self.module.module_load_stack.last().cloned();
+        // The compunit's own package is not a nested one: `unit module
+        // Foo::Reg; class Reg {}` keeps `Reg` for the class, and the module
+        // is reached as `Foo::Reg` alone (#14086).
+        if module.as_deref() == Some(outer.as_str()) {
+            return;
+        }
         {
             let table = crate::runtime::cow_table_mut(&mut self.module.published_outer_packages);
             let list = table.entry(module.clone().unwrap_or_default()).or_default();
