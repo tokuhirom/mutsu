@@ -386,7 +386,13 @@ impl Interpreter {
         }
         // ... and the name-keyed constraint the declaration may still carry.
         // Latched: no typed lexical in the program, no probe.
-        if self.var_type_constraint_sym(var_sym).is_some() {
+        let typed_decl = match target_slot {
+            Some(slot) => self
+                .slot_type_constraint_value(code, slot as usize, var_name, Some(var_sym))
+                .is_some(),
+            None => self.var_type_constraint_sym(var_sym).is_some(),
+        };
+        if typed_decl {
             return None;
         }
         // In-range only: an autovivifying store must resize with the right

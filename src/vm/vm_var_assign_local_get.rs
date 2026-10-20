@@ -290,9 +290,7 @@ impl Interpreter {
             // atomic and should go through the normal array read path.
             let is_atomic_int = !name.starts_with('@')
                 && (self
-                    .var_type_constraint_value_sym(
-                        code.local_sym(idx).unwrap_or_else(|| Symbol::intern(name)),
-                    )
+                    .slot_type_constraint_value(code, idx, name, code.local_sym(idx))
                     .is_some_and(|constraint| constraint.as_str() == Some("atomicint"))
                     || (atomic_name != name
                         && self

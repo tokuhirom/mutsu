@@ -271,7 +271,9 @@ impl Interpreter {
         let attr_constraint = (!val.is_nil())
             .then(|| self.scalar_attr_type_constraint(name))
             .flatten();
-        if let Some(constraint) = loan_env!(self, var_type_constraint(name)).or(attr_constraint)
+        if let Some(constraint) = self
+            .slot_type_constraint(code, idx, name, code.local_sym(idx))
+            .or(attr_constraint)
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
@@ -336,7 +338,7 @@ impl Interpreter {
         // before it is stored, so the embedded `HashData` metadata (or array
         // side-table entry) is carried by every copy below.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = loan_env!(self, var_type_constraint(name))
+            && let Some(value_type) = self.slot_type_constraint(code, idx, name, code.local_sym(idx))
         {
             let info = crate::runtime::ContainerTypeInfo {
                 declared_type: if name.starts_with('@')
@@ -348,7 +350,7 @@ impl Interpreter {
                 },
                 value_type,
                 key_type: if name.starts_with('%') {
-                    loan_env!(self, var_hash_key_constraint(name))
+                    self.slot_hash_key_constraint(code, idx, name, code.local_sym(idx))
                 } else {
                     None
                 },
