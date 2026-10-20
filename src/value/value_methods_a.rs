@@ -1290,6 +1290,19 @@ impl Value {
         self.0.is_container_ref_itemized()
     }
 
+    /// Whether this element word is a `=` value share of a container
+    /// (`@aoa[i] = @row`, `@a.push(@b)`): the element holds the source's cell
+    /// through the itemized `ContainerRef` flavour, while the source variable
+    /// (and any `:=` alias) holds the plain one. A non-bind reassignment of
+    /// such an element replaces the word instead of writing through the cell,
+    /// so the source stays unaffected. The word itself is the mark (ADR-0097),
+    /// so a later `:=` bind of the element -- which stores a plain word --
+    /// clears it, and it travels with the element through splice or copy.
+    // Cost: O(1), a tag probe.
+    pub fn is_element_share_word(&self) -> bool {
+        self.0.is_container_ref_itemized()
+    }
+
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.
     /// Returns a `HashEntryRef` pointing to the entry in the parent hash.
     /// Uses interior mutation of the `Arc<HashMap>` so that **all** clones of

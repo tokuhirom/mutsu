@@ -1180,11 +1180,10 @@ impl Interpreter {
         // element to mark as a `=` value share — a simple Int/Str subscript — so
         // a later non-share reassignment REPLACES the slot instead of writing
         // through the shared cell. Complex subscripts keep pure `:=` semantics.
-        let elem_share_mark: Option<(String, String)> = if element_share {
-            let var_name = Self::const_str(code, name_idx).to_string();
+        let elem_share_mark: Option<String> = if element_share {
             self.stack.last().and_then(|idx| match idx.view() {
-                ValueView::Int(n) if n >= 0 => Some((var_name, idx.to_string_value())),
-                ValueView::Str(_) => Some((var_name, idx.to_string_value())),
+                ValueView::Int(n) if n >= 0 => Some(idx.to_string_value()),
+                ValueView::Str(_) => Some(idx.to_string_value()),
                 _ => None,
             })
         } else {
@@ -1319,7 +1318,7 @@ impl Interpreter {
         // Slice 2b: now that the shared cell is installed in the element, record
         // it as a `=` value share so a later non-share reassignment replaces it.
         if result.is_ok()
-            && let Some((var_name, encoded)) = elem_share_mark
+            && let Some(encoded) = elem_share_mark
         {
             // ADR-0079 slice 3: the element is a `Scalar` holder in raku, so
             // its copy of the shared cell's word reads itemized; the source
@@ -1327,7 +1326,9 @@ impl Interpreter {
             if let Some(container) = self.env().get_sym(save_var_sym) {
                 container.deref_container().itemize_shared_element(&encoded);
             }
-            self.mark_element_share(&var_name, encoded);
+            // That itemized word is also the share mark
+            // (`Value::is_element_share_word`): nothing name-keyed to record.
+            self.array_share_active = true;
         }
         // Object index-assign (`$obj[i] = v` / `$obj{k} = v` dispatching
         // ASSIGN-POS/ASSIGN-KEY to an Instance or Mixin that does Positional/

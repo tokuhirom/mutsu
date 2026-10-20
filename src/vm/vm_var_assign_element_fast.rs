@@ -257,13 +257,6 @@ impl Interpreter {
         if crate::value::container_lock::multi_mutator_threads_live() {
             return None;
         }
-        // The latch is false for the overwhelming majority of programs, and
-        // its being true means a *name-keyed* side table may describe this
-        // element (`__mutsu_elem_share::`).
-        // This lane deliberately knows nothing about it: it declines instead.
-        if crate::env::elem_index_meta_possible() {
-            return None;
-        }
         let var_name = Self::const_str(code, name_idx);
         // Only a real `@` array. A sigilless alias (`my \a = @x`) has no sigil,
         // so this also excludes the `__mutsu_sigilless_alias::` redirect the

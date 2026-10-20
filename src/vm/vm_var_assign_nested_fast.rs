@@ -111,12 +111,6 @@ impl Interpreter {
         if crate::value::container_lock::multi_mutator_threads_live() {
             return None;
         }
-        // The latch being true means a *name-keyed* side table may describe one
-        // of the two elements this store walks through (`__mutsu_elem_share::`).
-        // This lane knows nothing about it.
-        if crate::env::elem_index_meta_possible() {
-            return None;
-        }
         let stack_len = self.stack.len();
         if stack_len < 3 {
             return None;

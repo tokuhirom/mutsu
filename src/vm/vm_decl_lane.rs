@@ -70,8 +70,7 @@ impl Interpreter {
             return None;
         }
         // Name-keyed metadata a declaration clears when it exists at all.
-        if crate::env::elem_index_meta_possible()
-            || crate::env::sigilless_readonly_keys_possible()
+        if crate::env::sigilless_readonly_keys_possible()
             || crate::env::scalar_bind_no_container_possible()
             || crate::env::closure_meta_keys_possible()
             || !self.local_bind_pairs.is_empty()

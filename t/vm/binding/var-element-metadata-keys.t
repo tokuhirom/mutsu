@@ -53,9 +53,9 @@ plan 16;
     is @a[0], 7, 'the bound element reads its binding';
 }
 
-# __mutsu_elem_share:: -- an element holding a shared cell that an element store
-# must write THROUGH, as against replacing the slot. `@aoa[0] = @row` shares;
-# a later `@aoa[0] = 42` must replace instead.
+# An element holding a shared cell through the itemized word (the retired
+# __mutsu_elem_share:: marker): `@aoa[0] = @row` shares; a later
+# `@aoa[0] = 42` must replace instead of writing through.
 {
     my @row = 1, 2;
     my @aoa;
