@@ -82,6 +82,9 @@ pub(crate) struct CompiledAttrDecl {
     /// `default` is the parser's synthesized seed, not a written initializer.
     /// See `Stmt::HasDecl::default_is_seed`.
     pub(crate) default_is_seed: bool,
+    /// `default` is the value of an `is default(...)` trait, not an
+    /// initializer the source wrote. See `Stmt::HasDecl::default_is_trait`.
+    pub(crate) default_is_trait: bool,
     /// The line the `has` keyword sits on, filled in by the class-body walk
     /// (`Compiler::compile_class_attr_decls`) that tracks `Stmt::SetLine`
     /// markers as it visits each declaration -- `from_stmt` itself has no
@@ -180,10 +183,8 @@ impl CompiledAttrDecl {
             declared_shape,
             dynamic_shape,
             default_is_bind: *default_is_bind,
-            // `is default(X)` with no initializer: `X` seeds the slot, as
-            // a type object seeds `has Int $.x`; no initializer runs, so
-            // `.build` is `Mu` and the BUILDPLAN leaves the attribute alone.
-            default_is_seed: *default_is_seed || *default_is_trait,
+            default_is_seed: *default_is_seed,
+            default_is_trait: *default_is_trait,
             decl_line: None,
         }
     }

@@ -112,7 +112,7 @@ impl Interpreter {
             }
         }
         for attr in &attrs {
-            if attr.default.is_none() || attr.default_is_seed {
+            if !Self::has_build_default(attr) {
                 continue;
             }
             let kind = native_kind(attr.type_constraint.as_deref());
@@ -125,8 +125,7 @@ impl Interpreter {
             ]));
         }
         for attr in &attrs {
-            let has_default = attr.default.is_some() && !attr.default_is_seed;
-            if has_default
+            if Self::has_build_default(attr)
                 || attr.is_required.is_some()
                 || native_kind(attr.type_constraint.as_deref()) != 0
             {
@@ -178,6 +177,13 @@ impl Interpreter {
             .get(class)
             .and_then(|state| state.all_plan.clone());
         stored.unwrap_or_else(|| self.derive_buildallplan(class))
+    }
+
+    /// Whether `attr` has a written initializer, which its default task runs
+    /// (not a type-object seed, nor an `is default(...)` value alone).
+    // Cost: O(1).
+    fn has_build_default(attr: &ClassAttributeDef) -> bool {
+        attr.default.is_some() && !attr.default_is_seed && !attr.default_is_trait
     }
 
     /// Whether `task` is a `[1000, type, name]` no-op entry.
