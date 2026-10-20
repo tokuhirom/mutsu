@@ -1736,8 +1736,11 @@ pub(crate) struct Compiler {
     decont_scalar_params: std::collections::HashSet<String>,
     /// READONLY `$` parameters of the routine being compiled (no `is rw` /
     /// `is raw` / `is copy`, not sigilless): a `return-rw`/`is rw` tail
-    /// naming one hands back a value, not a container (#11108). A body `my`
-    /// re-declaration removes the name, as for `decont_scalar_params`.
+    /// naming one hands back a value, not a container (#11108), and a call
+    /// argument naming one is passed as a value, not tagged as a container
+    /// an `is rw` parameter could bind (#13782). Any later binding that
+    /// reaches the name's slot (a body `my`, an inline loop or block
+    /// parameter, see `alloc_local`) removes the name.
     readonly_scalar_params: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
     /// Constants are `our`-scoped (installed in the package), so once their
@@ -2452,6 +2455,11 @@ impl Compiler {
     }
 
     fn alloc_local(&mut self, name: &str) -> u32 {
+        // Any binding of `name` after the signature's (a body `my`, an inline
+        // loop or pointy-block parameter sharing the slot) may be writable,
+        // so a call argument `$name` is no longer known to be the readonly
+        // parameter (#13782).
+        self.readonly_scalar_params.remove(name);
         if let Some(&slot) = self.local_map.get(name) {
             return slot;
         }
