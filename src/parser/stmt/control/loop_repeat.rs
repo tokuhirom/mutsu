@@ -310,15 +310,15 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// The `init`/`step` pair a `repeat while/until COND -> $param { }` loop keeps
-/// its pointy parameter in: the parameter starts undefined and holds the
-/// (true) condition on each later pass. Shared with the RakuAST lowerer, which
+/// its pointy parameter in: the parameter starts as Mu; the compiler binds the
+/// raw condition value between passes. Shared with the RakuAST lowerer, which
 /// rebuilds the loop from the `PointyBlock` the converter writes for it.
 // Cost: O(|name|).
 pub(crate) fn repeat_param_clause(param: Option<String>) -> (Option<Box<Stmt>>, Option<Expr>) {
     let init = param.as_ref().map(|name| {
         Box::new(Stmt::VarDecl {
             name: name.clone(),
-            expr: Expr::Literal(crate::value::Value::NIL),
+            expr: Expr::Literal(crate::value::Value::package(Symbol::intern("Mu"))),
             type_constraint: None,
             is_state: false,
             is_our: false,
@@ -329,12 +329,7 @@ pub(crate) fn repeat_param_clause(param: Option<String>) -> (Option<Box<Stmt>>, 
             where_constraint: None,
         })
     });
-    let step = param.map(|name| Expr::AssignExpr {
-        name,
-        expr: Box::new(Expr::Literal(crate::value::Value::TRUE)),
-        is_bind: false,
-    });
-    (init, step)
+    (init, None)
 }
 
 /// Parse `repeat while/until` loop.

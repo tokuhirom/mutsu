@@ -1090,6 +1090,7 @@ mod control_block_scope;
 mod control_for;
 mod control_for_tail;
 mod control_if;
+mod control_repeat;
 mod decl_plan;
 mod decl_reset;
 mod enter_phaser_exprs;
