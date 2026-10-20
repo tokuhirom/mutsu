@@ -143,9 +143,6 @@ pub(crate) enum MetaNs {
     /// this module's GLOBAL into the scope (ADR-11136). Lives in the block's
     /// env tier, so it ends with the block and a closure keeps it.
     ModuleMerge,
-    /// `__mutsu_elem_share::<name>` — the set of this container's indices that
-    /// hold a shared cell an element store must write *through*.
-    ElemShare,
     /// `__mutsu_eval_role::<qualified-name>` — a role declared inside an `EVAL`
     /// with `my` scope.
     EvalRole,
@@ -276,7 +273,6 @@ impl MetaNs {
         MetaNs::Compunit,
         MetaNs::ConstantVar,
         MetaNs::ModuleMerge,
-        MetaNs::ElemShare,
         MetaNs::EvalRole,
         MetaNs::FfState,
         MetaNs::GatherSelfRef,
@@ -333,7 +329,6 @@ impl MetaNs {
             MetaNs::Compunit => "__mutsu_compunit::",
             MetaNs::ConstantVar => "__mutsu_constant_var::",
             MetaNs::ModuleMerge => "__mutsu_module_merge::",
-            MetaNs::ElemShare => "__mutsu_elem_share::",
             MetaNs::EvalRole => "__mutsu_eval_role::",
             MetaNs::FfState => "__mutsu_ff_state::",
             MetaNs::GatherSelfRef => "__mutsu_gather_self_ref::",
@@ -560,12 +555,12 @@ mod tests {
     #[test]
     fn the_memo_returns_the_same_symbol_and_namespaces_do_not_collide() {
         let name = Symbol::intern("%h");
-        assert_eq!(MetaNs::ElemShare.key(name), MetaNs::ElemShare.key(name));
+        assert_eq!(MetaNs::Type.key(name), MetaNs::Type.key(name));
         assert_ne!(
-            MetaNs::ElemShare.key(name),
-            MetaNs::SigillessAlias.key(name),
+            MetaNs::Type.key(name),
+            MetaNs::HashKeyType.key(name),
             "the memo is keyed by (namespace, name); a name-only key would \
-             hand `__mutsu_sigilless_alias::` the `__mutsu_elem_share::` entry"
+             hand `__mutsu_hash_key_type::` the `__mutsu_type::` entry"
         );
     }
 
@@ -594,7 +589,6 @@ mod tests {
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
             (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
-            (MetaNs::ElemShare, "__mutsu_elem_share::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),
             (MetaNs::GatherSelfRef, "__mutsu_gather_self_ref::@a"),
             (MetaNs::MethodValue, "__mutsu_method_value::@a"),

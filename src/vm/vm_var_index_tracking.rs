@@ -1,8 +1,6 @@
-//! Bound-index / element-share / deleted-index bookkeeping helpers
+//! Deleted-index and initialized-index bookkeeping helpers
 //! split from `vm_var_ops` (§7-8 file split).
 use super::*;
-use crate::meta_ns::MetaNs;
-use crate::value::ValueMap;
 
 impl Interpreter {
     pub(super) fn encode_element_index(idx: &Value) -> String {
@@ -13,56 +11,6 @@ impl Interpreter {
                 .collect::<Vec<_>>()
                 .join(";"),
             _ => idx.to_string_value(),
-        }
-    }
-
-    /// Slice 2b (`docs/scalar-array-sharing.md`): mark element `encoded` of
-    /// `var_name` as a `=`-reference share (`@aoa[i] = @row`). Such an element
-    /// holds a shared `ContainerRef` cell, but unlike a `:=` bind a later
-    /// non-share reassignment (`@aoa[i] = 42`) must REPLACE the slot rather than
-    /// write through the cell. The guards at the element-write chokepoints
-    /// consult this marker to choose replace vs write-through.
-    pub(super) fn mark_element_share(&mut self, var_name: &str, encoded: String) {
-        let key = MetaNs::ElemShare.key_for_str(var_name);
-        if let Some(entry) = self.env_mut().get_mut_sym(key)
-            && entry
-                .with_hash_mut(|map| {
-                    crate::gc::Gc::make_mut(map).insert(encoded.clone(), Value::TRUE);
-                })
-                .is_some()
-        {
-            return;
-        }
-        let mut map = ValueMap::default();
-        map.insert(encoded, Value::TRUE);
-        self.env_mut().insert_sym_noting(key, Value::hash(map));
-        self.array_share_active = true;
-    }
-
-    pub(super) fn is_element_share(&self, var_name: &str, encoded: &str) -> bool {
-        // Runs on every element write. With no element share anywhere in the
-        // program no such key can exist, so skip the interned env probe.
-        if !crate::env::elem_index_meta_possible() {
-            return false;
-        }
-        let key = MetaNs::ElemShare.key_for_str(var_name);
-        if let Some(ValueView::Hash(map)) = self.env().get_sym(key).map(Value::view) {
-            map.contains_key(encoded)
-        } else {
-            false
-        }
-    }
-
-    pub(super) fn clear_element_share(&mut self, var_name: &str, encoded: &str) {
-        // Runs on every element write; nothing to clear if no marker can exist.
-        if !crate::env::elem_index_meta_possible() {
-            return;
-        }
-        let key = MetaNs::ElemShare.key_for_str(var_name);
-        if let Some(entry) = self.env_mut().get_mut_sym(key) {
-            entry.with_hash_mut(|map| {
-                crate::gc::Gc::make_mut(map).remove(encoded);
-            });
         }
     }
 

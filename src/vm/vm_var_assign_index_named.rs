@@ -1621,13 +1621,6 @@ impl Interpreter {
             }
         }
         let encoded_idx = Self::encode_element_index(&idx);
-        // Slice 2b: is the existing element a `=` value share (`@aoa[i] = @row`)?
-        // A non-bind reassignment to such an element REPLACES the shared cell
-        // (raku value semantics) instead of writing through it. Precomputed here
-        // because the element-write chokepoints below hold a `&mut` borrow of the
-        // container and cannot call `self`; the marker is cleared after the store.
-        let elem_is_value_share =
-            !bind_mode && self.array_share_active && self.is_element_share(&var_name, &encoded_idx);
         // The same refusal for an entry `%h.BIND-KEY($k, 42)` bound to a bare
         // value: that entry is a read-only cell rather than a name-keyed marker.
         if !bind_mode && !is_positional && self.hash_element_is_readonly_bound(&var_name, &idx) {
@@ -2825,9 +2818,12 @@ impl Interpreter {
                                 // through `itemize_value`/`hash_insert_through`,
                                 // which would copy the node and break the cycle.
                                 hd.map.insert(key.clone(), val.clone());
-                            } else if elem_is_value_share {
+                            } else if !bind_mode
+                                && hd.map.get(&key).is_some_and(Value::is_element_share_word)
+                            {
                                 // Slice 2b: replace the `=`-shared cell rather than
-                                // write through it, so the source stays unaffected.
+                                // write through it, so the source stays unaffected
+                                // (`Value::is_element_share_word`).
                                 // ADR-0040 slice 1: itemize the stored value.
                                 hd.map.insert(
                                     key.clone(),
@@ -2972,7 +2968,7 @@ impl Interpreter {
                                             source_index,
                                         );
                                     } else if let ValueView::ContainerRef(cell) = arr[i].view() {
-                                        if elem_is_value_share {
+                                        if !bind_mode && arr[i].is_element_share_word() {
                                             // Slice 2b: a `=`-shared element
                                             // reassigned with a non-share value
                                             // REPLACES the slot (raku value
@@ -3149,13 +3145,6 @@ impl Interpreter {
                 }
                 for encoded in range_initialized_marks {
                     self.mark_initialized_index(&var_name, encoded);
-                }
-                // Slice 2b: a `=`-shared element just reassigned with a non-share
-                // value has been replaced by a plain value — drop the share
-                // marker so a later `:=` bind of the same element is not mistaken
-                // for a value share.
-                if elem_is_value_share {
-                    self.clear_element_share(&var_name, &encoded_idx);
                 }
                 // `%*ENV` is never mirrored into the process environment
                 // (#11241). Sync $*HOME when %*ENV<HOME> changes.
