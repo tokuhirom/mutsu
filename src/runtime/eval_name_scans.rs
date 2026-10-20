@@ -203,6 +203,14 @@ impl UndeclaredName<'_> {
         {
             return self.is_known(&name[..open]);
         }
+        // `Format`, `Formatter` and `Formatter::Syntax` are 6.e-only types:
+        // below 6.e a name nothing in the unit declares is undeclared.
+        if matches!(name, "Format" | "Formatter" | "Formatter::Syntax")
+            && !self.declared.contains(name)
+            && !crate::parser::current_language_version().starts_with("6.e")
+        {
+            return false;
+        }
         // A module's own declaration resolves only where that module is
         // merged (ADR-11136); the snippet may merge it itself (`use M; C`).
         if interp.module_name_hidden_here(name) {

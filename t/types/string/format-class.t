@@ -1,3 +1,4 @@
+use v6.e.PREVIEW;
 use Test;
 
 # The Format class (Raku 6.e): a Callable wrapper around a sprintf format string.
