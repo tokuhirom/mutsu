@@ -449,6 +449,9 @@ pub(crate) struct Registry {
     /// whose name the composing class declares too; a role method composed
     /// into `K` runs in its scope (`role_composition_scope`, #14177).
     pub(crate) role_composition_scopes: HashSet<crate::symbol::Symbol>,
+    /// BUILDPLANs the meta-object protocol stored per class: built by
+    /// `create_BUILDPLAN` or bound by a module (ADR-14162, `buildplan.rs`).
+    pub(crate) buildplans: HashMap<String, super::buildplan::BuildPlanState>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
     pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.

@@ -372,7 +372,8 @@ impl Interpreter {
         Ok(body.clone())
     }
 
-    /// The `$!do` (and `$!signature`) case of the nqp attribute ops, shared
+    /// The `$!do` (and `$!signature`) case of the nqp attribute ops, and a
+    /// class HOW's `@!BUILDPLAN`/`@!BUILDALLPLAN` (`nqp_buildplan_attr`), shared
     /// by the generic op table, the VM's `NqpAttrC` site and TRIR. `None`
     /// when `obj`/`name` do not address such a code object attribute, and
     /// the caller's ordinary
@@ -386,6 +387,9 @@ impl Interpreter {
         name: &str,
         bind: Option<&Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        if let Some(served) = self.nqp_buildplan_attr(obj, name, bind) {
+            return Some(served);
+        }
         if name == "$!signature" {
             let code = Self::unwrap_callable_mixin(obj.clone());
             let ValueView::Sub(data) = code.view() else {

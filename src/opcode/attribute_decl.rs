@@ -131,7 +131,7 @@ impl CompiledAttrDecl {
             unknown_traits,
             default_is_bind,
             default_is_seed,
-            default_is_trait: _,
+            default_is_trait,
             trait_order: _,
         } = stmt
         else {
@@ -180,7 +180,10 @@ impl CompiledAttrDecl {
             declared_shape,
             dynamic_shape,
             default_is_bind: *default_is_bind,
-            default_is_seed: *default_is_seed,
+            // `is default(X)` with no initializer: `X` seeds the slot, as
+            // a type object seeds `has Int $.x`; no initializer runs, so
+            // `.build` is `Mu` and the BUILDPLAN leaves the attribute alone.
+            default_is_seed: *default_is_seed || *default_is_trait,
             decl_line: None,
         }
     }

@@ -1,3 +1,6 @@
+pub(crate) mod buildplan;
+mod buildplan_attr;
+mod buildplan_run;
 mod registration;
 mod registration_class;
 mod registration_class_attr;

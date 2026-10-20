@@ -2813,8 +2813,19 @@ impl Interpreter {
                         self.invalidate_fn_resolution();
                     }
                     // substr-rw / subbuf-rw return a Proxy that must be preserved
-                    // (not auto-FETCHed)
-                    let auto_fetch = name != "substr-rw" && name != "subbuf-rw";
+                    // (not auto-FETCHed). So does a re-dispatch: it hands back
+                    // what the next candidate returned, and a Proxy subclass's
+                    // `new` doing `callwith(:$FETCH, :$STORE).VAR` wants the
+                    // Proxy itself (AttrX::Mooish's `AttrProxy`).
+                    let auto_fetch = !matches!(
+                        name,
+                        "substr-rw"
+                            | "subbuf-rw"
+                            | "callwith"
+                            | "callsame"
+                            | "nextwith"
+                            | "nextsame"
+                    );
                     let result = result?;
                     if name == "make" {
                         self.attach_made_to_match_topic(code, result.clone());
