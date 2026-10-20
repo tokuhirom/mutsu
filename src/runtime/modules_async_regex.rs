@@ -15,6 +15,7 @@ mod ops_bits;
 mod ops_compare;
 mod ops_reduction;
 mod ops_set;
+pub(crate) mod our_scoped_restore;
 mod output_sink;
 pub(crate) mod parse_time_exports;
 pub(crate) mod phasers;
