@@ -449,6 +449,33 @@ pub(in crate::parser) fn source_chars_before(at: &str, n: usize) -> String {
     })
 }
 
+/// The 1-based line of the last non-whitespace source character before `at`
+/// (a block body's `{`, whose following whitespace the caller already
+/// skipped), or `at`'s own line when `at` is outside the recorded source.
+// Cost: O(w + log n), w = whitespace skipped back, n = newlines of the source.
+pub(in crate::parser) fn line_before_whitespace(at: &str) -> i64 {
+    let before = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        let (src_ptr, src_len) = (origin.ptr, origin.len);
+        let at_ptr = at.as_ptr() as usize;
+        if src_ptr == 0 || at_ptr < src_ptr || at_ptr > src_ptr + src_len {
+            return None;
+        }
+        // SAFETY: as in `source_span_at`: (src_ptr, src_len) was recorded from
+        // a live `&str` and `at_ptr - src_ptr` is within `[0, src_len]`.
+        let full = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(src_ptr as *const u8, src_len))
+        };
+        // Just past the last non-whitespace character: still on its line,
+        // since only the newlines before an offset count. A slice of the
+        // recorded buffer, so the line lookup below takes the same path as
+        // for any parser input.
+        let end = full[..at_ptr - src_ptr].trim_end().len();
+        Some(&full[end..])
+    });
+    current_line_number(before.unwrap_or(at))
+}
+
 /// The 1-based line of the original source that `eject` points at, or `None`
 /// when it is outside the recorded source buffer. For diagnostics that have to
 /// name a line in their own message text rather than in error metadata (rakudo
