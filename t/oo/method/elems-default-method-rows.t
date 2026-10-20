@@ -5,7 +5,7 @@ use Test;
 # `Array.default` / `Hash.default` answer a typed, shaped or lazy container
 # from their own rows (ADR-11276 §9.163).
 
-plan 24;
+plan 27;
 
 class P { }
 class Q { method list { (1, 2, 3) } }
@@ -43,3 +43,11 @@ my Int %ti;
 is %ti.default.raku, 'Int', 'a typed hash defaults to its value type';
 is [1, 2].default.raku, 'Any', 'an Array literal defaults to Any';
 throws-like { (1, 2).default }, X::Method::NotFound, 'a List has no default';
+
+# A lazy array answers its container's default without being reified (#13806).
+my @lazy-plain = lazy 1..*;
+is @lazy-plain.default.raku, 'Any', 'a lazy array defaults to Any';
+my Int @lazy-typed = lazy 1..*;
+is @lazy-typed.default.raku, 'Int', 'a typed lazy array defaults to its type';
+my @lazy-default is default(5) = lazy 1..*;
+is @lazy-default.default, 5, 'a lazy array with `is default`';
