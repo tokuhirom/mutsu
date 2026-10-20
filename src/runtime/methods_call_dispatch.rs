@@ -555,6 +555,7 @@ impl Interpreter {
         // argument as the class's per-site hooks did.
         if let Some(owners) = crate::builtins::method_table::opaque_owners_of(&target)
             && !self.native_lever_a_user_override_sym(&target, Symbol::intern(method))
+            && !self.enum_composes_role_method(&target, method)
             && let Some(answer) = crate::builtins::method_table::invoke_owner(
                 self,
                 owners,

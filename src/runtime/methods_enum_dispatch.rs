@@ -29,33 +29,24 @@ impl Interpreter {
             .then(|| inner.as_ref().clone())
     }
 
-    /// The methods of an enum member: its base type's collection methods for
-    /// an `Array`/`Hash`-valued member ([`Self::enum_aggregate_base`]), then
-    /// the rows of the roles Rakudo composes into every enum type
-    /// (`Enumeration`, `NumericEnumeration`, `StringyEnumeration`; ADR-11276
-    /// §9.125), found by their owner. `None` when neither answers.
-    // Cost: O(o) to find the row, o = the member's roles, plus the row's own.
+    /// What an enum member answers beyond its shape's rows (the roles Rakudo
+    /// composes into every enum type, found by the opaque shape of the member
+    /// by its payload kind): a method the enumeration roles do not declare is
+    /// the **base type's** row, answered on the member's value (`y.Num`,
+    /// `y.is-prime`, `p.uc`), then `Any(Enumeration)`'s key/value views of the
+    /// whole enumeration (`red.pairs`, ADR-11276 §9.145). `None` when neither
+    /// answers.
+    ///
+    /// This runs late, not in the receiver step: a member's `WHICH` and the
+    /// `Cool` text methods read through its *key* are answered before it, and
+    /// a redirect to the payload would take them over.
+    // Cost: O(o) to find the row, o = the member's base types, plus the row's own.
     pub(super) fn dispatch_enum_method(
         &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let owners = crate::builtins::method_table::enumeration_owners_of(target)?;
-        // `Mu.perl` is `self.raku`, so the row of `raku` answers it.
-        if let Some(base) = Self::enum_aggregate_base(target, method) {
-            return Some(self.call_method_with_values(base, method, args.to_vec()));
-        }
-        if let Some(result) =
-            crate::builtins::method_table::invoke_owner(self, owners, method, args, || {
-                target.clone()
-            })
-        {
-            return Some(result);
-        }
-        // A member is a value of its base type (Rakudo's enum type inherits from
-        // it): a method the enumeration roles do not declare is the base type's
-        // row, answered on the member's value (`y.Num`, `y.is-prime`, `p.uc`).
         let ValueView::Enum { value, .. } = target.view() else {
             return None;
         };
@@ -73,9 +64,33 @@ impl Interpreter {
         {
             return Some(result);
         }
-        // Then `Any(Enumeration)`'s key/value views of the whole enumeration
-        // (`red.pairs`, ADR-11276 §9.145).
         crate::builtins::method_table::any_enum_views::invoke(self, target, method, args)
+    }
+
+    /// Whether an enum member has `method` for `.^can`: a row of its shape's
+    /// roles, its base type's row, or one of the views of the enumeration.
+    // Cost: a few set probes.
+    pub(crate) fn enum_member_has_method(target: &Value, method: &str) -> bool {
+        let method = Symbol::intern(method);
+        let ValueView::Enum { value, .. } = target.view() else {
+            return false;
+        };
+        let owners = target.receiver_shape().and_then(|shape| shape.opaque_owners());
+        owners
+            .into_iter()
+            .flatten()
+            .chain(match value {
+                EnumValue::Int(_) => ["Int", "Cool"].as_slice(),
+                EnumValue::Str(_) => ["Str", "Cool"].as_slice(),
+                EnumValue::Generic(_) => [].as_slice(),
+            })
+            .any(|owner| {
+                (0..4).any(|arity| {
+                    crate::builtins::method_table::owner_row(Symbol::intern(owner), method, arity)
+                        .is_some()
+                })
+            })
+            || crate::builtins::method_table::any_enum_views::declares(method.as_str())
     }
 
     /// The `enums` of an enumeration, in declaration order: of an enum's type

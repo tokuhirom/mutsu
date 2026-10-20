@@ -85,6 +85,12 @@ impl Interpreter {
                     return true;
                 }
             }
+            // An enum member: a role its enum composes (`enum E does R`)
+            // comes before the enumeration roles' own rows.
+            ValueView::Enum { .. } => {
+                return self.enum_composes_role_method(target, name)
+                    || self.native_lever_a_user_override_sym(target, method);
+            }
             // A plain built-in receiver (`Array`, `Str`, a `Range`, ...): only
             // an `augment` or a `.wrap` of its type comes first.
             _ => return self.native_lever_a_user_override_sym(target, method),

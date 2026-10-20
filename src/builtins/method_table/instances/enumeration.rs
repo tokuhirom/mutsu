@@ -7,9 +7,10 @@
 //! Rakudo composes the roles into each enum type, so `E.^method_table` lists
 //! them; mutsu's enum member is one value kind (`ValueView::Enum`) for every
 //! enum, so the rows are the roles' own, found by their owner
-//! (`RowFlags::OWNER_ONLY`, `invoke_owner`) from the enum dispatch, after the
-//! methods of a role the enum itself composes (`dispatch_enum_role_method`).
-//! [`owners_of`] names the roles a member does, the more specific first.
+//! (`RowFlags::OWNER_ONLY`) under the owners of the opaque shape of a member
+//! by its payload kind (`DispatchShape::EnumNumeric`, `EnumStringy`,
+//! `EnumGeneric`; the more specific role first), after the methods of a role
+//! the enum itself composes (`dispatch_enum_role_method`).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -48,21 +49,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("NumericEnumeration", "Str", 0, Handler::Narrow(key)),
     row!("StringyEnumeration", "Str", 0, Handler::Narrow(stringy_str)),
 ];
-
-/// The roles an enum member does, the more specific first: `NumericEnumeration`
-/// for an `Int`-valued member, `StringyEnumeration` for a `Str`-valued one, and
-/// `Enumeration` for every member.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    let ValueView::Enum { value, .. } = target.view() else {
-        return None;
-    };
-    Some(match value {
-        EnumValue::Int(_) => &["NumericEnumeration", "Enumeration"],
-        EnumValue::Str(_) => &["StringyEnumeration", "Enumeration"],
-        EnumValue::Generic(_) => &["Enumeration"],
-    })
-}
 
 /// The member's key, its value and the index of the member in its enum.
 // Cost: O(1).
