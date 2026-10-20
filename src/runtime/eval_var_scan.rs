@@ -462,7 +462,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
                 self.routine(param_defs, stmt)
             }
             Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
-                self.type_body(body, stmt)
+                self.in_lenient_code(|v| v.type_body(body, stmt))
             }
             // A statement-form phaser (`BEGIN my $c = ...`) declares into the
             // enclosing scope; its block form (`BEGIN { my $c }`, whose body
@@ -484,7 +484,12 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             // unit's head), so in the compunit mode it is no evidence of a
             // use before a declaration.
             Stmt::Phaser { .. } => self.in_scope(|v| {
-                v.in_moved_code(|v| v.judging(true, |v| walk_stmt(v, stmt)))
+                v.in_lenient_code(|v| {
+                    v.in_moved_code(|v| v.judging(true, |v| walk_stmt(v, stmt)))
+                })
+            }),
+            Stmt::Package { .. } | Stmt::AugmentClass { .. } => self.in_scope(|v| {
+                v.in_lenient_code(|v| v.judging(true, |v| walk_stmt(v, stmt)))
             }),
             Stmt::For { .. }
             | Stmt::Given { .. }
@@ -496,9 +501,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
             | Stmt::React { .. }
             | Stmt::TokenDecl { .. }
             | Stmt::RuleDecl { .. }
-            | Stmt::ProtoDecl { .. }
-            | Stmt::Package { .. }
-            | Stmt::AugmentClass { .. } => {
+            | Stmt::ProtoDecl { .. } => {
                 self.in_scope(|v| v.judging(true, |v| walk_stmt(v, stmt)))
             }
             _ => self.judging(true, |v| walk_stmt(v, stmt)),
