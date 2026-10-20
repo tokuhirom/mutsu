@@ -22,10 +22,10 @@ use crate::value::{RuntimeError, Value, ValueView};
 #[derive(Clone, Copy)]
 enum RwTarget {
     /// A caller frame slot holding the value directly.
-    Slot(u32),
+    Slot(u32, TrKind),
     /// A caller frame slot holding a shared container cell; the write goes
     /// through the cell, so no env mirror is needed.
-    Cell(u32),
+    Cell(u32, TrKind),
 }
 
 /// One bound `is rw` parameter at the OUTER boundary: the spill slot holding
@@ -161,16 +161,16 @@ impl Interpreter {
             }
         };
         // Read the spills back BEFORE the frame is closed.
-        let mut writes: [(i64, RwTarget); 4] = [(0, RwTarget::Slot(0)); 4];
+        let mut writes: [(i64, RwTarget); 4] = [(0, RwTarget::Slot(0, TrKind::Int)); 4];
         for i in 0..rw_len {
             let (spill, target) = rw[i];
             writes[i] = (self.trir.nl[frame.nbase as usize + spill as usize], target);
         }
         self.trir.pop_frame(frame);
         for &(raw, target) in &writes[..rw_len] {
-            let v = Value::int(raw);
             match target {
-                RwTarget::Cell(slot) => {
+                RwTarget::Cell(slot, kind) => {
+                    let v = kind.box_native(raw);
                     if let ValueView::ContainerRef(cell) = self.locals[slot as usize].view() {
                         *cell.lock().unwrap_or_else(|e| e.into_inner()) = v;
                     } else {
@@ -182,7 +182,7 @@ impl Interpreter {
                         )));
                     }
                 }
-                RwTarget::Slot(slot) => self.locals[slot as usize] = v,
+                RwTarget::Slot(slot, kind) => self.locals[slot as usize] = kind.box_native(raw),
             }
         }
         super::stats::record(super::stats::TrirEntry::Completed);
@@ -198,7 +198,7 @@ impl Interpreter {
         site: &crate::trir::TrCallSite,
         caller_code: &CompiledCode,
     ) -> Option<RwPlan> {
-        let mut rw = [(0u16, RwTarget::Slot(0)); 4];
+        let mut rw = [(0u16, RwTarget::Slot(0, TrKind::Int)); 4];
         let mut rw_len = 0usize;
         let mut next_spill = chunk.n_native;
         for (i, p) in chunk.params.iter().enumerate() {
@@ -212,11 +212,11 @@ impl Interpreter {
                 // write through one is visible to the other inside the body.
                 // Two spills cannot reproduce that, so decline.
                 if rw[..rw_len].iter().any(|(_, t)| {
-                    matches!(t, RwTarget::Slot(s) | RwTarget::Cell(s) if *s == caller_slot)
+                    matches!(t, RwTarget::Slot(s, _) | RwTarget::Cell(s, _) if *s == caller_slot)
                 }) {
                     return None;
                 }
-                let (raw, target) = self.bind_rw_slot(caller_slot, caller_code)?;
+                let (raw, target) = self.bind_rw_slot(caller_slot, caller_code, p.kind)?;
                 self.seed_rw_spill(frame, p.slot, next_spill, raw);
                 rw[rw_len] = (next_spill, target);
                 next_spill += 1;
@@ -246,7 +246,7 @@ impl Interpreter {
         args_base: usize,
         caller_code: Option<&CompiledCode>,
     ) -> Option<RwPlan> {
-        let mut rw = [(0u16, RwTarget::Slot(0)); 4];
+        let mut rw = [(0u16, RwTarget::Slot(0, TrKind::Int)); 4];
         let mut rw_len = 0usize;
         let mut next_spill = chunk.n_native;
         for (i, p) in chunk.params.iter().enumerate() {
@@ -264,11 +264,11 @@ impl Interpreter {
                 }
                 let caller_slot = arg.varref_slot().filter(|s| *s != u32::MAX)?;
                 if rw[..rw_len].iter().any(|(_, t)| {
-                    matches!(t, RwTarget::Slot(s) | RwTarget::Cell(s) if *s == caller_slot)
+                    matches!(t, RwTarget::Slot(s, _) | RwTarget::Cell(s, _) if *s == caller_slot)
                 }) {
                     return None;
                 }
-                let (raw, target) = self.bind_rw_slot(caller_slot, caller_code?)?;
+                let (raw, target) = self.bind_rw_slot(caller_slot, caller_code?, p.kind)?;
                 self.seed_rw_spill(frame, p.slot, next_spill, raw);
                 rw[rw_len] = (next_spill, target);
                 next_spill += 1;
@@ -359,7 +359,12 @@ impl Interpreter {
     /// `ContainerRef` cell — the same promotion the untyped `is rw` path
     /// performs — after which both halves are the same container and the
     /// writeback is one store through it.
-    fn bind_rw_slot(&mut self, slot: u32, caller_code: &CompiledCode) -> Option<(i64, RwTarget)> {
+    fn bind_rw_slot(
+        &mut self,
+        slot: u32,
+        caller_code: &CompiledCode,
+        kind: TrKind,
+    ) -> Option<(i64, RwTarget)> {
         let idx = slot as usize;
         if idx >= caller_code.locals.len() || idx >= self.locals.len() {
             return None;
@@ -373,10 +378,10 @@ impl Interpreter {
         }
         if let ValueView::ContainerRef(cell) = self.locals[idx].view() {
             let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let raw = Self::trir_rw_int(&inner)?;
-            return Some((raw, RwTarget::Cell(slot)));
+            let raw = kind.unbox_native(&inner)?;
+            return Some((raw, RwTarget::Cell(slot, kind)));
         }
-        let raw = Self::trir_rw_int(&self.locals[idx])?;
+        let raw = kind.unbox_native(&self.locals[idx])?;
         // ALWAYS promote, exactly as the untyped `is rw` path does. Writing
         // the slot in place instead looks equivalent and is not: a closure
         // that captured the same variable, or an env mirror the caller keeps,
@@ -389,7 +394,7 @@ impl Interpreter {
             return None;
         }
         self.locals[idx] = cell;
-        Some((raw, RwTarget::Cell(slot)))
+        Some((raw, RwTarget::Cell(slot, kind)))
     }
 
     /// The shared container an inner closure captured this caller local
@@ -407,15 +412,6 @@ impl Interpreter {
             .get_sym(sym)
             .filter(|v| v.is_container_ref())
             .cloned()
-    }
-
-    /// The raw `i64` a native `is rw` parameter binds from.
-    fn trir_rw_int(v: &Value) -> Option<i64> {
-        match v.view() {
-            ValueView::Int(i) => Some(i),
-            ValueView::Bool(b) => Some(b as i64),
-            _ => None,
-        }
     }
 
     /// The cold path of a `CallTrir` site: rebuild the argument shape the

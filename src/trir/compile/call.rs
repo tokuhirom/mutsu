@@ -101,10 +101,19 @@ impl TrirCompiler<'_> {
         };
         let idx = self.calls.len() as u32;
         let resolved = matches!(site_callee, TrCallee::Trir { .. });
+        let native_args = plan.iter().enumerate().take(32).fold(0, |mask, (i, arg)| {
+            let native = match arg {
+                TrArg::Native(..) | TrArg::Ref(..) => true,
+                TrArg::Obj(slot) => self.native_str_slots.contains(slot),
+                _ => false,
+            };
+            mask | (u32::from(native) << i)
+        });
         self.calls.push(TrInnerCall {
             callee: site_callee,
             name: sym,
             args: plan,
+            native_args,
             result: kind,
         });
         self.ops.push(if resolved {
@@ -252,8 +261,8 @@ impl TrirCompiler<'_> {
     fn slot_arg(&self, name: &str) -> Option<TrArg> {
         let Binding { slot, kind } = self.binding_of(name)?;
         Some(match kind {
-            _ if self.is_rw_param_slot(slot, kind) => TrArg::Ref(slot),
-            TrKind::Int | TrKind::Num => TrArg::Native(slot),
+            _ if self.is_rw_param_slot(slot, kind) => TrArg::Ref(slot, kind),
+            TrKind::Int | TrKind::Num => TrArg::Native(slot, kind),
             TrKind::Obj => TrArg::Obj(slot),
         })
     }

@@ -98,6 +98,9 @@ impl TrirCompiler<'_> {
         let from_nqp = self.nqp_sourced;
         self.coerce_store(init, kind, width.map_or("int", |w| w.2))?;
         let slot = self.alloc(name, kind);
+        if tc == Some("str") {
+            self.native_str_slots.insert(slot);
+        }
         // A redeclaration (`my` inside a loop body runs once per iteration)
         // gets a fresh slot, so these facts are per slot, not per name.
         if let Some(w) = width {

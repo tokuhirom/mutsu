@@ -5,6 +5,16 @@
 use super::TrChunk;
 use crate::symbol::Symbol;
 
+/// A statement's variant name, for a decline report.
+pub(super) fn discriminant_of(s: &crate::ast::Stmt) -> String {
+    let rendered = format!("{s:?}");
+    rendered
+        .split([' ', '(', '{'])
+        .next()
+        .unwrap_or("?")
+        .to_string()
+}
+
 /// The dump mode, read once: this runs per routine declaration.
 fn mode() -> Option<&'static str> {
     use std::sync::OnceLock;

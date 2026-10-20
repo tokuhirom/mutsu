@@ -38,7 +38,7 @@ use super::{TrArg, TrChunk, TrInnerCall, TrKind};
 use crate::opcode::CompiledFns;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, ValueView};
 
 /// The resolution state a link was observed in.
 type GenContext = (u64, Symbol, Option<Symbol>);
@@ -200,8 +200,8 @@ impl Interpreter {
                 // Only a native `is rw` parameter is TRIR, and it aliases a
                 // variable: hand it the caller slot's absolute index.
                 let target = match arg {
-                    TrArg::Native(s) if p.kind.is_native() => nbase + *s as usize,
-                    TrArg::Ref(s) if p.kind.is_native() => {
+                    TrArg::Native(s, kind) if p.kind == *kind => nbase + *s as usize,
+                    TrArg::Ref(s, kind) if p.kind == *kind => {
                         self.trir.nl[nbase + *s as usize] as usize
                     }
                     _ => {
@@ -219,10 +219,10 @@ impl Interpreter {
                 return Ok(GenOutcome::NotLinked);
             }
             let val = match arg {
-                TrArg::Native(s) => Value::int(self.trir.nl[nbase + *s as usize]),
-                TrArg::Ref(s) => {
+                TrArg::Native(s, kind) => kind.box_native(self.trir.nl[nbase + *s as usize]),
+                TrArg::Ref(s, kind) => {
                     let r = self.trir.nl[nbase + *s as usize] as usize;
-                    Value::int(self.trir.nl[r])
+                    kind.box_native(self.trir.nl[r])
                 }
                 TrArg::Obj(s) => self.trir.ol[obase + *s as usize].clone(),
                 TrArg::Outer(i) => {

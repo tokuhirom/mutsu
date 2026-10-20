@@ -31,6 +31,8 @@ pub(crate) struct TrirCompiler<'a> {
     params: Vec<TrParam>,
     /// Boxed slots this body assigns to after their declaration.
     obj_written: Vec<bool>,
+    /// Boxed slots whose declaration is native `str`, rather than untyped.
+    pub(super) native_str_slots: HashSet<u16>,
     /// The calls this body makes, indexed by `CallTr`/`CallGen`.
     pub(super) calls: Vec<crate::trir::TrInnerCall>,
     /// Routines this compile has already registered with a chunk, so a call
@@ -82,16 +84,6 @@ pub(crate) struct TrirCompiler<'a> {
     /// Addresses of the routine body's own top-level statements: only a
     /// declaration there is a frame lexical.
     top_level: HashSet<usize>,
-}
-
-/// A statement's variant name, for a decline report.
-fn discriminant_of(s: &Stmt) -> String {
-    let rendered = format!("{s:?}");
-    rendered
-        .split([' ', '(', '{'])
-        .next()
-        .unwrap_or("?")
-        .to_string()
 }
 
 /// What the enclosing compile hands a routine's TRIR compile: the routines
@@ -160,6 +152,7 @@ impl<'a> TrirCompiler<'a> {
             n_obj: 0,
             params: Vec::new(),
             obj_written: Vec::new(),
+            native_str_slots: HashSet::new(),
             calls: Vec::new(),
             routines,
             fns,
@@ -355,7 +348,7 @@ impl<'a> TrirCompiler<'a> {
                     // and `last` stays whatever the tail yields.
                 }
                 other => {
-                    self.note_decline(|| format!("statement {}", discriminant_of(other)));
+                    self.note_decline(|| format!("statement {}", dump::discriminant_of(other)));
                     return None;
                 }
             }

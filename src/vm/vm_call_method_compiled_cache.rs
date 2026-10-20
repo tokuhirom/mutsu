@@ -162,29 +162,7 @@ impl Interpreter {
                     }
                     value.clone()
                 }
-                _ => {
-                    // A LITERAL argument dispatches on the native type its
-                    // written shape implies, exactly as a `VarRef` dispatches
-                    // on its source variable's declared type (see
-                    // `unwrap_varref_for_dispatch_at`). It must therefore be
-                    // part of the key: without it `d("7".Int)` and `d(5)` --
-                    // the same `Int` value, different provenance, different
-                    // rakudo answer -- collide, and whichever ran first
-                    // decided for both.
-                    if pos_idx < 32
-                        && self.literal_native_args & (1 << pos_idx) != 0
-                        && let Some(nt) = match raw.view() {
-                            ValueView::Int(_) => Some(key_syms::native_int()),
-                            ValueView::Num(_) => Some(key_syms::native_num()),
-                            ValueView::Str(_) => Some(key_syms::native_str()),
-                            _ => None,
-                        }
-                    {
-                        keys.push(key_syms::literal_native());
-                        keys.push(nt);
-                    }
-                    raw.clone()
-                }
+                _ => raw.clone(),
             };
             // A `ContainerRef` argument (a variable boxed into a shared cell,
             // e.g. one a closure captured) type-checks by its CONTENTS
@@ -202,6 +180,23 @@ impl Interpreter {
                 a
             };
             let a = &a;
+            // The call-site mask also describes declared-native variables.
+            // A light frame may omit their env type record, leaving a VarRef
+            // with no declared constraint; its native bit must still differ
+            // from an untyped VarRef's key, or either can reuse the other's
+            // winner (#13776). Key the mask after unwrapping every argument.
+            if pos_idx < 32
+                && self.literal_native_args & (1 << pos_idx) != 0
+                && let Some(native) = match a.view() {
+                    ValueView::Int(_) => Some(key_syms::native_int()),
+                    ValueView::Num(_) => Some(key_syms::native_num()),
+                    ValueView::Str(_) => Some(key_syms::native_str()),
+                    _ => None,
+                }
+            {
+                keys.push(key_syms::literal_native());
+                keys.push(native);
+            }
             // A native `array[T]` is held in the `Array` representation but is
             // a different type (`array` is not a `List`), so it keys by its own
             // declared type: `(List:D $a)` and `(array:D $a)` must not share a

@@ -82,6 +82,30 @@ impl TrKind {
     pub(crate) fn is_native(self) -> bool {
         matches!(self, TrKind::Int | TrKind::Num)
     }
+
+    /// Box a word read from a native argument slot.
+    // Cost: O(1).
+    pub(super) fn box_native(self, bits: i64) -> Value {
+        if self == TrKind::Num {
+            Value::num(f64::from_bits(bits as u64))
+        } else {
+            Value::int(bits)
+        }
+    }
+
+    /// Restore a native argument slot after an `is rw` call.
+    // Cost: O(1).
+    pub(super) fn unbox_native(self, value: &Value) -> Option<i64> {
+        if self == TrKind::Num {
+            value.as_num().map(|number| number.to_bits() as i64)
+        } else {
+            match value.view() {
+                crate::value::ValueView::Int(number) => Some(number),
+                crate::value::ValueView::Bool(boolean) => Some(i64::from(boolean)),
+                _ => None,
+            }
+        }
+    }
 }
 
 pub(crate) use op::{TrCmp, TrOp};
@@ -100,12 +124,12 @@ pub(crate) enum TrArg {
     /// Already evaluated onto the operand stack of this kind's bank.
     Value(TrKind),
     /// This frame's native slot.
-    Native(u16),
+    Native(u16, TrKind),
     /// This frame's boxed slot.
     Obj(u16),
     /// A native reference this frame already holds — its own `is rw`
     /// parameter, handed on.
-    Ref(u16),
+    Ref(u16, TrKind),
     /// This frame's free variable (an index into the chunk's `outers`),
     /// passed by variable to a generic callee: an `is rw` parameter binds
     /// the variable's store-owned cell, anything else its value (#10372).
@@ -133,6 +157,8 @@ pub(crate) struct TrInnerCall {
     pub(crate) name: Symbol,
     /// The arguments, in signature order.
     pub(crate) args: Vec<TrArg>,
+    /// Positions supplied by native declarations, as on a VM call site.
+    pub(crate) native_args: u32,
     /// The kind the call leaves on a bank.
     pub(crate) result: TrKind,
 }
