@@ -8,10 +8,11 @@ plan 14;
 
 my $task-dir = '/proc/self/task'.IO;
 # This pins mutsu's shared-reactor architecture: its socket service threads
-# have `sock-` names. Scheduler workers (including an initializing worker
-# still named after its creator, or `pool-tick`) are unrelated to listeners.
-# Every listener completes a handshake BEFORE sampling, so its accept
-# machinery has run and its socket thread has already set its own name.
+# have `sock-` names. Scheduler workers and `pool-tick` are unrelated to
+# listeners. Connections are sent one at a time, and every listener completes
+# its handshake BEFORE the next connection or sample: both its accept thread
+# and the worker handling that event have run and set their own names. This
+# also covers a worker briefly inheriting the reactor's `sock-conn` name.
 sub socket-thread-count() {
     $task-dir.dir.grep({ ((try .add('comm').slurp.chomp) // '').starts-with('sock-') }).elems
 }
