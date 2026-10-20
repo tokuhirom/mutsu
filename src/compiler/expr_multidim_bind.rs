@@ -20,7 +20,14 @@ impl Compiler {
         // value, even when the expression names a writable scalar container.
         self.compile_expr(&Expr::Call {
             name: *marker,
-            args: vec![args[0].clone(), Expr::Literal(Value::NIL)],
+            args: vec![
+                Expr::Call {
+                    name: Symbol::intern("nqp::decont"),
+                    args: vec![args[0].clone()],
+                    listop: false,
+                },
+                Expr::Literal(Value::NIL),
+            ],
             listop: false,
         });
         for dimension in dimensions.iter().rev() {

@@ -5442,7 +5442,14 @@ impl Interpreter {
                     .map(|c| Value::container_ref_bound_itemized(c.clone()))
                     .unwrap_or_else(|| {
                         if is_bind_value {
-                            Value::bound_element(val.deref_container())
+                            // An indexed RHS already owns its promoted leaf
+                            // cell. Existing paths bind that cell, including
+                            // cyclic structures whose leaf is later replaced.
+                            if !binding_creates_path {
+                                Value::bound_element(val.clone())
+                            } else {
+                                Value::bound_element(val.deref_container())
+                            }
                         } else {
                             val.clone()
                         }

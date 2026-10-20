@@ -1,5 +1,5 @@
 use Test;
-plan 44;
+plan 47;
 
 {
     my @s[2;2];
@@ -140,4 +140,14 @@ plan 44;
     dies-ok { %h<a><b> = 3 }, 'binding a whole Array does not invent a writable Scalar';
     @source.push(3);
     is %h<a><b>.raku, '$[1, 2, 3]', 'the bound aggregate retains its identity and itemization';
+}
+{
+    my $tree = [ { branch => { leaf => [0, 1], label => 'old' }, extra => 0 }, 0 ];
+    $tree[0]<branch><leaf>[1] := $tree[0]<branch>;
+    is $tree[0]<branch><leaf>[1]<label>, 'old',
+        'an indexed source retains its leaf container in a cyclic bind';
+    $tree[0]<branch><leaf>[1]<label> = 'new';
+    is $tree[0]<branch><label>, 'new', 'the cyclic binding shares nested mutations';
+    $tree[0]<branch><leaf>[1] = 23;
+    is $tree[0]<branch>, 23, 'replacing the bound leaf writes through its indexed source';
 }
