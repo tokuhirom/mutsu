@@ -130,7 +130,12 @@ impl Interpreter {
         } else {
             role_name_str
         };
-        if self.registry().classes.contains_key(&role_name_str) {
+        // A role that was called as a type object (`R.method`) also has a
+        // class of the same name, its pun. That is still the role: composing
+        // it must merge its attributes (#14076), not record a class parent.
+        if self.registry().classes.contains_key(&role_name_str)
+            && !self.registry().roles.contains_key(&role_name_str)
+        {
             self.registry_mut()
                 .role_parents
                 .entry(name.to_string())
