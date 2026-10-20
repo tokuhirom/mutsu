@@ -17,7 +17,7 @@ pub(crate) use crate::value::array_coerce::MAX_LAZY_RANGE_PREFIX;
 /// that run per store and per closure call: the caller probes the env with
 /// `get_sym` / `contains_key_sym` / `remove_sym` and writes with
 /// `insert_sym_noting`, so neither the key string nor its hash is rebuilt
-/// (#8087). [`MetaNs`] memoizes the mapping.
+/// (#8087). [`crate::meta_ns::MetaNs`] memoizes the mapping.
 pub(crate) fn sigilless_alias_key(name: &str) -> crate::symbol::Symbol {
     crate::meta_ns::MetaNs::SigillessAlias.key_for_str(name)
 }
