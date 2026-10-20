@@ -378,7 +378,11 @@ impl Interpreter {
         // its own rows and dispatcher, which need the interpreter (a supply
         // materializes, taps or schedules); the pure cascades would read it as
         // one item (`Supply.batch` on the type object, ADR-11276 §9.168).
-        if crate::builtins::method_table::supply_owners_of(target).is_some() {
+        if target
+            .receiver_shape()
+            .or_else(|| target.type_object_shape())
+            == Some(crate::value::DispatchShape::Supply)
+        {
             return None;
         }
         // Lazy Match: class is statically "Match" — mirror the Instance

@@ -1,8 +1,8 @@
 //! `Supply.list` (ADR-11276 §9.55) and the rest of `Supply`'s methods
 //! (§9.130).
 //!
-//! Every method of a `Supply` instance is an `OWNER_ONLY` row found by its
-//! owner (`owners_of`) before the by-name dispatch, whose handler is
+//! A `Supply` has an opaque dispatch shape (`DispatchShape::is_opaque`), so
+//! every call entry reaches its rows through the table; each handler is
 //! `Interpreter::supply_call`: the routine that answered the name before, one
 //! per method, so a variable and a temporary receiver reach the same answer.
 //! The methods read their positional and named arguments as one list, so the
@@ -24,15 +24,15 @@ type Answer = Option<Result<Value, RuntimeError>>;
 
 macro_rules! row {
     ($name:literal, $op:ident $(, named: $named:expr)?) => {
-        row!(@row $name, $op, RowFlags::OWNER_ONLY.or(RowFlags::SLURPY) $(, $named)?)
+        row!(@row $name, $op, RowFlags::SLURPY.or(ARGS) $(, $named)?)
     };
     // `Supply:D:` (`Supply.tap` is `X::Parameter::InvalidConcreteness`).
     ($name:literal, $op:ident, definite $(, named: $named:expr)?) => {
         row!(
             @row $name,
             $op,
-            RowFlags::OWNER_ONLY
-                .or(RowFlags::SLURPY)
+            RowFlags::SLURPY
+                .or(ARGS)
                 .or(RowFlags::DEFINITE)
             $(, $named)?
         )
@@ -42,8 +42,8 @@ macro_rules! row {
         row!(
             @row $name,
             $op,
-            RowFlags::OWNER_ONLY
-                .or(RowFlags::SLURPY)
+            RowFlags::SLURPY
+                .or(ARGS)
                 .or(RowFlags::DEFINITE_MULTI)
             $(, $named)?
         )
@@ -52,8 +52,8 @@ macro_rules! row {
         row!(
             @row $name,
             $op,
-            RowFlags::OWNER_ONLY
-                .or(RowFlags::SLURPY)
+            RowFlags::SLURPY
+                .or(ARGS)
                 .or(RowFlags::TYPE_OBJECT_OK)
             $(, $named)?
         )
@@ -63,8 +63,8 @@ macro_rules! row {
         row!(
             @row $name,
             $op,
-            RowFlags::OWNER_ONLY
-                .or(RowFlags::SLURPY)
+            RowFlags::SLURPY
+                .or(ARGS)
                 .or(RowFlags::ANY_NAMED)
         )
     };
@@ -95,6 +95,10 @@ macro_rules! row {
     };
 }
 
+/// A handler reads its arguments itself, as `supply_call` did before the
+/// shape existed.
+const ARGS: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS);
+
 /// The named arguments of `unique`, and of `repeated` and `squish` without
 /// `:expires`.
 const AS_WITH: &[&str] = &["as", "with"];
@@ -105,7 +109,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "list",
         arity: 0,
         handler: Handler::Interp(list),
-        flags: RowFlags::OWNER_ONLY,
+        flags: RowFlags::NONE,
         named: &[],
     },
     row!("map", Map, definite),
@@ -165,17 +169,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Channel", Channel),
     row!("Supply", Supply),
 ];
-
-/// `Supply`'s rows for a `Supply` instance or the `Supply` type object; `None`
-/// for anything else.
-// Cost: O(1).
-pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
-    match target.view() {
-        ValueView::Instance { class_name, .. } if class_name == "Supply" => Some(&["Supply"]),
-        ValueView::Package(name) if name == "Supply" => Some(&["Supply"]),
-        _ => None,
-    }
-}
 
 /// `Supply.list`: the values materialized, drained from a live channel, or
 /// collected by running an on-demand body (`Interpreter::supply_materialize`).

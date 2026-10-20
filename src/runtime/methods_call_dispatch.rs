@@ -1086,20 +1086,6 @@ impl Interpreter {
             return result;
         }
 
-        // `Supply`'s methods are rows, found by their owner (ADR-11276 §9.130).
-        // A `Supply:D:` row refuses the type object (`RowFlags::DEFINITE`,
-        // `Supply.tap`).
-        if let Some(owners) = crate::builtins::method_table::supply_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
-        }
         // The positional protocol of a list or array: `Any`'s late rows for
         // multi-dimensional indices, a shaped array's bounds and a native
         // array's refusals (ADR-11276 §9.138).

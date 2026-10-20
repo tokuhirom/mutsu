@@ -259,13 +259,17 @@ pub(crate) enum DispatchShape {
     DistributionHash,
     /// `Distribution::Path` (opaque).
     DistributionPath,
+    /// `Supply` (opaque).
+    Supply,
+    /// `Proc::Async` (opaque).
+    ProcAsync,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 77] = [
+    pub(crate) const ALL: [DispatchShape; 79] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -343,6 +347,8 @@ impl DispatchShape {
         DispatchShape::LazyDistribution,
         DispatchShape::DistributionHash,
         DispatchShape::DistributionPath,
+        DispatchShape::Supply,
+        DispatchShape::ProcAsync,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched

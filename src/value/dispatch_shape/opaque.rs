@@ -75,6 +75,8 @@ pub(super) const fn opaque(
         ),
         S::DistributionHash => ("Distribution::Hash", &["Distribution::Hash"]),
         S::DistributionPath => ("Distribution::Path", &["Distribution::Path"]),
+        S::Supply => ("Supply", &["Supply"]),
+        S::ProcAsync => ("Proc::Async", &["Proc::Async"]),
         _ => return None,
     })
 }

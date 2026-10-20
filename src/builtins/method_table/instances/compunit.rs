@@ -50,7 +50,15 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("CompUnit", "repo-id", Handler::Narrow(repo_id)),
     row!("CompUnit", "distribution", Handler::Narrow(distribution)),
     row!("CompUnit", "precompiled", Handler::Narrow(precompiled)),
-    row!("CompUnit", "handle", Handler::Narrow(handle)),
+    // A new `CompUnit::Handle` each call: an identity of its own.
+    MethodRow {
+        owner: "CompUnit",
+        name: "handle",
+        arity: 0,
+        handler: Handler::Narrow(handle),
+        flags: RowFlags::RANDOM,
+        named: &[],
+    },
 ];
 
 /// The attribute `key` of the instance, `None` inside when it was not set.

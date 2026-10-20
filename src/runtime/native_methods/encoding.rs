@@ -13,7 +13,6 @@ impl Interpreter {
     ) -> Option<&'static [&'static str]> {
         crate::builtins::method_table::opaque_owners_of(target)
             .or_else(|| crate::builtins::method_table::proc_async_owners_of(target))
-            .or_else(|| crate::builtins::method_table::supply_owners_of(target))
             .or_else(|| crate::builtins::method_table::supplier_owners_of(target))
             .or_else(|| self.encoding_owners_of(target))
     }
