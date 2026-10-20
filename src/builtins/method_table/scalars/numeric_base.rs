@@ -173,7 +173,7 @@ fn int_radix(arg: &Value) -> Option<Value> {
             value: crate::value::EnumValue::Int(i),
             ..
         } => Some(Value::int(*i)),
-        ValueView::Mixin(inner, _) => int_radix(&inner),
+        ValueView::Mixin(inner, _) => int_radix(inner),
         _ => None,
     }
 }
