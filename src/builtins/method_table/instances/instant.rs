@@ -217,7 +217,15 @@ fn of_seconds_with(
 /// `Real.base($radix)`: the seconds written in that radix.
 // Cost: O(d), d = digits written.
 fn base_with(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    of_seconds_with(target, args, "base")
+    let [radix] = args else {
+        return None;
+    };
+    match crate::builtins::method_table::numeric_base::bind_real_radix(radix) {
+        Ok(radix) => {
+            crate::builtins::method_table::numeric_base::base_of(&seconds(target), &radix, None)
+        }
+        Err(err) => Some(Err(err)),
+    }
 }
 
 /// `Real.base($radix, $digits)`: the seconds written in that radix with that many
@@ -227,7 +235,14 @@ fn base_with_digits(target: &Value, args: &[Value]) -> Option<Result<Value, Runt
     let [radix, digits] = args else {
         return None;
     };
-    crate::builtins::method_table::numeric_base::base_of(&seconds(target), radix, Some(digits))
+    match crate::builtins::method_table::numeric_base::bind_real_radix(radix) {
+        Ok(radix) => crate::builtins::method_table::numeric_base::base_of(
+            &seconds(target),
+            &radix,
+            Some(digits),
+        ),
+        Err(err) => Some(Err(err)),
+    }
 }
 
 /// `Real.Rat($epsilon)`.

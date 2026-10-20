@@ -373,6 +373,27 @@ impl Interpreter {
                 _ => divisors.push(arg.clone()),
             }
         }
+        // A Str divisor is the number it numifies to (`3.5.polymod("2")`
+        // divides by the Int 2); one that is no number raises
+        // `X::Str::Numeric` for a fractional receiver, whose `mod` numifies
+        // it. `Int.polymod` leaves such a divisor to the loop below.
+        let receiver_is_int = matches!(
+            target.view(),
+            ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_)
+        );
+        for d in &mut divisors {
+            let text = match d.view() {
+                ValueView::Str(text) => text.to_string(),
+                _ => continue,
+            };
+            match crate::value::str_numeric::parse_raku_str_to_numeric(&text) {
+                Some(number) => *d = number,
+                None if !receiver_is_int => {
+                    return Err(crate::builtins::methods_0arg::str_numeric_error(&text));
+                }
+                None => {}
+            }
+        }
         // Exact path: when the invocant and every divisor are non-negative
         // Int/Rat and the list is finite, do the decomposition in exact rational
         // arithmetic so results like `5.Rat.polymod(.3, .2)` stay `(0.2 0 80)`

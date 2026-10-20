@@ -2,7 +2,12 @@
 //! `FatRat`, and `base-repeating` on `Rat` (ADR-11276 §9.70, §9.104).
 //!
 //! `base($radix)` and `base($radix, $digits)` are two arities of one routine,
-//! [`base_of`]. A bad radix is the `X::OutOfRange` `Failure` Rakudo answers. The
+//! [`base_of`]. The radix is bound first, as each owner's signature binds it
+//! ([`bind_radix`]): `Int`'s candidates coerce it (`Int(Cool) $base`),
+//! `Rational`'s take only an `Int:D` (any other is `X::Multi::NoMatch`), and
+//! `Num`'s and `Real`'s parameter is `Int:D $base` (any other is
+//! `X::TypeCheck::Binding::Parameter`). A radix out of range is the
+//! `X::OutOfRange` `Failure` Rakudo answers. The
 //! cascade arms keep the receivers the table has no shape for (an `Instant` or
 //! `Duration` has rows of its own; a user subclass is an instance) and call the
 //! same routines.
@@ -73,6 +78,9 @@ fn base_named(
     args: &[Value],
     named: crate::builtins::method_table::Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
+    if let Err(err) = bind_radix(target, &args[0]) {
+        return Some(Err(err));
+    }
     if !named.pairs().is_empty() {
         let mut all = args.to_vec();
         all.extend_from_slice(named.pairs());
@@ -141,12 +149,125 @@ pub(super) static FAT_RAT_REPEATING_ROWS: &[MethodRow] = &[
 ];
 
 fn base_1(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    base_of(target, &args[0], None)
+    match bind_radix(target, &args[0]) {
+        Ok(radix) => base_of(target, &radix, None),
+        Err(err) => Some(Err(err)),
+    }
 }
 
 fn base_2(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    base_of(target, &args[0], Some(&args[1]))
+    match bind_radix(target, &args[0]) {
+        Ok(radix) => base_of(target, &radix, Some(&args[1])),
+        Err(err) => Some(Err(err)),
+    }
 }
+
+/// The `Int` an `Int:D` radix argument stands for: an `Int`, a `Bool`, an
+/// `Int`-valued enum or an `IntStr`; `None` for any other value.
+// Cost: O(1), a tag probe.
+fn int_radix(arg: &Value) -> Option<Value> {
+    match arg.view() {
+        ValueView::Int(_) | ValueView::BigInt(_) => Some(arg.clone()),
+        ValueView::Bool(b) => Some(Value::int(i64::from(b))),
+        ValueView::Enum {
+            value: crate::value::EnumValue::Int(i),
+            ..
+        } => Some(Value::int(*i)),
+        ValueView::Mixin(inner, _) => int_radix(inner),
+        _ => None,
+    }
+}
+
+/// Bind `.base`'s radix argument the way the receiver's candidates do: the
+/// `Int` radix for the rows to read, or the error binding it raises. A type
+/// object and an argument of a kind the signatures do not name keep the old
+/// answer (the radix as given, which [`radix_arg`] reads).
+// Cost: O(n) to numify a Str radix, n = its chars; O(1) otherwise.
+pub(crate) fn bind_radix(target: &Value, radix: &Value) -> Result<Value, RuntimeError> {
+    if let Some(radix) = int_radix(radix) {
+        return Ok(radix);
+    }
+    match target.view() {
+        // `Int(Cool) $base`: a Str numifies, a fraction truncates.
+        ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_) => int_cool_radix(radix),
+        ValueView::Rat(..) => rational_radix("Rat", radix),
+        ValueView::FatRat(..) | ValueView::BigRat(..) => rational_radix("FatRat", radix),
+        ValueView::Num(_) => bind_real_radix(radix),
+        _ => Ok(radix.clone()),
+    }
+}
+
+/// `Num.base` and `Real.base` (an `Instant`, a `Duration`): `Int:D $base`.
+// Cost: O(t) to render a refused argument, t = its `.raku` length; O(1) otherwise.
+pub(crate) fn bind_real_radix(radix: &Value) -> Result<Value, RuntimeError> {
+    if let Some(radix) = int_radix(radix) {
+        return Ok(radix);
+    }
+    if radix_is_unbound(radix) {
+        return Ok(radix.clone());
+    }
+    Err(
+        crate::runtime::utils::typecheck_binding_parameter_with_hint(
+            "$base",
+            "Int",
+            radix,
+            &crate::runtime::utils::value_short_repr(radix),
+            None,
+        ),
+    )
+}
+
+/// Whether binding leaves `radix` to [`radix_arg`]: a type object or `Nil`,
+/// whose messages differ per candidate, or a value no candidate names.
+// Cost: O(1), a tag probe.
+fn radix_is_unbound(radix: &Value) -> bool {
+    !matches!(
+        radix.view(),
+        ValueView::Str(_) | ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::Num(_)
+    )
+}
+
+/// `Int(Cool) $base`: a numeric Str numifies (a bad one raises
+/// `X::Str::Numeric`), and a fraction truncates to its `Int`.
+// Cost: O(n) for a Str radix, n = its chars; O(1) otherwise.
+fn int_cool_radix(radix: &Value) -> Result<Value, RuntimeError> {
+    let number = match radix.view() {
+        ValueView::Str(s) => crate::value::str_numeric::parse_raku_str_to_numeric(&s)
+            .ok_or_else(|| crate::builtins::methods_0arg::str_numeric_error(&s))?,
+        _ => radix.clone(),
+    };
+    let truncated = match number.view() {
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => Value::int(n / d),
+        ValueView::Num(f) if f.is_finite() => Value::int(f.trunc() as i64),
+        _ => number.clone(),
+    };
+    Ok(truncated)
+}
+
+/// `Rational.base`: every candidate takes `Int:D $base`, so any other radix has
+/// no candidate.
+// Cost: O(1).
+fn rational_radix(type_name: &str, radix: &Value) -> Result<Value, RuntimeError> {
+    if radix_is_unbound(radix) {
+        return Ok(radix.clone());
+    }
+    Err(
+        crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+            "base",
+            type_name,
+            true,
+            &format!("{}:D", crate::value::types::what_type_name(radix)),
+            &RATIONAL_BASE_SIGNATURES.map(str::to_string),
+        ),
+    )
+}
+
+/// The candidates `Rational.base` lists in its dispatch failure.
+const RATIONAL_BASE_SIGNATURES: [&str; 3] = [
+    "(Rational:D $:: Int:D $base, *%_ --> Str:D)",
+    "(Rational:D $:: Int:D $base, Whatever, *%_ --> Str:D)",
+    "(Rational:D $:: Int:D $base, Int(Any) $digits, Bool:D :$no-trailing-zeroes = Bool::False, *%_ --> Str:D)",
+];
 
 fn base_repeating_0(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     base_repeating_of(target, &Value::int(10))
