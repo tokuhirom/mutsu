@@ -2548,9 +2548,6 @@ impl Interpreter {
                     String,
                     crate::gc::Gc<crate::value::ContainerCell>,
                 )> = None;
-                // Whether the bind stored a shared cell at the element (skips
-                // the bound-index side table — the cell IS the alias).
-                let mut stored_bind_cell = false;
                 // Pre-read the bind source before the mutable container borrow.
                 // An element source (`:= @b[j]`) arrives already promoted to a
                 // shared cell by IndexAutovivifyLazyTerminal; a source variable
@@ -2860,7 +2857,6 @@ impl Interpreter {
                                 bind_cell.as_ref().map(|(_, cell)| cell),
                             )?;
                             if bind_mode && let Some((source_install, cell)) = &bind_cell {
-                                stored_bind_cell = true;
                                 pending_source_cell = source_install
                                     .as_ref()
                                     .map(|name| (name.clone(), cell.clone()));
@@ -2960,7 +2956,6 @@ impl Interpreter {
                                         // `resolve_array_entry`; writes go
                                         // through the cell arm below.
                                         arr[i] = Value::container_ref(cell.clone());
-                                        stored_bind_cell = true;
                                         if let Some(source_name) = source_install {
                                             pending_source_cell =
                                                 Some((source_name.clone(), cell.clone()));
