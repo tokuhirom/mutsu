@@ -206,13 +206,15 @@ pub(crate) fn bind_real_radix(radix: &Value) -> Result<Value, RuntimeError> {
     if radix_is_unbound(radix) {
         return Ok(radix.clone());
     }
-    Err(crate::runtime::utils::typecheck_binding_parameter_with_hint(
-        "$base",
-        "Int",
-        radix,
-        &crate::runtime::utils::value_short_repr(radix),
-        None,
-    ))
+    Err(
+        crate::runtime::utils::typecheck_binding_parameter_with_hint(
+            "$base",
+            "Int",
+            radix,
+            &crate::runtime::utils::value_short_repr(radix),
+            None,
+        ),
+    )
 }
 
 /// Whether binding leaves `radix` to [`radix_arg`]: a type object or `Nil`,
