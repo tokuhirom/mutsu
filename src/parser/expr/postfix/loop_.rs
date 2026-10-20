@@ -3184,9 +3184,16 @@ fn postfix_expr_loop_from(
                                     .collect(),
                             )]
                         };
+                        // `».<a b>` slices each element (`.{'a','b'}`); a bare
+                        // `AT-KEY` would look up the list as one key.
+                        let slice = args.len() == 1 && matches!(args[0], Expr::ArrayLiteral(_));
                         expr = Expr::HyperMethodCall {
                             target: Box::new(expr),
-                            name: Symbol::intern("AT-KEY"),
+                            name: Symbol::intern(if slice {
+                                "postcircumfix:<{ }>"
+                            } else {
+                                "AT-KEY"
+                            }),
                             args,
                             modifier,
                             quoted: false,
