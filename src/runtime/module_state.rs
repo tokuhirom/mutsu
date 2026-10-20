@@ -416,6 +416,13 @@ pub(crate) struct ModuleState {
     /// `OpCode::LexImportCall` sites lexically inside the block read it.
     pub(crate) lexical_import_sets:
         HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
+    /// The values a `sub EXPORT` hook returned for the names the importing
+    /// block declares itself (ADR-8751), keyed by the use's lexical import
+    /// set id and then by the name's declaration key (`x`, `@a`, the term key
+    /// of a sigilless one). Refilled by every run of the `use`; the block's
+    /// `OpCode::GetHookExport` bindings read it.
+    pub(crate) lexical_import_hook_values:
+        HashMap<Symbol, std::sync::Arc<HashMap<Symbol, Value>>>,
     /// The ids of the `lexical_import_sets` that bind a built-in operator's
     /// dispatcher (ADR-8751 stage 2). A built-in op compiled under an import
     /// chain asks the chain only while one exists (#13906).
@@ -627,6 +634,7 @@ impl ModuleState {
             imported_exported_proto_tags: Default::default(),
             imported_env_aliases: Default::default(),
             lexical_import_sets: HashMap::new(),
+            lexical_import_hook_values: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
@@ -715,6 +723,7 @@ impl ModuleState {
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             imported_env_aliases: self.imported_env_aliases.clone(),
             lexical_import_sets: self.lexical_import_sets.clone(),
+            lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),

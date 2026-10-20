@@ -384,6 +384,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                             package: self.prefix.clone(),
                             tags: export_tags.clone(),
                             term: crate::term_names::is_term_constant_decl(name, custom_traits),
+                            hook: false,
                         });
                 }
                 // Sigiled constants (`constant $x = 1`) are not barewords.
