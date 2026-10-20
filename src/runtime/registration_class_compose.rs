@@ -75,6 +75,10 @@ pub(super) struct RoleCompositionCx<'a> {
     /// The composing class's own `has` declarations, not yet registered while
     /// its header roles compose (see `run_composed_role_deferred_body`).
     pub(super) pending_attrs: &'a [(Symbol, crate::opcode::CompiledAttrDecl)],
+    /// The composing class's own body, not yet run while its header roles
+    /// compose: a `sub` it declares keeps its name from a role body's copy
+    /// (see `register_role_body_subs_per_composer`).
+    pub(super) class_body_plan: &'a [crate::opcode::ClassBodyOp],
 }
 
 impl Interpreter {

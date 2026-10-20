@@ -82,6 +82,7 @@ impl Interpreter {
             out: RoleCompositionOutcome::default(),
             is_hoisted_shell: cx.is_hoisted_shell,
             pending_attrs: &[],
+            class_body_plan: &[],
         };
         self.compose_role_into_class(
             &mut composition,
