@@ -6749,11 +6749,9 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(m + d + n), m = name bytes, d = ancestor packages, n = their total name bytes.
-            // One-shot per declaration; ancestor names use the cached name index.
+            // Cost: O(m), m = package name bytes.
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.declare_package_ancestors(code.const_sym(*name_idx));
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 if !self.qualified_identity_binding_is_redundant(&name, &name) {
@@ -6770,11 +6768,20 @@ impl Interpreter {
                 self.set_current_package(name);
                 *ip += 1;
             }
-            // Cost: O(1) avg (O(R) copy-on-write when the registry Arc is shared, R = registry
+            // Cost: O(m + d + n) avg, m = name bytes, d = ancestor packages,
+            // n = their total name bytes
+            // (O(R) copy-on-write when the registry Arc is shared, R = registry
             // size; O(P) copy-on-write of the provenance table, P = attributed names, when a
             // module-attributed name is redeclared).
-            OpCode::SetPackageKind { name_idx, kind } => {
+            OpCode::SetPackageKind {
+                name_idx,
+                kind,
+                declare_ancestors,
+            } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                if *declare_ancestors {
+                    self.declare_package_ancestors(code.const_sym(*name_idx));
+                }
                 self.release_foreign_provenance(&name);
                 self.registry_mut().package_kinds.insert(name, *kind);
                 *ip += 1;

@@ -41,6 +41,11 @@ isa-ok $stash-index.operand, RakuAST::Term::Name, 'stash lookup retains its name
 isa-ok $stash-index.postfix, RakuAST::Postcircumfix::LiteralHashIndex,
     'a missing stash key remains a subscript rather than a qualified name';
 
+my $manual-export = Q[use lib 't/lib'; use ManualExportStashVarMod :special; Answer];
+isa-ok $manual-export.AST.statements[2].expression, RakuAST::Term::Name,
+    'a static module scan recognizes a retained stash bind as a value export';
+is EVAL($manual-export.AST), 42, 'a statically discovered stash export evaluates';
+
 for
     Q[Distribution::Resource.^name], 'Distribution::Resource',
     Q[Distribution::Resources.^name], 'Distribution::Resources',
@@ -84,6 +89,10 @@ for
     throws-like { EVAL($source.subst('Namespace', 'OrdinaryNamespace', :g)) }, $exception, 'ordinary declaration validation: ' ~ $source;
     throws-like { EVAL($source.AST) }, $exception, 'AST declaration validation: ' ~ $source;
 }
+
+EVAL(q[{ my package NamespacePrivate::Child {} }]);
+throws-like { EVAL('NamespacePrivate') },
+    X::Undeclared::Symbols, 'a private qualified package does not publish a global ancestor';
 
 throws-like { EVAL('package NamespaceSemicolon; 42') }, X::UnitScope::MustHaveUnit,
     'top-level semicolon package requires unit';

@@ -6,7 +6,7 @@ use super::DeclScan;
 use crate::ast::Expr;
 
 impl DeclScan {
-    // Cost: O(1) per expression, plus the length of a stash key it reads.
+    // Cost: O(n), n = bytes of the method, package and key names inspected.
     pub(super) fn scan_expr(&mut self, expr: &Expr) {
         match expr {
             // An L10N distribution's generated EXPORT hook calls
@@ -17,6 +17,25 @@ impl DeclScan {
                 if name.resolve() == "define_slang" =>
             {
                 self.out.defines_slang = true;
+            }
+            // Literal package subscripts keep their IndexAssign form. Read
+            // only the key: neither BEGIN nor the initializer runs in a scan.
+            Expr::IndexAssign { target, index, .. }
+                if matches!(target.as_ref(), Expr::PseudoStash(stash)
+                    if stash.strip_suffix("::").is_some_and(is_export_stash_package)) =>
+            {
+                if let Expr::Literal(key) = index.as_ref()
+                    && let Some(key) = key.as_str()
+                {
+                    if let Some(routine) = key.strip_prefix('&').filter(|name| !name.is_empty()) {
+                        self.export(routine.to_string());
+                    } else if !key.is_empty()
+                        && !key.starts_with(['$', '@', '%'])
+                        && !crate::qualified::is_qualified_str(key)
+                    {
+                        self.out.constant_names.push(key.to_string());
+                    }
+                }
             }
             // `OUR::{'&infix:<@~~>'} := ...` in an export stash binds that
             // routine into the tag's export list like an `our sub` declared
@@ -67,5 +86,25 @@ impl DeclScan {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn literal_export_stash_bindings_are_static() {
+        let _no_execute = crate::parser::no_execute::NoExecuteGuard::enter();
+        let (stmts, _) = crate::parser::parse_program(
+            "BEGIN { die 'a declaration scan must not execute'; \
+             EXPORT::special::<Answer> := 42; \
+             EXPORT::special::{'Other'} := 17; \
+             EXPORT::special::<&helper> := sub { 42 } }",
+        )
+        .unwrap();
+        let decls = super::super::scan_module_decls(&stmts);
+        assert!(decls.constant_names.iter().any(|name| name == "Answer"));
+        assert!(decls.constant_names.iter().any(|name| name == "Other"));
+        assert!(decls.exports.contains_key("helper"));
+        assert!(!decls.dynamic_export_stash);
     }
 }

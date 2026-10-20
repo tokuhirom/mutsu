@@ -1533,7 +1533,7 @@ its own optional constraint constant, including an explicit absence, rather
 than attaching a caller's same-named type. Split runtime package bodies carry
 their own `our` aliases separately from their private lexicals: compilation
 hides caller slots for both, but binds only private lexicals from the static
-store. The cache format advances to 37.
+store. The cache format advances to 38.
 
 Class-body exit restores the bare aliases of top-level `our` declarations
 while preserving their qualified storage and changes to shared outer cells.
@@ -1563,6 +1563,9 @@ Literal package stash subscripts remain index expressions rather than becoming
 qualified-name lookups, so an absent member yields Nil. EVAL's caller namespace
 classification includes the generated export indexes without declaring them
 as user packages.
+The static module scan reads retained literal stash assignments as export
+names without executing BEGIN or an initializer. Ancestor publication belongs
+to the package-kind operation and carries explicit public/private provenance.
 The existing relative-class regression now measures constructor dispatch
 against Rakudo instead of accepting a fabricated package value's name.
 Post-declaration checks include modules and packages, and semicolon forms

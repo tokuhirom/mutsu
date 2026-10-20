@@ -3954,6 +3954,7 @@ pub(crate) enum OpCode {
     SetPackageKind {
         name_idx: u32,
         kind: crate::ast::PackageKind,
+        declare_ancestors: bool,
     },
     /// Register a lexically-scoped (`my`) package type object.
     /// Same as RegisterPackage but marks the name as block-declared

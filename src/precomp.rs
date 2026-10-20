@@ -136,7 +136,8 @@ pub(crate) fn interpreter_version() -> String {
     // 35: split package runtime bodies carry their own our aliases.
     // 36: package declarations and bytecode retain executable traits.
     // 37: class/role plans distinguish compiler-qualified declaration names.
-    const CACHE_FORMAT_VERSION: u32 = 37;
+    // 38: package kind declarations carry ancestor-publication provenance.
+    const CACHE_FORMAT_VERSION: u32 = 38;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

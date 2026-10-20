@@ -3808,6 +3808,7 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: true,
                     });
                     self.emit_package_traits(name_idx, custom_traits);
                     // Keep the runtime package in step with the compiler's, so
@@ -3821,6 +3822,7 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: true,
                     });
                     self.emit_package_traits(name_idx, custom_traits);
                     self.code.emit(OpCode::RegisterPackageStub { name_idx });
@@ -3835,6 +3837,7 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: !*is_my,
                     });
                     self.emit_package_traits(name_idx, custom_traits);
                     // Clear any previous stub status for this package
