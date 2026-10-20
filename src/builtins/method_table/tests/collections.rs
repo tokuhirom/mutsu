@@ -70,7 +70,12 @@ fn aggregate_rows_resolve_to_the_rakudo_owners() {
 
 #[test]
 fn hash_sum_rejects_its_pair_list() {
-    let result = try_dispatch(&sample(DispatchShape::Hash), Symbol::intern("sum"), &[]);
+    // The receiver step reads the Hash as its pairs first (`Any.sum` is
+    // `self.list.sum`), so the pure entry that runs it answers.
+    let result = crate::builtins::methods_0arg::native_method_0arg(
+        &sample(DispatchShape::Hash),
+        Symbol::intern("sum"),
+    );
     assert!(
         matches!(result, Some(Err(_))),
         "Hash.sum should reject Pairs"

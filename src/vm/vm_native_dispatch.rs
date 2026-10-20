@@ -25,27 +25,25 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let _region = crate::profile::enter(crate::profile::Region::NativeBuiltin);
-        // A `Cool` method on a user subclass of `IO::Path` runs on its path (#12149).
-        if let Some(path) = self.io_path_subclass_cool_receiver(target, method_sym.as_str()) {
-            return self.try_native_method(&path, method_sym, args);
-        }
-        // A `Channel` subclass's list coercions read its channel (#13634).
-        if let Some(result) = Self::channel_subclass_coercion(target, method_sym.as_str()) {
-            return Some(result);
-        }
-        // A `Match` answers `Any`'s `self.list.METHOD` methods on its positional
-        // captures (ADR-11276 §9.98).
-        if let Some(list) = self.match_list_receiver(target, method_sym.as_str()) {
-            if args.is_empty()
-                && crate::value::match_view::match_list_answers_itself(method_sym.as_str())
-            {
-                return Some(Ok(list));
+        // The receiver step (ADR-11276 §2.4, `method_table::receiver_step`):
+        // a container is transparent, a hash-like receiver and a `Match`
+        // answer `Any`'s `self.list.METHOD` methods on their list, an enum
+        // member and a user `IO::Path` subclass delegate to the value standing
+        // in for them, and a `Channel` subclass coerces its channel. The
+        // container's own `.raku` is the renderer's, below.
+        match crate::builtins::method_table::receiver_step::step_in(
+            self,
+            target,
+            method_sym.as_str(),
+            args.len(),
+        ) {
+            Some(crate::builtins::method_table::receiver_step::Step::Redirect(receiver, _)) => {
+                return self.try_native_method(&receiver, method_sym, args);
             }
-            return self.try_native_method(&list, method_sym, args);
-        }
-        // A member of a `my Array enum` answers the base type's collection methods.
-        if let Some(base) = Self::enum_aggregate_base(target, method_sym.as_str()) {
-            return self.try_native_method(&base, method_sym, args);
+            Some(crate::builtins::method_table::receiver_step::Step::Answer(answer)) => {
+                return Some(answer);
+            }
+            Some(crate::builtins::method_table::receiver_step::Step::Itself) | None => {}
         }
         // ADR-0058: a native method reads its ARGUMENTS' elements through pure
         // Rust (the receiver is already handled by

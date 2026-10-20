@@ -1,5 +1,6 @@
 use super::methods_signature_errors::make_multi_no_match_error;
 use super::*;
+use crate::builtins::method_table::receiver_step::{Step, Why};
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
@@ -322,6 +323,28 @@ impl Interpreter {
         }
     }
 
+    /// `.raku` of a `Scalar` container: the `$` sigil of an itemized aggregate
+    /// shows, an element whose repr needs method dispatch (`$[Foo.new]`) is
+    /// rendered through it, and an itemized lazy sequence renders the prefix
+    /// its own `raku` pulls inside `$( )`.
+    // Cost: O(n), n = the rendered text.
+    fn render_scalar_container_raku(
+        &mut self,
+        target: &Value,
+        inner: &Value,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::LazyList(_) = inner.view() {
+            let rendered = self.call_method_with_values(inner.clone(), "raku", Vec::new())?;
+            return Ok(Value::str(format!("$({})", rendered.to_string_value())));
+        }
+        if let Some(rendered) = self.raku_repr_with_dispatch(target) {
+            return Ok(Value::str(rendered));
+        }
+        Ok(Value::str(
+            crate::builtins::methods_0arg::raku_repr::raku_value(target),
+        ))
+    }
+
     fn call_method_with_values_inner(
         &mut self,
         target: Value,
@@ -554,18 +577,34 @@ impl Interpreter {
         {
             return Ok(v);
         }
-        // A `Channel` subclass's list coercions read its channel (#13634).
-        if let Some(result) = Self::channel_subclass_coercion(&target, method) {
-            return result;
-        }
-        // A `Match` answers `Any`'s list methods from its positional captures
-        // (`Interpreter::match_list_receiver`), unless the grammar defines the
-        // method.
-        if let Some(list) = self.match_list_receiver(&target, method) {
-            if args.is_empty() && crate::value::match_view::match_list_answers_itself(method) {
-                return Ok(list);
+        // The receiver step (ADR-11276 §2.4): a container is transparent, a
+        // hash-like receiver and a `Match` answer `Any`'s `self.list.METHOD`
+        // methods on their list, an enum member its base's, a `Channel`
+        // subclass its channel's coercions (`method_table::receiver_step`).
+        match crate::builtins::method_table::receiver_step::step_in(
+            self,
+            &target,
+            method,
+            args.len(),
+        ) {
+            Some(Step::Redirect(receiver, Why::Decont)) => {
+                return self.call_method_with_values_unviewed(receiver, method, args);
             }
-            return self.call_method_with_values(list, method, args);
+            Some(Step::Redirect(receiver, _)) => {
+                return self.call_method_with_values(receiver, method, args);
+            }
+            Some(Step::Answer(answer)) => return answer,
+            Some(Step::Itself) => {
+                if let ValueView::Scalar(inner) = target.view() {
+                    return self.render_scalar_container_raku(&target, inner);
+                }
+                // `$(...)` and `$(%h)` are `Scalar` containers for
+                // introspection, sharing the aggregate's storage.
+                if method == "VAR" {
+                    return Ok(Value::package(Symbol::intern("Scalar")));
+                }
+            }
+            None => {}
         }
         // A receiver with its own `iterator` or `list` (a user class, a
         // `Backtrace`, an `IterationBuffer`, a buffer-backed `CArray`, a role
@@ -574,113 +613,11 @@ impl Interpreter {
         if let Some(result) = self.own_iteration_view(&target, method, &args) {
             return result;
         }
-        // Scalar containers are transparent for method dispatch (except .item,
-        // .VAR, and .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper
-        // so an itemized aggregate shows its `$` sigil (`${a=>1}.raku` →
-        // `${:a(1)}`, `$[1,2].raku` → `$[1, 2]`); decontainerizing first would
-        // strip it. `.gist` needs no special case — it never shows the sigil, so
-        // gisting the inner value is already correct.
-        if let ValueView::Scalar(inner) = target.view() {
-            if method == "VAR" {
-                // Return an opaque Scalar type object so .^name returns "Scalar"
-                return Ok(Value::package(Symbol::intern("Scalar")));
-            }
-            if method == "raku" {
-                // An itemized aggregate can still hold a value whose repr needs
-                // method dispatch (`$[Foo.new].raku`).
-                // An itemized lazy sequence renders as its own `raku` (the
-                // lazy step's pull) inside the `$( )` of the itemization.
-                if let ValueView::LazyList(_) = inner.view() {
-                    let rendered = self.call_method_with_values(inner.clone(), "raku", Vec::new())?;
-                    return Ok(Value::str(format!("$({})", rendered.to_string_value())));
-                }
-                if let Some(rendered) = self.raku_repr_with_dispatch(&target) {
-                    return Ok(Value::str(rendered));
-                }
-                return Ok(Value::str(
-                    crate::builtins::methods_0arg::raku_repr::raku_value(&target),
-                ));
-            }
-            // A scalar shared with an array/hash variable is represented as
-            // `Scalar(ContainerRef(cell))`: keep the outer wrapper for the
-            // renderer, but read through the cell for every ordinary method.
-            // Otherwise `$shared.elems` sees the wrapper as a one-element value
-            // and mutators such as `.push` fail to reach the backing container.
-            let inner = if inner.is_container_ref() {
-                inner.deref_container()
-            } else {
-                inner.clone()
-            };
-            return self.call_method_with_values_unviewed(inner, method, args);
-        }
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
             && let Some(rendered) = self.raku_repr_with_dispatch(&target)
         {
             return Ok(Value::str(rendered));
-        }
-        // An itemized Array/List invocant is likewise a Scalar container:
-        // method dispatch decontainerizes it (`$list.tail` reaches the last
-        // element, not the container treated as one item by `value_to_list`).
-        // The kind flip keeps the same backing data, so mutators (`.push`)
-        // still write through. `.raku`/`.perl`/`.item`/`.VAR`/`.self` must
-        // see the container itself (the `$` sigil / itemization is the point).
-        if let ValueView::Array(items, kind) = target.view()
-            && kind.is_itemized()
-        {
-            if method == "VAR" {
-                // `$(...)` is represented as an itemized List/Array sharing
-                // its backing storage.  It is still a Scalar container for
-                // introspection, so `.VAR` must expose Scalar rather than
-                // the contextualized aggregate's inner type.
-                return Ok(Value::package(Symbol::intern("Scalar")));
-            }
-            if matches!(method, "raku" | "item" | "self") {
-                // These methods observe the itemized container itself.
-            } else {
-                let deconted = Value::array_with_kind(items.clone(), kind.decontainerize());
-                return self.call_method_with_values(deconted, method, args);
-            }
-        }
-        // The Hash half of the same rule. An itemized Hash carries its
-        // itemization as a bool on the repr rather than as an `ArrayKind`, so
-        // it needs its own arm. `.VAR` on `$(%h)` is `Scalar` either way, but
-        // only the `ValueView::Scalar` spelling was covered. Reachable since
-        // ADR-0040 slice 4 started itemizing chained-subscript stores, which
-        // produce the flag form (`my %g; %g<a>[0]<k> = 5; %g<a>[0].VAR.^name`).
-        //
-        // Every other method is decontainerized too, exactly as for an Array:
-        // the renderers and the element-flattening chokepoints consult
-        // `hash_is_itemized`, but a method that decomposes its RECEIVER through
-        // `value_to_list(target)` (that function answers "does this flatten as
-        // an ELEMENT of another container", ADR-0040) saw the whole hash as one
-        // opaque item -- `$s.tail`, `.reverse`, `.unique`, `.squish`, `.rotor`,
-        // `.Seq`, `.minmax`, `.reduce`, ... (#10744). Clearing the flag keeps the
-        // SAME `HashData` `Gc`, so mutators (`.push`, `:delete`) still write
-        // through.
-        if matches!(target.view(), ValueView::Hash(_)) && target.hash_is_itemized() {
-            if method == "VAR" {
-                return Ok(Value::package(Symbol::intern("Scalar")));
-            }
-            // These observe the itemized container itself (the `$` sigil / the
-            // itemization is the point), as in the Array arm above.
-            if !matches!(method, "raku" | "item" | "self") {
-                return self.call_method_with_values(
-                    target.clone().with_hash_itemized(false),
-                    method,
-                    args,
-                );
-            }
-        }
-        // `Hash`/`Map` and the QuantHashes inherit `reverse`/`unique`/`squish`/
-        // `eager`/`Supply`/`minmax`/`produce` from `Any`, which defines each as
-        // `self.list.METHOD`: re-dispatch on the receiver's list of Pairs
-        // (#10758). A user method of the same name on the receiver's own class
-        // (`augment`) still wins, so it is checked first.
-        if let Some(pairs) = crate::runtime::utils::hashlike_receiver_as_pairs_list(&target, method)
-            && !self.has_user_method(crate::runtime::utils::value_type_name(&target), method)
-        {
-            return self.call_method_with_values(pairs, method, args);
         }
         // `List.from-iterator` and `Array.from-iterator` are rows of their
         // type objects (ADR-11276 §9.164).
