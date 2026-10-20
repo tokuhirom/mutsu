@@ -4998,6 +4998,7 @@ t/rakuast/rakuast-eval-var.t
 t/rakuast/rakuast-eval-whatever-code.t
 t/rakuast/rakuast-eval-whatever.t
 t/rakuast/rakuast-eval.t
+t/rakuast/rakuast-export-namespace-eval-context.t
 t/rakuast/rakuast-exported-declarations.t
 t/rakuast/rakuast-expr.t
 t/rakuast/rakuast-expression-context-cohort.t
@@ -7890,6 +7891,7 @@ t/vm/scope/shadow-slot-state-paren-decl.t
 t/vm/scope/shadow-slots-default.t
 t/vm/scope/sibling-block-code-var-name-leak.t
 t/vm/scope/sigilless-scope-leak.t
+t/vm/scope/stash-assign-visible-from-other-frames.t
 t/vm/scope/stash-bind-key.t
 t/vm/scope/stash-exists-key.t
 t/vm/scope/stash-literal-key-assign.t
