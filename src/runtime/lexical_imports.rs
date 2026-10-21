@@ -80,6 +80,9 @@ pub(crate) struct LexicalImportCapture {
     /// The multi families the importing block declares itself: the import
     /// merges with them, so they keep the registry path.
     block_multis: HashSet<Symbol>,
+    /// The core listop families whose candidates extend CORE's dispatch set
+    /// (ADR-0044 D1): they keep the registry path.
+    core_extending: HashSet<Symbol>,
     /// Whether the `use` is at the importing unit's top level (no import scope
     /// of the unit is open). Its multi families keep the registry path:
     /// (an operator family binds: its uses are not routine calls with
@@ -105,6 +108,15 @@ pub(crate) struct LexicalImportCapture {
     pub(super) hook_routines: HashMap<Symbol, Value>,
 }
 
+/// Whether `name` is one of the seven core array listops (ADR-0044 D1).
+// Cost: O(1).
+fn is_core_listop_name(name: &str) -> bool {
+    matches!(
+        name,
+        "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+    )
+}
+
 impl Interpreter {
     /// Start collecting the imports of a `use` that fills a lexical import
     /// set. Every run of the `use` refills it: the import binds its plain
@@ -126,6 +138,7 @@ impl Interpreter {
             .is_none_or(|scope| scope.unit != importer);
         let capture = LexicalImportCapture {
             block_multis,
+            core_extending: HashSet::new(),
             block_vars,
             top_level,
             unit: importer,
@@ -198,6 +211,12 @@ impl Interpreter {
             && let Some(proto) = proto
         {
             return self.bind_routine_lexically(name, &std::sync::Arc::new(proto.clone()));
+        }
+        if proto.is_none() && is_core_listop_name(name) {
+            if let Some(capture) = self.module.lexical_import_capture.as_mut() {
+                capture.core_extending.insert(Symbol::intern(name));
+            }
+            return false;
         }
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
@@ -290,6 +309,10 @@ impl Interpreter {
         // a module extending its exported proto) is one family: this set's
         // dispatcher spans the earlier candidates as well.
         let mut multi_defs = capture.multi_defs;
+        // Candidates for a core listop name extend CORE's dispatch set
+        // (ADR-0044 D1): a dispatcher over them alone would hide the core
+        // array forms, so a family without its own proto stays a registry alias.
+        multi_defs.retain(|name, _| !capture.core_extending.contains(name));
         let importer = self.executing_unit_sym_for_module_load();
         let earlier_sets: Vec<Symbol> = match self.module.import_scope_stack.last() {
             Some(scope) if scope.unit == importer => scope.lexical_sets.clone(),
@@ -372,6 +395,8 @@ impl Interpreter {
                         .cloned()
                         .map(LexicalImport::Code)
                 }
+            } else if capture.core_extending.contains(&name) {
+                None
             } else {
                 self.registry()
                     .function_def(crate::qualified::qualified(package, name))
