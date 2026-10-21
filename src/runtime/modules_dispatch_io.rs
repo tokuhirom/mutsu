@@ -27,6 +27,7 @@ mod eval_check;
 mod eval_decl_scans;
 mod eval_import_scope;
 mod eval_name_scans;
+mod eval_nested_hook_uses;
 mod eval_post_declared_types;
 mod export_namespace_index;
 mod eval_package_exports;
