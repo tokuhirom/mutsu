@@ -662,7 +662,6 @@ impl Interpreter {
                 } else {
                     positional.len().saturating_sub(assumed).max(1)
                 };
-                let mut last_call_args: Option<Vec<Value>> = None;
                 if slot.take_first_phaser(src.has(1)) {
                     src.has(batch);
                     let first_args = src.buf[..batch.min(src.buf.len())].to_vec();
@@ -677,7 +676,7 @@ impl Interpreter {
                     // A short final chunk of a required-arity block raises
                     // "Too few positionals" (matching raku); an optional trailing
                     // parameter binds the missing slot to its default / `Any`.
-                    last_call_args = Some(chunk.clone());
+                    slot.last_call_args = Some(chunk.clone());
                     let callable = Value::sub_value(data.clone());
                     // A block with its own parameters runs its compiled body
                     // as any closure call does (see the rw twin of this loop).
@@ -695,8 +694,9 @@ impl Interpreter {
                 }
                 // A LAST phaser in a signature-bearing map block runs with the
                 // final chunk bound (`call_block_loop_phasers`).
-                if let Some(last_args) = last_call_args
+                if slot.last_call_args.is_some()
                     && slot.take_last_phaser(src.ran_out(&out.produced, produced_base, i))
+                    && let Some(last_args) = slot.last_call_args.take()
                 {
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last_args)?;
                 }
@@ -948,8 +948,24 @@ impl Interpreter {
 
                 // Run LAST phasers after the map loop completes (natural end or
                 // `last`), best-effort.
+                if i > 0 {
+                    slot.last_call_args = Some(src.buf[i.saturating_sub(arity)..i].to_vec());
+                }
                 if slot.take_last_phaser(by_last || src.ran_out(produced, produced_base, i)) {
-                    let _ = vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Last);
+                    // A pull that ran no iteration has no parameters bound
+                    // left in the env: `LAST` binds the final call's.
+                    match slot.last_call_args.take() {
+                        Some(args) if i == 0 => {
+                            let _ = vm.call_block_loop_phasers(
+                                &data,
+                                crate::ast::PhaserKind::Last,
+                                args,
+                            );
+                        }
+                        _ => {
+                            let _ = vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Last);
+                        }
+                    }
                 }
 
                 Ok(())
