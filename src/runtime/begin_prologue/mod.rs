@@ -109,7 +109,10 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     let decls = lifted.decls;
     // A `use` and a `constant` are BEGIN-time effects on their own (slice 3),
     // so the prologue reaches the last of them too.
-    let last_effect = stmts.iter().rposition(is_begin_time_effect);
+    let trait_parents = DeferredTraitParents::scan(stmts);
+    let last_effect = stmts
+        .iter()
+        .rposition(|stmt| is_begin_time_effect(stmt) || trait_parents.names_trait(stmt));
     let last_lifted = effects
         .iter()
         .zip(&package_effects)
@@ -444,6 +447,60 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
         | Stmt::RoleDecl { custom_traits, .. }
         | Stmt::Package { custom_traits, .. } => !custom_traits.is_empty(),
         _ => false,
+    }
+}
+
+/// The unit's own `trait_mod:<is>` routines and declared types, to tell which
+/// lowercase `is NAME` of a class header is a trait. The parser keeps an
+/// argument-less `class C is flagged` as a parent name, and the runtime defers
+/// a name no type answers to the unit's `trait_mod:<is>` (see
+/// `validate_class_parents`); the prologue has to place that declaration the
+/// same way a parenthesized `is flagged(...)` one is placed (#14369).
+struct DeferredTraitParents {
+    has_is_trait_mod: bool,
+    declared_types: HashSet<String>,
+}
+
+impl DeferredTraitParents {
+    // Cost: O(n), n = top-level statements of the unit.
+    fn scan(stmts: &[Stmt]) -> Self {
+        let mut has_is_trait_mod = false;
+        let mut declared_types = HashSet::new();
+        for stmt in crate::ast::scope_members(stmts) {
+            match stmt {
+                Stmt::SubDecl { name, .. } => {
+                    has_is_trait_mod |= name.resolve().starts_with("trait_mod:<is>");
+                }
+                Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. }
+                | Stmt::Package { name, .. } => {
+                    declared_types.insert(name.resolve().to_string());
+                }
+                _ => {}
+            }
+        }
+        Self {
+            has_is_trait_mod,
+            declared_types,
+        }
+    }
+
+    // Cost: O(p), p = parents of the declaration.
+    fn names_trait(&self, stmt: &Stmt) -> bool {
+        let Stmt::ClassDecl {
+            parents,
+            does_parents,
+            ..
+        } = stmt
+        else {
+            return false;
+        };
+        self.has_is_trait_mod
+            && parents.iter().any(|parent| {
+                parent.starts_with(|c: char| c.is_lowercase())
+                    && !self.declared_types.contains(parent)
+                    && !does_parents.contains(parent)
+            })
     }
 }
 
