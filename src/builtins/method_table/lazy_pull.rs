@@ -314,10 +314,7 @@ fn cache(
 /// (nothing is batched across threads, as for a settled `HyperSeq`). A list
 /// that will end declines and is reified into the settled `HyperSeq`.
 // Cost: O(c), c = elements already cached (the list is cloned).
-fn hyperize(
-    list: &LazyList,
-    kind: crate::value::HyperKind,
-) -> Option<Result<Value, RuntimeError>> {
+fn hyperize(list: &LazyList, kind: crate::value::HyperKind) -> Option<Result<Value, RuntimeError>> {
     if !list.renders_lazy_placeholder() {
         return None;
     }
