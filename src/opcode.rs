@@ -10946,7 +10946,10 @@ impl CompiledCode {
                 // (`regex_literal_closure_captures`), so they need the same
                 // shared cell once written after the literal is built.
                 let kebab = Self::regex_kebab_var_names(&pattern);
-                for name in Self::regex_closure_var_names(&pattern).into_iter().chain(kebab) {
+                for name in Self::regex_closure_var_names(&pattern)
+                    .into_iter()
+                    .chain(kebab)
+                {
                     if own.contains(name.as_str()) {
                         regex_captured_own.insert(Symbol::intern(&name));
                     } else {
