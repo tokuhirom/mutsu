@@ -8,12 +8,17 @@ impl Compiler {
     /// initializer remains in its variable declaration and also contributes
     /// the method-table declaration that Raku installs at composition time.
     pub(super) fn with_expression_methods(stmt: &Stmt) -> Option<Stmt> {
-        if !matches!(stmt, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }) {
+        if !matches!(
+            stmt,
+            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::AugmentClass { .. }
+        ) {
             return None;
         }
         let mut result = stmt.clone();
         let body = match &mut result {
-            Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => body,
+            Stmt::ClassDecl { body, .. }
+            | Stmt::RoleDecl { body, .. }
+            | Stmt::AugmentClass { body, .. } => body,
             _ => unreachable!(),
         };
         #[derive(Default)]
@@ -24,7 +29,10 @@ impl Compiler {
             fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
                 if !matches!(
                     stmt,
-                    Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::Package { .. }
+                    Stmt::ClassDecl { .. }
+                        | Stmt::RoleDecl { .. }
+                        | Stmt::Package { .. }
+                        | Stmt::AugmentClass { .. }
                 ) {
                     crate::ast_visit::walk_stmt_mut(self, stmt);
                 }
@@ -64,7 +72,10 @@ impl Compiler {
             fn visit_stmt(&mut self, stmt: &'ast Stmt) {
                 if !matches!(
                     stmt,
-                    Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::Package { .. }
+                    Stmt::ClassDecl { .. }
+                        | Stmt::RoleDecl { .. }
+                        | Stmt::Package { .. }
+                        | Stmt::AugmentClass { .. }
                 ) {
                     crate::ast_visit::walk_stmt(self, stmt);
                 }

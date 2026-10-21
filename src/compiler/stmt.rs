@@ -4900,7 +4900,8 @@ impl Compiler {
             }
             Stmt::AugmentClass { name, body, .. } => {
                 let site_id = self.augment_site_id(&name.resolve(), body);
-                let idx = self.code.add_stmt(stmt.clone());
+                let expanded = Self::with_expression_methods(stmt);
+                let idx = self.code.add_stmt(expanded.unwrap_or_else(|| stmt.clone()));
                 self.code.emit(OpCode::AugmentClass { idx, site_id });
             }
             // ADR-0048 D7/Phase 5, VALUE half: NOT implemented — a role body

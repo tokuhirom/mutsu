@@ -281,6 +281,9 @@ impl Interpreter {
             crate::symbol::Symbol::intern(name)
         };
         let method_cell = crate::value::RoutineCell::default();
+        if decl.multi && (!decl.is_my || decl.is_submethod) {
+            method_cell.note_method_family(Symbol::intern(name), Symbol::intern(&resolved_method_name));
+        }
         let def = MethodDef {
             value_prototype: decl.value_prototype.map(|site| std::sync::Arc::new(
                 crate::value::RoutinePrototype::new(site, method_cell.clone()))),

@@ -288,6 +288,9 @@ impl Registry {
     /// entirely once no column keeps it alive (ADR-0019 F4c design note
     /// (3)).
     pub(crate) fn set_user_methods(&mut self, owner: Symbol, name: Symbol, defs: Vec<MethodDef>) {
+        for def in &defs {
+            if def.is_multi { def.routine_cell.note_method_family(owner, name); }
+        }
         for def in &defs { self.note_method_value_prototype(owner, def); }
         self.note_raw_invocant_methods(&defs);
         if !defs.is_empty() {
@@ -309,6 +312,7 @@ impl Registry {
     /// `multi` declaration case, where a later declaration adds a candidate
     /// rather than replacing the row.
     pub(crate) fn push_user_method(&mut self, owner: Symbol, name: Symbol, def: MethodDef) -> usize {
+        if def.is_multi { def.routine_cell.note_method_family(owner, name); }
         self.note_method_value_prototype(owner, &def);
         self.note_raw_invocant_methods(std::slice::from_ref(&def));
         note_user_find_method_row(name);

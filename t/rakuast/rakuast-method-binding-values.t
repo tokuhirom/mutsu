@@ -48,6 +48,10 @@ ok $default-invocant.invocant, 'a defaulted invocant retains its invocant flag';
 is $default-invocant.default.value, 42, 'a defaulted invocant retains its initializer';
 
 for
+    Q[use MONKEY-TYPING; multi sub trait_mod:<is>(Method $m,:$paint!) { $m.wrap: method (|) { state $n=0; callsame() ~ ':' ~ ++$n } }; class BindingAugmentWrap {}; augment class BindingAugmentWrap { our &alias = method actual() is paint {'v'} }; (BindingAugmentWrap.actual, BindingAugmentWrap::alias(BindingAugmentWrap)).join(',')], 'v:1,v:2',
+    Q[class BindingMultiOrigin { multi method actual(Str $x) { 'str' }; our &alias = multi method actual(Int $x) { $x } }; (&BindingMultiOrigin::alias.multi, &BindingMultiOrigin::alias.dispatcher.^name, &BindingMultiOrigin::alias.dispatcher.candidates.elems, (&BindingMultiOrigin::alias.dispatcher)(BindingMultiOrigin,'x')).join(',')], 'True,Method,2,str',
+    Q[use MONKEY-TYPING; class BindingAugment {}; augment class BindingAugment { our &alias = method actual() {42} }; (BindingAugment.actual, BindingAugment::alias(BindingAugment)).join(',')], '42,42',
+    Q[use MONKEY-TYPING; BEGIN our @BindingAugmentSeen; multi sub trait_mod:<is>(Method $m,:$paint!) { @BindingAugmentSeen.push($m.name) }; class BindingAugmentTrait {}; augment class BindingAugmentTrait { our &alias = method actual() is paint {42} }; (BindingAugmentTrait.actual, BindingAugmentTrait::alias(BindingAugmentTrait), @BindingAugmentSeen.elems).join(',')], '42,42,1',
     Q[class BindingDefaultReceiver { our &alias = method actual($c = BindingDefaultReceiver:) { $c === BindingDefaultReceiver } }; BindingDefaultReceiver::alias()], True,
     Q[class BindingExplicitReceiver { our &alias = method actual($c:) { $c } }; BindingExplicitReceiver::alias(42)], 42,
     Q[my &alias = method ($c = 42:) { $c }; alias()], 42,

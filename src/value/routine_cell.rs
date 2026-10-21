@@ -51,6 +51,9 @@ impl RoutinePrototype {
 
 #[derive(Default)]
 struct Inner {
+    /// The multi-method family of a first-class candidate. This is reflection
+    /// provenance, independent of the code object's call and state identity.
+    method_family: std::sync::OnceLock<(Symbol, Symbol)>,
     /// Set once a composition is stored; never cleared.
     composed: AtomicBool,
     overrides: RwLock<Option<Gc<MixinOverrides>>>,
@@ -96,6 +99,15 @@ impl std::fmt::Debug for RoutineCell {
 }
 
 impl RoutineCell {
+    // Cost: O(1).
+    pub(crate) fn note_method_family(&self, owner: Symbol, name: Symbol) {
+        let _ = self.0.method_family.set((owner, name));
+    }
+
+    // Cost: O(1).
+    pub(crate) fn method_family(&self) -> Option<(Symbol, Symbol)> {
+        self.0.method_family.get().copied()
+    }
     /// The roles composed into the routine so far, if any.
     // Cost: O(1); one atomic load when nothing was composed.
     pub(crate) fn get(&self) -> Option<Gc<MixinOverrides>> {
@@ -186,6 +198,9 @@ impl RoutineCell {
     // Cost: O(1).
     pub(crate) fn forked(&self) -> Self {
         let fresh = Self::default();
+        if let Some((owner, name)) = self.method_family() {
+            fresh.note_method_family(owner, name);
+        }
         if let Some(name) = self.renamed() {
             fresh.rename(name);
         }
