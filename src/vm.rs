@@ -385,6 +385,7 @@ mod vm_smartmatch_value_ops;
 pub(crate) mod vm_stack_guard;
 pub(crate) mod vm_stats;
 pub(crate) mod vm_stats_regex_vm;
+mod vm_storage_backed_instance;
 pub(crate) mod vm_string_regex_ops;
 mod vm_subscript_invocant_ref;
 mod vm_subscript_protocol;

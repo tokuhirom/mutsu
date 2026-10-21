@@ -1245,10 +1245,31 @@ impl Interpreter {
                 _ => idx.clone(),
             };
             let method = if bind_mode { "BIND-KEY" } else { "ASSIGN-KEY" };
-            let delegate_args = [key_val, val.clone()];
+            // A `:=` binds the element to the source variable's container,
+            // as it does on a plain Hash: share a cell with the source so a
+            // later write to either side reaches the other.
+            let (bound, promoted) = match bind_sources.first() {
+                Some(Some(source_name)) if bind_mode && !source_name.contains('\0') => {
+                    match self.env().get(source_name).map(Value::view) {
+                        Some(ValueView::ContainerRef(cell)) => {
+                            (Value::container_ref(cell.clone()), None)
+                        }
+                        _ => {
+                            let cell = self.promote_bind_source_cell(source_name, val.clone());
+                            (Value::container_ref(cell), Some(source_name.clone()))
+                        }
+                    }
+                }
+                _ => (val.clone(), None),
+            };
+            let delegate_args = [key_val, bound.clone()];
             if let Some(result) =
                 self.try_hash_storage_delegate_mut(&var_name, &inst, method, &delegate_args)
             {
+                if let Some(src) = promoted {
+                    self.set_env_with_main_alias(&src, bound.clone());
+                    self.update_local_if_exists(code, &src, &bound);
+                }
                 self.stack.push(result?);
                 return Ok(());
             }
@@ -4035,6 +4056,19 @@ impl Interpreter {
                     )? {
                         return Ok(true);
                     }
+                    // An `is Hash` / `is Array` subclass instance in the slot
+                    // (`@a[0]<k> = v` with `@a[0]` a `PDF::COS::Dict`) takes
+                    // the store into its backing storage; `needs_viv` below
+                    // would replace it with a fresh container.
+                    if Self::store_into_storage_backed_instance(
+                        &arr[inner_i],
+                        &outer_key,
+                        outer_positional,
+                        val.clone(),
+                        false,
+                    ) {
+                        return Ok(true);
+                    }
                     // A slot that already holds a DEFINED non-container value
                     // is not autovivifiable: rakudo refuses the store instead
                     // of clobbering the value.
@@ -4206,6 +4240,17 @@ impl Interpreter {
                     // `a => 1` dies in rakudo, and mutsu used to drop the
                     // write silently (`assign_into_nested_container` no-ops on
                     // a non-container target).
+                    // An `is Hash` / `is Array` subclass instance takes the
+                    // store into its backing storage, as in the array-outer arm.
+                    if Self::store_into_storage_backed_instance(
+                        &inner_val.deref_container(),
+                        &outer_key,
+                        outer_positional,
+                        val.clone(),
+                        false,
+                    ) {
+                        return Ok(());
+                    }
                     if let Some(err) = Self::subscript_descent_refusal_at(
                         inner_val,
                         outer_positional,
@@ -5331,12 +5376,15 @@ impl Interpreter {
                                 // `:=`-bound cell that holds (and is descended to)
                                 // a container on the next iteration; treating it
                                 // as "needs vivify" would clobber the binding.
+                                // A container-subclass instance (`is Hash` /
+                                // `is Array`) is descended into, not replaced
+                                // with a fresh container.
                                 let needs_viv = !matches!(
                                     arr[i].view(),
                                     ValueView::Array(..)
                                         | ValueView::Hash(..)
                                         | ValueView::ContainerRef(..)
-                                );
+                                ) && !Self::is_storage_backed_instance(&arr[i]);
                                 if needs_viv {
                                     binding_creates_path = true;
                                     arr[i] = Self::fresh_autoviv_container(next_positional);
@@ -5506,6 +5554,20 @@ impl Interpreter {
                             && bind_cell.is_none()
                         {
                             Self::store_into_pair_aggregate(&aggregate, val_unitemized.clone());
+                            continue;
+                        }
+                        // An `is Hash` / `is Array` subclass instance
+                        // (`@a[0]<k> := $x` with `@a[0]` a `PDF::COS::Dict`)
+                        // stores into its backing storage, in place through the
+                        // shared attribute cell; autovivifying replaced the
+                        // object with a fresh container.
+                        if Self::store_into_storage_backed_instance(
+                            cur,
+                            key,
+                            is_positional,
+                            leaf_val.clone(),
+                            is_bind_value,
+                        ) {
                             continue;
                         }
                         // Autovivify at final level
