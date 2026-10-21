@@ -13,3 +13,9 @@ Two ways a Proxy was FETCHed where Rakudo leaves it alone:
 
 AttrX::Mooish 1.0.10: `t/010-base`, `011-arrays`, `014-private`, `016-filtering`,
 `020-role`, `030-inheritance` and `050-multi-filter` pass in full (#14266).
+
+An element store through a Proxy-returning accessor (`$obj.attr[i] = v`,
+`$obj.attr<k> = v`) now goes into the aggregate FETCH answered, in place, and no
+longer calls `STORE` with the whole modified aggregate. Rakudo calls `STORE` only
+when the attribute itself is assigned; AttrX::Mooish's triggers fired one time too
+many on `$inst.bar[1] = e`.
