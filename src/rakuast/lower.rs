@@ -29,7 +29,7 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 /// (e.g. `EVAL(RakuAST::IntLiteral.new(42))`) becomes a single expression
 /// statement.
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
-    let normalized = normalize_subclass_children(node, 0)?;
+    let normalized = super::subclass::normalize_for_lower(node, 0)?;
     let node = normalized.as_ref().unwrap_or(node);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan(node);
@@ -53,67 +53,6 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
         return Err(crate::parser::scope_diagnostic_error(diagnostic));
     }
     Ok(stmts)
-}
-
-/// Replace a user subclass in a child slot with the native node its parent
-/// constructor built. Only ancestors of such a slot are cloned; ordinary ASTs
-/// stay borrowed throughout lowering.
-fn normalize_subclass_children(
-    node: &RakuAstNode,
-    depth: usize,
-) -> Result<Option<RakuAstNode>, RuntimeError> {
-    if depth >= 512 {
-        return Err(RuntimeError::new(
-            "RakuAST: node nesting exceeds 512 levels",
-        ));
-    }
-    let mut normalized = None;
-    for (index, field) in node.fields.iter().enumerate() {
-        let replacement = match &field.value {
-            RakuAstFieldValue::Node(value) => {
-                normalize_child_value(value, depth + 1)?.map(RakuAstFieldValue::Node)
-            }
-            RakuAstFieldValue::List(items) => {
-                let mut changed = None;
-                for (item_index, item) in items.iter().enumerate() {
-                    if let Some(value) = normalize_child_value(item, depth + 1)? {
-                        let output = changed.get_or_insert_with(|| items.clone());
-                        output[item_index] = value;
-                    }
-                }
-                changed.map(RakuAstFieldValue::List)
-            }
-            RakuAstFieldValue::Adverb(_) => None,
-        };
-        if let Some(replacement) = replacement {
-            let output = normalized.get_or_insert_with(|| node.clone());
-            output.fields[index].value = replacement;
-        }
-    }
-    Ok(normalized)
-}
-
-fn normalize_child_value(value: &Value, depth: usize) -> Result<Option<Value>, RuntimeError> {
-    if depth >= 512 {
-        return Err(RuntimeError::new(
-            "RakuAST: node nesting exceeds 512 levels",
-        ));
-    }
-    match value.view() {
-        ValueView::Instance { attributes, .. } => {
-            let Some(base) = attributes.rakuast_base() else {
-                return Ok(None);
-            };
-            Ok(Some(
-                normalize_child_value(&base, depth + 1)?.unwrap_or(base),
-            ))
-        }
-        ValueView::RakuAst(node) => Ok(normalize_subclass_children(node, depth + 1)?
-            .map(|node| Value::rakuast(Box::new(node)))),
-        ValueView::Mixin(inner, mixins) => Ok(normalize_child_value(inner, depth + 1)?
-            .map(|inner| Value::mixin_with_state(inner, (**mixins).clone()))),
-        _ => Ok(None),
-    }
 }
 
 /// The statements of a block body. Each body is a frame for the anonymous

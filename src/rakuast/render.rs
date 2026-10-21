@@ -409,7 +409,7 @@ fn render_node_value(value: &Value, indent: usize) -> Option<String> {
                 };
                 let name = class_name.resolve();
                 let display = crate::value::user_facing_type_name(&name);
-                return Some(super::subclass_gist_at(display.as_ref(), node, indent));
+                return Some(super::subclass::gist_at(display.as_ref(), node, indent));
             }
             ValueView::Mixin(inner, _) => current = inner,
             _ => return None,

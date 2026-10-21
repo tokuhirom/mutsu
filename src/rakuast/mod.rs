@@ -92,6 +92,7 @@ mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
 mod star_lvalue;
+mod subclass;
 mod subscript_adverb;
 mod substitution;
 mod symbolic_deref;
@@ -115,6 +116,8 @@ mod zip_assign;
 pub use formatter::formatter_ast;
 pub use lower::lower;
 pub(crate) use name_parts::{is_name_part, is_name_part_class};
+pub use subclass::gist as subclass_gist;
+pub(crate) use subclass::is_node_value;
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -1790,33 +1793,6 @@ pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value
 /// `.gist` / `.raku` / `.Str` of a RakuAST node.
 pub fn node_gist(node: &RakuAstNode) -> String {
     render::render_node(node, 0)
-}
-
-/// Render a node inherited by a user subclass under that subclass's name.
-// Cost: O(n), n = constructor text length.
-pub fn subclass_gist(class_name: &str, node: &RakuAstNode) -> String {
-    subclass_gist_at(class_name, node, 0)
-}
-
-pub(super) fn subclass_gist_at(class_name: &str, node: &RakuAstNode, indent: usize) -> String {
-    let rendered = render::render_node(node, indent);
-    let parent = node.class.printed_name();
-    match rendered.strip_prefix(parent) {
-        Some(rest) => format!("{class_name}{rest}"),
-        None => rendered,
-    }
-}
-
-pub(crate) fn is_node_value(value: &Value) -> bool {
-    let mut current = value;
-    loop {
-        match current.view() {
-            ValueView::RakuAst(_) => return true,
-            ValueView::Instance { attributes, .. } => return attributes.rakuast_base().is_some(),
-            ValueView::Mixin(inner, _) => current = inner,
-            _ => return false,
-        }
-    }
 }
 
 /// Construction (Phase 4): build a `Value::RakuAst` from a `RakuAST::*.new(...)`
