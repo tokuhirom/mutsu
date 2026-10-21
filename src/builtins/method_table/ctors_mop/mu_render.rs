@@ -97,7 +97,12 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
         ValueView::Nil => Some(Ok(Value::str_from("Nil"))),
         // The `Signature` rows' renderings (`method_table::signature`).
         ValueView::Instance { class_name, .. } if class_name == "Signature" => {
-            crate::builtins::method_table::signature::answer(target, method)
+            let id = crate::builtins::method_table::owner_row(
+                crate::symbol::Symbol::intern("Signature"),
+                crate::symbol::Symbol::intern(method),
+                0,
+            )?;
+            crate::builtins::method_table::invoke(id, target, &[])
         }
         ValueView::Instance {
             class_name,

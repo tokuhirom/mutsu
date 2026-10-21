@@ -4,8 +4,8 @@
 //! A `Signature` instance carries its two renderings as the attributes `gist`
 //! and `raku` (the compiler renders them once, from the parsed parameters), so
 //! both rows read an attribute, as do `params` and `returns`; `arity` and `count`
-//! read the structured parameter list the compiler registered. `Signature` has no
-//! shape, so the rows are reached through their owner: [`answer`] is the entry for the cascade.
+//! read the structured parameter list the compiler registered. A `Signature` has an
+//! opaque shape, so every entry reaches the rows through the table.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -17,7 +17,7 @@ macro_rules! row {
             name: $name,
             arity: 0,
             handler: Handler::Narrow($handler),
-            flags: RowFlags::OWNER_ONLY,
+            flags: RowFlags::NONE,
             named: &[],
         }
     };
@@ -31,24 +31,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("params", params),
     row!("returns", returns),
 ];
-
-/// The answer of the row for `method` on a `Signature` instance, or `None`.
-// Cost: O(1).
-pub(crate) fn answer(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    match target.view() {
-        ValueView::Instance { class_name, .. } if class_name == "Signature" => {}
-        _ => return None,
-    }
-    match method {
-        "gist" => gist(target, &[]),
-        "raku" => raku(target, &[]),
-        "arity" => arity(target, &[]),
-        "count" => count(target, &[]),
-        "params" => params(target, &[]),
-        "returns" => returns(target, &[]),
-        _ => None,
-    }
-}
 
 fn rendering(target: &Value, key: &str) -> Option<Result<Value, RuntimeError>> {
     let ValueView::Instance {
@@ -109,7 +91,7 @@ fn params(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>
 
 /// `Signature.returns`: the declared return type, `Mu` without one.
 // Cost: O(1).
-fn returns(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(super) fn returns(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
