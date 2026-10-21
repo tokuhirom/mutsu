@@ -869,8 +869,13 @@ impl Interpreter {
         // that container, so seat the same cell in `self` (not a copy of what
         // it holds) -- otherwise `self.x` inside this method still reads the
         // old container until the method returns.
-        if matches!(self.locals[idx].view(), ValueView::ContainerRef(_))
-            && sigil == '$'
+        // A `Proxy` is a container too (`$!x := Proxy.new(...)`): it is seated
+        // as the attribute, so reads FETCH and writes STORE, instead of being
+        // dropped as non-mirrorable.
+        if matches!(
+            self.locals[idx].view(),
+            ValueView::ContainerRef(_) | ValueView::Proxy { .. }
+        ) && sigil == '$'
             && let Some(self_val) = self.attr_access_self(code)
             && let Some((attributes, key)) = self.with_self_attr(
                 &self_val,
