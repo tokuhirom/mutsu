@@ -1583,3 +1583,20 @@ whitelist; its completed blocker entry is removed.
 Trait application uses the existing compiled declaration-registration timing;
 the remaining compile-time argument/callback scheduling gap is measured in
 #14146, including its pre-existing class reproduction.
+
+### 6.86 S10: grammar argument expressions and binding windows (2026-10-21)
+
+The regex source renderer retains `$<name>` and the distinction between named
+fat-arrow arguments and positional Pair data, including nested calls. Pattern
+specialization substitutes only already-bound enclosing parameters; it never
+evaluates the argument expression against empty captures. The compiled match
+engine evaluates the complete argument list as a Capture at the actual call,
+using the ordinary compiler's named/positional/flattening rules. Binding
+windows classify Pair data by its existing value marker, so an object inside
+a positional Pair stays live across the callee's match and backtracking.
+
+Grammar construction shares the Class/Native package-body contract, and
+regex/token/rule construction retains signatures, scopes and multiness.
+`t/rakuast/rakuast-grammar-argument-bindings.t` covers both directions and
+hand-built grammar declarations; the existing capture-exception and binding
+window files exercise the same behavior through the round-trip frontend.

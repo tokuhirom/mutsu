@@ -419,16 +419,14 @@ impl Interpreter {
             Ok(v) => {
                 if let ValueView::Regex(pat) = v.view() {
                     let pat = instantiate_sym(&pat);
-                    self.instantiate_named_regex_arg_calls(
-                        &self.interpolate_bound_regex_scalars(&pat),
-                    )
-                    .map(Some)
+                    Ok(Some(self.bake_bound_params_into_regex_arguments(
+                        &self.interpolate_bound_regex_scalars(&pat), &def.params,
+                    )))
                 } else if let ValueView::Str(s) = v.view() {
                     let s = instantiate_sym(&s);
-                    self.instantiate_named_regex_arg_calls(
-                        &self.interpolate_bound_regex_scalars(&s),
-                    )
-                    .map(Some)
+                    Ok(Some(self.bake_bound_params_into_regex_arguments(
+                        &self.interpolate_bound_regex_scalars(&s), &def.params,
+                    )))
                 } else if v.is_nil() {
                     Ok(None)
                 } else {
@@ -439,16 +437,14 @@ impl Interpreter {
                 let rv = e.return_value.unwrap();
                 if let ValueView::Regex(pat) = rv.view() {
                     let pat = instantiate_sym(&pat);
-                    self.instantiate_named_regex_arg_calls(
-                        &self.interpolate_bound_regex_scalars(&pat),
-                    )
-                    .map(Some)
+                    Ok(Some(self.bake_bound_params_into_regex_arguments(
+                        &self.interpolate_bound_regex_scalars(&pat), &def.params,
+                    )))
                 } else if let ValueView::Str(s) = rv.view() {
                     let s = instantiate_sym(&s);
-                    self.instantiate_named_regex_arg_calls(
-                        &self.interpolate_bound_regex_scalars(&s),
-                    )
-                    .map(Some)
+                    Ok(Some(self.bake_bound_params_into_regex_arguments(
+                        &self.interpolate_bound_regex_scalars(&s), &def.params,
+                    )))
                 } else if rv.is_nil() {
                     Ok(None)
                 } else {

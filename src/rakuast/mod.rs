@@ -68,6 +68,7 @@ mod proto;
 mod react;
 mod regex_char_class;
 mod regex_code;
+mod regex_decl_constructor;
 mod regex_enumeration;
 mod regex_extension;
 mod regex_quantifier;
@@ -2793,84 +2794,13 @@ pub fn construct(
             fields,
         }))));
     }
-    if matches!(
-        class_name,
-        "RakuAST::RegexDeclaration" | "RakuAST::TokenDeclaration" | "RakuAST::RuleDeclaration"
-    ) && method == "new"
-    {
-        // The name is optional: an anonymous `regex { }` term has none.
-        let name = named_arg(args, "name");
-        if let Some(name) = &name {
-            require_rakuast_class(name, RakuAstClass::Name, "RakuAST regex declaration")?;
+    if method == "new" {
+        if class_name == "RakuAST::Grammar" {
+            return class_constructor::construct_grammar(args).map(Some);
         }
-        let body = named_arg(args, "body")
-            .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `body`")))?;
-        require_regex_node(&body, class_name)?;
-        let traits = named_arg(args, "traits")
-            .map(|value| {
-                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
-                    RuntimeError::new(format!("{class_name}.new expects `traits` to be a list"))
-                })
-            })
-            .transpose()?;
-        if let Some(traits) = &traits {
-            for trait_node in traits {
-                require_rakuast_class(
-                    trait_node,
-                    RakuAstClass::TraitIs,
-                    "RakuAST regex declaration",
-                )?;
-            }
+        if let Some(result) = regex_decl_constructor::construct(class_name, args) {
+            return result.map(Some);
         }
-        let class = match class_name {
-            "RakuAST::RegexDeclaration" => RakuAstClass::RegexDeclaration,
-            "RakuAST::TokenDeclaration" => RakuAstClass::TokenDeclaration,
-            _ => RakuAstClass::RuleDeclaration,
-        };
-        let mut fields: Vec<_> = name
-            .map(|name| RakuAstField {
-                name: Some("name"),
-                value: RakuAstFieldValue::Node(name),
-            })
-            .into_iter()
-            .collect();
-        if let Some(traits) = traits {
-            fields.push(RakuAstField {
-                name: Some("traits"),
-                value: RakuAstFieldValue::List(traits),
-            });
-        }
-        fields.push(RakuAstField {
-            name: Some("body"),
-            value: RakuAstFieldValue::Node(body),
-        });
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class,
-            fields,
-        }))));
-    }
-    if class_name == "RakuAST::Grammar" && method == "new" {
-        let name = named_arg(args, "name")
-            .ok_or_else(|| RuntimeError::new("RakuAST::Grammar.new requires `name`"))?;
-        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Grammar.new")?;
-        if named_arg(args, "body").is_some() {
-            return Err(RuntimeError::new(
-                "RakuAST::Grammar.new does not accept a `body` argument",
-            ));
-        }
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::Grammar,
-            fields: vec![
-                RakuAstField {
-                    name: Some("name"),
-                    value: RakuAstFieldValue::Node(name),
-                },
-                RakuAstField {
-                    name: Some("body"),
-                    value: RakuAstFieldValue::Node(empty_block()),
-                },
-            ],
-        }))));
     }
     if let Some(node) = regex_char_class::construct(class_name, method, args) {
         return node.map(Some);

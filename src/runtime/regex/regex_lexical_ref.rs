@@ -248,7 +248,7 @@ impl Interpreter {
                 .collect();
             let pattern = interp.bake_bound_params_into_regex_code_blocks(&pattern, &bare_names);
             let pattern = interp.interpolate_bound_regex_scalars(&pattern);
-            interp.instantiate_named_regex_arg_calls(&pattern).ok()
+            Some(interp.bake_bound_params_into_regex_arguments(&pattern, &bare_names))
         })
     }
 }

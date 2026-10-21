@@ -185,7 +185,7 @@ impl Interpreter {
         }
         let Some(orig) = args
             .iter()
-            .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .find(|a| !a.unwrap_varref().is_string_pair_value())
         else {
             return Some(Err(RuntimeError::new(
                 "!cursor_init requires a target string",

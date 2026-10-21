@@ -293,7 +293,7 @@ impl Interpreter {
         if has_opaque_arg {
             let positional: Vec<&Value> = arg_values
                 .iter()
-                .filter(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                .filter(|v| !v.unwrap_varref().is_string_pair_value())
                 .collect();
             for def in self.resolve_token_defs_in_pkg(name, pkg) {
                 let mut positional_idx = 0usize;
@@ -326,15 +326,6 @@ impl Interpreter {
                             .iter()
                             .any(|candidate| candidate == key.as_str())
                             .then_some(value),
-                        ValueView::ValuePair(key, value) => {
-                            let ValueView::Str(key) = key.view() else {
-                                return None;
-                            };
-                            pd.named_external_keys()
-                                .iter()
-                                .any(|candidate| candidate == key.as_str())
-                                .then_some(value)
-                        }
                         _ => None,
                     }) else {
                         continue;
@@ -354,7 +345,7 @@ impl Interpreter {
         // Named arguments (`:args(:x(1),)`) never fill a positional slot.
         let positional: Vec<&Value> = arg_values
             .iter()
-            .filter(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .filter(|v| !v.unwrap_varref().is_string_pair_value())
             .collect();
         saved.reserve(params.len());
         for (idx, pd) in params.iter() {
