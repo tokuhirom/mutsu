@@ -460,7 +460,12 @@ impl Interpreter {
             && !self_val.with_deref(|value| {
                 matches!(
                     value.view(),
-                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                    ValueView::Instance { .. }
+                        | ValueView::Mixin(..)
+                        | ValueView::Proxy {
+                            subclass: Some(_),
+                            ..
+                        }
                 )
             })
         {

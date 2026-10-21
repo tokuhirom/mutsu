@@ -1471,7 +1471,7 @@ impl Interpreter {
                 "VAR" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
             ) {
             let has_subclass_attr = if let Some((_, attrs)) = subclass {
-                attrs.lock().unwrap().contains_key(method)
+                attrs.as_map().contains_key(method)
             } else {
                 false
             };
@@ -1491,12 +1491,6 @@ impl Interpreter {
         } else {
             target
         };
-        // A user method called on a `.VAR`-decontainerized Proxy subclass
-        // (ADR-14162): it runs against the Proxy's attributes.
-        if let Some(result) = self.dispatch_proxy_subclass_user_method(&target, method, &args) {
-            self.stack.push(result?);
-            return Ok(());
-        }
         // A lazy receiver's pull answers first: the placeholders of
         // `gist`/`Str`/`raku`, `cache`, `values`, and the refusals of the
         // counting methods (the lazy step, ADR-13891).

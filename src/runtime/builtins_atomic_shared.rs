@@ -828,11 +828,8 @@ impl Interpreter {
         {
             return None;
         }
-        let Some(ValueView::Instance { attributes, .. }) = self.env.get("self").map(Value::view)
-        else {
-            return None;
-        };
-        let attrs = attributes.clone();
+        // An instance's cell, or a `Proxy` subclass instance's (#14259).
+        let attrs = Self::self_instance_attrs(self.env.get("self")?)?;
         let key = {
             let map = attrs.as_map();
             match self.types.method_class_stack.last() {

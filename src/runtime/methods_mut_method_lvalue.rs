@@ -787,20 +787,15 @@ impl Interpreter {
         } = target.view()
         {
             let attrs = subclass_attrs.clone();
-            if attrs.lock().unwrap().contains_key(method) {
+            let existing = attrs.as_map().get(method).cloned();
+            if let Some(existing) = existing {
                 // Coerce to array if the existing attribute is an array
-                let new_val = {
-                    let guard = attrs.lock().unwrap();
-                    if matches!(
-                        guard.get(method).map(Value::view),
-                        Some(ValueView::Array(..))
-                    ) {
-                        crate::runtime::coerce_to_array(value.clone())
-                    } else {
-                        value.clone()
-                    }
+                let new_val = if matches!(existing.view(), ValueView::Array(..)) {
+                    crate::runtime::coerce_to_array(value.clone())
+                } else {
+                    value.clone()
                 };
-                attrs.lock().unwrap().insert(method.to_string(), new_val);
+                attrs.set_attribute_value(Symbol::intern(method), new_val);
                 return Ok(value);
             }
         }

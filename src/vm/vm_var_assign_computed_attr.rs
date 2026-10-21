@@ -243,7 +243,8 @@ impl Interpreter {
     /// caller's Mixin (it shares the same inner instance). A `ContainerRef` is read
     /// through: `$outer := self` rewrites the frame's `self` into the bind's shared
     /// cell, and attribute writes after that bind must still reach the instance
-    /// (t/bind-self-attr-write.t). Returns `None` for a type object / non-instance.
+    /// (t/bind-self-attr-write.t). A `Proxy` subclass instance answers its
+    /// attribute cell. Returns `None` for a type object / non-instance.
     ///
     /// The unwrap is iterative and bounded, and each `ContainerRef` level is
     /// cloned out via `deref_container` so NO cell lock is held while looking at
@@ -259,6 +260,12 @@ impl Interpreter {
             let v = cur.as_ref().unwrap_or(val);
             let next = match v.view() {
                 ValueView::Instance { attributes, .. } => return Some(attributes.clone()),
+                // A `Proxy` subclass instance carries its attributes in the
+                // same kind of cell (#14259).
+                ValueView::Proxy {
+                    subclass: Some((_, attributes)),
+                    ..
+                } => return Some(attributes.clone()),
                 ValueView::Mixin(inner, _) => Value::clone(inner),
                 ValueView::ContainerRef(_) => v.deref_container(),
                 _ => return None,

@@ -512,8 +512,11 @@ impl Interpreter {
             }
         }
 
-        // Initialize subclass attributes with defaults
+        // Initialize subclass attributes with defaults; an attribute without
+        // one is seeded as an ordinary instance's is (its type object, or its
+        // `is default` value), not left `Nil` (#14259).
         let class_attrs_info = self.collect_class_attributes(class_name);
+        let attr_type_constraints = self.collect_attribute_type_constraints(class_name);
         for attr in &class_attrs_info {
             let attr_name = &attr.name;
             let default_expr = &attr.default;
@@ -523,17 +526,7 @@ impl Interpreter {
                     let result = self.eval_decl_trait_arg(arg)?;
                     Self::coerce_attr_value_by_sigil(result, *sigil)
                 } else {
-                    match sigil {
-                        '@' => Value::real_array(Vec::new()),
-                        '%' => Value::hash(ValueMap::default()),
-                        // An untyped `$` attribute reads as the Any type object
-                        // (what the plain constructor seeds), so `cas` against
-                        // a `my $old = $!attr` copy compares equal.
-                        _ if attr.type_constraint.is_none() => {
-                            Value::package(crate::symbol::wk::any())
-                        }
-                        _ => Value::NIL,
-                    }
+                    self.seed_attr_value(class_name, attr_name, *sigil, &attr_type_constraints)
                 };
                 extra_attrs.insert(attr_name.clone(), default_val);
             }
@@ -541,7 +534,7 @@ impl Interpreter {
         self.enforce_attribute_where_constraints(class_name, &class_attrs_info, &extra_attrs)?;
 
         let subclass_attrs =
-            std::sync::Arc::new(std::sync::Mutex::new(HashMap::from(&extra_attrs)));
+            crate::value::proxy_subclass_attrs(Symbol::intern(class_name), extra_attrs);
         Ok(Value::proxy_parts(
             fetcher,
             storer,
