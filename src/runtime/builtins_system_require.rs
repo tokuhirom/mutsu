@@ -773,7 +773,16 @@ impl Interpreter {
         let mut missing = Vec::new();
         for symbol in imports {
             match self.required_symbol(module, symbol) {
-                Some((value, _)) => {
+                Some((value, key)) => {
+                    // A bare type or term name a module provides is visible
+                    // only where it is imported (`bare_name_visible_here`):
+                    // the scope records the import, though it binds the name
+                    // itself.
+                    match &key {
+                        RequiredKey::Term => self.record_import_env_key(symbol),
+                        RequiredKey::TermKey(term) => self.record_import_env_key(term),
+                        _ => {}
+                    }
                     values.insert(Symbol::intern(symbol), value);
                 }
                 None => missing.push(symbol.clone()),

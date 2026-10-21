@@ -1004,8 +1004,8 @@ impl Compiler {
                     },
                 )));
             }
-            Stmt::Expr(expr) if let Some((module, symbols)) = Self::static_require_import(expr) => {
-                self.compile_block_require(expr, &module, &symbols);
+            Stmt::Expr(expr) if let Some(symbols) = Self::static_require_import(expr) => {
+                self.compile_block_require(expr, &symbols);
             }
             Stmt::Expr(expr) => {
                 // See `Compiler::sunk_list_assign_result` — the statement's

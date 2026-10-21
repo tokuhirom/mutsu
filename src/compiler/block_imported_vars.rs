@@ -190,20 +190,18 @@ pub(super) enum ImportedVarSource {
 pub(crate) const REQUIRE_SET_MARK: &str = "\u{1}require:";
 
 impl Compiler {
-    /// The module and the literal import list of a statement-level
-    /// `require M <&f $x T>`, when both are known at compile time.
+    /// The literal import list of a statement-level `require M <&f $x T>`.
+    /// The module may be computed (`require ::($name) <&f>`, a path): only
+    /// the list decides which names the statement binds.
     // Cost: O(s), s = listed symbols.
-    pub(crate) fn static_require_import(expr: &Expr) -> Option<(String, Vec<String>)> {
+    pub(crate) fn static_require_import(expr: &Expr) -> Option<Vec<String>> {
         let Expr::Call { name, args, .. } = expr else {
             return None;
         };
         if name.resolve() != "require" {
             return None;
         }
-        let [Expr::Literal(target), rest @ ..] = args.as_slice() else {
-            return None;
-        };
-        let ValueView::Package(module) = target.view() else {
+        let [_module, rest @ ..] = args.as_slice() else {
             return None;
         };
         // `<&f>` is one string literal, `<&f $x>` a list of them.
@@ -222,10 +220,16 @@ impl Compiler {
                         symbols.push(literal_str(item)?);
                     }
                 }
+                // The parser's own `__mutsu_require_*` adverbs.
+                Expr::Binary {
+                    left,
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    ..
+                } if literal_str(left).is_some_and(|k| k.starts_with("__mutsu_require")) => {}
                 other => symbols.push(literal_str(other)?),
             }
         }
-        (!symbols.is_empty()).then(|| (module.resolve().to_string(), symbols))
+        (!symbols.is_empty()).then_some(symbols)
     }
 
     /// A `require M <&f $x T>` below the unit's top level (ADR-8751, #14140):
@@ -237,8 +241,10 @@ impl Compiler {
     /// the block keeps them after the block's import scope rolled back the
     /// run-time aliases.
     // Cost: O(s), s = listed symbols.
-    pub(super) fn compile_block_require(&mut self, expr: &Expr, module: &str, symbols: &[String]) {
-        let set_id = format!("{REQUIRE_SET_MARK}{module}:{}", symbols.join(","));
+    pub(super) fn compile_block_require(&mut self, expr: &Expr, symbols: &[String]) {
+        // The bindings read the set right after the call, so statements
+        // listing the same names may share it.
+        let set_id = format!("{REQUIRE_SET_MARK}{}", symbols.join(","));
         let set_idx = self.code.add_constant(Value::str(set_id.clone()));
         let Expr::Call { name, args, listop } = expr else {
             return;

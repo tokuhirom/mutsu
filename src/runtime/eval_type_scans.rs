@@ -198,7 +198,7 @@ impl<'ast> Visit<'ast> for TypeDecls<'_> {
             // `require M <T>` declares each sigil-less name it lists when the
             // unit is compiled; the import binds it when the statement runs.
             Stmt::Expr(expr) => {
-                if let Some((_, symbols)) = crate::compiler::Compiler::static_require_import(expr) {
+                if let Some(symbols) = crate::compiler::Compiler::static_require_import(expr) {
                     for symbol in symbols
                         .iter()
                         .filter(|s| !s.starts_with(['$', '@', '%', '&']))
