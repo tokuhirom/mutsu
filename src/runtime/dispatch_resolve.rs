@@ -312,19 +312,53 @@ impl Interpreter {
         self.resolve_function(name)
     }
 
-    /// Whether a candidate of the multi `name` takes an argument by container
-    /// (`is rw`, `is raw`): a `Proxy` argument must reach it as it is.
+    /// How a `Proxy` argument of a call to the multi `name` is handled by
+    /// candidate selection, per positional slot: `true` where it must be
+    /// FETCHed first because some candidate constrains that slot by type (a
+    /// `%`/`@`/`&` sigil counts), `false` where every candidate takes `Mu`/`Any`
+    /// or an untyped parameter (a FETCH there would only run twice). `None`
+    /// when a candidate takes an argument by container (`is rw`, `is raw`): the
+    /// `Proxy` must reach it as it is.
     // Cost: O(c * p), c = candidates of the family, p = parameters.
-    fn multi_family_takes_containers(&mut self, name: &str) -> bool {
+    fn multi_proxy_slots(&mut self, name: &str, arity: usize) -> Option<Vec<bool>> {
         let keys = self.fn_keys_for_base_sym(name, Symbol::intern(name));
         let registry = self.registry();
-        keys.iter().any(|key| {
-            registry.functions.get(key).is_some_and(|def| {
-                def.param_defs
-                    .iter()
-                    .any(|pd| pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
-            })
-        })
+        let mut typed = vec![false; arity];
+        for key in keys.iter() {
+            let Some(def) = registry.functions.get(key) else {
+                continue;
+            };
+            let mut slot = 0usize;
+            for pd in &def.param_defs {
+                if pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")) {
+                    return None;
+                }
+                if pd.named || pd.is_invocant {
+                    continue;
+                }
+                if pd.slurpy {
+                    // A typed slurpy ranks every slot it swallows.
+                    if pd.type_constraint.as_deref().is_some_and(|tc| !matches!(tc, "Mu" | "Any")) {
+                        for t in typed.iter_mut().skip(slot) {
+                            *t = true;
+                        }
+                    }
+                    break;
+                }
+                let constrained = pd
+                    .type_constraint
+                    .as_deref()
+                    .is_some_and(|tc| !matches!(tc, "Mu" | "Any"))
+                    || pd.name.starts_with(['@', '%', '&'])
+                    || pd.where_constraint.is_some()
+                    || pd.sub_signature.is_some();
+                if constrained && let Some(t) = typed.get_mut(slot) {
+                    *t = true;
+                }
+                slot += 1;
+            }
+        }
+        Some(typed)
     }
 
     pub(crate) fn resolve_function_with_types(
@@ -352,11 +386,14 @@ impl Interpreter {
             .iter()
             .any(|v| v.unwrap_varref().is_proxy_value())
             && self.has_multi_candidates_cached_sym(crate::qualified::known_symbol(name))
-            && !self.multi_family_takes_containers(name)
+            && let Some(typed) = self.multi_proxy_slots(name, arg_values.len())
+            && arg_values.iter().enumerate().any(|(i, v)| {
+                typed.get(i).copied().unwrap_or(false) && v.unwrap_varref().is_proxy_value()
+            })
         {
             let mut fetched = Vec::with_capacity(arg_values.len());
-            for v in arg_values {
-                if v.unwrap_varref().is_proxy_value() {
+            for (i, v) in arg_values.iter().enumerate() {
+                if typed.get(i).copied().unwrap_or(false) && v.unwrap_varref().is_proxy_value() {
                     fetched.push(self.auto_fetch_proxy(v.unwrap_varref())?);
                 } else {
                     fetched.push(v.clone());
