@@ -401,8 +401,10 @@ impl Compiler {
         // A left bareword that names an in-scope term -- a sigilless binding
         // (`\g` param, `my \x`) or a `constant` -- is a value, not a listop,
         // so `g | e` is the infix junction (issue #9364).
+        // The slipped bareword has to be a term itself (a sigilless capture, a
+        // constant): `aa | bb` over two enum values is the infix junction.
         if *op == TokenKind::Pipe
-            && matches!(right, Expr::BareWord(_))
+            && matches!(right, Expr::BareWord(r) if self.bareword_is_lexical_term(r))
             && let Expr::BareWord(name) = left
             && !name.starts_with(char::is_uppercase)
             && !self.bareword_is_lexical_term(name)

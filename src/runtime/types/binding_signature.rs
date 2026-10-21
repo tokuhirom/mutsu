@@ -652,7 +652,9 @@ impl Interpreter {
         // (`sub f(Str $s is raw)` accepts a Proxy over a Str). An `is rw` /
         // `is raw` parameter that must keep the caller's Proxy re-binds it from
         // the caller's cell below, so only the checked value is the fetched one.
-        if pd.type_constraint.is_some() {
+        // `Mu` accepts the Proxy as it is, so its FETCH has nothing to decide
+        // (and AttrX::Mooish's builder re-entering its own FETCH would hang).
+        if pd.type_constraint.as_deref().is_some_and(|tc| tc != "Mu") {
             if value.is_proxy_value() {
                 value = self.auto_fetch_proxy(&value)?;
             } else {
