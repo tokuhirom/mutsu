@@ -580,7 +580,8 @@ impl Interpreter {
                 return Ok(());
             }
             if name.starts_with('%') && Interpreter::is_plain_lexical_name(name) {
-                self.stack.push(Value::hash(crate::value::ValueMap::default()));
+                self.stack
+                    .push(Value::hash(crate::value::ValueMap::default()));
                 return Ok(());
             }
             // `is default(...)`: return the default value instead of Nil.
