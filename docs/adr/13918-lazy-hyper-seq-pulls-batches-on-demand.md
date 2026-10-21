@@ -1,6 +1,6 @@
 # ADR-13918: A hyper or race sequence over a lazy source pulls its batches on demand
 
-- **Status**: Proposed
+- **Status**: Rejected (user decision 2026-10-21; see §0). Follow-ups: [#14420](https://github.com/tokuhirom/mutsu/issues/14420), [#14421](https://github.com/tokuhirom/mutsu/issues/14421)
 - **Date**: 2026-10-20
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#13918](https://github.com/tokuhirom/mutsu/issues/13918)
@@ -8,6 +8,28 @@
   rows; its §6 audit left this difference open), [ADR-0034](0034-seq-reification-is-in-place-and-distinct-from-consumption.md)
   (the `Seq` body and its deferred sources), [ADR-11276](11276-built-in-methods-are-handler-rows.md)
   (`HyperSeq`/`RaceSeq` rows, §9.137)
+
+## 0. Rejection (2026-10-21)
+
+The maintainer rejected this proposal. It was overtaken before it was decided:
+
+- **The representation is settled by #14284.** A `.hyper`/`.race` of an unbounded sequence is
+  a `LazyList` tagged `HyperKind::Hyper`/`Race` (`LazyList::hyper_kind`), not a `SeqBody` with
+  a deferred source as §2.1 proposes. The tag is one field on an existing kind, so it is cheap
+  to change later and does not have the cost §4 gave a new `ValueRepr` kind. Accepting §2
+  would mean rebuilding a working representation for no behavioural gain.
+- **#13918's repro passes** (`(1..*).map(*+0).hyper.map(*+1).head(3)` is `(2 3 4)`), and the
+  issue is closed.
+- **What remains is not costly to reverse, so it needs no ADR.** The correctness gaps of the
+  lazy form (`.configuration` missing, `.is-lazy` answering `True`) are a ticket, #14420.
+  Running a lazy pipeline's stages on the worker pool is a performance change whose only
+  observable difference, how far ahead the source is pulled, Raku leaves unspecified; it is
+  #14421 (`todo:perf`), with the bound that a pull reads at most `degree × batch` source
+  elements ahead and the source is pulled on the calling thread only.
+
+Sections 1-5 below are the proposal as it was written, kept for the record. Its §4 rejected
+"sequential, unbatched pulls"; that is the state #14284 shipped as a correct intermediate,
+and #14421 adds the batching back on top of it.
 
 ## 1. Context
 

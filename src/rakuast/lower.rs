@@ -1970,12 +1970,12 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if is_traits.assoc.is_some() || is_traits.precedence.is_some() {
         return Err(unsupported(node));
     }
-    // `scope => "my"` / `"our"`; a plain method has none.
+    // `scope => "my"` / `"our"`; a plain method or submethod has none.
     let (is_our, is_my) = match node.fields.iter().find(|f| f.name == Some("scope")) {
         None => (false, false),
         Some(_) => match (leaf_str(node, "scope")?.as_str(), node.class) {
-            ("our", RakuAstClass::Method) => (true, false),
-            ("my", RakuAstClass::Method) => (false, true),
+            ("our", RakuAstClass::Method | RakuAstClass::Submethod) => (true, false),
+            ("my", RakuAstClass::Method | RakuAstClass::Submethod) => (false, true),
             ("has" | "anon", RakuAstClass::Method | RakuAstClass::Submethod) => (false, false),
             _ => return Err(unsupported(node)),
         },

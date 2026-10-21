@@ -1283,10 +1283,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // forms, user traits, and delegation carry extra shape; `multi`,
             // `!private`, `is rw` and `is raw` are `rakuast::routine_traits`.
             let spelling = return_type_spelling(custom_traits)?;
-            // `submethod_decl` marks every submethod `is_my` as its internal
-            // "not inherited" flag, not because the source said `my` — so for a
-            // submethod that flag carries no RakuAST shape of its own.
-            let declared_my = *is_my && !*is_submethod;
+            let declared_my = *is_my;
             let deferred = [
                 (
                     *is_export != !export_tags.is_empty(),
@@ -1344,11 +1341,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 routine_traits::add_custom(&mut node, &custom, !flags.nodes().is_empty())?;
             }
             // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
-            // Rakudo's RakuAST does not retain a scope field on Submethod:
-            // `my`, `our`, and unscoped forms all have the same model shape.
-            let scope = if *is_submethod {
-                None
-            } else if *is_our {
+            // Submethod's constructor rendering omits even a written scope,
+            // but its accessor still distinguishes `my` and `our`. Keep the
+            // value in the model and let the renderer apply that contract.
+            let scope = if *is_our {
                 Some("our")
             } else if declared_my {
                 Some("my")
