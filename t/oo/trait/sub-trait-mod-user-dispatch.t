@@ -15,7 +15,9 @@ use MONKEY-SEE-NO-EVAL;
 
 # The user handler actually runs, with visible side effects, for a trait name
 # mutsu's parser also treats as a builtin (`test-assertion`).
-my $seen = False;
+# No initializer: the trait runs when the declaration is compiled, which an
+# initializer would undo at run time.
+my $seen;
 multi sub trait_mod:<is>(Routine:D $r, :$test-assertion!) { $seen = True }
 sub foo-ok() is test-assertion { }
 ok $seen, 'user trait_mod:<is> handler runs for a natively-recognised trait name';
