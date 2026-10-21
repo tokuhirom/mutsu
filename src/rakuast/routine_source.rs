@@ -1,14 +1,89 @@
 //! Routine traits in written order, independently of their execution fields.
 
 use super::convert::{ReturnSpelling, blockoid, name_from_identifier, signature};
-use super::convert::{node_field, unsupported};
-use super::lower::{list_field, named_child, named_child_or_positional, positional_leaf};
+use super::convert::{leaf_field, node_field, unsupported};
+use super::lower::{
+    list_field, lower_signature_parameters, named_child, named_child_or_positional, positional_leaf,
+};
 use super::name_parts;
 use super::type_build::return_constraint_node;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::routine_trait::{RoutineTrait, TraitArgument};
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
+
+const SOURCE_SIGNATURE_ALTERNATES: &str = "source-signature-alternates";
+const SOURCE_SUPERSEDE: &str = "source-supersede";
+pub(super) type SignatureAlternates = Vec<(Vec<String>, Vec<ParamDef>)>;
+
+/// The S13 alternate-signature and `supersede` forms are accepted by mutsu's
+/// source parser but have no public Rakudo node shape. Carry their executable
+/// source data without changing the public Sub constructor rendering.
+// Cost: O(p), p = parameters in alternate signatures.
+pub(super) fn mark_legacy_sub_forms(
+    node: &mut RakuAstNode,
+    alternates: &[(Vec<String>, Vec<ParamDef>)],
+    supersede: bool,
+) -> Result<(), RuntimeError> {
+    if !alternates.is_empty() {
+        let signatures = alternates
+            .iter()
+            .map(|(_, defs)| signature(defs, true, None).map(|sig| Value::rakuast(Box::new(sig))))
+            .collect::<Result<Vec<_>, _>>()?;
+        node.fields.push(RakuAstField {
+            name: Some(SOURCE_SIGNATURE_ALTERNATES),
+            value: RakuAstFieldValue::List(signatures),
+        });
+    }
+    if supersede {
+        node.fields
+            .push(leaf_field(Some(SOURCE_SUPERSEDE), Value::TRUE));
+    }
+    Ok(())
+}
+
+// Cost: O(p), p = parameters in alternate signatures.
+pub(super) fn lower_alternates(node: &RakuAstNode) -> Result<SignatureAlternates, RuntimeError> {
+    let Some(field) = node
+        .fields
+        .iter()
+        .find(|field| field.name == Some(SOURCE_SIGNATURE_ALTERNATES))
+    else {
+        return Ok(Vec::new());
+    };
+    let RakuAstFieldValue::List(signatures) = &field.value else {
+        return Err(unsupported("alternate signature metadata"));
+    };
+    signatures
+        .iter()
+        .map(|value| {
+            let ValueView::RakuAst(signature) = value.view() else {
+                return Err(unsupported("alternate signature metadata"));
+            };
+            if signature.class != RakuAstClass::Signature {
+                return Err(unsupported("alternate signature metadata"));
+            }
+            let defs = lower_signature_parameters(signature, node)?;
+            let names = defs.iter().map(|def| def.name.clone()).collect();
+            Ok((names, defs))
+        })
+        .collect()
+}
+
+// Cost: O(f), f = fields of the routine node.
+pub(super) fn has_supersede(node: &RakuAstNode) -> bool {
+    node.fields
+        .iter()
+        .any(|field| field.name == Some(SOURCE_SUPERSEDE))
+}
+
+// Cost: O(1).
+pub(super) fn is_legacy_source_field(field: &RakuAstField) -> bool {
+    matches!(
+        field.name,
+        Some(SOURCE_SIGNATURE_ALTERNATES | SOURCE_SUPERSEDE)
+    )
+}
 
 // Cost: O(b + t + a), b = body statements, t = traits, a = argument size.
 pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, RuntimeError> {

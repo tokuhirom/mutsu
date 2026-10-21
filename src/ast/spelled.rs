@@ -80,6 +80,9 @@ pub(crate) enum Spelling {
         subscript: Box<Expr>,
         pairs: Vec<Expr>,
     },
+    /// A bare Whatever operand of `o` is expanded to a closure for execution;
+    /// the public RakuAST keeps the written composition and Whatever argument.
+    CompositionWhatever(Box<Expr>),
 }
 
 /// A term and the way it was spelled; see the module documentation.

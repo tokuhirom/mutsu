@@ -7,6 +7,29 @@ use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
+const SOURCE_CLOSED_BLOCK_HEREDOC: &str = "source-closed-block-heredoc";
+
+/// Keep the parser's lexical-scope diagnostic while exposing the public
+/// interpolated string tree.
+// Cost: O(n), n = heredoc content size.
+pub(super) fn convert_closed_block_heredoc(content: &str) -> Result<RakuAstNode, RuntimeError> {
+    let mut quoted =
+        super::convert::convert_expr(&crate::parser::interpolate_heredoc_content(content))?;
+    if quoted.class != RakuAstClass::QuotedString {
+        return Err(super::convert::unsupported("closed-block heredoc contents"));
+    }
+    quoted.fields.push(super::convert::leaf_field(
+        Some(SOURCE_CLOSED_BLOCK_HEREDOC),
+        Value::str(content.to_string()),
+    ));
+    Ok(quoted)
+}
+
+// Cost: O(1).
+pub(super) fn is_source_field(field: &RakuAstField) -> bool {
+    field.name == Some(SOURCE_CLOSED_BLOCK_HEREDOC)
+}
+
 // Cost: O(n), n = quoted-string expression size.
 pub(super) fn convert_format(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let [string] = args else {
@@ -99,6 +122,19 @@ fn interpolating_words(
 
 // Cost: O(n), n = quoted-string node size.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if let Some(field) = node
+        .fields
+        .iter()
+        .find(|field| field.name == Some(SOURCE_CLOSED_BLOCK_HEREDOC))
+    {
+        let RakuAstFieldValue::Node(content) = &field.value else {
+            return Err(unsupported(node));
+        };
+        let ValueView::Str(content) = content.view() else {
+            return Err(unsupported(node));
+        };
+        return Ok(Expr::HeredocInterpolation(content.to_string(), true));
+    }
     if node
         .fields
         .iter()

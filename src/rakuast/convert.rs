@@ -696,6 +696,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             var_decl_statement(var_decl_parts(decl)?, true)
         }
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
+        Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(signature_block_node(body)?))),
         // `BEGIN { … }` / `INIT { … }` / `LEAVE { … }` / … -> a
@@ -1152,14 +1153,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // Phase 2 slice 7 covers the plain named `sub NAME (params) { body }`
             // form; return types are covered too (`-->` via `Signature.returns`,
             // `returns`/`of` via `Trait::Returns`/`Trait::Of`). Other traits,
-            // multi, export, operator subs, and alternate signatures carry extra
-            // RakuAST shape, deferred.
+            // Multi, export and operator subs carry their public RakuAST shape.
+            // The S13 alternate-signature and supersede forms have no Rakudo
+            // node shape; their execution data stays as hidden source metadata.
             let spelling = return_type_spelling(custom_traits)?;
             let deferred = [
-                (
-                    !signature_alternates.is_empty(),
-                    "sub with alternate signatures",
-                ),
                 (
                     *is_export != !export_tags.is_empty(),
                     "sub with an untagged `is export`",
@@ -1168,7 +1166,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_test_assertion && !custom_traits.iter().any(|(t, _)| t == "test-assertion"),
                     "sub with `is test-assertion`",
                 ),
-                (*supersede, "`supersede` sub"),
                 (
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__")
@@ -1197,6 +1194,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 param_defs,
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
+            )?;
+            super::routine_source::mark_legacy_sub_forms(
+                &mut node,
+                signature_alternates,
+                *supersede,
             )?;
             super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
             if super::routine_source::apply(&mut node, body)? {
@@ -1527,12 +1529,13 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             class: RakuAstClass::StatementTrusts,
             fields: vec![node_field(Some("type"), build_type_node(&name.resolve())?)],
         })),
-        // `augment class C { ... }` is a `Class` with `scope => "augment"`.
+        // `augment class/role C { ... }` keeps its package kind and the
+        // `scope => "augment"` declarator.
         Stmt::AugmentClass {
             name,
             body,
             does_roles,
-            is_role: false,
+            is_role,
         } => {
             let mut fields = vec![
                 leaf_field(Some("scope"), Value::str_from("augment")),
@@ -1556,7 +1559,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 block_node(&crate::parser::unhoist_nested_methods(body))?,
             ));
             Ok(Some(statement_expression(RakuAstNode {
-                class: RakuAstClass::Class,
+                class: if *is_role {
+                    RakuAstClass::Role
+                } else {
+                    RakuAstClass::Class
+                },
                 fields,
             })))
         }
@@ -3258,6 +3265,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Spelling::NamedSubscript { .. } | Spelling::ConflictingSubscript { .. } => {
                 Err(unsupported("subscript adverb source form"))
             }
+            Spelling::CompositionWhatever(source) => {
+                super::composition_source::convert(source, &spelled.expr)
+            }
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -4726,7 +4736,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // interpolation would lose.
         Expr::HeredocInterpolation(content, closes_block_same_line) => {
             if *closes_block_same_line {
-                return Err(unsupported("heredoc closing an enclosing block"));
+                return super::quoted_string::convert_closed_block_heredoc(content);
             }
             convert_expr(&crate::parser::interpolate_heredoc_content(content))
         }
