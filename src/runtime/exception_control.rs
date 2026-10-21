@@ -51,6 +51,40 @@ impl Interpreter {
         crate::builtins::method_table::invoke_mro_late(self, &[owner], method, args, target)
     }
 
+    /// Answer `message`, `gist`, `Str`, `Stringy`, `backtrace` or `payload` of a
+    /// built-in exception instance from its owner's row
+    /// (`method_table::exception`). A class with a method of its own, or one
+    /// whose message the interpreter must compute, keeps its ordinary dispatch.
+    // Cost: O(1) to decline a method with no row; otherwise one class-registry
+    // probe plus the row's handler.
+    pub(super) fn exception_rows_by_owner(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !args.is_empty()
+            || !matches!(
+                method,
+                "message" | "gist" | "Str" | "Stringy" | "backtrace" | "payload"
+            )
+            || !target.instance_is_exception_by_name()
+        {
+            return None;
+        }
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        let cn = class_name.resolve();
+        if self.has_user_method(&cn, method)
+            || (matches!(method, "gist" | "Str" | "Stringy")
+                && self.exception_render_needs_interpreter(target, &cn))
+        {
+            return None;
+        }
+        crate::builtins::method_table::exception::answer(target, method)
+    }
+
     /// `Exception.throw`, `rethrow`, `die`, `fail` and `resume` on an exception
     /// instance, a user subclass's included: raise it (as a control exception
     /// for a class doing `X::Control`, as a warning for a `CX::Warn`), return a

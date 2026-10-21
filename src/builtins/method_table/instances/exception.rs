@@ -6,7 +6,7 @@
 //! the typed ones `format_exception_message` renders a message from). Every
 //! handler reads those attributes, so they are pure rows. The classes are many
 //! and open-ended (every `X::Foo` is one), so none has a shape: the rows are
-//! reached through their owner, and [`answer`] is that entry for the cascade,
+//! reached through their owner, and [`answer`] is that lookup for the interpreter's entry,
 //! which walks the instance's owner chain (`X::AdHoc` and `CX::Warn` answer
 //! some names themselves, every other class answers as `Exception`).
 
