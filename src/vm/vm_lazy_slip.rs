@@ -189,9 +189,9 @@ impl Interpreter {
         }
         let mut pipe = crate::value::LazyList::new_stream_pipe(source);
         pipe.mark_lazy();
-        Ok(Some(Value::slip(vec![Value::lazy_list(crate::gc::Gc::new(
-            pipe,
-        ))])))
+        Ok(Some(Value::slip(vec![Value::lazy_list(
+            crate::gc::Gc::new(pipe),
+        )])))
     }
 
     /// `.Slip` on a genuinely lazy receiver or a plain gather: the lazy-tail
