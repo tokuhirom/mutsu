@@ -676,11 +676,14 @@ fn callback_positionals(func: &Value) -> usize {
 /// pull cuts its chunks at whole groups (`.map(-> $a, $b { ... })` takes two
 /// per call, as Rakudo's iterator pulls them). A block with a slurpy
 /// parameter takes its required positionals per call, at least one, as the
-/// eager loop's batch does. A grep tests one element at a time.
+/// eager loop's batch does. A grep takes as many as its inline loop binds.
 // Cost: O(p), p = parameters.
 pub(super) fn map_group_size(func: Option<&Value>, mode: &MapGrepMode) -> usize {
     if mode.is_grep() {
-        return 1;
+        return match func.map(Value::view) {
+            Some(ValueView::Sub(data)) => crate::runtime::map_grep_plan::inline_loop_arity(&data),
+            _ => 1,
+        };
     }
     if let Some(func) = func
         && let ValueView::Sub(data) = func.view()

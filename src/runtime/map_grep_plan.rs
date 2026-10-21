@@ -111,6 +111,10 @@ pub(crate) struct MapGrepPlanSlot {
     /// phasers belong to the whole iteration.
     first_fired: bool,
     last_fired: bool,
+    /// Set by a chained pull around a chunk that does not reach the end of
+    /// its upstream: running out of the chunk's elements is not the end, so
+    /// `LAST` must wait (#14196).
+    pub(crate) chunk_open: bool,
 }
 
 /// The address a plan is keyed by.

@@ -57,12 +57,20 @@ impl<'a> LoopFeed<'a> {
 pub(crate) struct LoopSource<'a> {
     pub(crate) buf: Vec<Value>,
     feed: Option<LoopFeed<'a>>,
+    /// The elements held are only the part of a longer source the pull has
+    /// read so far (a chained map's upstream is not yet exhausted), so
+    /// running past them is not the end of the iteration.
+    pub(crate) open_end: bool,
 }
 
 impl<'a> LoopSource<'a> {
     // Cost: O(1).
     pub(crate) fn list(buf: Vec<Value>) -> Self {
-        Self { buf, feed: None }
+        Self {
+            buf,
+            feed: None,
+            open_end: false,
+        }
     }
 
     // Cost: O(1).
@@ -70,6 +78,7 @@ impl<'a> LoopSource<'a> {
         Self {
             buf: Vec::new(),
             feed: Some(feed),
+            open_end: false,
         }
     }
 
@@ -103,7 +112,7 @@ impl<'a> LoopSource<'a> {
     /// yet seen the end (a `map`'s `LAST` waits for that pull).
     // Cost: O(1) beyond one source read.
     pub(crate) fn ran_out(&mut self, produced: &[Value], produced_base: usize, at: usize) -> bool {
-        !self.satisfied(produced, produced_base) && !self.has(at + 1)
+        !self.open_end && !self.satisfied(produced, produced_base) && !self.has(at + 1)
     }
 }
 
