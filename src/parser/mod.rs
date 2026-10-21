@@ -90,7 +90,7 @@ pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;
 mod outer_redecl;
 pub(crate) mod p6_frame_state;
-pub(crate) use stmt::decl::destructure::native_type_default;
+pub(crate) use stmt::decl::typed_default_expr;
 mod parse_result;
 mod primary;
 pub(crate) use primary::container::finalize_array_sections;
