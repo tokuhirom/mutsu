@@ -87,6 +87,44 @@ impl Interpreter {
         self.check_type_capture_inheritance(stmts)
     }
 
+    /// Run the unit's top-level `use` of a module that imports through a
+    /// `sub EXPORT` hook before the CHECK-time validation, as rakudo does at
+    /// BEGIN time: what such a hook imports depends on the `use` arguments and
+    /// no static scan can predict it (#13441). The statements run here (inside
+    /// the EVAL's import scope) and are dropped from the unit, so the checks
+    /// read the real import set and the hook is not run a second time.
+    // Cost: O(u) static checks plus the load and hook of each hook-importing
+    // `use`, u = top-level statements.
+    fn run_eval_hook_uses(&mut self, stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+        let is_hook_use = |this: &Self, stmt: &Stmt| {
+            matches!(stmt, Stmt::Use { module, condition: None, .. } if this.module_imports_through_export_hook(module))
+        };
+        if !stmts.iter().any(|stmt| is_hook_use(self, stmt)) {
+            return Ok(stmts);
+        }
+        let (uses, rest): (Vec<Stmt>, Vec<Stmt>) =
+            stmts.into_iter().partition(|stmt| is_hook_use(self, stmt));
+        for stmt in &uses {
+            let Stmt::Use { module, arg, tags, .. } = stmt else {
+                continue;
+            };
+            // The `use` arguments are what the module's `sub EXPORT` sees
+            // (the compiler pushes one value per top-level list element).
+            let arg_exprs: Vec<&Expr> = match arg {
+                Some(Expr::ArrayLiteral(items)) => items.iter().collect(),
+                Some(other) => vec![other],
+                None => Vec::new(),
+            };
+            let mut args = Vec::with_capacity(arg_exprs.len());
+            for expr in arg_exprs {
+                args.push(self.eval_block_value(&[Stmt::Expr(expr.clone())])?);
+            }
+            self.module.pending_use_export_args = (!args.is_empty()).then_some(args);
+            self.use_module_with_tags(module, tags)?;
+        }
+        Ok(rest)
+    }
+
     pub(super) fn parse_and_eval_with_operators(
         &mut self,
         src: &str,
@@ -145,6 +183,7 @@ impl Interpreter {
                 } else {
                     stmts
                 };
+                let stmts = self.run_eval_hook_uses(stmts)?;
                 self.validate_eval_source(&stmts)?;
                 self.run_eval_unit_stmts(stmts)
             }
