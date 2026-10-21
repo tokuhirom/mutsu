@@ -1299,6 +1299,18 @@ impl Interpreter {
                             } else {
                                 Self::accessor_read_value(attr.sigil, val)
                             };
+                            // A non-rw accessor hands back a decontainerized value, so
+                            // a `@`/`%` attribute bound to a Proxy (AttrX::Mooish's lazy
+                            // attribute) is read through it: the FETCH runs at the call,
+                            // even in statement position, where nothing else would.
+                            let val = if !attr.is_rw
+                                && matches!(attr.sigil, '@' | '%')
+                                && val.is_proxy_value()
+                            {
+                                self.auto_fetch_proxy(&val)?
+                            } else {
+                                val
+                            };
                             // For typed @/% attributes, register type metadata on the
                             // returned value so push/insert type enforcement works.
                             if (attr.sigil == '@' || attr.sigil == '%')
