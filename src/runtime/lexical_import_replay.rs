@@ -22,8 +22,8 @@ use super::*;
 use crate::runtime::lexical_imports::LexicalImport;
 use std::sync::Arc;
 
-/// `ModuleState::imported_env_aliases`.
-type EnvAliases = Arc<HashMap<Symbol, Symbol>>;
+/// `ModuleState::unit_env_imports`.
+type EnvAliases = crate::runtime::unit_env_imports::UnitEnvImports;
 
 /// `TypeState::package_type_aliases`.
 type TypeAliases = Arc<crate::runtime::package_keyed::PackageKeyed<String>>;
@@ -31,8 +31,8 @@ type TypeAliases = Arc<crate::runtime::package_keyed::PackageKeyed<String>>;
 /// What a block-scoped `use` wrote that its scope's exit removes again.
 pub(crate) struct LexicalImportReplay {
     /// The module-merge env keys, the values the import bound them to and
-    /// the display names `record_import_env_key` gave them, if it did.
-    env_keys: Vec<(Symbol, Value, Option<Symbol>)>,
+    /// whether `record_import_env_key` noted them as the unit's imports.
+    env_keys: Vec<(Symbol, Value, bool)>,
     /// The routine aliases it noted (`GLOBAL::name`).
     routine_aliases: Vec<Symbol>,
     /// Those of them the scope lists as its own imports (`MY::`).
@@ -75,7 +75,7 @@ impl Interpreter {
             proto_functions: std::sync::Arc::as_ptr(&reg.proto_functions) as usize,
             proto_subs: std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize,
             classes_shared: reg.classes.clone(),
-            env_aliases: Arc::clone(&self.module.imported_env_aliases),
+            env_aliases: Arc::clone(&self.module.unit_env_imports),
             type_aliases: Arc::clone(&self.types.package_type_aliases),
             pragmas: (
                 self.module.strict_mode,
@@ -163,8 +163,8 @@ impl Interpreter {
             if !key.with_str(|k| k.starts_with(merge)) && !Self::replayable_import_value(value) {
                 return None;
             }
-            let display = self.module.imported_env_aliases.get(key).copied();
-            env_keys.push((*key, value.clone(), display));
+            let noted = self.env_key_imported_here(*key);
+            env_keys.push((*key, value.clone(), noted));
         }
         let routine_aliases = self
             .module
@@ -187,7 +187,7 @@ impl Interpreter {
             ),
             env_aliases_memo: (
                 Arc::clone(&probe.env_aliases),
-                Arc::clone(&self.module.imported_env_aliases),
+                Arc::clone(&self.module.unit_env_imports),
             ),
             type_aliases_memo: (
                 Arc::clone(&probe.type_aliases),
@@ -228,14 +228,17 @@ impl Interpreter {
             self.types.package_type_aliases = Arc::clone(types_after);
         }
         // What `record_import_env_key` records for a key no enclosing import
-        // bound, without re-deriving the display name.
-        // A key an import visible when the scope opened already bound is
-        // shadowed, and the scope's exit puts that binding back, as
-        // `record_import_env_key` arranges on a real import.
+        // bound. A key an import of this unit visible when the scope opened
+        // already bound is shadowed, and the scope's exit puts that binding
+        // back, as `record_import_env_key` arranges on a real import.
+        let unit = self.executing_unit_sym_for_module_load();
         if let Some(top) = self.module.import_scope_stack.last_mut() {
             for (key, ..) in &replay.env_keys {
                 if top.imported_env_keys.insert(*key)
-                    && top.imported_env_aliases.contains_key(key)
+                    && top
+                        .unit_env_imports
+                        .get(key)
+                        .is_some_and(|entry| entry.units.contains(&unit))
                     && let Some(previous) = self.env.get_sym(*key)
                 {
                     top.shadowed_env_values.insert(*key, previous.clone());
@@ -248,13 +251,12 @@ impl Interpreter {
             self.env.insert_sym(*key, value.clone());
         }
         let (before, after) = &replay.env_aliases_memo;
-        if Arc::ptr_eq(&self.module.imported_env_aliases, before) {
-            self.module.imported_env_aliases = Arc::clone(after);
-        } else if replay.env_keys.iter().any(|(_, _, display)| display.is_some()) {
-            let aliases = Arc::make_mut(&mut self.module.imported_env_aliases);
-            for (key, _, display) in &replay.env_keys {
-                if let Some(display) = display {
-                    aliases.insert(*key, *display);
+        if Arc::ptr_eq(&self.module.unit_env_imports, before) {
+            self.module.unit_env_imports = Arc::clone(after);
+        } else {
+            for (key, _, noted) in &replay.env_keys {
+                if *noted {
+                    self.note_unit_env_import(*key);
                 }
             }
         }

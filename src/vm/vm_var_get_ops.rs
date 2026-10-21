@@ -1128,9 +1128,7 @@ impl Interpreter {
         }
         // A term the running code imported is its own binding.
         let term_key = crate::runtime::term_names::term_key_sym(name_sym);
-        if self.module.imported_env_aliases.contains_key(&term_key)
-            || self.module.imported_env_aliases.contains_key(&name_sym)
-        {
+        if self.env_key_imported_here(term_key) || self.env_key_imported_here(name_sym) {
             return None;
         }
         let own = self.resolve_type_in_current_package(name)?;

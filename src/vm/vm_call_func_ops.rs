@@ -302,12 +302,10 @@ impl Interpreter {
     /// name, and (unless `&name` is an imported alias) no same-named package
     /// sub / proto / multi, whose shadow case is handled separately.
     ///
-    /// Cost: O(1) hashed probes.
+    /// Cost: O(1) hashed probes, plus the anchor-unit walk of
+    /// `env_key_imported_here` when some unit imported `&name`.
     pub(crate) fn lexical_amp_call_eligible(&mut self, name: &str) -> bool {
-        let imported_alias = self
-            .module
-            .imported_env_aliases
-            .contains_key(&Symbol::intern(&format!("&{name}")));
+        let imported_alias = self.env_key_imported_here(Symbol::intern(&format!("&{name}")));
         !(Self::is_control_flow_function_name(name)
             || Self::is_interpreter_carrier_function(name)
             || self.is_interpreter_handled_function(name)
@@ -2647,10 +2645,7 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
-                } else if self
-                    .module
-                    .imported_env_aliases
-                    .contains_key(&Symbol::intern(&format!("&{name}")))
+                } else if self.env_key_imported_here(Symbol::intern(&format!("&{name}")))
                     && let Some(callable) = self.lexical_amp_var_callable(Some(code), name)
                 {
                     // A custom EXPORT hook can install an imported CODE alias

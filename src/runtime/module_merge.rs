@@ -583,12 +583,12 @@ impl Interpreter {
             // rakudo), as the qualified gate already lets `Monad::Maybe` do.
             Some(&module) => {
                 self.module_merged_here(module)
-                    || self.module.imported_env_aliases.contains_key(&name)
+                    || self.env_key_imported_here(name)
                     // An imported sigilless term (`our constant Sym is export`)
                     // is recorded under its term key (`\Sym`), not the bare name.
-                    || self.module.imported_env_aliases.contains_key(
-                        &Symbol::intern(&crate::term_names::term_key(name.as_str())),
-                    )
+                    || self.env_key_imported_here(Symbol::intern(&crate::term_names::term_key(
+                        name.as_str(),
+                    )))
                     || self.package_granted_here(name.as_str())
                     // A type an open block's `use` binds in its pad
                     // (ADR-8751): the import writes no env alias for it. A

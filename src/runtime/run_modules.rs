@@ -1248,7 +1248,6 @@ impl Interpreter {
             let saved_export_terms = std::mem::take(&mut self.module.module_export_terms);
             let saved_imported_routine_aliases =
                 std::mem::take(&mut self.module.imported_routine_aliases);
-            let saved_imported_env_aliases = std::mem::take(&mut self.module.imported_env_aliases);
             let saved_pending_rw_writeback_len = self.pending_rw_writeback_sources.len();
             // A module is its own lexical scope: a `my role R` in its body must
             // not read as a further candidate of the loading scope's (or an
@@ -1354,7 +1353,6 @@ impl Interpreter {
                 &mut self.module.imported_routine_aliases,
                 saved_imported_routine_aliases,
             );
-            self.module.imported_env_aliases = saved_imported_env_aliases;
             if !module_routine_aliases.is_empty() {
                 crate::runtime::cow_table_mut(&mut self.module.module_body_import_aliases)
                     .extend(module_routine_aliases.iter().copied());

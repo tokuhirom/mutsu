@@ -409,11 +409,9 @@ pub(crate) struct ModuleState {
     /// exported proto. Rakudo exports the whole family, including the local
     /// candidate, under those tags.
     pub(crate) imported_exported_proto_tags: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
-    /// Environment keys installed by imports, paired with the spelling that
-    /// should appear in a lexical pseudo-stash. Scalar exports are stored in
-    /// `env` without their `$` sigil, so the display spelling cannot be
-    /// reconstructed from the environment key alone.
-    pub(crate) imported_env_aliases: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// Environment keys installed by imports, with the units that imported
+    /// each and its pseudo-stash spelling (`runtime::unit_env_imports`).
+    pub(crate) unit_env_imports: crate::runtime::unit_env_imports::UnitEnvImports,
     /// ADR-8751 stage 1: the routines each block-scoped `use` binds, keyed by
     /// the use's lexical import set id (`OpCode::UseModule::lexical_set_idx`)
     /// and then by routine name. Filled the first time such a `use` runs; the
@@ -643,7 +641,7 @@ impl ModuleState {
             imported_routine_aliases: Default::default(),
             module_body_import_aliases: Default::default(),
             imported_exported_proto_tags: Default::default(),
-            imported_env_aliases: Default::default(),
+            unit_env_imports: Default::default(),
             lexical_import_sets: HashMap::new(),
             lexical_import_hook_values: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
@@ -735,7 +733,7 @@ impl ModuleState {
             imported_routine_aliases: self.imported_routine_aliases.clone(),
             module_body_import_aliases: self.module_body_import_aliases.clone(),
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
-            imported_env_aliases: self.imported_env_aliases.clone(),
+            unit_env_imports: self.unit_env_imports.clone(),
             lexical_import_sets: self.lexical_import_sets.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),

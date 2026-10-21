@@ -12,7 +12,7 @@ impl Interpreter {
     /// light-call and OTF cache probes, the `CALL-ME` mixin probe, junction
     /// auto-threading (it skips every `__mutsu_` name itself), the wrap chain, the
     /// lexical override, `has_proto` / `find_compiled_function_memo`,
-    /// `user_only_sub_hides_builtin` and the `imported_env_aliases` probe all
+    /// `user_only_sub_hides_builtin` and the `unit_env_imports` probe all
     /// miss for an unregistered name. In `roast/S17-lowlevel/cas-int.t` they were
     /// ~5-8k instructions per `cas` (#12120), against 4-6k for the helper itself.
     ///

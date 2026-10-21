@@ -110,7 +110,7 @@ impl Interpreter {
                 lexical_fatal_mode: self.module.lexical_fatal_mode,
                 monkey_typing: self.module.monkey_typing,
                 scope_classes,
-                imported_env_aliases: self.module.imported_env_aliases.clone(),
+                unit_env_imports: self.module.unit_env_imports.clone(),
                 leave_phasers: Vec::new(),
                 lexical_sets: Vec::new(),
                 routine_depth: self.routine_stack().len(),
@@ -191,28 +191,19 @@ impl Interpreter {
     pub(crate) fn record_import_env_key(&mut self, key: &str) {
         let key_sym = Symbol::intern(key);
         self.note_lexical_import_env_key(key_sym);
-        let display = if let Some(term) = key.strip_prefix(crate::runtime::term_names::TERM_PREFIX)
-        {
-            // A sigilless term's env key (`\Y`); its pad name is bare.
-            term.to_string()
-        } else if key.starts_with(['$', '@', '%', '&'])
-            || key.chars().next().is_some_and(|c| c.is_uppercase())
-        {
-            key.to_string()
-        } else {
-            format!("${key}")
-        };
-        let display = Symbol::intern(&display);
-        if self.module.imported_env_aliases.get(&key_sym) != Some(&display) {
-            std::sync::Arc::make_mut(&mut self.module.imported_env_aliases).insert(key_sym, display);
-        }
-        // A block's import over a name an enclosing import already bound
-        // shadows that binding, and its scope exit puts it back (`use M :t;
-        // { use M } t`). Only an import visible when the scope opened counts:
-        // an alias a BEGIN-time preload left in `env` is not one.
+        let unit = self.executing_unit_sym_for_module_load();
+        self.note_unit_env_import(key_sym);
+        // A block's import over a name an enclosing import of the same unit
+        // already bound shadows that binding, and its scope exit puts it back
+        // (`use M :t; { use M } t`). Only an import visible when the scope
+        // opened counts: an alias a BEGIN-time preload left in `env` is not
+        // one.
         if let Some(top) = self.module.import_scope_stack.last_mut()
             && top.imported_env_keys.insert(key_sym)
-            && top.imported_env_aliases.contains_key(&key_sym)
+            && top
+                .unit_env_imports
+                .get(&key_sym)
+                .is_some_and(|entry| entry.units.contains(&unit))
             && let Some(previous) = self.env.get_sym(key_sym)
         {
             top.shadowed_env_values.insert(key_sym, previous.clone());
@@ -499,7 +490,7 @@ impl Interpreter {
                 imported_env_keys,
                 block_bound_keys: _,
                 mut shadowed_env_values,
-                imported_env_aliases,
+                unit_env_imports,
                 imported_routine_aliases,
                 own_routine_imports: _,
                 imported_exported_proto_tags,
@@ -700,7 +691,7 @@ impl Interpreter {
             self.module.monkey_typing = monkey_typing;
             self.module.imported_routine_aliases = imported_routine_aliases;
             self.module.imported_exported_proto_tags = imported_exported_proto_tags;
-            self.module.imported_env_aliases = imported_env_aliases;
+            self.module.unit_env_imports = unit_env_imports;
             // Removing imported functions when a lexical import scope pops must
             // invalidate the name-keyed function-resolution caches: a sub that
             // was OTF-compiled and cached under its bare name while in scope
