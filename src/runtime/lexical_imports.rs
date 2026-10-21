@@ -511,7 +511,9 @@ impl Interpreter {
         if self.module.import_scope_stack.is_empty() {
             return None;
         }
-        let chain = self.active_lexical_import_chain();
+        // The sets lexically around the lookup site, as for an `EVAL`: a
+        // routine called from the `use`-block is outside them.
+        let chain = self.eval_lexical_import_chain();
         if chain.is_empty() {
             return None;
         }
