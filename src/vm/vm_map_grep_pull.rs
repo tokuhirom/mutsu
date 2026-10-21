@@ -204,32 +204,56 @@ impl Interpreter {
                 .min(items.len());
             let (consumed_before, produced_before) = (out.consumed, out.produced.len());
             let max_matches = mode.is_grep().then_some(missing);
-            let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
-            self.async_state.map_grep_last_depth = None;
-            let pulled = self.run_map_grep_chunk(
+            let last = self.pull_chunk_step(
                 func,
                 *fatal,
                 mode,
                 plan,
                 items,
-                *pos,
+                pos,
                 end,
                 max_matches,
                 out,
-            );
-            *pos = start_pos + (out.consumed - consumed_base);
-            pulled?;
+            )?;
             if !mode.is_grep() {
                 batch = (out.produced.len() - produced_before) * group
                     == out.consumed - consumed_before;
             }
-            // The loop the chunk ran in sat one handler level below us; a
-            // `last` a loop nested inside the callback caught sits deeper.
-            if self.async_state.map_grep_last_depth.take() == Some(depth + 1) {
+            if last {
                 return Ok(true);
             }
         }
         Ok(*pos >= items.len() && plan.pending_slip.is_none())
+    }
+
+    /// One chunk of a prefix pull: run the callback over the source elements
+    /// `*pos..end` and advance `*pos` past the ones consumed, also when the
+    /// callback dies (#12401). Returns whether a `last` the callback's own
+    /// loop did not catch ended the Seq: the loop the chunk ran in sat one
+    /// handler level below this frame, so a `last` caught one level deeper
+    /// than that belongs to a loop nested inside the callback.
+    // Cost: as [`Self::run_map_grep_chunk`].
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn pull_chunk_step(
+        &mut self,
+        func: &Option<Value>,
+        fatal: bool,
+        mode: &MapGrepMode,
+        plan: &mut MapGrepPlanSlot,
+        items: &MapGrepItems,
+        pos: &mut usize,
+        end: usize,
+        max_matches: Option<usize>,
+        out: &mut PullOut,
+    ) -> Result<bool, RuntimeError> {
+        let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
+        self.async_state.map_grep_last_depth = None;
+        let (pos_before, consumed_before) = (*pos, out.consumed);
+        let pulled =
+            self.run_map_grep_chunk(func, fatal, mode, plan, items, pos_before, end, max_matches, out);
+        *pos = pos_before + (out.consumed - consumed_before);
+        pulled?;
+        Ok(self.async_state.map_grep_last_depth.take() == Some(depth + 1))
     }
 
     /// Run a deferred `.map`/`.grep` callback over the source elements
