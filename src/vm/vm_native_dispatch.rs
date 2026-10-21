@@ -293,58 +293,6 @@ impl Interpreter {
         {
             return Some(r);
         }
-        // A `.map`/`.grep` on a lazy source that the interpreter would turn into
-        // a lazy pipeline stage (a chained map/grep pipe, an infinite sequence, or
-        // a genuinely-lazy `gather { … }.lazy`) must be deferred to the interpreter
-        // (`dispatch_map_method`/`dispatch_grep` via `is_lazy_pipe_source`). Running
-        // the native impl here would materialize the source eagerly — forcing the
-        // whole gather body (and its trailing side effects) instead of pulling on
-        // demand. Defer.
-        if target.is_lazy_list_value()
-            && Self::is_lazy_pipe_source(target)
-            && matches!(method_name, "map" | "grep")
-        {
-            return None;
-        }
-        // A laziness-preserving coercion on a lazy map/grep pipeline returns the
-        // pipeline unchanged (it stays pullable). Intercept before the native
-        // impl, which would otherwise wrap/empty the pipeline's (empty) cache.
-        if target.is_lazy_list_value()
-            && let ValueView::LazyList(ll) = target.view()
-            && ll.lazy_pipe.is_some()
-            && !ll.coercion_keeps_pipe_lazy()
-            && method_name == "cache"
-        {
-            // `.cache` is a strict Seq-to-List coercion. Keeping a finite pipe
-            // as a Seq makes Test.rakumod's `is-deeply(Seq, ...)` overload call
-            // itself forever through `$got.cache`.
-            return Some(self.force_lazy_list_vm(&ll).map(Value::array));
-        }
-        if target.is_lazy_list_value()
-            && let ValueView::LazyList(ll) = target.view()
-            && ll.lazy_pipe.is_some()
-            && Self::lazy_pipe_preserving_coercion(method_name)
-            // A pipe with a finite source must reify for strict coercions such
-            // as `.cache`. In particular, Test.rakumod's Seq `is-deeply`
-            // candidate recursively calls `.cache`; returning the same finite
-            // Seq here reselects that candidate forever. A `lazy`-marked pipe
-            // stays lazy even when finite, as in Rakudo.
-            && ll.coercion_keeps_pipe_lazy()
-        {
-            // The pipeline stays pullable, but `.List`/`.Array`/`.cache` change
-            // the reported type immediately (Rakudo: type changes, laziness
-            // does not) — tag the context marker the same way `.^name`/`.WHAT`
-            // read it. `.Seq`/`.lazy` leave the value unchanged.
-            let retagged = match method_name {
-                "Array" => Value::lazy_list(crate::gc::Gc::new(ll.with_array_context())),
-                "List" | "list" | "values" => {
-                    Value::lazy_list(crate::gc::Gc::new(ll.with_list_context()))
-                }
-                "cache" => ll.cache_lazy_view().unwrap_or_else(|| target.clone()),
-                _ => target.clone(),
-            };
-            return Some(Ok(retagged));
-        }
         // Eager list operations cannot run on a lazy/infinite source: throw
         // X::Cannot::Lazy instead of hanging while the native impl materializes
         // it (matches raku). Shared with the interpreter dispatch path.
