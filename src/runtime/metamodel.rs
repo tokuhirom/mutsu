@@ -512,6 +512,21 @@ impl Interpreter {
             .is_some_and(|how| self.mixin_has_compose_hook(how))
     }
 
+    /// Whether `role_name` declares an attribute with a custom trait: the
+    /// trait handler may mix a meta-role (with a `specialize`) into the role's HOW.
+    // Cost: O(p), p = recorded attribute-trait entries.
+    pub(crate) fn role_has_attribute_trait_hooks(&self, role_name: &str) -> bool {
+        let registry = self.registry();
+        registry
+            .role_attribute_pending_traits
+            .keys()
+            .any(|(role, _)| role == role_name)
+            || registry
+                .class_attribute_trait_objects
+                .keys()
+                .any(|(role, _)| role == role_name)
+    }
+
     /// Compose a synthesized mixin type (`C+{R}`) whose HOW a role's `specialize`
     /// hook mixed a meta-role into, as the class declaration op does for a
     /// written class: the HOW's `compose`, else the native compose, then the

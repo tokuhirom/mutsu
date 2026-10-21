@@ -37,6 +37,9 @@ impl Interpreter {
         // which a user `specialize` (a trait handler mixed a meta-role into the
         // role's HOW, known only once the role's attributes compose) adds
         // methods to. `but` mixes into a copy, so the original is untouched.
+        // TODO: every `but` on an instance should compose a real mixin type;
+        // the wrapper path still carries anon-role names, `set_name` and
+        // stacking (t/oo/mixin-*.t), so only trait-bearing roles take this one.
         if let Some(reblessed) = self.but_rebless_copy(&left, &right)? {
             self.apply_pending_caller_var_writeback(code);
             self.stack.push(reblessed);
@@ -97,9 +100,11 @@ impl Interpreter {
         Ok(())
     }
 
-    /// `obj but R` for an instance of a user class: rebless a copy of `obj`
-    /// into the mixin class `C+{R}` (`None` when `left` is no such instance, or
-    /// `does_rebless_instance` keeps the wrapper path for it).
+    /// `obj but R` for an instance of a user class, `R` having attributes with
+    /// custom traits (whose handlers may mix a meta-role into the role's HOW):
+    /// rebless a copy of `obj` into the mixin class `C+{R}` (`None` when `left`
+    /// is no such instance, `R` has none, or `does_rebless_instance` keeps the
+    /// wrapper path for it). Any other `but` keeps the mixin-map wrapper.
     // Cost: O(a) to copy the attributes, a = attributes of `left`, plus the
     // role composition.
     fn but_rebless_copy(
@@ -118,6 +123,9 @@ impl Interpreter {
         let Some(application) = self.extract_role_application(right) else {
             return Ok(None);
         };
+        if !self.role_has_attribute_trait_hooks(&application.0) {
+            return Ok(None);
+        }
         let copy = Value::make_instance(class_name, attributes.as_map().clone());
         self.does_rebless_instance(&copy, &[application])
     }

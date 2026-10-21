@@ -11,7 +11,7 @@ my class Foo { has $.x = 5 }
 my $f = Foo.new(x => 7);
 my $p = $f but R;
 
-is $p.^name, "Foo+\{R\}", "a lexical class's instance is mixed into Foo+{R}";
+is $p.^name, "Foo+\{R\}", "a lexical class's instance is mixed into the mixin type";
 is $p.WHAT.^name, "Foo+\{R\}", ".WHAT names the mixin type";
 is $f.^name, "Foo", "the original object keeps its class";
 is $p.x, 7, "attributes of the class are copied";
