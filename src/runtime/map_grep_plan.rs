@@ -106,6 +106,11 @@ pub(crate) struct MapGrepPlanSlot {
     /// Whether the chunk being run is a prefix pull, which keeps a slipped
     /// lazy list in `pending_slip`; any other loop reads it to its end.
     pub(crate) stream_slips: bool,
+    /// Whether the callback's `FIRST` phaser has run for this Seq, and its
+    /// `LAST` (#14196): a prefix pull runs the loop once per pull, but the
+    /// phasers belong to the whole iteration.
+    first_fired: bool,
+    last_fired: bool,
 }
 
 /// The address a plan is keyed by.
@@ -125,6 +130,32 @@ pub(crate) fn inline_loop_arity(data: &SubData) -> usize {
 }
 
 impl MapGrepPlanSlot {
+    /// Whether the loop about to run must fire the callback's `FIRST`: once
+    /// per Seq, when its first element is about to be read.
+    // Cost: O(1).
+    pub(crate) fn take_first_phaser(&mut self, has_element: bool) -> bool {
+        let fire = has_element && !self.first_fired;
+        self.first_fired |= fire;
+        fire
+    }
+
+    /// Whether `FIRST` ran and `LAST` has not: a pull that finds the source
+    /// already read to its end runs the loop once more to fire it.
+    // Cost: O(1).
+    pub(crate) fn last_phaser_due(&self) -> bool {
+        self.first_fired && !self.last_fired
+    }
+
+    /// Whether the loop that just ended must fire the callback's `LAST`: once
+    /// per Seq, when the iteration ended (`ended`: the source ran out or the
+    /// callback said `last`) after `FIRST` ran.
+    // Cost: O(1).
+    pub(crate) fn take_last_phaser(&mut self, ended: bool) -> bool {
+        let fire = ended && self.first_fired && !self.last_fired;
+        self.last_fired |= fire;
+        fire
+    }
+
     /// The cached prefix-pullability verdict, or `compute`'s answer, cached.
     /// Only a Seq's own slot may use this: the verdict is not keyed.
     // Cost: O(1) on a hit; `compute` otherwise.

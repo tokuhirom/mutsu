@@ -662,7 +662,7 @@ impl Interpreter {
                     positional.len().saturating_sub(assumed).max(1)
                 };
                 let mut last_call_args: Option<Vec<Value>> = None;
-                if src.has(1) {
+                if slot.take_first_phaser(src.has(1)) {
                     src.has(batch);
                     let first_args = src.buf[..batch.min(src.buf.len())].to_vec();
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first_args)?;
@@ -694,7 +694,9 @@ impl Interpreter {
                 }
                 // A LAST phaser in a signature-bearing map block runs with the
                 // final chunk bound (`call_block_loop_phasers`).
-                if let Some(last_args) = last_call_args {
+                if let Some(last_args) = last_call_args
+                    && slot.take_last_phaser(src.ran_out(&out.produced, produced_base, i))
+                {
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last_args)?;
                 }
                 return Ok(());
@@ -781,10 +783,11 @@ impl Interpreter {
                 // The fresh chunk's block-declared routine calls read the
                 // closure's own upvalues (`bind_origin_code_var_upvalues`).
                 vm.upvalues = data.upvalues.clone();
-                if src.has(1) {
+                if slot.take_first_phaser(src.has(1)) {
                     vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
                 }
                 let mut i = 0usize;
+                let mut by_last = false;
                 while !src.satisfied(produced, produced_base) && src.has(i + 1) {
                     if arity > 1 && !src.has(i + arity) {
                         return Err(RuntimeError::new(format!(
@@ -905,6 +908,7 @@ impl Interpreter {
                             if let Some(val) = e.return_value {
                                 push_map_value(produced, val);
                             }
+                            by_last = true;
                             break;
                         }
                         Err(e) if e.is_succeed() => {
@@ -943,7 +947,7 @@ impl Interpreter {
 
                 // Run LAST phasers after the map loop completes (natural end or
                 // `last`), best-effort.
-                if i > 0 {
+                if slot.take_last_phaser(by_last || src.ran_out(produced, produced_base, i)) {
                     let _ = vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Last);
                 }
 
