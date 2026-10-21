@@ -204,17 +204,8 @@ impl Interpreter {
                 .min(items.len());
             let (consumed_before, produced_before) = (out.consumed, out.produced.len());
             let max_matches = mode.is_grep().then_some(missing);
-            let last = self.pull_chunk_step(
-                func,
-                *fatal,
-                mode,
-                plan,
-                items,
-                pos,
-                end,
-                max_matches,
-                out,
-            )?;
+            let last =
+                self.pull_chunk_step(func, *fatal, mode, plan, items, pos, end, max_matches, out)?;
             if !mode.is_grep() {
                 batch = (out.produced.len() - produced_before) * group
                     == out.consumed - consumed_before;
@@ -249,8 +240,17 @@ impl Interpreter {
         let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
         self.async_state.map_grep_last_depth = None;
         let (pos_before, consumed_before) = (*pos, out.consumed);
-        let pulled =
-            self.run_map_grep_chunk(func, fatal, mode, plan, items, pos_before, end, max_matches, out);
+        let pulled = self.run_map_grep_chunk(
+            func,
+            fatal,
+            mode,
+            plan,
+            items,
+            pos_before,
+            end,
+            max_matches,
+            out,
+        );
         *pos = pos_before + (out.consumed - consumed_before);
         pulled?;
         Ok(self.async_state.map_grep_last_depth.take() == Some(depth + 1))

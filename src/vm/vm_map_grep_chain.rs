@@ -114,17 +114,7 @@ impl Interpreter {
             let max_matches = mode
                 .is_grep()
                 .then_some(needed - (out.produced.len() - produced_base));
-            if self.pull_chunk_step(
-                func,
-                fatal,
-                mode,
-                plan,
-                items,
-                pos,
-                end,
-                max_matches,
-                out,
-            )? {
+            if self.pull_chunk_step(func, fatal, mode, plan, items, pos, end, max_matches, out)? {
                 return Ok(true);
             }
         }
