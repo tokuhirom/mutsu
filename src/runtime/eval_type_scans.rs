@@ -195,6 +195,18 @@ impl<'ast> Visit<'ast> for TypeDecls<'_> {
             {
                 insert_declared_name(&mut out.types, name);
             }
+            // `require M <T>` declares each sigil-less name it lists when the
+            // unit is compiled; the import binds it when the statement runs.
+            Stmt::Expr(expr) => {
+                if let Some((_, symbols)) = crate::compiler::Compiler::static_require_import(expr) {
+                    for symbol in symbols
+                        .iter()
+                        .filter(|s| !s.starts_with(['$', '@', '%', '&']))
+                    {
+                        insert_declared_name(&mut out.types, symbol);
+                    }
+                }
+            }
             _ => {}
         }
         walk_stmt(self, stmt);

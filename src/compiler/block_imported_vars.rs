@@ -190,21 +190,10 @@ pub(super) enum ImportedVarSource {
 pub(crate) const REQUIRE_SET_MARK: &str = "\u{1}require:";
 
 impl Compiler {
-    /// Whether a statement compiled here belongs to a scope below the unit's
-    /// top level: a nested block, or a routine or closure body. A `require`
-    /// there binds its imports in that scope.
-    // Cost: O(1).
-    pub(super) fn binds_required_symbols_here(&self) -> bool {
-        self.decl_scope_depth > 0
-            || self.is_routine
-            || self.lexically_in_routine
-            || self.in_closure_body
-    }
-
     /// The module and the literal import list of a statement-level
     /// `require M <&f $x T>`, when both are known at compile time.
     // Cost: O(s), s = listed symbols.
-    pub(super) fn static_require_import(expr: &Expr) -> Option<(String, Vec<String>)> {
+    pub(crate) fn static_require_import(expr: &Expr) -> Option<(String, Vec<String>)> {
         let Expr::Call { name, args, .. } = expr else {
             return None;
         };
