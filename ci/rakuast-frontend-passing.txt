@@ -26,6 +26,7 @@ t/collections/array/array-element-scalar-splice-shares.t
 t/collections/array/array-element-share-reassign.t
 t/collections/array/array-elems-in-loop-condition.t
 t/collections/array/array-explicit-any-element-not-hole.t
+t/collections/array/array-from-list.t
 t/collections/array/array-front-mutation-head-offset.t
 t/collections/array/array-grab.t
 t/collections/array/array-head-tail-return-element-container.t
@@ -344,6 +345,7 @@ t/collections/lazy-seq/lazy-gather-grep-map-laziness.t
 t/collections/lazy-seq/lazy-generator-scan-strict-force.t
 t/collections/lazy-seq/lazy-grep-feed-prefix-pull.t
 t/collections/lazy-seq/lazy-grep-infinite-exclusive-range.t
+t/collections/lazy-seq/lazy-if-iterable-any.t
 t/collections/lazy-seq/lazy-infinite-sequence-strict-force.t
 t/collections/lazy-seq/lazy-list-adaptors-stream.t
 t/collections/lazy-seq/lazy-list-eqv-and-list-view.t
@@ -393,6 +395,7 @@ t/collections/lazy-seq/seq-consumption-matrix.t
 t/collections/lazy-seq/seq-eager-list.t
 t/collections/lazy-seq/seq-eqv-type-object-keeps-seq.t
 t/collections/lazy-seq/seq-is-not-list.t
+t/collections/lazy-seq/seq-iterator-map-streams.t
 t/collections/lazy-seq/seq-left-exclusive-listop.t
 t/collections/lazy-seq/seq-map-group-prefix-read.t
 t/collections/lazy-seq/seq-new-iterator-cursor.t
@@ -773,6 +776,7 @@ t/collections/subscript/shaped-attr-constant-dimension.t
 t/collections/subscript/shaped-buf-alloc-guard.t
 t/collections/subscript/shaped-element-rebind.t
 t/collections/subscript/shaped-enum-value-and-anon-array-type.t
+t/collections/subscript/shaped-typed-array-list.t
 t/collections/subscript/shaped-typed-array-row-hole-tracking.t
 t/collections/subscript/shapeless-subscript-rows.t
 t/collections/subscript/single-store-slice-a.t
@@ -1055,6 +1059,7 @@ t/concurrency/promise/promise-result-broken-exception-type.t
 t/concurrency/promise/promise-scheduler-binding.t
 t/concurrency/promise/promise-scheduler.t
 t/concurrency/promise/promise-status-enum.t
+t/concurrency/promise/promise-subclass-class-methods.t
 t/concurrency/promise/promise-subclass-factory-methods.t
 t/concurrency/promise/promise-then-callback-die-skips-outer-catch.t
 t/concurrency/promise/promise-then-callback-output-order.t
@@ -2286,6 +2291,7 @@ t/lang/eval-core-term-constant-call-undeclared-class.t
 t/lang/eval-imported-constant-term.t
 t/lang/eval-imported-lowercase-constant.t
 t/lang/eval-imported-main.t
+t/lang/eval-in-callee-ignores-callers-block-imports.t
 t/lang/eval-label-redeclaration.t
 t/lang/eval-lang-adverb.t
 t/lang/eval-nested-my-sub-same-name.t
@@ -2883,6 +2889,7 @@ t/modules/import-export/imported-type-alias-return-spec.t
 t/modules/import-export/imported-type-and-term-in-my-stash.t
 t/modules/import-export/imported-type-name-in-coercion.t
 t/modules/import-export/imported-type-smiley-grouped.t
+t/modules/import-export/imported-value-term-declarators.t
 t/modules/import-export/indirect-lookup-unit-own-export-package.t
 t/modules/import-export/inline-module-is-export.t
 t/modules/import-export/inline-module-lexical-class-export.t
@@ -2935,6 +2942,7 @@ t/modules/import-export/require-expression.t
 t/modules/import-export/require-import-enum-key.t
 t/modules/import-export/require-in-method-keeps-module-type-alias.t
 t/modules/import-export/require-in-param-default-keeps-imports.t
+t/modules/import-export/require-in-routine-lexical-types.t
 t/modules/import-export/require-in-sub-module-curried-lexical-role.t
 t/modules/import-export/require-missing-module-stub.t
 t/modules/import-export/require-quote-keyword-module-name.t
@@ -3448,6 +3456,8 @@ t/nativecall/nativecall-callback-param.t
 t/nativecall/nativecall-callback-pointer-arg-upstream-type.t
 t/nativecall/nativecall-callback-typed-params.t
 t/nativecall/nativecall-carray.t
+t/nativecall/nativecall-cast-runtime-return-type.t
+t/nativecall/nativecall-cglobal-symbol-address.t
 t/nativecall/nativecall-cglobal.t
 t/nativecall/nativecall-constant-type-alias.t
 t/nativecall/nativecall-cpointer-class-in-module.t
@@ -3581,6 +3591,7 @@ t/oo/attribute/attr-nil-reset-typed.t
 t/oo/attribute/attr-param-empty-default-is-array.t
 t/oo/attribute/attr-slot-site-cache.t
 t/oo/attribute/attr-subscript-assignment.t
+t/oo/attribute/attr-trait-bracket-args.t
 t/oo/attribute/attr-trait-multi-positional-args.t
 t/oo/attribute/attr-trait-paren-space.t
 t/oo/attribute/attr-trait-recursive-default-dispatch.t
@@ -3803,6 +3814,7 @@ t/oo/class/class-var-scoped-to-class-body.t
 t/oo/class/class-version-meta-and-default.t
 t/oo/class/class-vmarray-immutable-positional.t
 t/oo/class/class.t
+t/oo/class/classhow-buildplan-mop.t
 t/oo/class/classhow-lookup-mro.t
 t/oo/class/classhow-user-how-add-parent-builtin-shadow.t
 t/oo/class/classhow-user-how-add-parent-can.t
@@ -4312,6 +4324,7 @@ t/oo/method/proto-method-body.t
 t/oo/method/proto-method-buf8-narrowness.t
 t/oo/method/proto-method-rw-redispatch.t
 t/oo/method/proto-method-visible-to-find-method.t
+t/oo/method/proxy-invocant-user-method.t
 t/oo/method/q-adverb-array-method-interp.t
 t/oo/method/qualified-method-call.t
 t/oo/method/qualified-name-method-multi-part-qualifier.t
@@ -4942,6 +4955,7 @@ t/rakuast/rakuast-array-context-seq-reread.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-atomic-operators.t
 t/rakuast/rakuast-attribute-bind.t
+t/rakuast/rakuast-attribute-bracket-traits.t
 t/rakuast/rakuast-attribute-compound-assign.t
 t/rakuast/rakuast-attribute-default.t
 t/rakuast/rakuast-attribute-group.t
@@ -5098,6 +5112,7 @@ t/rakuast/rakuast-imaginary-bigrat-literal.t
 t/rakuast/rakuast-imaginary-literal.t
 t/rakuast/rakuast-immediate-sub-call.t
 t/rakuast/rakuast-imported-bareword-call.t
+t/rakuast/rakuast-imported-value-binding.t
 t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
 t/rakuast/rakuast-indirect-declarator-name.t
@@ -6723,6 +6738,7 @@ t/routines/signature/positional-param-deitemizes.t
 t/routines/signature/proto-dispatcher-signature-eqv.t
 t/routines/signature/proto-onlystar-skips-own-signature.t
 t/routines/signature/proxy-argument-typed-param-fetch.t
+t/routines/signature/proxy-param-default-fetched.t
 t/routines/signature/proxy-raw-param-direct-call.t
 t/routines/signature/quanthash-parameterize-values-write-through.t
 t/routines/signature/quanthash-parameterized-pair-elements.t
@@ -6756,6 +6772,7 @@ t/routines/signature/rw-param-type-follows-caller-container.t
 t/routines/signature/rw-param-writeback-coherence.t
 t/routines/signature/rw-routine-readonly-param-aggregate-tail.t
 t/routines/signature/scalar-param-container-share.t
+t/routines/signature/scalar-param-default-itemized.t
 t/routines/signature/scalar-param-positional-type-no-item-wrap.t
 t/routines/signature/seq-bound-to-array-param-rereadable.t
 t/routines/signature/shared-var-lane-param-rebind.t
@@ -7117,6 +7134,7 @@ t/types/ecosystem-rational-complex-numeric.t
 t/types/enum-subset/anonymous-subset-hash-key.t
 t/types/enum-subset/bool-enumeration-collection-methods.t
 t/types/enum-subset/builtin-enum-base-tier.t
+t/types/enum-subset/coercion-type-subset-refinee.t
 t/types/enum-subset/definite-return-core-term-not-imported-type.t
 t/types/enum-subset/definite-return.t
 t/types/enum-subset/definite-scalar-nil-reassignment.t
@@ -7267,6 +7285,7 @@ t/types/numeric/int-add-sub-mul-operator-forms.t
 t/types/numeric/int-bigint-div-subnormal-num.t
 t/types/numeric/int-bit-methods.t
 t/types/numeric/int-bitop-object-numeric.t
+t/types/numeric/int-bits-power-up-down.t
 t/types/numeric/int-enum-type-object-is-int.t
 t/types/numeric/int-eq-fast-path.t
 t/types/numeric/int-modulo-operator-forms.t
@@ -7278,6 +7297,7 @@ t/types/numeric/int-type-object-range.t
 t/types/numeric/log-atanh-rounding.t
 t/types/numeric/nan-comparisons.t
 t/types/numeric/num-gist-and-rat-sequence.t
+t/types/numeric/num-mod-floor-formula.t
 t/types/numeric/num-scientific-notation.t
 t/types/numeric/num-subclass-payload.t
 t/types/numeric/numeric-accepts-object-numeric.t
@@ -8101,6 +8121,7 @@ t/vm/writeback/prefix-incdec-slot-writeback.t
 t/vm/writeback/proxy-at-key-decontainerized-args.t
 t/vm/writeback/proxy-bind-with-begin-in-unit.t
 t/vm/writeback/proxy-binds-container-not-value.t
+t/vm/writeback/proxy-fetch-gets-proxy-object.t
 t/vm/writeback/proxy-fetch-returns-rw-container.t
 t/vm/writeback/proxy-list-transparency.t
 t/vm/writeback/proxy-lvalue-sub-assign-no-fetch.t
