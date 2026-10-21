@@ -44,8 +44,10 @@ impl<'a> LoopFeed<'a> {
     /// callback cannot run over a feed (every match needs a source element,
     /// so the chunk never runs the callback over one the pull does not need).
     // Cost: O(limit).
-    fn window(self) -> Vec<Value> {
-        (0..self.limit).map_while(|i| self.fetch(i)).collect()
+    fn window(self, arity: usize) -> Vec<Value> {
+        (0..self.limit * arity.max(1))
+            .map_while(|i| self.fetch(i))
+            .collect()
     }
 }
 
@@ -239,10 +241,12 @@ impl Interpreter {
                     || super::resolution_map_grep::sub_reads_block_var(&data));
             if needs_full_binding {
                 if let Some(feed) = feed.take() {
-                    list_items = feed.window();
+                    list_items = feed.window(1);
                 }
                 let mut matched = Vec::new();
-                if let Some(first) = list_items.first() {
+                if let Some(first) = list_items.first()
+                    && slot.take_first_phaser(true)
+                {
                     self.call_block_loop_phasers(
                         &data,
                         crate::ast::PhaserKind::First,
@@ -269,12 +273,11 @@ impl Interpreter {
             // Only the inline loop below reads a feed lazily, and only one
             // element per call; anything else greps the window a chunked pull
             // used to copy.
-            if (arity != 1
-                || (cached_plan.is_none()
-                    && super::resolution_map_grep::sub_is_call_carrier(&data)))
+            if cached_plan.is_none()
+                && super::resolution_map_grep::sub_is_call_carrier(&data)
                 && let Some(feed) = feed.take()
             {
-                list_items = feed.window();
+                list_items = feed.window(arity);
             }
             // Carrier Subs (.assuming wrapper, composed callable, multi-candidate
             // dispatcher) — delegate to call_sub_value which resolves the markers.
@@ -283,7 +286,11 @@ impl Interpreter {
                 let mut matched = Vec::new();
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
-                        break;
+                        *consumed = consumed_base + list_items.len();
+                        return Err(RuntimeError::new(format!(
+                            "Too few positionals passed; expected {arity} arguments but got {}",
+                            list_items.len() - i
+                        )));
                     }
                     let chunk: Vec<Value> = if arity == 1 {
                         vec![list_items[i].clone()]
@@ -355,30 +362,40 @@ impl Interpreter {
                 // Scope `state` variables to the closure instance (see
                 // `eval_map_over_items`).
                 vm.lexicals.state_scope_id.set(Some(vm.callable_state_scope(&data)));
-                // A grep block's FIRST runs before the first test; Rakudo runs
-                // no LAST for one. A block with a FIRST is never fed a chunk
-                // at a time (`map_grep_pullable_by_prefix`).
-                if !list_items.is_empty() {
+                // A grep block's FIRST runs before the first test, once per
+                // Seq; Rakudo runs no LAST for one.
+                let has_first = !list_items.is_empty()
+                    || feed.as_ref().is_some_and(|feed| feed.fetch(0).is_some());
+                if slot.take_first_phaser(has_first) {
                     vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
                 }
                 let mut i = 0usize;
                 let mut stop = false;
                 loop {
                     if let Some(feed) = &feed {
-                        // `i` is always the next element to read here: a feed
-                        // runs one element per call.
+                        // `i` is the first element of this call: read the
+                        // `arity` elements the callback takes.
                         if result.len() - produced_base >= feed.limit {
                             break;
                         }
-                        match feed.fetch(i) {
-                            Some(item) => list_items.push(item),
-                            None => break,
+                        while list_items.len() < i + arity {
+                            match feed.fetch(list_items.len()) {
+                                Some(item) => list_items.push(item),
+                                None => break,
+                            }
+                        }
+                        if list_items.len() <= i {
+                            break;
                         }
                     } else if i >= list_items.len() {
                         break;
                     }
                     if arity > 1 && i + arity > list_items.len() {
-                        break;
+                        *consumed = consumed_base + list_items.len();
+                        return Err(RuntimeError::new(format!(
+                            "Too few positionals passed; expected {arity} arguments but got {}",
+                            list_items.len() - i
+                        )));
                     }
                     let chunk: Vec<Value> = if arity == 1 {
                         vec![list_items[i].clone()]
@@ -570,7 +587,7 @@ impl Interpreter {
             return Ok((list_items, Some(matched)));
         }
         if let Some(feed) = feed {
-            list_items = feed.window();
+            list_items = feed.window(1);
         }
         *consumed = consumed_base + list_items.len();
         result.extend(list_items.iter().cloned());
