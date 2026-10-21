@@ -240,6 +240,7 @@ impl Interpreter {
         def.decl_order = next_decl_order();
         crate::runtime::regex::regex_dynparams::note_token_def_params(&def.param_defs);
         crate::runtime::regex::regex_qq_token_scope::note_token_def_qq_thunks(&def.body);
+        crate::runtime::regex::regex_dynparams::note_token_def_routine_reads(&def.body);
         let def = std::sync::Arc::new(def);
         if multi {
             std::sync::Arc::make_mut(&mut self.registry_mut().token_defs)

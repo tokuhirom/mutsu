@@ -81,6 +81,37 @@ pub(crate) fn note_token_def_params(param_defs: &[ParamDef]) {
     }
 }
 
+/// Set the first time a rule whose declaration mentions `&?ROUTINE` is
+/// registered. A rule's code block or call argument reads the rule it runs in,
+/// which only exists as a routine frame, so every call pushes one while this is
+/// armed (`rx_call_rule_frame`); other programs skip the push (it was measured
+/// at ~5% of `bench-grammar-parse-big`).
+pub(crate) static ANY_RULE_READS_ROUTINE: AtomicBool = AtomicBool::new(false);
+
+/// Note a freshly registered rule's body, arming [`ANY_RULE_READS_ROUTINE`]
+/// when its declaration text mentions `&?ROUTINE`.
+// Cost: O(s), s = the declaration text length, until the flag is armed.
+pub(crate) fn note_token_def_routine_reads(body: &[crate::ast::Stmt]) {
+    use crate::ast::{Expr, Stmt};
+    if ANY_RULE_READS_ROUTINE.load(Ordering::Relaxed) {
+        return;
+    }
+    let reads = body.iter().any(|stmt| match stmt {
+        Stmt::Expr(Expr::Literal(v)) | Stmt::Return(Expr::Literal(v)) => {
+            v.regex_declared_source()
+                .is_some_and(|text| text.contains("&?ROUTINE"))
+                || match v.view() {
+                    crate::value::ValueView::Regex(p) => p.contains("&?ROUTINE"),
+                    _ => false,
+                }
+        }
+        _ => false,
+    });
+    if reads {
+        ANY_RULE_READS_ROUTINE.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Set the first time a rule with a defaulted, lexically-scoped parameter
 /// (`token t(Int $n = 0)` or `token t(:$n = 0)`) is registered; gates the probe in
 /// [`token_defs_need_binding`] the way [`ANY_DYNAMIC_TOKEN_PARAM`] gates the
