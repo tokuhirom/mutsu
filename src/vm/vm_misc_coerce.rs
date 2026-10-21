@@ -451,7 +451,10 @@ impl Interpreter {
     /// Positional or Associative (`class A is Array`, `[1, 2] but R`) numifies
     /// to its element count, as the built-in containers do (`^$a`, `0..$a`).
     // Cost: O(1) for any other value; a type check for an Instance/Mixin.
-    pub(super) fn numify_container_endpoint(&mut self, value: Value) -> Result<Value, RuntimeError> {
+    pub(super) fn numify_container_endpoint(
+        &mut self,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
         let candidate = match value.view() {
             ValueView::Instance { .. } => !value.is_match_instance(),
             ValueView::Mixin(inner, mixins) => {
