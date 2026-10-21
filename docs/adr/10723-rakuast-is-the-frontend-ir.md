@@ -1744,3 +1744,7 @@ the already parsed token tree, with bounded recursion; it does not evaluate
 regex code. `t/rakuast/rakuast-regex-hash-capture-alias.t` covers source and
 constructed nodes, hash filing, and the diagnostic. The language regression
 `t/regex/regex-last-declines-compiled.t` runs in both frontends.
+The frontend-mode TAP test now checks the newly supported alias in the main
+unit and an EVAL unit. A converter-level unit test supplies a deliberately
+unmodelled Regex value to keep the no-fallback invariant stable as source
+coverage grows.
