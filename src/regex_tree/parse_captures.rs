@@ -1,5 +1,7 @@
 use super::*;
 
+const MAX_STATIC_HASH_ALIAS_NAME_CHARS: usize = 1024;
+
 impl Parser {
     // Cost: O(n), n = source consumed by the alias and its atom.
     pub(super) fn parse_numbered_capture(&mut self) -> Option<RegexNode> {
@@ -35,7 +37,10 @@ impl Parser {
             while self.chars.get(self.pos).is_some_and(|ch| *ch != '>') {
                 self.pos += 1;
             }
-            if self.pos == start || !self.consume_if('>') {
+            if self.pos == start
+                || self.pos - start > MAX_STATIC_HASH_ALIAS_NAME_CHARS
+                || !self.consume_if('>')
+            {
                 return None;
             }
             let name: String = self.chars[start..self.pos - 1].iter().collect();
@@ -48,7 +53,7 @@ impl Parser {
             {
                 self.pos += 1;
             }
-            if self.pos == start {
+            if self.pos == start || self.pos - start > MAX_STATIC_HASH_ALIAS_NAME_CHARS {
                 return None;
             }
             let name: String = self.chars[start..self.pos].iter().collect();
@@ -147,5 +152,17 @@ impl Parser {
             hash,
             regex: Box::new(regex),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn static_hash_alias_names_are_bounded() {
+        let long = "x".repeat(MAX_STATIC_HASH_ALIAS_NAME_CHARS + 1);
+        assert!(RegexTree::parse_static(&format!("%<{long}>=a"), false).is_none());
+        assert!(RegexTree::parse_static(&format!("%{long}=a"), false).is_none());
     }
 }

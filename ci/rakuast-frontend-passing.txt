@@ -1463,6 +1463,7 @@ t/control/block-scope-registry-skip.t
 t/control/block-self-ref-in-map.t
 t/control/block-sub-shadows-outer-code-var.t
 t/control/block-sub-sibling-call-after-exit.t
+t/control/block-use-import-called-from-ternary-in-sub.t
 t/control/block-use-main-declared-after.t
 t/control/block-use-runtime-lib-type-scoped.t
 t/control/block-value-while-until-modifiers.t
@@ -6320,6 +6321,7 @@ t/routines/dispatch/multi-star-hash-ambiguity.t
 t/routines/dispatch/multi-stub-class-invocant-implemented.t
 t/routines/dispatch/multi-sub.t
 t/routines/dispatch/multi-subset-base-type-narrowing.t
+t/routines/dispatch/multi-subset-default-rejects-candidate.t
 t/routines/dispatch/multi-subset-predicate-runs-once.t
 t/routines/dispatch/multi-type-dispatch-regressions.t
 t/routines/dispatch/multi-udismiley-ambiguity-leak.t

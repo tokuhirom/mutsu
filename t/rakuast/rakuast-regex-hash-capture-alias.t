@@ -3,7 +3,7 @@ use MONKEY-SEE-NO-EVAL;
 use experimental :rakuast;
 use Test;
 
-plan 13;
+plan 15;
 
 my $source = Q[rx/%<chars>=( \s+ \S+ )+/].AST;
 my $body = $source.statements[0].expression.body;
@@ -40,3 +40,8 @@ throws-like {
 throws-like { EVAL q["a~b" ~~ / a ~ b /] }, Exception,
     message => /'Unrecognized regex metacharacter ~'/,
     'an unpaired tilde raises its syntax diagnostic before RakuAST conversion';
+throws-like { EVAL q["a" ~~ / [ a ~ b ] /] }, Exception,
+    message => /'Unrecognized regex metacharacter ~'/,
+    'an unpaired tilde nested in a group raises the same diagnostic';
+lives-ok { EVAL q["a" ~~ / a ~ b c /] },
+    'a paired tilde goal remains a valid regex';

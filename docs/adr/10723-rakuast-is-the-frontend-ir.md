@@ -1734,6 +1734,8 @@ ordinary frontend implements the spec's hash capture semantics. Constructed
 nodes validate mutually exclusive array/hash kinds; lowering sets the existing
 matcher token's `hash_capture`, so each iteration files its key in the same
 execution path. The serialized node shape bumps the cache format to 44.
+Static hash alias names are capped at 1,024 characters; larger names decline
+conversion with a catchable boundary error.
 
 The same source file also contains an intentionally invalid unpaired `~`.
 Structural regex validation now recognizes a leftover tilde marker across
