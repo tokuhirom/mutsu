@@ -719,7 +719,17 @@ impl Compiler {
             .map(|p| p.name)
             .collect();
         frame_lexicals.dedup();
-        if !multi && !is_rw && !is_raw && !is_cached && !cf.has_inner_subs && !cf.code.uses_capture
+        // A routine whose calls resolve through a block's lexical import sets
+        // (`LexImportCall`, ADR-8751) declines too: TRIR compiles from the AST
+        // and links its calls by name, so it would never consult the sets and
+        // an imported routine would be an unknown function (#14140).
+        if !multi
+            && !is_rw
+            && !is_raw
+            && !is_cached
+            && !cf.has_inner_subs
+            && !cf.code.uses_capture
+            && cf.code.lexical_import_chains.is_empty()
         {
             cf.trir = crate::trir::compile::compile_routine(
                 crate::symbol::Symbol::intern(name),
