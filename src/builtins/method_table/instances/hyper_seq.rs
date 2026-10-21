@@ -112,7 +112,8 @@ pub(crate) fn answers_as_itself(method: &str) -> bool {
 
 /// A lazy `.hyper` / `.race` (#13918) is a `LazyList` that reports
 /// `HyperSeq`, so the owner walk reaches these rows with it: they hold a
-/// settled body, so they decline and the lazy step answers.
+/// settled body, so most decline and the lazy step answers; `configuration`
+/// and `is-lazy` answer from the list's own tags.
 // Cost: O(1).
 fn lazy_hyper(t: &Value) -> bool {
     matches!(t.view(), crate::value::ValueView::LazyList(_))
@@ -145,17 +146,15 @@ fn race(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
 
 // Cost: O(1).
 fn configuration(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    if lazy_hyper(t) {
-        return None;
+    if let crate::value::ValueView::LazyList(ll) = t.view() {
+        let (batch, degree) = ll.hyper_config().unwrap_or((None, None));
+        return Some(Ok(Interpreter::make_hyper_configuration(batch, degree)));
     }
     Some(i.hyper_seq_configuration(t))
 }
 
 // Cost: O(1).
-fn is_lazy(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    if lazy_hyper(t) {
-        return None;
-    }
+fn is_lazy(_: &mut Interpreter, _: &Value, _: &[Value], _: Named<'_>) -> Answer {
     Some(Ok(Value::FALSE))
 }
 

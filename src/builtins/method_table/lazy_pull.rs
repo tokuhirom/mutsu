@@ -319,7 +319,7 @@ fn hyperize(list: &LazyList, kind: crate::value::HyperKind) -> Option<Result<Val
         return None;
     }
     Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-        list.with_hyper_kind(kind),
+        list.with_hyper_kind(kind, None),
     ))))
 }
 
