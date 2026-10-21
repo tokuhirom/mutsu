@@ -1,18 +1,20 @@
-//! The `use` of a `sub EXPORT` hook module nested in a block of an `EVAL`'d
-//! unit (#13441).
+//! The `use` statements nested in a block of an `EVAL`'d unit (#13441).
 //!
-//! Rakudo runs every `use` at BEGIN time, so the names the hook returns are
-//! known to the unit's CHECK-time validation wherever the `use` sits.
+//! Rakudo runs every `use` at BEGIN time, so what a module imports is known to
+//! the unit's CHECK-time validation wherever the `use` sits.
 //! [`Interpreter::run_eval_hook_uses`](super::Interpreter) already runs the
 //! top-level ones ahead of the validation; this lifts the ones nested in a
 //! block, branch or routine body to the top of the unit so the same pre-run
-//! covers them.
+//! covers them. A hook module's `use` moves (its `sub EXPORT` must not run
+//! twice); any other module's stays in its block, where the in-position run
+//! records the block's lexical import set, and a copy is pre-run.
 
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::VisitMut;
 
-/// Removes every nested `use` of a hook module (per `is_hook`) whose arguments
-/// are literals, and returns them in source order.
+/// Collects every nested `use` whose arguments are literals, in source order:
+/// a hook module's (per `is_hook`) is removed from its block, any other
+/// module's is copied and stays.
 ///
 /// The import is then wider than the block that wrote it: a name the hook
 /// returned is visible after the block too. Nothing narrower is available to
@@ -57,21 +59,25 @@ impl VisitMut for Lifter<'_> {
         if self.depth > 1 {
             let mut kept = Vec::with_capacity(body.len());
             for stmt in std::mem::take(body) {
-                match &stmt {
-                    Stmt::Use {
-                        module,
-                        arg,
-                        condition: None,
-                        if_imports,
-                        ..
-                    } if if_imports.is_empty()
-                        && arg.as_ref().is_none_or(is_literal_arg)
-                        && crate::compiler::begin_use::loads_module_in_position(&stmt)
-                            .is_some_and(|m| m == module && (self.is_hook)(m)) =>
-                    {
-                        self.lifted.push(stmt);
-                    }
-                    _ => kept.push(stmt),
+                let preruns = matches!(
+                    &stmt,
+                    Stmt::Use { module, arg, condition: None, if_imports, .. }
+                        if if_imports.is_empty()
+                            && arg.as_ref().is_none_or(is_literal_arg)
+                            && crate::compiler::begin_use::loads_module_in_position(&stmt)
+                                .is_some_and(|m| m == module)
+                );
+                let Stmt::Use { module, .. } = &stmt else {
+                    kept.push(stmt);
+                    continue;
+                };
+                if !preruns {
+                    kept.push(stmt);
+                } else if (self.is_hook)(module) {
+                    self.lifted.push(stmt);
+                } else {
+                    self.lifted.push(stmt.clone());
+                    kept.push(stmt);
                 }
             }
             *body = kept;

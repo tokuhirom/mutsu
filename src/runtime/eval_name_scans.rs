@@ -209,6 +209,9 @@ impl UndeclaredName<'_> {
             || interp.has_class(name)
             || interp.has_function(name)
             || interp.has_multi_function_unindexed(name)
+            // A routine an enclosing block's `use` bound in its lexical import
+            // set, not in the registry (ADR-8751).
+            || interp.lexically_imported_routine(name)
             // The env entry `_` is the topic `$_`, never a term: a sigilless
             // `_` lives under its term key `\_` (ADR-12441).
             || (name != "_" && interp.env().contains_key(name))

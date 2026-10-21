@@ -105,8 +105,9 @@ impl Interpreter {
     // Cost: O(u) static checks plus the load of each pre-run `use`, u =
     // top-level statements.
     fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
-        // A hook module's `use` nested in a block runs here too, ahead of the
-        // unit (its import is then not confined to the block).
+        // A `use` nested in a block runs here too, ahead of the unit (its
+        // import is then not confined to the block).
+        let mut lifted = 0;
         let positional = stmts.iter().any(|stmt| {
             matches!(stmt, Stmt::Use { module, .. } if module == "lib")
                 || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
@@ -115,6 +116,7 @@ impl Interpreter {
             let nested = super::eval_nested_hook_uses::take_nested_hook_uses(&mut stmts, &|m| {
                 self.module_imports_through_export_hook(m)
             });
+            lifted = nested.len();
             if !nested.is_empty() {
                 stmts.splice(0..0, nested);
             }
@@ -141,6 +143,12 @@ impl Interpreter {
         for (idx, stmt) in stmts.iter().enumerate() {
             plan.push(match stmt {
                 _ if idx >= limit => Prerun::No,
+                // A statement lifted from a block: its hook module's `use`
+                // moved here, any other module's stays in the block.
+                Stmt::Use { module, .. } if idx < lifted => {
+                    loaded.insert(module.as_str());
+                    Prerun::Drop
+                }
                 Stmt::Import { module, .. } if loaded.contains(module.as_str()) => Prerun::Keep,
                 Stmt::Use { arg, .. } => match crate::compiler::begin_use::loads_module_in_position(stmt) {
                     Some(module) if self.module_imports_through_export_hook(module) => {
