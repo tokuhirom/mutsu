@@ -33,6 +33,15 @@ impl Interpreter {
         // group a preceding `but (R1, R2)` left open (see
         // `open_role_application_group`).
         self.close_role_application_group();
+        // A role whose HOW carries a user `specialize` (a trait handler mixed a
+        // meta-role into it) needs a real mixin class: Rakudo specializes the
+        // role onto the new `C+{R}` type, which the hook then adds methods to.
+        // `but` mixes into a copy, so the original object is untouched.
+        if let Some(reblessed) = self.but_rebless_copy(&left, &right)? {
+            self.apply_pending_caller_var_writeback(code);
+            self.stack.push(reblessed);
+            return Ok(());
+        }
         let role_composed = self
             .is_role_application(&right)
             .then(|| loan_env!(self, eval_does_values(left.clone(), right.clone())));
@@ -86,6 +95,34 @@ impl Interpreter {
         let result = Self::apply_but_mixin(left, right)?;
         self.stack.push(result);
         Ok(())
+    }
+
+    /// `obj but R` for an instance of a user class when `R`'s HOW overrides
+    /// `specialize`: rebless a copy of `obj` into the mixin class `C+{R}`
+    /// (`None` when the role's HOW has no such hook, or `left` is no instance).
+    // Cost: O(a) to copy the attributes, a = attributes of `left`, plus the
+    // role composition.
+    fn but_rebless_copy(
+        &mut self,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = left.view()
+        else {
+            return Ok(None);
+        };
+        let Some(application) = self.extract_role_application(right) else {
+            return Ok(None);
+        };
+        if !self.role_how_overrides_specialize(&application.0) {
+            return Ok(None);
+        }
+        let copy = Value::make_instance(class_name, attributes.as_map().clone());
+        self.does_rebless_instance(&copy, &[application])
     }
 
     /// Apply a `but` mixin for a single element from a tuple expansion,
