@@ -504,6 +504,27 @@ impl Interpreter {
                         let info = Self::parse_container_constraint(&pd.name, constraint);
                         missing = self.tag_container_metadata(missing, info);
                     }
+                    // A defaulted parameter typed by a `subset` is a bind
+                    // check in rakudo: the dispatcher trial-binds it, default
+                    // included, and a default the subset rejects makes the
+                    // candidate a non-match (#14159: `multi method right(BB $b
+                    // = $!content)` loses `.right` to a sibling `multi method
+                    // right`). Only a subset is evaluated here, so a plain
+                    // typed default still binds (and dies) at bind time.
+                    if let Some(default_expr) = pd.default.as_ref()
+                        && let Some(constraint) = &pd.type_constraint
+                        && !pd.name.starts_with('@')
+                        && !pd.name.starts_with('%')
+                        && self.constraint_is_subset(Self::constraint_base_name(
+                            crate::runtime::types::strip_type_smiley(constraint).0,
+                        ))
+                        && let Ok(default) = self.with_candidate_package(candidate_package, |this| {
+                            this.eval_param_default_expr(pd, default_expr)
+                        })
+                        && !default.is_nil()
+                    {
+                        missing = default;
+                    }
                     arg_for_checks = Some(missing);
                 }
                 // For multi-dispatch: `is rw` params require a writable variable argument.
