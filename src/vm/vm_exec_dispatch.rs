@@ -7144,6 +7144,11 @@ impl Interpreter {
                 self.output_sink_mut().emit_stderr(text);
                 *ip += 1;
             }
+            // Cost: O(r), r = length of the record (a hash lookup; one write the first time).
+            OpCode::CoverageHit(record_idx) => {
+                crate::coverage_log::hit(Self::const_str(code, *record_idx));
+                *ip += 1;
+            }
             // Cost: O(n) plus hashed lookups, n = chars of the looked-up name (stringified and parsed per execution).
             OpCode::IndirectTypeLookup => {
                 self.exec_indirect_type_lookup_op();

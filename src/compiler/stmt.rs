@@ -5103,6 +5103,15 @@ impl Compiler {
                 // and let the VM read it back from `ip` where a line is observable.
                 self.last_source_line = Some(*line);
                 self.code.set_emit_line(*line);
+                // `MVM_COVERAGE_LOG`: one hit record per statement line, only in
+                // a process that asked for the log.
+                if crate::coverage_log::enabled()
+                    && let Some(file) = crate::unit_source_file::current()
+                {
+                    let record = crate::coverage_log::record(file.as_str(), *line);
+                    let idx = self.code.add_constant(Value::str(record));
+                    self.code.emit(OpCode::CoverageHit(idx));
+                }
             }
             Stmt::Trace { id, line, source } => {
                 // `use trace`: the whole message is a compile-time constant, as in

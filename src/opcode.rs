@@ -4598,6 +4598,12 @@ pub(crate) enum OpCode {
     /// a program that rebinds `$*ERR` does not capture it.
     Trace(u32),
 
+    /// `MVM_COVERAGE_LOG`: append the record at the given constant index
+    /// (`HIT  <file>  <line>`) to the coverage log. Emitted for a statement's
+    /// line marker only when the variable is set at process start
+    /// ([`crate::coverage_log`]), so an ordinary compile has none.
+    CoverageHit(u32),
+
     /// State variable initialization.
     /// slot = local slot index, key = the interned unique state key (a
     /// `Symbol`, so precompiled code maps it through its symbol table).

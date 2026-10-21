@@ -333,6 +333,7 @@ impl Interpreter {
             OpCode::CheckPhaserEnd
             | OpCode::CheckPhaserStart { .. }
             | OpCode::ClearPackageStub { .. }
+            | OpCode::CoverageHit(..)
             | OpCode::DeclareRequireStub { .. }
             | OpCode::FlipFlopExpr { .. }
             | OpCode::HyperFuncOp { .. }
