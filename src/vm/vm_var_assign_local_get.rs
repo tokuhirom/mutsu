@@ -574,6 +574,15 @@ impl Interpreter {
             // resolved the name to this slot, so there is nothing to probe
             // (#14325). An unbound required sub-signature leaf fails its bind
             // instead (`bind_sub_signature_from_value`).
+            // An unreached `my @a` / `my %h` is the empty aggregate.
+            if name.starts_with('@') && Interpreter::is_plain_lexical_name(name) {
+                self.stack.push(Value::real_array(Vec::new()));
+                return Ok(());
+            }
+            if name.starts_with('%') && Interpreter::is_plain_lexical_name(name) {
+                self.stack.push(Value::hash(crate::value::ValueMap::default()));
+                return Ok(());
+            }
             // `is default(...)`: return the default value instead of Nil.
             if let Some(def) = self.var_default(name) {
                 self.stack.push(def.clone());
