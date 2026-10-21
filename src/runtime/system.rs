@@ -104,7 +104,21 @@ impl Interpreter {
     /// by-name calls read (ADR-8751), which this out-of-unit run has no id for.
     // Cost: O(u) static checks plus the load of each pre-run `use`, u =
     // top-level statements.
-    fn run_eval_hook_uses(&mut self, stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+    fn run_eval_hook_uses(&mut self, mut stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+        // A hook module's `use` nested in a block runs here too, ahead of the
+        // unit (its import is then not confined to the block).
+        let positional = stmts.iter().any(|stmt| {
+            matches!(stmt, Stmt::Use { module, .. } if module == "lib")
+                || matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, .. })
+        });
+        if !positional {
+            let nested = super::eval_nested_hook_uses::take_nested_hook_uses(&mut stmts, &|m| {
+                self.module_imports_through_export_hook(m)
+            });
+            if !nested.is_empty() {
+                stmts.splice(0..0, nested);
+            }
+        }
         let limit = stmts
             .iter()
             .position(|stmt| {
