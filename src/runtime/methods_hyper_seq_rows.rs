@@ -119,7 +119,7 @@ impl Interpreter {
     /// The `:batch` / `:degree` of a `.hyper` / `.race` call; a non-positive
     /// one is `X::Invalid::Value`.
     // Cost: O(a), a = arguments of the call.
-    fn hyper_adverbs(
+    pub(crate) fn hyper_adverbs(
         method: &str,
         args: &[Value],
     ) -> Result<(Option<i64>, Option<i64>), RuntimeError> {

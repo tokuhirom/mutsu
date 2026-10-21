@@ -322,12 +322,25 @@ fn cache(
 /// (nothing is batched across threads, as for a settled `HyperSeq`). A list
 /// that will end declines and is reified into the settled `HyperSeq`.
 // Cost: O(c), c = elements already cached (the list is cloned).
-fn hyperize(list: &LazyList, kind: crate::value::HyperKind) -> Option<Result<Value, RuntimeError>> {
+fn hyperize(
+    list: &LazyList,
+    kind: crate::value::HyperKind,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
     if !list.renders_lazy_placeholder() {
         return None;
     }
+    let method = if kind == crate::value::HyperKind::Hyper {
+        "hyper"
+    } else {
+        "race"
+    };
+    let config = match Interpreter::hyper_adverbs(method, args) {
+        Ok(config) => config,
+        Err(err) => return Some(Err(err)),
+    };
     Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-        list.with_hyper_kind(kind, None),
+        list.with_hyper_kind(kind, Some(config)),
     ))))
 }
 
@@ -336,9 +349,9 @@ fn hyper(
     _interp: &mut Interpreter,
     _target: &Value,
     list: &LazyList,
-    _args: &[Value],
+    args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    hyperize(list, crate::value::HyperKind::Hyper)
+    hyperize(list, crate::value::HyperKind::Hyper, args)
 }
 
 // Cost: as `hyperize`.
@@ -346,9 +359,9 @@ fn race(
     _interp: &mut Interpreter,
     _target: &Value,
     list: &LazyList,
-    _args: &[Value],
+    args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    hyperize(list, crate::value::HyperKind::Race)
+    hyperize(list, crate::value::HyperKind::Race, args)
 }
 
 /// `HyperSeq.configuration` of a lazy `.hyper` / `.race`: the `:batch` and
