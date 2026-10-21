@@ -329,3 +329,16 @@ pub(crate) fn with_shaped_array_leaf(value: &Value, idx: usize, leaf: Value) -> 
     }
     set(value, &leaf_path(&shape, idx)?, leaf)
 }
+
+/// The List of a multi-dimensional shaped array's leaves, which is what a
+/// reader that iterates the array sees (#14248, #14308). `None` for any other
+/// value.
+// Cost: O(E), E = leaves.
+pub(crate) fn shaped_array_leaves_list(value: &Value) -> Option<Value> {
+    shaped_array_iteration_leaves(value).map(|leaves| {
+        Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(leaves)),
+            ArrayKind::List,
+        )
+    })
+}
