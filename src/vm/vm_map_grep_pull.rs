@@ -175,6 +175,12 @@ impl Interpreter {
             return Ok(true);
         }
         let group = map_group_size(func.as_ref(), mode);
+        // A map callback can answer any number of elements, so a chunk of
+        // `missing` groups may run callbacks the consumer never needed (the
+        // second callback of `map({ slip(1..*) }).head(2)`). It starts one group
+        // at a time and widens to `missing` groups only once a chunk answered
+        // exactly one element per group (#14312).
+        let mut batch = mode.is_grep();
         while out.produced.len() - produced_base < needed
             && (*pos < items.len() || plan.pending_slip.is_some())
         {
@@ -192,9 +198,11 @@ impl Interpreter {
             // A grep runs until it has the missing matches (one loop run for
             // the whole pull, #11515); a map needs one call, of `group` source
             // elements, per element missing (#14196).
+            let groups = if batch { missing } else { 1 };
             let end = pos
-                .saturating_add(missing.saturating_mul(group))
+                .saturating_add(groups.saturating_mul(group))
                 .min(items.len());
+            let (consumed_before, produced_before) = (out.consumed, out.produced.len());
             let max_matches = mode.is_grep().then_some(missing);
             let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
             self.async_state.map_grep_last_depth = None;
@@ -211,6 +219,10 @@ impl Interpreter {
             );
             *pos = start_pos + (out.consumed - consumed_base);
             pulled?;
+            if !mode.is_grep() {
+                batch = (out.produced.len() - produced_before) * group
+                    == out.consumed - consumed_before;
+            }
             // The loop the chunk ran in sat one handler level below us; a
             // `last` a loop nested inside the callback caught sits deeper.
             if self.async_state.map_grep_last_depth.take() == Some(depth + 1) {

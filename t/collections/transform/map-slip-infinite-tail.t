@@ -6,7 +6,7 @@ use Test;
 # mutsu kept the lazy list as one element, rendered `(...)`. Expected values
 # are the `raku` (v2026.09) output.
 
-plan 13;
+plan 14;
 
 sub inf { gather { my $i = 0; loop { take $i++ } } }
 
@@ -41,3 +41,6 @@ is (1, 2).map({ slip(1..*) }).first(* > 4), 5,
 my $calls = 0;
 is (1..10).map({ $calls++; $_ }).first(* > 2), 3, 'first(matcher) on a deferred map';
 is $calls, 3, '... runs the callback only as far as the match';
+my $n = 0;
+(1, 2, 3).map({ $n++; slip(1..*) }).head(2);
+is $n, 1, 'a prefix pull does not run a callback past an infinite Slip';
