@@ -43,8 +43,15 @@ for RakuAST::Method.new, RakuAST::Submethod.new -> $node {
     is $node.private, False, 'routine constructor is public by default';
     isa-ok $node.body, RakuAST::Blockoid, 'routine constructor supplies an empty body';
 }
+my $default-invocant = Q[method ($c = 42:) { $c }].AST.statements[0].expression.signature.parameters[0];
+ok $default-invocant.invocant, 'a defaulted invocant retains its invocant flag';
+is $default-invocant.default.value, 42, 'a defaulted invocant retains its initializer';
 
 for
+    Q[class BindingDefaultReceiver { our &alias = method actual($c = BindingDefaultReceiver:) { $c === BindingDefaultReceiver } }; BindingDefaultReceiver::alias()], True,
+    Q[class BindingExplicitReceiver { our &alias = method actual($c:) { $c } }; BindingExplicitReceiver::alias(42)], 42,
+    Q[my &alias = method ($c = 42:) { $c }; alias()], 42,
+    Q[my &alias = method ($c = 42) { $c }; alias(Any)], 42,
     Q[class BindingInvocant { our &alias = method actual($this:) { $this.WHICH eq self.WHICH } }; BindingInvocant::alias(BindingInvocant)], True,
     Q[class BindingLexicalInvocant { our &alias = method actual($self:) { $self.WHICH eq self.WHICH } }; BindingLexicalInvocant::alias(BindingLexicalInvocant)], True,
     Q[class BindingReturn { our &alias = method actual(--> Int) {42} }; (BindingReturn::alias(BindingReturn), &BindingReturn::alias.returns.^name).join(',')], '42,Int',

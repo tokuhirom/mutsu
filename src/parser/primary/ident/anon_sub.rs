@@ -47,6 +47,7 @@ pub(crate) fn make_anon_method(
 /// (`(name, sigilless)`) and the body without that binding.
 pub(crate) struct FoldedInvocant<'a> {
     pub(crate) type_constraint: Option<&'a str>,
+    pub(crate) default: Option<&'a Expr>,
     pub(crate) alias: Option<(String, bool)>,
     pub(crate) body: &'a [crate::ast::Stmt],
 }
@@ -66,7 +67,6 @@ pub(crate) fn folded_invocant<'a>(
         || receiver.traits.len() != 1
         || receiver.traits[0] != crate::ast::IMPLICIT_INVOCANT_TRAIT
         || receiver.where_constraint.is_some()
-        || receiver.default.is_some()
         || receiver.type_capture.is_some()
         || receiver.sub_signature.is_some()
         || receiver.code_signature.is_some()
@@ -111,6 +111,7 @@ pub(crate) fn folded_invocant<'a>(
     };
     Some(FoldedInvocant {
         type_constraint: receiver.type_constraint.as_deref(),
+        default: receiver.default.as_ref(),
         alias,
         body,
     })
@@ -122,6 +123,7 @@ pub(crate) fn folded_invocant<'a>(
 pub(crate) fn anon_method_expr_declared(
     type_constraint: Option<String>,
     alias: Option<(String, bool)>,
+    default: Option<Expr>,
     rest: Vec<crate::ast::ParamDef>,
     return_type: Option<String>,
     body: Vec<crate::ast::Stmt>,
@@ -132,6 +134,7 @@ pub(crate) fn anon_method_expr_declared(
         && let Some(receiver) = param_defs.first_mut()
     {
         receiver.type_constraint = type_constraint;
+        receiver.default = default;
     }
     match alias {
         Some(alias) => bind_invocant_aliases(expr, &[alias]),
@@ -201,6 +204,9 @@ pub(crate) fn method_literal_params(
             pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.name == "self";
         let declares_self_lexical = pd.declares_self_lexical();
         if !seen_positional && declares_invocant {
+            invocant.default = pd.default;
+            invocant.optional_marker = pd.optional_marker;
+            invocant.required = pd.required;
             if pd.type_constraint.is_some() {
                 invocant.type_constraint = pd.type_constraint;
             }

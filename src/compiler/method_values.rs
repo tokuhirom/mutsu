@@ -114,10 +114,13 @@ impl Compiler {
         };
         let effective =
             crate::method_signature_shared::effective_method_param_defs(param_defs, false);
+        let declared_receiver = param_defs
+            .first()
+            .is_some_and(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"));
         let (mut defs, aliases) = crate::parser::method_literal_params(effective);
         if let Some(receiver) = defs.first_mut() {
             receiver.is_invocant = true;
-            if receiver.type_constraint.is_none() {
+            if !declared_receiver && receiver.type_constraint.is_none() {
                 receiver.type_constraint = self.static_class.clone();
             }
         }

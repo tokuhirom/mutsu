@@ -2612,7 +2612,7 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             .iter()
             .any(|t| t == crate::ast::IMPLICIT_INVOCANT_TRAIT);
         let alias = (!implicit).then(|| (first.name.clone(), first.sigilless));
-        Some((first.type_constraint, alias))
+        Some((first.type_constraint, alias, first.default))
     } else {
         None
     };
@@ -2632,9 +2632,10 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         crate::ast::RoutineDeclarator::Method
     };
     let mut literal = match declared {
-        Some((type_constraint, alias)) => crate::parser::anon_method_expr_declared(
+        Some((type_constraint, alias, default)) => crate::parser::anon_method_expr_declared(
             type_constraint,
             alias,
+            default,
             param_defs,
             return_type,
             body,
