@@ -2731,7 +2731,8 @@ fn reverse_assign_base(infix: &RakuAstNode) -> Option<String> {
 /// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
 /// compound-assignment execution shape while retaining the source marker.
 pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    let target = lower_expr(named_child(node, "left")?)?;
+    let target =
+        super::compound_stmt::restore_conditional_target(lower_expr(named_child(node, "left")?)?);
     let meta = named_child(node, "infix")?;
     // `$x R-= $y`: assigns to the right operand.
     if let Some(base) = reverse_assign_base(meta) {

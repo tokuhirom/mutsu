@@ -1626,6 +1626,7 @@ t/control/ternary-container-increment.t
 t/control/ternary-dot-assign-branch.t
 t/control/ternary-lvalue-assign-reassoc.t
 t/control/ternary-lvalue-assignment.t
+t/control/ternary-lvalue-compound-assign.t
 t/control/ternary-lvalue.t
 t/control/ternary-second-part-diagnoses.t
 t/control/ternary-self-then-branch.t
@@ -1752,6 +1753,7 @@ t/exceptions/exception-methods.t
 t/exceptions/exception-rendering-and-phasers.t
 t/exceptions/exception-resume-cross-frame.t
 t/exceptions/exception-role-membership.t
+t/exceptions/exception-rows-owner-chain.t
 t/exceptions/exception-str-gist-message.t
 t/exceptions/exception-str-via-user-message.t
 t/exceptions/exception-throw-rows.t
@@ -2280,6 +2282,7 @@ t/lang/adverbs/colonpair-bracket-trailing-comma.t
 t/lang/adverbs/colonpair-keyword-key-hash-composer.t
 t/lang/adverbs/colonpair-twigil-autopair-hash-composer.t
 t/lang/adverbs/computed-declarator-adverb.t
+t/lang/adverbs/exists-delete-adverb.t
 t/lang/adverbs/value-dynamic-adverb.t
 t/lang/and-not-loose-precedence.t
 t/lang/angle-bracket-hyphen.t
@@ -2956,12 +2959,14 @@ t/modules/import-export/reimport-tagged-export-after-plain-use.t
 t/modules/import-export/require-dist-selectors.t
 t/modules/import-export/require-expression.t
 t/modules/import-export/require-import-enum-key.t
+t/modules/import-export/require-in-block-binds-lexically.t
 t/modules/import-export/require-in-method-keeps-module-type-alias.t
 t/modules/import-export/require-in-param-default-keeps-imports.t
 t/modules/import-export/require-in-routine-lexical-types.t
 t/modules/import-export/require-in-sub-module-curried-lexical-role.t
 t/modules/import-export/require-missing-module-stub.t
 t/modules/import-export/require-quote-keyword-module-name.t
+t/modules/import-export/require-top-level-binds-lexically.t
 t/modules/import-export/require-top-level-class-file.t
 t/modules/import-export/require-toplevel-multi-candidate-not-leaked.t
 t/modules/import-export/require-undeclared-bareword.t
@@ -3131,9 +3136,12 @@ t/modules/module-proto-survives-block-require.t
 t/modules/module-qualified-code-constants-off-env.t
 t/modules/module-qualified-our-constants-off-env.t
 t/modules/module-qualified-self-after-namespace-load.t
+t/modules/module-qualified-type-alias-off-frame-env.t
 t/modules/module-resources-relative-lib-after-chdir.t
 t/modules/module-reuse-class-in-block.t
 t/modules/module-reused-role-does-in-nested-decl.t
+t/modules/module-routine-does-not-see-importer-lexicals.t
+t/modules/module-routine-element-store-shadowed-file-lexical.t
 t/modules/module-routine-own-type-over-caller-enum.t
 t/modules/module-routine-use-import-stays-lexical.t
 t/modules/module-scalar-held-container-lexical.t
@@ -4011,6 +4019,7 @@ t/oo/method/blob-decode-method-rows.t
 t/oo/method/bound-element-cell-rw-arg-in-method.t
 t/oo/method/bound-nil-method-warn.t
 t/oo/method/buffer-instance-method-rows.t
+t/oo/method/builtin-method-cascade-receiver-answers.t
 t/oo/method/builtin-method-name-rows.t
 t/oo/method/builtin-method-receiver-answers.t
 t/oo/method/builtin-method-shadow-query.t
@@ -4130,6 +4139,7 @@ t/oo/method/inner-method-captured-loop-lexical-shadowing.t
 t/oo/method/instant-duration-method-rows.t
 t/oo/method/instant-duration-real-method-rows.t
 t/oo/method/int-str-script-method-rows.t
+t/oo/method/int-subclass-method-not-found.t
 t/oo/method/interface-consistency-our-method-assignment.t
 t/oo/method/interp-array-slice-method.t
 t/oo/method/interp-hash-method-and-typeobject-str.t
@@ -5169,6 +5179,7 @@ t/rakuast/rakuast-loop-control-value.t
 t/rakuast/rakuast-loop-label.t
 t/rakuast/rakuast-loop.t
 t/rakuast/rakuast-lowering-semantics.t
+t/rakuast/rakuast-lvalue-contracts.t
 t/rakuast/rakuast-lvalue-expression-assign.t
 t/rakuast/rakuast-match-modifier-aliases.t
 t/rakuast/rakuast-members-traits.t
@@ -6995,6 +7006,7 @@ t/types/any-sampling-minmax-rows.t
 t/types/any-serial.t
 t/types/any-splice-instance-receivers.t
 t/types/any-type-object-sampling.t
+t/types/any-type-word-refuses-grow.t
 t/types/any-unique-scalar.t
 t/types/base64-battery.t
 t/types/blob-buf-concat-result-type.t

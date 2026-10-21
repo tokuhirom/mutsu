@@ -1672,3 +1672,30 @@ also no longer collide with loop labels sharing a keyword prefix.
 The executable contract is `t/rakuast/rakuast-format-quote-setting-types.t`.
 The formatter grammar's symbol captures and anchors are measured separately
 against Rakudo; its existing regression retains all assertions.
+
+### 6.90 S10: conditional lvalues, type receivers and subscript adverbs (2026-10-21)
+
+A statement modifier on an assignment inside a compound-assignment target
+lowers to an assignment expression, preserving its writable container. The
+existing compound-assignment expansion then writes through the taken branch
+and leaves an untaken modifier as a no-op. This matches the ordinary parser's
+execution shape without adding a separate evaluator.
+
+Bare type operands round-trip through `Type::Simple` and lower to term
+lookups. A method call on `Any` therefore uses the term namespace rather than
+a same-named scalar slot; an EVAL unit also uses that namespace for a term
+whose declaration is outside its compile unit. Constructor calls retain the
+ordinary bareword key because they do not write their type receiver, and raw
+constructor arguments must keep their source containers. These choices
+preserve an immutable type receiver while leaving a lexical type alias or
+sigilless binding dynamically resolvable.
+
+An invalid multi-dimensional `:!exists:delete` subscript still raises
+`X::Adverb`, but its parser expansion now retains the original index and the
+ordered colonpairs as spelling. Conversion emits the public postcircumfix
+tree; lowering uses the existing subscript-adverb expansion to restore the
+same exception. The order is retained in both directions, including
+`:delete:!exists`. The executable contract is
+`t/rakuast/rakuast-lvalue-contracts.t`, alongside the existing three focused
+regressions for conditional assignment, bare `Any` growth and combined
+subscript adverbs.
