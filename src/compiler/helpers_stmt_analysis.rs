@@ -287,6 +287,11 @@ impl Compiler {
     pub(crate) fn seed_lexical_import_chain_from(&mut self, origin: &crate::opcode::CompiledCode) {
         let mut chains = origin.lexical_import_chains.iter();
         let Some(first) = chains.next() else {
+            // No call site recorded a chain: the body still starts inside the
+            // sets around the closure (a nested closure may call an import).
+            if !origin.enclosing_import_chain.is_empty() {
+                self.seed_lexical_import_chain(origin.enclosing_import_chain.clone());
+            }
             return;
         };
         // Innermost first, so the shared outer sets are a common suffix.
