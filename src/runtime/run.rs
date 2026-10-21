@@ -633,7 +633,7 @@ impl Interpreter {
         compiler.is_mainline = true;
         compiler.lexical_scope_known = true;
         compiler.unit_tail_sinks = sink_tail;
-        compiler.defer_unit_lexical_use_sets(&body_main);
+        compiler.defer_unit_lexical_use_sets(&body_main, false);
         // A sunk tail expression or call is sunk by its own `SinkPop`; the
         // checks on `last_value` below are only for the other tail forms.
         let tail_sunk_by_code =

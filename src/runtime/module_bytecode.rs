@@ -271,7 +271,7 @@ impl Interpreter {
                 if verify_enabled() {
                     let _session = compile_session::enter_session(session);
                     let stmts = body.stmts()?;
-                    compiler.defer_unit_lexical_use_sets(stmts);
+                    compiler.defer_unit_lexical_use_sets(stmts, true);
                     let fresh = compiler.compile(stmts);
                     verify_same(&unit.source_path, &decoded, &fresh);
                 }
@@ -281,7 +281,7 @@ impl Interpreter {
                 let stmts = body.stmts()?;
                 let _session = compile_session::enter_session(session);
                 let recording = compile_inputs::start();
-                compiler.defer_unit_lexical_use_sets(stmts);
+                compiler.defer_unit_lexical_use_sets(stmts, true);
                 let compiled = compiler.compile(stmts);
                 let recorded = recording.map(compile_inputs::RecordingGuard::finish);
                 let encoded = match &recorded {

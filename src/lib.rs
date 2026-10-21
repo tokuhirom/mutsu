@@ -204,7 +204,7 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
     let mut compiler = compiler::Compiler::new();
     compiler.is_mainline = true;
     // As `run.rs` declares the unit's own top-level `use` sets.
-    compiler.defer_unit_lexical_use_sets(&stmts);
+    compiler.defer_unit_lexical_use_sets(&stmts, false);
     let (code, compiled_fns) = compiler.compile(&stmts);
     let mut out = String::new();
     let disasm = |out: &mut String, code: &opcode::CompiledCode| {

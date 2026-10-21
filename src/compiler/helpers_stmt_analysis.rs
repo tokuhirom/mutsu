@@ -224,7 +224,13 @@ impl Compiler {
     /// Routines and closures compiled meanwhile (the hoisted `sub`s) see
     /// every set, since a routine body is late-bound.
     // Cost: O(s), s = statements of the unit.
-    pub(crate) fn defer_unit_lexical_use_sets(&mut self, stmts: &[Stmt]) {
+    ///
+    /// A module unit's sets (`module_unit`) bind routines, multis and
+    /// operators only, as an `EVAL` unit's do: the variables, constants and
+    /// types such a `use` imports keep their env aliases, which the module's
+    /// own import scope removes again, and a `use` with `:EXPORT` keeps the
+    /// registry path since the module re-exports what it imports.
+    pub(crate) fn defer_unit_lexical_use_sets(&mut self, stmts: &[Stmt], module_unit: bool) {
         let mut local_multis: Option<Vec<String>> = None;
         let mut line = None;
         for stmt in stmts {
@@ -232,6 +238,16 @@ impl Compiler {
                 line = Some(*n);
             }
             if let Some(id) = Self::lexical_use_set_id(stmt) {
+                if module_unit
+                    && matches!(stmt, Stmt::Use { tags, .. } if tags.iter().any(|t| t == "EXPORT"))
+                {
+                    continue;
+                }
+                let id = if module_unit {
+                    Self::eval_unit_set_id(id)
+                } else {
+                    id
+                };
                 let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
                 let id = Self::with_block_multis(id, local);
                 if !self.deferred_unit_sets.contains(&id) {
