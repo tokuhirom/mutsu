@@ -590,9 +590,15 @@ impl Compiler {
             .cloned()
             .collect();
         self.code.eval_scope_names.extend(names);
-        // The sets lexically around this `EVAL` call: what its unit starts
-        // inside, instead of the sets of whatever blocks are open when it
-        // runs (ADR-8751).
+        self.note_eval_site_chain();
+    }
+
+    /// Record the import sets lexically around a site that resolves a name
+    /// at run time (an `EVAL` call, a `::(...)` / `&::(...)` lookup): what it
+    /// starts inside, instead of the sets of whatever blocks are open when it
+    /// runs (ADR-8751).
+    // Cost: O(s), s = sets in the enclosing import chain.
+    pub(super) fn note_eval_site_chain(&mut self) {
         let chain: Vec<Symbol> = self.lexical_import_chain.iter().rev().copied().collect();
         if !self.code.eval_site_chains.contains(&chain) {
             self.code.eval_site_chains.push(chain);
