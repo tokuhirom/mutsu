@@ -523,7 +523,13 @@ impl Interpreter {
                         Self::shaped_leaf_writeback(source_val.as_ref(), idx, &current_val)
                 {
                     if let Some(updated_value) = updated {
-                        self.write_back_container_source(code, source, None, &source_val, updated_value);
+                        self.write_back_container_source(
+                            code,
+                            source,
+                            None,
+                            &source_val,
+                            updated_value,
+                        );
                     }
                     return;
                 }

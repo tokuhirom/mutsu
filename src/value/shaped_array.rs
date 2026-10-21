@@ -171,7 +171,9 @@ pub(crate) fn mark_shaped_array_items(
 /// a one-dimensional shaped array included.
 // Cost: O(E), E = leaves.
 pub(crate) fn shaped_array_iteration_leaves(value: &Value) -> Option<Vec<Value>> {
-    let depth = shaped_array_shape(value).filter(|shape| shape.len() > 1)?.len();
+    let depth = shaped_array_shape(value)
+        .filter(|shape| shape.len() > 1)?
+        .len();
     fn walk(value: &Value, depth: usize, out: &mut Vec<Value>) {
         match value.view() {
             ValueView::Array(items, ..) if depth > 0 => {
