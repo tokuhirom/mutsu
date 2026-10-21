@@ -152,9 +152,13 @@ impl Interpreter {
             "clone_nd"
                 if let Some(ValueView::ContainerRef(cell)) = args.first().map(Value::view) =>
             {
-                Ok(Value::container_ref(crate::gc::Gc::new(
-                    crate::value::ContainerCell::new(cell.load()),
-                )))
+                // The copy keeps the container's `of` type: a store into it
+                // type-checks like a store into the original.
+                let copy = crate::gc::Gc::new(crate::value::ContainerCell::new(cell.load()));
+                if let Some(ty) = crate::value::lookup_container_constraint(&cell) {
+                    crate::value::register_container_constraint(&copy, &ty);
+                }
+                Ok(Value::container_ref(copy))
             }
             "clone" | "clone_nd" => {
                 let v = crate::runtime::types::unwrap_varref_value(
