@@ -5,7 +5,7 @@
 use Test;
 use lib 't/lib';
 
-plan 9;
+plan 11;
 
 sub outside-call { (try EVAL 'rsi-f()') // 'not visible' }
 sub outside-lookup { (try ::('&rsi-f')).defined }
@@ -31,6 +31,13 @@ is outside-call(), 'not visible', 'the import ends with the block';
         'nor into the scope holding it';
     is ::('RequireScopedImports').^name, 'RequireScopedImports',
         'but the module is loaded';
+}
+
+{
+    my $name = 'RequireScopedImports';
+    require ::($name) <&rsi-f $rsi-v>;
+    is rsi-f() ~ ' ' ~ $rsi-v, 'rsi-f rsi-v', 'a computed module name binds the listed symbols too';
+    nok outside-lookup(), 'without a routine alias outside the block';
 }
 
 throws-like { require RequireScopedImports <&not-there> },
