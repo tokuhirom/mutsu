@@ -182,10 +182,14 @@ impl Compiler {
         // The unit's own top-level `use` opens its set where it stands
         // (`defer_unit_lexical_use_sets`).
         let base_text = full.resolve();
+        // A module unit's sets leave the variables out, like an `EVAL`'s.
+        let eval_text = Self::eval_unit_set_id(full).resolve();
         // A block's `use` of the same import list (already in the chain) is
         // that block's own, not the unit's.
         if let Some(i) = self.deferred_unit_sets.iter().position(|id| {
-            Self::set_id_matches(*id, base_text.as_str()) && !self.lexical_import_chain.contains(id)
+            (Self::set_id_matches(*id, base_text.as_str())
+                || Self::set_id_matches(*id, eval_text.as_str()))
+                && !self.lexical_import_chain.contains(id)
         }) {
             let id = self.deferred_unit_sets.remove(i);
             self.lexical_import_chain.push(id);
@@ -224,7 +228,12 @@ impl Compiler {
     /// Routines and closures compiled meanwhile (the hoisted `sub`s) see
     /// every set, since a routine body is late-bound.
     // Cost: O(s), s = statements of the unit.
-    pub(crate) fn defer_unit_lexical_use_sets(&mut self, stmts: &[Stmt]) {
+    ///
+    /// A module unit's sets (`module_unit`) bind routines, multis and
+    /// operators only, as an `EVAL` unit's do: the variables, constants and
+    /// types such a `use` imports keep their env aliases, which the module's
+    /// own import scope removes again.
+    pub(crate) fn defer_unit_lexical_use_sets(&mut self, stmts: &[Stmt], module_unit: bool) {
         let mut local_multis: Option<Vec<String>> = None;
         let mut line = None;
         for stmt in stmts {
@@ -232,6 +241,11 @@ impl Compiler {
                 line = Some(*n);
             }
             if let Some(id) = Self::lexical_use_set_id(stmt) {
+                let id = if module_unit {
+                    Self::eval_unit_set_id(id)
+                } else {
+                    id
+                };
                 let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
                 let id = Self::with_block_multis(id, local);
                 if !self.deferred_unit_sets.contains(&id) {
@@ -287,6 +301,11 @@ impl Compiler {
     pub(crate) fn seed_lexical_import_chain_from(&mut self, origin: &crate::opcode::CompiledCode) {
         let mut chains = origin.lexical_import_chains.iter();
         let Some(first) = chains.next() else {
+            // No call site recorded a chain: the body still starts inside the
+            // sets around the closure (a nested closure may call an import).
+            if !origin.enclosing_import_chain.is_empty() {
+                self.seed_lexical_import_chain(origin.enclosing_import_chain.clone());
+            }
             return;
         };
         // Innermost first, so the shared outer sets are a common suffix.

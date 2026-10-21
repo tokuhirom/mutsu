@@ -7103,6 +7103,12 @@ pub(crate) struct CompiledCode {
     /// sites: per site, the ids of the import sets of the `use`-blocks
     /// lexically enclosing it, innermost first (ADR-8751 stage 1).
     pub(crate) lexical_import_chains: Vec<Vec<Symbol>>,
+    /// The import sets lexically around this closure body where it was
+    /// attached to its creating code, innermost first: a recompile of the
+    /// body from its AST starts inside them even when no call site of the
+    /// body recorded a chain (a `supply` body whose nested `whenever`
+    /// closure calls the imported routine).
+    pub(crate) enclosing_import_chain: Vec<Symbol>,
     /// The lexical import chains of this code's `EVAL` calls (one per distinct
     /// chain, innermost first): the sets an EVAL'd unit starts inside
     /// (`Interpreter::eval_lexical_import_chain`). Empty when the code calls
@@ -8314,6 +8320,7 @@ impl CompiledCode {
             expr_declared_syms: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
             lexical_import_chains: Vec::new(),
+            enclosing_import_chain: Vec::new(),
             eval_site_chains: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),

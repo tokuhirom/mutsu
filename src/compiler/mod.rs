@@ -2721,6 +2721,7 @@ impl Compiler {
     }
 
     pub(super) fn add_closure_code_baked(&mut self, mut compiled: CompiledCode, esc: bool) -> u32 {
+        compiled.enclosing_import_chain = self.lexical_import_chain.iter().rev().copied().collect();
         compiled.free_var_parent_slots = compiled
             .free_var_syms
             .iter()

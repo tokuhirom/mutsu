@@ -203,6 +203,14 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
     );
     let mut compiler = compiler::Compiler::new();
     compiler.is_mainline = true;
+    // As `run.rs` (a program) and `compile_module_mainline` (a module file)
+    // declare the unit's own top-level `use` sets.
+    let module_unit = source_file.is_some_and(|f| {
+        [".rakumod", ".pm6", ".pm"]
+            .iter()
+            .any(|ext| f.ends_with(ext))
+    });
+    compiler.defer_unit_lexical_use_sets(&stmts, module_unit);
     let (code, compiled_fns) = compiler.compile(&stmts);
     let mut out = String::new();
     let disasm = |out: &mut String, code: &opcode::CompiledCode| {
