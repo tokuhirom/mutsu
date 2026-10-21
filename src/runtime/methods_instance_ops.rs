@@ -1387,7 +1387,19 @@ impl Interpreter {
                 .resolve_user_method_or_accessor(&class_name.resolve(), method)
                 .is_none()
         {
-            return self.call_method_with_values(payload, method, args);
+            let payload_type = crate::runtime::value_type_name(&payload);
+            return match self.call_method_with_values(payload, method, args) {
+                // The payload has no such method either: the error names the
+                // receiver (`I`), not the payload's type (`Int`) (#14318).
+                Err(err) if err.is_method_not_found() && err.message.contains(&format!("of type '{payload_type}'")) => {
+                    Err(make_method_not_found_error(
+                        method,
+                        &class_name.resolve(),
+                        false,
+                    ))
+                }
+                other => other,
+            };
         }
 
         // Package (type object) dispatch -- private method call
