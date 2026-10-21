@@ -23,7 +23,10 @@ use crate::runtime::utils::is_known_type_constraint;
 // Cost: O(k + c), k = name length, c = number of registered model classes.
 fn setting_type(name: &str) -> bool {
     is_known_type_constraint(name)
-        || core_type_names::contains(name)
+        || core_type_names::contains_in_version(
+            name,
+            crate::parser::current_language_version_starts_with("6.e"),
+        )
         || super::is_registered_type_object(name)
 }
 use crate::symbol::Symbol;

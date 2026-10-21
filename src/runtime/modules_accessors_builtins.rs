@@ -73,6 +73,7 @@ mod builtins_operators_prefix;
 mod builtins_operators_repeat;
 pub(crate) mod builtins_reduce;
 mod builtins_string;
+mod builtins_quote_processing;
 pub(crate) mod builtins_system;
 pub(crate) mod builtins_system_async;
 mod builtins_system_proc;
