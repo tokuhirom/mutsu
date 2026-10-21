@@ -2872,6 +2872,14 @@ impl Interpreter {
                         // captured `@a`/`%h` whole-reassigned here must keep its
                         // backing `Gc` so by-value holders observe the update.
                         Self::cell_store_preserving_container_identity(&name, &arc, &val);
+                        // A unit-level `our @a`/`our %h` that a closure captured
+                        // is written through its cell, but it is a package
+                        // variable too: the store the block-exit refresh of
+                        // `our_locals` reads must see the write, or the refresh
+                        // puts the stale container back over the live slot.
+                        if code.our_locals.iter().any(|(_, q)| q.as_str() == name) {
+                            self.set_our_var(name.clone(), arc.load().into_deref());
+                        }
                         // A `$_` boxed for a regex literal's topic capture
                         // (`topic_container_cell`, #9396) is still the topic:
                         // keep its assignment side effects.
