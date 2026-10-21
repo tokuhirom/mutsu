@@ -77,6 +77,7 @@ impl Interpreter {
         };
         self.register_class_decl(&name, &parents, modifiers)?;
         self.compose_mixin_role_submethods(&name, &fresh);
+        self.compose_mixin_class_how(&name)?;
         // A mixin type is synthesized, not written by the user: it must inherit
         // the base's accessor authority rather than claim its own. Marked
         // user-declared (which `register_class_decl` does for everything), a

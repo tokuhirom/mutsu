@@ -512,6 +512,28 @@ impl Interpreter {
             .is_some_and(|how| self.mixin_has_compose_hook(how))
     }
 
+    /// Compose a synthesized mixin type (`C+{R}`) whose HOW a role's `specialize`
+    /// hook mixed a meta-role into, as the class declaration op does for a
+    /// written class: the HOW's `compose`, else the native compose, then the
+    /// `create_BUILDPLAN` / `publish_method_cache` overrides. A no-op without
+    /// such a HOW.
+    // Cost: O(1) without a HOW mixin; else the hooks' own cost.
+    pub(crate) fn compose_mixin_class_how(&mut self, class_name: &str) -> Result<(), RuntimeError> {
+        let Some(how) = self.registry().class_how_values.get(class_name).cloned() else {
+            return Ok(());
+        };
+        if !matches!(how.view(), ValueView::Mixin(..)) {
+            return Ok(());
+        }
+        if self.class_how_compose_hook(class_name) {
+            let type_obj = Value::package(Symbol::intern(class_name));
+            self.call_method_with_values(how, "compose", vec![type_obj])?;
+        } else if !self.registry().composed_classes.contains(class_name) {
+            self.mop_compose(vec![Value::package(Symbol::intern(class_name))])?;
+        }
+        self.run_how_compose_overrides(class_name)
+    }
+
     /// Run the user `specialize` override of every composed role's HOW for
     /// `class_name` (queued by `queue_role_how_specialize`): rakudo calls
     /// `$role.HOW.specialize($role, $class)` while composing, so a hook mixed
