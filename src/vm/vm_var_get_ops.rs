@@ -1158,6 +1158,16 @@ impl Interpreter {
         // on the second call of the same routine, and on the first as soon as
         // an unrelated `use` has run in between — so a placeholder-only rule
         // fixes one call and leaves the next one wrong.
+        // An enum key the module imported lives in the enum-key namespace of
+        // the module tables (#7914), where a same-named `$`-scalar read cannot
+        // reach it (#14255).
+        if crate::runtime::enum_bare_names::enum_bare_keys_in_use()
+            && !name.starts_with(['$', '@', '%', '&'])
+            && let Some(v) =
+                self.module_imported_lexical(&crate::runtime::enum_bare_names::enum_bare_key(name))
+        {
+            return Some(v.clone());
+        }
         if let Some(v) = self.module_imported_lexical(name) {
             return Some(v.clone());
         }
@@ -1194,6 +1204,13 @@ impl Interpreter {
         };
         if !env_entry_is_placeholder {
             return None;
+        }
+        if crate::runtime::enum_bare_names::enum_bare_keys_in_use()
+            && !name.starts_with(['$', '@', '%', '&'])
+            && let Some(v) =
+                self.module_scope_lexical(&crate::runtime::enum_bare_names::enum_bare_key(name))
+        {
+            return Some(v.clone());
         }
         self.module_scope_lexical(name).cloned()
     }

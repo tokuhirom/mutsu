@@ -224,6 +224,10 @@ impl UndeclaredName<'_> {
             || interp.get_our_var(name).is_some()
             // A file-scope constant of the running routine's own module.
             || interp.module_scope_lexical(name).is_some()
+            || (crate::runtime::enum_bare_names::enum_bare_keys_in_use()
+                && interp
+                    .module_scope_lexical(&crate::runtime::enum_bare_names::enum_bare_key(name))
+                    .is_some())
             || Interpreter::is_builtin_type(name)
             || crate::builtin_types::catalog::builtin_type_info(name).is_some()
             || Interpreter::is_pseudo_package_name(name)

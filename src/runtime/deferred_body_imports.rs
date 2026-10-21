@@ -41,21 +41,14 @@ impl Interpreter {
         if self.module.module_imported_names.len() <= mark {
             return;
         }
-        // `module_imported_names` records the ENV KEY the import landed under;
-        // the two scope tables want the name the importing code SPELLS, which
-        // for an enum key is its bare form rather than the enum-key namespace
-        // key the value lives at (#7914).
+        // `module_imported_names` records the ENV KEY the import landed under,
+        // and the two scope tables are keyed by the same text: an enum key stays
+        // in the enum-key namespace (#7914, #14255) so it cannot answer a
+        // same-named `$`-scalar read.
         let imported: Vec<(String, crate::value::Value)> = self.module.module_imported_names
             [mark..]
             .iter()
-            .map(|(name, value, _)| {
-                let spelled =
-                    match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
-                        Some(bare) => bare.to_string(),
-                        None => name.clone(),
-                    };
-                (spelled, value.clone())
-            })
+            .map(|(name, value, _)| (name.clone(), value.clone()))
             .collect();
         let lexicals = crate::runtime::cow_table_mut(&mut self.module.module_scope_lexicals)
             .entry(owner.to_string())

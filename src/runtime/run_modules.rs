@@ -1366,16 +1366,13 @@ impl Interpreter {
                 std::mem::replace(&mut self.module.module_export_terms, saved_export_terms);
             module_scope_names.extend(export_terms);
             // `module_imported_names` records the ENV KEY the import landed under,
-            // because the restore loop below has to undo that exact key. For the
-            // two scope tables it feeds, the key wanted is the name the importing
-            // code SPELLS — which for an enum key is its bare form, not the
-            // enum-key namespace key the value lives at (#7914).
-            let imported_spelling = |name: &String| -> String {
-                match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
-                    Some(bare) => bare.to_string(),
-                    None => name.clone(),
-                }
-            };
+            // because the restore loop below has to undo that exact key. The two
+            // scope tables it feeds are keyed by the same text: an enum key stays
+            // under its enum-key namespace key (#7914), so a scalar read of a
+            // same-named `$literal` in the module's own routines cannot be
+            // answered by the imported enum value (#14255); the bareword reader
+            // (`running_module_bareword`) probes that namespace.
+            let imported_spelling = |name: &String| -> String { name.clone() };
             // A re-import of a name an earlier module already installed adds
             // nothing to `env`, so the diff misses it even though it is part of
             // this module's scope (see `module_imported_names`).
@@ -2352,13 +2349,16 @@ impl Interpreter {
                 continue;
             }
             let name = key.resolve();
-            // An enum key is a module-scope declaration under its BARE name; the
-            // enum-key namespace (#7914) is only where the value is *stored*, so
-            // record it the way the module's own routines will look it up.
-            let name = match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
-                Some(bare) => bare.to_string(),
-                None => name.to_string(),
-            };
+            // An enum key is a module-scope declaration, recorded under its
+            // enum-key namespace key (#7914) like the env entry it came from:
+            // under its bare name it would answer a same-named `$`-scalar read
+            // in the module's own routines (#14255). The name checks below
+            // apply to the key without that prefix.
+            let (enum_key, name) =
+                match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
+                    Some(bare) => (true, bare.to_string()),
+                    None => (false, name.to_string()),
+                };
             // Twigils, qualified names and the `__mutsu_*` / `?FILE`-style
             // metadata keys are never plain module-scope declarations. A scalar
             // `my $x` is stored sigil-less (key `x`); `@`/`%` keep their sigil.
@@ -2380,7 +2380,12 @@ impl Interpreter {
                 continue;
             }
             if let Some(value) = self.env.get_sym(*key) {
-                names.insert(name.to_string(), value.clone());
+                let recorded = if enum_key {
+                    crate::runtime::enum_bare_names::enum_bare_key(&name)
+                } else {
+                    name.to_string()
+                };
+                names.insert(recorded, value.clone());
             }
         }
         names
