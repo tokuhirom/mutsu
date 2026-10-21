@@ -65,6 +65,7 @@ mod placeholder;
 mod postfix_grouping;
 mod prefix_call;
 mod proto;
+mod quoted_string;
 mod react;
 mod regex_char_class;
 mod regex_code;

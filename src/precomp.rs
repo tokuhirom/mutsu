@@ -139,7 +139,8 @@ pub(crate) fn interpreter_version() -> String {
     // 38: ancestor publication; 39: compiled attribute traits and bracket spelling.
     // 40: Method initializers retain their declaration/prototype identity.
     // 41: Role headers retain the written interleaving of trait families.
-    const CACHE_FORMAT_VERSION: u32 = 41;
+    // 42: `ModuleLoadFacts` gained `my_constant_names` (#14330).
+    const CACHE_FORMAT_VERSION: u32 = 42;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

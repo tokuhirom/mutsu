@@ -443,6 +443,12 @@ fn dispatch(
                 let receiver = Receiver::of_settled(&payload)?;
                 (&payload, super::resolve(receiver, method, arity)?)
             }
+            // A grammar cursor or an instance of a `Match` subclass has no
+            // shape, but its structure is a `Match`'s: it reads as one.
+            None if target.is_match_instance() => (
+                target,
+                super::resolve(Receiver::instance(DispatchShape::Match), method, arity)?,
+            ),
             // An allomorph is answered on the part the row reads (§9.101).
             None => {
                 let (part, id) = super::allomorph::redirect(target, method, arity)?;

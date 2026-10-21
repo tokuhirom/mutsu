@@ -1819,64 +1819,6 @@ fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
-/// The processors and text of a word quote (`processors => <words val>` over one
-/// literal segment), lowered through the parser's own `angle_words_expr`;
-/// `None` for a string without processors. Any other processor list stays
-/// the boundary.
-// Cost: O(p), p = processors of the node.
-fn word_quote_content(node: &RakuAstNode) -> Result<Option<(bool, bool, String)>, RuntimeError> {
-    if !node.fields.iter().any(|f| f.name == Some("processors")) {
-        return Ok(None);
-    }
-    let processors = list_field(node, "processors")?;
-    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
-    if processors.is_empty() {
-        return Ok(None);
-    }
-    let (quotewords, val) = match names.as_slice() {
-        ["words", "val"] => (false, true),
-        ["words"] => (false, false),
-        ["quotewords", "val"] => (true, true),
-        ["quotewords"] => (true, false),
-        _ => return Err(unsupported(node)),
-    };
-    let [segment] = list_field(node, "segments")? else {
-        return Err(unsupported(node));
-    };
-    let ValueView::RakuAst(segment) = segment.view() else {
-        return Err(unsupported(node));
-    };
-    if segment.class != RakuAstClass::StrLiteral {
-        return Err(unsupported(node));
-    }
-    match positional_leaf(segment)?.view() {
-        ValueView::Str(text) => Ok(Some((quotewords, val, text.to_string()))),
-        _ => Err(unsupported(node)),
-    }
-}
-
-/// `Some(val)` for a `quotewords` string whose segments are not one literal
-/// run: an interpolating word quote (see `word_quote`).
-// Cost: O(p), p = processors of the node.
-fn interpolating_words(
-    node: &RakuAstNode,
-    segments: &[Value],
-) -> Result<Option<bool>, RuntimeError> {
-    if !node.fields.iter().any(|f| f.name == Some("processors")) {
-        return Ok(None);
-    }
-    let processors = list_field(node, "processors")?;
-    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
-    let val = match names.as_slice() {
-        ["quotewords", "val"] => true,
-        ["quotewords"] => false,
-        _ => return Ok(None),
-    };
-    let one_literal = matches!(segments, [s]
-        if matches!(s.view(), ValueView::RakuAst(seg) if seg.class == RakuAstClass::StrLiteral));
-    Ok((!one_literal).then_some(val))
-}
-
 /// `subset S of T where P` -> `Stmt::SubsetDecl`. An explicit base type arrives
 /// as the single `Trait::Of` entry of the `traits` list; a `subset` that writes
 /// no `of` carries no `traits` field at all and takes the implied `Any`. Any
@@ -4319,73 +4261,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // plain segment lowers to its string literal.
         // A `Heredoc` is the same quoted text; `stop` only records the
         // terminator line, which the lowered string no longer has.
-        RakuAstClass::QuotedString | RakuAstClass::Heredoc => {
-            let segments = list_field(node, "segments")?;
-            if let Some(val) = interpolating_words(node, segments)? {
-                return super::word_quote::lower(node, val);
-            }
-            // `qqw/a $x/`: the interpolated string, split into words at run time.
-            if node.fields.iter().any(|f| f.name == Some("processors"))
-                && let Some(val) = super::word_quote::interpolating_plain_words(node, segments)
-            {
-                let mut plain = node.clone();
-                plain.fields.retain(|f| f.name != Some("processors"));
-                return Ok(super::word_quote::lower_words_atom(
-                    lower_expr(&plain)?,
-                    val,
-                ));
-            }
-            if let Some((quotewords, val, content)) = word_quote_content(node)? {
-                // `<…>` keeps its own lowering (a lone numeric word is a
-                // literal term there).
-                return Ok(if !quotewords && val {
-                    crate::parser::angle_words_expr(&content)
-                } else {
-                    crate::parser::word_quote_expr(quotewords, val, &content)
-                });
-            }
-            if segments.len() == 1
-                && let ValueView::RakuAst(seg) = segments[0].view()
-                && seg.class == RakuAstClass::StrLiteral
-            {
-                return Ok(Expr::Literal(positional_leaf(seg)?));
-            }
-            // A multi-segment (interpolated) string -> StringInterpolation of the
-            // lowered segments (`StrLiteral` runs and interpolated terms alike).
-            let mut parts = Vec::with_capacity(segments.len());
-            for s in segments {
-                let ValueView::RakuAst(seg) = s.view() else {
-                    return Err(unsupported(node));
-                };
-                // An interpolated code block (`"a{ $x }b"`) is a `Block`
-                // segment, but as a *segment* it is evaluated, not a closure
-                // value. mutsu spells that `DoStmt(Block)`; lowering it through
-                // the ordinary expression path would build a closure and
-                // interpolate its stringification instead of its result.
-                if seg.class == RakuAstClass::Block {
-                    parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(seg)?))));
-                    continue;
-                }
-                // `"a$(EXPR)b"` is the parser's `DoStmt(Expr(EXPR))`.
-                if seg.class == RakuAstClass::ContextualizerItem
-                    && let Some(contents) = super::contextualizer::lower_segment(seg)?
-                {
-                    parts.push(Expr::DoStmt(Box::new(Stmt::Expr(contents))));
-                    continue;
-                }
-                // `"a$(my $x = 1; $x)b"`: the parser's scope-transparent block.
-                if seg.class == RakuAstClass::ContextualizerItem
-                    && let Ok(sequence) = named_child_or_positional(seg)
-                    && sequence.class == RakuAstClass::StatementSequence
-                    && sequence.fields.len() > 1
-                {
-                    parts.push(Expr::desugar_block(lower_statement_sequence(sequence)?));
-                    continue;
-                }
-                parts.push(lower_expr(seg)?);
-            }
-            Ok(Expr::StringInterpolation(parts))
-        }
+        RakuAstClass::QuotedString | RakuAstClass::Heredoc => super::quoted_string::lower(node),
         RakuAstClass::Substitution => super::substitution::lower_substitution(node),
         RakuAstClass::Transliteration => super::substitution::lower_transliteration(node),
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
@@ -4909,7 +4785,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let single_word = if node.class == RakuAstClass::ColonPairValue
                 && value_node.class == RakuAstClass::QuotedString
             {
-                match word_quote_content(value_node)? {
+                match super::quoted_string::word_quote_content(value_node)? {
                     Some((false, true, word))
                         if !word.is_empty() && !word.contains(char::is_whitespace) =>
                     {

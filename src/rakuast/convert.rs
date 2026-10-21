@@ -3361,6 +3361,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(hyper) = super::hyper_prefix::convert(name.as_str(), args) {
                 return hyper;
             }
+            if name.as_str() == crate::ast::quote_processing::FORMAT {
+                return super::quoted_string::convert_format(args);
+            }
             if let Some(words) = super::word_quote::convert_words_atom(name.as_str(), args) {
                 return words;
             }

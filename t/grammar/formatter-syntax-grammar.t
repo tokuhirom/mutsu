@@ -28,7 +28,7 @@ is $d<idx>.Str, '2$', 'argument index';
 is $d<size><star>.Str, '*', 'star size';
 is $d<size><idx>.Str, '3$', 'star size index';
 
-is Formatter::Syntax.parse('%s')<statement>[0]<directive><sym>.defined, False, 'a string directive has no sym';
+is Formatter::Syntax.parse('%s')<statement>[0]<directive><sym>.Str, 's', 'a string directive captures its symbol';
 ok Formatter::Syntax.parse('%v')<statement>[0]<panic>.defined, 'an unsupported letter is a panic';
 nok Formatter::Syntax.parse('%').defined, 'a lone percent does not parse';
 nok Formatter::Syntax.parse('100%').defined, 'a trailing percent does not parse';

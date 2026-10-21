@@ -1071,6 +1071,28 @@ impl Interpreter {
                 );
                 return Ok(Value::make_instance(*class_name, attrs));
             }
+            // A user subclass of Match (`class M is Match {}`, #14338) is built
+            // like a `Match` -- `orig[from..to]` sliced, the captures stored --
+            // and marked as a match, so `Match`'s rows read it (the table's
+            // Match-shaped lookup).
+            let is_match_subclass = cn_resolved != "Match"
+                && !self.class_is_grammar(class_key)
+                && self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "Match");
+            if is_match_subclass
+                && (skip_user_new || !self.has_user_method(class_key, "new"))
+                && let ValueView::Instance { attributes, .. } =
+                    Self::build_native_match_value(&args).view()
+            {
+                let mut attrs = attributes.as_map().clone();
+                attrs.insert(
+                    crate::value::match_view::CURSOR_MATCH_MARKER.to_string(),
+                    Value::TRUE,
+                );
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             // The native constructor of a builtin class (`native_ctor`): the
             // arms of what used to be a `match` on this name. A user
             // declaration of the same name bypassed it (`constructor_dispatch_name`).
