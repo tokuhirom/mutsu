@@ -1479,6 +1479,7 @@ t/control/do-if-nested-without-modifier.t
 t/control/do-stmt-modifier-belongs-to-outer.t
 t/control/do-stmt-modifier-rvalue.t
 t/control/do-stmt.t
+t/control/doc-phaser-only-under-doc.t
 t/control/done-paren-stmt-modifier.t
 t/control/dotassign-store-and-container-topic.t
 t/control/double-statement-modifier-confused.t
@@ -3854,6 +3855,7 @@ t/oo/class/classify-pair-iteration.t
 t/oo/class/classify-whatever-identity.t
 t/oo/class/code-object-return-type-not-inherited.t
 t/oo/class/coerce-into-class-inheriting-builtin.t
+t/oo/class/composition-advanced.t
 t/oo/class/composition-not-composable.t
 t/oo/class/date-subclass-qualified-and-inherited-new.t
 t/oo/class/deep-mro-dispatch.t
@@ -4546,6 +4548,7 @@ t/oo/role/attr-trait-role-mixin.t
 t/oo/role/attribute-get-value-lvalue-and-mixin-role-attrs.t
 t/oo/role/attribute-role-stub-mixin.t
 t/oo/role/augment-does-role.t
+t/oo/role/augment-role-anon.t
 t/oo/role/bless-defaulted-parametric-role.t
 t/oo/role/blob-role-vmarray-user-class.t
 t/oo/role/builtin-role-composes-its-own-roles.t
@@ -4871,6 +4874,7 @@ t/oo/self-serial-strip-itemization.t
 t/oo/self-var-assign.t
 t/oo/set-coercion-keeps-scalar-mixin.t
 t/oo/str-mixin-string-operators-read-payload.t
+t/oo/stub-and-supersede.t
 t/oo/stub-fail-semantics.t
 t/oo/stub-redefine-position.t
 t/oo/subset-coercive-nested.t
@@ -5303,6 +5307,7 @@ t/rakuast/rakuast-slipped-control-call.t
 t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
 t/rakuast/rakuast-smiley-pragma.t
+t/rakuast/rakuast-source-declaration-boundaries.t
 t/rakuast/rakuast-source-forms.t
 t/rakuast/rakuast-source-identifiers.t
 t/rakuast/rakuast-statement-block-bindings.t
@@ -6679,12 +6684,14 @@ t/routines/signature/multi-num-param-strictness.t
 t/routines/signature/multi-parameter-signature-builtin-ancestry.t
 t/routines/signature/multi-required-array-param-arity.t
 t/routines/signature/multi-rw-param-from-routine-frame.t
+t/routines/signature/multi-signature-alternates.t
 t/routines/signature/multi-sub-signature-tie-declaration-order.t
 t/routines/signature/multi-subsignature-bind-check-tie-declaration-order.t
 t/routines/signature/multi-subsignature-destructures-an-associative.t
 t/routines/signature/multi-subsignature-object-named.t
 t/routines/signature/multi-typed-array-param.t
 t/routines/signature/multi-where-optional-param.t
+t/routines/signature/multiple-signatures.t
 t/routines/signature/named-arg-alias-external-key.t
 t/routines/signature/named-arg-rightmost-wins.t
 t/routines/signature/named-arg-statement-call.t
@@ -7956,6 +7963,7 @@ t/vm/scope/frame-lexical-inner-sub.t
 t/vm/scope/frame-lexical-rw-index-arg.t
 t/vm/scope/free-var-in-bare-block-lexical-scope.t
 t/vm/scope/free-var-store-ignores-caller-lexical-constraint.t
+t/vm/scope/heredoc-scope-in-sub-body.t
 t/vm/scope/is-default-scoped-to-declaration.t
 t/vm/scope/let-block-initializer-classifier.t
 t/vm/scope/let-temp.t
