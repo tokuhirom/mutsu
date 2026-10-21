@@ -50,6 +50,10 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
     "Array"."AT-POS" => at_pos,
     "Array"."default" => default,
     "Array"."of" => of,
+    "Seq"."hyper" => hyper,
+    "Seq"."race" => race,
+    "List"."hyper" => hyper,
+    "List"."race" => race,
     "Seq"."cache" => cache,
     "Any"."cache" => cache,
     "Seq"."gist" => gist,
@@ -98,8 +102,9 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
 /// - throw `X::Cannot::Lazy` from the force (a `Failure` in Rakudo for
 ///   `elems`, `end`, `Numeric`, `Int`, `sum`, `reverse`, `pick`, `roll`):
 ///   the counting, ordering and sampling methods;
-/// - `hyper` and `race` reify, so an infinite sequence throws: Rakudo
-///   hyperizes it lazily, which mutsu's `HyperSeq` cannot hold yet;
+/// - `hyper` and `race` are pulls (they keep an unbounded sequence lazy,
+///   marked `HyperSeq`/`RaceSeq`); only a sequence that ends reifies here,
+///   into the settled `HyperSeq`;
 /// - `item` is not here: it itemizes the receiver as it is (its pull).
 // Cost: O(n), n = names in the table.
 pub(crate) fn reifies(method: &str) -> bool {
@@ -300,6 +305,45 @@ fn cache(
         return None;
     }
     list.cache_lazy_view().map(Ok)
+}
+
+/// `hyper`/`race` of a list that may be infinite (#13918): Rakudo's
+/// `HyperSeq` wraps the source iterator and batches it on demand, so a
+/// prefix pulls one batch. The list stays a lazy pull, marked as a
+/// `HyperSeq`/`RaceSeq`; its stages then stream like any lazy `map`/`grep`
+/// (nothing is batched across threads, as for a settled `HyperSeq`). A list
+/// that will end declines and is reified into the settled `HyperSeq`.
+// Cost: O(c), c = elements already cached (the list is cloned).
+fn hyperize(
+    list: &LazyList,
+    kind: crate::value::HyperKind,
+) -> Option<Result<Value, RuntimeError>> {
+    if !list.renders_lazy_placeholder() {
+        return None;
+    }
+    Some(Ok(Value::lazy_list(crate::gc::Gc::new(
+        list.with_hyper_kind(kind),
+    ))))
+}
+
+// Cost: as `hyperize`.
+fn hyper(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    _args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    hyperize(list, crate::value::HyperKind::Hyper)
+}
+
+// Cost: as `hyperize`.
+fn race(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    _args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    hyperize(list, crate::value::HyperKind::Race)
 }
 
 /// `gist`/`Str`/`raku` of a list that may be infinite: rendering it would

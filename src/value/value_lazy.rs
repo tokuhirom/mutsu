@@ -48,6 +48,7 @@ impl Clone for LazyList {
                 .map(|c| Mutex::new(c.lock().unwrap().clone())),
             array_context: self.array_context,
             list_context: self.list_context,
+            hyper_kind: self.hyper_kind,
             cached_no_sink: self.cached_no_sink,
             deleted_indices: Default::default(),
             descriptor: self.descriptor.clone(),
@@ -534,6 +535,19 @@ impl LazyList {
     pub(crate) fn with_list_context(&self) -> Self {
         let mut cloned = self.clone();
         cloned.list_context = true;
+        cloned.itemized = false;
+        cloned
+    }
+
+    /// The hyperization this list carries (`.hyper` / `.race`).
+    pub(crate) fn hyper_kind(&self) -> super::HyperKind {
+        self.hyper_kind
+    }
+
+    /// A clone that reports `HyperSeq` / `RaceSeq` and stays lazy.
+    pub(crate) fn with_hyper_kind(&self, kind: super::HyperKind) -> Self {
+        let mut cloned = self.clone();
+        cloned.hyper_kind = kind;
         cloned.itemized = false;
         cloned
     }
