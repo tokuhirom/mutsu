@@ -571,157 +571,15 @@ impl Interpreter {
             slip: call_has_slip,
         } = arg_kinds;
         crate::vm::vm_stats::record_function_dispatch();
-        // ADR-0113: a frame-lexical routine is resolved at compile time and is
-        // in no registry the name-keyed dispatch below could consult.
-        if let Some(r) = code.lexical_routine(code.const_sym(name_idx))
-            && let Some(result) = self.exec_frame_lexical_call(
-                code,
-                r,
-                FrameLexicalCallSite {
-                    arity,
-                    arg_sources_idx,
-                    track_sources: true,
-                    call_has_named,
-                },
-                compiled_fns,
-            )?
-        {
-            self.stack.push(result);
-            return Ok(());
-        }
-        // A block-declared routine's body calling a sibling routine of its
-        // block: the declaring activation's capture binds it as `&name`
-        // (#13037), which the code-variable call resolves through the frame's
-        // static link ahead of the registry's latest-activation routine.
-        if self
-            .env()
-            .frame_activation_binds_routine(Self::const_str(code, name_idx))
-        {
-            return self.exec_call_on_code_var_op(
-                code,
-                name_idx,
-                arity,
-                arg_sources_idx,
-                false,
-                CodeVarBinding::ByName,
-                compiled_fns,
-            );
-        }
-        // An argument-less `callsame` / `nextsame` that nothing shadows goes
-        // straight to the builtin (see `vm_call_dispatcher_builtin`). With no
-        // real arguments there are no argument sources to honour.
-        if arity <= 1
-            && let Some(done) =
-                self.try_dispatcher_builtin_call(code, code.const_sym(name_idx), arity)
-        {
+        if let Some(done) = self.exec_call_func_preamble(
+            code,
+            name_idx,
+            arity,
+            arg_sources_idx,
+            call_has_named,
+            compiled_fns,
+        ) {
             return done;
-        }
-        // An `nqp::` op is a compiler-known primitive in a reserved namespace:
-        // nothing below can answer it differently than the op table, so it
-        // goes there directly (see `exec_nqp_call_op`). One memoized flag
-        // byte on the callee symbol decides.
-        if code.const_sym(name_idx).flags() & crate::symbol::flags::NQP_OP != 0 {
-            return self.exec_nqp_call_op(code, name_idx, arity, arg_sources_idx);
-        }
-        // A native atomic helper (`⚛`-operators, `cas`) is the same kind of
-        // compiler-emitted primitive in a reserved namespace: it goes to its
-        // handler directly (see `exec_atomic_helper_call_op`).
-        if arg_sources_idx.is_none()
-            && code.const_sym(name_idx).flags() & crate::symbol::flags::NATIVE_ATOMIC_HELPER != 0
-        {
-            return self.exec_atomic_helper_call_op(code, name_idx, arity);
-        }
-        // #7797: same package-qualification gate as `exec_get_bare_word_op`
-        // (see its comment), applied to a qualified sub CALL (`Pkg::sub(...)`)
-        // rather than a bareword term -- a call name never reaches that
-        // function, so the two chokepoints need the same check independently.
-        {
-            let name_str = Self::const_str(code, name_idx);
-            if crate::qualified::is_qualified(code.const_sym(name_idx))
-                && !self.qualified_name_visible_here(name_str)
-            {
-                return Err(RuntimeError::new(format!(
-                    "Could not find symbol '{}'",
-                    name_str,
-                )));
-            }
-        }
-        // `++`/`--` reach here as a call only because a user declared a `multi`
-        // for the operator; the native implementation is one candidate of that
-        // multi (rakudo's `Int:D`/`Bool`/`Num:D`/... core candidates), so rank
-        // it against the user's before dispatching. When the core candidate
-        // wins, the increment runs here, through the `VarRef` the call site
-        // already wrapped the operand in — the only place that can both mutate
-        // for the builtin and leave the variable alone when a (non-`is rw`)
-        // user candidate wins.
-        if arity == 1 && !self.stack.is_empty() {
-            let name_str = Self::const_str(code, name_idx);
-            if let Some(op) = IncrementOp::from_routine_name(name_str) {
-                let arg = self.stack[self.stack.len() - 1].clone();
-                if self.core_increment_candidate_wins(name_str, std::slice::from_ref(&arg))
-                    == Some(true)
-                {
-                    self.stack.pop();
-                    // An attribute operand (`++$!x`) is read-modify-written
-                    // through its backing cell, exactly as the increment
-                    // opcodes do around `exec_scalar_incdec_op`.
-                    if let Some((attr, _, _)) = arg.as_varref() {
-                        let attr = attr.resolve();
-                        self.sync_attr_local_from_cell_by_name(code, &attr);
-                    }
-                    let result = self.run_core_increment(op, &arg, Some(code))?;
-                    self.apply_pending_rw_writeback(code);
-                    self.stack.push(result);
-                    return Ok(());
-                }
-            }
-        }
-        // An empty-signature proto (`proto bar {*}`) gates the whole dispatch:
-        // a call with positional arguments can never reach a candidate. Reject
-        // it here, before the light-call caches would dispatch directly to a
-        // multi candidate. Guarded by `is_empty()` so the common case is free.
-        if !self.dispatch.empty_sig_proto_names.is_empty()
-            && self
-                .dispatch.empty_sig_proto_names
-                .contains(&code.const_sym(name_idx))
-            // Re-verify against the registry: the name-only set can go stale
-            // (an EVAL-scoped `proto bar {*}` must not veto an unrelated
-            // mainline `bar`), so only gate while an empty-sig proto is still
-            // the visible one.
-            && self
-                .resolve_proto_function(Self::const_str(code, name_idx))
-                .is_some_and(|p| p.empty_sig)
-        {
-            let arity_usize = arity as usize;
-            if self.stack.len() >= arity_usize {
-                let stack_args = &self.stack[self.stack.len() - arity_usize..];
-                let positional_types: Vec<String> = stack_args
-                    .iter()
-                    .filter(|a| {
-                        !Self::is_callsite_line_marker(a)
-                            && !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
-                    })
-                    .map(crate::value::types::what_type_name)
-                    .collect();
-                if !positional_types.is_empty() {
-                    let name_str = Self::const_str(code, name_idx);
-                    let msg = format!(
-                        "Calling {}({}) will never work with signature of the proto ()",
-                        name_str,
-                        positional_types.join(", ")
-                    );
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    attrs.insert("objname".to_string(), Value::str(name_str.to_string()));
-                    attrs.insert("signature".to_string(), Value::str("()".to_string()));
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(Value::make_instance(
-                        crate::symbol::Symbol::intern("X::TypeCheck::Argument"),
-                        attrs,
-                    )));
-                    return Err(err);
-                }
-            }
         }
         // If this name is used as a `&`-sigil parameter anywhere, a lexical
         // `&name` binding in the current frame may shadow a same-named package
@@ -977,6 +835,215 @@ impl Interpreter {
             }
         }
 
+        self.exec_call_func_op_general(
+            code,
+            name_idx,
+            arity,
+            arg_sources_idx,
+            arg_kinds,
+            skip_name_caches,
+            compiled_fns,
+        )
+    }
+
+    /// The cold checks `exec_call_func_op_inner` makes before its call caches:
+    /// a frame-lexical routine, a `&name` binding, the `nqp::`/atomic/dispatcher
+    /// primitives, a qualified name, a user `++`/`--` multi and an empty-signature
+    /// proto. `Some` when one of them answered the call. Out of line so their
+    /// locals (`format!` strings, a `Vec<String>` of type names) are not in the
+    /// frame every Raku call holds while its callee runs (#9924).
+    #[inline(never)]
+    fn exec_call_func_preamble(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+        arg_sources_idx: Option<u32>,
+        call_has_named: bool,
+        compiled_fns: &CompiledFns,
+    ) -> Option<Result<(), RuntimeError>> {
+        // ADR-0113: a frame-lexical routine is resolved at compile time and is
+        // in no registry the name-keyed dispatch below could consult.
+        if let Some(r) = code.lexical_routine(code.const_sym(name_idx)) {
+            match self.exec_frame_lexical_call(
+                code,
+                r,
+                FrameLexicalCallSite {
+                    arity,
+                    arg_sources_idx,
+                    track_sources: true,
+                    call_has_named,
+                },
+                compiled_fns,
+            ) {
+                Ok(Some(result)) => {
+                    self.stack.push(result);
+                    return Some(Ok(()));
+                }
+                Ok(None) => {}
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        // A block-declared routine's body calling a sibling routine of its
+        // block: the declaring activation's capture binds it as `&name`
+        // (#13037), which the code-variable call resolves through the frame's
+        // static link ahead of the registry's latest-activation routine.
+        if self
+            .env()
+            .frame_activation_binds_routine(Self::const_str(code, name_idx))
+        {
+            return Some(self.exec_call_on_code_var_op(
+                code,
+                name_idx,
+                arity,
+                arg_sources_idx,
+                false,
+                CodeVarBinding::ByName,
+                compiled_fns,
+            ));
+        }
+        // An argument-less `callsame` / `nextsame` that nothing shadows goes
+        // straight to the builtin (see `vm_call_dispatcher_builtin`). With no
+        // real arguments there are no argument sources to honour.
+        if arity <= 1
+            && let Some(done) =
+                self.try_dispatcher_builtin_call(code, code.const_sym(name_idx), arity)
+        {
+            return Some(done);
+        }
+        // An `nqp::` op is a compiler-known primitive in a reserved namespace:
+        // nothing below can answer it differently than the op table, so it
+        // goes there directly (see `exec_nqp_call_op`). One memoized flag
+        // byte on the callee symbol decides.
+        if code.const_sym(name_idx).flags() & crate::symbol::flags::NQP_OP != 0 {
+            return Some(self.exec_nqp_call_op(code, name_idx, arity, arg_sources_idx));
+        }
+        // A native atomic helper (`⚛`-operators, `cas`) is the same kind of
+        // compiler-emitted primitive in a reserved namespace: it goes to its
+        // handler directly (see `exec_atomic_helper_call_op`).
+        if arg_sources_idx.is_none()
+            && code.const_sym(name_idx).flags() & crate::symbol::flags::NATIVE_ATOMIC_HELPER != 0
+        {
+            return Some(self.exec_atomic_helper_call_op(code, name_idx, arity));
+        }
+        // #7797: same package-qualification gate as `exec_get_bare_word_op`
+        // (see its comment), applied to a qualified sub CALL (`Pkg::sub(...)`)
+        // rather than a bareword term -- a call name never reaches that
+        // function, so the two chokepoints need the same check independently.
+        {
+            let name_str = Self::const_str(code, name_idx);
+            if crate::qualified::is_qualified(code.const_sym(name_idx))
+                && !self.qualified_name_visible_here(name_str)
+            {
+                return Some(Err(RuntimeError::new(format!(
+                    "Could not find symbol '{}'",
+                    name_str,
+                ))));
+            }
+        }
+        // `++`/`--` reach here as a call only because a user declared a `multi`
+        // for the operator; the native implementation is one candidate of that
+        // multi (rakudo's `Int:D`/`Bool`/`Num:D`/... core candidates), so rank
+        // it against the user's before dispatching. When the core candidate
+        // wins, the increment runs here, through the `VarRef` the call site
+        // already wrapped the operand in — the only place that can both mutate
+        // for the builtin and leave the variable alone when a (non-`is rw`)
+        // user candidate wins.
+        if arity == 1 && !self.stack.is_empty() {
+            let name_str = Self::const_str(code, name_idx);
+            if let Some(op) = IncrementOp::from_routine_name(name_str) {
+                let arg = self.stack[self.stack.len() - 1].clone();
+                if self.core_increment_candidate_wins(name_str, std::slice::from_ref(&arg))
+                    == Some(true)
+                {
+                    self.stack.pop();
+                    // An attribute operand (`++$!x`) is read-modify-written
+                    // through its backing cell, exactly as the increment
+                    // opcodes do around `exec_scalar_incdec_op`.
+                    if let Some((attr, _, _)) = arg.as_varref() {
+                        let attr = attr.resolve();
+                        self.sync_attr_local_from_cell_by_name(code, &attr);
+                    }
+                    let result = match self.run_core_increment(op, &arg, Some(code)) {
+                        Ok(result) => result,
+                        Err(e) => return Some(Err(e)),
+                    };
+                    self.apply_pending_rw_writeback(code);
+                    self.stack.push(result);
+                    return Some(Ok(()));
+                }
+            }
+        }
+        // An empty-signature proto (`proto bar {*}`) gates the whole dispatch:
+        // a call with positional arguments can never reach a candidate. Reject
+        // it here, before the light-call caches would dispatch directly to a
+        // multi candidate. Guarded by `is_empty()` so the common case is free.
+        if !self.dispatch.empty_sig_proto_names.is_empty()
+            && self
+                .dispatch.empty_sig_proto_names
+                .contains(&code.const_sym(name_idx))
+            // Re-verify against the registry: the name-only set can go stale
+            // (an EVAL-scoped `proto bar {*}` must not veto an unrelated
+            // mainline `bar`), so only gate while an empty-sig proto is still
+            // the visible one.
+            && self
+                .resolve_proto_function(Self::const_str(code, name_idx))
+                .is_some_and(|p| p.empty_sig)
+        {
+            let arity_usize = arity as usize;
+            if self.stack.len() >= arity_usize {
+                let stack_args = &self.stack[self.stack.len() - arity_usize..];
+                let positional_types: Vec<String> = stack_args
+                    .iter()
+                    .filter(|a| {
+                        !Self::is_callsite_line_marker(a)
+                            && !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                    })
+                    .map(crate::value::types::what_type_name)
+                    .collect();
+                if !positional_types.is_empty() {
+                    let name_str = Self::const_str(code, name_idx);
+                    let msg = format!(
+                        "Calling {}({}) will never work with signature of the proto ()",
+                        name_str,
+                        positional_types.join(", ")
+                    );
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    attrs.insert("objname".to_string(), Value::str(name_str.to_string()));
+                    attrs.insert("signature".to_string(), Value::str("()".to_string()));
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(Value::make_instance(
+                        crate::symbol::Symbol::intern("X::TypeCheck::Argument"),
+                        attrs,
+                    )));
+                    return Some(Err(err));
+                }
+            }
+        }
+        None
+    }
+
+    /// What `exec_call_func_op_inner` does when no positional light-call cache
+    /// took the call: the multi/named/OTF caches, then the general resolution.
+    /// Out of line so the frame a recursive call holds while its callee runs is
+    /// the fast path's, not this path's (#9924).
+    #[inline(never)]
+    #[allow(clippy::too_many_arguments)]
+    fn exec_call_func_op_general(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+        arg_sources_idx: Option<u32>,
+        arg_kinds: CallArgKinds,
+        skip_name_caches: bool,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let CallArgKinds {
+            named: call_has_named,
+            slip: call_has_slip,
+        } = arg_kinds;
         // A multi call whose winner this site's argument types already
         // resolved runs it through the positional light bind directly
         // (`vm_multi_light_call.rs`, #10109). After the plain caches above,
