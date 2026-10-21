@@ -1004,6 +1004,12 @@ impl Compiler {
                     },
                 )));
             }
+            Stmt::Expr(expr)
+                if self.binds_required_symbols_here()
+                    && let Some((module, symbols)) = Self::static_require_import(expr) =>
+            {
+                self.compile_block_require(expr, &module, &symbols);
+            }
             Stmt::Expr(expr) => {
                 // See `Compiler::sunk_list_assign_result` — the statement's
                 // value is about to be unconditionally discarded below, so a
