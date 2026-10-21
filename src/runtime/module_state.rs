@@ -752,6 +752,7 @@ impl ModuleState {
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             unit_env_imports: self.unit_env_imports.clone(),
             lexical_import_sets: self.lexical_import_sets.clone(),
+            lexical_set_families: self.lexical_set_families.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
