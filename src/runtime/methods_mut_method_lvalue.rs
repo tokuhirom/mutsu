@@ -1303,10 +1303,23 @@ impl Interpreter {
                         if target_var == Some("__ANON_STATE#") {
                             return Ok(value);
                         }
-                        return Err(RuntimeError::new(format!(
-                            "X::Assignment::RO: method '{}' is not rw",
-                            method
-                        )));
+                        // Rakudo's accessor hands back the attribute's value, so
+                        // the refusal names it: "Cannot modify an immutable Str
+                        // (is baz)", or the type object when it holds none.
+                        let held = attributes.get_attribute_value(Symbol::intern(method));
+                        return Err(match held.view() {
+                            ValueView::Nil | ValueView::Package(_) => {
+                                let type_name = match held.view() {
+                                    ValueView::Package(sym) => sym.resolve(),
+                                    _ => attr
+                                        .type_constraint
+                                        .clone()
+                                        .unwrap_or_else(|| "Any".to_string()),
+                                };
+                                RuntimeError::assignment_ro_type_object(&type_name)
+                            }
+                            _ => RuntimeError::assignment_ro_value(held.clone()),
+                        });
                     }
                     found_public_rw = true;
                     attr_sigil = attr.sigil;
