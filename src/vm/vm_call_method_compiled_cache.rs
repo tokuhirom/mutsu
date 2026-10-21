@@ -737,6 +737,26 @@ impl Interpreter {
         can_skip_merge: Option<bool>,
     ) -> Result<Value, RuntimeError> {
         let method: &str = method_sym.as_str();
+        // A `Proxy` subclass instance (`class AP is Proxy { has $!x }`) is
+        // `self` itself, while its attributes live in the cell the Proxy
+        // carries: run the method against that cell (#14259).
+        if let ValueView::Proxy {
+            subclass: Some((_, attrs_cell)),
+            ..
+        } = target.view()
+        {
+            let attrs_cell = attrs_cell.clone();
+            return self.dispatch_compiled_method_with_attrs_cell(
+                cn,
+                owner_class.as_str(),
+                method,
+                method_def,
+                cc,
+                target,
+                &attrs_cell,
+                args,
+            );
+        }
         let target_id = match target.view() {
             ValueView::Instance { id, .. } => Some(id),
             _ => None,

@@ -113,7 +113,21 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
 }
 
 /// Shared mutable attribute storage for Proxy subclasses.
-pub(crate) type ProxySubclassAttrs = Arc<Mutex<ValueMap>>;
+/// The attribute store of a `Proxy` subclass instance (`class AP is Proxy
+/// { has $!x }`): the same shared cell an ordinary instance carries, so the
+/// subclass's methods read and write `$!x` on it in place (#14259).
+pub(crate) type ProxySubclassAttrs = crate::gc::Gc<InstanceAttrs>;
+
+/// A fresh attribute store for a `Proxy` subclass instance of `class_name`.
+// Cost: O(1) plus the map move.
+pub(crate) fn proxy_subclass_attrs(class_name: Symbol, attributes: AttrMap) -> ProxySubclassAttrs {
+    crate::gc::Gc::new(InstanceAttrs::new(
+        class_name,
+        attributes,
+        next_instance_id(),
+        false,
+    ))
+}
 
 /// The mutable state attached to a [`ValueRepr::Mixin`].
 ///

@@ -97,7 +97,7 @@ impl Interpreter {
     /// (or inherits from) the owner marks code that was written inside that
     /// class. DBDish's Pg StatementHandle BUILD calls `self!get-meta` inside a
     /// block passed to `$!parent.protect-connection` this way.
-    fn lexical_self_allows_private(&mut self, resolved_owner: &str) -> bool {
+    pub(super) fn lexical_self_allows_private(&mut self, resolved_owner: &str) -> bool {
         let Some(self_cls) = self.lexical_self_class() else {
             return false;
         };
@@ -135,6 +135,10 @@ impl Interpreter {
         match self.env.get("self").map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(name)) => Some(name),
+            Some(ValueView::Proxy {
+                subclass: Some((name, _)),
+                ..
+            }) => Some(*name),
             _ => None,
         }
     }
@@ -2367,18 +2371,17 @@ impl Interpreter {
     // Cost: the row's own cost, plus one lock round trip.
     pub(crate) fn proxy_subclass_array_mutate(
         &mut self,
-        attrs_ref: &Arc<std::sync::Mutex<ValueMap>>,
+        attrs_ref: &crate::value::ProxySubclassAttrs,
         attr_name: &str,
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         // The lock is not held across the row, which may run user code.
         let mut array = attrs_ref
-            .lock()
-            .unwrap()
-            .entry(attr_name.to_string())
-            .or_insert_with(|| Value::real_array(Vec::new()))
-            .clone();
+            .as_map()
+            .get(attr_name)
+            .cloned()
+            .unwrap_or_else(|| Value::real_array(Vec::new()));
         let answer = crate::builtins::method_table::invoke_mut(
             self,
             &mut crate::builtins::method_table::ReceiverPlace::Detached(&mut array),
@@ -2391,10 +2394,7 @@ impl Interpreter {
                 method
             )));
         };
-        attrs_ref
-            .lock()
-            .unwrap()
-            .insert(attr_name.to_string(), array);
+        attrs_ref.set_attribute_value(Symbol::intern(attr_name), array);
         answer
     }
 

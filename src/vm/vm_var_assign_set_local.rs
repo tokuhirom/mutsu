@@ -1065,7 +1065,15 @@ impl Interpreter {
             // Read through a ContainerRef: `$outer := self` rewrites the frame's
             // `self` into the bind's shared cell, but it still holds the instance.
             && !self_val.with_deref(|v| {
-                matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+                matches!(
+                    v.view(),
+                    ValueView::Instance { .. }
+                        | ValueView::Mixin(..)
+                        | ValueView::Proxy {
+                            subclass: Some(_),
+                            ..
+                        }
+                )
             })
         {
             // self is a type object - determine class name for error message

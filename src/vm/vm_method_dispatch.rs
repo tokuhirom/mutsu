@@ -393,6 +393,9 @@ impl Interpreter {
                 && !has_complex_params
                 && !needs_default_eval
                 && !has_arg_mismatch
+                // The fast path reads attributes off `self`'s own cell; a
+                // `Proxy` subclass's live in the cell passed separately.
+                && !matches!(base.view(), ValueView::Proxy { .. })
             {
                 // The fast binder below checks the parameter types itself;
                 // hand it this call's #10986 trust.

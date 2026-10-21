@@ -565,7 +565,7 @@ fn every_variant_roundtrips_losslessly() {
             storer: Box::new(Value::NIL),
             subclass: Some((
                 Symbol::intern("MyProxy"),
-                Arc::new(Mutex::new(ValueMap::default())),
+                crate::value::proxy_subclass_attrs(Symbol::intern("MyProxy"), AttrMap::new()),
             )),
             decontainerized: true,
         },
