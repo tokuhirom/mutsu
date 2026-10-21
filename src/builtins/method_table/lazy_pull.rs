@@ -179,9 +179,13 @@ pub(super) fn owners_of(target: &Value) -> &'static [&'static str] {
     const SEQ: &[&str] = mro("Seq");
     const LIST: &[&str] = mro("List");
     const ARRAY: &[&str] = mro("Array");
+    const HYPER: &[&str] = mro("HyperSeq");
+    const RACE: &[&str] = mro("RaceSeq");
     match crate::value::type_name::value_type_name(target) {
         "Array" => ARRAY,
         "List" => LIST,
+        "HyperSeq" => HYPER,
+        "RaceSeq" => RACE,
         _ => SEQ,
     }
 }
