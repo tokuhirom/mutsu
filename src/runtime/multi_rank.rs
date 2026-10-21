@@ -403,10 +403,20 @@ impl MultiRank {
         if other_wins {
             return false;
         }
+        // Rakudo orders two candidates by their DECLARED types, parameter by
+        // parameter. A distance artifact (a role mixed into an argument is
+        // nearer than the value's own type, though the role and the other
+        // candidate's nominal type are unrelated) must not put a candidate
+        // ahead of one that is narrower on a declared type it does not lose
+        // (#14176: `(R, Numeric)` vs `(Rational:D, Rational:D)`).
+        let (decl_self, decl_other) = self.profile.declared_wins(&other.profile, conforms);
+        if decl_other && !decl_self {
+            return false;
+        }
         match self.rank_cmp(other) {
             Ordering::Less => !self.incomparable(other, conforms),
             Ordering::Equal => self_wins && !self.incomparable(other, conforms),
-            Ordering::Greater => false,
+            Ordering::Greater => decl_self && !decl_other && self.nominal == other.nominal,
         }
     }
 

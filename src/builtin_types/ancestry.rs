@@ -36,6 +36,18 @@ pub(crate) fn builtin_type_is_a(type_name: &str, ancestor: &str) -> bool {
     info.mro.contains(&ancestor) || builtin_type_has_role(info.name, ancestor)
 }
 
+/// The roles a bare builtin ROLE name composes, nearest first. The catalog
+/// has rows only for classes, so a role used as a type constraint
+/// (`Rational`, `Real`) has no chain of its own.
+// Cost: O(1).
+pub(crate) fn builtin_role_ancestors(role: &str) -> &'static [&'static str] {
+    match role {
+        "Rational" => &["Real", "Numeric"],
+        "Real" => &["Numeric"],
+        _ => &[],
+    }
+}
+
 /// A builtin type's classes and roles in narrowness order, most specific
 /// first (`Rat` -> `Rat, Rational[Int,Int], Rational, Real, Numeric, Cool,
 /// Any, Mu`). A parameterized name is followed by its base, so a sized
