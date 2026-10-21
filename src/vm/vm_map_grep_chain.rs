@@ -128,7 +128,17 @@ impl Interpreter {
                 return Ok(false);
             }
             plan.stream_slips = true;
-            self.pull_chunk_step(func, fatal, mode, plan, items, pos, items.len(), Some(1), out)?;
+            self.pull_chunk_step(
+                func,
+                fatal,
+                mode,
+                plan,
+                items,
+                pos,
+                items.len(),
+                Some(1),
+                out,
+            )?;
         }
         Ok(at_end)
     }
