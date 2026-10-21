@@ -52,6 +52,28 @@ pub(super) fn type_constraint(
     type_constraint_at(owner, type_node, 0)
 }
 
+/// Parent names retain the absolute edge; parameter captures and ordinary
+/// type-object expressions use their existing, context-specific spelling.
+// Cost: O(n), n = type-node size; composition depth is bounded.
+pub(super) fn parent_type_constraint(
+    owner: &RakuAstNode,
+    node: &RakuAstNode,
+) -> Result<String, RuntimeError> {
+    let name = type_constraint(owner, node)?;
+    let mut base = node;
+    for _ in 0..super::type_build::MAX_TYPE_DEPTH {
+        if base.class == RakuAstClass::TypeSimple {
+            return if name_parts::has_leading_empty(named_child_or_positional(base)?) {
+                Ok(format!("::{name}"))
+            } else {
+                Ok(name)
+            };
+        }
+        base = named_child(base, "base-type")?;
+    }
+    Err(unsupported(owner))
+}
+
 fn type_constraint_at(
     owner: &RakuAstNode,
     type_node: &RakuAstNode,
@@ -66,13 +88,7 @@ fn type_constraint_at(
         RakuAstClass::TypeSimple => {
             let name_node = named_child_or_positional(type_node)?;
             match name_parts::name_shape(name_node) {
-                Some(NameShape::Identifier(name)) => {
-                    if name_parts::has_leading_empty(name_node) {
-                        Ok(format!("::{name}"))
-                    } else {
-                        Ok(name)
-                    }
-                }
+                Some(NameShape::Identifier(name)) => Ok(name),
                 _ => Err(unsupported(owner)),
             }
         }

@@ -2720,7 +2720,7 @@ pub(super) fn var_declaration(
 /// including an operator name that merely contains `::` (`infix:<::=>`),
 /// stays one `Name.from-identifier("<s>")` string.
 pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
-    if let Some(name) = s.strip_prefix("::")
+    if let Some(name) = crate::qualified::type_capture_name(s)
         && !name.is_empty()
         && name_parts::identifier_segments(name).all(crate::parser::is_raku_identifier)
     {

@@ -11,7 +11,7 @@ pub(super) const MAX_TYPE_DEPTH: usize = 128;
 /// internal hyphens, apostrophes, Unicode and qualified segments.
 pub(super) fn is_simple_type(t: &str) -> bool {
     is_pseudo_type(t) || {
-        let t = t.strip_prefix("::").unwrap_or(t);
+        let t = crate::qualified::type_capture_name(t).unwrap_or(t);
         !t.is_empty() && name_parts::identifier_segments(t).all(crate::parser::is_raku_identifier)
     }
 }

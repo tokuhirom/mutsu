@@ -205,7 +205,7 @@ fn parent_clause(
     type_node: &RakuAstNode,
     from_is: bool,
 ) -> Result<Stmt, RuntimeError> {
-    let name = super::type_lower::type_constraint(owner, type_node)?;
+    let name = super::type_lower::parent_type_constraint(owner, type_node)?;
     let args = super::type_lower::type_application_args(owner, type_node)?;
     Ok(Stmt::DoesDecl {
         name: Symbol::intern(&name),
