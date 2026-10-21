@@ -233,10 +233,34 @@ fn auto_viv_container(
                 let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(default));
                 // The container carries the attribute's type, so a store into
                 // it (`$!val = $value`) type-checks like `$obj.attr = $value`.
-                if let Some(ValueView::Package(name)) = meta.as_map().get("type").map(Value::view)
-                    && !matches!(name.as_str(), "Mu" | "Any")
-                {
-                    crate::value::register_container_constraint(&cell, name.as_str());
+                // The attribute's `where` clause rides on the cell as well
+                // (Rakudo's descriptor carries the whole constraint).
+                let owner = fact_str(meta, "__mutsu_attr_owner").unwrap_or_default();
+                let bare = fact_str(meta, "name")
+                    .unwrap_or_default()
+                    .trim_start_matches(['$', '@', '%', '&', '!', '.'])
+                    .to_string();
+                let of = match meta.as_map().get("type").map(Value::view) {
+                    Some(ValueView::Package(name)) if !matches!(name.as_str(), "Mu" | "Any") => {
+                        Some(name.as_str().to_string())
+                    }
+                    _ => None,
+                };
+                match i.class_attr_where_constraint(&owner, &bare, '$') {
+                    Some((pred, scope)) => crate::value::register_container_where(
+                        &cell,
+                        of.as_deref().unwrap_or("Any"),
+                        crate::value::CellWhere {
+                            pred,
+                            package: scope.package,
+                            unit: scope.unit,
+                        },
+                    ),
+                    None => {
+                        if let Some(of) = &of {
+                            crate::value::register_container_constraint(&cell, of);
+                        }
+                    }
                 }
                 Value::container_ref(cell)
             }

@@ -1075,6 +1075,20 @@ pub struct CellConstraint {
     /// write arrived through an alias or another frame. `None` keeps the older,
     /// nameless wording for a cell whose origin is genuinely anonymous.
     pub assign_to: Option<String>,
+    /// The attribute's `where` clause when the cell is a container handed out
+    /// for a declared attribute (`Attribute.auto_viv_container`). Rakudo's
+    /// descriptor carries the whole constraint, so a store through the cell
+    /// checks the clause as well as `ty`.
+    pub where_check: Option<std::sync::Arc<CellWhere>>,
+}
+
+/// A `where` predicate a cell enforces, with the scope it was written in (the
+/// compunit and package its names resolve against).
+#[derive(Debug, Clone)]
+pub struct CellWhere {
+    pub pred: crate::opcode::DeclTraitArg,
+    pub package: Symbol,
+    pub unit: Option<Symbol>,
 }
 
 impl ContainerCell {
@@ -1298,6 +1312,24 @@ pub fn register_container_constraint(
         ty: type_name.to_string(),
         element_of: None,
         assign_to: None,
+        where_check: None,
+    }));
+}
+
+/// Like [`register_container_constraint`], and the cell also enforces `check`,
+/// an attribute's `where` clause.
+// Cost: O(1).
+pub fn register_container_where(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+    type_name: &str,
+    check: CellWhere,
+) {
+    CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
+        ty: type_name.to_string(),
+        element_of: None,
+        assign_to: None,
+        where_check: Some(std::sync::Arc::new(check)),
     }));
 }
 
@@ -1313,6 +1345,7 @@ pub fn register_container_constraint_named(
         ty: type_name.to_string(),
         element_of: None,
         assign_to: Some(name.to_string()),
+        where_check: None,
     }));
 }
 
@@ -1329,6 +1362,7 @@ pub fn register_element_constraint(
         ty: type_name.to_string(),
         element_of: Some(owner.to_string()),
         assign_to: None,
+        where_check: None,
     }));
 }
 
