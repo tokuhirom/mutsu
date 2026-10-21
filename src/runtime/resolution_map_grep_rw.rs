@@ -1,10 +1,11 @@
 use super::*;
 use crate::runtime::map_grep_plan::{InlineLoopKind, MapGrepPlanSlot};
+use crate::runtime::resolution_grep_loop::LoopSource;
 use crate::runtime::resolution_map_grep::bind_loop_topic;
 use crate::value::{PullOut, ValueView};
 
 impl Interpreter {
-    /// Maps `list_items` into `out` (see `eval_map_over_items_into`),
+    /// Maps `src` into `out` (see `eval_map_over_items_into`),
     /// recording in `wrote_back` whether an element was actually written back
     /// (Raku's rw binding of `$_` / an `is rw` param), also when the callback
     /// dies part way: a deferred rw `.map` then publishes the elements written
@@ -26,12 +27,13 @@ impl Interpreter {
     pub(crate) fn eval_map_over_items_rw_into(
         &mut self,
         func: Option<Value>,
-        list_items: &mut [Value],
+        src: &mut LoopSource<'_>,
         slot: &mut MapGrepPlanSlot,
         out: &mut PullOut,
         wrote_back: &std::cell::Cell<bool>,
     ) -> Result<(), RuntimeError> {
         let consumed_base = out.consumed;
+        let produced_base = out.produced.len();
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -52,7 +54,7 @@ impl Interpreter {
             // setup per construction was the single largest component of
             // bench-ctor. It also stops an inner empty map from removing the
             // enclosing map's `topic_key` mid-iteration.
-            if list_items.is_empty() {
+            if !src.has(1) {
                 return Ok(());
             }
             let data = data.clone();
@@ -112,25 +114,27 @@ impl Interpreter {
                     .flatten()
                     .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
                 let chunk_at = |items: &[Value], i: usize| items[i..(i + arity).min(items.len())].to_vec();
-                if !list_items.is_empty() {
-                    let first = chunk_at(list_items, 0);
+                if src.has(1) {
+                    src.has(arity);
+                    let first = chunk_at(&src.buf, 0);
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first)?;
                 }
                 let mut last_start = None;
                 let mut i = 0usize;
-                while i < list_items.len() {
+                while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
+                    src.has(i + arity);
                     last_start = Some(i);
-                    out.consumed = consumed_base + (i + arity).min(list_items.len());
+                    out.consumed = consumed_base + (i + arity).min(src.buf.len());
                     let value = if rw_param.is_some() {
                         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
-                            list_items[i].clone(),
+                            src.buf[i].clone(),
                         ));
                         let res = self.call_sub_value(
                             Value::sub_value(data.clone()),
                             vec![Value::container_ref(cell.clone())],
                             false,
                         )?;
-                        list_items[i] = cell.load();
+                        src.buf[i] = cell.load();
                         wrote_back.set(true);
                         res.deref_container()
                     } else {
@@ -144,9 +148,9 @@ impl Interpreter {
                         // still raises "Too few positionals" from that same
                         // call, matching raku.
                         let chunk: Vec<Value> = if arity == 1 {
-                            vec![list_items[i].clone()]
+                            vec![src.buf[i].clone()]
                         } else {
-                            list_items[i..(i + arity).min(list_items.len())].to_vec()
+                            src.buf[i..(i + arity).min(src.buf.len())].to_vec()
                         };
                         self.env.remove_sym(topic_key);
                         // A block with its own parameters binds the element to
@@ -163,7 +167,7 @@ impl Interpreter {
                             && !keeps_outer_topic
                             && let Some(mutated) = self.env.get_sym(topic_key).cloned()
                         {
-                            list_items[i] = mutated;
+                            src.buf[i] = mutated;
                             wrote_back.set(true);
                         }
                         v
@@ -174,7 +178,7 @@ impl Interpreter {
                 }
                 self.env.remove_sym(topic_key);
                 if let Some(start) = last_start {
-                    let last = chunk_at(list_items, start);
+                    let last = chunk_at(&src.buf, start);
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last)?;
                 }
                 return Ok(());
@@ -250,12 +254,12 @@ impl Interpreter {
                 // re-compiled fresh, so two distinct blocks share compile-time
                 // state keys (see the same line in `eval_map_over_items`).
                 vm.lexicals.state_scope_id.set(Some(vm.callable_state_scope(&data)));
-                if !list_items.is_empty() {
+                if src.has(1) {
                     vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
                 }
                 let mut i = 0usize;
-                while i < list_items.len() {
-                    if arity > 1 && i + arity > list_items.len() {
+                while !src.satisfied(result, produced_base) && src.has(i + 1) {
+                    if arity > 1 && !src.has(i + arity) {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
                     // The elements taken, this one included: if the callback
@@ -278,7 +282,7 @@ impl Interpreter {
                         // Clear the topic tracker before each iteration
                         vm.env_mut().remove_sym(topic_key);
                         if arity == 1 {
-                            let item = list_items[i].clone();
+                            let item = src.buf[i].clone();
                             if let Some(&p) = plan.param_syms.get(assumed_count) {
                                 if rw_param.is_some() {
                                     // The param is a plain scalar of its own: an
@@ -317,14 +321,14 @@ impl Interpreter {
                         } else {
                             for (idx, &p) in plan.param_syms.iter().skip(assumed_count).enumerate()
                             {
-                                if i + idx < list_items.len() {
+                                if i + idx < src.buf.len() {
                                     vm.env_mut()
-                                        .insert_sym_noting(p, list_items[i + idx].clone());
+                                        .insert_sym_noting(p, src.buf[i + idx].clone());
                                 }
                             }
                             bind_loop_topic(
                                 vm.env_mut(),
-                                &list_items[i],
+                                &src.buf[i],
                                 keeps_outer_topic,
                                 &outer_topic,
                             );
@@ -375,15 +379,15 @@ impl Interpreter {
                                 .cloned()
                                 .or_else(|| vm.env().get_sym(crate::symbol::wk::topic()).cloned())
                                 .unwrap_or(Value::NIL);
-                            writeback(list_items, vm);
+                            writeback(&mut src.buf, vm);
                             let val = vm.reify_finite_pipe_value(val)?;
                             super::resolution_map_grep::push_map_value(result, val);
                         }
                         Err(e) if e.is_next() => {
-                            writeback(list_items, vm);
+                            writeback(&mut src.buf, vm);
                         }
                         Err(e) if e.is_last() => {
-                            writeback(list_items, vm);
+                            writeback(&mut src.buf, vm);
                             vm.async_state.map_grep_last_depth =
                                 Some(crate::runtime::loop_handler_depth::loop_handler_depth());
                             break;
@@ -394,7 +398,7 @@ impl Interpreter {
                         Err(e) if e.is_succeed() => {
                             vm.set_when_matched(saved_when_matched);
                             let val = e.return_value.unwrap_or(Value::NIL);
-                            writeback(list_items, vm);
+                            writeback(&mut src.buf, vm);
                             let val = vm.reify_finite_pipe_value(val)?;
                             super::resolution_map_grep::push_map_value(result, val);
                         }
@@ -419,11 +423,7 @@ impl Interpreter {
             return loop_result;
         }
         // Non-Sub func: delegate to regular map (which never writes back)
-        self.eval_map_over_items_into(
-            func,
-            list_items.to_vec(),
-            &mut MapGrepPlanSlot::default(),
-            out,
-        )
+        let rest = std::mem::replace(src, LoopSource::list(Vec::new()));
+        self.eval_map_loop(func, rest, &mut MapGrepPlanSlot::default(), out)
     }
 }

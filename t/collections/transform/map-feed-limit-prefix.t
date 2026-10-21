@@ -2,7 +2,7 @@ use Test;
 
 # A deferred .map read by prefix runs its callback only for the elements the
 # reader needs, in one loop run, whatever shape the callback has (#14196).
-plan 11;
+plan 15;
 
 my $n = 0;
 my $s = (1..*).map(-> Int $x { $n++; $x });
@@ -33,3 +33,14 @@ my @a = 1..5;
 my $m = @a.map({ $_ + 1 });
 @a[3] = 100;
 is-deeply $m.head(5).list, (2, 3, 4, 101, 6), 'a Live source is read when the loop reaches it';
+
+my @r = 1..10;
+my $rw = @r.map({ $_++ });
+is-deeply $rw.head(3).list, (1, 2, 3), 'rw map: head(3)';
+is @r.join(','), '2,3,4,4,5,6,7,8,9,10', 'rw map: only the pulled prefix is written back';
+
+my @q = 1..8;
+$k = 0;
+my $rp = @q.map(-> $x is rw { $k++; $x += 100; $x });
+is $rp[1], 102, 'rw param map: second element';
+is $k, 2, 'rw param map: two callbacks';

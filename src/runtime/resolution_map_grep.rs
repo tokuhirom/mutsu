@@ -566,7 +566,7 @@ impl Interpreter {
     /// elements go into `out.produced` and the source elements taken are
     /// counted in `out.consumed`, both as the loop goes (#12401).
     // Cost: see the callers.
-    fn eval_map_loop(
+    pub(crate) fn eval_map_loop(
         &mut self,
         func: Option<Value>,
         mut src: LoopSource<'_>,
