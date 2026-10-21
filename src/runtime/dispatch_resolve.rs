@@ -336,6 +336,7 @@ impl Interpreter {
         if arg_values
             .iter()
             .any(|v| v.unwrap_varref().is_proxy_value())
+            && self.has_multi_candidates_cached_sym(crate::qualified::known_symbol(name))
         {
             let mut fetched = Vec::with_capacity(arg_values.len());
             for v in arg_values {
