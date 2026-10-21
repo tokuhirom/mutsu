@@ -25,7 +25,6 @@ mod match3_late;
 mod mu_late;
 mod mu_render_late;
 mod revision_e_late;
-pub(crate) use any_interp::early_entry_defers;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
 pub(crate) mod any_subscript;

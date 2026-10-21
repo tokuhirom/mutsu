@@ -86,6 +86,18 @@ impl Interpreter {
             }
             return self.try_native_method(target, method_sym, &fetched);
         }
+        // A receiver state only the general entry reads (a `Proxy`, an element
+        // source behind a user iterator, a lazy source, an enum type object's
+        // `pick`/`roll`, a typed `Hash.raku`): neither the table nor a cascade
+        // answers it (`receiver_step::general_entry_owns`).
+        if crate::builtins::method_table::receiver_step::general_entry_owns(
+            self,
+            target,
+            method_sym.as_str(),
+            args.len(),
+        ) {
+            return None;
+        }
         // The built-in method table (ADR-11276, #8888). For a plain receiver
         // of a shape it covers, a row is the method's implementation, and no
         // probe between here and the family cascade can claim the call: each
@@ -101,14 +113,7 @@ impl Interpreter {
         // stays the same memoized gate the general path applies.
         if let Some(result) = crate::builtins::method_table::try_dispatch_in(
             self,
-            |vm| {
-                !vm.native_lever_a_user_override_sym(target, method_sym)
-                    && !crate::builtins::method_table::early_entry_defers(
-                        vm,
-                        target,
-                        method_sym.as_str(),
-                    )
-            },
+            |vm| !vm.native_lever_a_user_override_sym(target, method_sym),
             target,
             method_sym,
             args,
@@ -211,30 +216,6 @@ impl Interpreter {
         {
             return Some(result);
         }
-        // A user instance with its own `iterator` method routes the Any
-        // iteration methods through that iterator (the arm in
-        // `call_method_with_values`), whether or not it also composes
-        // `Iterable` (#8547); a native impl (e.g. `flat`) would treat the
-        // instance as one opaque item instead, so decline it here.
-        if matches!(
-            method_name,
-            "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
-        ) {
-            // An `IterationBuffer` likewise answers these from its elements
-            // (`call_method_with_values`); the native impl would see one item.
-            if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
-                return None;
-            }
-            // The same for a role mixed into a native container (`my @a is R`):
-            // its elements live behind the role's `iterator`, which the native
-            // impl cannot see.
-            if matches!(target.view(), ValueView::Mixin(..))
-                && self.mixin_composes_method(target, "iterator")
-                && !self.mixin_composes_method(target, method_name)
-            {
-                return None;
-            }
-        }
         // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed
         // CStruct/CUnion/CArray from an ordinary instance needs the class
         // registry, so the pure native path cannot answer these — and it must
@@ -258,18 +239,9 @@ impl Interpreter {
         }
         // Eager list operations cannot run on a lazy/infinite source: throw
         // X::Cannot::Lazy instead of hanging while the native impl materializes
-        // it (matches raku). Shared with the interpreter dispatch path.
+        // it (matches raku).
         if let Some(err) = crate::runtime::Interpreter::lazy_guard_error(method_name, target) {
             return Some(Err(err));
-        }
-        // Early exit for Proxy containers
-        if target.is_proxy_value()
-            && !matches!(
-                method_name,
-                "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
-            )
-        {
-            return None;
         }
         // A declaration of the program takes the call from the built-in row:
         // a user method or accessor (`.WHICH`/`.WHY` included: they are
@@ -286,30 +258,6 @@ impl Interpreter {
         // name the receiver lacks.
         if self.native_receiver_guard(target, method_name) {
             return None;
-        }
-        // `pick`/`roll` on an enum type object (or its name as a `Str`) sample
-        // its values, which only the interpreter's enum registry knows
-        // (`dispatch_enum_pick_roll`); any other type object reaches the
-        // `Any.pick`/`Any.roll` rows and samples itself.
-        if (method_sym == "pick" || method_sym == "roll")
-            && args.len() <= 1
-            && match target.view() {
-                ValueView::Package(name) => self.registry().enum_types.contains_key(name.as_str()),
-                ValueView::Str(name) => self.registry().enum_types.contains_key(name.as_str()),
-                _ => false,
-            }
-        {
-            return None;
-        }
-        // Hash-specific bypasses (lazy-Match gate: `view()` would materialize)
-        if !target.is_lazy_match_value()
-            && matches!(target.view(), ValueView::Hash(_))
-            && args.is_empty()
-        {
-            let mn = method_name;
-            if (mn == "raku") && self.container_type_metadata(target).is_some() {
-                return None;
-            }
         }
         // `Range.int-bounds($from is rw, $to is rw --> Bool)`: writes the bounds
         // into the caller's containers, so it needs `&mut self` and the call

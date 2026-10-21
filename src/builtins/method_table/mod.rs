@@ -107,7 +107,6 @@ pub(crate) use scalars::{
 pub(crate) use table::mixin_role_owners_of;
 
 pub(crate) use collections::accepts_open::accepts_by_smartmatch;
-pub(crate) use collections::early_entry_defers;
 pub(crate) use ctors_mop::{ENUM_HOW_OWNERS, MOP_OWNERS, mop_declares};
 pub(crate) use dispatch::{
     admits, answer, answer_as, answer_shapeless, cool_text_for_shapeless, invoke, invoke_base,
