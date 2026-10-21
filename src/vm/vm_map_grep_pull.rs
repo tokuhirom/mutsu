@@ -566,7 +566,12 @@ pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMo
             }
         )
     });
-    (callback_positionals(func) <= 1 || !mode.is_grep()) && !slurpy && !loop_phaser
+    // A map block's slurpy parameter takes one element per call (the eager
+    // loop batches by the required positionals, at least 1), so a map can be
+    // cut into chunks of `map_group_size`; a grep's cannot (#14300).
+    (callback_positionals(func) <= 1 || !mode.is_grep())
+        && !(slurpy && mode.is_grep())
+        && !loop_phaser
 }
 
 /// How many positional parameters `func`, a `.map`/`.grep` callback, binds
@@ -586,12 +591,31 @@ fn callback_positionals(func: &Value) -> usize {
 
 /// The source elements one call of a `.map` callback consumes, so a prefix
 /// pull cuts its chunks at whole groups (`.map(-> $a, $b { ... })` takes two
-/// per call, as Rakudo's iterator pulls them). A grep tests one element at a
-/// time.
+/// per call, as Rakudo's iterator pulls them). A block with a slurpy
+/// parameter takes its required positionals per call, at least one, as the
+/// eager loop's batch does. A grep tests one element at a time.
 // Cost: O(p), p = parameters.
 pub(super) fn map_group_size(func: Option<&Value>, mode: &MapGrepMode) -> usize {
     if mode.is_grep() {
         return 1;
+    }
+    if let Some(func) = func
+        && let ValueView::Sub(data) = func.view()
+        && data.param_defs.iter().any(|pd| pd.slurpy && !pd.named)
+    {
+        return data
+            .param_defs
+            .iter()
+            .filter(|pd| {
+                !pd.named
+                    && !pd.is_invocant
+                    && !pd.slurpy
+                    && !pd.optional_marker
+                    && pd.default.is_none()
+            })
+            .count()
+            .saturating_sub(data.assumed_positional.len())
+            .max(1);
     }
     func.map_or(1, callback_positionals).max(1)
 }
