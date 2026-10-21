@@ -42,47 +42,57 @@ impl Compiler {
     /// counts as the top level too.
     // Cost: O(n), n = top-level statements.
     pub(super) fn unit_declared_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
-        let mut names = std::collections::HashSet::new();
-        Self::collect_unit_declared_names(stmts, &mut names);
-        names
+        let mut names = UnitDeclaredNames::default();
+        crate::ast_visit::walk_stmts(&mut names, stmts);
+        names.0
     }
+}
 
-    // Cost: O(n), n = top-level statements.
-    fn collect_unit_declared_names(stmts: &[Stmt], names: &mut std::collections::HashSet<String>) {
-        let term = |names: &mut std::collections::HashSet<String>, name: &str| {
-            names.insert(crate::term_names::term_key(name));
-        };
-        for stmt in crate::ast::scope_statements(stmts) {
-            match stmt {
-                Stmt::VarDecl { name, .. } => {
-                    names.insert(name.clone());
-                    term(names, name);
-                }
-                Stmt::ClassDecl {
-                    name,
-                    body,
-                    is_unit,
-                    ..
-                } => {
-                    term(names, &name.resolve());
-                    if *is_unit {
-                        Self::collect_unit_declared_names(body, names);
-                    }
-                }
-                Stmt::Package { body, is_unit, .. } if *is_unit => {
-                    Self::collect_unit_declared_names(body, names);
-                }
-                Stmt::RoleDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
-                    term(names, &name.resolve())
-                }
-                Stmt::EnumDecl { name, variants, .. } => {
-                    term(names, &name.resolve());
-                    for (variant, _) in variants {
-                        term(names, variant);
-                    }
-                }
-                _ => {}
+/// [`Compiler::unit_declared_names`]' collector: it visits the top-level
+/// statements only, opening the synthetic blocks a declaration desugars to
+/// and the body of a `unit` package declaration.
+#[derive(Default)]
+struct UnitDeclaredNames(std::collections::HashSet<String>);
+
+impl UnitDeclaredNames {
+    // Cost: O(n), n = length of `name`.
+    fn term(&mut self, name: &str) {
+        self.0.insert(crate::term_names::term_key(name));
+    }
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for UnitDeclaredNames {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        match stmt {
+            Stmt::SyntheticBlock(_) => crate::ast_visit::walk_stmt(self, stmt),
+            Stmt::VarDecl { name, .. } => {
+                self.0.insert(name.clone());
+                self.term(name);
             }
+            Stmt::ClassDecl {
+                name,
+                body,
+                is_unit,
+                ..
+            } => {
+                self.term(&name.resolve());
+                if *is_unit {
+                    crate::ast_visit::walk_stmts(self, body);
+                }
+            }
+            Stmt::Package { body, is_unit, .. } if *is_unit => {
+                crate::ast_visit::walk_stmts(self, body);
+            }
+            Stmt::RoleDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
+                self.term(&name.resolve());
+            }
+            Stmt::EnumDecl { name, variants, .. } => {
+                self.term(&name.resolve());
+                for (variant, _) in variants {
+                    self.term(variant);
+                }
+            }
+            _ => {}
         }
     }
 }
