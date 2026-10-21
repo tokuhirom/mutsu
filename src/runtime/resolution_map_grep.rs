@@ -626,6 +626,10 @@ impl Interpreter {
                     positional.len().saturating_sub(assumed).max(1)
                 };
                 let mut last_call_args: Option<Vec<Value>> = None;
+                if !list_items.is_empty() {
+                    let first_args = list_items[..batch.min(list_items.len())].to_vec();
+                    self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first_args)?;
+                }
                 let mut i = 0usize;
                 while i < list_items.len() {
                     let end = (i + batch).min(list_items.len());
@@ -650,31 +654,10 @@ impl Interpreter {
                     push_map_value(&mut out.produced, value);
                     i = end;
                 }
-                // A LAST phaser in a signature-bearing map block cannot use the
-                // inline map loop's direct parameter bindings: this branch calls
-                // the full binder once per chunk, and that call-local environment
-                // is restored before the next chunk. Re-run each LAST body as a
-                // one-shot block with the final chunk so its signature (including
-                // a destructuring sub-signature) binds the final values while
-                // captured lexicals retain their normal closure semantics.
+                // A LAST phaser in a signature-bearing map block runs with the
+                // final chunk bound (`call_block_loop_phasers`).
                 if let Some(last_args) = last_call_args {
-                    for stmt in data.body.iter() {
-                        let crate::ast::Stmt::Phaser {
-                            kind: crate::ast::PhaserKind::Last,
-                            body,
-                            ..
-                        } = stmt
-                        else {
-                            continue;
-                        };
-                        let mut phaser_data = data.as_ref().clone();
-                        phaser_data.body = std::sync::Arc::new(body.clone());
-                        phaser_data.compiled_code = None;
-                        phaser_data.compiled_fns = None;
-                        phaser_data.compiled_routine = None;
-                        let phaser = Value::sub_value(crate::gc::Gc::new(phaser_data));
-                        self.call_sub_value(phaser, last_args.clone(), false)?;
-                    }
+                    self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last_args)?;
                 }
                 return Ok(());
             }
@@ -701,19 +684,6 @@ impl Interpreter {
                     i += arity;
                 }
                 return Ok(());
-            }
-
-            // Extract LAST phaser bodies so they can be run after the map loop
-            let mut last_phaser_bodies: Vec<Vec<crate::ast::Stmt>> = Vec::new();
-            for stmt in data.body.iter() {
-                if let crate::ast::Stmt::Phaser {
-                    kind: crate::ast::PhaserKind::Last,
-                    body,
-                    ..
-                } = stmt
-                {
-                    last_phaser_bodies.push(body.clone());
-                }
             }
 
             // Compile once, reuse VM for every iteration (and reuse a cached
@@ -770,6 +740,9 @@ impl Interpreter {
                 // The fresh chunk's block-declared routine calls read the
                 // closure's own upvalues (`bind_origin_code_var_upvalues`).
                 vm.upvalues = data.upvalues.clone();
+                if !list_items.is_empty() {
+                    vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
+                }
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
@@ -924,19 +897,10 @@ impl Interpreter {
                     i += arity;
                 }
 
-                // Run LAST phasers after the map loop completes (natural end or `last`)
-                if !last_phaser_bodies.is_empty() && i > 0 {
-                    for phaser_body in &last_phaser_bodies {
-                        let phaser_compiler = crate::compiler::Compiler::new();
-                        let (phaser_code, phaser_fns) = phaser_compiler.compile(phaser_body);
-                        // Ignore errors from LAST phasers (best-effort)
-                        let _ = vm.run_reuse(&phaser_code, &phaser_fns);
-                        // Record the phaser's captured-outer writes (`LAST $x = True`)
-                        // so the enclosing call site drains them into the caller's
-                        // local slots — the map body's own writeback (below) only
-                        // covers `code`, not the separately-compiled phaser body.
-                        vm.record_eager_block_free_var_writeback(&phaser_code, &[]);
-                    }
+                // Run LAST phasers after the map loop completes (natural end or
+                // `last`), best-effort.
+                if i > 0 {
+                    let _ = vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Last);
                 }
 
                 Ok(())

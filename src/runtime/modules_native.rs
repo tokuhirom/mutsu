@@ -14,6 +14,7 @@ pub(crate) mod begin_prologue;
 mod dispatcher_wrap;
 mod enum_type_key;
 mod export_hook_routines;
+mod map_grep_loop_phasers;
 pub(crate) mod map_grep_plan;
 mod method_type_decls;
 mod native_io_special;
