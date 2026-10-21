@@ -198,6 +198,7 @@ t/collections/hash/hash-set-numeric-equality.t
 t/collections/hash/hash-spread-slip.t
 t/collections/hash/hash-subclass-bind-key.t
 t/collections/hash/hash-subclass-computed-target-assign.t
+t/collections/hash/hash-subclass-element-bind-nested-store.t
 t/collections/hash/hash-subclass-mutator-return-self.t
 t/collections/hash/hash-subclass-new-declared-attr-pair.t
 t/collections/hash/hash-subclass-new-default-ctor.t
@@ -290,6 +291,7 @@ t/collections/lazy-seq/gather-seq-body-oracle.t
 t/collections/lazy-seq/gather-seq-bool-methods.t
 t/collections/lazy-seq/gather-seq-bool.t
 t/collections/lazy-seq/gather-seq-slip.t
+t/collections/lazy-seq/gather-slip-lazy-tail.t
 t/collections/lazy-seq/gather-state-per-instance.t
 t/collections/lazy-seq/gather-stream-pipe.t
 t/collections/lazy-seq/gather-take-in-callee-infinite-loop.t
@@ -345,6 +347,7 @@ t/collections/lazy-seq/lazy-gather-grep-map-laziness.t
 t/collections/lazy-seq/lazy-generator-scan-strict-force.t
 t/collections/lazy-seq/lazy-grep-feed-prefix-pull.t
 t/collections/lazy-seq/lazy-grep-infinite-exclusive-range.t
+t/collections/lazy-seq/lazy-hyper-seq.t
 t/collections/lazy-seq/lazy-if-iterable-any.t
 t/collections/lazy-seq/lazy-infinite-sequence-strict-force.t
 t/collections/lazy-seq/lazy-list-adaptors-stream.t
@@ -420,6 +423,7 @@ t/collections/lazy-seq/slip-array-of-pairs-is-positional.t
 t/collections/lazy-seq/slip-gather-side-effects.t
 t/collections/lazy-seq/slip-hash-named-args.t
 t/collections/lazy-seq/slip-hash-subclass-instance.t
+t/collections/lazy-seq/slip-lazy-tail-flatten.t
 t/collections/lazy-seq/slip-listop-args.t
 t/collections/lazy-seq/slip-raku-repr.t
 t/collections/lazy-seq/slip-satisfies-list-return.t
@@ -750,6 +754,7 @@ t/collections/subscript/positional-index-rat-on-range.t
 t/collections/subscript/positional-instance-range-slice.t
 t/collections/subscript/positional-subscript-rows.t
 t/collections/subscript/postcircumfix-byname-unknown-adverb.t
+t/collections/subscript/postcircumfix-quote-words-delims-not-user-op.t
 t/collections/subscript/postcircumfix-subscript-call-adverbs.t
 t/collections/subscript/raw-invocant-subscript-receiver.t
 t/collections/subscript/rw-slice-arg-is-not-a-container.t
@@ -887,6 +892,7 @@ t/collections/transform/join-nested-deferred-map-seq.t
 t/collections/transform/join-nested-list-user-str.t
 t/collections/transform/join-user-str-seq-slip-cells.t
 t/collections/transform/map-array-shared-loop.t
+t/collections/transform/map-assign-key-immutable.t
 t/collections/transform/map-block-my-shadow-leak.t
 t/collections/transform/map-callback-runs-at-consumption.t
 t/collections/transform/map-coercion-flattens-hash-items.t
@@ -2005,6 +2011,8 @@ t/grammar/grammar-start-builtin-and-where-capture.t
 t/grammar/grammar-start-rule-built-invocant.t
 t/grammar/grammar-subparse-pos-failed.t
 t/grammar/grammar-subparse.t
+t/grammar/grammar-subrule-arg-exception.t
+t/grammar/grammar-subrule-binding-window-frames.t
 t/grammar/grammar-subrule-call-args-frames.t
 t/grammar/grammar-subrule-call-frames.t
 t/grammar/grammar-subrule-each-path-continuation.t
@@ -3079,6 +3087,7 @@ t/modules/module-capture-param-otf.t
 t/modules/module-class-shadows-loaded-module-name.t
 t/modules/module-class-topic-binding.t
 t/modules/module-constant-same-name-as-packageless-module.t
+t/modules/module-enum-import-vs-param.t
 t/modules/module-file-scope-lexical.t
 t/modules/module-file-scope-type-object-lexical.t
 t/modules/module-file-var-and-callframe.t
@@ -3885,6 +3894,8 @@ t/oo/construct/build-attr-default-order.t
 t/oo/construct/build-callsame-nil.t
 t/oo/construct/build-sibling-writeback-coherence.t
 t/oo/construct/build-tweak.t
+t/oo/construct/buildplan-hook-runs-extra-task.t
+t/oo/construct/buildplan-matches-rakudo.t
 t/oo/construct/builtin-constructor-table.t
 t/oo/construct/clone-decontainerizes-its-result.t
 t/oo/construct/clone-preserves-deleted-slot.t
@@ -5093,6 +5104,7 @@ t/rakuast/rakuast-frontend-mode.t
 t/rakuast/rakuast-given-pointy-block.t
 t/rakuast/rakuast-given-when.t
 t/rakuast/rakuast-goto-statement.t
+t/rakuast/rakuast-grammar-argument-bindings.t
 t/rakuast/rakuast-handles-spelling.t
 t/rakuast/rakuast-handles-wordlists.t
 t/rakuast/rakuast-has-compound-assign.t
@@ -7175,6 +7187,7 @@ t/types/enum-subset/enum-value-numeric-compare.t
 t/types/enum-subset/enum-value-shadows-core-listop.t
 t/types/enum-subset/enum-value-shadows-same-named-sub.t
 t/types/enum-subset/enum-value-which.t
+t/types/enum-subset/enum-values-junction-infix.t
 t/types/enum-subset/eval-enum-bare-key-transitive.t
 t/types/enum-subset/eval-enum-bare-key.t
 t/types/enum-subset/generics-nominalizable-class.t
@@ -7818,6 +7831,7 @@ t/vm/nqp-list-index-parity.t
 t/vm/nqp-list-setelems-fill.t
 t/vm/nqp-loop-value-context.t
 t/vm/nqp-mergesort-str.t
+t/vm/nqp-nd-ops-on-containers.t
 t/vm/nqp-object-ops-parity.t
 t/vm/nqp-object-ops.t
 t/vm/nqp-op-call-assign.t
@@ -8020,6 +8034,7 @@ t/vm/scope/strict-no-strict-autodecl-outlives-block.t
 t/vm/scope/strict-undeclared-scalar-any-not-nil.t
 t/vm/scope/strict-undeclared-variable-read.t
 t/vm/scope/strict-use-and-eval.t
+t/vm/scope/symbolic-code-lookup-lexical-chain.t
 t/vm/scope/symbolic-scalar-lookup-sees-lexicals.t
 t/vm/scope/syntax-missing-and-unitscope-carry-what.t
 t/vm/scope/temp-postfix-incdec.t
@@ -8130,6 +8145,7 @@ t/vm/writeback/proxy-operand-user-infix-decline.t
 t/vm/writeback/proxy-renders-through-fetch.t
 t/vm/writeback/proxy-store-boundary.t
 t/vm/writeback/proxy-store-receives-nil.t
+t/vm/writeback/proxy-subclass-user-methods.t
 t/vm/writeback/proxy-what-fetch.t
 t/vm/writeback/raw-invocant-arrives-as-container.t
 t/vm/writeback/raw-invocant-immutable-write.t
