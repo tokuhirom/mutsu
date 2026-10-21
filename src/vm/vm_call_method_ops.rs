@@ -428,6 +428,11 @@ impl Interpreter {
                 // A slot promoted to a `ContainerRef` cell (a prior `:=` bind /
                 // `.VAR` mixin) is transparent to a plain accessor read.
                 let out = v.deref_container();
+                // A Proxy in the slot (AttrX::Mooish's lazy attribute) is read
+                // through by a non-rw accessor: the full dispatch FETCHes it.
+                if out.is_proxy_value() {
+                    return None;
+                }
                 // Only an Array/Hash value is affected by either use of the
                 // declaration below (decontainerizing, type tagging), so a
                 // plain scalar read skips the MRO attribute collection, which
