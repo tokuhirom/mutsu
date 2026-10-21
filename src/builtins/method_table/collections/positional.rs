@@ -264,8 +264,10 @@ fn at_pos_interp(
     // `my $c := @a.AT-POS(1); $c = 20` writes the array and a user `AT-POS`
     // that `callsame`s stays assignable (PDF::COS::Tie::Array). A `List`'s
     // elements are values, and a shaped or lazy array goes the opcode's way.
-    if matches!(kind, crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray)
-        && let [index] = args
+    if matches!(
+        kind,
+        crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
+    ) && let [index] = args
         && let ValueView::Int(i) = index.view()
         && i >= 0
         && !crate::runtime::utils::is_shaped_array(target)

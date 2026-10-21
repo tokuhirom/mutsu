@@ -1759,17 +1759,14 @@ impl Interpreter {
                                     .map_or(&[], |sources| sources.as_slice()),
                             );
                             crate::builtins::method_table::invoke_mut(
-                                self,
-                                &mut place,
-                                method_sym,
-                                &args,
+                                self, &mut place, method_sym, &args,
                             )
                         } else {
                             None
                         };
-                        if let Some(result) = bound.or_else(|| {
-                            self.native_array_storage_mut(&mut storage, method, &args)
-                        }) {
+                        if let Some(result) = bound
+                            .or_else(|| self.native_array_storage_mut(&mut storage, method, &args))
+                        {
                             let result = result?;
                             let updated_instance = self.write_back_array_storage_instance(
                                 target_name,
