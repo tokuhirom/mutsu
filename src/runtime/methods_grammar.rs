@@ -2022,7 +2022,14 @@ impl Interpreter {
     /// failed; the answer is a diagnostic position either way.
     pub(super) fn longest_complete_prefix_end(&mut self, pattern: &str, text: &str) -> usize {
         let saved = super::regex::regex_helpers::CODE_ATOMS_INERT.replace(true);
+        // The probe skips the code blocks that assign a rule's `:my` variables,
+        // so a subrule argument naming one binds `Nil` and records a binding
+        // error (YAMLish's `<value=map($new-indent)>`). Rakudo has no such
+        // second walk: the error belongs to the probe alone, and the slot
+        // holds only what the real parse recorded.
+        let pending = super::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take());
         let best = self.all_complete_match_ends_max(pattern, text);
+        super::regex_parse::PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = pending);
         super::regex::regex_helpers::CODE_ATOMS_INERT.set(saved);
         best
     }
