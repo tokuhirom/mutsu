@@ -66,6 +66,21 @@ impl Interpreter {
         Some((cf.package_sym(), cf.source_file_sym()))
     }
 
+    /// Whether a body of the sub `plan` declares rebinds its free variable
+    /// `var` (`$var := ...`).
+    // Cost: O(r), r = rebound free variables of the sub's bodies.
+    fn lexsub_rebinds_var(
+        plan: &crate::opcode::CompiledSubDeclPlan,
+        compiled_fns: &CompiledFns,
+        var: Symbol,
+    ) -> bool {
+        plan.compiled_routine_keys.iter().any(|key| {
+            compiled_fns
+                .get(key)
+                .is_some_and(|cf| cf.code.free_var_rebinds.contains(&var))
+        })
+    }
+
     /// `RegisterDecl` of a sub plan: bind this activation's aliases.
     pub(super) fn bind_lexsub_free_aliases(
         &mut self,
@@ -136,6 +151,22 @@ impl Interpreter {
                         .remove(&(sub, a.var));
                 }
                 continue;
+            };
+            // A variable the sub rebinds with `:=` needs a binding cell, so
+            // the rebind seats the new binding inside the cell this frame's
+            // slot shares (`unit_scope_lexical_rebind`) instead of replacing
+            // the callee's env entry, which the return would then drop.
+            let cell = if Self::binding_cell_of(&cell).is_none()
+                && Self::lexsub_rebinds_var(plan, compiled_fns, a.var)
+                && let Some(slot) = a.var_slot.map(|s| s as usize)
+                && code.locals.get(slot).is_some_and(|n| *n == a.var.resolve())
+            {
+                let wrapped = Self::wrap_in_binding_cell(cell);
+                self.locals[slot] = wrapped.clone();
+                self.env_mut().insert_sym(a.var, wrapped.clone());
+                wrapped
+            } else {
+                cell
             };
             if let Some(slot) = self.locals.get_mut(a.alias_slot as usize) {
                 *slot = cell.clone();

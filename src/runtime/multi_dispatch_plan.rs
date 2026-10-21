@@ -328,7 +328,7 @@ impl Interpreter {
             });
         }
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
-        self.bind_ranked_candidates(name, args, ranked, None)
+        self.bind_ranked_candidates(name, args, None, ranked, None)
     }
 
     /// The cached, keyed plan of a bare multi call with argument type keys
