@@ -39,7 +39,7 @@ pub(super) fn normalize_for_lower(
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
     if depth >= 512 {
         return Err(RuntimeError::new(
-            "RakuAST: node nesting exceeds 512 levels",
+            crate::native_stack::DEEP_RECURSION_MESSAGE,
         ));
     }
     let mut normalized = None;
@@ -71,7 +71,7 @@ pub(super) fn normalize_for_lower(
 fn normalize_child_value(value: &Value, depth: usize) -> Result<Option<Value>, RuntimeError> {
     if depth >= 512 {
         return Err(RuntimeError::new(
-            "RakuAST: node nesting exceeds 512 levels",
+            crate::native_stack::DEEP_RECURSION_MESSAGE,
         ));
     }
     match value.view() {
