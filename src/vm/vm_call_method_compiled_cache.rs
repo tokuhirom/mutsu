@@ -758,7 +758,13 @@ impl Interpreter {
             let invocant_for_dispatch = target.clone();
             let pushed_dispatch = loan_env!(
                 self,
-                push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
+                push_method_dispatch_frame(
+                    cn,
+                    method,
+                    &args,
+                    invocant_for_dispatch,
+                    Some((owner_class.as_str(), method_def))
+                )
             );
             let result = self.call_compiled_method_fast(
                 cn,
@@ -782,7 +788,13 @@ impl Interpreter {
             let invocant_for_dispatch = target.clone();
             let pushed_dispatch = loan_env!(
                 self,
-                push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
+                push_method_dispatch_frame(
+                    cn,
+                    method,
+                    &args,
+                    invocant_for_dispatch,
+                    Some((owner_class.as_str(), method_def))
+                )
             );
             let invocant = Some(target);
             let result = self.call_compiled_method(
@@ -865,7 +877,13 @@ impl Interpreter {
         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let pushed_dispatch = loan_env!(
             self,
-            push_method_dispatch_frame(cn, method, &args, target.clone(),)
+            push_method_dispatch_frame(
+                cn,
+                method,
+                &args,
+                target.clone(),
+                Some((owner_class, method_def))
+            )
         );
         let invocant = Some(target);
         let result = self.call_compiled_method(

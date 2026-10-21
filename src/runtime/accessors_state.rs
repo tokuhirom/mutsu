@@ -1384,12 +1384,18 @@ impl Interpreter {
         method_name: &str,
         args: &[Value],
         invocant: &Value,
+        matched_winner: Option<(Symbol, u64)>,
     ) -> Vec<(Symbol, super::MethodDef)> {
         let role_bindings = self.registry().get_role_param_bindings(receiver_class);
         let expansion = self.resolve_deferral_expansion(receiver_class, method_name);
         let mut all_candidates: Vec<(Symbol, super::MethodDef)> = Vec::new();
         for (owner, def) in expansion {
+            // Reuse only the resolved winner's successful applicability test;
+            // every other multi candidate still needs its own signature match.
             if !def.is_multi
+                || matched_winner.is_some_and(|(matched_owner, fp)| {
+                    owner == matched_owner && self.method_def_fingerprint(&def) == fp
+                })
                 || self.method_args_match_for_invocant(
                     receiver_class,
                     &def,
@@ -1447,7 +1453,7 @@ impl Interpreter {
         invocant: &Value,
     ) -> Vec<super::DeferralEntry> {
         let all_candidates =
-            self.matched_deferral_candidates(receiver_class, method_name, args, invocant);
+            self.matched_deferral_candidates(receiver_class, method_name, args, invocant, None);
         let mut remaining = Vec::new();
         let mut skipped = false;
         for (owner, def) in all_candidates {

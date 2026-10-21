@@ -950,7 +950,7 @@ impl Interpreter {
             let pushed = if self.is_role(&qualifier) {
                 self.push_qualified_method_dispatch_frame(&qualifier, &args, target.clone())
             } else {
-                self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone())
+                self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone(), None)
             };
             let result = self.dispatch_qualified_method(&target, method, &args);
             if pushed {
