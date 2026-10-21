@@ -135,7 +135,8 @@ impl Interpreter {
     }
 
     /// Whether `class_name` has user candidates for `method_name` and every one
-    /// is a `multi` of only a capture / slurpies, while the receiver has a
+    /// is a `multi` declared above the level that declares the built-in (never
+    /// a candidate of its dispatcher), or of only a capture / slurpies, while the receiver has a
     /// built-in of that name declared at the user candidates' level or below
     /// (`Any.map` against an augment of `Any`; not `Mu.say`, whose invocant is
     /// wider than the augmented `Any`): no user candidate can win a call,
@@ -150,6 +151,22 @@ impl Interpreter {
         let Some(builtin_level) = Self::builtin_method_level(&mro, method_name) else {
             return false;
         };
+        // Rakudo derives a built-in class's multi dispatcher from its parent's
+        // when the class is composed, so a `multi` an `augment` later adds to
+        // an ANCESTOR never joins the dispatcher of a more derived class that
+        // declares the method itself: `List` declares `head`, so an augmented
+        // `Any.head(Int $x)` is not a candidate of `(1, 2, 3).head(2)`, whatever
+        // its signature. Only a level at or above the declaring one can win.
+        let declared_level = mro.iter().position(|owner| {
+            let folded =
+                crate::builtins::builtin_type_methods::canonical_builtin_owner(owner.as_str());
+            let owner = if folded.is_empty() {
+                owner.as_str()
+            } else {
+                folded
+            };
+            crate::builtins::method_introspection::native_method_declared(owner, method_name)
+        });
         let mut any = false;
         for (level, owner) in mro.iter().enumerate() {
             let overloads = self
@@ -159,10 +176,14 @@ impl Interpreter {
                 if def.is_private {
                     continue;
                 }
-                if !def.is_multi
-                    || !Self::candidate_is_slurpy_only(def)
-                    || level < builtin_level
-                {
+                if !def.is_multi {
+                    return false;
+                }
+                if declared_level.is_some_and(|declared| level > declared) {
+                    any = true;
+                    continue;
+                }
+                if !Self::candidate_is_slurpy_only(def) || level < builtin_level {
                     return false;
                 }
                 any = true;

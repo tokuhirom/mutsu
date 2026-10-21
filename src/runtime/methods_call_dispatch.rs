@@ -520,6 +520,12 @@ impl Interpreter {
             target.view(),
             ValueView::Instance { .. } | ValueView::Package(_)
         ) && self.native_lever_a_user_override(&target, method)
+            && {
+                // An `augment`ed `multi` is ranked with the built-in
+                // candidates of the method (#12751).
+                let owner = self.dispatch_owner_name(&target);
+                !self.builtin_candidate_outranks_user(&target, owner, method, &args)
+            }
         {
             // ADR-0019 F6: VM-level direct-dispatch path first (see
             // `try_dispatch_compiled_method_direct_as`'s doc comment). `target`
@@ -1507,6 +1513,7 @@ impl Interpreter {
             if self.has_user_method(type_name, method)
                 && !self.native_base_bypass_hit(&target, Symbol::intern(method))
                 && !self.user_override_outranked_by_builtin(type_name, method)
+                && !self.builtin_candidate_outranks_user(&target, type_name, method, &args)
             {
                 return self.dispatch_instance_and_fallback(target, method, args);
             }

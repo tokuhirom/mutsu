@@ -93,7 +93,14 @@ impl Interpreter {
             }
             // A plain built-in receiver (`Array`, `Str`, a `Range`, ...): only
             // an `augment` or a `.wrap` of its type comes first.
-            _ => return self.native_lever_a_user_override_sym(target, method),
+            _ => {
+                return self.native_lever_a_user_override_sym(target, method) && {
+                    // An `augment`ed `multi` is ranked with the built-in
+                    // candidates of the method (#12751).
+                    let owner = self.dispatch_owner_name(target);
+                    !self.builtin_candidate_outranks_user(target, owner, name, args)
+                };
+            }
         }
         self.mixin_role_has_method(target, name) || self.mixin_wrapped_instance_has_method(target, name)
     }

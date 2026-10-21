@@ -46,6 +46,7 @@ mod resolution_call_sub;
 mod resolution_deferral;
 mod resolution_eval;
 pub(crate) mod resolution_grep_loop;
+mod builtin_method_candidates;
 mod resolution_lazy;
 pub(crate) mod resolution_map_grep;
 mod resolution_map_grep_rw;
