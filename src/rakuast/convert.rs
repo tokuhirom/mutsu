@@ -2516,7 +2516,7 @@ fn var_decl_statement(
     } else if shaped.as_ref().is_some_and(|(_, data)| data.is_none()) {
         None
     } else if let Expr::CompoundAssign { op, rhs, .. } = expr
-        && is_dotty_assign_op(op)
+        && op == crate::ast::method_assign_decl::DECL_INITIALIZER_OP
     {
         Some(Initializer::CallAssignMarker(rhs))
     } else {

@@ -4471,9 +4471,17 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         | RakuAstClass::VarDeclarationSignature
                 )
             {
-                return Ok(Expr::Grouped(Box::new(Expr::DoStmt(Box::new(
-                    lower_stmt_inner(declaration)?,
-                )))));
+                let mut statement = lower_stmt_inner(declaration)?;
+                // A `.=` declaration is one expression-position declaration,
+                // not the statement-level source-form record plus expansion.
+                if let Stmt::SyntheticBlock(parts) = &statement
+                    && let Some(Stmt::SourceForm(form)) = parts.first()
+                    && let crate::ast::SourceForm::MethodAssignDecl(form) = form.as_ref()
+                    && let Some(single) = crate::ast::method_assign_decl::expression_declaration(form)
+                {
+                    statement = single;
+                }
+                return Ok(Expr::Grouped(Box::new(Expr::DoStmt(Box::new(statement)))));
             }
             let lowered = lower_expr(inner)?;
             // A parenthesized bareword fat-arrow is a positional Pair at the

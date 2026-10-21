@@ -784,7 +784,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     } else {
         // Without the statement-level source-form record (an expression-position
         // declaration, or a list continuing it) the `.=` initializer keeps its
-        // spelling in the transparent dotty marker, as `$x .= meth` does; the
+        // spelling in a transparent `Expr::CompoundAssign` marker; the
         // RakuAST boundary reads it back as `Initializer::CallAssign` (#11431).
         let expr = if s.shape_dims.is_none() {
             let target = match &expr {
@@ -793,7 +793,12 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 }
                 _ => Expr::BareWord(String::new()),
             };
-            crate::parser::stmt::assign::dotty_assign_marker(target, expr.clone(), expr)
+            Expr::CompoundAssign {
+                target: Box::new(target),
+                op: crate::ast::method_assign_decl::DECL_INITIALIZER_OP.to_string(),
+                rhs: Box::new(expr.clone()),
+                expanded: Box::new(expr),
+            }
         } else {
             expr
         };
