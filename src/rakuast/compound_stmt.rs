@@ -14,7 +14,14 @@ const SOURCE_ASSIGN_NAME: &str = "source-stmt-assign-name";
 // Cost: O(n), n = AST nodes in the conditional target's assignment value.
 pub(super) fn restore_conditional_target(target: Expr) -> Expr {
     match target {
-        Expr::Grouped(inner) => Expr::Grouped(Box::new(restore_conditional_target(*inner))),
+        Expr::Grouped(inner) => Expr::Grouped(Box::new(restore_conditional_do_stmt(*inner))),
+        other => restore_conditional_do_stmt(other),
+    }
+}
+
+// Cost: O(n), n = AST nodes in the assignment value copied into expression form.
+fn restore_conditional_do_stmt(target: Expr) -> Expr {
+    match target {
         Expr::DoStmt(mut statement) => {
             if let Stmt::If {
                 then_branch,
