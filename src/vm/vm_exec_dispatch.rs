@@ -2877,7 +2877,9 @@ impl Interpreter {
                         // variable too: the store the block-exit refresh of
                         // `our_locals` reads must see the write, or the refresh
                         // puts the stale container back over the live slot.
-                        if code.our_locals.iter().any(|(_, q)| q.as_str() == name) {
+                        if name.starts_with(['@', '%'])
+                            && code.our_locals.iter().any(|(_, q)| q.as_str() == name)
+                        {
                             self.set_our_var(name.clone(), arc.load().into_deref());
                         }
                         // A `$_` boxed for a regex literal's topic capture
