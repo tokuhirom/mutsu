@@ -110,6 +110,17 @@ impl Interpreter {
                 None => self.typecheck_assignment_failure(&c.ty, &val, c.assign_to.as_deref()),
             });
         }
+        if let Some(check) = &c.where_check
+            && !val.is_nil()
+        {
+            let scope = crate::runtime::AttrWhereScope {
+                unit: check.unit,
+                package: check.package,
+            };
+            if !self.check_attribute_where_constraint(&check.pred, &val, scope) {
+                return Err(self.typecheck_assignment_failure(&c.ty, &val, c.assign_to.as_deref()));
+            }
+        }
         Self::wrap_native_int_by_constraint(&c.ty, val)
     }
 

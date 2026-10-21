@@ -423,18 +423,15 @@ impl Interpreter {
         inst_id: u64,
         storage: Value,
     ) -> Value {
-        let new_attrs = crate::value::InstanceAttrs::clone(attributes);
-        new_attrs.insert("__mutsu_hash_storage".to_string(), storage);
-        let updated_instance = Value::instance_parts(
-            *inst_class,
-            crate::gc::Gc::new(crate::value::InstanceAttrs::new(
-                *inst_class,
-                new_attrs.to_map(),
-                inst_id,
-                true,
-            )),
-            inst_id,
-        );
+        // Update the backing storage in the instance's shared attribute cell:
+        // every holder of the instance -- a method's `self`, the caller's
+        // variable -- sees it, and the attributes the running method wrote
+        // since this call began are kept. Rebuilding the instance from the
+        // attribute snapshot taken before the call dropped those writes (a
+        // `%!attr<k> = v` after a `self.elems`, #12907).
+        attributes.insert("__mutsu_hash_storage".to_string(), storage);
+        let updated_instance =
+            Value::instance_parts(*inst_class, crate::gc::Gc::clone(attributes), inst_id);
         // Through the shared cell, not over it: see `Env::insert_through`.
         self.env_mut()
             .insert_through(target_name.to_string(), updated_instance.clone());

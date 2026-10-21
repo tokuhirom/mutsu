@@ -152,11 +152,23 @@ impl Interpreter {
             "clone_nd"
                 if let Some(ValueView::ContainerRef(cell)) = args.first().map(Value::view) =>
             {
-                // The copy keeps the container's `of` type: a store into it
-                // type-checks like a store into the original.
+                // The copy keeps the container's whole constraint (its `of`
+                // type and the attribute's `where` clause): a store into it
+                // is checked like a store into the original.
                 let copy = crate::gc::Gc::new(crate::value::ContainerCell::new(cell.load()));
-                if let Some(ty) = crate::value::lookup_container_constraint(&cell) {
-                    crate::value::register_container_constraint(&copy, &ty);
+                match (
+                    crate::value::lookup_cell_constraint(&cell),
+                    crate::value::lookup_container_constraint(&cell),
+                ) {
+                    (Some(c), _) if c.where_check.is_some() => {
+                        crate::value::register_container_where(
+                            &copy,
+                            &c.ty,
+                            c.where_check.as_deref().cloned().expect("where_check"),
+                        );
+                    }
+                    (_, Some(ty)) => crate::value::register_container_constraint(&copy, &ty),
+                    _ => {}
                 }
                 Ok(Value::container_ref(copy))
             }
