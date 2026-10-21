@@ -266,6 +266,8 @@ pub(crate) fn colonpair_source_expr(source: &str) -> Option<crate::ast::Expr> {
 /// Slang activation surface for the runtime (ADR-0026): the runtime's
 /// `$*LANG.define_slang` maps overridden grammar-rule names onto these
 /// parser modes.
+#[cfg(test)]
+pub(crate) use stmt::simple::RECOGNIZED_PRODUCTION_OVERRIDES;
 pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_modes};
 
 /// The module search paths a parse-time slang activation must run under — the

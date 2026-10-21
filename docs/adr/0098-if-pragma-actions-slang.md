@@ -1,6 +1,8 @@
 # ADR-0098: mutsu answers `Raku.legacy` with `False`, and a slang's *actions*-role method is an override name
 
-- Status: Accepted, implemented (2026-09-13)
+- Status: Accepted, implemented (2026-09-13); §2.2's "every actions-role method
+  is an override name" superseded by [ADR-13220](13220-slang-actions-role-helper-methods.md)
+  (2026-10-21)
 - Date: 2026-09-13
 - Deciders: tokuhirom, Claude
 - Extends: [ADR-0026](0026-slang-activation-architecture.md) (slang activation
