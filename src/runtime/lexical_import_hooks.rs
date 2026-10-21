@@ -61,6 +61,43 @@ impl Interpreter {
         true
     }
 
+    /// Keep the routine a unit-level `use` of a `sub EXPORT` hook module
+    /// bound as the env alias `&name`, for [`Self::unit_hook_routine`].
+    // Cost: O(|name|).
+    pub(crate) fn note_unit_hook_routine(&mut self, name: &str, value: &Value) {
+        if name.contains(':') || !matches!(value.view(), ValueView::Sub(_)) {
+            return;
+        }
+        let unit = self.executing_unit_sym_for_module_load();
+        self.module
+            .unit_hook_routines
+            .entry(unit)
+            .or_default()
+            .insert(Symbol::intern(name), value.clone());
+    }
+
+    /// The routine `name` a `sub EXPORT` hook returned to a top-level `use`
+    /// of the running unit. The env alias the import writes is the caller
+    /// frame's, so a closure of the unit that runs after its routine returned
+    /// (a lazy `map` callback) finds the routine here (#14385).
+    // Cost: O(1).
+    pub(crate) fn unit_hook_routine(&self, name: &str) -> Option<Value> {
+        if self.module.unit_hook_routines.is_empty() {
+            return None;
+        }
+        // The chunk that is running names its own unit: a callback recompiled
+        // from the importer's source runs under the caller's frames.
+        let unit = match self.running_code().and_then(|code| code.source_file) {
+            Some(file) => self.unit_of_source_sym(Some(file)),
+            None => self.executing_unit_sym(),
+        };
+        self.module
+            .unit_hook_routines
+            .get(&unit)?
+            .get(&Symbol::intern(name))
+            .cloned()
+    }
+
     /// The value a `sub EXPORT` hook returned for the declaration key `name`
     /// in the `use` that fills lexical import set `set`.
     // Cost: O(1).
