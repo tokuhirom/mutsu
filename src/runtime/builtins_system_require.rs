@@ -183,18 +183,11 @@ impl Interpreter {
         // required file's `package Pod { class Ber {} }` as
         // `Test::Compile::Pod::Ber`). Mirrors `load_module`.
         //
-        // The package hint names the package a *hintless* file's declarations
-        // belong to. A file that declares its own `unit module Foo;` sets the
-        // package itself (and the compiler qualifies relative to whatever is
-        // already current), so pre-setting it here would nest it inside itself
-        // as `Foo::Foo`.
-        let unit_declared = Self::detect_unit_package_name(&stmts).is_some();
-        match package_hint {
-            Some(pkg) if !pkg.is_empty() && !unit_declared => {
-                self.set_current_package(pkg.to_string())
-            }
-            _ => self.set_current_package("GLOBAL".to_string()),
-        }
+        // The file's top level runs in GLOBAL, whatever the package hint names:
+        // Rakudo declares a package-less file's types under their own names, as
+        // the first `use`/`need` of the same file does (#14336). The hint only
+        // adds the `pkg::name` function/env aliases below.
+        self.set_current_package("GLOBAL".to_string());
         // See `hide_toplevel_global_routines`: a package-less top-level routine
         // in the required file (e.g. its own `sub MAIN`) must not collide with
         // -- or silently overwrite -- a same-named one the requiring scope
