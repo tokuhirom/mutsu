@@ -4813,17 +4813,13 @@ impl Interpreter {
                 self.stack.push(list_val);
                 *ip += 1;
             }
-            // Cost: O(1); O(k) when a lazy list is sunk here, k = elements forced; a sunk Proxy adds its FETCH.
+            // Cost: O(1); O(k) when a lazy list is sunk here, k = elements forced.
             OpCode::Pop => {
-                if let Some(popped) = self.stack.pop() {
-                    if let ValueView::LazyList(list) = popped.view() {
-                        // Sink context must realize lazy gathers for side effects.
-                        self.force_lazy_list_vm(&list)?;
-                    } else if popped.is_proxy_value() {
-                        // `.sink` of a Proxy reads it: the FETCH runs (and may die)
-                        // even though nothing uses the value.
-                        self.auto_fetch_proxy(&popped)?;
-                    }
+                if let Some(popped) = self.stack.pop()
+                    && let ValueView::LazyList(list) = popped.view()
+                {
+                    // Sink context must realize lazy gathers for side effects.
+                    self.force_lazy_list_vm(&list)?;
                 }
                 *ip += 1;
             }
