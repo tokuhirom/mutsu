@@ -512,19 +512,6 @@ impl Interpreter {
             .is_some_and(|how| self.mixin_has_compose_hook(how))
     }
 
-    /// Whether `role_name`'s HOW (the individual role's or the group's) carries
-    /// a user `specialize` override.
-    // Cost: O(1) map lookups plus the hook scan of each candidate HOW.
-    pub(crate) fn role_how_overrides_specialize(&self, role_name: &str) -> bool {
-        let visible = role_name.split('\u{0}').next().unwrap_or(role_name);
-        [role_name, visible].into_iter().any(|key| {
-            self.registry()
-                .class_how_values
-                .get(key)
-                .is_some_and(|how| self.mixin_has_hook(how, "specialize"))
-        })
-    }
-
     /// Run the user `specialize` override of every composed role's HOW for
     /// `class_name` (queued by `queue_role_how_specialize`): rakudo calls
     /// `$role.HOW.specialize($role, $class)` while composing, so a hook mixed

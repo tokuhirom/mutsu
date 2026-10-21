@@ -33,10 +33,10 @@ impl Interpreter {
         // group a preceding `but (R1, R2)` left open (see
         // `open_role_application_group`).
         self.close_role_application_group();
-        // A role whose HOW carries a user `specialize` (a trait handler mixed a
-        // meta-role into it) needs a real mixin class: Rakudo specializes the
-        // role onto the new `C+{R}` type, which the hook then adds methods to.
-        // `but` mixes into a copy, so the original object is untouched.
+        // Rakudo specializes the role onto a new `C+{R}` type for `obj but R`,
+        // which a user `specialize` (a trait handler mixed a meta-role into the
+        // role's HOW, known only once the role's attributes compose) adds
+        // methods to. `but` mixes into a copy, so the original is untouched.
         if let Some(reblessed) = self.but_rebless_copy(&left, &right)? {
             self.apply_pending_caller_var_writeback(code);
             self.stack.push(reblessed);
@@ -97,9 +97,9 @@ impl Interpreter {
         Ok(())
     }
 
-    /// `obj but R` for an instance of a user class when `R`'s HOW overrides
-    /// `specialize`: rebless a copy of `obj` into the mixin class `C+{R}`
-    /// (`None` when the role's HOW has no such hook, or `left` is no instance).
+    /// `obj but R` for an instance of a user class: rebless a copy of `obj`
+    /// into the mixin class `C+{R}` (`None` when `left` is no such instance, or
+    /// `does_rebless_instance` keeps the wrapper path for it).
     // Cost: O(a) to copy the attributes, a = attributes of `left`, plus the
     // role composition.
     fn but_rebless_copy(
@@ -118,9 +118,6 @@ impl Interpreter {
         let Some(application) = self.extract_role_application(right) else {
             return Ok(None);
         };
-        if !self.role_how_overrides_specialize(&application.0) {
-            return Ok(None);
-        }
         let copy = Value::make_instance(class_name, attributes.as_map().clone());
         self.does_rebless_instance(&copy, &[application])
     }
