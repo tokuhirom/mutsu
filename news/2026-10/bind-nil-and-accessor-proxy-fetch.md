@@ -1,4 +1,4 @@
-# Binding Nil keeps it, and a sunk Proxy is read
+# Binding Nil keeps it, and a non-rw accessor FETCHes a bound Proxy
 
 `my Mu $v := Nil` stored the `Mu` type object (the assignment reset applied to
 a bind too), and `my Str $v := Nil` was accepted; a bind now keeps the Nil and
