@@ -649,40 +649,12 @@ impl Interpreter {
 }
 
 /// Whether a deferred `.map`/`.grep` can be run a chunk of its source at a
-/// time (see [`Interpreter::pull_map_grep_prefix`]). A multi-parameter map
-/// can: its chunks are cut at whole groups ([`map_group_size`]). A grep with
-/// several parameters, a slurpy parameter and a `FIRST`/`LAST` phaser cannot.
-// Cost: O(s), s = top-level statements of the callback's body.
-pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMode) -> bool {
-    if let MapGrepMode::MapRw(source) = mode
-        && crate::runtime::utils::is_shaped_array(source)
-    {
-        return false;
-    }
-    let Some(func) = func else {
-        return true;
-    };
-    let ValueView::Sub(data) = func.view() else {
-        // A Regex, a type object or another smartmatch target is tested one
-        // element at a time and keeps no state between elements.
-        return true;
-    };
-    let slurpy = data.param_defs.iter().any(|pd| pd.slurpy);
-    let loop_phaser = data.body.iter().any(|stmt| {
-        matches!(
-            stmt,
-            crate::ast::Stmt::Phaser {
-                kind: crate::ast::PhaserKind::First | crate::ast::PhaserKind::Last,
-                ..
-            }
-        )
-    });
-    // A map block's slurpy parameter takes one element per call (the eager
-    // loop batches by the required positionals, at least 1), so a map can be
-    // cut into chunks of `map_group_size`; a grep's cannot (#14300).
-    (callback_positionals(func) <= 1 || !mode.is_grep())
-        && !(slurpy && mode.is_grep())
-        && !(loop_phaser && mode.is_grep())
+/// time (see [`Interpreter::pull_map_grep_prefix`]): every callback shape
+/// can, as the loop reads its source through a feed and cuts its groups
+/// itself. Only a map over a shaped array's leaves is pulled whole.
+// Cost: O(1).
+pub(super) fn map_grep_pullable_by_prefix(_func: Option<&Value>, mode: &MapGrepMode) -> bool {
+    !matches!(mode, MapGrepMode::MapRw(source) if crate::runtime::utils::is_shaped_array(source))
 }
 
 /// How many positional parameters `func`, a `.map`/`.grep` callback, binds
