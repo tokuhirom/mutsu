@@ -626,12 +626,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // `to-posix`, `DateTime`, `Date`, `tai` and `narrow` have no arm here.
 
     // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace` and
-    // `X::AdHoc.payload` are rows of the method table (`method_table::exception`,
-    // ADR-11276 §9.39); `line`, `file` and `filename` are mutsu's own accessors.
-    // The control methods (`throw`, `resume`, ...) are interpreter rows (§9.163).
-    if let Some(answer) = crate::builtins::method_table::exception::answer(target, method) {
-        return Some(answer);
-    }
+    // `X::AdHoc.payload` are rows of the method table, reached through
+    // `method_table::instances::exception::redirect` (ADR-11276 §9.39);
+    // `line`, `file` and `filename` are mutsu's own accessors. The control
+    // methods (`throw`, `resume`, ...) are interpreter rows (§9.163).
     // Match object methods
     if let ValueView::Instance { .. } = target.view()
         && target.is_match_instance()

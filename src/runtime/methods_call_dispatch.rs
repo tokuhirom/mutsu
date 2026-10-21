@@ -731,6 +731,11 @@ impl Interpreter {
         if let Some(result) = self.exception_control_by_mro(&target, method, &args) {
             return result;
         }
+        // A built-in exception's `message`, `gist`, `Str`, `backtrace` and
+        // `X::AdHoc.payload` are rows found by its owner chain (§9.39).
+        if let Some(result) = self.exception_rows_by_owner(&target, method, &args) {
+            return result;
+        }
         // Unhandled Failure explosion
         if let ValueView::Instance { class_name, .. } = target.view()
             && class_name.resolve() == "Failure"
