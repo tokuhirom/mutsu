@@ -15,6 +15,11 @@ pub(super) fn construct_native(args: &[Value]) -> Result<Value, RuntimeError> {
     construct_as(args, RakuAstClass::Native)
 }
 
+// Cost: O(a + t + s), a = arguments, t = traits, s = stringified scope length.
+pub(super) fn construct_grammar(args: &[Value]) -> Result<Value, RuntimeError> {
+    construct_as(args, RakuAstClass::Grammar)
+}
+
 fn construct_as(args: &[Value], class: RakuAstClass) -> Result<Value, RuntimeError> {
     let mut fields = Vec::new();
     if let Some(scope) = named_arg(args, "scope")
@@ -47,22 +52,7 @@ fn construct_as(args: &[Value], class: RakuAstClass) -> Result<Value, RuntimeErr
             require_rakuast_class(&body, RakuAstClass::Block, CONSTRUCTOR)?;
             body
         }
-        None => Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::Block,
-            fields: vec![field(
-                "body",
-                Value::rakuast(Box::new(RakuAstNode {
-                    class: RakuAstClass::Blockoid,
-                    fields: vec![RakuAstField {
-                        name: None,
-                        value: RakuAstFieldValue::Node(Value::rakuast(Box::new(RakuAstNode {
-                            class: RakuAstClass::StatementList,
-                            fields: Vec::new(),
-                        }))),
-                    }],
-                })),
-            )],
-        })),
+        None => super::empty_block(),
     };
     fields.push(field("body", body));
     Ok(Value::rakuast(Box::new(RakuAstNode { class, fields })))
