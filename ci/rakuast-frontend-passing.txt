@@ -1701,6 +1701,7 @@ t/exceptions/catch-handler-cyclic-same-name-lexical.t
 t/exceptions/catch-in-blocks.t
 t/exceptions/catch-in-lazy-gather-suspend.t
 t/exceptions/catch-inline-installing-unit-and-anon-return.t
+t/exceptions/catch-reads-unreached-my-as-undefined.t
 t/exceptions/catch-resume-across-jit-frame.t
 t/exceptions/catch-resume-subscript-assign-writeback.t
 t/exceptions/catch-return-past-typed-method.t
@@ -1914,6 +1915,7 @@ t/grammar/grammar-alias-actions.t
 t/grammar/grammar-alias-capture-identity.t
 t/grammar/grammar-aliased-regex-subrule.t
 t/grammar/grammar-also-is-replaces-implicit-parent.t
+t/grammar/grammar-and-match-subclass-rows.t
 t/grammar/grammar-assertion-side-effects.t
 t/grammar/grammar-backtracked-action-replay.t
 t/grammar/grammar-basic.t
@@ -2966,6 +2968,7 @@ t/modules/import-export/require-in-param-default-keeps-imports.t
 t/modules/import-export/require-in-routine-lexical-types.t
 t/modules/import-export/require-in-sub-module-curried-lexical-role.t
 t/modules/import-export/require-missing-module-stub.t
+t/modules/import-export/require-path-package-less-types-global.t
 t/modules/import-export/require-quote-keyword-module-name.t
 t/modules/import-export/require-top-level-binds-lexically.t
 t/modules/import-export/require-top-level-class-file.t
@@ -3223,6 +3226,7 @@ t/modules/package-body-routine-family-is-lexical.t
 t/modules/package-constant-alias-qualified-sub.t
 t/modules/package-hash-subscript-vivify.t
 t/modules/package-less-module-file-scope-lexicals.t
+t/modules/package-less-module-my-constant-not-visible.t
 t/modules/package-lexical-rebind-keeps-alias.t
 t/modules/package-lexical-subrule.t
 t/modules/package-lookup.t
@@ -4460,6 +4464,7 @@ t/oo/mixin-array-hash-mutator-override.t
 t/oo/mixin-assign-pos.t
 t/oo/mixin-attr-default-references-sibling.t
 t/oo/mixin-bool-truthy.t
+t/oo/mixin-builtin-receiver-overrides.t
 t/oo/mixin-compiled-attr-writeback.t
 t/oo/mixin-container-assign-store.t
 t/oo/mixin-itemization-raku.t
@@ -4560,6 +4565,7 @@ t/oo/role/but-role-type-object-new.t
 t/oo/role/callsame-punned-role-and-hyper-infix-sub.t
 t/oo/role/can-methods-composed-role-methods.t
 t/oo/role/can-role-declared-methods.t
+t/oo/role/class-body-my-role-leaves-no-type-key.t
 t/oo/role/class-does-enumeration-role.t
 t/oo/role/class-does-self-named-role.t
 t/oo/role/class-multi-method-outranks-role-multi-on-tie.t
@@ -5461,6 +5467,7 @@ t/regex/match/match-raku-nested-escape.t
 t/regex/match/match-replace-with.t
 t/regex/match/match-smartmatch-quantified-capture.t
 t/regex/match/match-smartmatch-str.t
+t/regex/match/match-subclass-new-instance.t
 t/regex/match/match-subject-shared-target.t
 t/regex/match/match-truthiness.t
 t/regex/match/match-unbound-capture-hole.t
@@ -6882,6 +6889,7 @@ t/routines/signature/sub-signature-decl-time-exprs-capture-outer-lexicals.t
 t/routines/signature/sub-signature-default-multi-dispatch.t
 t/routines/signature/sub-signature-named-callable-required.t
 t/routines/signature/sub-signature-named-callable.t
+t/routines/signature/sub-signature-required-named-leaf-fails-bind.t
 t/routines/signature/sub-signature-where-clause.t
 t/routines/signature/sub-signature-with-where.t
 t/routines/signature/subsig-destructure-through-itemization.t
