@@ -69,6 +69,16 @@ fn table() -> &'static FxHashMap<(&'static str, &'static str), Vec<Candidate>> {
     })
 }
 
+/// Whether the snapshot lists candidates for some method of `owner`, i.e. it
+/// is a core type rather than a class the program declares.
+// Cost: O(1) after the first call; that call is O(t), t = snapshot rows.
+fn is_core_owner(owner: &str) -> bool {
+    static OWNERS: OnceLock<rustc_hash::FxHashSet<&'static str>> = OnceLock::new();
+    OWNERS
+        .get_or_init(|| table().keys().map(|(owner, _)| *owner).collect())
+        .contains(owner)
+}
+
 /// A parameter with every field at its blank value.
 // Cost: O(1).
 fn blank_param(name: &str) -> ParamDef {
@@ -252,6 +262,13 @@ impl Interpreter {
                 .registry()
                 .get_method_overloads(owner.as_str(), method);
             for def in overloads.iter().flatten() {
+                // A class the program declares owns its method: only a core
+                // type's `augment` joins the built-in dispatcher (a `CArray`
+                // multi ranked against `Any.ASSIGN-POS` would leave the call
+                // to a built-in row the instance cannot run).
+                if !is_core_owner(owner.as_str()) {
+                    return false;
+                }
                 if !def.is_private && def.is_multi {
                     user.push((level, *owner, def.clone()));
                 }
