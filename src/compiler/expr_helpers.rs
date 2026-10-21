@@ -953,12 +953,10 @@ impl Compiler {
         // `OUTER_STORE_ONLY`). Left uncaptured, `$full-path` resolved at
         // match time in whatever frame ran the match, which a linked frame
         // (ADR-12529) answers from the program scope (#12478).
-        let in_frame = self.is_routine || self.lexically_in_routine || self.in_closure_body;
         for name in crate::opcode::CompiledCode::regex_kebab_var_names(&pattern) {
             let local = self.local_map.get(name.as_str()).copied();
             let slot = match local {
-                Some(slot) if in_frame => slot,
-                Some(_) => continue,
+                Some(slot) => slot,
                 None => crate::opcode::OUTER_STORE_ONLY,
             };
             let sym = Symbol::intern(&name);
