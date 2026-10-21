@@ -230,9 +230,15 @@ fn auto_viv_container(
                     Some(ValueView::Package(name)) if name != "Mu" => Value::package(name),
                     _ => Value::package(Symbol::intern("Any")),
                 };
-                Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
-                    default,
-                )))
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(default));
+                // The container carries the attribute's type, so a store into
+                // it (`$!val = $value`) type-checks like `$obj.attr = $value`.
+                if let Some(ValueView::Package(name)) = meta.as_map().get("type").map(Value::view)
+                    && !matches!(name.as_str(), "Mu" | "Any")
+                {
+                    crate::value::register_container_constraint(&cell, name.as_str());
+                }
+                Value::container_ref(cell)
             }
         })
     })
