@@ -103,13 +103,45 @@ impl Interpreter {
         let instance = self.create_instance(class);
         self.seed_trait_defaults(&instance, class)?;
         let plan = self.buildallplan_of(class.as_str());
+        self.run_plan_tasks(&instance, &plan, args)?;
+        Ok(instance)
+    }
+
+    /// Run the BUILDPLAN of `class` itself, a mixin type's own plan, on an
+    /// object it was just reblessed into (Rakudo's `mixin` builds the new
+    /// type's attributes this way). A no-op unless a module replaced the plan.
+    // Cost: O(t) tasks, plus each task's own cost.
+    pub(crate) fn run_mixin_buildplan(
+        &mut self,
+        instance: &Value,
+        class: &str,
+    ) -> Result<(), RuntimeError> {
+        let replaced = self
+            .registry()
+            .buildplans
+            .get(class)
+            .is_some_and(|state| state.replaced);
+        if !replaced {
+            return Ok(());
+        }
+        let plan = self.buildplan_of(class);
+        self.run_plan_tasks(instance, &plan, &[])
+    }
+
+    // Cost: O(t) tasks, plus each task's own cost.
+    fn run_plan_tasks(
+        &mut self,
+        instance: &Value,
+        plan: &Value,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
         let ValueView::Array(tasks, _) = plan.view() else {
-            return Ok(instance);
+            return Ok(());
         };
         let tasks: Vec<Value> = tasks.iter().cloned().collect();
         for task in tasks {
             match PlanTask::decode(&task) {
-                Some(task) => self.run_plan_task(&instance, &task, args)?,
+                Some(task) => self.run_plan_task(instance, &task, args)?,
                 // A `Code` task: a `BUILD`/`TWEAK` submethod or a block a
                 // module put in the plan, called with the instance and the
                 // named arguments.
@@ -121,7 +153,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(instance)
+        Ok(())
     }
 
     // Cost: O(1) plus the attribute store or default evaluation.

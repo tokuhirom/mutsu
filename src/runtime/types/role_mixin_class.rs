@@ -297,6 +297,7 @@ impl Interpreter {
         for (attr, value) in initializers {
             attributes.insert(attr.as_str(), value);
         }
+        self.run_mixin_buildplan(&reblessed, &mixin_class)?;
         // 6.e runs a composed role's BUILD/TWEAK on the object it was mixed into.
         for name in &role_names {
             self.run_mixin_role_build(&reblessed, &attributes, name)?;
