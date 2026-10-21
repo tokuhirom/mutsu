@@ -81,6 +81,77 @@ pub(crate) fn note_token_def_params(param_defs: &[ParamDef]) {
     }
 }
 
+/// Set the first time a rule whose declaration mentions `&?ROUTINE` is
+/// registered. A rule's code block or call argument reads the rule it runs in,
+/// which only exists as a routine frame, so every call pushes one while this is
+/// armed (`rx_call_rule_frame`); other programs skip the push (it was measured
+/// at ~5% of `bench-grammar-parse-big`).
+pub(crate) static ANY_RULE_READS_ROUTINE: AtomicBool = AtomicBool::new(false);
+
+/// Note a freshly registered rule's body, arming [`ANY_RULE_READS_ROUTINE`]
+/// when its declaration text mentions `&?ROUTINE`.
+// Cost: O(s), s = the declaration text length, until the flag is armed.
+pub(crate) fn note_token_def_routine_reads(body: &[crate::ast::Stmt]) {
+    use crate::ast::{Expr, Stmt};
+    if ANY_RULE_READS_ROUTINE.load(Ordering::Relaxed) {
+        return;
+    }
+    let reads = body.iter().any(|stmt| match stmt {
+        Stmt::Expr(Expr::Literal(v)) | Stmt::Return(Expr::Literal(v)) => {
+            v.regex_declared_source()
+                .is_some_and(|text| text.contains("&?ROUTINE"))
+                || match v.view() {
+                    crate::value::ValueView::Regex(p) => p.contains("&?ROUTINE"),
+                    _ => false,
+                }
+        }
+        _ => false,
+    });
+    if reads {
+        ANY_RULE_READS_ROUTINE.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Resolve `&?ROUTINE` in a rule's pattern to the rule itself, at declaration
+/// time as Rakudo does: the engine pushes no routine frame per rule call, so
+/// a code block or call argument could otherwise only see the routine the
+/// parse was entered through (#13246). A proto candidate `b:sym<t>` is the
+/// candidate, not the proto.
+// Cost: O(s), s = the pattern length (a substring probe when it has none).
+pub(crate) fn resolve_rule_routine_reads(body: &mut [crate::ast::Stmt], package: &str, name: &str) {
+    use crate::ast::{Expr, Stmt};
+    const NEEDLE: &str = "&?ROUTINE";
+    if crate::qualified::is_global_package(Symbol::intern(package)) {
+        return;
+    }
+    let lookup = format!(
+        "({package}.^lookup(\"{}\"))",
+        name.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    for stmt in body.iter_mut() {
+        let (Stmt::Expr(Expr::Literal(v)) | Stmt::Return(Expr::Literal(v))) = stmt else {
+            continue;
+        };
+        let rewritten = match v.view() {
+            crate::value::ValueView::Regex(p) if p.contains(NEEDLE) => Value::regex_closure(
+                Arc::new(p.replace(NEEDLE, &lookup)),
+                v.regex_closure_scope(),
+                v.regex_signature(),
+                None,
+                v.regex_captured_topic(),
+                v.regex_declared_source_arc(),
+            ),
+            crate::value::ValueView::RegexWithAdverbs(a) if a.pattern.contains(NEEDLE) => {
+                let mut adv = a.clone();
+                adv.pattern = Arc::new(a.pattern.replace(NEEDLE, &lookup));
+                Value::regex_with_adverbs(adv)
+            }
+            _ => continue,
+        };
+        *v = rewritten;
+    }
+}
+
 /// Set the first time a rule with a defaulted, lexically-scoped parameter
 /// (`token t(Int $n = 0)` or `token t(:$n = 0)`) is registered; gates the probe in
 /// [`token_defs_need_binding`] the way [`ANY_DYNAMIC_TOKEN_PARAM`] gates the
