@@ -24,42 +24,6 @@ use crate::value::{InstanceAttrs, RuntimeError, Value, ValueView};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
-/// The answer of the row for `method` called with `args` on a `Backtrace` or
-/// `Backtrace::Frame` instance, for the cascades that a call reaches when the
-/// table's own entry did not take it (the debug cross-check runs them on every
-/// row's call; a generic instance fallback would answer such a call wrongly).
-/// The arguments are split as the guard step splits them: a string-keyed pair
-/// is a named argument.
-// Cost: O(r + a), r = rows of this group, a = arguments.
-pub(crate) fn answer(target: &Value, method: &str, args: &[Value]) -> Answer {
-    let ValueView::Instance { class_name, .. } = target.view() else {
-        return None;
-    };
-    let owner = match class_name.resolve().as_str() {
-        "Backtrace" => "Backtrace",
-        "Backtrace::Frame" => "Backtrace::Frame",
-        _ => return None,
-    };
-    let (named, positional): (Vec<Value>, Vec<Value>) = args
-        .iter()
-        .cloned()
-        .partition(|arg| arg.is_string_pair_value());
-    let row = ROWS.iter().find(|row| {
-        row.owner == owner && row.name == method && usize::from(row.arity) == positional.len()
-    })?;
-    if named.iter().any(|pair| match pair.view() {
-        ValueView::Pair(key, _) => !row.named.contains(&key.as_str()),
-        _ => true,
-    }) {
-        return None;
-    }
-    match row.handler {
-        Handler::Narrow(f) if named.is_empty() => f(target, &positional),
-        Handler::Named(f) => f(target, &positional, Named::new(&named)),
-        _ => None,
-    }
-}
-
 const NICE_NAMED: &[&str] = &["oneline"];
 const NEXT_NAMED: &[&str] = &["named", "noproto", "setting"];
 

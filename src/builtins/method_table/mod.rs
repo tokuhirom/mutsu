@@ -87,7 +87,7 @@ pub(crate) use instances::hyper_seq::owners_of as hyper_seq_owners_of;
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::rakuast_node::origin_value;
 pub(crate) use instances::routine::owners_of as routine_owners_of;
-pub(crate) use instances::{backtrace, code, exception, failure, regex_match, signature, supply};
+pub(crate) use instances::{code, exception, failure, regex_match, signature, supply};
 pub(crate) use io_concurrency::encoding::{
     DECODER_OWNERS as ENCODING_DECODER_OWNERS, names as encoding_names,
 };
