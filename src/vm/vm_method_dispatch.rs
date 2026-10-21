@@ -967,7 +967,11 @@ impl Interpreter {
         // the seed reads through the link (#12478).
         let marked_frame = links_frame && self.env().is_frame_root();
         if marked_frame {
-            self.env_mut().mark_outer_is_unit();
+            if self.code_is_foreign_unit(cc) {
+                self.env_mut().mark_outer_is_foreign_unit();
+            } else {
+                self.env_mut().mark_outer_is_unit();
+            }
         }
         self.locals.refill_slots(cc.locals.len());
         for (i, local_name) in cc.locals.iter().enumerate() {
@@ -2484,7 +2488,11 @@ impl Interpreter {
         // (#12478).
         let marked_frame = links_frame && self.env().is_frame_root();
         if marked_frame {
-            self.env_mut().mark_outer_is_unit();
+            if self.code_is_foreign_unit(cc) {
+                self.env_mut().mark_outer_is_foreign_unit();
+            } else {
+                self.env_mut().mark_outer_is_unit();
+            }
         }
         self.locals.refill_slots(cc.locals.len());
 

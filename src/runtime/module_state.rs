@@ -362,6 +362,12 @@ pub(crate) struct ModuleState {
     /// deferred body run (`enter_source_file`), which is that role's
     /// compunit's mainline code re-run from the composing scope.
     pub(crate) module_loading_unit_stack: Vec<(Symbol, usize)>,
+    /// How many runs of a loaded module's code in the module's own scope
+    /// are open: a re-`use` re-running the module's `sub EXPORT` over the
+    /// env its body left (`rerun_module_export`). That env is the code's
+    /// lexical outer, so its frames link to it as a module body's do
+    /// (`Interpreter::code_is_foreign_unit`).
+    pub(crate) module_scope_runs: u32,
     /// Exports each module registered while it was the module currently being
     /// loaded (attributed via `module_load_stack`), mapping module -> name ->
     /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
@@ -634,6 +640,7 @@ impl ModuleState {
             unit_module_loading_stack: Vec::new(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
+            module_scope_runs: 0,
             module_owned_exports: Default::default(),
             module_owned_types: Default::default(),
             suppress_exports: false,
@@ -726,6 +733,7 @@ impl ModuleState {
             unit_module_loading_stack: Vec::new(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
+            module_scope_runs: 0,
             module_owned_exports: self.module_owned_exports.clone(),
             module_owned_types: self.module_owned_types.clone(),
             suppress_exports: false,

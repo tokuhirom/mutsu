@@ -193,6 +193,25 @@ impl Interpreter {
             .into_iter()
             .map(|n| n.split('\u{0}').next().unwrap_or(&n).to_string())
             .collect();
+        // The running package's own types (and its enclosing packages') by
+        // their short names: a module routine's `EVAL 'Bar'` for the module's
+        // `class Bar`, which the frame env does not hold.
+        let pkg = self.current_package_sym();
+        if !crate::qualified::is_global_package(pkg) {
+            let own: Vec<Symbol> = crate::qualified::package_ancestors(pkg)
+                .filter(|p| !crate::qualified::is_global_package(*p))
+                .collect();
+            let short: Vec<String> = names
+                .iter()
+                .filter_map(|name| {
+                    let sym = Symbol::intern(name);
+                    crate::qualified::package_parent(sym)
+                        .filter(|parent| own.contains(parent))
+                        .map(|_| crate::qualified::unqualified_part(sym).resolve().to_string())
+                })
+                .collect();
+            names.extend(short);
+        }
         names.extend(self.env.iter().filter_map(|(key, value)| {
             let name = key.resolve();
             matches!(value.view(), ValueView::Package(_))

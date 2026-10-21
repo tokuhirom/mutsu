@@ -763,6 +763,15 @@ impl Interpreter {
         {
             return Value::package(Symbol::intern(name));
         }
+        // A type the running package (or an enclosing one) declares, by its
+        // short name: a module routine's `::('Bar')` for its own `class Bar`
+        // (rakudo finds it in the unit's lexpad and in `OUR::`).
+        if !name_is_qualified
+            && !name.starts_with(['$', '@', '%'])
+            && let Some(own) = self.resolve_type_in_current_package(name)
+        {
+            return Value::package(Symbol::intern(&own));
+        }
 
         let mut parts = crate::qualified::segments(name_sym)
             .iter()

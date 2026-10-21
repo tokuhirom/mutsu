@@ -635,6 +635,10 @@ impl Interpreter {
         !self.bare_name_visible_here(sym)
             && self.resolve_suppressed_type(name).is_none()
             && self.resolve_type_in_current_package(name).is_none()
+            // The running package itself, or one enclosing it: inside
+            // `unit module Foo`, `Foo` is the module however it was loaded
+            // (a `require` merges nothing).
+            && !crate::qualified::package_ancestors(self.current_package_sym()).any(|p| p == sym)
             // A `constant` the running package declared in its own file scope
             // is what the bareword means there, even when a package-less
             // module published a same-named one (`unit module A` and a plain

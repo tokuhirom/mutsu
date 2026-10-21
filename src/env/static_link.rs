@@ -123,6 +123,16 @@ pub(super) fn lexically_scoped(key: Symbol) -> bool {
         || key.with_str(|s| s.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix()))
 }
 
+/// Whether a frame running a loaded module's routine
+/// ([`Env::mark_outer_is_foreign_unit`]) stops a lookup of `key` that missed
+/// it: a [`lexically_scoped`] name, or a sigilless term (`\x`, an imported
+/// or declared `constant`/`my \x`), none of which the program scope holds
+/// for that routine.
+// Cost: O(1) (memoized symbol flags), O(|key|) for a term probe.
+fn foreign_unit_hides(key: Symbol) -> bool {
+    lexically_scoped(key) || key.with_str(|s| s.starts_with(crate::term_names::TERM_PREFIX))
+}
+
 impl Env {
     /// Give this frame root a static link to the program scope: by-name
     /// lookups of plain user lexicals that miss the frame skip the caller
@@ -482,6 +492,21 @@ impl Env {
         self.chain_has_static_link = true;
     }
 
+    /// [`Self::mark_outer_is_unit`] for code declared at the top level of a
+    /// compunit that is not the program's (a loaded module's routine). The
+    /// program scope past the caller frames is not that code's lexical outer
+    /// either: its own file scope lives in the per-compunit stores
+    /// (`unit_lexicals`, `module_scope_lexicals`), so a lexically scoped name
+    /// that misses the frame stops here ([`Self::static_hides`]). Without it
+    /// a module routine's `EVAL '$x'` or `::('Foo')` read the importing
+    /// program's own lexicals and the names its top-level `use`s imported.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn mark_outer_is_foreign_unit(&mut self) {
+        self.mark_outer_is_unit();
+        self.outer_is_foreign_unit = true;
+    }
+
     /// Hide `hidden` from this marked frame root's view of the program scope
     /// ([`Self::mark_outer_is_unit`]): the plain user lexicals the program
     /// scope binds that the running code's lexical outer does not declare --
@@ -504,10 +529,11 @@ impl Env {
     pub(super) fn static_hides(&self, key: Symbol) -> bool {
         self.outer_is_unit
             && !suppressed()
-            && self
-                .inner
-                .unit_hidden()
-                .is_some_and(|hidden| hidden.contains(&key))
+            && ((self.outer_is_foreign_unit && foreign_unit_hides(key))
+                || self
+                    .inner
+                    .unit_hidden()
+                    .is_some_and(|hidden| hidden.contains(&key)))
     }
 
     /// Whether the frame running this env hides `key` from its view of the
@@ -544,6 +570,7 @@ impl Env {
     #[inline]
     pub(crate) fn unmark_outer_is_unit(&mut self) {
         self.outer_is_unit = false;
+        self.outer_is_foreign_unit = false;
     }
 
     /// Whether this env is a frame root marked by [`Self::mark_outer_is_unit`]
@@ -554,6 +581,13 @@ impl Env {
     #[inline]
     pub(crate) fn is_empty_unit_frame(&self) -> bool {
         self.outer_is_unit && self.overlay_is_shared_empty()
+    }
+
+    /// Whether this frame root is marked [`Self::mark_outer_is_foreign_unit`].
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn outer_is_foreign_unit(&self) -> bool {
+        self.outer_is_foreign_unit
     }
 
     /// The program scope's part of the chain starting at `self`: the env

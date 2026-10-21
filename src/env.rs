@@ -588,6 +588,14 @@ pub struct Env {
     /// link, so marking a frame costs no allocation; the program scope's
     /// position is found when a lookup first needs it.
     outer_is_unit: bool,
+    /// On a frame root marked [`outer_is_unit`](Self::outer_is_unit): the
+    /// running code was declared at the top level of a compunit other than
+    /// the program's (a loaded module's routine). Its lexical outer is that
+    /// compunit's file scope, whose lexicals live in the per-compunit stores,
+    /// never the program scope this chain bottoms out at, so a lexical that
+    /// misses the frame does not continue there (ADR-12529 phase 3,
+    /// [`Self::mark_outer_is_foreign_unit`]).
+    outer_is_foreign_unit: bool,
     /// On a frame root: the frame is a routine's, so it owns its `$/` (with
     /// the capture views) and `$!`. A by-name lookup of one stops here
     /// instead of continuing into the caller frames (ADR-12529 phase 3,
@@ -782,6 +790,7 @@ impl Env {
             chain_has_static_link: false,
             chain_has_routine_owner: false,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
@@ -919,6 +928,7 @@ impl Env {
                     chain_has_static_link: false,
                     chain_has_routine_owner: false,
                     outer_is_unit: false,
+                    outer_is_foreign_unit: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
                     frame_writes: None,
@@ -945,6 +955,7 @@ impl Env {
                 chain_has_static_link: arc_csl,
                 chain_has_routine_owner: arc_cmo,
                 outer_is_unit: false,
+                outer_is_foreign_unit: false,
                 owns_routine_state: false,
                 capture_merged: OnceLock::new(),
                 frame_writes: None,
@@ -976,6 +987,7 @@ impl Env {
             chain_has_static_link: parent_csl,
             chain_has_routine_owner: parent_cmo,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
@@ -1021,6 +1033,7 @@ impl Env {
             chain_has_static_link: parent_csl,
             chain_has_routine_owner: parent_cmo,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
@@ -1046,6 +1059,7 @@ impl Env {
             chain_has_static_link: false,
             chain_has_routine_owner: false,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
@@ -1545,6 +1559,7 @@ impl Env {
                     chain_has_static_link: false,
                     chain_has_routine_owner: false,
                     outer_is_unit: false,
+                    outer_is_foreign_unit: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
                     frame_writes: None,
@@ -1678,6 +1693,7 @@ impl Env {
             chain_has_static_link: false,
             chain_has_routine_owner: false,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
@@ -1867,6 +1883,7 @@ impl Env {
             chain_has_static_link: false,
             chain_has_routine_owner: false,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
@@ -2044,6 +2061,7 @@ impl Env {
             chain_has_static_link: false,
             chain_has_routine_owner: false,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
@@ -2224,6 +2242,7 @@ impl Env {
             chain_has_static_link: false,
             chain_has_routine_owner: false,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             fallback,
@@ -3208,6 +3227,7 @@ impl From<ValueMap> for Env {
             chain_has_static_link: false,
             chain_has_routine_owner: false,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
@@ -3234,6 +3254,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             chain_has_static_link: false,
             chain_has_routine_owner: false,
             outer_is_unit: false,
+            outer_is_foreign_unit: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,

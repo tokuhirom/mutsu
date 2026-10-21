@@ -249,7 +249,9 @@ impl Interpreter {
                 // with an earlier importing block's scope; EXPORT reads them
                 // through `UNIT::` (#11246).
                 let reinstated = self.reinstate_own_families(module);
+                self.module.module_scope_runs += 1;
                 let r = self.compile_and_call_function_def(&d, export_args, &empty_fns);
+                self.module.module_scope_runs -= 1;
                 self.remove_reinstated_families(reinstated);
                 self.current_unit = saved_unit;
                 r?

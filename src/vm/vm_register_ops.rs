@@ -131,7 +131,19 @@ impl Interpreter {
                 })
                 .or_else(|| self.package_scope_lexical(name.as_str()))
                 .or_else(|| self.unit_scope_lexical(name.as_str(), None))
-                .or_else(|| (!store_only).then(|| self.env().get(name.as_str()).cloned())?)
+                .or_else(|| {
+                    if store_only {
+                        // A name the frame does not declare, read as a bare
+                        // `$x` of the creating code would read it: a loaded
+                        // module's routine does not see the program scope,
+                        // but its own file's constants answer.
+                        self.get_env_with_main_alias(name.as_str())
+                            .or_else(|| self.module_scope_lexical(name.as_str()).cloned())
+                            .or_else(|| self.package_chain_var_fallback(*sym))
+                    } else {
+                        self.env().get(name.as_str()).cloned()
+                    }
+                })
             else {
                 continue;
             };

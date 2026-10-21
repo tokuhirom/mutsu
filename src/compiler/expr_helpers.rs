@@ -947,20 +947,19 @@ impl Compiler {
             captures.push((sym, slot));
         }
         // The prefix-only scan above sees `$current-decimal` as `$current`.
-        // A kebab-case name is captured under its full spelling: a local of
-        // a routine or closure frame from its slot, as a short name is, and
-        // anything else from the outer-scope stores only (see
-        // `OUTER_STORE_ONLY`). Left uncaptured, `$full-path` resolved at
-        // match time in whatever frame ran the match, which a linked frame
-        // (ADR-12529) answers from the program scope (#12478).
-        let in_frame = self.is_routine || self.lexically_in_routine || self.in_closure_body;
+        // A kebab-case name is captured under its full spelling: a local
+        // from its slot, as a short name is, and anything else from the
+        // outer-scope stores only (see `OUTER_STORE_ONLY`). Left uncaptured,
+        // `$full-path` resolved at match time in whatever frame ran the
+        // match, which a linked frame (ADR-12529) answers from the program
+        // scope (#12478) and a loaded module's routine (`like`) does not
+        // answer at all.
         for name in crate::opcode::CompiledCode::regex_kebab_var_names(&pattern) {
-            let local = self.local_map.get(name.as_str()).copied();
-            let slot = match local {
-                Some(slot) if in_frame => slot,
-                Some(_) => continue,
-                None => crate::opcode::OUTER_STORE_ONLY,
-            };
+            let slot = self
+                .local_map
+                .get(name.as_str())
+                .copied()
+                .unwrap_or(crate::opcode::OUTER_STORE_ONLY);
             let sym = Symbol::intern(&name);
             if !captures.iter().any(|(s, _)| *s == sym) {
                 captures.push((sym, slot));

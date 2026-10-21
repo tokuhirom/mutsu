@@ -842,13 +842,21 @@ impl Interpreter {
         if let Some(found) = self.lexsub_alias_slot(name) {
             return Some(found);
         }
+        if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
+            return None;
+        }
+        // A variable the running routine declares itself shadows the
+        // compunit's file-scope one of the same name: `my %seen` in a module
+        // routine whose file declares `%seen` too. The name-keyed element
+        // stores reach here by name, and the routine's own container is in
+        // its slot.
+        if self.running_routine_declares_local(name) {
+            return None;
+        }
         let lexical_owner = self.routine_stack().last().and_then(|frame| {
             self.lexical_package_for_frame(frame.def_file)
                 .or(frame.lexical_package)
         });
-        if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
-            return None;
-        }
         // EVAL is its own compilation unit with its own `$=pod` (kept under
         // `env["=pod"]` while it runs); the calling module's document must
         // not shadow it.
@@ -980,6 +988,14 @@ impl Interpreter {
             return self.lexsub_alias_slot_mut(name);
         }
         if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
+            return None;
+        }
+        // A variable the running routine declares itself shadows the
+        // compunit's file-scope one of the same name: `my %seen` in a module
+        // routine whose file declares `%seen` too. The name-keyed element
+        // stores reach here by name, and the routine's own container is in
+        // its slot, not in the frame's env.
+        if self.running_routine_declares_local(name) {
             return None;
         }
         let lexical_owner = self.routine_stack().last().and_then(|frame| {
@@ -3126,6 +3142,14 @@ impl Interpreter {
         if stale {
             self.set_env_with_main_alias(var_name, slot_val);
         }
+    }
+
+    /// Whether the routine body running now declares `name` (its env-key
+    /// spelling: `x`, `@a`, `%h`) as one of its own locals.
+    // Cost: O(l), l = the running code's locals.
+    pub(super) fn running_routine_declares_local(&self, name: &str) -> bool {
+        self.running_code()
+            .is_some_and(|code| code.is_routine && code.locals.iter().any(|local| local == name))
     }
 
     pub(super) fn locals_get_by_name(&self, code: &CompiledCode, name: &str) -> Option<Value> {
