@@ -300,8 +300,8 @@ impl Interpreter {
         // Runtime import aliases survive nested parses and cold module loads,
         // unlike the parser's current import table. Their display spelling
         // distinguishes sigilless terms from ordinary exported variables.
-        names.extend(self.module.imported_env_aliases.iter().filter_map(|(key, spelling)| {
-            let value = self.env.get_sym(*key)?;
+        names.extend(self.env_imports_here().into_iter().filter_map(|(key, spelling)| {
+            let value = self.env.get_sym(key)?;
             if matches!(value.view(), ValueView::Package(_)) {
                 return None;
             }

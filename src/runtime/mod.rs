@@ -2722,8 +2722,9 @@ pub(crate) struct ImportScopeSnapshot {
     /// instead of removing the key (`use M :t; { use M } t` still sees the
     /// outer import of `t`).
     pub(crate) shadowed_env_values: HashMap<Symbol, Value>,
-    /// Imported environment aliases visible before this scope was pushed.
-    pub(crate) imported_env_aliases: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// The env-key import record (`ModuleState::unit_env_imports`) as it was
+    /// before this scope was pushed.
+    pub(crate) unit_env_imports: crate::runtime::unit_env_imports::UnitEnvImports,
     /// Imported routine aliases visible before this scope was pushed. The
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.
