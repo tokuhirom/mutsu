@@ -2038,7 +2038,9 @@ impl Interpreter {
                     self.coerce_constant_hash_value(&name, raw_val)?
                 } else if raw_mode {
                     raw_val
-                } else if name.starts_with('%') && (is_bind_ctx || is_rebind) && raw_val.is_proxy_value()
+                } else if name.starts_with('%')
+                    && (is_bind_ctx || is_rebind)
+                    && raw_val.is_proxy_value()
                 {
                     // `%!attr := Proxy.new(...)`: the Proxy is the container.
                     // Its FETCHed value passed the Associative bind check
