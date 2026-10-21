@@ -213,15 +213,6 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 })
             {
                 Stmt::Expr(lower_expr(expression)?)
-            } else if conditional_block
-                && expression.class == RakuAstClass::ApplyInfix
-                && infix_is_assignment(expression)
-            {
-                // A modifier on an assignment expression can itself be an
-                // lvalue, as in `($s = "a" if 1) ~= "y"`. Preserve the
-                // expression form so compound assignment can write through
-                // the selected branch.
-                Stmt::Expr(lower_expr(expression)?)
             } else {
                 lower_stmt_inner(expression)?
             };
@@ -2740,7 +2731,8 @@ fn reverse_assign_base(infix: &RakuAstNode) -> Option<String> {
 /// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
 /// compound-assignment execution shape while retaining the source marker.
 pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    let target = lower_expr(named_child(node, "left")?)?;
+    let target =
+        super::compound_stmt::restore_conditional_target(lower_expr(named_child(node, "left")?)?);
     let meta = named_child(node, "infix")?;
     // `$x R-= $y`: assigns to the right operand.
     if let Some(base) = reverse_assign_base(meta) {
