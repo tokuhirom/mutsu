@@ -12854,6 +12854,7 @@ impl CompiledCode {
     ) -> u32 {
         let Stmt::RoleDecl {
             name,
+            header_order: _,
             type_params,
             type_param_defs,
             is_export,

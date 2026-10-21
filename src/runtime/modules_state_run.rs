@@ -53,6 +53,8 @@ pub(crate) mod shared_store;
 pub(crate) mod signal_watcher;
 pub(crate) mod slang_activation;
 pub(crate) mod slang_declarator;
+mod slang_productions;
+mod slang_role_members;
 mod source_code_text;
 pub(super) mod sprintf;
 mod sprintf_helpers;

@@ -5,8 +5,8 @@
 //! `iterator`, `match`, `classify`, `categorize`) run user code through the
 //! interpreter. Each handler calls the one `Interpreter::dispatch_*_method` the
 //! cascade's arm calls too (ADR-11276 slice 3C remainder). The receivers the
-//! VM's native entry leaves to the interpreter are its veto
-//! ([`early_entry_defers`]), not the rows' (§9.134).
+//! VM's native entry leaves to the interpreter are the receiver step's
+//! (`receiver_step::general_entry_owns`), not the rows' (§9.134).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -219,49 +219,6 @@ fn reads_as_pairs(target: &Value, name: &str) -> bool {
             target.view(),
             ValueView::Hash(..) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
         )
-}
-
-/// Whether the VM's native entry must leave `map`/`grep`/`first` to the
-/// interpreter, which runs its receiver probes (`call_method_with_values`)
-/// before it asks the table again: a receiver whose elements live behind a
-/// user `iterator` or an `IterationBuffer` (read as their elements), or a lazy
-/// source a `map`/`grep` turns into a pipeline stage. The decision belongs to
-/// that early entry, not to the row: once the probes have run, the row is the
-/// method (ADR-11276 §9.134).
-// Cost: O(1) tag probes; O(m) method-table lookups for an instance, m = MRO length.
-pub(crate) fn early_entry_defers(interp: &mut Interpreter, target: &Value, name: &str) -> bool {
-    if !matches!(name, "map" | "grep" | "first") {
-        return false;
-    }
-    if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
-        return true;
-    }
-    match target.view() {
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if !attributes.contains_key("__mutsu_array_storage")
-            && !attributes.contains_key("__mutsu_hash_storage") =>
-        {
-            let class_name = class_name.as_str().to_string();
-            if interp.has_user_method(&class_name, "iterator")
-                && !interp.has_user_method(&class_name, name)
-            {
-                return true;
-            }
-        }
-        ValueView::Mixin(..)
-            if interp.mixin_composes_method(target, "iterator")
-                && !interp.mixin_composes_method(target, name) =>
-        {
-            return true;
-        }
-        _ => {}
-    }
-    matches!(name, "map" | "grep")
-        && target.is_lazy_list_value()
-        && Interpreter::is_lazy_pipe_source(target)
 }
 
 macro_rules! handler {

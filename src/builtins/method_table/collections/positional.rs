@@ -146,7 +146,7 @@ pub(super) fn list(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
 
 /// Whether `target` is a native array (`array[uint32]`, `array[str]`, ...).
 // Cost: O(1).
-fn is_native_array(target: &Value) -> bool {
+pub(crate) fn is_native_array(target: &Value) -> bool {
     crate::runtime::embedded_container_type_info(target).is_some_and(|info| {
         crate::native_types::is_native_array_element_type(&info.value_type)
             || info

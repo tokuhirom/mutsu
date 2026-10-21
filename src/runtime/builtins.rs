@@ -663,6 +663,9 @@ impl Interpreter {
         if Self::has_builtin_seq_read(&args) {
             args = self.builtin_gather_args(name, &args)?.into_owned();
         }
+        if let Some(leaves) = Self::shaped_routine_args(name, &args) {
+            args = leaves;
+        }
         match name {
             // Error / control flow
             "die" => self.builtin_die(&args),

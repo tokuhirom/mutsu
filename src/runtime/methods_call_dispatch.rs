@@ -83,6 +83,7 @@ impl Interpreter {
         let target = Self::routine_current_view(&target).unwrap_or(target);
         // A lazy-tail Slip answers as the lazy list it reifies from (#13117).
         let target = Self::lazy_slip_receiver(target, method);
+        let target = Self::shaped_iteration_receiver(target, method);
         // `Mu.perl` is `self.raku` (ADR-11276 §9.152).
         let method = if method == "perl" {
             self.perl_as_raku(&target, crate::symbol::wk::perl())
@@ -624,10 +625,6 @@ impl Interpreter {
         // `Rakudo::Internals::JSON.from-json` / `.to-json`: a core Rakudo class
         // routed to the native JSON implementation (used by OpenSSL, JSON::JWT).
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
-            return result;
-        }
-        // `Kernel.cpu-cores`, `Thread.usage`, ... on the type object.
-        if let Some(result) = self.try_core_type_object_method(&target, method, &args) {
             return result;
         }
         // `proto method` body dispatch (see try_proto_method_body).

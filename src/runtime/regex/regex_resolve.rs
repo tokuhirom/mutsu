@@ -789,27 +789,17 @@ impl Interpreter {
         exprs: &[String],
         caps: &RegexCaptures,
     ) -> Option<Vec<Value>> {
-        let mut out = Vec::new();
-        for arg in exprs {
-            let v = self.eval_regex_expr_value(arg, caps)?;
-            if let ValueView::Slip(items) = v.view() {
-                for item in items.iter() {
-                    out.push(Self::normalize_pair_for_binding(item.clone()));
-                }
-            } else {
-                out.push(Self::normalize_pair_for_binding(v));
-            }
-        }
+        // Compile the complete argument list as a Capture, exactly as an
+        // ordinary call does. Evaluating arguments as isolated expressions and
+        // converting every Pair with a string key loses positional Pair data.
+        let source = format!("\\({})", exprs.join(", "));
+        let value = self.eval_regex_expr_value(&source, caps)?;
+        let ValueView::Capture { positional, named } = value.view() else {
+            return None;
+        };
+        let mut out = positional.to_vec();
+        out.extend(named.iter().map(|(key, value)| Value::pair(key.clone(), value.clone())));
         Some(out)
-    }
-
-    fn normalize_pair_for_binding(v: Value) -> Value {
-        if let ValueView::ValuePair(key, val) = v.view()
-            && let ValueView::Str(name) = key.view()
-        {
-            return Value::pair(name.to_string(), val.clone());
-        }
-        v
     }
 
     /// The value of `stmts` when it is a single constant expression, `None`

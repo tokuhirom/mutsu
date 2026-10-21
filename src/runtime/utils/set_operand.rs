@@ -26,6 +26,10 @@ pub(crate) enum SetLevel {
 /// `__baggy_data__`.
 pub(crate) fn set_operand(val: &Value) -> Value {
     let val = quanthash_operand(val);
+    // A multi-dimensional shaped array contributes its leaves (#14308).
+    if let Some(leaves) = crate::value::shaped_array::shaped_array_leaves_list(val) {
+        return leaves;
+    }
     if let ValueView::Instance { attributes, .. } = val.view()
         && let Some(inner) = attributes.as_map().get("__baggy_data__")
     {

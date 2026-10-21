@@ -73,6 +73,7 @@ pub(crate) use carried_state::owners_of as carried_state_owners_of;
 pub(crate) use collections::any_interp::{ANY_VIA_ITERATOR, MAP_NAMED};
 pub(crate) use collections::composed_real::is_user_real_instance;
 pub(crate) use collections::composed_roles;
+pub(crate) use collections::positional::is_native_array;
 pub(crate) use collections::sampling::callable_count as sampling_callable_count;
 pub(crate) use collections::{
     any_enum_views, clone as collection_clone, lazy, list, list_aggregate, positional, quanthash,
@@ -107,7 +108,6 @@ pub(crate) use scalars::{
 pub(crate) use table::mixin_role_owners_of;
 
 pub(crate) use collections::accepts_open::accepts_by_smartmatch;
-pub(crate) use collections::early_entry_defers;
 pub(crate) use ctors_mop::{ENUM_HOW_OWNERS, MOP_OWNERS, mop_declares};
 pub(crate) use dispatch::{
     admits, answer, answer_as, answer_shapeless, cool_text_for_shapeless, invoke, invoke_base,

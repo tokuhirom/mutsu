@@ -1751,6 +1751,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         )?)),
         Stmt::RoleDecl {
             name,
+            header_order,
             type_params,
             type_param_defs,
             is_export,
@@ -1762,6 +1763,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         } => Ok(Some(statement_expression(super::role::convert(
             super::role::RoleDecl {
                 name: *name,
+                header_order,
                 type_params,
                 type_param_defs,
                 is_export: *is_export,
@@ -2718,6 +2720,14 @@ pub(super) fn var_declaration(
 /// including an operator name that merely contains `::` (`infix:<::=>`),
 /// stays one `Name.from-identifier("<s>")` string.
 pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
+    if let Some(name) = crate::qualified::type_capture_name(s)
+        && !name.is_empty()
+        && name_parts::identifier_segments(name).all(crate::parser::is_raku_identifier)
+    {
+        let mut parts = vec![name_parts::leading_empty()];
+        parts.extend(name_parts::identifier_segments(name).map(name_parts::simple_part));
+        return name_parts::name_from_parts(parts);
+    }
     if name_parts::is_qualified_identifier(s) && !s.starts_with("::?") {
         return name_parts::qualified_name(s);
     }

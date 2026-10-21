@@ -164,6 +164,31 @@ pub(crate) fn mark_shaped_array_items(
     }
 }
 
+/// The leaves of a multi-dimensional shaped array, in row-major order, each
+/// level read the way `@a[$i]` reads a slot (`items_with_default`). This is
+/// what iterating such an array yields in Rakudo: its iterator walks the
+/// leaves, not the first-dimension rows (#14248). `None` for any other value,
+/// a one-dimensional shaped array included.
+// Cost: O(E), E = leaves.
+pub(crate) fn shaped_array_iteration_leaves(value: &Value) -> Option<Vec<Value>> {
+    let depth = shaped_array_shape(value)
+        .filter(|shape| shape.len() > 1)?
+        .len();
+    fn walk(value: &Value, depth: usize, out: &mut Vec<Value>) {
+        match value.view() {
+            ValueView::Array(items, ..) if depth > 0 => {
+                for item in items.items_with_default().iter() {
+                    walk(item, depth - 1, out);
+                }
+            }
+            _ => out.push(value.clone()),
+        }
+    }
+    let mut out = Vec::new();
+    walk(value, depth, &mut out);
+    Some(out)
+}
+
 /// Collect all leaf values from a shaped (multidimensional) array.
 pub(crate) fn shaped_array_leaves(value: &Value) -> Vec<Value> {
     let mut leaves = Vec::new();
@@ -247,4 +272,73 @@ fn rebuild_with_leaves<'a, I: Iterator<Item = &'a Value>>(value: &Value, iter: &
     } else {
         iter.next().cloned().unwrap_or_else(|| value.clone())
     }
+}
+
+/// The index tuple of the `idx`-th leaf (row-major) of an array of `shape`.
+// Cost: O(d), d = dimensions.
+fn leaf_path(shape: &[usize], idx: usize) -> Option<Vec<usize>> {
+    let total = shape.iter().product::<usize>();
+    if idx >= total {
+        return None;
+    }
+    let mut rest = idx;
+    let mut path = vec![0; shape.len()];
+    for (d, &len) in shape.iter().enumerate().rev() {
+        path[d] = rest % len.max(1);
+        rest /= len.max(1);
+    }
+    Some(path)
+}
+
+/// The `idx`-th leaf, in iteration order, of a multi-dimensional shaped
+/// array (see [`shaped_array_iteration_leaves`]). `None` for any other value
+/// or an index past the last leaf.
+// Cost: O(d), d = dimensions.
+pub(crate) fn shaped_array_leaf_at(value: &Value, idx: usize) -> Option<Value> {
+    let shape = shaped_array_shape(value).filter(|shape| shape.len() > 1)?;
+    let mut cur = value.clone();
+    for i in leaf_path(&shape, idx)? {
+        let next = match cur.view() {
+            ValueView::Array(items, ..) => items.items_with_default().get(i).cloned()?,
+            _ => return None,
+        };
+        cur = next;
+    }
+    Some(cur)
+}
+
+/// A copy of the multi-dimensional shaped array `value` with its `idx`-th
+/// leaf, in iteration order, replaced by `leaf`. Each level on the path is a
+/// clone of its `ArrayData`, so the element type, default and shape metadata
+/// survive. `None` for any other value or an index past the last leaf.
+// Cost: O(d * w), d = dimensions, w = the widest level's length (one clone
+// per level on the path).
+pub(crate) fn with_shaped_array_leaf(value: &Value, idx: usize, leaf: Value) -> Option<Value> {
+    let shape = shaped_array_shape(value).filter(|shape| shape.len() > 1)?;
+    fn set(value: &Value, path: &[usize], leaf: Value) -> Option<Value> {
+        let Some((&i, rest)) = path.split_first() else {
+            return Some(leaf);
+        };
+        let ValueView::Array(items, kind) = value.view() else {
+            return None;
+        };
+        let child = items.items().get(i)?.clone();
+        let mut data = crate::value::ArrayData::clone(&items);
+        data.live_mut()[i] = set(&child, rest, leaf)?;
+        Some(Value::array_with_kind(crate::gc::Gc::new(data), kind))
+    }
+    set(value, &leaf_path(&shape, idx)?, leaf)
+}
+
+/// The List of a multi-dimensional shaped array's leaves, which is what a
+/// reader that iterates the array sees (#14248, #14308). `None` for any other
+/// value.
+// Cost: O(E), E = leaves.
+pub(crate) fn shaped_array_leaves_list(value: &Value) -> Option<Value> {
+    shaped_array_iteration_leaves(value).map(|leaves| {
+        Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(leaves)),
+            ArrayKind::List,
+        )
+    })
 }

@@ -76,6 +76,88 @@ impl Interpreter {
         Ok(Value::slip(out))
     }
 
+    /// Settle the lazy-tail Slips a `.map` loop left in `produced[from..]`.
+    /// A callback result that is a lazy-tail Slip whose tail cannot be seen to
+    /// end reaches `produced` whole, as a Slip element (a Slip is otherwise
+    /// always flattened there), so the loop can stay a plain `Vec` loop
+    /// (#14295). With `stream` the first such Slip and everything the chunk
+    /// produced after it become the lazy list answered: the consumer reads it
+    /// before the callback runs again, as Rakudo's map iterator pulls a
+    /// slipped iterator. Otherwise every such Slip is read to its end in
+    /// place, which does not return for a Slip that has none (an eager
+    /// consumer of an infinite list does not either).
+    // Cost: O(p) to scan the p elements produced; O(r) to build or read the
+    // r elements from the first Slip on.
+    pub(crate) fn settle_map_slip_markers(
+        &mut self,
+        produced: &mut Vec<Value>,
+        from: usize,
+        stream: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some(first) = produced[from..]
+            .iter()
+            .position(|v| matches!(v.view(), ValueView::Slip(_)))
+        else {
+            return Ok(None);
+        };
+        let rest = produced.split_off(from + first);
+        if stream {
+            return Ok(Some(Self::lazy_map_parts(rest)));
+        }
+        for v in rest {
+            if !matches!(v.view(), ValueView::Slip(_)) {
+                produced.push(v);
+                continue;
+            }
+            let slipped = Self::lazy_slip_receiver(v, "");
+            match slipped.view() {
+                ValueView::LazyList(ll) => produced.extend(self.force_lazy_list_vm(&ll)?),
+                _ => produced.extend(crate::runtime::value_to_list(&slipped)),
+            }
+        }
+        Ok(None)
+    }
+
+    /// The elements a `.map` loop produced as one value: a plain list, or the
+    /// lazy concatenation of its runs and the tails of the lazy-tail Slips
+    /// among them ([`Self::settle_map_slip_markers`]).
+    // Cost: O(p), p = elements produced.
+    pub(crate) fn map_produced_value(produced: Vec<Value>) -> Value {
+        if produced
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Slip(_)))
+        {
+            Self::lazy_map_parts(produced)
+        } else {
+            Value::array(produced)
+        }
+    }
+
+    /// `items` with each Slip element read as its lazy tail and each run of
+    /// the others as one finite part, concatenated lazily.
+    // Cost: O(p), p = elements.
+    fn lazy_map_parts(items: Vec<Value>) -> Value {
+        let mut parts = Vec::new();
+        let mut run = Vec::new();
+        for v in items {
+            if matches!(v.view(), ValueView::Slip(_)) {
+                if !run.is_empty() {
+                    parts.push(Value::array(std::mem::take(&mut run)));
+                }
+                parts.push(Self::lazy_slip_receiver(v, ""));
+            } else {
+                run.push(v);
+            }
+        }
+        if !run.is_empty() {
+            parts.push(Value::array(run));
+        }
+        if parts.len() == 1 {
+            return parts.remove(0);
+        }
+        Self::lazy_concat_pipe(parts, false)
+    }
+
     /// `args` with each lazy-tail Slip passed through
     /// [`Self::reify_lazy_slip_tail`], or `None` when no argument is one.
     // Cost: O(n), n = arguments, plus the reifications.

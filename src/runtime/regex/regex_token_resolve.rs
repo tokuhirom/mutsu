@@ -654,10 +654,9 @@ impl Interpreter {
                 let pattern =
                     interp.bake_bound_params_into_regex_code_blocks(&pattern, &param_names);
                 let pattern = interp.interpolate_bound_regex_scalars(&pattern);
-                if let Ok(instantiated) = interp.instantiate_named_regex_arg_calls(&pattern) {
-                    let sym_val = Self::extract_sym_adverb(&def.name.resolve());
-                    out.push((instantiated, def.package, sym_val));
-                }
+                let instantiated = interp.bake_bound_params_into_regex_arguments(&pattern, &param_names);
+                let sym_val = Self::extract_sym_adverb(&def.name.resolve());
+                out.push((instantiated, def.package, sym_val));
             }
             Ok(out)
         })

@@ -108,6 +108,21 @@ pub(crate) fn consume_slang_ident_trailing_punct<'a>(name: &mut String, rest: &'
     }
 }
 
+/// Every production name [`apply_slang_rule_override`] maps onto a mode, for
+/// the "recognized: ..." part of the unsupported-override error and for the
+/// test that each one is a production of Rakudo's grammar (ADR-13220: an
+/// actions-role method naming no production is an inert helper, so a
+/// recognized name missing from that table would be silently ignored).
+pub(crate) const RECOGNIZED_PRODUCTION_OVERRIDES: &[&str] = &[
+    "term:sym<identifier>",
+    "methodop",
+    "routine-declarator:sym<sub>",
+    "routine_declarator:sym<sub>",
+    "identifier",
+    "name",
+    "statement-control:sym<use>",
+];
+
 /// The recognized-override map (ADR-0026 §2.3): apply one overridden
 /// grammar-rule name from a slang role to the mode set. Returns `None` when
 /// the rule is not supported — the caller must raise a hard compile-time

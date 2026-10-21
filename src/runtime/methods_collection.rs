@@ -157,7 +157,10 @@ impl Interpreter {
                     crate::value::LazyList::new_adaptor_pipe(
                         target,
                         func.clone(),
-                        crate::value::PipeAdaptor::MultiMap { arity },
+                        crate::value::PipeAdaptor::MultiMap {
+                            arity,
+                            pending: None,
+                        },
                     ),
                 )));
             }
