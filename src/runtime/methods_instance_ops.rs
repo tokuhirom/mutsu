@@ -1303,11 +1303,13 @@ impl Interpreter {
                             // a `@`/`%` attribute bound to a Proxy (AttrX::Mooish's lazy
                             // attribute) is read through it: the FETCH runs at the call,
                             // even in statement position, where nothing else would.
-                            let val = if !attr.is_rw
-                                && matches!(attr.sigil, '@' | '%')
-                                && val.is_proxy_value()
-                            {
-                                self.auto_fetch_proxy(&val)?
+                            let val = if !attr.is_rw && matches!(attr.sigil, '@' | '%') {
+                                let inner = val.deref_container();
+                                if inner.is_proxy_value() {
+                                    self.auto_fetch_proxy(&inner)?
+                                } else {
+                                    val
+                                }
                             } else {
                                 val
                             };
