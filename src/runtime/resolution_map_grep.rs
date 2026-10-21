@@ -1,6 +1,7 @@
 use super::*;
 use crate::env::Env;
 use crate::runtime::map_grep_plan::{InlineLoopKind, MapGrepPlanSlot};
+use crate::runtime::resolution_grep_loop::{LoopFeed, LoopSource};
 use crate::value::{PullOut, SubData};
 
 /// A matcher callback runs in a nested register scope, but a regex match is
@@ -541,7 +542,39 @@ impl Interpreter {
         slot: &mut MapGrepPlanSlot,
         out: &mut PullOut,
     ) -> Result<(), RuntimeError> {
+        self.eval_map_loop(func, LoopSource::list(list_items), slot, out)
+    }
+
+    /// [`Self::eval_map_over_items_into`] over the source elements `feed`
+    /// reads, stopping once the callback has produced `feed.limit` elements:
+    /// one loop run (one env merge, one register reset) for a whole prefix
+    /// pull, and no copy of the source it does not reach. The pull advances by
+    /// `out.consumed`.
+    // Cost: one callback call per source element (per `arity` elements for a
+    // multi-parameter block) consumed, up to the `limit`-th element produced.
+    pub(crate) fn eval_map_over_feed_into(
+        &mut self,
+        func: Option<Value>,
+        feed: LoopFeed<'_>,
+        slot: &mut MapGrepPlanSlot,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
+        self.eval_map_loop(func, LoopSource::fed(feed), slot, out)
+    }
+
+    /// The map loop: over the elements `src` holds or reads. The produced
+    /// elements go into `out.produced` and the source elements taken are
+    /// counted in `out.consumed`, both as the loop goes (#12401).
+    // Cost: see the callers.
+    pub(crate) fn eval_map_loop(
+        &mut self,
+        func: Option<Value>,
+        mut src: LoopSource<'_>,
+        slot: &mut MapGrepPlanSlot,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
         let consumed_base = out.consumed;
+        let produced_base = out.produced.len();
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -629,15 +662,17 @@ impl Interpreter {
                     positional.len().saturating_sub(assumed).max(1)
                 };
                 let mut last_call_args: Option<Vec<Value>> = None;
-                if !list_items.is_empty() {
-                    let first_args = list_items[..batch.min(list_items.len())].to_vec();
+                if src.has(1) {
+                    src.has(batch);
+                    let first_args = src.buf[..batch.min(src.buf.len())].to_vec();
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first_args)?;
                 }
                 let mut i = 0usize;
-                while i < list_items.len() {
-                    let end = (i + batch).min(list_items.len());
+                while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
+                    src.has(i + batch);
+                    let end = (i + batch).min(src.buf.len());
                     out.consumed = consumed_base + end;
-                    let chunk: Vec<Value> = list_items[i..end].to_vec();
+                    let chunk: Vec<Value> = src.buf[i..end].to_vec();
                     // A short final chunk of a required-arity block raises
                     // "Too few positionals" (matching raku); an optional trailing
                     // parameter binds the missing slot to its default / `Any`.
@@ -670,14 +705,17 @@ impl Interpreter {
             // dispatcher) — delegate to call_sub_value which resolves the markers.
             if cached_plan.is_none() && sub_is_call_carrier(&data) {
                 let mut i = 0usize;
-                while i < list_items.len() {
-                    if arity > 1 && i + arity > list_items.len() {
-                        return Err(RuntimeError::new("Not enough elements for map block arity"));
+                while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
+                    if arity > 1 && !src.has(i + arity) {
+                        return Err(RuntimeError::new(format!(
+                            "Too few positionals passed; expected {arity} arguments but got {}",
+                            src.buf.len() - i
+                        )));
                     }
                     let chunk: Vec<Value> = if arity == 1 {
-                        vec![list_items[i].clone()]
+                        vec![src.buf[i].clone()]
                     } else {
-                        list_items[i..i + arity].to_vec()
+                        src.buf[i..i + arity].to_vec()
                     };
                     out.consumed = consumed_base + i + arity;
                     let value =
@@ -743,18 +781,21 @@ impl Interpreter {
                 // The fresh chunk's block-declared routine calls read the
                 // closure's own upvalues (`bind_origin_code_var_upvalues`).
                 vm.upvalues = data.upvalues.clone();
-                if !list_items.is_empty() {
+                if src.has(1) {
                     vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
                 }
                 let mut i = 0usize;
-                while i < list_items.len() {
-                    if arity > 1 && i + arity > list_items.len() {
-                        return Err(RuntimeError::new("Not enough elements for map block arity"));
+                while !src.satisfied(produced, produced_base) && src.has(i + 1) {
+                    if arity > 1 && !src.has(i + arity) {
+                        return Err(RuntimeError::new(format!(
+                            "Too few positionals passed; expected {arity} arguments but got {}",
+                            src.buf.len() - i
+                        )));
                     }
                     // The source elements consumed, the one in flight
                     // included: if the callback dies, the Seq resumes after it
                     // (#12048).
-                    *consumed = consumed_base + (i + arity).min(list_items.len());
+                    *consumed = consumed_base + (i + arity).min(src.buf.len());
                     vm.frame_authoritative = block_authoritative.clone();
                     vm.frame_owned = block_owned.clone();
                     {
@@ -766,7 +807,7 @@ impl Interpreter {
                             }
                         }
                         if arity == 1 {
-                            let item = list_items[i].clone();
+                            let item = src.buf[i].clone();
                             if let Some(p) = data.params.get(assumed_count) {
                                 // A `-> $v` map param is an item binding — see
                                 // `itemize_plain_scalar_param`. The topic bind
@@ -786,8 +827,8 @@ impl Interpreter {
                             bind_loop_topic(vm.env_mut(), &item, is_whatever_code, &outer_topic);
                         } else {
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
-                                if i + idx < list_items.len() {
-                                    let item = list_items[i + idx].clone();
+                                if i + idx < src.buf.len() {
+                                    let item = src.buf[i + idx].clone();
                                     let bound = match data.param_defs.get(assumed_count + idx) {
                                         Some(pd) => Self::itemize_plain_scalar_param(pd, item),
                                         None if !p.starts_with(['@', '%', '&', '\\']) => {
@@ -804,7 +845,7 @@ impl Interpreter {
                             }
                             bind_loop_topic(
                                 vm.env_mut(),
-                                &list_items[i],
+                                &src.buf[i],
                                 is_whatever_code,
                                 &outer_topic,
                             );
@@ -917,8 +958,11 @@ impl Interpreter {
             return loop_result;
         }
         if let Some(func) = func {
-            for (i, item) in list_items.into_iter().enumerate() {
-                out.consumed = consumed_base + i + 1;
+            let mut i = 0usize;
+            while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
+                let item = src.buf[i].clone();
+                i += 1;
+                out.consumed = consumed_base + i;
                 let value = if let ValueView::Sub(data) = func.view()
                     && (!data.assumed_positional.is_empty() || !data.assumed_named.is_empty())
                 {
@@ -931,8 +975,12 @@ impl Interpreter {
             }
             return Ok(());
         }
-        out.consumed = consumed_base + list_items.len();
-        out.produced.extend(list_items);
+        let mut i = 0usize;
+        while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
+            out.produced.push(src.buf[i].clone());
+            i += 1;
+        }
+        out.consumed = consumed_base + i;
         Ok(())
     }
 

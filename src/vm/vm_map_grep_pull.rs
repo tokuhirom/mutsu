@@ -18,6 +18,7 @@
 
 use super::*;
 use crate::runtime::map_grep_plan::MapGrepPlanSlot;
+use crate::runtime::resolution_grep_loop::{LoopFeed, LoopSource};
 use crate::value::{MapGrepItems, MapGrepMode, PullOut, SeqSource};
 
 impl Interpreter {
@@ -174,13 +175,6 @@ impl Interpreter {
             *pos = items.len();
             return Ok(true);
         }
-        let group = map_group_size(func.as_ref(), mode);
-        // A map callback can answer any number of elements, so a chunk of
-        // `missing` groups may run callbacks the consumer never needed (the
-        // second callback of `map({ slip(1..*) }).head(2)`). It starts one group
-        // at a time and widens to `missing` groups only once a chunk answered
-        // exactly one element per group (#14312).
-        let mut batch = mode.is_grep();
         while out.produced.len() - produced_base < needed
             && (*pos < items.len() || plan.pending_slip.is_some())
         {
@@ -195,21 +189,20 @@ impl Interpreter {
                 continue;
             }
             plan.stream_slips = true;
-            // A grep runs until it has the missing matches (one loop run for
-            // the whole pull, #11515); a map needs one call, of `group` source
-            // elements, per element missing (#14196).
-            let groups = if batch { missing } else { 1 };
-            let end = pos
-                .saturating_add(groups.saturating_mul(group))
-                .min(items.len());
-            let (consumed_before, produced_before) = (out.consumed, out.produced.len());
-            let max_matches = mode.is_grep().then_some(missing);
-            let last =
-                self.pull_chunk_step(func, *fatal, mode, plan, items, pos, end, max_matches, out)?;
-            if !mode.is_grep() {
-                batch = (out.produced.len() - produced_before) * group
-                    == out.consumed - consumed_before;
-            }
+            // One loop run reads the source as it goes and stops itself at the
+            // missing elements (a grep: matches), so no callback runs over
+            // an element the consumer did not need (#11515, #14196).
+            let last = self.pull_chunk_step(
+                func,
+                *fatal,
+                mode,
+                plan,
+                items,
+                pos,
+                items.len(),
+                Some(missing),
+                out,
+            )?;
             if last {
                 return Ok(true);
             }
@@ -400,17 +393,32 @@ impl Interpreter {
             // `@a.map({ $_++ })`: Raku rw-binds `$_` to the source
             // element, so the callback's writes have to reach `@a`.
             // See `MapGrepMode::MapRw`.
-            MapGrepMode::MapRw(source) => self.pull_rw_map(
-                func.clone(),
-                items.slice(start, end),
-                source.clone(),
-                start,
-                plan,
-                out,
-            ),
-            MapGrepMode::Map => {
-                self.eval_map_over_items_into(func.clone(), items.slice(start, end), plan, out)
+            MapGrepMode::MapRw(source) => {
+                let result = self.pull_rw_map(
+                    func.clone(),
+                    items,
+                    start..end,
+                    source.clone(),
+                    max_matches,
+                    plan,
+                    out,
+                );
+                consumed_end = start + (out.consumed - consumed_base);
+                result
             }
+            MapGrepMode::Map => match max_matches {
+                Some(limit) => {
+                    let fetch =
+                        |i: usize| (start + i < end).then(|| items.get(start + i)).flatten();
+                    let feed = crate::runtime::resolution_grep_loop::LoopFeed::new(&fetch, limit);
+                    let result = self.eval_map_over_feed_into(func.clone(), feed, plan, out);
+                    consumed_end = start + (out.consumed - consumed_base);
+                    result
+                }
+                None => {
+                    self.eval_map_over_items_into(func.clone(), items.slice(start, end), plan, out)
+                }
+            },
         };
         self.module.fatal_mode = saved_fatal;
         if let Some(unit) = saved_unit {
@@ -462,8 +470,8 @@ impl Interpreter {
     ) -> Result<usize, RuntimeError> {
         let (consumed, _) = match max_matches {
             Some(max_matches) => {
-                let fetch = |i: usize| items.get(start + i);
-                let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(&fetch, max_matches);
+                let fetch = |i: usize| (start + i < end).then(|| items.get(start + i)).flatten();
+                let feed = crate::runtime::resolution_grep_loop::LoopFeed::new(&fetch, max_matches);
                 self.eval_grep_over_feed_into(func.clone(), feed, plan, out)?
             }
             None => {
@@ -484,9 +492,10 @@ impl Interpreter {
     fn pull_rw_map(
         &mut self,
         func: Option<Value>,
-        mut items: Vec<Value>,
+        items: &MapGrepItems,
+        range: std::ops::Range<usize>,
         source: Value,
-        start: usize,
+        limit: Option<usize>,
         plan: &mut MapGrepPlanSlot,
         out: &mut PullOut,
     ) -> Result<(), RuntimeError> {
@@ -498,6 +507,10 @@ impl Interpreter {
         // Whether the callback's shape can take it at all is a property of
         // the callback alone, so a Seq pulled a chunk at a time asks once:
         // the answer used to cost an AST walk of the body per element.
+        let start = range.start;
+        // The source elements a native pass covers: it answers exactly one
+        // element per source element, so a pull's limit bounds the range.
+        let native_end = limit.map_or(range.end, |l| range.end.min(start.saturating_add(l)));
         let native_candidate = match func.as_ref().map(Value::view) {
             Some(ValueView::Sub(data)) => plan
                 .native_rw_candidate(crate::runtime::map_grep_plan::sub_origin(&data), || {
@@ -508,17 +521,25 @@ impl Interpreter {
         if native_candidate
             && !self.native_lever_a_user_override_sym(&source, crate::symbol::wk::map())
             && let Some(args) = func.clone().map(|f| vec![f])
-            && let Some(native) =
-                self.try_native_rw_map_over(&source, &args, start..start + items.len())
+            && let Some(native) = self.try_native_rw_map_over(&source, &args, start..native_end)
         {
             let (result_items, source_after) = native?;
             self.publish_rw_map_writeback(&source, source_after, start);
-            out.consumed += items.len();
+            out.consumed += native_end - start;
             out.produced.extend(result_items);
             return Ok(());
         }
         let wrote_back = std::cell::Cell::new(false);
-        let mapped = self.eval_map_over_items_rw_into(func, &mut items, plan, out, &wrote_back);
+        let fetch = |i: usize| {
+            (start + i < range.end)
+                .then(|| items.get(start + i))
+                .flatten()
+        };
+        let mut src = match limit {
+            Some(limit) => LoopSource::fed(LoopFeed::new(&fetch, limit)),
+            None => LoopSource::list(items.slice(start, range.end)),
+        };
+        let mapped = self.eval_map_over_items_rw_into(func, &mut src, plan, out, &wrote_back);
         // A read-only block wrote nothing, so leave the source container
         // ALONE. It used to be rebuilt unconditionally, which silently
         // dropped the per-slot metadata `ArrayData` carries: a `:delete`d
@@ -528,7 +549,7 @@ impl Interpreter {
         // `@a.map({ $_ // "Any()" })` in between). A callback that died part
         // way still publishes what it wrote before (#12401).
         if wrote_back.get() {
-            self.publish_rw_map_writeback(&source, items, start);
+            self.publish_rw_map_writeback(&source, src.buf, start);
         }
         mapped
     }
