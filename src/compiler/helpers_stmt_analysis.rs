@@ -228,8 +228,7 @@ impl Compiler {
     /// A module unit's sets (`module_unit`) bind routines, multis and
     /// operators only, as an `EVAL` unit's do: the variables, constants and
     /// types such a `use` imports keep their env aliases, which the module's
-    /// own import scope removes again, and a `use` with `:EXPORT` keeps the
-    /// registry path since the module re-exports what it imports.
+    /// own import scope removes again.
     pub(crate) fn defer_unit_lexical_use_sets(&mut self, stmts: &[Stmt], module_unit: bool) {
         let mut local_multis: Option<Vec<String>> = None;
         let mut line = None;
@@ -238,11 +237,6 @@ impl Compiler {
                 line = Some(*n);
             }
             if let Some(id) = Self::lexical_use_set_id(stmt) {
-                if module_unit
-                    && matches!(stmt, Stmt::Use { tags, .. } if tags.iter().any(|t| t == "EXPORT"))
-                {
-                    continue;
-                }
                 let id = if module_unit {
                     Self::eval_unit_set_id(id)
                 } else {
