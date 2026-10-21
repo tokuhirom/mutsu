@@ -80,6 +80,9 @@ pub(crate) struct LexicalImportCapture {
     /// The multi families the importing block declares itself: the import
     /// merges with them, so they keep the registry path.
     block_multis: HashSet<Symbol>,
+    /// The core listop families whose candidates extend CORE's dispatch set
+    /// (ADR-0044 D1): they keep the registry path.
+    core_extending: HashSet<Symbol>,
     /// The proto of each family in `multi_defs` whose body does more than
     /// dispatch: the family's dispatcher value runs it.
     protos: HashMap<Symbol, std::sync::Arc<crate::ast::FunctionDef>>,
@@ -121,6 +124,7 @@ impl Interpreter {
         let importer = self.executing_unit_sym_for_module_load();
         let capture = LexicalImportCapture {
             block_multis,
+            core_extending: HashSet::new(),
             block_vars,
             unit: importer,
             routines: Vec::new(),
@@ -194,6 +198,9 @@ impl Interpreter {
             return self.bind_routine_lexically(name, &std::sync::Arc::new(proto.clone()));
         }
         if proto.is_none() && is_core_listop_name(name) {
+            if let Some(capture) = self.module.lexical_import_capture.as_mut() {
+                capture.core_extending.insert(Symbol::intern(name));
+            }
             return false;
         }
         if entries.is_empty()
@@ -291,9 +298,7 @@ impl Interpreter {
         // Candidates for a core listop name extend CORE's dispatch set
         // (ADR-0044 D1): a dispatcher over them alone would hide the core
         // array forms, so a family without its own proto stays a registry alias.
-        multi_defs.retain(|name, _| {
-            capture.protos.contains_key(name) || !is_core_listop_name(&name.resolve())
-        });
+        multi_defs.retain(|name, _| !capture.core_extending.contains(name));
         let importer = self.executing_unit_sym_for_module_load();
         let earlier_sets: Vec<Symbol> = match self.module.import_scope_stack.last() {
             Some(scope) if scope.unit == importer => scope.lexical_sets.clone(),
@@ -376,7 +381,7 @@ impl Interpreter {
                         .cloned()
                         .map(LexicalImport::Code)
                 }
-            } else if is_core_listop_name(&name.resolve()) {
+            } else if capture.core_extending.contains(&name) {
                 None
             } else {
                 self.registry()
