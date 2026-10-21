@@ -139,6 +139,7 @@ fn spell_word_quote_contents(
             return Expr::spelled(expr, || Spelling::InterpolatingWords {
                 val: flags.val,
                 text: text.into(),
+                delimiter: None,
             });
         }
         return expr;

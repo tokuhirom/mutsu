@@ -58,6 +58,8 @@ pub(crate) enum Spelling {
         /// Words become allomorphs (`val`).
         val: bool,
         text: Box<str>,
+        /// The source delimiter for nested `<< >>` or `« »` word quotes.
+        delimiter: Option<char>,
     },
     /// `gather say 1`, `try say 1`, `start say 1`, `once say 1`, `BEGIN say 1`:
     /// a statement prefix written over a bare statement. The wrapped

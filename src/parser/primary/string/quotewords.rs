@@ -168,13 +168,18 @@ pub(crate) enum QuoteWordsPart {
     Text(Expr),
     /// A quoted word (`"b c"`), a `QuoteWordsAtom` over its own string.
     Atom(Expr),
+    /// A nested copy of the source delimiter, without its own brackets.
+    Nested(String),
 }
 
 /// Split the raw text of an interpolating `quotewords` quote into the pieces
 /// rakudo makes segments of: each quoted word on its own, every run between
 /// them interpolated as one string.
 // Cost: O(n), n = length of `content`.
-pub(crate) fn quotewords_spelled_parts(content: &str) -> Option<Vec<QuoteWordsPart>> {
+pub(crate) fn quotewords_spelled_parts(
+    content: &str,
+    delimiter: Option<char>,
+) -> Option<Vec<QuoteWordsPart>> {
     let mut parts = Vec::new();
     let mut run_start = 0;
     let mut pos = 0;
@@ -187,6 +192,22 @@ pub(crate) fn quotewords_spelled_parts(content: &str) -> Option<Vec<QuoteWordsPa
     };
     while pos < content.len() {
         let rest = &content[pos..];
+        let delims = match delimiter {
+            Some('<') => Some(("<<", ">>")),
+            Some('«') => Some(("«", "»")),
+            _ => None,
+        };
+        if let Some((open, close)) = delims
+            && rest.starts_with(open)
+        {
+            let body = &rest[open.len()..];
+            let end = crate::parser::primary::container::find_quote_word_close(body, open, close)?;
+            flush(&mut parts, run_start, pos + open.len());
+            parts.push(QuoteWordsPart::Nested(body[..end].to_string()));
+            pos += open.len() + end;
+            run_start = pos;
+            continue;
+        }
         if let Some((next, quoted)) = parse_quotewords_quoted_atom(rest).ok()? {
             flush(&mut parts, run_start, pos);
             parts.push(QuoteWordsPart::Atom(quoted));
@@ -200,7 +221,12 @@ pub(crate) fn quotewords_spelled_parts(content: &str) -> Option<Vec<QuoteWordsPa
             0 => rest.chars().next().map_or(1, char::len_utf8),
             n => n,
         };
-        pos += step;
+        let step = if let Some((open, _)) = delims {
+            rest[..step].find(open).unwrap_or(step)
+        } else {
+            step
+        };
+        pos += step.max(1);
     }
     flush(&mut parts, run_start, content.len());
     Some(parts)

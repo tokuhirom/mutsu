@@ -1748,3 +1748,27 @@ The frontend-mode TAP test now checks the newly supported alias in the main
 unit and an EVAL unit. A converter-level unit test supplies a deliberately
 unmodelled Regex value to keep the no-fallback invariant stable as source
 coverage grows.
+
+### 6.93 S10: remaining source and lowering distinctions (2026-10-21)
+
+Eight previously divergent files now execute through the RakuAST frontend.
+Nested `<< >>` and `« »` word quotes retain their own source delimiter in the
+serialized spelling and become child `QuotedString` segments. Lowering flattens
+the nested words through the existing quote-word expression path. The cache
+format advances to 45 for the changed spelling variant. A regex smartmatch
+ends its comparison chain before a following `eq`; later comparisons chain
+over its Match result. Qualified and routine-valued source barewords retain
+their parser binding as private node metadata, so enum values and post-declared
+listops keep the ordinary frontend's behavior.
+
+The whole-frame `p6stateinit` lowering runs after the RakuAST round trip, when
+the rebuilt statement tree is complete. A `with` statement modifier binds a
+bare block's placeholders to its topic. Uninitialized native declarations use
+the parser's shared native default when rebuilt. The overloaded `<=>` candidate
+uses the same `InfixFunc` dispatch as the ordinary frontend. The focused
+`t/rakuast/rakuast-final-diffs.t` test checks quote read and write directions;
+`t/rakuast/rakuast-final-diffs-frontends.t` keeps the eight complete language
+regressions green in frontend mode.
+
+The inline-proto `use` argument and `use trace` still need model-level source
+representation; they remain in #14359.

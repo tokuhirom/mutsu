@@ -3257,7 +3257,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 val,
                 text,
             } => Ok(word_quote_with(*quotewords, *val, text)),
-            Spelling::InterpolatingWords { val, text } => super::word_quote::convert(*val, text),
+            Spelling::InterpolatingWords {
+                val,
+                text,
+                delimiter,
+            } => super::word_quote::convert(*val, text, *delimiter),
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
@@ -3685,14 +3689,23 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // A bareword the setting or the unit's own declarations resolve; any
         // other one stays the boundary (the catch-all arm below).
         Expr::BareWord(name) if bareword::convert(name).is_some() => {
-            Ok(bareword::convert(name).expect("just checked"))
+            let mut node = bareword::convert(name).expect("just checked");
+            if matches!(
+                node.class,
+                RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses
+            ) {
+                node.fields.push(super::declared_routines::bareword_field());
+            }
+            Ok(node)
         }
         // A qualified name that did not resolve in this parse scope is still
         // a valid Raku name term (`A::B`). Rakudo represents it as an
         // argument-less Call::Name, including when it is later used as a
         // method-call operand; the failed lookup remains catchable at runtime.
         Expr::BareWord(name) if name_parts::is_qualified_identifier(name) => {
-            call_name(name, &[], false)
+            let mut node = call_name(name, &[], false)?;
+            node.fields.push(super::declared_routines::bareword_field());
+            Ok(node)
         }
         // Any other unresolved word: rakudo's `.AST` refuses it, and an
         // argument-less call renders the same as `foo()`, so a hidden field

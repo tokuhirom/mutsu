@@ -428,6 +428,7 @@ fn lower_with_modifier(
     topic: Expr,
     statement: Stmt,
 ) -> Result<Stmt, RuntimeError> {
+    let statement = crate::parser::rewrite_placeholder_block_modifier_stmt(statement, &topic);
     if let Some(expanded) = crate::parser::topical_declaration(
         &statement,
         &topic,
@@ -3224,7 +3225,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             match sigil.as_str() {
                 "@" => Expr::Literal(Value::real_array(Vec::new())),
                 "%" => Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer),
-                _ => Expr::Literal(Value::NIL),
+                _ => crate::parser::native_type_default(&type_constraint),
             },
             false,
         ),

@@ -180,7 +180,6 @@ fn keeps_native_dispatch(name: &str) -> bool {
             | "%"
             | "%%"
             | "**"
-            | "<=>"
             | "div"
             | "mod"
             | "gcd"
