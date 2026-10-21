@@ -21,6 +21,7 @@
 //! keeps the run-time import.
 
 use super::*;
+use crate::value::ValueView;
 
 impl Compiler {
     /// Declare in the enclosing block each variable the `use` of `module`
@@ -182,4 +183,142 @@ pub(super) enum ImportedVarSource {
     /// The value a `sub EXPORT` hook returned for the key, which the import
     /// stored in the lexical import set (`OpCode::GetHookExport`).
     Hook { set_idx: u32, name_idx: u32 },
+}
+
+/// Marks the id of the hook-value set a block's `require M <...>` fills
+/// (`Compiler::compile_block_require`), which no `use`'s set id spells.
+pub(crate) const REQUIRE_SET_MARK: &str = "\u{1}require:";
+
+impl Compiler {
+    /// Whether a statement compiled here belongs to a scope below the unit's
+    /// top level: a nested block, or a routine or closure body. A `require`
+    /// there binds its imports in that scope.
+    // Cost: O(1).
+    pub(super) fn binds_required_symbols_here(&self) -> bool {
+        self.decl_scope_depth > 0 || self.is_routine || self.lexically_in_routine || self.in_closure_body
+    }
+
+    /// The module and the literal import list of a statement-level
+    /// `require M <&f $x T>`, when both are known at compile time.
+    // Cost: O(s), s = listed symbols.
+    pub(super) fn static_require_import(expr: &Expr) -> Option<(String, Vec<String>)> {
+        let Expr::Call { name, args, .. } = expr else {
+            return None;
+        };
+        if name.resolve() != "require" {
+            return None;
+        }
+        let [Expr::Literal(target), rest @ ..] = args.as_slice() else {
+            return None;
+        };
+        let ValueView::Package(module) = target.view() else {
+            return None;
+        };
+        // `<&f>` is one string literal, `<&f $x>` a list of them.
+        let literal_str = |item: &Expr| match item {
+            Expr::Literal(v) => match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let mut symbols = Vec::new();
+        for arg in rest {
+            match arg {
+                Expr::ArrayLiteral(items) => {
+                    for item in items {
+                        symbols.push(literal_str(item)?);
+                    }
+                }
+                other => symbols.push(literal_str(other)?),
+            }
+        }
+        (!symbols.is_empty()).then(|| (module.resolve().to_string(), symbols))
+    }
+
+    /// A `require M <&f $x T>` below the unit's top level (ADR-8751, #14140):
+    /// the symbols it imports are bindings of the enclosing scope, as a
+    /// block-scoped `use`'s are. The call stores the value of each listed
+    /// symbol in a hook-value set (the `__mutsu_require_set` argument), and
+    /// the block goes on with `my &f := ...; my $x := ...; my \T := ...`
+    /// bound to those values (`OpCode::GetHookExport`), so a closure taken in
+    /// the block keeps them after the block's import scope rolled back the
+    /// run-time aliases.
+    // Cost: O(s), s = listed symbols.
+    pub(super) fn compile_block_require(&mut self, expr: &Expr, module: &str, symbols: &[String]) {
+        let set_id = format!("{REQUIRE_SET_MARK}{module}:{}", symbols.join(","));
+        let set_idx = self.code.add_constant(Value::str(set_id.clone()));
+        let Expr::Call { name, args, listop } = expr else {
+            return;
+        };
+        let mut args = args.clone();
+        args.push(Expr::Literal(Value::pair(
+            "__mutsu_require_set".to_string(),
+            Value::str(set_id),
+        )));
+        let call = Expr::Call {
+            name: *name,
+            args,
+            listop: *listop,
+        };
+        self.with_stmt_root(|c| c.compile_condition_expr(&call));
+        self.emit_sink_pop_call(*name);
+        for symbol in symbols {
+            let Some(stmt) = Self::required_symbol_binding(symbol) else {
+                continue;
+            };
+            let name_idx = self.code.add_constant(Value::str(symbol.clone()));
+            self.imported_var_source = Some(ImportedVarSource::Hook { set_idx, name_idx });
+            self.compile_stmt(&stmt);
+            self.imported_var_source = None;
+        }
+    }
+
+    /// The binding declaration of the `require`d symbol `symbol` (`&f`,
+    /// `$x`, `@a`, `%h`, or a bare type or term name), expanded as the parser
+    /// expands a binding declaration. Its right-hand side only selects the
+    /// bind shape: the value comes from `GetHookExport`.
+    // Cost: O(|symbol|).
+    fn required_symbol_binding(symbol: &str) -> Option<Stmt> {
+        let (sigil, bare) = match symbol.chars().next()? {
+            sigil @ ('$' | '@' | '%' | '&') => (Some(sigil), &symbol[1..]),
+            _ => (None, symbol),
+        };
+        if bare.is_empty()
+            || !bare.starts_with(|c: char| c.is_alphabetic() || c == '_')
+            || crate::qualified::is_qualified_str(bare)
+        {
+            return None;
+        }
+        // Only the declaration's shape is read: its name in declaration
+        // spelling (a scalar without the sigil) and whether it is a term.
+        let var = crate::parser::ExportedVar {
+            name: if sigil == Some('$') {
+                bare.to_string()
+            } else {
+                symbol.to_string()
+            },
+            package: "GLOBAL".to_string(),
+            tags: Vec::new(),
+            term: sigil.is_none(),
+            hook: true,
+        };
+        if sigil == Some('&') {
+            let decl = Stmt::VarDecl {
+                anonymous: false,
+                name: symbol.to_string(),
+                expr: Expr::CodeVar(bare.to_string()),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            };
+            return Some(Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]));
+        }
+        Self::imported_var_binding(&var)
+    }
 }

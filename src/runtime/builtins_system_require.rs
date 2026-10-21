@@ -576,12 +576,19 @@ impl Interpreter {
         // NOTE: callers must bump `fn_resolve_gen` after this (no `self` here).
     }
 
-    fn import_single_require_symbol(&mut self, module: &str, symbol: &str) -> bool {
+    /// Import the symbol `symbol` a `require` of `module` lists, and return
+    /// its value, or `None` when the module does not provide it. A routine is
+    /// installed in the function registry and its code object returned.
+    fn import_single_require_symbol(&mut self, module: &str, symbol: &str) -> Option<Value> {
         if symbol.is_empty() {
-            return true;
+            return Some(Value::NIL);
         }
         if module == "Test" {
-            return true;
+            // Test's routines are imported by the module load itself.
+            return Some(match symbol.strip_prefix('&') {
+                Some(name) => self.resolve_code_var(name),
+                None => self.env.get(symbol).cloned().unwrap_or(Value::NIL),
+            });
         }
         if let Some(name) = symbol.strip_prefix('&') {
             let source_single =
@@ -615,17 +622,23 @@ impl Interpreter {
             }
             // Invalidate name-keyed resolution caches.
             self.invalidate_fn_resolution();
-            return found
+            let found = found
                 || self
                     .registry()
                     .functions
                     .contains_key(&Symbol::intern(&format!("GLOBAL::{name}")));
+            return found.then(|| self.resolve_code_var(name));
         }
 
         if let Some(sigil) = symbol.chars().next()
             && matches!(sigil, '$' | '@' | '%' | '&')
         {
             let bare = &symbol[1..];
+            if let Some(value) = self.required_export_value(module, symbol) {
+                self.env.insert(symbol.to_string(), value.clone());
+                self.record_import_env_key(symbol);
+                return Some(value);
+            }
             let candidates = [
                 format!("{sigil}{module}::{bare}"),
                 format!("{sigil}{bare}"),
@@ -636,12 +649,12 @@ impl Interpreter {
             ];
             for source in candidates {
                 if let Some(value) = self.env.get(&source).cloned() {
-                    self.env.insert(symbol.to_string(), value);
+                    self.env.insert(symbol.to_string(), value.clone());
                     self.record_import_env_key(symbol);
-                    return true;
+                    return Some(value);
                 }
             }
-            return false;
+            return None;
         }
 
         let source_single =
@@ -649,22 +662,20 @@ impl Interpreter {
                 .as_str()
                 .to_string();
         if self.has_class(&source_single) || self.is_role(&source_single) {
-            self.env.insert(
-                symbol.to_string(),
-                Value::package(Symbol::intern(&source_single)),
-            );
+            let value = Value::package(Symbol::intern(&source_single));
+            self.env.insert(symbol.to_string(), value.clone());
             self.env
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             self.record_import_env_key(symbol);
-            return true;
+            return Some(value);
         }
         if self.has_class(symbol) || self.is_role(symbol) {
-            self.env
-                .insert(symbol.to_string(), Value::package(Symbol::intern(symbol)));
+            let value = Value::package(Symbol::intern(symbol));
+            self.env.insert(symbol.to_string(), value.clone());
             self.env
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             self.record_import_env_key(symbol);
-            return true;
+            return Some(value);
         }
         // An exported enum key (`enum HashAlgorithm is export (ARGON2I13 => ..)`)
         // is in the module's export table like any `use`-imported symbol, and
@@ -682,8 +693,8 @@ impl Interpreter {
             let key = crate::runtime::enum_bare_names::enum_bare_key_for_insert(symbol);
             self.unsuppress_name(symbol);
             self.record_import_env_key(&key);
-            self.env.insert(key, value);
-            return true;
+            self.env.insert(key, value.clone());
+            return Some(value);
         }
         if let Some(value) = self.env.get(&source_single).cloned() {
             if self
@@ -692,32 +703,96 @@ impl Interpreter {
                 .contains_key(&Symbol::intern(&source_single))
                 && matches!(value.view(), ValueView::Int(_))
             {
-                return false;
+                return None;
             }
-            self.env.insert(symbol.to_string(), value);
+            self.env.insert(symbol.to_string(), value.clone());
             self.env
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             self.record_import_env_key(symbol);
-            return true;
+            return Some(value);
         }
         // A sigil-less constant the module declared is a term (#9962): it is
         // imported as one, under its term key.
         let term = crate::runtime::term_names::term_key(symbol);
-        if let Some(value) = self.env.get(&term).cloned() {
-            let is_nil = value.is_nil();
+        if let Some(value) = self.required_export_value(module, &term) {
             self.record_import_env_key(&term);
-            self.env.insert(term, value);
-            return !is_nil;
+            self.env.insert(term, value.clone());
+            return Some(value);
+        }
+        if let Some(value) = self.env.get(&term).cloned() {
+            self.record_import_env_key(&term);
+            self.env.insert(term, value.clone());
+            return (!value.is_nil()).then_some(value);
         }
         if let Some(value) = self.env.get(symbol).cloned() {
-            let is_nil = value.is_nil();
-            self.env.insert(symbol.to_string(), value);
+            self.env.insert(symbol.to_string(), value.clone());
             self.env
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
             self.record_import_env_key(symbol);
-            return !is_nil;
+            return (!value.is_nil()).then_some(value);
         }
-        false
+        None
+    }
+
+    /// The value of the variable or constant `module` exports under `name`
+    /// (`$x`, or a constant's term key). `require` loads a module without
+    /// importing its exports, so a listed one is read from the export table,
+    /// not from an alias in the env.
+    // Cost: O(|name|) plus the export-value lookup's few table probes.
+    fn required_export_value(&self, module: &str, name: &str) -> Option<Value> {
+        self.module
+            .exported_vars
+            .get(module)
+            .is_some_and(|vars| vars.contains_key(name))
+            .then(|| self.exported_var_value(module, name))
+            .flatten()
+    }
+
+    /// The values a `require` below the unit's top level imports, recorded
+    /// under their listed spellings in the hook-value set `set` its scope's
+    /// bindings read (`OpCode::GetHookExport`, #14140). A routine is read
+    /// from the module's own registry entry and is never installed in the
+    /// registry as a `GLOBAL::` name, which every routine called while the
+    /// scope runs would see; the scope binds `&f` instead. A variable or a
+    /// term is imported as before (the scope's import snapshot rolls its env
+    /// alias back) and its value read from the env.
+    // Cost: O(s * r), s = listed symbols, r = registry routines (a
+    // non-routine symbol's import scans them, as a top-level `require`'s).
+    fn require_scoped_symbols(
+        &mut self,
+        module: &str,
+        imports: &[String],
+        set: Symbol,
+    ) -> Result<(), RuntimeError> {
+        let mut values = HashMap::new();
+        let mut missing = Vec::new();
+        for symbol in imports {
+            let value = match symbol.strip_prefix('&').filter(|_| module != "Test") {
+                Some(name) => Some(self.resolve_code_var(
+                    crate::qualified::qualified(Symbol::intern(module), Symbol::intern(name))
+                        .as_str(),
+                ))
+                .filter(Value::truthy),
+                None => self.import_single_require_symbol(module, symbol),
+            };
+            match value {
+                Some(value) => {
+                    values.insert(Symbol::intern(symbol), value);
+                }
+                None => missing.push(symbol.clone()),
+            }
+        }
+        self.module
+            .lexical_import_hook_values
+            .insert(set, std::sync::Arc::new(values));
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err(RuntimeError::new(format!(
+                "X::Import::MissingSymbols: {}",
+                missing.join(" ")
+            )))
+        }
     }
 
     fn require_import_symbols(
@@ -727,7 +802,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let mut missing = Vec::new();
         for symbol in imports {
-            if !self.import_single_require_symbol(module, symbol) {
+            if self.import_single_require_symbol(module, symbol).is_none() {
                 missing.push(symbol.clone());
             }
         }
@@ -746,6 +821,7 @@ impl Interpreter {
         let mut file_target: Option<String> = None;
         let mut dist_selectors = String::new();
         let mut imports: Vec<String> = Vec::new();
+        let mut require_set: Option<Symbol> = None;
         for arg in args {
             match arg.view() {
                 ValueView::Pair(key, value) if key == "__mutsu_require_file" => {
@@ -757,6 +833,12 @@ impl Interpreter {
                 // installed below and the package this returns stay bare.
                 ValueView::Pair(key, value) if key == "__mutsu_require_dist_selectors" => {
                     dist_selectors = value.to_string_value();
+                }
+                // A `require` below the unit's top level: the set its scope's
+                // bindings of the listed symbols read
+                // (`Compiler::compile_block_require`).
+                ValueView::Pair(key, value) if key == "__mutsu_require_set" => {
+                    require_set = Some(Symbol::intern(&value.to_string_value()));
                 }
                 ValueView::Array(items, ..) => {
                     imports.extend(items.iter().map(|v| v.to_string_value()));
@@ -818,10 +900,15 @@ impl Interpreter {
                 crate::runtime::cow_table_mut(&mut self.module.loaded_modules).remove(module);
             }
             let saved = std::mem::replace(&mut self.module.require_propagates_missing_module, true);
-            let result = if dist_selectors.is_empty() {
-                self.use_module(module)
+            // `require` loads the module without importing its exports: only
+            // the symbols it lists are imported (below), as Rakudo does.
+            // Test's routines are still imported by the load
+            // (`import_single_require_symbol`).
+            let target = format!("{module}{dist_selectors}");
+            let result = if module == "Test" {
+                self.use_module(&target)
             } else {
-                self.use_module(&format!("{module}{dist_selectors}"))
+                self.preload_module(&target)
             };
             self.module.require_propagates_missing_module = saved;
             result?;
@@ -837,12 +924,18 @@ impl Interpreter {
             self.env
                 .insert(module.clone(), Value::package(Symbol::intern(module)));
             if !imports.is_empty() {
-                self.require_import_symbols(module, &imports)?;
+                match require_set {
+                    Some(set) => self.require_scoped_symbols(module, &imports, set)?,
+                    None => self.require_import_symbols(module, &imports)?,
+                }
             }
         } else if let Some(module) = module_name.as_ref()
             && !imports.is_empty()
         {
-            self.require_import_symbols(module, &imports)?;
+            match require_set {
+                Some(set) => self.require_scoped_symbols(module, &imports, set)?,
+                None => self.require_import_symbols(module, &imports)?,
+            }
         }
 
         if return_is_str {
