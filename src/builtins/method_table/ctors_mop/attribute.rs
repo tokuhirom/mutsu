@@ -206,7 +206,12 @@ fn container(target: &Value, _args: &[Value]) -> Answer {
 /// default for `$`, an empty `Array[T]`/`Hash[T]` carrying the declared element
 /// type for `@`/`%`.
 // Cost: O(a), a = the owner's attributes (`seed_attr_value`) for `@`/`%`; O(1) for `$`.
-fn auto_viv_container(i: &mut Interpreter, target: &Value, _args: &[Value], _named: Named<'_>) -> Answer {
+fn auto_viv_container(
+    i: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
     with_meta(target, |meta| {
         let sigil = fact_str(meta, "sigil").unwrap_or_else(|| "$".to_string());
         Ok(match sigil.as_str() {
