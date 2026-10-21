@@ -18,6 +18,8 @@ scalar or element passed by the caller, using the existing compiled binding
 path. ADR-14144's documented value-copy divergence is unchanged. Parentheses
 also retain the distinction between an ordinary role coercion and the direct
 call spelling of a mixin initializer.
+Colonpair value delimiters retain the caller's container identity for named
+`is rw` and `is raw` arguments.
 
 `RakuAST::Role.new` and `RakuAST::RoleBody.new` support constructed declarations,
 including parameterization, body and mixed trait lists. The focused contract

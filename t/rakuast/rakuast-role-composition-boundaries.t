@@ -152,4 +152,17 @@ isa-ok RakuAST::Role.new.body, RakuAST::RoleBody, 'an omitted role body defaults
 isa-ok RakuAST::RoleBody.new.body, RakuAST::Blockoid, 'an omitted role blockoid defaults to an empty blockoid';
 isa-ok RakuAST::Role.new.parameterization, RakuAST::Signature, 'an omitted role signature has its model default';
 
+is EVAL(Q[
+    sub replace(:$value! is rw) { $value = 7 }
+    my $value = 1;
+    replace(:value($value));
+    $value
+].AST), 7, 'colonpair delimiters preserve a named writable argument container';
+
+is EVAL(Q[
+    sub read(:$value! is raw) { $value.VAR.name }
+    my $original = 1;
+    read(:value($original))
+].AST), '$original', 'colonpair delimiters preserve the named argument source identity';
+
 done-testing;

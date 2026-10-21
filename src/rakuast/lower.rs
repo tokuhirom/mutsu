@@ -4918,7 +4918,18 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             };
             let value = match single_word {
                 Some(word) => Expr::Literal(crate::parser::angle_word_value(&word)),
-                None => lower_expr(value_node)?,
+                // The outer parentheses of `:key(EXPR)` delimit the
+                // colonpair's value; they are not an extra written grouping
+                // around EXPR. Keep any additional inner parentheses, while
+                // producing the same container operand as the source parser.
+                None => match lower_expr(value_node)? {
+                    Expr::Grouped(inner)
+                        if value_node.class == RakuAstClass::CircumfixParentheses =>
+                    {
+                        *inner
+                    }
+                    value => value,
+                },
             };
             Ok(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(key))),

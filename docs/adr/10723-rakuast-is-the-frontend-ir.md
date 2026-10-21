@@ -1623,6 +1623,8 @@ The lowerer reuses ADR-14144's `does` parameter analysis for subs, methods and
 closures, including hand-built routines. Parenthesized expressions retain
 `Grouped`, so a grouped role call stays an ordinary coercion rather than
 becoming a mixin initializer. The existing compiler and VM own all execution.
+The outer parentheses of `:key(EXPR)` remain colonpair delimiters, so they do
+not add a `Grouped` operand that would hide the argument's source container.
 `Role.new` and `RoleBody.new` share the package-construction helpers and retain
 their body, traits and parameterization. The measured executable contract is
 `t/rakuast/rakuast-role-composition-boundaries.t`.
