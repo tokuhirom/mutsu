@@ -124,7 +124,7 @@ impl Interpreter {
             // A lazy Seq over a not-yet-pulled iterator (`Seq.new($lazy-iter)`,
             // `Seq.from-loop`): the stage pulls it through
             // `SeqBody::extend_from_iterator` (#10891).
-            ValueView::Seq(body) => body.is_lazy() && body.unpulled_iterator().is_some(),
+            ValueView::Seq(body) => body.unpulled_iterator().is_some(),
             _ => false,
         }
     }
