@@ -831,6 +831,25 @@ impl Interpreter {
             if name == "Proxy" && class_name != "Proxy" {
                 return Some(self.construct_proxy_subclass(&class_name, args));
             }
+            if name.starts_with("RakuAST::") && name != class_name {
+                match crate::rakuast::construct(&name, "new", args) {
+                    Ok(Some(node)) => {
+                        return Some(self.dispatch_bless(invocant, args.to_vec()).and_then(
+                            |instance| {
+                                let ValueView::Instance { attributes, .. } = instance.view() else {
+                                    return Err(RuntimeError::new(
+                                        "RakuAST subclass construction did not yield an instance",
+                                    ));
+                                };
+                                attributes.set_rakuast_base(node);
+                                Ok(instance)
+                            },
+                        ));
+                    }
+                    Ok(None) => {}
+                    Err(error) => return Some(Err(error)),
+                }
+            }
             if let Some(res) = self.try_native_builtin_construct(*cn, args) {
                 // An Instance-shaped builtin (`Date`, `DateTime`, `Buf`, ...)
                 // is minted under the ANCESTOR's name because that is the name

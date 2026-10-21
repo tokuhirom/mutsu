@@ -144,7 +144,12 @@ fn visit_children(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::RakuAst(node) = target.view() else {
+    let base = match target.view() {
+        ValueView::RakuAst(_) => target.clone(),
+        ValueView::Instance { attributes, .. } => attributes.rakuast_base()?,
+        _ => return None,
+    };
+    let ValueView::RakuAst(node) = base.view() else {
         return None;
     };
     let callable = args.first()?;

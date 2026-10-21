@@ -120,6 +120,29 @@ impl Interpreter {
         ) {
             return Some(self.settle_native_warning(result));
         }
+        // A user RakuAST subclass keeps its native parent node in the instance.
+        // Its opaque Instance shape cannot select the parent's owner-only rows,
+        // so resolve those rows through the declared MRO after user overrides.
+        if let ValueView::Instance { attributes, .. } = target.view()
+            && attributes.rakuast_base().is_some()
+            && !self.native_lever_a_user_override_sym(target, method_sym)
+        {
+            let ancestors = self.dispatch_owner_chain(target);
+            let owners: Vec<&str> = ancestors
+                .iter()
+                .map(|owner| owner.as_str())
+                .filter(|owner| owner.starts_with("RakuAST::"))
+                .collect();
+            if let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                &owners,
+                method_sym.as_str(),
+                args,
+                || target.clone(),
+            ) {
+                return Some(self.settle_native_warning(result));
+            }
+        }
         // `Any` is not a `Cool` (#7773): the cascades below recognize a `Cool`
         // method by NAME and answer out of the stringified receiver, which for
         // a type object is its gist -- so `$undefined.uc` answered `"(ANY)"`.

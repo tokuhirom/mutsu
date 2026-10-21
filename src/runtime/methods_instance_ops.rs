@@ -205,6 +205,16 @@ impl Interpreter {
         if !((method == "raku" || gist_default) && args.is_empty()) {
             return None;
         }
+        if let Some(base) = attributes.rakuast_base()
+            && let ValueView::RakuAst(node) = base.view()
+        {
+            let class_key = class_name.resolve();
+            let display_name = crate::value::user_facing_type_name(&class_key);
+            return Some(Ok(Value::str(crate::rakuast::subclass_gist(
+                display_name.as_ref(),
+                node,
+            ))));
+        }
         // An `is Str` subclass delegates `.raku`/`.gist` to its string payload,
         // so `class Foo is Str {}; Foo.new(:value("hi")).raku` is `"hi"` —
         // mirrors the `is Array`/`is Hash` backing-storage delegation below.

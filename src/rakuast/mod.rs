@@ -1792,6 +1792,17 @@ pub fn node_gist(node: &RakuAstNode) -> String {
     render::render_node(node, 0)
 }
 
+/// Render a node inherited by a user subclass under that subclass's name.
+// Cost: O(n), n = constructor text length.
+pub fn subclass_gist(class_name: &str, node: &RakuAstNode) -> String {
+    let rendered = node_gist(node);
+    let parent = node.class.printed_name();
+    match rendered.strip_prefix(parent) {
+        Some(rest) => format!("{class_name}{rest}"),
+        None => rendered,
+    }
+}
+
 /// Construction (Phase 4): build a `Value::RakuAst` from a `RakuAST::*.new(...)`
 /// / `.from-identifier(...)` call. Returns `Ok(None)` when the class/method is
 /// not a supported constructor yet (so normal dispatch handles it). Covers the
