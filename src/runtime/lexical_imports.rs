@@ -201,10 +201,11 @@ impl Interpreter {
         }
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
-            || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
-                (capture.top_level && !name.contains(":<"))
-                    || capture.block_multis.contains(&Symbol::intern(name))
-            })
+            || self
+                .module
+                .lexical_import_capture
+                .as_ref()
+                .is_some_and(|capture| capture.block_multis.contains(&Symbol::intern(name)))
         {
             return false;
         }
@@ -444,7 +445,6 @@ impl Interpreter {
         let importer = self.executing_unit_sym_for_module_load();
         if let Some(capture) = self.module.lexical_import_capture.as_mut()
             && capture.unit == importer
-            && !(capture.top_level && !name.contains(":<"))
             && !capture.block_multis.contains(&Symbol::intern(name))
         {
             capture
