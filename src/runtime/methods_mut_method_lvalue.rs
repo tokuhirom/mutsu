@@ -1325,14 +1325,15 @@ impl Interpreter {
                 // very instance's attributes would otherwise queue behind it.
                 // An `@`/`%` attribute bound to a Proxy (AttrX::Mooish's
                 // `AttrProxy`) is assigned through it the same way.
-                let proxy_storer = match attributes.as_map().get(method).map(Value::view) {
-                    Some(ValueView::Proxy { storer, .. }) => Some(Value::clone(storer)),
-                    _ => None,
-                };
-                if let Some(storer) = proxy_storer {
+                let bound_proxy = attributes
+                    .as_map()
+                    .get(method)
+                    .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
+                    .cloned();
+                if let Some(proxy) = bound_proxy {
                     let current_attrs = attributes.to_map();
                     return self.proxy_store(
-                        &storer,
+                        &proxy,
                         target_var,
                         class_name,
                         &current_attrs,
@@ -1862,13 +1863,13 @@ impl Interpreter {
         self.set_pending_call_arg_sources(saved_sources);
         self.in_lvalue_assignment = was_lvalue;
         let method_result = method_result?;
-        if let ValueView::Proxy { storer, .. } = method_result.view() {
+        if matches!(method_result.view(), ValueView::Proxy { .. }) {
             // The method call above shares `attributes`' underlying cell with
             // `target`, so any self-mutation the method body made is already
             // visible here — re-snapshot rather than reuse a pre-call copy.
             let updated_attrs = attributes.to_map();
             return self.proxy_store(
-                storer,
+                &method_result,
                 target_var,
                 class_name,
                 &updated_attrs,
