@@ -1,6 +1,9 @@
 # ADR-13220: An actions-role method is a production handler only if the grammar has a production of that name; every other method is an inert helper
 
-- **Status**: Accepted (2026-10-21, maintainer); slice 1 landed. Supersedes
+- **Status**: Accepted (2026-10-21, maintainer); slice 1 landed. §5's ledger
+  question was decided the same day against a legacy baseline (AGENTS.md: the
+  ecosystem oracle is rakudo's RakuAST frontend), so Test::Async is
+  `no_baseline` and slices 2-3 lose their ecosystem motivation. Supersedes
   [ADR-0098](0098-if-pragma-actions-slang.md) §2.2's rule that *every* plain
   method of an actions role is an override name, and answers ADR-0098 §5's
   second open question. The rest of ADR-0098, and

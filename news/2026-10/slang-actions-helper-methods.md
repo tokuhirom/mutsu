@@ -21,7 +21,9 @@ Rakudo's production names come from a generated table,
 Rakudo 2026.09. `scripts/gen-rakudo-grammar-productions.raku` regenerates it
 from the `raku` oracle.
 
-Test::Async itself still stops one step later. `use Test::Async` iterates
+Test::Async itself still stops one step later. It fails on rakudo's RakuAST
+frontend too, so under the ecosystem oracle rule it is `no_baseline`, and
+neither remaining gap is ecosystem work. `use Test::Async` iterates
 `Test::Async::Hub.HOW.bundles`, a method's `nqp::list` result, which mutsu
 does not HLL-ize (#14290). The bundle registration that `add_phaser` stood in
 for under precompilation needs a role-kind slang declarator to drive its
