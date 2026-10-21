@@ -115,7 +115,7 @@ impl Compiler {
     /// top-level import stays the whole unit's, on the registry. Returns the
     /// mark to truncate `lexical_import_chain` back to on exit.
     // Cost: O(s), s = statements of the block.
-    pub(super) fn enter_lexical_use_block(&mut self, stmts: &[Stmt]) -> usize {
+    pub(crate) fn enter_lexical_use_block(&mut self, stmts: &[Stmt]) -> usize {
         let mark = self.lexical_import_chain.len();
         let mut local_multis: Option<Vec<String>> = None;
         for stmt in stmts {
