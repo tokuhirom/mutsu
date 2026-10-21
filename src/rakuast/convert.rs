@@ -3265,6 +3265,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Spelling::NamedSubscript { .. } | Spelling::ConflictingSubscript { .. } => {
                 Err(unsupported("subscript adverb source form"))
             }
+            Spelling::CompositionWhatever(source) => {
+                super::composition_source::convert(source, &spelled.expr)
+            }
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -4733,7 +4736,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // interpolation would lose.
         Expr::HeredocInterpolation(content, closes_block_same_line) => {
             if *closes_block_same_line {
-                return Err(unsupported("heredoc closing an enclosing block"));
+                return super::quoted_string::convert_closed_block_heredoc(content);
             }
             convert_expr(&crate::parser::interpolate_heredoc_content(content))
         }

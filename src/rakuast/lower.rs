@@ -5052,6 +5052,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             ) {
                 return Ok(Expr::PositionalPair(Box::new(binary)));
             }
+            if matches!(&binary, Expr::Binary { op: crate::token_kind::TokenKind::Ident(name), .. } if name == "o")
+            {
+                return Ok(crate::parser::lower_composition(binary));
+            }
             Ok(binary)
         }
         // `$x .= meth(args)`: the parser's own `.=` expansion over the target.

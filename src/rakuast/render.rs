@@ -265,6 +265,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::compound_stmt::is_source_field(field)
                 || super::routine_source::is_legacy_source_field(field)
                 || super::doc_phaser::is_source_field(field)
+                || super::quoted_string::is_source_field(field)
                 || super::use_stmt::is_source_field(field)
                 || super::type_call::is_marker(field)
                 || super::keyed_hash::is_source_marker(field)

@@ -1672,3 +1672,27 @@ also no longer collide with loop labels sharing a keyword prefix.
 The executable contract is `t/rakuast/rakuast-format-quote-setting-types.t`.
 The formatter grammar's symbol captures and anchors are measured separately
 against Rakudo; its existing regression retains all assertions.
+
+### 6.90 S10: declaration and source boundaries (2026-10-21)
+
+The parser accepts legacy alternate signatures and `supersede` routines that
+the current Rakudo oracle does not parse. Their executable data is retained as
+private fields on the public `Sub` node. A DOC phaser exposes Rakudo's ordinary
+`Nil` expression, with its original phaser retained privately so `--doc` can
+still execute it after lowering. A role augmentation retains the role package
+kind and its existing legality checks.
+
+Composition with a bare Whatever operand keeps the written `o` expression in
+`Spelling::CompositionWhatever` while its executable closure remains the
+parser's normal expansion. RakuAST conversion recovers the public infix and
+lowering reuses the parser's composition wrapper. The new serialized spelling
+bumps the cache format to 43. A heredoc whose marker closes an enclosing block
+retains that lexical boundary privately on its public `QuotedString`, so
+lowering preserves the existing scope diagnostic without executing source in
+the analysis path. Private source fields are omitted from constructor output.
+
+`t/rakuast/rakuast-source-declaration-boundaries.t` checks the public shapes
+and executable round trips; the seven affected language test files run in
+both frontends. The captured-closure regex case remains a separate RegexTree
+boundary (#14350) because its `%<chars>=` alias is not represented by the
+static tree.

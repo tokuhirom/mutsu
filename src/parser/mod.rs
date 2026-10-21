@@ -7,6 +7,7 @@ pub(crate) use type_qualify::qualify_program as qualify_type_names;
 // construction that moved out of the parser) needs these priming-scope
 // predicates, so re-export them at crate visibility without making the whole
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
+pub(crate) use expr::lower_composition;
 pub(crate) use expr::{
     contains_whatever, is_frozen_whatever, is_whatever, should_wrap_whatevercode,
 };

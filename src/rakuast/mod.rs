@@ -16,6 +16,7 @@ mod callable_context;
 mod capture_term;
 mod chain;
 mod class_constructor;
+mod composition_source;
 mod compound_stmt;
 mod constructor_positional;
 mod contextualizer;
