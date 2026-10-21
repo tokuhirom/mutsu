@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 8;
 
 # A regex literal closes over the kebab-case lexical it interpolates, even when
 # the routine that matches it reads its caller's lexicals (`Test::cmp-ok` does:
@@ -27,3 +27,9 @@ cmp-ok "Scalar container", &[~~], $r, "a stored regex keeps its kebab lexical";
 }
 
 nok "Other container" ~~ /$cont-name \s container/, "and it still does not match other text";
+
+my $live-part = 'bar';
+my $live = /foo <?before $live-part>/;
+ok 'foobar' ~~ $live, "a kebab lexical matches before it is rewritten";
+$live-part = 'baz';
+ok 'foobaz' ~~ $live, "and the stored regex reads its current value afterwards";
