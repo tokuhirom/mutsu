@@ -120,11 +120,13 @@ pub(crate) fn sub_origin(data: &SubData) -> usize {
 }
 
 /// Elements an inline map/grep loop binds per call: the positional params
-/// not supplied by `.assuming`, at least one.
+/// not supplied by `.assuming`, a slurpy parameter not counted, at least one.
 // Cost: O(1).
 pub(crate) fn inline_loop_arity(data: &SubData) -> usize {
+    let slurpies = data.param_defs.iter().filter(|pd| pd.slurpy).count();
     data.params
         .len()
+        .saturating_sub(slurpies)
         .saturating_sub(data.assumed_positional.len())
         .max(1)
 }
