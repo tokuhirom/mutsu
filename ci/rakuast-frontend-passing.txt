@@ -2809,6 +2809,7 @@ t/modules/import-export/custom-export-tagged-stash-pairs.t
 t/modules/import-export/custom-export-use-args-not-tags.t
 t/modules/import-export/enum-export-space-and-slip.t
 t/modules/import-export/enum-export-tag.t
+t/modules/import-export/eval-use-export-hook-before-check.t
 t/modules/import-export/eval-use-export-hook-term.t
 t/modules/import-export/export-alias-resolution-cache.t
 t/modules/import-export/export-bareword-tag-undeclared.t
@@ -5306,6 +5307,7 @@ t/rakuast/rakuast-role-hidden-traits.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
 t/rakuast/rakuast-routine-custom-traits.t
+t/rakuast/rakuast-routine-scope.t
 t/rakuast/rakuast-routine-trait-order.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sequential-interpolation.t

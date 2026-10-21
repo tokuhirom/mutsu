@@ -3395,10 +3395,29 @@ fn named_arg(args: &[Value], name: &str) -> Option<Value> {
     })
 }
 
+/// The semantic scope of a routine without a written scope. Rakudo 2026.09
+/// resolves this from the routine kind and whether it has a source name.
+// Cost: O(f), f = fields of the routine node.
+fn routine_default_scope(node: &RakuAstNode) -> Option<&'static str> {
+    if !matches!(
+        node.class,
+        RakuAstClass::Sub | RakuAstClass::Method | RakuAstClass::Submethod
+    ) {
+        return None;
+    }
+    let named = node.fields.iter().any(|field| field.name == Some("name"));
+    Some(match (named, node.class) {
+        (false, _) => "anon",
+        (true, RakuAstClass::Sub) => "my",
+        (true, _) => "has",
+    })
+}
+
 /// A named-field / positional accessor on a RakuAST node (Phase 3). Returns the
 /// field value as a mutsu `Value`, or `None` if `method` is not an accessor for
 /// this node (so ordinary methods like `.gist` fall through). `.statements`
 /// returns the positional children of a `StatementList`/`SemiList` as a `List`.
+// Cost: O(f), f = fields of the node.
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if let Some(child) = regex_extension::nested_accessor(node, method) {
         return Some(child);
@@ -3415,6 +3434,15 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         if f.name == Some(method) {
             return Some(field_to_value(&f.value));
         }
+    }
+    // Rakudo 2026.09 resolves an omitted routine scope from its class and
+    // whether it has a name. A nameless routine is `anon`; a named Sub is
+    // `my`, and a named Method/Submethod is `has`. The resolved value is an
+    // accessor result, not a constructor field to render.
+    if method == "scope"
+        && let Some(scope) = routine_default_scope(node)
+    {
+        return Some(Value::str_from(scope));
     }
     // This inherited Block capability defaults to false and is not one of
     // the class's local model fields reported by reflection.

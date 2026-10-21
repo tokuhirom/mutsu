@@ -264,6 +264,13 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::postfix_grouping::is_source_field(field)
                 || super::compound_stmt::is_source_field(field)
                 || super::routine_source::is_legacy_source_field(field)
+                || field.name == Some("scope")
+                    && super::routine_default_scope(node).is_some_and(|default| {
+                        node.class == RakuAstClass::Submethod
+                            || matches!(&field.value, RakuAstFieldValue::Node(value)
+                                if matches!(value.view(), ValueView::Str(_))
+                                    && value.to_string_value() == default)
+                    })
                 || super::doc_phaser::is_source_field(field)
                 || super::quoted_string::is_source_field(field)
                 || super::use_stmt::is_source_field(field)
