@@ -574,7 +574,9 @@ pub(crate) fn match_user_declared_postcircumfix_op(input: &str) -> Option<(Strin
                 }
                 let open = parts[0];
                 let close = parts[1];
-                if !input.starts_with(open) {
+                // `$x<<k>>` and its guillemet spelling is the `{ }` subscript of a quote-words
+                // key; rakudo never calls a `postcircumfix:<<< >>>` for it.
+                if matches!(open, "<<" | "\u{ab}") || !input.starts_with(open) {
                     continue;
                 }
                 let consumed = open.len();
