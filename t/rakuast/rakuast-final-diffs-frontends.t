@@ -3,6 +3,8 @@ use Test;
 my @files = <
     t/lang/parsing/parser-statement-continues-past-early-stop.t
     t/lang/quoting/double-angle-quote-word-lt.t
+    t/modules/import-export/use-inline-proto-argument.t
+    t/modules/import-export/use-trace-pragma.t
     t/routines/dispatch/core-infix-user-candidate-fallbacks.t
     t/routines/signature/placeholder-scope-signature-capable.t
     t/types/enum-subset/enum.t

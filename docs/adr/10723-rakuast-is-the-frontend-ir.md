@@ -1772,3 +1772,21 @@ regressions green in frontend mode.
 
 The inline-proto `use` argument and `use trace` still need model-level source
 representation; they remain in #14359.
+
+### 6.94 S10: inline proto imports and statement traces (2026-10-21)
+
+The parser's transparent `SyntheticBlock(ProtoDecl, Use)` for an inline proto
+argument now converts to Rakudo's single `Statement::Use` node with the proto
+`Sub` in its argument list. Lowering extracts that proto into the same
+transparent declaration-and-import sequence, then passes its code object to
+the module's `EXPORT`. This also accepts a constructed use node with a direct
+proto argument.
+
+`use trace` already records exact statement text, source line and statement
+attempt number during parsing. Each traced statement now carries that data in
+private RakuAST metadata and restores the existing `Stmt::Trace` hook before
+compilation. The public node shape and `.raku` output stay Rakudo-compatible;
+no tracing runs during `.AST` analysis. The two remaining language files pass
+in frontend mode, bringing the tracked corpus to parity in all ten files from
+#14359. The frontend ratchet and the inline-proto read/write assertions in
+`t/rakuast/rakuast-final-diffs.t` pin the behavior.

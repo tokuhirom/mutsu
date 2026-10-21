@@ -141,6 +141,80 @@ pub(super) fn convert_use(
     Ok(node)
 }
 
+/// An inline `proto sub` is the `use` argument itself in Rakudo's tree. The
+/// parser declares it ahead of the import in a transparent synthetic block;
+/// replace that block with the public `Statement::Use` shape.
+// Cost: O(a), a = direct import arguments.
+pub(super) fn convert_inline_proto(
+    proto: &Stmt,
+    use_stmt: &Stmt,
+) -> Result<RakuAstNode, RuntimeError> {
+    let Stmt::ProtoDecl { name, .. } = proto else {
+        return Err(super::convert::unsupported("inline proto argument"));
+    };
+    let Stmt::Use {
+        module,
+        arg,
+        tags,
+        condition,
+        if_imports,
+    } = use_stmt
+    else {
+        return Err(super::convert::unsupported("inline proto use statement"));
+    };
+    let mut node = convert_use(module, arg.as_ref(), tags, condition.as_deref(), if_imports)?;
+    let declaration = super::convert::convert_stmt(proto)?
+        .ok_or_else(|| super::convert::unsupported("inline proto declaration"))?;
+    let proto_node = named_child(&declaration, "expression")?.clone();
+    let argument = node
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("argument"))
+        .ok_or_else(|| super::convert::unsupported("inline proto without argument"))?;
+    let RakuAstFieldValue::Node(value) = &mut argument.value else {
+        return Err(super::convert::unsupported("inline proto argument"));
+    };
+    let ValueView::RakuAst(arg_node) = value.view() else {
+        return Err(super::convert::unsupported("inline proto argument"));
+    };
+    let mut arg_node = arg_node.clone();
+    if !replace_code_var(&mut arg_node, &name.resolve(), proto_node) {
+        return Err(super::convert::unsupported("inline proto code argument"));
+    }
+    *value = Value::rakuast(Box::new(arg_node));
+    Ok(node)
+}
+
+fn replace_code_var(arg: &mut RakuAstNode, name: &str, proto: RakuAstNode) -> bool {
+    let expected = format!("&{name}");
+    let matches_var = |node: &RakuAstNode| {
+        node.class == RakuAstClass::VarLexical
+            && positional_leaf(node).ok().is_some_and(
+                |value| matches!(value.view(), ValueView::Str(text) if text.as_str() == expected),
+            )
+    };
+    if matches_var(arg) {
+        *arg = proto;
+        return true;
+    }
+    if arg.class == RakuAstClass::ApplyListInfix
+        && let Some(RakuAstField {
+            value: RakuAstFieldValue::List(operands),
+            ..
+        }) = arg.fields.iter_mut().find(|f| f.name == Some("operands"))
+    {
+        for operand in operands {
+            if let ValueView::RakuAst(candidate) = operand.view()
+                && matches_var(candidate)
+            {
+                *operand = Value::rakuast(Box::new(proto));
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // Cost: O(1).
 pub(super) fn is_source_field(field: &RakuAstField) -> bool {
     matches!(
@@ -425,6 +499,9 @@ pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// `RakuAST::Statement::Use` -> `Stmt::Use`.
 pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let mut node = node.clone();
+    let inline_proto = take_inline_proto(&mut node)?;
+    let node = &node;
     let module = match name_parts::name_shape(named_child(node, "module-name")?) {
         Some(NameShape::Identifier(name)) => name,
         _ => return Err(super::lower::unsupported(node)),
@@ -453,13 +530,72 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         });
         tags.clear();
     }
-    Ok(Stmt::Use {
+    let use_stmt = Stmt::Use {
         module,
         arg,
         tags,
         condition: condition.map(Box::new),
         if_imports,
+    };
+    Ok(match inline_proto {
+        Some(proto) => Stmt::SyntheticBlock(vec![proto, use_stmt]),
+        None => use_stmt,
     })
+}
+
+fn take_inline_proto(node: &mut RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("argument")) else {
+        return Ok(None);
+    };
+    let RakuAstFieldValue::Node(value) = &mut field.value else {
+        return Err(super::lower::unsupported(node));
+    };
+    let ValueView::RakuAst(argument) = value.view() else {
+        return Err(super::lower::unsupported(node));
+    };
+    let mut argument = argument.clone();
+    let proto = take_proto_operand(&mut argument)?;
+    if proto.is_some() {
+        *value = Value::rakuast(Box::new(argument));
+    }
+    Ok(proto)
+}
+
+fn take_proto_operand(argument: &mut RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+    let is_proto =
+        |node: &RakuAstNode| node.class == RakuAstClass::Sub && super::proto::is_proto(node);
+    if is_proto(argument) {
+        let proto = super::proto::lower(argument)?;
+        let Stmt::ProtoDecl { name, .. } = &proto else {
+            unreachable!("proto lowerer")
+        };
+        *argument = super::convert::var_lexical("&", &name.resolve());
+        return Ok(Some(proto));
+    }
+    if argument.class == RakuAstClass::ApplyListInfix
+        && let Some(RakuAstField {
+            value: RakuAstFieldValue::List(operands),
+            ..
+        }) = argument
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("operands"))
+    {
+        for operand in operands {
+            if let ValueView::RakuAst(candidate) = operand.view()
+                && is_proto(candidate)
+            {
+                let proto = super::proto::lower(candidate)?;
+                let Stmt::ProtoDecl { name, .. } = &proto else {
+                    unreachable!("proto lowerer")
+                };
+                *operand =
+                    Value::rakuast(Box::new(super::convert::var_lexical("&", &name.resolve())));
+                return Ok(Some(proto));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// `RakuAST::Statement::Need` -> `Stmt::Need`. Only the one-module form the

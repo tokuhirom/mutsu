@@ -79,7 +79,11 @@ pub(super) fn lower_routine_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, Runti
 pub(super) fn lower_statement_sequence(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let mut stmts = Vec::with_capacity(node.fields.len());
     for f in &node.fields {
-        stmts.push(lower_stmt(child_node(&f.value)?)?);
+        let child = child_node(&f.value)?;
+        if let Some(trace) = super::origin::trace_of(child)? {
+            stmts.push(trace);
+        }
+        stmts.push(lower_stmt(child)?);
     }
     Ok(stmts)
 }
@@ -93,6 +97,9 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                 super::infix_func::note_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
                     stmts.push(Stmt::SetLine(line));
+                }
+                if let Some(trace) = super::origin::trace_of(child)? {
+                    stmts.push(trace);
                 }
                 let line = super::origin::line_of(child);
                 let mut stmt = super::origin::with_line(line, || lower_stmt(child))?;
