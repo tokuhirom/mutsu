@@ -58,12 +58,39 @@ impl Interpreter {
         if !ITERATING_METHODS.contains(&method) {
             return target;
         }
-        match crate::value::shaped_array::shaped_array_iteration_leaves(&target) {
-            Some(leaves) => Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(leaves)),
-                crate::value::ArrayKind::List,
-            ),
-            None => target,
+        crate::value::shaped_array::shaped_array_leaves_list(&target).unwrap_or(target)
+    }
+}
+
+/// The builtin routines that read their list arguments through the
+/// arguments' iterators, so a multi-dimensional shaped array argument gives
+/// them its leaves (#14308): `sum(@c)` adds four elements, not two rows.
+/// Routines about the array itself (`elems`) are absent.
+const ITERATING_ROUTINES: &[&str] = &[
+    "sum", "max", "min", "first", "grep", "any", "all", "one", "none", "set", "bag", "mix",
+];
+
+impl Interpreter {
+    /// `args` with each multi-dimensional shaped array replaced by the List
+    /// of its leaves, when `name` is a routine of [`ITERATING_ROUTINES`];
+    /// `None` when nothing changes.
+    // Cost: O(n) to scan the n arguments; O(E) to collect a shaped
+    // argument's E leaves.
+    pub(crate) fn shaped_routine_args(name: &str, args: &[Value]) -> Option<Vec<Value>> {
+        if !ITERATING_ROUTINES.contains(&name)
+            || !args
+                .iter()
+                .any(crate::value::shaped_array::shaped_array_has_rows)
+        {
+            return None;
         }
+        Some(
+            args.iter()
+                .map(|arg| {
+                    crate::value::shaped_array::shaped_array_leaves_list(arg)
+                        .unwrap_or_else(|| arg.clone())
+                })
+                .collect(),
+        )
     }
 }

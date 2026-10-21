@@ -581,6 +581,9 @@ impl Interpreter {
                 Err(e) => return Some(Err(e)),
             }
         }
+        if let Some(leaves) = Self::shaped_routine_args(name_sym.as_str(), args) {
+            *args = leaves;
+        }
         let args: &[Value] = args;
         // Atomic var/element RMW markers (`__mutsu_atomic_*` / `__mutsu_cas_*`) for the
         // `⚛`-operators. Dispatch them here directly so they don't fall through to the
