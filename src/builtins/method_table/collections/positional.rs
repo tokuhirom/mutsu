@@ -257,23 +257,8 @@ fn at_pos_interp(
     args: &[Value],
     _named: crate::builtins::method_table::Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::Array(_, kind) = target.view() else {
+    if !matches!(target.view(), ValueView::Array(..)) {
         return None;
-    };
-    // `Array.AT-POS` is `is raw`: it answers the element's own container, so
-    // `my $c := @a.AT-POS(1); $c = 20` writes the array and a user `AT-POS`
-    // that `callsame`s stays assignable (PDF::COS::Tie::Array). A `List`'s
-    // elements are values, and a shaped or lazy array goes the opcode's way.
-    if matches!(
-        kind,
-        crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
-    ) && let [index] = args
-        && let ValueView::Int(i) = index.view()
-        && i >= 0
-        && !crate::runtime::utils::is_shaped_array(target)
-        && let Some(slot) = target.array_slot_ref(i as usize, true)
-    {
-        return Some(Ok(slot));
     }
     interp.builtin_at_pos(target, args)
 }
