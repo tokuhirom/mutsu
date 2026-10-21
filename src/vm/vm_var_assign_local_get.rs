@@ -557,8 +557,6 @@ impl Interpreter {
                 self.stack.push(shared_val);
                 return Ok(());
             }
-            let is_internal = name.starts_with("__");
-            let is_special = matches!(name, "_" | "/" | "!" | "¢");
             // Private attribute locals (!attr) are populated directly from
             // instance attributes in fast-path method calls; they may not be
             // in the env (when skip_env_setup is active) but are still valid.
@@ -570,21 +568,21 @@ impl Interpreter {
             if is_private_attr && let Some(err) = self.missing_private_attr_read_error(name) {
                 return Err(err);
             }
-            // TODO: a Nil slot of a declared local is an unreached `my`
-            // (raku reads `Any`, e.g. a CATCH after a `die` before the `my`),
-            // not an undeclared name; this probe only stands in for that
-            // distinction, and an unbound required sub-signature leaf relies
-            // on it to fail its bind. It reads through the callers, as it did
-            // before a loaded module's routine stopped seeing the program
-            // scope (ADR-12529), so it does not change what it accepts.
-            if !is_internal
-                && !is_special
-                && !is_private_attr
-                && !self
-                    .env()
-                    .contains_key_sym_through_callers(Symbol::intern(name))
-            {
-                return Err(RuntimeError::undeclared_variable(name));
+            // A Nil slot of a declared local is a declared variable: an
+            // unreached `my` (a CATCH after a `die` before the `my`) reads as
+            // the slot's Nil, never as an undeclared name -- the compiler
+            // resolved the name to this slot, so there is nothing to probe
+            // (#14325). An unbound required sub-signature leaf fails its bind
+            // instead (`bind_sub_signature_from_value`).
+            // An unreached `my @a` / `my %h` is the empty aggregate.
+            if name.starts_with('@') && Interpreter::is_plain_lexical_name(name) {
+                self.stack.push(Value::real_array(Vec::new()));
+                return Ok(());
+            }
+            if name.starts_with('%') && Interpreter::is_plain_lexical_name(name) {
+                self.stack
+                    .push(Value::hash(crate::value::ValueMap::default()));
+                return Ok(());
             }
             // `is default(...)`: return the default value instead of Nil.
             if let Some(def) = self.var_default(name) {

@@ -261,12 +261,7 @@ pub(crate) fn source_adverb_pair(name: &str, condition: Option<Expr>) -> Expr {
             BinaryForm::ColonPairTrue,
         ),
     };
-    Expr::Binary {
-        left: Box::new(Expr::Literal(crate::value::Value::str(key))),
-        op: crate::token_kind::TokenKind::FatArrow,
-        right: Box::new(right),
-        form,
-    }
+    crate::ast::subscript_adverb::source_pair(&key, right, form)
 }
 
 pub(crate) fn collect_remaining_adverbs<'a>(
@@ -325,8 +320,18 @@ pub(crate) enum DeleteAdverb {
 
 /// A `:delete` written next to `:exists`, in either order, applied to the
 /// `:exists` node: `:delete(COND)` deletes only when `COND` holds.
-pub(crate) fn delete_with_exists(delete_adv: DeleteAdverb, exists_expr: Expr) -> Expr {
-    apply_delete_adverb(delete_adv, exists_expr)
+pub(crate) fn delete_with_exists(
+    delete_adv: DeleteAdverb,
+    exists_expr: Expr,
+    delete_first: bool,
+) -> Expr {
+    match delete_adv {
+        DeleteAdverb::NoDelete => exists_expr,
+        DeleteAdverb::Delete(None) => deleting(&exists_expr, delete_first),
+        DeleteAdverb::Delete(Some(cond)) => {
+            conditional_delete(cond, deleting(&exists_expr, delete_first), exists_expr)
+        }
+    }
 }
 
 /// A `:delete` applied to a single-dimension subscript's read (the subscript,
@@ -335,8 +340,8 @@ pub(crate) fn delete_with_exists(delete_adv: DeleteAdverb, exists_expr: Expr) ->
 pub(crate) fn apply_delete_adverb(delete_adv: DeleteAdverb, read: Expr) -> Expr {
     match delete_adv {
         DeleteAdverb::NoDelete => read,
-        DeleteAdverb::Delete(None) => deleting(&read),
-        DeleteAdverb::Delete(Some(cond)) => conditional_delete(cond, deleting(&read), read),
+        DeleteAdverb::Delete(None) => deleting(&read, false),
+        DeleteAdverb::Delete(Some(cond)) => conditional_delete(cond, deleting(&read, false), read),
     }
 }
 

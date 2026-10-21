@@ -1187,6 +1187,17 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             candidate = Some(interpreter.eval_param_default_expr(sub_pd, default_expr)?);
         }
         let Some(mut candidate) = candidate else {
+            // A required named leaf (`:at-keyw($type)!`) fails the bind, as at
+            // a top-level parameter (#14325).
+            if sub_pd.named && sub_pd.required && sub_pd.default.is_none() {
+                return Err(RuntimeError::typed_msg(
+                    "X::AdHoc",
+                    format!(
+                        "Required named argument '{}' not passed in sub-signature",
+                        sub_pd.name
+                    ),
+                ));
+            }
             // If the param is required (not optional, no default), error
             if !sub_pd.optional_marker && sub_pd.default.is_none() && !sub_pd.named {
                 return Err(RuntimeError::new(
