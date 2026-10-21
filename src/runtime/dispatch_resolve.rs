@@ -330,6 +330,23 @@ impl Interpreter {
         arg_values: &[Value],
         arg_keys: Option<&[Symbol]>,
     ) -> Resolved {
+        // A `Proxy` argument ranks by what its FETCH answers (see
+        // `choose_best_in_scope_candidate`); resolving over the fetched values
+        // also keeps the arity walk and the memo keys below honest.
+        if arg_values
+            .iter()
+            .any(|v| v.unwrap_varref().is_proxy_value())
+        {
+            let mut fetched = Vec::with_capacity(arg_values.len());
+            for v in arg_values {
+                if v.unwrap_varref().is_proxy_value() {
+                    fetched.push(self.auto_fetch_proxy(v.unwrap_varref())?);
+                } else {
+                    fetched.push(v.clone());
+                }
+            }
+            return self.resolve_function_with_types_keyed(name, &fetched, None);
+        }
         // The plain-routine tail below does not read the arguments, so its
         // answer is memoized (#9081, `plain_fn_resolve_memo.rs`).
         let plain_key = self.plain_fn_resolve_key(name);
