@@ -26,8 +26,9 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let mut body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     super::routine_source::retain(node, &mut body)?;
     // A sub with no signature of its own takes its placeholder variables.
-    let (params, param_defs) =
+    let (params, mut param_defs) =
         crate::ast::implicit_placeholder_signature(params, param_defs, &body);
+    crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     let associativity = is_traits
         .assoc
         .clone()

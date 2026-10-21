@@ -164,6 +164,7 @@ impl Compiler {
             }
             Stmt::RoleDecl {
                 type_params,
+                header_order,
                 type_param_defs,
                 is_export,
                 export_tags,
@@ -175,6 +176,7 @@ impl Compiler {
                 ..
             } => Stmt::RoleDecl {
                 name: qualified_sym,
+                header_order: header_order.clone(),
                 type_params: type_params.clone(),
                 type_param_defs: type_param_defs.clone(),
                 is_export: *is_export,

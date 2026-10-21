@@ -10,9 +10,10 @@ pub(super) const MAX_TYPE_DEPTH: usize = 128;
 /// A simple type uses exactly the parser's identifier grammar, including
 /// internal hyphens, apostrophes, Unicode and qualified segments.
 pub(super) fn is_simple_type(t: &str) -> bool {
-    is_pseudo_type(t)
-        || (!t.is_empty()
-            && name_parts::identifier_segments(t).all(crate::parser::is_raku_identifier))
+    is_pseudo_type(t) || {
+        let t = t.strip_prefix("::").unwrap_or(t);
+        !t.is_empty() && name_parts::identifier_segments(t).all(crate::parser::is_raku_identifier)
+    }
 }
 
 pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {

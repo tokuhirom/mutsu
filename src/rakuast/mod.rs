@@ -75,6 +75,7 @@ mod regex_quantifier;
 mod regex_sym;
 mod render;
 mod role;
+mod role_header;
 mod routine_ctor;
 mod routine_is_traits;
 mod routine_lower;
@@ -929,6 +930,8 @@ impl RakuAstClass {
             TraitIs | TraitReturns | TraitOf | TraitDoes | TraitHides | TraitWillBuild
             | TraitHandles | TraitWill | TraitTrusts => &["RakuAST::Trait"],
             Native => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
+            Role => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
+            RoleBody => &["RakuAST::Sub", "RakuAST::Routine", "RakuAST::Term", "RakuAST::Expression"],
             CallBlockMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
             StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],
             IntLiteral
@@ -2798,6 +2801,12 @@ pub fn construct(
         if class_name == "RakuAST::Grammar" {
             return class_constructor::construct_grammar(args).map(Some);
         }
+        if class_name == "RakuAST::Role" {
+            return class_constructor::construct_role(args).map(Some);
+        }
+        if class_name == "RakuAST::RoleBody" {
+            return class_constructor::construct_role_body(args).map(Some);
+        }
         if let Some(result) = regex_decl_constructor::construct(class_name, args) {
             return result.map(Some);
         }
@@ -2808,7 +2817,7 @@ pub fn construct(
     if let Some(node) = regex_enumeration::construct(class_name, method, args) {
         return node.map(Some);
     }
-    if let Some(node) = role::construct(class_name, method, args) {
+    if let Some(node) = role_header::construct(class_name, method, args) {
         return node.map(Some);
     }
     // `Regex::InternalModifier::IgnoreCase.new(:modifier<ignorecase>, :negated)`:
@@ -3720,6 +3729,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RuleDeclaration
             | RakuAstClass::Grammar
             | RakuAstClass::NamePartSimple
+            | RakuAstClass::Role
+            | RakuAstClass::RoleBody
             | RakuAstClass::NamePartExpression
             | RakuAstClass::NamePartEmpty
             | RakuAstClass::NamePartEmptyEdge

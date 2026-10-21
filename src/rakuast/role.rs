@@ -27,6 +27,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// The fields of a `Stmt::RoleDecl` the RakuAST node is built from.
 pub(super) struct RoleDecl<'a> {
     pub name: Symbol,
+    pub header_order: &'a [crate::ast::RoleHeaderTrait],
     pub type_params: &'a [String],
     pub type_param_defs: &'a [ParamDef],
     pub is_export: bool,
@@ -140,11 +141,12 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         + usize::from(role.is_export)
         + usize::from(role.is_rw)
         + usize::from(!user_traits.is_empty());
-    if kinds > 1 {
+    if kinds > 1 && role.header_order.is_empty() {
         return Err(unsupported(
             "role traits whose source order is not recorded",
         ));
     }
+    let parent_trait_count = traits.len();
     let flags = IsTraits {
         is_rw: role.is_rw,
         is_raw: false,
@@ -158,12 +160,16 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             .map(|t| Value::rakuast(Box::new(t))),
     );
     traits.extend(super::decl_traits::class_custom_traits(&user_traits)?);
+    if !role.header_order.is_empty() {
+        traits = super::role_header::ordered_traits(&role, traits, parent_trait_count)?;
+    }
     let scope = if super::convert::is_anon_package(role.custom_traits) {
         Some("anon")
     } else {
         is_lexical.then_some("my")
     };
     let mut fields = package_header_fields(role.name, scope, is_colons_package(role.custom_traits));
+    super::role_header::retain_name(&mut fields, role.name);
     super::declare_how::add_field(&mut fields, role.custom_traits);
     if !traits.is_empty() {
         fields.push(RakuAstField {
@@ -213,7 +219,10 @@ fn parent_clause(
 /// front of the body.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let head = package_head(node, crate::parser::next_anon_role_name)?;
+    let retained = super::role_header::retained_name(node)?;
+    let head = package_head(node, || {
+        retained.unwrap_or_else(crate::parser::next_anon_role_name)
+    })?;
     if head.is_unit {
         return Err(super::lower::unsupported(node));
     }
@@ -296,6 +305,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     Ok(head.finish(Stmt::RoleDecl {
         name: Symbol::intern(&head.name),
+        header_order: super::role_header::lower_order(node)?,
         type_params: crate::parser::role_type_param_names(&type_param_defs),
         type_param_defs,
         is_export: !flags.export_tags.is_empty(),
@@ -462,49 +472,6 @@ pub(super) fn also_is_statement(trait_node: Value) -> RakuAstNode {
             value: RakuAstFieldValue::List(vec![trait_node]),
         }],
     }
-}
-
-/// `RakuAST::Statement::Also.new(traits => (...))`, or `None` for any other
-/// class.
-// Cost: O(a), a = number of arguments.
-pub(super) fn construct(
-    class_name: &str,
-    method: &str,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    if (class_name, method) != ("RakuAST::Statement::Also", "new") {
-        return None;
-    }
-    let mut traits = Vec::new();
-    for arg in args {
-        match arg.view() {
-            ValueView::Pair(key, value) if key.as_str() == "traits" => {
-                traits = match value.view() {
-                    ValueView::RakuAst(_) => vec![value.clone()],
-                    _ => match value.as_list_items() {
-                        Some(items) => items.to_vec(),
-                        None => {
-                            return Some(Err(RuntimeError::new(
-                                "RakuAST::Statement::Also.new expects `traits` to be a list",
-                            )));
-                        }
-                    },
-                };
-            }
-            _ => {
-                return Some(Err(RuntimeError::new(
-                    "RakuAST::Statement::Also.new takes only `traits`",
-                )));
-            }
-        }
-    }
-    Some(Ok(Value::rakuast(Box::new(RakuAstNode {
-        class: RakuAstClass::StatementAlso,
-        fields: vec![RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(traits),
-        }],
-    }))))
 }
 
 fn unsupported_node(node: &RakuAstNode) -> RuntimeError {

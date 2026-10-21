@@ -66,7 +66,13 @@ fn type_constraint_at(
         RakuAstClass::TypeSimple => {
             let name_node = named_child_or_positional(type_node)?;
             match name_parts::name_shape(name_node) {
-                Some(NameShape::Identifier(name)) => Ok(name),
+                Some(NameShape::Identifier(name)) => {
+                    if name_parts::has_leading_empty(name_node) {
+                        Ok(format!("::{name}"))
+                    } else {
+                        Ok(name)
+                    }
+                }
                 _ => Err(unsupported(owner)),
             }
         }
