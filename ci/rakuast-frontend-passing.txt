@@ -357,6 +357,7 @@ t/collections/lazy-seq/lazy-list-gist-context.t
 t/collections/lazy-seq/lazy-list-join.t
 t/collections/lazy-seq/lazy-list-say-display.t
 t/collections/lazy-seq/lazy-map-returns-map-seq.t
+t/collections/lazy-seq/lazy-map-variadic-block-head.t
 t/collections/lazy-seq/lazy-marked-finite-pipe-coercion.t
 t/collections/lazy-seq/lazy-marker-rows.t
 t/collections/lazy-seq/lazy-pairs-kv-antipairs.t
@@ -2066,6 +2067,7 @@ t/grammar/rule-sigspace-trailing-whitespace.t
 t/grammar/rule-sigspace-word-boundary-group.t
 t/grammar/rule-tilde-sigspace.t
 t/grammar/rw-method-attribute-store-shares-accessor-rule.t
+t/grammar/slang-actions-helper-methods.t
 t/grammar/slurpy-single-argument-rule.t
 t/grammar/splice-arg-flatten-rule.t
 t/grammar/stub-satisfied-by-token-or-proto.t
@@ -2992,6 +2994,7 @@ t/modules/import-export/unit-module-imported-parent.t
 t/modules/import-export/unit-module-multi-candidates-and-tagged-code.t
 t/modules/import-export/unit-module-prelude-type-global.t
 t/modules/import-export/unit-module-scope.t
+t/modules/import-export/unit-module-sibling-parametric-role-does.t
 t/modules/import-export/unit-module-typed-hash-lanes.t
 t/modules/import-export/unit-module-unexported-class-short-name.t
 t/modules/import-export/unit-my-constant-name-collision.t
@@ -3727,6 +3730,7 @@ t/oo/attribute/object-hash-attr-accessor-assign.t
 t/oo/attribute/parent-attributes.t
 t/oo/attribute/placeholder-attribute.t
 t/oo/attribute/prefix-incdec-on-an-rw-accessor.t
+t/oo/attribute/proxy-subclass-attributes-methods.t
 t/oo/attribute/quanthash-attribute-assign-in-place.t
 t/oo/attribute/quanthash-attribute-element-assign.t
 t/oo/attribute/quoted-method-name-reaches-accessor.t
@@ -3940,6 +3944,7 @@ t/oo/does-but-type-errors.t
 t/oo/does-mixin-reaches-the-caller.t
 t/oo/does-mutates-the-object.t
 t/oo/does-on-captured-variable-reaches-shared-binding.t
+t/oo/does-value-param-writeback.t
 t/oo/does-writes-through-the-assignment-store.t
 t/oo/enum-does-enumeration.t
 t/oo/enum-value-does-not-block-unrelated-rebind.t
@@ -4450,6 +4455,7 @@ t/oo/mixin-type-object-gist.t
 t/oo/mixin-type-set-name-raku.t
 t/oo/mixin-typed-int-attr-persists-across-calls.t
 t/oo/mixin-value-identity.t
+t/oo/mixin-what-declaration-site-stable.t
 t/oo/mop/builtin-type-introspection.t
 t/oo/mop/can-anonymous-class-dynamic-method.t
 t/oo/mop/can-built-in-mro-candidates.t
@@ -4712,6 +4718,7 @@ t/oo/role/role-diamond-stub-concrete.t
 t/oo/role/role-does-container-decl.t
 t/oo/role/role-does-parametric-role-attr-default.t
 t/oo/role/role-does-punned-role-attrs.t
+t/oo/role/role-does.t
 t/oo/role/role-dotted-name-sibling-not-real-nesting.t
 t/oo/role/role-double-parametric-args-distinct.t
 t/oo/role/role-double-parametric-multi-dispatch.t
@@ -4720,6 +4727,8 @@ t/oo/role/role-expr-hyphenated-name.t
 t/oo/role/role-how-specialize-hook.t
 t/oo/role/role-initialization.t
 t/oo/role/role-instantiation.t
+t/oo/role/role-is-hash-var-tie.t
+t/oo/role/role-is-parent-shadowed-by-own-name.t
 t/oo/role/role-is-rw.t
 t/oo/role/role-lexical-class.t
 t/oo/role/role-method-class-in-mixin.t
@@ -4735,6 +4744,7 @@ t/oo/role/role-method-vs-class-accessor-quoted-call.t
 t/oo/role/role-mixin-array-protocols.t
 t/oo/role/role-mixin-hash-attr-default-coerce.t
 t/oo/role/role-mixin-init-value-is-not-a-type-parameter.t
+t/oo/role/role-mixin-initializer-shape.t
 t/oo/role/role-mixin-marker-keys.t
 t/oo/role/role-mixin-survival.t
 t/oo/role/role-multi-invocant-smiley-across-composition.t
@@ -5251,6 +5261,7 @@ t/rakuast/rakuast-require-import-list.t
 t/rakuast/rakuast-require-statement.t
 t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-arg-blocks.t
+t/rakuast/rakuast-role-composition-boundaries.t
 t/rakuast/rakuast-role-hidden-traits.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t

@@ -1518,7 +1518,7 @@ impl PackageHead {
 // Cost: O(k), k = length of the name.
 pub(super) fn package_head(
     node: &RakuAstNode,
-    fresh: fn() -> String,
+    fresh: impl FnOnce() -> String,
 ) -> Result<PackageHead, RuntimeError> {
     let scope = match node.fields.iter().find(|f| f.name == Some("scope")) {
         Some(_) => Some(leaf_str(node, "scope")?),
@@ -1933,7 +1933,7 @@ pub(super) fn multiness(node: &RakuAstNode) -> Result<bool, RuntimeError> {
 fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let _method_scope = super::underscore_bindings::MethodScope::enter(true);
     let (name, name_expr) = super::routine_lower::declarator_name(node)?;
-    let (params, param_defs) = signature_positional_params(node)?;
+    let (params, mut param_defs) = signature_positional_params(node)?;
     let mut is_traits = super::routine_traits::IsTraits::default();
     let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
     // The parser keeps a method's `is default` and `is DEPRECATED` in fields of
@@ -1962,6 +1962,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let mut body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     super::routine_source::retain(node, &mut body)?;
     let handles = super::routine_source::handle_specs(&body).ok_or_else(|| unsupported(node))?;
+    crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     Ok(Stmt::MethodDecl {
         value_prototype: None,
         name: crate::symbol::Symbol::intern(&name),
@@ -2631,6 +2632,7 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     } else {
         crate::ast::RoutineDeclarator::Method
     };
+    crate::ast::does_target::mark_does_targets("", &mut param_defs, &body);
     let mut literal = match declared {
         Some((type_constraint, alias, default)) => crate::parser::anon_method_expr_declared(
             type_constraint,
@@ -4484,7 +4486,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?)))
         }
         RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
-            let (params, param_defs) = signature_positional_params(node)?;
+            let (params, mut param_defs) = signature_positional_params(node)?;
             let mut flags = super::routine_traits::IsTraits::default();
             let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
             if !flags.export_tags.is_empty() || flags.assoc.is_some() || flags.precedence.is_some()
@@ -4498,6 +4500,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let mut body =
                 lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
             super::routine_source::retain(node, &mut body)?;
+            crate::ast::does_target::mark_does_targets("", &mut param_defs, &body);
             let doc = super::declarator_docs::slot(node);
             if params.is_empty() && return_type.is_none() && custom_traits.is_empty() {
                 return Ok(Expr::AnonSub {
@@ -4588,7 +4591,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             if matches!(&lowered, Expr::Var(n) if n == "_") {
                 return Ok(Expr::Grouped(Box::new(lowered)));
             }
-            Ok(lowered)
+            Ok(Expr::Grouped(Box::new(lowered)))
         }
         RakuAstClass::CircumfixHashComposer => super::hash_literal::lower_composer(node),
         RakuAstClass::ContextualizerHash => super::contextualizer::lower(node, ContextKind::Hash),
@@ -4915,7 +4918,18 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             };
             let value = match single_word {
                 Some(word) => Expr::Literal(crate::parser::angle_word_value(&word)),
-                None => lower_expr(value_node)?,
+                // The outer parentheses of `:key(EXPR)` delimit the
+                // colonpair's value; they are not an extra written grouping
+                // around EXPR. Keep any additional inner parentheses, while
+                // producing the same container operand as the source parser.
+                None => match lower_expr(value_node)? {
+                    Expr::Grouped(inner)
+                        if value_node.class == RakuAstClass::CircumfixParentheses =>
+                    {
+                        *inner
+                    }
+                    value => value,
+                },
             };
             Ok(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(key))),

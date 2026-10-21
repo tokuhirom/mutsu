@@ -400,7 +400,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("repr", Absent::TypeObject("Str")),
             ("traits", Absent::EmptyList),
             ("body", Absent::Required),
+            ("parameterization", Absent::EmptyNode(Signature)),
         ],
+        RoleBody => &[("body", Absent::Required)],
         Grammar => &[
             ("scope", Absent::Str("our")),
             ("parsed-declarator", Absent::Str("grammar")),

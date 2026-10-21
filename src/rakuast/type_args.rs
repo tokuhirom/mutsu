@@ -145,7 +145,14 @@ pub(super) fn parameterized_type_node_at(
         }
     } else {
         for source in sources {
-            fields.push(node_field(None, build_type_node_at(source, depth + 1)?));
+            let node = if let Some(value) = crate::parser::numeric_literal_value(source) {
+                super::convert::convert_literal(&value)?
+            } else if let Some(value) = super::type_build::plain_string_literal(source) {
+                super::convert::quoted_string(crate::value::Value::str(value.to_string()))
+            } else {
+                build_type_node_at(source, depth + 1)?
+            };
+            fields.push(node_field(None, node));
         }
     }
     Ok(RakuAstNode {

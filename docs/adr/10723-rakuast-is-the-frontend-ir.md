@@ -1600,3 +1600,31 @@ regex/token/rule construction retains signatures, scopes and multiness.
 `t/rakuast/rakuast-grammar-argument-bindings.t` covers both directions and
 hand-built grammar declarations; the existing capture-exception and binding
 window files exercise the same behavior through the round-trip frontend.
+
+### 6.87 S10: role composition provenance and caller bindings (2026-10-21)
+
+`Stmt::RoleDecl::header_order` records the written interleaving of the
+separately stored parent, export, rw and custom-trait families. Both block
+and unit role parsers record it before normalization; conversion orders the
+public traits from that record, and lowering records the order of constructed
+trait lists. The serialized AST cache format is bumped for the new field.
+The role header parser is split out of the declaration-body parser.
+
+Anonymous role nodes retain their already minted declaration name as private
+model metadata, following the existing source-metadata pattern. Lowering
+reuses it; a newly constructed node still allocates a fresh name. No global
+counter is reset, and the metadata is absent from public constructor rendering.
+Absolute type names retain their leading empty edge without changing type
+capture names at unrelated lowering sites. Source-only parameterized type
+arguments support plain string and numeric literals; parsed argument lists
+continue through the ordinary expression converter.
+
+The lowerer reuses ADR-14144's `does` parameter analysis for subs, methods and
+closures, including hand-built routines. Parenthesized expressions retain
+`Grouped`, so a grouped role call stays an ordinary coercion rather than
+becoming a mixin initializer. The existing compiler and VM own all execution.
+The outer parentheses of `:key(EXPR)` remain colonpair delimiters, so they do
+not add a `Grouped` operand that would hide the argument's source container.
+`Role.new` and `RoleBody.new` share the package-construction helpers and retain
+their body, traits and parameterization. The measured executable contract is
+`t/rakuast/rakuast-role-composition-boundaries.t`.

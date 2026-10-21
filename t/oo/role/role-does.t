@@ -6,7 +6,7 @@ role Greetable {
 }
 
 class Person {
-    does Greetable;
+    also does Greetable;
 }
 
 my $p = Person.new();
@@ -18,7 +18,7 @@ role CounterRole {
 }
 
 class Counter {
-    does CounterRole;
+    also does CounterRole;
 }
 
 my $c = Counter.new();

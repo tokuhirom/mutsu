@@ -310,6 +310,7 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::RoleDecl {
+            header_order: Vec::new(),
             name: Symbol::intern(&name),
             type_params,
             type_param_defs,
