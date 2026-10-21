@@ -287,7 +287,13 @@ impl Interpreter {
             && !name.container_storage
             && let ValueView::Instance { attributes, .. } = obj.view()
         {
-            attributes.bind_attr_through(key, val);
+            // A Proxy or a cell is the attribute's container, so it replaces
+            // the slot (a bind); see `nqp_bindattr_value`.
+            if Self::is_non_mirrorable_attr_value(&val) {
+                attributes.bind_attr_replace(key, val);
+            } else {
+                attributes.bind_attr_through(key, val);
+            }
             return Ok(());
         }
         Self::nqp_bindattr_value(op, obj, name.name.as_str(), val)

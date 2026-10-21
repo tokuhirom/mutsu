@@ -103,6 +103,15 @@ impl Interpreter {
         name: &str,
         raw_popped: &Value,
     ) -> Result<Value, RuntimeError> {
+        // A Proxy binds as the container itself, after its FETCHed value passes
+        // the Positional check (rakudo checks the FETCHed value: a Proxy
+        // answering an Array binds, one answering `5` fails the binding).
+        // AttrX::Mooish binds an `AttrProxy` to `@!attr` this way.
+        if raw_popped.is_proxy_value() {
+            let fetched = self.auto_fetch_proxy(raw_popped)?;
+            self.bind_positional_value(name, &fetched)?;
+            return Ok(raw_popped.clone());
+        }
         let decontained_popped = raw_popped.deref_container();
         // `but`/`does` wraps the value in a `Mixin` view, which none of the
         // arms below matched — so `my @p := <a b> but R` failed the bind even

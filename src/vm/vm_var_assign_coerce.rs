@@ -177,6 +177,15 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // A Proxy binds as the container itself once its FETCHed value passes
+        // the check (rakudo checks the FETCHed value).
+        let fetched_proxy;
+        let value = if value.is_proxy_value() {
+            fetched_proxy = self.auto_fetch_proxy(value)?;
+            &fetched_proxy
+        } else {
+            value
+        };
         let mut candidate = value.deref_container();
         let mut mixin_composes_associative = false;
         if let ValueView::Mixin(inner, mixins) = candidate.view() {
