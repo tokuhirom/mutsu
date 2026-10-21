@@ -4631,6 +4631,7 @@ t/oo/role/mro-role-hides.t
 t/oo/role/mro-roles-last-declared-first.t
 t/oo/role/multi-method-nested-role-narrowness.t
 t/oo/role/multi-method-roles.t
+t/oo/role/multi-mixin-role-vs-unrelated-nominal.t
 t/oo/role/multi-subset-param-vs-unrelated-role-param-narrowness.t
 t/oo/role/my-enum-and-type-params-in-role.t
 t/oo/role/my-role-compound-name-qualification.t
@@ -6205,6 +6206,7 @@ t/routines/dispatch/adr0110-trir-call-out-dispatch.t
 t/routines/dispatch/anonymous-any-multi-dispatch.t
 t/routines/dispatch/assoc-multidim-lvalue-edges.t
 t/routines/dispatch/begin-selective-import-proto-multi.t
+t/routines/dispatch/block-imports-merge-multi-family-of-two-modules.t
 t/routines/dispatch/block-local-sub-dispatch.t
 t/routines/dispatch/block-multi-call-after-exit.t
 t/routines/dispatch/block-multi-where-runs-once.t
