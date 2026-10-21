@@ -353,6 +353,7 @@ impl Interpreter {
             | OpCode::SymbolicDeref { .. }
             | OpCode::SymbolicDerefStore(..)
             | OpCode::Trace(..)
+            | OpCode::CoverageHit(..)
             | OpCode::TypeCheck(..)
             | OpCode::TypeCheckBind(..) => self.exec_ops_group_13(code, ip, compiled_fns),
             OpCode::AugmentClass { .. }

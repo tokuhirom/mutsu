@@ -69,6 +69,7 @@ mod trace;
 pub(crate) mod trir;
 pub(crate) mod type_id;
 mod ucd;
+pub(crate) mod coverage_log;
 pub(crate) mod unit_source_file;
 mod value;
 mod vm;
