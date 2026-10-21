@@ -17,7 +17,8 @@ The role of an ADR is to preserve the *context of the judgment* — something th
   at least six times, once only noticed after both PRs had merged. ADR-0001 … ADR-0138 keep
   their sequential numbers; that scheme is closed.
 - **Status**: a `- **Status**: ...` line near the top — `Proposed` (under discussion / awaiting
-  approval) / `Accepted` (final) / `Superseded by ADR-XXXX` (updated). That line is the only
+  approval) / `Accepted` (final) / `Rejected` (declined; the file stays, with the reason) /
+  `Superseded by ADR-XXXX` (updated). That line is the only
   place the status lives.
 - When a decision changes, **do not rewrite the existing ADR** — supersede it with a new ADR and update the old ADR's Status.
 - **An ADR records the decision, not implementation progress** (user decision, 2026-10-19):
