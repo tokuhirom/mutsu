@@ -1772,3 +1772,24 @@ regressions green in frontend mode.
 
 The inline-proto `use` argument and `use trace` still need model-level source
 representation; they remain in #14359.
+
+### 6.95 Routine scope is resolved from the node, not its constructor text (2026-10-21)
+
+The scope discrepancy reported in #14264 against Rakudo 2026.07 no longer
+reproduces in the current oracle: a parsed named Method and a constructed
+Method with the same name and body both answer `has`. Rakudo 2026.09 resolves
+an omitted scope from the node kind and presence of a name: a nameless
+Sub/Method/Submethod answers `anon`, a named Sub answers `my`, and a named
+Method/Submethod answers `has`. Explicit scopes override that default and are
+kept in the model. EVAL leaves the accessor value unchanged.
+
+The uniform node's field schema now declares `scope` on routines, while the
+accessor computes a missing value from kind and name. The parser's `is_my` and
+`is_our` flags distinguish explicitly scoped submethods from the unscoped
+form. Conversion retains their semantic scope field, and lowering restores
+those flags. Rakudo omits a Submethod scope from constructor text even when
+explicit; rendering applies that rule without discarding the node's field.
+It also elides an explicit Sub or Method scope equal to its derived default.
+No source-provenance marker or second resolver is needed for the current
+routine contract. `t/rakuast/rakuast-routine-scope.t` checks parsed and built
+nodes, both frontend modes, constructor output, and values before/after EVAL.
