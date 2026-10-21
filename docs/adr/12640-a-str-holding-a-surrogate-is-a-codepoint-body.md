@@ -1,10 +1,35 @@
 # ADR-12640: A `Str` holding a surrogate is a codepoint body
 
-- **Status**: Proposed (2026-10-20)
+- **Status**: Rejected (user decision 2026-10-21; see §0). Follow-up: [#14416](https://github.com/tokuhirom/mutsu/issues/14416)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#12640](https://github.com/tokuhirom/mutsu/issues/12640); builds on the `Str`
   payload type of [ADR-0120](0120-str-payload-may-be-a-lazily-flattened-strand-list.md) and the
   shared string primitives of [ADR-0117](0117-str-methods-and-nqp-ops-share-one-routine.md).
+
+## 0. Rejection (2026-10-21)
+
+The maintainer rejected this proposal. mutsu does not keep a surrogate codepoint in a `Str`;
+every construction path raises `X::InvalidCodepoint` instead (#14416). The reasons:
+
+- **The spec says a surrogate is an error.** `roast/S29-conversions/ord_and_chr.t` expects
+  `dies-ok {chr(0xD800)}`, which Rakudo carries as `#?rakudo todo 'chr surrogate'`, and S15
+  (`old-design-docs/S15-unicode.pod`) says `chr`/`chrs` fail on "parts of surrogate code
+  pairs".
+  Rakudo keeping the codepoint is its own known deviation, and roast is mutsu's authoritative
+  spec. Rakudo already raises `X::InvalidCodepoint` for `Uni.new(0xD800)`.
+- **Nothing needs it.** #12640 came from comparing escape decoding against `raku` while
+  working the RakuAST regex-source cohort (#12644); no roast file, distribution or user program
+  was found that builds a surrogate `Str`.
+- **The cost is permanent and its failure mode is the one §4 rejects.** Review found that the
+  design as written would still give wrong answers that look right: `HashKey` is `str`-keyed,
+  so a `Wide` key collides with the U+FFFD key; the string primitives take `&str`, so any
+  `eq`/`cmp` caller that is not migrated compares the lossy views and answers
+  `"a\x[D800]" eq "a\x[FFFD]"` as `True`; and the in-place `~=` path (`take_flat`) appends to
+  the lossy buffer. `.raku` was also mis-described: Rakudo emits the raw surrogate, not
+  `\x[D800]`. A third `StrBody` form would have to be carried by every string primitive for a
+  case only Rakudo's todo exercises.
+
+Sections 1-5 below are the proposal as it was written, kept for the record.
 
 ## 1. Context
 
