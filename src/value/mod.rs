@@ -3873,6 +3873,10 @@ pub(crate) struct LazyList {
     /// Mutually exclusive with `array_context` in practice. Typed field (was
     /// the `__mutsu_lazylist_list_context` env marker).
     pub(crate) list_context: bool,
+    /// `.hyper` / `.race` of a lazy sequence (#13918): the sequence stays a
+    /// lazy pull and reports `HyperSeq` / `RaceSeq`. The work is not batched
+    /// across threads, as for the settled `HyperSeq`.
+    pub(crate) hyper_kind: HyperKind,
     /// Set by `.cache` on a genuinely-lazy list: the result is a cached,
     /// re-iterable view, so sinking it is a no-op (it must NOT drain the
     /// underlying source). A bare lazy Seq sunk still drains; only the
@@ -3902,6 +3906,15 @@ pub(crate) struct LazyList {
     /// eager `ArrayData` carries, so `Array.default`/`.of` answer from the
     /// value and survive the list leaving its variable (#14101).
     pub(crate) descriptor: Option<Arc<LazyArrayDescriptor>>,
+}
+
+/// See [`LazyList::hyper_kind`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum HyperKind {
+    #[default]
+    Plain,
+    Hyper,
+    Race,
 }
 
 /// See [`LazyList::descriptor`].
