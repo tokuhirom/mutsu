@@ -341,6 +341,10 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let right = self.fetch_proxy_operand(right)?;
         let left = self.fetch_proxy_operand(left)?;
+        let (left, right) = (
+            self.numify_container_endpoint(left)?,
+            self.numify_container_endpoint(right)?,
+        );
         let result = Self::build_range_value(left, right)?;
         self.stack.push(result);
         Ok(())
@@ -351,6 +355,10 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let right = self.fetch_proxy_operand(right)?;
         let left = self.fetch_proxy_operand(left)?;
+        let (left, right) = (
+            self.numify_container_endpoint(left)?,
+            self.numify_container_endpoint(right)?,
+        );
         let result = Self::build_range_excl_value(left, right)?;
         self.stack.push(result);
         Ok(())
@@ -361,6 +369,10 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let right = self.fetch_proxy_operand(right)?;
         let left = self.fetch_proxy_operand(left)?;
+        let (left, right) = (
+            self.numify_container_endpoint(left)?,
+            self.numify_container_endpoint(right)?,
+        );
         let result = Self::build_range_excl_start_value(left, right)?;
         self.stack.push(result);
         Ok(())
@@ -371,6 +383,10 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let right = self.fetch_proxy_operand(right)?;
         let left = self.fetch_proxy_operand(left)?;
+        let (left, right) = (
+            self.numify_container_endpoint(left)?,
+            self.numify_container_endpoint(right)?,
+        );
         let result = Self::build_range_excl_both_value(left, right)?;
         self.stack.push(result);
         Ok(())
