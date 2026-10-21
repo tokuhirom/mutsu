@@ -2312,7 +2312,14 @@ impl Interpreter {
                 let bind_derefed = if binding && val.is_proxy_value() {
                     // A typed bind checks the Proxy's current value, but must
                     // still install the Proxy itself as the new container.
-                    Some(self.auto_fetch_proxy(&val)?)
+                    // `Mu` accepts anything, so Rakudo never looks at the
+                    // value there: `my Mu $x := Proxy.new(...)` does not FETCH
+                    // (AttrX::Mooish binds its AttrProxy to `my Mu $attr-var`).
+                    if constraint == "Mu" {
+                        None
+                    } else {
+                        Some(self.auto_fetch_proxy(&val)?)
+                    }
                 } else {
                     binding.then(|| val.deref_container())
                 };

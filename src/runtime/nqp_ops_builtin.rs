@@ -557,6 +557,12 @@ impl Interpreter {
             ValueView::Instance { attributes, .. } => {
                 attributes.bind_attr_through(attr_key, val);
             }
+            ValueView::Proxy {
+                subclass: Some((_, attributes)),
+                ..
+            } => {
+                attributes.bind_attr_through(attr_key, val);
+            }
             // A role attribute lives in the mixin's role cell; anything else
             // is the inner value's (see `nqp_attr_value`).
             ValueView::Mixin(inner, mixins)
@@ -717,9 +723,27 @@ impl Interpreter {
                 _ => None,
             };
         }
-        let ValueView::Instance { attributes, .. } = obj.view() else {
-            return None;
-        };
+        // A Proxy subclass instance keeps its attributes in its own cell
+        // (AttrX::Mooish's `nqp::getattr($proxy, AttrProxy, '$!is-set')`).
+        match obj.view() {
+            ValueView::Instance { attributes, .. } => {
+                Self::nqp_attr_in_cell(&attributes, bare, name)
+            }
+            ValueView::Proxy {
+                subclass: Some((_, attributes)),
+                ..
+            } => Self::nqp_attr_in_cell(attributes, bare, name),
+            _ => None,
+        }
+    }
+
+    /// The attribute `bare`/`name` of an instance's attribute cell.
+    // Cost: O(1), a few attribute-map probes.
+    fn nqp_attr_in_cell(
+        attributes: &crate::value::InstanceAttrs,
+        bare: &str,
+        name: &str,
+    ) -> Option<Value> {
         // Read under the guard: cloning the whole map to read one key made
         // every getattr O(attributes) (#9134).
         let attrs = attributes.as_map();
