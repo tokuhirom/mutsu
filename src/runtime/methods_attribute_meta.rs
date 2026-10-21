@@ -133,9 +133,28 @@ impl Interpreter {
             ..
         } = obj.view()
         {
-            return Ok(obj_attrs.get_attribute_value(attribute_meta_storage_key(
-                meta, &obj_attrs, &attr_name,
-            )));
+            let key = attribute_meta_storage_key(meta, &obj_attrs, &attr_name);
+            // The read first: an ABSENT slot is recorded as a pending lazy
+            // initializer (`set_attribute_value`'s race rule), and answers
+            // `Nil` rather than a container the slot does not have yet.
+            let value = obj_attrs.get_attribute_value(key);
+            // A scalar attribute's value is its Scalar container (Rakudo's
+            // `get_value` hands that out, so `nqp::iscont` holds and a store
+            // through it is the attribute's own); a Proxy bound there, or a
+            // list/hash slot, is already its own container.
+            if !attr_name.starts_with(['@', '%', '&'])
+                && obj_attrs.as_map().get(key).is_some()
+                && !matches!(
+                    value.view(),
+                    ValueView::Array(..)
+                        | ValueView::Hash(_)
+                        | ValueView::Mixin(..)
+                        | ValueView::Proxy { .. }
+                )
+            {
+                return Ok(obj_attrs.promote_attr_to_container(key));
+            }
+            return Ok(value);
         }
         // An attribute has no value on a type object.
         if let ValueView::Package(name) = obj.view()

@@ -1380,7 +1380,15 @@ impl Interpreter {
             {
                 self.types.pending_proxy_subclass_attr =
                     Some((subclass_attrs.clone(), method.to_string()));
-                return Some(Ok(val));
+                // A read through the accessor answers the attribute's value;
+                // a bound cell (`$!val := nqp::clone_nd($container)`) is not
+                // handed out, or a later store into it would change what the
+                // caller already took (AttrX::Mooish's `:old-value`).
+                return Some(Ok(if val.is_container_ref() {
+                    val.deref_container()
+                } else {
+                    val
+                }));
             }
         }
         // Handle .raku on Proxy subclass
