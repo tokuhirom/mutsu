@@ -63,7 +63,11 @@ fn is_user_trait(name: &str) -> bool {
 /// The user traits a declaration applies, each with its argument.
 type AppliedTraits = Vec<(String, Option<Expr>)>;
 
-fn liftable_traits(stmt: &Stmt) -> Option<(String, AppliedTraits)> {
+///
+/// `allow_init` admits a declaration with an initializer (`my $x is foo = 1`):
+/// the unit's prologue applies the traits over the static cell, and the
+/// declaration's own split leaves the assignment at its position.
+fn liftable_traits(stmt: &Stmt, allow_init: bool) -> Option<(String, AppliedTraits)> {
     let Stmt::VarDecl {
         name,
         is_state: false,
@@ -78,10 +82,11 @@ fn liftable_traits(stmt: &Stmt) -> Option<(String, AppliedTraits)> {
     };
     if name.starts_with('&')
         || custom_traits.iter().any(|(t, _)| {
-            matches!(
-                t.as_str(),
-                "__has_initializer" | "__scalar_bind" | "__constant"
-            )
+            match t.as_str() {
+                "__has_initializer" => !allow_init,
+                "__scalar_bind" | "__constant" => true,
+                _ => false,
+            }
         })
     {
         return None;
@@ -168,14 +173,14 @@ fn entry_phasers(name: &str, site: &str) -> Vec<Stmt> {
 /// the body and `LEAVE`/`KEEP`/`UNDO` phasers for the exit.
 // Cost: O(n), n = number of statements in the body.
 fn hoist_package_var_traits(body: &mut Vec<Stmt>) {
-    if !body.iter().any(|s| liftable_traits(s).is_some()) {
+    if !body.iter().any(|s| liftable_traits(s, false).is_some()) {
         return;
     }
     let mut head = Vec::new();
     let mut exit = Vec::new();
     let mut rest = Vec::with_capacity(body.len());
     for stmt in std::mem::take(body) {
-        let Some((name, applied)) = liftable_traits(&stmt) else {
+        let Some((name, applied)) = liftable_traits(&stmt, false) else {
             rest.push(stmt);
             continue;
         };
@@ -220,13 +225,13 @@ pub(crate) fn lift_package_var_traits(stmts: &mut Vec<Stmt>) {
 /// run before the unit's block phasers are split off.
 // Cost: O(n), n = number of statements in the unit's top level.
 pub(crate) fn lift_unit_var_traits(stmts: &mut Vec<Stmt>) {
-    if !stmts.iter().any(|s| liftable_traits(s).is_some()) {
+    if !stmts.iter().any(|s| liftable_traits(s, true).is_some()) {
         return;
     }
     let mut out = Vec::with_capacity(stmts.len() + 2);
     let mut entry = Vec::new();
     for stmt in std::mem::take(stmts) {
-        let Some((name, applied)) = liftable_traits(&stmt) else {
+        let Some((name, applied)) = liftable_traits(&stmt, true) else {
             out.push(stmt);
             continue;
         };
@@ -256,7 +261,7 @@ impl Walker<'_> {
         if self.frames.is_empty() || self.in_detached_type() {
             return false;
         }
-        let Some((name, applied)) = liftable_traits(stmt) else {
+        let Some((name, applied)) = liftable_traits(stmt, false) else {
             return false;
         };
         // `Variable.block.add_phaser` files its phaser under this site; the

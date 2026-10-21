@@ -8,6 +8,9 @@ use Test;
 # List; single-word `<a>` evaluates to a plain Str (matching how `<...>`
 # behaves everywhere else in the language).
 
+# The traits run when the declarations are compiled, before any statement runs,
+# so the log holds their calls in declaration order.
+
 plan 6;
 
 my @log;
@@ -24,17 +27,17 @@ multi sub trait_mod:<is>(Variable:D \v, :$plain!) {
 
 # Multi-word angle-bracket sugar: `is restricted<a b>` == `is restricted(<a b>)`.
 my %h is restricted<a b> = a => 1, b => 2;
-is @log.pop, '("a", "b")', 'multi-word `is Trait<a b>` passes a List argument';
+is @log.shift, '("a", "b")', 'multi-word `is Trait<a b>` passes a List argument';
 is-deeply %h, { a => 1, b => 2 }, 'the variable itself is still declared correctly';
 
 # Single-word angle-bracket sugar: `is tag<a>` == `is tag(<a>)`, a bare Str.
 my $x is tag<a> = 5;
-is @log.pop, '"a"', 'single-word `is Trait<a>` passes a Str argument';
+is @log.shift, '"a"', 'single-word `is Trait<a>` passes a Str argument';
 is $x, 5, 'the variable itself is still declared correctly';
 
 # Regression: a bareword trait with no argument at all must still work.
 my $y is plain = 7;
-is @log.pop, 'plain:Bool::True', 'bareword `is Trait` (no argument) still dispatches with no arg';
+is @log.shift, 'plain:Bool::True', 'bareword `is Trait` (no argument) still dispatches with no arg';
 is $y, 7, 'the variable itself is still declared correctly';
 
 done-testing;

@@ -459,6 +459,9 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
 struct DeferredTraitParents {
     has_is_trait_mod: bool,
     declared_types: HashSet<String>,
+    /// The named parameters of the unit's own `trait_mod:<is>` routines
+    /// (`:$marked!`): the trait names a declaration of this unit may use.
+    trait_names: HashSet<String>,
 }
 
 impl DeferredTraitParents {
@@ -466,10 +469,21 @@ impl DeferredTraitParents {
     fn scan(stmts: &[Stmt]) -> Self {
         let mut has_is_trait_mod = false;
         let mut declared_types = HashSet::new();
+        let mut trait_names = HashSet::new();
         for stmt in crate::ast::scope_members(stmts) {
             match stmt {
-                Stmt::SubDecl { name, .. } => {
-                    has_is_trait_mod |= name.resolve().starts_with("trait_mod:<is>");
+                Stmt::SubDecl {
+                    name, param_defs, ..
+                } => {
+                    if name.resolve().starts_with("trait_mod:<is>") {
+                        has_is_trait_mod = true;
+                        trait_names.extend(
+                            param_defs
+                                .iter()
+                                .filter(|p| p.named)
+                                .map(|p| p.name.clone()),
+                        );
+                    }
                 }
                 Stmt::ClassDecl { name, .. }
                 | Stmt::RoleDecl { name, .. }
@@ -482,25 +496,80 @@ impl DeferredTraitParents {
         Self {
             has_is_trait_mod,
             declared_types,
+            trait_names,
         }
     }
 
     // Cost: O(p), p = parents of the declaration.
     fn names_trait(&self, stmt: &Stmt) -> bool {
-        let Stmt::ClassDecl {
-            parents,
-            does_parents,
-            ..
-        } = stmt
-        else {
-            return false;
-        };
+        match stmt {
+            // A routine or variable that uses a trait the unit's own
+            // `trait_mod:<is>` takes runs it when the declaration is
+            // compiled, like a type's (#14146).
+            Stmt::SubDecl {
+                custom_traits,
+                param_defs,
+                ..
+            } => self.uses_unit_trait(custom_traits) || self.params_use_unit_trait(param_defs),
+            Stmt::VarDecl { custom_traits, .. } => self.uses_unit_trait(custom_traits),
+            Stmt::ClassDecl {
+                parents,
+                does_parents,
+                body,
+                ..
+            } => {
+                self.has_is_trait_mod
+                    && (parents.iter().any(|parent| {
+                        parent.starts_with(|c: char| c.is_lowercase())
+                            && !self.declared_types.contains(parent)
+                            && !does_parents.contains(parent)
+                    }) || self.members_use_unit_trait(body))
+            }
+            Stmt::RoleDecl { body, .. } | Stmt::Package { body, .. } => {
+                self.has_is_trait_mod && self.members_use_unit_trait(body)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether a method, attribute or routine declared in a type's body, or a
+    /// parameter of one, takes a trait of the unit's own `trait_mod:<is>`: the
+    /// trait runs when the type is composed, so the type is a BEGIN-time
+    /// effect (#14146).
+    // Cost: O(m), m = members of the body.
+    fn members_use_unit_trait(&self, body: &[Stmt]) -> bool {
+        crate::ast::scope_members(body).any(|member| match member {
+            Stmt::MethodDecl {
+                custom_traits,
+                param_defs,
+                ..
+            }
+            | Stmt::SubDecl {
+                custom_traits,
+                param_defs,
+                ..
+            } => self.uses_unit_trait(custom_traits) || self.params_use_unit_trait(param_defs),
+            Stmt::HasDecl { unknown_traits, .. } => unknown_traits
+                .iter()
+                .any(|(kind, name, _)| kind == "is" && self.trait_names.contains(name)),
+            _ => false,
+        })
+    }
+
+    // Cost: O(p), p = parameters.
+    fn params_use_unit_trait(&self, param_defs: &[crate::ast::ParamDef]) -> bool {
         self.has_is_trait_mod
-            && parents.iter().any(|parent| {
-                parent.starts_with(|c: char| c.is_lowercase())
-                    && !self.declared_types.contains(parent)
-                    && !does_parents.contains(parent)
-            })
+            && param_defs
+                .iter()
+                .any(|p| p.traits.iter().any(|t| self.trait_names.contains(t)))
+    }
+
+    // Cost: O(t), t = traits of the declaration.
+    fn uses_unit_trait(&self, custom_traits: &[(String, Option<Expr>)]) -> bool {
+        self.has_is_trait_mod
+            && custom_traits
+                .iter()
+                .any(|(t, _)| self.trait_names.contains(t))
     }
 }
 
