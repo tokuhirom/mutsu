@@ -523,7 +523,12 @@ impl Compiler {
                 // late-bound) means what the name meant before.
                 if let Some(&use_line) = self.unit_set_line.get(id)
                     && self.unit_active_sets.contains(id)
-                    && self.lexical_import_chain.iter().filter(|c| *c == id).count() == 1
+                    && self
+                        .lexical_import_chain
+                        .iter()
+                        .filter(|c| *c == id)
+                        .count()
+                        == 1
                     && !self.lexically_in_routine
                     && self.last_source_line.is_some_and(|line| line < use_line)
                 {
