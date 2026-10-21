@@ -222,7 +222,10 @@ impl Interpreter {
         )
         .out;
         let harvest = |module: &str, out: &mut HashSet<String>| {
-            collect_use_declared_type_names(self, module, &lib_dirs, out)
+            // A module the EVAL's pre-run already loaded is in the
+            // interpreter's own scope; its source says more than it imports.
+            !self.module.eval_prerun_modules.contains(module)
+                && collect_use_declared_type_names(self, module, &lib_dirs, out)
         };
         scan(
             TypeDecls {

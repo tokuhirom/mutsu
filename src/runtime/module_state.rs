@@ -467,6 +467,10 @@ pub(crate) struct ModuleState {
     /// by-name lookup in the unit reads them instead of the sets of the
     /// `use`-blocks open around the call, which the EVAL cannot see.
     pub(crate) eval_import_chain: Option<Vec<Symbol>>,
+    /// The modules an `EVAL` unit's pre-run already `use`d while its CHECK-time
+    /// validation runs, whose names the checks read from the interpreter, not
+    /// from the module's source (`run_eval_hook_uses`, #13441).
+    pub(crate) eval_prerun_modules: HashSet<String>,
     /// The routine-table version an import scope's exit last found free of
     /// a module-declared `GLOBAL::MAIN` candidate
     /// (`drop_foreign_global_main_candidates`), so a later exit over the same
@@ -685,6 +689,7 @@ impl ModuleState {
             lexical_import_hook_values: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
+            eval_prerun_modules: HashSet::new(),
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
             lexical_operator_candidate_defs: Default::default(),
@@ -783,6 +788,7 @@ impl ModuleState {
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
+            eval_prerun_modules: self.eval_prerun_modules.clone(),
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),
             lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),

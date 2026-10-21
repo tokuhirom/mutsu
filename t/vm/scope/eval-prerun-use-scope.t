@@ -6,7 +6,7 @@ use Test;
 # lexical to the EVAL: the unit's own import wins over the caller's, and the
 # caller keeps its own afterwards. Expected values are the `raku` output.
 
-plan 5;
+plan 8;
 
 use EvalPreRunA;
 
@@ -17,3 +17,12 @@ is EVAL(q[use EvalPreRunA :extra; import EvalPreRunA :extra; only-a()]), 'only-a
     'a use followed by an import of the same module';
 throws-like q[use EvalPreRunB; no-such-routine()], X::Undeclared::Symbols,
     'the names of a pre-run use are known to the checks, others still fail';
+
+# What the checks accept is what the pre-run really imported, not what the
+# module's source declares: a class the module does not export stays unknown.
+is EVAL(q[use EvalPreRunTypes; Shown.^name]), 'EvalPreRunTypes::Shown',
+    'an exported class is known to the checks';
+throws-like q[use EvalPreRunTypes; Hidden.^name], X::Undeclared::Symbols,
+    'a class the module does not export is undeclared';
+throws-like q[use EvalPreRunTypes; sub f(Hidden $x) { }; 1], X::Parameter::InvalidType,
+    'and an invalid parameter type';

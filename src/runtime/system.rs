@@ -147,6 +147,7 @@ impl Interpreter {
             return Ok(stmts);
         }
         let mut rest = Vec::with_capacity(stmts.len());
+        let mut preran: HashSet<String> = HashSet::new();
         for (stmt, how) in stmts.into_iter().zip(plan) {
             match (&stmt, how) {
                 (_, Prerun::No) => {}
@@ -155,6 +156,7 @@ impl Interpreter {
                         .map_err(|err| self.in_place_use_error(module, err))?;
                 }
                 (Stmt::Use { module, arg, tags, .. }, _) => {
+                    preran.insert(module.clone());
                     // The `use` arguments are what the module's `sub EXPORT`
                     // sees (the compiler pushes one value per top-level list
                     // element).
@@ -180,6 +182,7 @@ impl Interpreter {
                 rest.push(stmt);
             }
         }
+        self.module.eval_prerun_modules = preran;
         Ok(rest)
     }
 
@@ -242,7 +245,9 @@ impl Interpreter {
                     stmts
                 };
                 let stmts = self.run_eval_hook_uses(stmts)?;
-                self.validate_eval_source(&stmts)?;
+                let validated = self.validate_eval_source(&stmts);
+                self.module.eval_prerun_modules.clear();
+                validated?;
                 self.run_eval_unit_stmts(stmts)
             }
             Err(parse_err) => {
