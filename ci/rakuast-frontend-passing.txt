@@ -916,6 +916,7 @@ t/collections/transform/map-returns-gather.t
 t/collections/transform/map-returns-seq.t
 t/collections/transform/map-rw-empty-and-compile-cache.t
 t/collections/transform/map-rw-tail-call-named-arg.t
+t/collections/transform/map-slip-infinite-tail.t
 t/collections/transform/map-store-via-lookup-in-subclass.t
 t/collections/transform/map-sub-return-index-rw.t
 t/collections/transform/map-subclass-custom-store.t
@@ -1890,6 +1891,7 @@ t/grammar/dispatch-token-cross-stack-nesting.t
 t/grammar/eval-grammar-parse.t
 t/grammar/exporthow-grammar-how.t
 t/grammar/failed-grammar-parse-does-not-leak-binding-error.t
+t/grammar/formatter-syntax-grammar.t
 t/grammar/grammar-action-capture-env-isolation.t
 t/grammar/grammar-action-capture-order.t
 t/grammar/grammar-action-direct-dispatch.t
@@ -2574,6 +2576,7 @@ t/lang/quoting/corner-quote-backslash.t
 t/lang/quoting/double-angle-quote-word-list.t
 t/lang/quoting/embedded-qqw-qw-escape.t
 t/lang/quoting/escaped-our-sub-incdec.t
+t/lang/quoting/format-quote-adverb.t
 t/lang/quoting/forward-sub-quotewords.t
 t/lang/quoting/heredoc-imported-call-value.t
 t/lang/quoting/heredoc-newline-delimiter.t
@@ -3118,6 +3121,7 @@ t/modules/module-nested-sub-captures-routine-array.t
 t/modules/module-noarg-default-private-sub-comma.t
 t/modules/module-our-globals-outlive-scope.t
 t/modules/module-own-dynamic-does-not-leak.t
+t/modules/module-own-hook-import-stays-in-module.t
 t/modules/module-parse-warning-once.t
 t/modules/module-pod-late-call.t
 t/modules/module-pod-variable.t
@@ -5113,6 +5117,7 @@ t/rakuast/rakuast-for-lone-slurpy.t
 t/rakuast/rakuast-for-pointy-params.t
 t/rakuast/rakuast-for-signature.t
 t/rakuast/rakuast-for.t
+t/rakuast/rakuast-format-quote-setting-types.t
 t/rakuast/rakuast-formatter.t
 t/rakuast/rakuast-frontend-mode.t
 t/rakuast/rakuast-given-pointy-block.t
@@ -7404,6 +7409,7 @@ t/types/string/flip-flop.t
 t/types/string/fmt-directive-count.t
 t/types/string/format-class.t
 t/types/string/format-directives.t
+t/types/string/format-formatter.t
 t/types/string/format-str-subclass-rows.t
 t/types/string/format-types-need-6e.t
 t/types/string/formatter-new.t
