@@ -18,7 +18,8 @@
 use std::cell::Cell;
 
 use super::{RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::value::{Value, ValueView};
+use crate::ast::Stmt;
+use crate::value::{RuntimeError, Value, ValueView};
 
 thread_local! {
     /// The line of the statement being lowered, for the call-site markers the
@@ -28,6 +29,48 @@ thread_local! {
 
 /// The hidden field's name.
 pub(super) const FIELD: &str = "origin";
+const TRACE_FIELD: &str = "source-trace";
+
+/// Keep a parsed statement's numbered trace hook on its RakuAST statement.
+// Cost: O(n), n = source text length.
+pub(super) fn trace_field(stmt: &Stmt) -> Option<RakuAstField> {
+    let Stmt::Trace { id, line, source } = stmt else {
+        return None;
+    };
+    Some(RakuAstField {
+        name: Some(TRACE_FIELD),
+        value: RakuAstFieldValue::List(vec![
+            Value::int(i64::from(*id)),
+            Value::int(*line),
+            Value::str(source.clone()),
+        ]),
+    })
+}
+
+/// Restore a trace hook before compiling the statement that owns it.
+// Cost: O(n), n = source text length.
+pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+    let Some(field) = node.fields.iter().find(|f| f.name == Some(TRACE_FIELD)) else {
+        return Ok(None);
+    };
+    let RakuAstFieldValue::List(values) = &field.value else {
+        return Err(super::lower::unsupported(node));
+    };
+    let [id, line, source] = values.as_slice() else {
+        return Err(super::lower::unsupported(node));
+    };
+    let (ValueView::Int(id), ValueView::Int(line), ValueView::Str(source)) =
+        (id.view(), line.view(), source.view())
+    else {
+        return Err(super::lower::unsupported(node));
+    };
+    let id = u32::try_from(id).map_err(|_| super::lower::unsupported(node))?;
+    Ok(Some(Stmt::Trace {
+        id,
+        line,
+        source: source.to_string(),
+    }))
+}
 
 /// The `origin` field for a statement that began on `line`.
 // Cost: O(1).
@@ -68,7 +111,7 @@ pub(super) fn end_index_of(node: &RakuAstNode) -> Option<u32> {
 /// Whether `field` is the hidden origin or `END` number, which no renderer shows.
 // Cost: O(1).
 pub(super) fn is_origin(field: &RakuAstField) -> bool {
-    field.name == Some(FIELD) || field.name == Some(END_INDEX)
+    field.name == Some(FIELD) || field.name == Some(END_INDEX) || field.name == Some(TRACE_FIELD)
 }
 
 /// The line recorded in `node`'s `origin` field, ignoring the `END` number.
@@ -87,7 +130,10 @@ pub(super) fn statement_line_of(node: &RakuAstNode) -> Option<i64> {
 /// The line `node`'s statement began on, when the node carries one.
 // Cost: O(f), f = fields of `node`.
 pub(super) fn line_of(node: &RakuAstNode) -> Option<i64> {
-    let field = node.fields.iter().find(|f| is_origin(f))?;
+    let field = node
+        .fields
+        .iter()
+        .find(|f| matches!(f.name, Some(FIELD) | Some(END_INDEX)))?;
     let RakuAstFieldValue::Node(value) = &field.value else {
         return None;
     };
