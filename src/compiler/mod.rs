@@ -1075,7 +1075,7 @@ mod adverb_interp;
 mod amp_scope;
 mod atomic_elem_forms;
 mod atomic_target;
-mod begin_use;
+pub(crate) mod begin_use;
 mod bind_ternary;
 mod block_imported_vars;
 mod block_lexsubs;

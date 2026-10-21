@@ -152,9 +152,13 @@ impl Interpreter {
             "clone_nd"
                 if let Some(ValueView::ContainerRef(cell)) = args.first().map(Value::view) =>
             {
-                Ok(Value::container_ref(crate::gc::Gc::new(
-                    crate::value::ContainerCell::new(cell.load()),
-                )))
+                // The copy keeps the container's `of` type: a store into it
+                // type-checks like a store into the original.
+                let copy = crate::gc::Gc::new(crate::value::ContainerCell::new(cell.load()));
+                if let Some(ty) = crate::value::lookup_container_constraint(&cell) {
+                    crate::value::register_container_constraint(&copy, &ty);
+                }
+                Ok(Value::container_ref(copy))
             }
             "clone" | "clone_nd" => {
                 let v = crate::runtime::types::unwrap_varref_value(
@@ -192,15 +196,9 @@ impl Interpreter {
                     )));
                 }
                 Ok(match v.view() {
-                    ValueView::Hash(map) => {
-                        let copied: Vec<(String, Value)> =
-                            map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                        let mut fresh = ValueMap::default();
-                        for (k, v) in copied {
-                            fresh.insert(k, v);
-                        }
-                        Value::hash_with_data(Value::hash_arc(fresh))
-                    }
+                    // The copy keeps the hash's element/key type (`Hash[Int:D]`),
+                    // as the array copy above keeps its own.
+                    ValueView::Hash(map) => Value::hash_with_data(crate::gc::Gc::new((**map).clone())),
                     _ => v.clone(),
                 })
             }

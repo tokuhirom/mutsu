@@ -36,7 +36,7 @@
 
 use super::Compiler;
 use crate::ast::{Expr, Stmt};
-use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::opcode::OpCode;
 use crate::value::{Value, ValueView};
 use std::sync::Mutex;
@@ -107,6 +107,55 @@ pub(crate) fn preloadable_module(stmt: &Stmt) -> Option<&str> {
             ..
         } => preloadable_module_name(module, tags, condition.as_deref(), arg.as_ref()),
         _ => None,
+    }
+}
+
+/// The module a top-level `use` loads and imports in position — the shape
+/// the general `Stmt::Use` compile arm turns into [`OpCode::UseModule`] — so an
+/// `EVAL`'s pre-run runs exactly these ahead of the CHECK-time validation.
+/// Excluded, because the compile arm treats them specially: pragmas, `Test`
+/// and its submodules, a `:from<...>` foreign compunit, a `use Foo:if(EXPR)`,
+/// an empty import list (a load-only `NeedModule`) and a bareword argument,
+/// which is `X::Undeclared::Symbols` before the module is even looked up.
+pub(crate) fn loads_module_in_position(stmt: &Stmt) -> Option<&str> {
+    let Stmt::Use {
+        module,
+        tags,
+        condition: None,
+        arg,
+        ..
+    } = stmt
+    else {
+        return None;
+    };
+    if tags.iter().any(|t| t == "from")
+        || is_pragma_like(module)
+        || module == "Test"
+        || module.starts_with("Test::")
+        || (tags.is_empty() && arg.as_ref().is_some_and(Expr::is_empty_import_list))
+    {
+        return None;
+    }
+    if let Some(arg) = arg {
+        let mut barewords = HasBareWord(false);
+        Visit::visit_expr(&mut barewords, arg);
+        if barewords.0 {
+            return None;
+        }
+    }
+    Some(module)
+}
+
+/// Whether an expression holds a bareword term.
+struct HasBareWord(bool);
+
+impl<'ast> Visit<'ast> for HasBareWord {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if matches!(expr, Expr::BareWord(_)) {
+            self.0 = true;
+        } else {
+            walk_expr(self, expr);
+        }
     }
 }
 
