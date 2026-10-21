@@ -4,20 +4,6 @@ use crate::value::ValueMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
-/// The plain positionals' `list`/`List`/`Array`.
-/// The coercions are rows (`method_table::collections::any_coerce`, ADR-11276 §9.110).
-pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    if matches!(method, "list" | "List" | "Array")
-        && matches!(
-            target.dispatch_shape(),
-            Some(crate::value::DispatchShape::List | crate::value::DispatchShape::Array)
-        )
-    {
-        return crate::builtins::method_table::positional::dispatch(target, method);
-    }
-    None
-}
-
 /// Implement is-prime for any Value, with type coercion.
 /// Negative numbers are not prime.
 /// Complex with non-zero imaginary throws X::Numeric::Real.

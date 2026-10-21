@@ -174,7 +174,7 @@ fn of(
         _ => return mu(),
     };
     if let Some(signature) = data.routine_cell.bound_signature() {
-        return super::signature::answer(&signature, "returns");
+        return super::signature::returns(&signature, &[]);
     }
     if let Some(ty) = data.routine_cell.return_type() {
         return Some(Ok(ty));

@@ -201,15 +201,6 @@ fn array(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> 
     )))
 }
 
-pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    match method {
-        "list" => list(target, &[]),
-        "List" => list_type(target, &[]),
-        "Array" => array(target, &[]),
-        _ => None,
-    }
-}
-
 /// The index a positional-subscript argument stands for, or the answer every
 /// receiver gives for an argument that is no index. A `Str` or `Rat` index is
 /// coerced to an `Int`, as Rakudo's `AT-POS(Any)` candidate does

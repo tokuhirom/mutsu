@@ -203,15 +203,6 @@ pub(crate) fn native_method_0arg_cascade(
         return Some(result);
     }
 
-    // ADR-0064: a `.VAR` container descriptor answers only its own properties
-    // natively. Every other method is a question about the value the container
-    // holds, and only the interpreter can resolve that (a variable descriptor
-    // reads the variable's live env entry) -- so defer to the slow path rather
-    // than answering out of the descriptor's attribute map.
-    if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method) {
-        return None;
-    }
-
     // Seq consumed/cached state checks.
     // Only handle operations that are fully dispatched here in native_method_0arg.
     // Do NOT pre-check methods that fall through to the runtime (like "iterator"),
@@ -242,15 +233,6 @@ pub(crate) fn native_method_0arg_cascade(
             // short-circuit (`roast/S16-filehandles/io_in_for_loops.t`).
             return Some(Ok(target.clone()));
         }
-    }
-
-    // `Failure`'s `exception`, `handled`, `gist`, `raku`, `Str` and `Bool` are rows of
-    // the method table (`method_table::failure`, ADR-11276 §9.51). `exception` and
-    // `handled` are in the interpreter's no-explode safe list, so answering them
-    // here is correct; a non-safe method (`.message`) is not a row, so it reaches
-    // the interpreter, which explodes an unhandled Failure.
-    if let Some(answer) = crate::builtins::method_table::failure::answer(target, method) {
-        return Some(answer);
     }
 
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
@@ -489,12 +471,7 @@ pub(crate) fn native_method_0arg_cascade(
             method,
         ));
     }
-    // Try core string/numeric/array methods first
-    if let result @ Some(_) = dispatch_core(target, method) {
-        return result;
-    }
-    // Then type coercion and specialized methods
-    coercion::dispatch(target, method)
+    dispatch_core(target, method)
 }
 
 /// True for a value whose element count cannot be reported, so numeric/count
@@ -627,57 +604,12 @@ pub(crate) fn unicode_foldcase(s: &str) -> String {
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    fn has_date_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
-        attributes.contains_key("year")
-            && attributes.contains_key("month")
-            && attributes.contains_key("day")
-    }
-    fn has_datetime_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
-        has_date_attrs(attributes)
-            && attributes.contains_key("hour")
-            && attributes.contains_key("minute")
-            && attributes.contains_key("second")
-            && attributes.contains_key("timezone")
-    }
-
     // `Code.Capture` and `Code.clone` are rows of the method table
     // (`method_table::code`, ADR-12523 slice 5).
     if matches!(method, "Capture" | "clone")
         && let Some(answer) = crate::builtins::method_table::code::pure_answer(target, method)
     {
         return Some(answer);
-    }
-
-    // Date/DateTime 0-arg methods of a receiver with no shape (an instance of
-    // a subclass): the rows of `Date` / `DateTime` answer it, the instance as
-    // invocant (ADR-11276 §9.87). A plain `Date`/`DateTime` was answered by
-    // its shape before the cascade.
-    // Cost: O(k) to find the row, k = rows named `method`, plus the handler's.
-    fn temporal_owner_row(
-        target: &Value,
-        owner: &str,
-        method: &str,
-    ) -> Option<Result<Value, RuntimeError>> {
-        // `Mu.perl` is `.raku`.
-        let id = crate::builtins::method_table::owner_row(
-            Symbol::intern(owner),
-            Symbol::intern(method),
-            0,
-        )?;
-        crate::builtins::method_table::invoke(id, target, &[])
-    }
-    match target.view() {
-        ValueView::Instance { attributes, .. } if has_datetime_attrs(&attributes) => {
-            if let Some(result) = temporal_owner_row(target, "DateTime", method) {
-                return Some(result);
-            }
-        }
-        ValueView::Instance { attributes, .. } if has_date_attrs(&attributes) => {
-            if let Some(result) = temporal_owner_row(target, "Date", method) {
-                return Some(result);
-            }
-        }
-        _ => {}
     }
 
     // RakuAST node accessors (Phase 3): `.condition`, `.expression`, `.args`,
@@ -693,19 +625,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // table (`method_table::instances::instant`): `Instant.Instant`, `succ`/`pred`,
     // `to-posix`, `DateTime`, `Date`, `tai` and `narrow` have no arm here.
 
-    // `Any.values` is `self.list`, and a buffer's `list` its `Blob` row's.
-    if method == "values" && crate::runtime::Interpreter::is_buf_value(target) {
-        return crate::builtins::method_table::blob::list(target, &[]);
-    }
-
-    // `Signature`'s `arity`, `count`, `params` and `returns` are rows of the method
-    // table (`method_table::signature`, ADR-11276 §9.55).
-    if matches!(method, "arity" | "count" | "params" | "returns")
-        && let Some(answer) = crate::builtins::method_table::signature::answer(target, method)
-    {
-        return Some(answer);
-    }
-
     // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace` and
     // `X::AdHoc.payload` are rows of the method table (`method_table::exception`,
     // ADR-11276 §9.39); `line`, `file` and `filename` are mutsu's own accessors.
@@ -713,15 +632,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     if let Some(answer) = crate::builtins::method_table::exception::answer(target, method) {
         return Some(answer);
     }
-    // Backtrace and Backtrace::Frame: their own methods are rows of the method
-    // table (`method_table::backtrace`, ADR-11276 §9.35); a call the table's
-    // entry did not take reaches the same handlers here. `Any`'s
-    // `self.list.METHOD` methods were answered on the frames before the call
-    // reached here (`Value::match_list_receiver`, §9.111).
-    if let Some(answer) = crate::builtins::method_table::backtrace::answer(target, method, &[]) {
-        return Some(answer);
-    }
-
     // Match object methods
     if let ValueView::Instance { .. } = target.view()
         && target.is_match_instance()

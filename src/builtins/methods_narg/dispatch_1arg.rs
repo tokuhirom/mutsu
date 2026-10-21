@@ -64,29 +64,6 @@ fn native_method_1arg_cascade(
         }
         Some(crate::builtins::method_table::receiver_step::Step::Itself) | None => {}
     }
-    // An instance of a user subclass of `Int` answers `Int`'s methods on its
-    // payload (`builtins::native_base`).
-    if let Some(result) =
-        crate::builtins::native_base::dispatch(target, method_sym, std::slice::from_ref(arg))
-    {
-        return Some(result);
-    }
-    // A plain allomorph's method with a row is the row's, on the part it reads
-    // (§9.101): `<65>.uniprop("Script")` is `Common`, the script of "6".
-    // Cost: O(1), a tag probe, one map lookup and at most two table lookups.
-    if crate::builtins::method_table::allomorph::answers(
-        target,
-        method_sym,
-        std::slice::from_ref(arg),
-    ) {
-        return None;
-    }
-    // `Backtrace` and `Backtrace::Frame`: the rows' handlers (ADR-11276 §9.35).
-    if let Some(answer) =
-        crate::builtins::method_table::backtrace::answer(target, method, std::slice::from_ref(arg))
-    {
-        return Some(answer);
-    }
     // A call the method table answers has no arm below this point: the row is
     // the method's only implementation (ADR-11276 §9.88). `native_method_1arg`
     // asked the table first, so this declines only for the callers that run
@@ -97,17 +74,6 @@ fn native_method_1arg_cascade(
         .is_some()
     {
         return None;
-    }
-    // A match the table has no shape for (a grammar cursor, an instance of a
-    // `Match` subclass) answers the rows a plain `Match` reaches (§9.89).
-    if target.is_match_instance()
-        && let Some(result) = crate::builtins::methods_0arg::match_owner_row(
-            target,
-            method_sym,
-            std::slice::from_ref(arg),
-        )
-    {
-        return Some(result);
     }
     // A positional index of a receiver whose row binds it (`Int:D`, and every
     // other index as Rakudo's candidates do) is the row's alone, through
