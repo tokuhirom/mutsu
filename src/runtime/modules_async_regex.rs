@@ -9,7 +9,6 @@ pub(crate) mod nativecall_info;
 pub(crate) mod nativecall_nqp;
 pub(crate) mod nqp_stat;
 mod nqp_uniprop_data;
-mod numeric_bridge_probe;
 pub(crate) mod once_store;
 mod ops_bits;
 mod ops_compare;

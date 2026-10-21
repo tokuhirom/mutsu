@@ -185,7 +185,6 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        use crate::runtime::utils::collection_contains_instance;
         // `Any.kv`/`.pairs`/... are `self.list.<method>`: an object that
         // overrides `list` answers from that list, not as one item.
         if let Some(view) = self
@@ -226,24 +225,6 @@ impl Interpreter {
             if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
                 return None;
             }
-            let cn = match target.view() {
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if !attributes.contains_key("__mutsu_array_storage")
-                    && !attributes.contains_key("__mutsu_hash_storage") =>
-                {
-                    Some(class_name.as_str().to_string())
-                }
-                _ => None,
-            };
-            if let Some(cn) = cn
-                && self.has_user_method(&cn, "iterator")
-                && !self.has_user_method(&cn, method_name)
-            {
-                return None;
-            }
             // The same for a role mixed into a native container (`my @a is R`):
             // its elements live behind the role's `iterator`, which the native
             // impl cannot see.
@@ -253,24 +234,6 @@ impl Interpreter {
             {
                 return None;
             }
-        }
-        // A `Seq.new($iterator)`/`IO::Handle.lines` body whose source has not
-        // been pulled yet (ADR-0034 §2.3) reads as an empty `Vec` through the
-        // native impls below (`.List`/`.elems`/`.Array`/...). Defer such a
-        // Seq to the interpreter, whose `call_method_with_values` reifies or
-        // consumes it (via `reify_seq_body`/`take_seq_body`) before
-        // dispatching. `cache`/`raku`/`perl`/`sink`, and every method that
-        // answers from type/identity alone (`seq_method_never_touches`),
-        // intentionally must NOT pull, so they proceed with the native path.
-        // (The Seq probe below is tag-gated: `view()` on a lazy Match target
-        // would materialize it per dispatched method call.)
-        if target.is_seq_value()
-            && let ValueView::Seq(body) = target.view()
-            && body.needs_touch()
-            && !matches!(method_name, "cache" | "raku" | "sink")
-            && !crate::value::seq_method_never_touches(method_name)
-        {
-            return None;
         }
         // `.REPR` / `.WHERE` on a NativeCall handle. Telling a `nativecast`ed
         // CStruct/CUnion/CArray from an ordinary instance needs the class
@@ -324,74 +287,6 @@ impl Interpreter {
         if self.native_receiver_guard(target, method_name) {
             return None;
         }
-        // A `Supply` (instance or type object) answers its methods through
-        // its own rows and dispatcher, which need the interpreter (a supply
-        // materializes, taps or schedules); the pure cascades would read it as
-        // one item (`Supply.batch` on the type object, ADR-11276 §9.168).
-        if target
-            .receiver_shape()
-            .or_else(|| target.type_object_shape())
-            == Some(crate::value::DispatchShape::Supply)
-        {
-            return None;
-        }
-        // Lazy Match: class is statically "Match" — mirror the Instance
-        // bypasses below without materializing. (A Match never matches
-        // Real/Numeric, and the Supply/Supplier arms cannot apply.)
-        if target.is_lazy_match_value() {
-            // A grammar cursor's dispatch owner is the grammar's own class, not
-            // `Match` — as `native_receiver_defers` reads it.
-            let owner = target.match_dispatch_class();
-            let is_pure_render = matches!(method_name, "gist" | "Str" | "Stringy" | "raku");
-            let render_overridden = is_pure_render && self.has_user_method(owner, method_name);
-            if (!is_pure_render || render_overridden) && self.has_user_method(owner, "Bridge") {
-                return None;
-            }
-        }
-        // Instance-specific bypasses (avoid for non-Instance targets)
-        else if let ValueView::Instance { class_name, .. } = target.view() {
-            let cn = class_name.resolve();
-            // Numeric bridge — Real/Numeric instances route through the
-            // interpreter's Numeric bridge for arithmetic and coercion.
-            // Exception: pure-render methods (gist/Str/raku/...) don't need
-            // the bridge, so let `native_method_0arg` render the known
-            // builtin numeric instances (Instant/Duration) directly. A
-            // user numeric class that overrides one of these keeps the
-            // bypass so its method runs; unknown numeric instances return
-            // `None` from native and still fall through to the interpreter.
-            let is_pure_render = matches!(method_name, "gist" | "Str" | "Stringy" | "raku");
-            let render_overridden = is_pure_render && self.has_user_method(&cn, method_name);
-            // The probe (`~~ Real`, `~~ Numeric`, own `Bridge` method)
-            // is a property of the receiver's CLASS, not of the call, so
-            // it is memoized per class symbol. Asked inline it made two
-            // full `type_matches_value` walks -- each over the class MRO
-            // *and* the transitive closure of its composed roles -- 52% of
-            // a `Buf.push` loop. The memo is keyed on the registry write
-            // generation, bumped by the registry's sole write path, so no
-            // enumeration of mutation sites can go stale (#7712).
-            if (!is_pure_render || render_overridden)
-                && self.instance_needs_numeric_bridge(class_name, target)
-            {
-                return None;
-            }
-        }
-        if let Some(result) = self.try_core_type_object_method(target, method_name, args) {
-            return Some(result);
-        }
-        // Collection gist bypass
-        if method_sym == "gist" && args.is_empty() && collection_contains_instance(target) {
-            return None;
-        }
-        // Collection .raku/.perl bypass: an element whose `.raku` is only
-        // reachable through method dispatch (a user instance, a built-in object
-        // type) must be rendered by the interpreter — the pure renderer would
-        // fall back to `Foo()` (see `runtime::methods_raku_dispatch`).
-        if matches!(method_name, "raku")
-            && args.is_empty()
-            && crate::runtime::container_needs_raku_dispatch(target)
-        {
-            return None;
-        }
         // `pick`/`roll` on an enum type object (or its name as a `Str`) sample
         // its values, which only the interpreter's enum registry knows
         // (`dispatch_enum_pick_roll`); any other type object reaches the
@@ -416,17 +311,6 @@ impl Interpreter {
                 return None;
             }
         }
-        // Typed array .raku/.perl bypass (method-name gate first: the `view()`
-        // probe would materialize a lazy Match on every other method call)
-        if matches!(method_name, "raku")
-            && args.is_empty()
-            && matches!(target.view(), ValueView::Array(..))
-            && self
-                .container_type_metadata(target)
-                .is_some_and(|info| info.value_type != "Any" && info.value_type != "Mu")
-        {
-            return None;
-        }
         // `Range.int-bounds($from is rw, $to is rw --> Bool)`: writes the bounds
         // into the caller's containers, so it needs `&mut self` and the call
         // site's arg-source names (see `vm/vm_range_int_bounds.rs`). The
@@ -444,13 +328,7 @@ impl Interpreter {
         // dropped (`method_table::implicit_named`).
         let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
-        // The pure `unique`/`repeated`/`squish` compare elements by `.WHICH`
-        // and cannot run a user `WHICH`, so deposit it first
-        // (see `runtime::which_identity`).
-        if args.is_empty() && matches!(method_name, "unique" | "repeated" | "squish") {
-            self.warm_which_identity(target);
-        }
-        let mut result = if args.len() == 2 {
+        if args.len() == 2 {
             // No cascade takes two arguments: a row with no shape may.
             crate::builtins::method_table::answer_shapeless(Some(self), target, method_sym, args)
         } else if args.len() == 1 {
@@ -480,89 +358,8 @@ impl Interpreter {
                 },
             )
         } else {
-            return None;
-        };
-
-        // For Hash values with declared_type "Map", override gist/raku/perl
-        // to use Map.new((...)) format instead of {...} format. (Method-name
-        // gate first: the Hash `view()` probe would materialize a lazy Match
-        // on every other method call.)
-        if matches!(method_name, "gist" | "raku")
-            && let ValueView::Hash(map) = target.view()
-        {
-            let is_map = self
-                .container_type_metadata(target)
-                .and_then(|info| info.declared_type)
-                .is_some_and(|dt| dt == "Map");
-            if is_map {
-                if map.is_empty() {
-                    // `.gist` keeps the empty argument list (`Map.new(())`);
-                    // `.raku` drops it (`Map.new`).
-                    let text = if method_name == "gist" {
-                        "Map.new(())"
-                    } else {
-                        "Map.new"
-                    };
-                    return Some(Ok(Value::str(text.to_string())));
-                }
-                let mut sorted_keys: Vec<&String> = map.keys().collect();
-                sorted_keys.sort();
-                if method_name == "gist" {
-                    let total = sorted_keys.len();
-                    let truncated = total > 100;
-                    let display_keys = if truncated {
-                        &sorted_keys[..100]
-                    } else {
-                        &sorted_keys[..]
-                    };
-                    let mut parts: Vec<String> = display_keys
-                        .iter()
-                        .map(|k| format!("{} => {}", k, crate::runtime::gist_value(&map[*k])))
-                        .collect();
-                    if truncated {
-                        parts.push("...".to_string());
-                    }
-                    return Some(Ok(Value::str(format!("Map.new(({}))", parts.join(", ")))));
-                } else {
-                    let parts: Vec<String> = sorted_keys
-                        .iter()
-                        .map(|k| {
-                            let v = &map[*k];
-                            if let ValueView::Bool(true) = v.view() {
-                                format!(":{}", k)
-                            } else if let ValueView::Bool(false) = v.view() {
-                                format!(":!{}", k)
-                            } else {
-                                let repr = if matches!(v.view(), ValueView::Nil) {
-                                    "Any".to_string()
-                                } else {
-                                    crate::builtins::methods_0arg::raku_value(v)
-                                };
-                                format!(":{}({})", k, repr)
-                            }
-                        })
-                        .collect();
-                    return Some(Ok(Value::str(
-                        crate::builtins::methods_0arg::raku_repr::raku_map_new(&parts),
-                    )));
-                }
-            }
+            None
         }
-
-        // When cloning a container (Hash/Array/Set/Bag/Mix) that has type
-        // metadata, copy the metadata to the cloned value so the clone
-        // preserves the type constraint (e.g. %h.clone ~~ Hash[Int,Int]).
-        if method_name == "clone"
-            && matches!(&result, Some(Ok(_)))
-            && let Some(info) = self.container_type_metadata(target)
-            && let Some(Ok(v)) = result.take()
-        {
-            // Hashes embed metadata in `HashData`; re-tag the cloned value
-            // (no-op Arc for array/instance side-table containers).
-            result = Some(Ok(self.tag_container_metadata(v, info)));
-        }
-
-        result
     }
 
     pub(super) fn try_native_function(

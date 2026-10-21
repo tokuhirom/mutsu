@@ -600,9 +600,6 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     }
 }
 
-/// Re-export raku_value for backward compatibility.
-pub use raku_repr::raku_value;
-
 /// Re-export complex_trig for external use.
 pub(crate) use crate::builtins::method_table::complex_math::complex_trig;
 
