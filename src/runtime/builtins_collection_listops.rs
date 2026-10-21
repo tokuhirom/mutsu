@@ -384,6 +384,9 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_flat(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // A lazy-tail Slip argument flattens its ending lazy items (#13117).
+        let reified = self.reify_lazy_slip_args(args)?;
+        let args = reified.as_deref().unwrap_or(args);
         // A plain gather (streamed to `flat` as a pipe over its Seq) is
         // flattened as it is pulled (ADR-11678), so an infinite gather works.
         if let [arg] = args
@@ -422,13 +425,16 @@ impl Interpreter {
         Ok(Value::seq(result))
     }
 
-    pub(super) fn builtin_slip(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // `slip(+args)`: under the single-argument rule a lone lazy list is
-        // the list, and it slips as a lazy tail (#13117).
-        if let [only] = args
-            && let Some(lazy) = crate::builtins::lazy_slip::lazy_slip_tail(only)
-        {
-            return Ok(lazy);
+    pub(super) fn builtin_slip(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // `slip(+args)`: under the single-argument rule a lone lazy list or
+        // gather is the list, and it slips as a lazy tail (#13117).
+        if let [only] = args {
+            if let Some(lazy) = crate::builtins::lazy_slip::lazy_slip_tail(only) {
+                return Ok(lazy);
+            }
+            if let Some(slip) = self.gather_slip(only, false)? {
+                return Ok(slip);
+            }
         }
         let mut items = Vec::new();
         for arg in args {

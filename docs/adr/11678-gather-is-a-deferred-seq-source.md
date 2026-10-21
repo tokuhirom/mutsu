@@ -1,6 +1,6 @@
 # ADR-11678: A gather is a deferred `SeqSource`
 
-- **Status**: Accepted — steps 0-3 implemented (2026-10-12, see §8); the hand-off retirement, step 4 and step 5 remain (#13026); the lazy Slip of a genuinely lazy list implemented, a gather's lazy Slip decided but not built (§8.6, #13117)
+- **Status**: Accepted — steps 0-3 implemented (2026-10-12, see §8); the hand-off retirement, step 4 and step 5 remain (#13026); the lazy Slip of a genuinely lazy list implemented, a gather's lazy Slip built as a bounded-pull interim (§8.6, #13117, #14295)
 - **Date**: 2026-10-07
 - **Deciders**: tokuhirom, Claude
 - **Amended**: 2026-10-12 (see "Amendment" below)
@@ -575,3 +575,25 @@ reifies a gather tail (the `|EXPR` forcing in `exec_make_slip_op` is the one
 site that does it today), after which `.Slip`, `slip(...)` and `|EXPR` of an
 unpulled gather can share the lazy-tail representation. Until then a gather's
 Slip is pulled whole, as before, so an infinite gather's `.Slip` still hangs.
+
+**Interim, built (2026-10-21, #13117).** The interpreter-side flatten sites
+now go through one chokepoint, `Interpreter::reify_lazy_slip_tail`. Those
+sites are a `.map` callback's result (`reify_finite_pipe_value`, the native
+and multi-parameter map loops), `take` and a `flat` argument. The chokepoint
+reifies each lazy item of a lazy-tail Slip that ends. A gather's item gets
+the bounded pull `reify_finite_pipe_value` gives a gather. `.Slip` and
+`slip(...)` of a plain gather (`Interpreter::gather_slip`) use the same
+bounded pull, of `MAP_RESULT_GATHER_FORCE_CAP` elements:
+
+- A gather that finishes within it gives the eager Slip of its elements.
+  The pure flatten sites therefore never see the gather tail of a finite
+  gather.
+- A gather that does not finish gives a lazy-tail Slip. Its one item is a
+  `lazy`-marked pipe that streams the gather, with the pulled prefix
+  cached.
+
+The bounded pull still runs a gather's body ahead of what is read. Rakudo
+reads it on demand. The decided design above, with no pull at creation,
+remains the target. A lazy-tail Slip returned by a `.map` callback whose item
+does not end is still kept whole by the map's output: the output does not
+stream it (#14295).

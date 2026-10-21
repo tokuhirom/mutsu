@@ -65,7 +65,7 @@ impl Interpreter {
     /// over an uncached gather's coroutine (leaving `value` consumed), or a
     /// cached gather `value` itself. `None` for every other value.
     // Cost: O(1).
-    fn gather_stream_source(value: &Value) -> Option<Value> {
+    pub(super) fn gather_stream_source(value: &Value) -> Option<Value> {
         if !value.is_seq_value() {
             return None;
         }
@@ -394,7 +394,8 @@ enum GatherRead {
 fn builtin_gather_read(name: &str) -> GatherRead {
     match name {
         // `cache` returns a List that pulls the gather as it is read.
-        "list" | "item" | "defined" | "push" | "unshift" | "cache" => GatherRead::Pass,
+        // `slip` slips a gather as a lazy tail (`Interpreter::gather_slip`).
+        "list" | "item" | "defined" | "push" | "unshift" | "cache" | "slip" => GatherRead::Pass,
         "first" | "zip" | "roundrobin" | "flat" | "map" | "grep" => GatherRead::Stream,
         "sum" | "min" | "max" | "minmax" | "unique" | "repeated" | "squish" | "pick" | "roll"
         | "classify" | "categorize" | "produce" | "reduce" | "keys" | "values" | "kv" | "pairs"

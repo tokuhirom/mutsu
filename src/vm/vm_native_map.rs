@@ -166,6 +166,10 @@ impl Interpreter {
                 }
                 v
             };
+            let value = match self.reify_lazy_slip_tail(value) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
             if let ValueView::Slip(elems) = value.view() {
                 result.extend(elems.iter().cloned());
             } else {
