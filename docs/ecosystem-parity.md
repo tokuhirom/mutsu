@@ -87,9 +87,14 @@ Per-file comparison verdicts (`cmp` in the record):
 | `parity` | rakudo passes, mutsu passes | yes (numerator) |
 | `partial` | rakudo passes, mutsu reaches the plan but fails some assertions | yes (denominator only) |
 | `regression` | rakudo passes, mutsu fails / dies / times out | yes (denominator only) — **the actionable bucket** |
-| `no_baseline` | rakudo does not pass cleanly | no |
+| `no_baseline` | rakudo (RakuAST frontend) does not pass cleanly | no |
 | `accepted` | rakudo passes; mutsu fails in exactly the shape an `ecosystem/accepted-divergences.toml` entry records (a decided divergence, ADR-0130) | no (counted as `accepted_files`) |
 | `mutsu_better` | rakudo fails, mutsu passes | no (recorded, reported separately) |
+
+The baseline is rakudo's default **RakuAST** frontend, pinned by `ecosystem-sweep.py`
+(`RAKUDO_RAKUAST=1`) so a caller's environment cannot switch it (user
+decision, 2026-10-21). A distribution that only works under the legacy frontend is written for an
+unmaintained compiler surface: it is `no_baseline`, and mutsu does not have to run it.
 
 Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_load`
 (a provided module does not even `use`) · `blocked_dep` (§3) · `skipped`.
