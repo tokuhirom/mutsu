@@ -123,6 +123,47 @@ impl Interpreter {
                 );
                 return Ok(Value::NIL);
             }
+            // An attribute accessor (`Foo.^method_table<val>`, AttrX::Mooish's
+            // `$orig-accessor` it re-adds under an alias) is a name-only Routine
+            // for the generated reader. Forwarding through `&val` would look for
+            // a code variable the class never declares, so the alias reads the
+            // attribute itself, as the accessor does.
+            let method_value = if let ValueView::Routine {
+                package,
+                name,
+                is_regex: false,
+                ..
+            } = method_value.view()
+                && !private
+                && let Some(is_rw) = self
+                    .collect_class_attributes(&package.resolve())
+                    .iter()
+                    .find(|attr| attr.is_public && attr.name == name.resolve())
+                    .map(|attr| attr.is_rw)
+                && self
+                    .registry()
+                    .user_method_overloads(&package.resolve(), &name.resolve())
+                    .is_none()
+            {
+                // `method () { self.attr }`: the alias answers through the
+                // class's own accessor, which keeps its rw/type behaviour.
+                let body = vec![Stmt::Expr(Expr::MethodCall {
+                    target: Box::new(Expr::BareWord("self".to_string())),
+                    name,
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                    sugar: false,
+                })];
+                let mut env = Env::new();
+                env.insert_sym(
+                    crate::symbol::well_known::callable_type(),
+                    Value::str_from("Method"),
+                );
+                Value::make_sub(package, name, Vec::new(), Vec::new(), body, is_rw, env)
+            } else {
+                method_value
+            };
             // A builtin/operator code value is a name-only Routine rather
             // than a Sub with an AST body. Materialize it as a plain
             // forwarding block once, so the existing add_method path can
