@@ -394,9 +394,9 @@ impl Interpreter {
         // `check_eval_undeclared_names`), and what such a hook installs is
         // overwhelmingly a routine or a term (`%( 'other' => 42 )`), so a
         // lowercase call is not judged; a capitalised one still is.
-        // TODO: run the unit's `use` statements before this CHECK-time
-        // validation, as rakudo does at BEGIN time, so the hook's real import
-        // set is in scope; this split only approximates it (#13441).
+        // TODO: a top-level `use` of a hook module already ran before this
+        // validation (`run_eval_hook_uses`); one nested in a block is still
+        // only approximated by this split (#13441).
         let hook = imported.imports_through_export_hook;
         // A term a hook bound in the import sets of the blocks the `EVAL`
         // runs in (ADR-8751): a bare word of the snippet reads it.
