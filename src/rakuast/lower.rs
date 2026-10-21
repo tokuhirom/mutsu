@@ -1711,7 +1711,10 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         _ => unreachable!("declaration kind was checked above"),
     };
-    let value = Value::regex(execution_pattern).with_regex_source_tree(tree.clone());
+    let value = super::regex_declaration::restore_source(
+        node,
+        Value::regex(execution_pattern).with_regex_source_tree(tree.clone()),
+    )?;
     let body = vec![Stmt::Expr(Expr::Literal(value))];
     let source_regex = Some(tree);
     let (params, param_defs) = signature_positional_params(node)?;
@@ -4232,9 +4235,10 @@ fn lower_anon_regex_declaration(node: &RakuAstNode) -> Result<Expr, RuntimeError
         .then(|| signature_positional_params(node))
         .transpose()?
         .map(|(_, defs)| defs);
-    Ok(Expr::Literal(
+    Ok(Expr::Literal(super::regex_declaration::restore_source(
+        node,
         Value::anon_regex_code(pattern, params).with_regex_source_tree(tree),
-    ))
+    )?))
 }
 
 /// The execution value of a regex literal: what the parser builds from the

@@ -14,6 +14,9 @@ use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
 use super::origin;
 use super::placeholder::{is_placeholder_name, placeholder_node};
+use super::regex_declaration::{
+    convert as regex_declaration, with_body as regex_declaration_with_body,
+};
 use super::routine_source::return_type_spelling;
 pub(super) use super::routine_source::routine_node;
 use super::source_identifier::{named_routine_call, written_identifier, written_variable};
@@ -294,6 +297,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             name,
             params,
             param_defs,
+            body,
             source_regex,
             regex_kind,
             multi,
@@ -324,7 +328,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     return Err(unsupported("rule declaration in TokenDecl"));
                 }
             };
-            Ok(Some(statement_expression(regex_declaration(
+            let mut declaration = regex_declaration(
                 class,
                 &name.resolve(),
                 tree,
@@ -335,7 +339,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_export || !export_tags.is_empty(),
                     export_tags,
                 ),
-            )?)))
+            )?;
+            super::regex_declaration::retain_source(&mut declaration, body);
+            Ok(Some(statement_expression(declaration)))
         }
         // `proto token t {*}`: the declaration with no regex, only the
         // dispatcher.
@@ -374,6 +380,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             name,
             params,
             param_defs,
+            body,
             source_regex,
             multi,
             is_export,
@@ -388,7 +395,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let Some(tree) = source_regex else {
                 return Err(unsupported("rule declaration without a source tree"));
             };
-            Ok(Some(statement_expression(regex_declaration(
+            let mut declaration = regex_declaration(
                 RakuAstClass::RuleDeclaration,
                 &name.resolve(),
                 tree,
@@ -399,7 +406,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_export || !export_tags.is_empty(),
                     export_tags,
                 ),
-            )?)))
+            )?;
+            super::regex_declaration::retain_source(&mut declaration, body);
+            Ok(Some(statement_expression(declaration)))
         }
         // A signature declaration (`my ($a, @b) = …`): the parser keeps its
         // source form as the expansion's first statement.
@@ -5217,68 +5226,6 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
     Ok(RakuAstNode { class, fields })
 }
 
-/// `[my|our] token NAME(SIG) { … }`: rakudo's `scope` leads the node (the
-/// default `has` renders none), and a parameter list is the method-style
-/// `signature` between `name` and `body` (measured on rakudo 2026.09).
-// Cost: O(r + p), r = size of the regex, p = size of the parameters.
-fn regex_declaration(
-    class: RakuAstClass,
-    name: &str,
-    tree: &RegexTree,
-    scope: Option<&str>,
-    multiness: Option<&str>,
-    param_defs: &[ParamDef],
-    export_trait: Option<Value>,
-) -> Result<RakuAstNode, RuntimeError> {
-    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
-    regex_declaration_with_body(
-        class,
-        Some(name),
-        scope,
-        multiness,
-        param_defs,
-        regex_node(&tree.body)?,
-        export_trait.into_iter().collect(),
-    )
-}
-
-/// [`regex_declaration`] over an already converted body (the `{*}` of a proto).
-// Cost: O(p), p = size of the parameters.
-fn regex_declaration_with_body(
-    class: RakuAstClass,
-    name: Option<&str>,
-    scope: Option<&str>,
-    multiness: Option<&str>,
-    param_defs: &[ParamDef],
-    body: RakuAstNode,
-    traits: Vec<Value>,
-) -> Result<RakuAstNode, RuntimeError> {
-    let mut fields = Vec::with_capacity(6);
-    if let Some(scope) = scope {
-        fields.push(leaf_field(Some("scope"), Value::str_from(scope)));
-    }
-    if let Some(multiness) = multiness {
-        fields.push(leaf_field(Some("multiness"), Value::str_from(multiness)));
-    }
-    if let Some(name) = name {
-        fields.push(node_field(Some("name"), name_from_identifier(name)));
-    }
-    if !param_defs.is_empty() {
-        fields.push(node_field(
-            Some("signature"),
-            signature(param_defs, true, None)?,
-        ));
-    }
-    if !traits.is_empty() {
-        fields.push(RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(traits),
-        });
-    }
-    fields.push(node_field(Some("body"), body));
-    Ok(RakuAstNode { class, fields })
-}
-
 fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
     if tree.match_immediately {
@@ -6888,7 +6835,7 @@ fn anon_regex_declaration(v: &Value, tree: &RegexTree) -> Result<RakuAstNode, Ru
         .regex_signature()
         .map(|p| (*p).clone())
         .unwrap_or_default();
-    regex_declaration_with_body(
+    let mut declaration = regex_declaration_with_body(
         class,
         None,
         None,
@@ -6896,7 +6843,9 @@ fn anon_regex_declaration(v: &Value, tree: &RegexTree) -> Result<RakuAstNode, Ru
         &params,
         regex_node(&tree.body)?,
         Vec::new(),
-    )
+    )?;
+    super::regex_declaration::retain_value_source(&mut declaration, v);
+    Ok(declaration)
 }
 
 /// `FakeSignature.new(Signature(parameters => (...)[, returns => Type]))` for a

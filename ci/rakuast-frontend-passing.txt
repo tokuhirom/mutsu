@@ -768,6 +768,7 @@ t/collections/subscript/shaped-array-delete-keeps-shape.t
 t/collections/subscript/shaped-array-delete-pos.t
 t/collections/subscript/shaped-array-exists-holes.t
 t/collections/subscript/shaped-array-gist-dimensions.t
+t/collections/subscript/shaped-array-iterates-leaves.t
 t/collections/subscript/shaped-array-list-coerce.t
 t/collections/subscript/shaped-array-map-mutation.t
 t/collections/subscript/shaped-array-pairs-zip-assign.t
@@ -903,6 +904,7 @@ t/collections/transform/map-gist.t
 t/collections/transform/map-grep-chain-interleave.t
 t/collections/transform/map-grep-first-compile-cache.t
 t/collections/transform/map-grep-itemized-arg.t
+t/collections/transform/map-grep-loop-phasers.t
 t/collections/transform/map-grep-prefix-pull.t
 t/collections/transform/map-grep-pure-bulk.t
 t/collections/transform/map-imported-named-tail-call.t
@@ -2030,6 +2032,7 @@ t/grammar/grammarhow-new-type-add-regex-method.t
 t/grammar/ipv6-mapped-dotted-decimal.t
 t/grammar/lookahead-interpolates-dynvar-of-calling-rule.t
 t/grammar/match-of-x-namespaced-grammar-is-not-an-exception.t
+t/grammar/method-table-token-source.t
 t/grammar/mu-callable-grammar-6d-absent.t
 t/grammar/mu-callable-grammar-6e-rows.t
 t/grammar/multi-token-protoless-dispatch.t
@@ -4005,6 +4008,7 @@ t/oo/method/bound-element-cell-rw-arg-in-method.t
 t/oo/method/bound-nil-method-warn.t
 t/oo/method/buffer-instance-method-rows.t
 t/oo/method/builtin-method-name-rows.t
+t/oo/method/builtin-method-receiver-answers.t
 t/oo/method/builtin-method-shadow-query.t
 t/oo/method/builtin-method-too-many-positionals.t
 t/oo/method/builtin-subclass-method-override.t
@@ -5251,6 +5255,7 @@ t/rakuast/rakuast-regex-quantifiers.t
 t/rakuast/rakuast-regex-quote-escapes.t
 t/rakuast/rakuast-regex-source-cohort.t
 t/rakuast/rakuast-regex-source-form.t
+t/rakuast/rakuast-regex-source-provenance.t
 t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-symbolic-subrule.t
@@ -5572,6 +5577,7 @@ t/regex/regex-caret-mid-pattern.t
 t/regex/regex-carrier-writeback-coherence.t
 t/regex/regex-cclass-parity.t
 t/regex/regex-code-assertion-quoted-braces.t
+t/regex/regex-code-block-comment-apostrophe.t
 t/regex/regex-code-block-die.t
 t/regex/regex-code-block-listop-call.t
 t/regex/regex-code-block-my-lexical-rerun.t
@@ -5648,6 +5654,7 @@ t/regex/regex-lookaround-compiled-op.t
 t/regex/regex-lookaround.t
 t/regex/regex-lr-bookkeeping-gate.t
 t/regex/regex-ltm-declarative-prefix.t
+t/regex/regex-ltm-dq-interpolation.t
 t/regex/regex-ltm-first-step-guard.t
 t/regex/regex-ltm-furthest-fate.t
 t/regex/regex-ltm-interpolation-provenance.t
@@ -6510,6 +6517,7 @@ t/routines/routine-yada.t
 t/routines/rw-routine-tail-declaration-container.t
 t/routines/seq-arg-to-callable-variable.t
 t/routines/seq-cache-list-view-and-eqv-routine.t
+t/routines/shaped-array-routine-and-set-operands.t
 t/routines/sibling-scope-routine-shadow.t
 t/routines/sigilless-term-shadows-imported-routine-of-same-name.t
 t/routines/signature/aggregate-param-shares-container.t

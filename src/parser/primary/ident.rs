@@ -1,3 +1,4 @@
+mod anon_regex;
 pub(in crate::parser) mod anon_sub;
 pub(crate) mod circumfix;
 mod identifier_call;

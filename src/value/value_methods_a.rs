@@ -63,16 +63,18 @@ impl Value {
     /// of its own and a name cell for `Code.set_name`.
     // Cost: O(1) (two allocations; the pattern is moved, not copied).
     pub fn regex(s: String) -> Self {
-        Value::regex_closure(Arc::new(s), None, None, None, None)
+        Value::regex_closure(Arc::new(s), None, None, None, None, None)
     }
     /// A code-bearing regex literal that closed over `scope` — see
     /// [`crate::value::RegexClosure`]. Views as a plain `Regex`.
+    // Cost: O(1), all payload inputs are shared handles.
     pub(crate) fn regex_closure(
         pattern: Arc<String>,
         scope: Option<Arc<ValueMap>>,
         signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
         source_tree: Option<Arc<crate::regex_tree::RegexTree>>,
         topic: Option<Value>,
+        declared_source: Option<Arc<str>>,
     ) -> Self {
         Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
             pattern,
@@ -80,7 +82,7 @@ impl Value {
             source_tree,
             signature,
             topic,
-            declared_source: None,
+            declared_source,
             id: Default::default(),
             name: Default::default(),
         }))
@@ -160,7 +162,7 @@ impl Value {
             // A bare-pattern payload (only ever decoded from a pre-payload
             // representation) becomes a code object of its own.
             ValueView::Regex(pattern) => {
-                Value::regex_closure(Arc::clone(&pattern), None, None, None, None)
+                Value::regex_closure(Arc::clone(&pattern), None, None, None, None, None)
             }
             ValueView::RegexWithAdverbs(adverbs) => Value::regex_with_adverbs(adverbs.clone()),
             _ => self.clone(),
@@ -213,7 +215,7 @@ impl Value {
                     source_tree: Some(Arc::new(tree)),
                     signature: self.regex_signature(),
                     topic: None,
-                    declared_source: None,
+                    declared_source: self.regex_declared_source_arc(),
                     id: Default::default(),
                     name: Default::default(),
                 }))
@@ -288,32 +290,6 @@ impl Value {
             } => r.regex_captured_topic(),
             _ => None,
         }
-    }
-
-    /// Attach the verbatim declaration text of a grammar `token`/`rule`/`regex`
-    /// to a plain regex value (see [`crate::value::RegexClosure::declared_source`]).
-    pub(crate) fn with_regex_declared_source(&self, text: &str) -> Self {
-        match self.view() {
-            ValueView::Regex(pattern) => {
-                Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
-                    pattern: Arc::new(pattern.to_string()),
-                    scope: None,
-                    source_tree: self.regex_source_tree_arc(),
-                    signature: self.regex_signature(),
-                    topic: None,
-                    declared_source: Some(Arc::from(text)),
-                    id: Default::default(),
-                    name: Default::default(),
-                }))
-            }
-            _ => self.clone(),
-        }
-    }
-
-    /// The verbatim declaration text of a grammar `token`/`rule`/`regex`, when
-    /// the parser recorded it.
-    pub(crate) fn regex_declared_source(&self) -> Option<&str> {
-        self.0.regex_declared_source()
     }
 
     /// Source-level provenance carried by a parser-created regex value, or
