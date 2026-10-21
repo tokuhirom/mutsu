@@ -82,15 +82,23 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     // The line of the statement about to be converted: the `SetLine` marker
     // in front of it becomes the node's hidden origin (see `origin`).
     let mut line = None;
+    let mut trace = None;
     for (at, stmt) in stmts.iter().enumerate() {
         if let Stmt::SetLine(n) = stmt {
             line = Some(*n);
+            continue;
+        }
+        if matches!(stmt, Stmt::Trace { .. }) {
+            trace = Some(stmt);
             continue;
         }
         // `unit module M;` / `unit package P;`: rakudo holds the rest of the
         // unit in the declaration's body; the parser leaves it beside it.
         if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
             if let Some(mut node) = convert_stmt(&unit)? {
+                if let Some(field) = trace.take().and_then(origin::trace_field) {
+                    node.fields.push(field);
+                }
                 if let Some(n) = line.take() {
                     node.fields.push(origin::field(n));
                 }
@@ -106,6 +114,9 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         if let Some(expansion) = done_value_expansion(stmt) {
             for part in expansion {
                 if let Some(mut node) = convert_stmt(part)? {
+                    if let Some(field) = trace.take().and_then(origin::trace_field) {
+                        node.fields.push(field);
+                    }
                     if let Some(n) = line.take() {
                         node.fields.push(origin::field(n));
                     }
@@ -115,6 +126,9 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             continue;
         }
         if let Some(mut node) = convert_stmt(stmt)? {
+            if let Some(field) = trace.take().and_then(origin::trace_field) {
+                node.fields.push(field);
+            }
             if let Some(n) = line.take() {
                 node.fields.push(origin::field(n));
             }
@@ -259,6 +273,16 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         return zip.map(|node| Some(statement_expression(node)));
     }
     match stmt {
+        Stmt::SyntheticBlock(stmts)
+            if matches!(stmts.as_slice(), [Stmt::ProtoDecl { .. }, Stmt::Use { .. }]) =>
+        {
+            let [proto, use_stmt] = stmts.as_slice() else {
+                unreachable!("guarded inline proto shape")
+            };
+            Ok(Some(super::use_stmt::convert_inline_proto(
+                proto, use_stmt,
+            )?))
+        }
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
         Stmt::SetLine(_) | Stmt::Trace { .. } => Ok(None),

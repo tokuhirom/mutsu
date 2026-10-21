@@ -2546,6 +2546,7 @@ t/lang/parsing/parser-lowercase-type-smiley-union.t
 t/lang/parsing/parser-modifier-key-after-comma.t
 t/lang/parsing/parser-nesting-limit.t
 t/lang/parsing/parser-pipe-prefixed-declaration.t
+t/lang/parsing/parser-statement-continues-past-early-stop.t
 t/lang/parsing/parser-two-terms-statement-shapes.t
 t/lang/parsing/semicolon-list-literal.t
 t/lang/parsing/slang-l10n-vocabulary.t
@@ -2581,6 +2582,7 @@ t/lang/quoting/angle-spaceship-quote-word.t
 t/lang/quoting/backslash-unrecognized.t
 t/lang/quoting/corner-quote-backslash.t
 t/lang/quoting/double-angle-quote-word-list.t
+t/lang/quoting/double-angle-quote-word-lt.t
 t/lang/quoting/embedded-qqw-qw-escape.t
 t/lang/quoting/escaped-our-sub-incdec.t
 t/lang/quoting/format-quote-adverb.t
@@ -3074,6 +3076,7 @@ t/modules/import-export/use-in-block-repeated-calls.t
 t/modules/import-export/use-in-do-block-is-scoped.t
 t/modules/import-export/use-in-nested-block-is-begin-time.t
 t/modules/import-export/use-in-package-failed-preload-error.t
+t/modules/import-export/use-inline-proto-argument.t
 t/modules/import-export/use-inside-method-body-loads-at-compile-time.t
 t/modules/import-export/use-lib-argument-shapes.t
 t/modules/import-export/use-lib-dynamic-sibling-path.t
@@ -3087,6 +3090,7 @@ t/modules/import-export/use-nested-module-merges-outer-package.t
 t/modules/import-export/use-newline.t
 t/modules/import-export/use-ok-real-load.t
 t/modules/import-export/use-tag-variable-colonpair.t
+t/modules/import-export/use-trace-pragma.t
 t/modules/import-export/use-version-adverb-parens.t
 t/modules/import-export/use-version-auth-adverb.t
 t/modules/import-export/use-version-short-adverb.t
@@ -5134,6 +5138,8 @@ t/rakuast/rakuast-expression-context-cohort.t
 t/rakuast/rakuast-fake-signature-whatevercode-where.t
 t/rakuast/rakuast-fat-arrow-key.t
 t/rakuast/rakuast-fat-arrow-whatever.t
+t/rakuast/rakuast-final-diffs-frontends.t
+t/rakuast/rakuast-final-diffs.t
 t/rakuast/rakuast-folded-literals.t
 t/rakuast/rakuast-for-destructuring.t
 t/rakuast/rakuast-for-lone-slurpy.t
@@ -6228,6 +6234,7 @@ t/routines/dispatch/captured-multi-dispatch-no-env-leak.t
 t/routines/dispatch/captured-multi-dispatcher-narrowest.t
 t/routines/dispatch/cas-multidim-cells.t
 t/routines/dispatch/closure-assigns-sigilless-multislice-alias.t
+t/routines/dispatch/core-infix-user-candidate-fallbacks.t
 t/routines/dispatch/core-routine-user-multi-candidate.t
 t/routines/dispatch/defer-multi-cross-level-proto-block.t
 t/routines/dispatch/defer-multi-plain-cross-level.t
@@ -6782,6 +6789,7 @@ t/routines/signature/parameterized-type-object.t
 t/routines/signature/parametric-container-new-table.t
 t/routines/signature/parametric-of-keyof-rows.t
 t/routines/signature/parametric-type-compound-name-scope.t
+t/routines/signature/placeholder-scope-signature-capable.t
 t/routines/signature/plus-unpack-param-and-renamed-block-params.t
 t/routines/signature/pod-declarator-param-trailing-extent.t
 t/routines/signature/pointy-amp-param-shadows-sub.t
@@ -7247,6 +7255,7 @@ t/types/enum-subset/enum-value-shadows-core-listop.t
 t/types/enum-subset/enum-value-shadows-same-named-sub.t
 t/types/enum-subset/enum-value-which.t
 t/types/enum-subset/enum-values-junction-infix.t
+t/types/enum-subset/enum.t
 t/types/enum-subset/eval-enum-bare-key-transitive.t
 t/types/enum-subset/eval-enum-bare-key.t
 t/types/enum-subset/generics-nominalizable-class.t
@@ -7749,6 +7758,7 @@ t/vm/codegen/adr0112-trir-list-ops.t
 t/vm/codegen/adr0112-trir-short-circuit.t
 t/vm/codegen/adr0112-trir-string-path.t
 t/vm/codegen/adr0116-trir-op-bodies.t
+t/vm/codegen/adr0116-trir-peephole.t
 t/vm/codegen/bench-det-warmup.t
 t/vm/codegen/compile-time-vars.t
 t/vm/codegen/compiler-id.t
@@ -7895,6 +7905,7 @@ t/vm/nqp-nd-ops-on-containers.t
 t/vm/nqp-object-ops-parity.t
 t/vm/nqp-object-ops.t
 t/vm/nqp-op-call-assign.t
+t/vm/nqp-p6-frame-state-ops.t
 t/vm/nqp-p6-ops.t
 t/vm/nqp-p6scalarwithvalue-bool-container.t
 t/vm/nqp-pointer-ops.t
@@ -8131,6 +8142,7 @@ t/vm/sigilless-scalar-same-name.t
 t/vm/sigilless-shadow-tracks-container.t
 t/vm/sigilless-shadows-imaginary-i.t
 t/vm/sigilless-store-container-assign.t
+t/vm/sigilless-term-infix-pipe.t
 t/vm/sigilless-underscore-eval.t
 t/vm/slip-container-read-flattens.t
 t/vm/source-literals-are-nfc.t
