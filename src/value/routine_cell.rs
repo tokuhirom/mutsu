@@ -18,8 +18,42 @@ use super::MixinOverrides;
 use crate::gc::Gc;
 use crate::symbol::Symbol;
 
+/// Declaration metadata copied by a Method initializer. Its executable body
+/// is compiled independently; only trait composition and wrapper values travel
+/// with this prototype. Role composition shares the declaration metadata.
+#[derive(Debug)]
+pub(crate) struct RoutinePrototype {
+    pub(crate) site: Symbol,
+    pub(crate) cell: RoutineCell,
+    wrappers: std::sync::OnceLock<Vec<(u64, super::Value)>>,
+}
+
+impl RoutinePrototype {
+    pub(crate) fn new(site: Symbol, cell: RoutineCell) -> Self {
+        Self {
+            site,
+            cell,
+            wrappers: std::sync::OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn finish(
+        &self,
+        wrappers: Vec<(u64, super::Value)>,
+    ) -> Result<(), Vec<(u64, super::Value)>> {
+        self.wrappers.set(wrappers)
+    }
+
+    pub(crate) fn wrappers(&self) -> Option<&[(u64, super::Value)]> {
+        self.wrappers.get().map(Vec::as_slice)
+    }
+}
+
 #[derive(Default)]
 struct Inner {
+    /// The multi-method family of a first-class candidate. This is reflection
+    /// provenance, independent of the code object's call and state identity.
+    method_family: std::sync::OnceLock<(Symbol, Symbol)>,
     /// Set once a composition is stored; never cleared.
     composed: AtomicBool,
     overrides: RwLock<Option<Gc<MixinOverrides>>>,
@@ -65,6 +99,15 @@ impl std::fmt::Debug for RoutineCell {
 }
 
 impl RoutineCell {
+    // Cost: O(1).
+    pub(crate) fn note_method_family(&self, owner: Symbol, name: Symbol) {
+        let _ = self.0.method_family.set((owner, name));
+    }
+
+    // Cost: O(1).
+    pub(crate) fn method_family(&self) -> Option<(Symbol, Symbol)> {
+        self.0.method_family.get().copied()
+    }
     /// The roles composed into the routine so far, if any.
     // Cost: O(1); one atomic load when nothing was composed.
     pub(crate) fn get(&self) -> Option<Gc<MixinOverrides>> {
@@ -155,6 +198,9 @@ impl RoutineCell {
     // Cost: O(1).
     pub(crate) fn forked(&self) -> Self {
         let fresh = Self::default();
+        if let Some((owner, name)) = self.method_family() {
+            fresh.note_method_family(owner, name);
+        }
         if let Some(name) = self.renamed() {
             fresh.rename(name);
         }

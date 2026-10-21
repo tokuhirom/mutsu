@@ -39,6 +39,7 @@ impl Compiler {
         chunk_compiler.lexically_in_routine = self.lexically_in_routine;
         chunk_compiler.in_closure_body = self.in_closure_body;
         chunk_compiler.return_routineness = self.return_routineness;
+        chunk_compiler.static_class_hidden = self.static_class_hidden;
         chunk_compiler.enclosing_package = Some(
             self.enclosing_package
                 .clone()
@@ -118,11 +119,12 @@ impl Compiler {
         class_body_static_code_vars: &std::collections::HashSet<String>,
         class_body_type_aliases: &std::collections::HashMap<String, String>,
         package_body_lexicals: &std::collections::HashSet<String>,
-        static_class: Option<&str>,
+        static_class: Option<(&str, bool)>,
     ) -> crate::opcode::CompiledDeclExpr {
         let mut chunk_compiler = self.new_decl_chunk_compiler();
         chunk_compiler.set_current_package(package.to_string());
-        chunk_compiler.static_class = static_class.map(str::to_string);
+        chunk_compiler.static_class = static_class.map(|(name, _)| name.to_string());
+        chunk_compiler.static_class_hidden = static_class.is_some_and(|(_, hidden)| hidden);
         chunk_compiler.class_body_static_code_vars = class_body_static_code_vars.clone();
         chunk_compiler.package_body_lexicals = package_body_lexicals.clone();
         chunk_compiler
@@ -209,6 +211,8 @@ impl Compiler {
 
     /// [`Self::add_sub_decl_plan`] for a class declaration.
     pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let expanded = Self::with_expression_methods(stmt);
+        let stmt = expanded.as_ref().unwrap_or(stmt);
         let Stmt::ClassDecl {
             name,
             name_expr,
@@ -288,7 +292,7 @@ impl Compiler {
             true,
             is_hoisted_shell,
         );
-        let body_plan = self.compile_class_body_plan(body, package_name.as_deref());
+        let body_plan = self.compile_class_body_plan(body, package_name.as_deref(), *is_hidden);
         self.code.add_class_decl_plan(
             stmt,
             name_expr.is_none() && self.decl_name_is_prequalified(),
@@ -341,6 +345,7 @@ impl Compiler {
         &self,
         body: &[Stmt],
         package_name: Option<&str>,
+        is_hidden: bool,
     ) -> Vec<crate::opcode::ClassBodyOp> {
         let mut ops = crate::opcode::class_body_plan(body);
         let Some(package_name) = package_name else {
@@ -437,7 +442,7 @@ impl Compiler {
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
                     &body_lexicals,
-                    Some(package_name),
+                    Some((package_name, is_hidden)),
                 ));
                 continue;
             }
@@ -454,7 +459,7 @@ impl Compiler {
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
                     &body_lexicals,
-                    Some(package_name),
+                    Some((package_name, is_hidden)),
                 ));
                 let hoisted_raw = Self::hoisted_class_sub_decl(raw);
                 *hoist_chunk = Some(self.compile_decl_stmts_chunk_in_package(
@@ -463,7 +468,7 @@ impl Compiler {
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
                     &body_lexicals,
-                    Some(package_name),
+                    Some((package_name, is_hidden)),
                 ));
                 continue;
             }
@@ -479,7 +484,7 @@ impl Compiler {
                 &class_body_static_code_vars,
                 &class_body_type_aliases,
                 &body_lexicals,
-                Some(package_name),
+                Some((package_name, is_hidden)),
             ));
         }
         ops
@@ -787,6 +792,8 @@ impl Compiler {
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is
     /// always compile-time known, so only its trait arguments are lowered.
     pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let expanded = Self::with_expression_methods(stmt);
+        let stmt = expanded.as_ref().unwrap_or(stmt);
         let Stmt::RoleDecl {
             name,
             custom_traits,

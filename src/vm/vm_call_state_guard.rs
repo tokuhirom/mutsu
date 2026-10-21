@@ -100,16 +100,20 @@ use std::cell::Cell;
 pub(crate) struct StateScopeGuard {
     /// Raw pointer into `state_scope_id`'s OWN `Box` allocation (see the
     /// module doc's "v3" section) -- never a pointer to `Interpreter` itself.
-    cell: *const Cell<Option<u64>>,
-    saved: Option<u64>,
+    cell: *const Cell<Option<crate::state_scope::StateScopeId>>,
+    saved: Option<crate::state_scope::StateScopeId>,
 }
 
 impl StateScopeGuard {
-    pub(crate) fn new(interp: &Interpreter, new_value: Option<u64>) -> Self {
+    pub(crate) fn new(
+        interp: &Interpreter,
+        new_value: Option<crate::state_scope::StateScopeId>,
+    ) -> Self {
         let saved = interp.lexicals.state_scope_id.get();
         interp.lexicals.state_scope_id.set(new_value);
         StateScopeGuard {
-            cell: &*interp.lexicals.state_scope_id as *const Cell<Option<u64>>,
+            cell: &*interp.lexicals.state_scope_id
+                as *const Cell<Option<crate::state_scope::StateScopeId>>,
             saved,
         }
     }

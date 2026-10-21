@@ -59,6 +59,8 @@ impl Compiler {
         custom_traits: &[(String, Option<crate::ast::Expr>)],
         is_whatever_code: bool,
         declarator: crate::ast::RoutineDeclarator,
+        routine_name: Symbol,
+        prototype: Option<Symbol>,
     ) {
         // A parameter type naming a `constant` alias is its target, as in a
         // sub's signature (`param_defs_with_type_aliases_resolved`, #13728).
@@ -71,8 +73,10 @@ impl Compiler {
         let method_defs;
         let method_params;
         let (params, param_defs) = if method_literal {
-            method_defs =
-                crate::method_signature_shared::effective_method_param_defs(param_defs, false);
+            method_defs = crate::method_signature_shared::effective_method_param_defs(
+                param_defs,
+                self.static_class_hidden,
+            );
             method_params = method_defs
                 .iter()
                 .map(|pd| pd.name.clone())
@@ -265,7 +269,7 @@ impl Compiler {
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {
-            name: Symbol::intern(""),
+            name: routine_name,
             name_expr: None,
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
@@ -298,6 +302,7 @@ impl Compiler {
             idx,
             Some(cc_idx),
             is_whatever_code,
+            prototype,
         ));
     }
 }

@@ -469,8 +469,11 @@ impl Interpreter {
         // through the body loop below -- a manual `self.lexicals.state_scope_id =
         // saved;` statement near this function's end would be skipped by an
         // unwind.
-        let state_scope_guard =
-            crate::vm::vm_call_state_guard::StateScopeGuard::new(self, new_state_scope);
+        let state_scope_guard = crate::vm::vm_call_state_guard::StateScopeGuard::new(
+            self,
+            new_state_scope
+                .map(|id| crate::state_scope::StateScopeId::for_callable(id, data.is_bare_block)),
+        );
 
         loan_env!(self, inject_pending_callsite_line());
 

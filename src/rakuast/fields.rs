@@ -203,7 +203,16 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         VarDeclarationPlaceholderSlurpyArray => &[],
         VarDeclarationPlaceholderSlurpyHash => &[],
         StubFail | StubDie | StubWarn => &[("args", Absent::EmptyNode(ArgList))],
-        Sub | Method | Submethod => &[
+        Sub => &[
+            ("multiness", Absent::Str("")),
+            ("name", Absent::TypeObject("RakuAST::Name")),
+            ("signature", Absent::EmptyNode(Signature)),
+            ("traits", Absent::EmptyList),
+            ("body", Absent::Required),
+        ],
+        Method | Submethod => &[
+            ("multiness", Absent::Str("")),
+            ("private", Absent::False),
             ("name", Absent::TypeObject("RakuAST::Name")),
             ("signature", Absent::EmptyNode(Signature)),
             ("traits", Absent::EmptyList),

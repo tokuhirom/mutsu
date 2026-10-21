@@ -87,6 +87,7 @@ impl Compiler {
         method_compiler.set_current_package(package_name.to_string());
         method_compiler.current_distribution = self.current_distribution.clone();
         method_compiler.lexically_in_method = true;
+        method_compiler.static_class_hidden = is_hidden;
         // Only the enclosing `my &k` Callable containers are handed down (not the
         // whole scope chain, design decision 2): `&k = ...` in a method body
         // must assign through the outer container rather than being rejected as

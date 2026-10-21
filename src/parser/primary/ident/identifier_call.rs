@@ -1352,6 +1352,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "multi" => {
+            let (r, _) = ws(rest)?;
+            let method = keyword("method", r)
+                .map(|r| (r, false))
+                .or_else(|| keyword("submethod", r).map(|r| (r, true)));
+            if let Some((r, is_submethod)) = method {
+                let (r, _) = ws(r)?;
+                let (r, mut stmt) =
+                    crate::parser::stmt::expr_position_method_decl_pub(r, is_submethod)?;
+                if let Stmt::MethodDecl { multi, .. } = &mut stmt {
+                    *multi = true;
+                }
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
             // `multi sub name(...) { ... }` / `multi name(...) { ... }` in
             // expression context: a `DoStmt(SubDecl)`, which declares the
             // candidate in the current scope and evaluates to it (see the
@@ -1426,7 +1439,6 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 // (`has @.x = method TOP ($/) { ... }`) is still a declaration:
                 // inside a package body it installs `TOP` as a method there,
                 // and the expression evaluates to the method object.
-                crate::parser::stmt::hoisted_methods::record(r, &stmt);
                 return Ok((r_decl, Expr::DoStmt(Box::new(stmt))));
             }
         }

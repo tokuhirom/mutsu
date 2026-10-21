@@ -188,6 +188,8 @@ impl Interpreter {
         });
         let method_cell = crate::value::RoutineCell::default();
         let def = MethodDef {
+            value_prototype: decl.value_prototype.map(|site| std::sync::Arc::new(
+                crate::value::RoutinePrototype::new(site, method_cell.clone()))),
             syms: Default::default(),
             lexical_package: crate::symbol::Symbol::intern(&cx.saved_package),
             params: effective_params.clone(),
@@ -245,10 +247,10 @@ impl Interpreter {
         // method table — they are only callable as functions.
         // Submethods (is_submethod=true) DO go in the table even
         // though they also have is_my=true from the parser.
-        // The `our &name = method name(...)` variable form
-        // (our_variable_form=true) keeps the method in the table.
+        let prototype = def.value_prototype.clone();
+        let mut candidate_idx = 0;
         let is_lexical_only = decl.is_my && !decl.is_submethod;
-        let is_our_only = decl.is_our && !decl.our_variable_form;
+        let is_our_only = decl.is_our;
         if !is_lexical_only && !is_our_only {
             // ADR-0019 F4c-9b: the registry's `method_entries` table is the
             // sole store now -- every write goes straight through the
@@ -257,7 +259,7 @@ impl Interpreter {
             let owner = Symbol::intern(cx.name);
             let method_sym = Symbol::intern(&resolved_method_name);
             if decl.multi {
-                self.registry_mut().push_user_method(owner, method_sym, def);
+                candidate_idx = self.registry_mut().push_user_method(owner, method_sym, def);
             } else {
                 // Check for duplicate non-multi method definition.
                 // Only error if the existing method was defined in
@@ -286,7 +288,7 @@ impl Interpreter {
                 // privacy stored under the same name.
                 self.registry_mut()
                     .retain_user_methods(owner, method_sym, |m| m.is_private != new_is_private);
-                self.registry_mut().push_user_method(owner, method_sym, def);
+                candidate_idx = self.registry_mut().push_user_method(owner, method_sym, def);
             }
         }
         // A method declared `is export` is importable as a *sub* whose
@@ -327,7 +329,9 @@ impl Interpreter {
             decl.return_type.as_deref(),
             &decl.custom_traits,
             &method_cell,
+            candidate_idx,
         )?;
+        self.finish_method_value_prototype(prototype.as_deref(), cx.name, &resolved_method_name, candidate_idx)?;
         // `handles` on a method: synthesize forwarder methods that
         // delegate to the return value of this method. E.g.
         //   method Str() handles 'uc' { 'x' }

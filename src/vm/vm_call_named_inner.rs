@@ -365,7 +365,7 @@ impl Interpreter {
         // restores `state_scope_id` on drop, including on a Rust panic
         // unwind through the body loop below.
         let state_scope_guard = callable_id
-            .map(|id| crate::vm::vm_call_state_guard::StateScopeGuard::new(self, Some(id)));
+            .map(|id| crate::vm::vm_call_state_guard::StateScopeGuard::new(self, Some(id.into())));
         // Load persisted state variable values
         for (slot, key) in &cf.code.state_locals {
             let scoped_key = self.scoped_state_key(*key);

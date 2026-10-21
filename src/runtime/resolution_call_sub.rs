@@ -735,7 +735,7 @@ impl Interpreter {
                     (None, None)
                 };
                 self.push_wrap_dispatch_frame(frame);
-                let result = self.call_sub_value(outermost, sanitized_args, false);
+                let result = self.call_method_wrapper(outermost, sanitized_args);
                 self.pop_wrap_dispatch_frame();
                 // Propagate closure variable mutations from the wrapper back to
                 // the current env so captured variables (e.g. $seen = True) are
@@ -1414,7 +1414,7 @@ impl Interpreter {
             // every clone of the block instead of restarting with each. Handed
             // across `run_nested`'s register reset via `pending_nested_state_scope`,
             // which is what actually installs it (see `with_nested_registers`).
-            self.lexicals.pending_nested_state_scope = Some(self.sub_state_scope_id(&data));
+            self.lexicals.pending_nested_state_scope = Some(self.callable_state_scope(&data));
             // ADR-0059 Slice 2: an `is rw`/`is raw` code object's bare tail is
             // its lvalue return, on this recompile path exactly as on the
             // compiled one (`compile_routine_closure_body`'s `is_rw`).

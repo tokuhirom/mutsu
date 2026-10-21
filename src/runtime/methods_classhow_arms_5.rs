@@ -31,6 +31,7 @@ impl Interpreter {
                 Some(env)
             };
             let def = MethodDef {
+                value_prototype: None,
                 syms: Default::default(),
                 lexical_package: sub_data.package,
                 params: sub_data.params.to_vec(),

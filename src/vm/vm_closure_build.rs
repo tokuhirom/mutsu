@@ -36,6 +36,7 @@ use crate::value::ValueMap;
 
 /// The per-kind inputs of [`Interpreter::build_closure`].
 pub(super) struct ClosureSpec<'a> {
+    pub(super) routine_cell: Option<crate::value::RoutineCell>,
     /// `anon` for an anonymous literal, the declared name for `anon sub NAME`.
     pub(super) name: Symbol,
     pub(super) signature: crate::opcode::ClosureSignature,
@@ -204,7 +205,7 @@ impl Interpreter {
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard,
             captured_readonly,
-            routine_cell: Default::default(),
+            routine_cell: spec.routine_cell.unwrap_or_default(),
         }))
     }
 

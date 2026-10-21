@@ -4312,6 +4312,10 @@ impl Compiler {
                 body,
                 multi,
                 is_rw,
+                is_raw,
+                is_export,
+                export_tags,
+                custom_traits,
                 return_type,
                 is_submethod,
                 is_my,
@@ -4349,7 +4353,7 @@ impl Compiler {
                 // `t/oo/method/nested-method-captured-writeback-coherence.t`
                 // calling one with no arguments. Prepending an invocant there
                 // would only break a spelling this ticket has no baseline for.
-                let (sub_params, mut sub_param_defs) = if *is_my || *is_our {
+                let (sub_params, mut sub_param_defs) = if *is_my || *is_our || *is_submethod {
                     crate::runtime::registration_class_body_method_forms::method_sub_form_params(
                         params, param_defs,
                     )
@@ -4381,13 +4385,17 @@ impl Compiler {
                     body: body.clone(),
                     multi: *multi,
                     is_rw: *is_rw,
-                    is_raw: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
+                    is_raw: *is_raw,
+                    is_export: *is_export,
+                    export_tags: export_tags.clone(),
                     is_test_assertion: false,
                     supersede: false,
                     custom_traits: {
-                        let mut traits = vec![("__mutsu_method_decl".to_string(), None)];
+                        let mut traits = custom_traits.clone();
+                        traits.push(("__mutsu_method_decl".to_string(), None));
+                        if *is_our {
+                            traits.push(("__our_scoped".to_string(), None));
+                        }
                         if let Some(marker) = declarator.literal_marker() {
                             traits.push((marker.to_string(), None));
                         }
@@ -4414,7 +4422,7 @@ impl Compiler {
                             *multi,
                             None,
                             *is_rw,
-                            false,
+                            *is_raw,
                             false,
                             false,
                         )
@@ -4892,7 +4900,8 @@ impl Compiler {
             }
             Stmt::AugmentClass { name, body, .. } => {
                 let site_id = self.augment_site_id(&name.resolve(), body);
-                let idx = self.code.add_stmt(stmt.clone());
+                let expanded = Self::with_expression_methods(stmt);
+                let idx = self.code.add_stmt(expanded.unwrap_or_else(|| stmt.clone()));
                 self.code.emit(OpCode::AugmentClass { idx, site_id });
             }
             // ADR-0048 D7/Phase 5, VALUE half: NOT implemented — a role body

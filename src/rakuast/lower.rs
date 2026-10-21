@@ -1951,10 +1951,11 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     // `scope => "my"` / `"our"`; a plain method has none.
     let (is_our, is_my) = match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => (false, node.class == RakuAstClass::Submethod),
+        None => (false, false),
         Some(_) => match (leaf_str(node, "scope")?.as_str(), node.class) {
             ("our", RakuAstClass::Method) => (true, false),
             ("my", RakuAstClass::Method) => (false, true),
+            ("has" | "anon", RakuAstClass::Method | RakuAstClass::Submethod) => (false, false),
             _ => return Err(unsupported(node)),
         },
     };
@@ -1962,6 +1963,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     super::routine_source::retain(node, &mut body)?;
     let handles = super::routine_source::handle_specs(&body).ok_or_else(|| unsupported(node))?;
     Ok(Stmt::MethodDecl {
+        value_prototype: None,
         name: crate::symbol::Symbol::intern(&name),
         name_expr,
         params,
@@ -1976,7 +1978,6 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // raku names the declarator with the class, so `submethod` comes back
         // from `node.class` rather than from a field.
         is_submethod: node.class == RakuAstClass::Submethod,
-        our_variable_form: false,
         return_type,
         is_default_candidate,
         deprecated_message,
@@ -2611,7 +2612,7 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             .iter()
             .any(|t| t == crate::ast::IMPLICIT_INVOCANT_TRAIT);
         let alias = (!implicit).then(|| (first.name.clone(), first.sigilless));
-        Some((first.type_constraint, alias))
+        Some((first.type_constraint, alias, first.default))
     } else {
         None
     };
@@ -2631,9 +2632,10 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         crate::ast::RoutineDeclarator::Method
     };
     let mut literal = match declared {
-        Some((type_constraint, alias)) => crate::parser::anon_method_expr_declared(
+        Some((type_constraint, alias, default)) => crate::parser::anon_method_expr_declared(
             type_constraint,
             alias,
+            default,
             param_defs,
             return_type,
             body,

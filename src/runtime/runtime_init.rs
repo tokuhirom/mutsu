@@ -2834,6 +2834,7 @@ impl Interpreter {
                     args: vec![], listop: false,
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
+                    value_prototype: None,
                     syms: Default::default(),
                     lexical_package: crate::symbol::wk::global_package(),
                     params: Vec::new(),
@@ -2901,6 +2902,7 @@ impl Interpreter {
                     args: vec![], listop: false,
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
+                    value_prototype: None,
                     syms: Default::default(),
                     lexical_package: crate::symbol::wk::global_package(),
                     params: Vec::new(),

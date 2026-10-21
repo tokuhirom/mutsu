@@ -692,6 +692,7 @@ impl Interpreter {
             return_type.as_deref(),
             trait_args,
             &proto_cell,
+            0,
         )
     }
 

@@ -4,7 +4,7 @@ use Test;
 # the dispatch match that picked the candidate is the check, the binder does
 # not re-run the user's code.
 
-plan 9;
+plan 11;
 
 my $c = 0;
 subset P of Int where { $c++; True };
@@ -46,3 +46,13 @@ class E {
     multi method m(Str $x) { 'str' }
 }
 throws-like { E.m(3) }, X::Multi::NoMatch, 'and for a multi method too';
+
+# Frame construction must reuse the winner's applicability even when a deferral
+# builtin is present, whether its frame is materialized eagerly or lazily.
+class PredicateBase { method choose($x) { 'base' } }
+class PredicateChild is PredicateBase {
+    multi method choose($x where { $c++; True }) { 'child-' ~ callsame }
+}
+$c = 0;
+is PredicateChild.choose(1), 'child-base', 'deferral reaches the inherited candidate';
+is $c, 1, 'building and consuming the frame does not rerun the winning predicate';

@@ -447,9 +447,9 @@ impl Interpreter {
     /// base string: a per-clone `#{scope}` suffix interned one never-freed
     /// `Symbol` per closure clone, and hid the entry from the dead-clone
     /// reaper (`reap_dead_state_scopes`, #9504). A routine-invocation scope
-    /// comes from a different counter than closure ids, so it is tagged with
-    /// [`ROUTINE_INVOCATION_SCOPE`] to keep the two id spaces apart.
-    pub(super) fn anon_state_key(&self, name: &str) -> Option<(Symbol, Option<u64>)> {
+    /// comes from a different counter than closure ids, so the typed
+    /// [`crate::state_scope::StateScopeId`] keeps the domains apart.
+    pub(super) fn anon_state_key(&self, name: &str) -> Option<crate::state_scope::StateKey> {
         if !name.starts_with("__ANON_STATE#") {
             return None;
         }
@@ -466,9 +466,12 @@ impl Interpreter {
             // that case. A closure frame is still a block frame, so use the
             // state scope itself to distinguish these two cases.
             let scope = if self.state_scope_belongs_to_routine() {
-                self.enclosing_routine_invocation_id() | ROUTINE_INVOCATION_SCOPE
+                crate::state_scope::StateScopeId::Invocation(self.enclosing_routine_invocation_id())
             } else {
-                self.lexicals.state_scope_id.get().unwrap_or(0)
+                self.lexicals
+                    .state_scope_id
+                    .get()
+                    .unwrap_or(crate::state_scope::StateScopeId::Block(0))
             };
             Some((
                 Symbol::intern(&format!("__anon_state::{name}")),
@@ -497,15 +500,13 @@ impl Interpreter {
     /// routine's scope without pushing a block frame; direct map callbacks set
     /// the scope to their own fresh `SubData` identity instead.
     fn state_scope_belongs_to_routine(&self) -> bool {
-        let Some(scope) = self.lexicals.state_scope_id.get() else {
-            return false;
-        };
-        let Some(frame) = self.routine_stack().iter().rev().find(|f| !f.is_block) else {
-            return false;
-        };
-        let key = Self::callable_id_key_for_syms(frame.package, frame.name);
-        self.registration_callable_id(key)
-            .is_some_and(|id| id == scope as i64)
+        matches!(
+            self.lexicals.state_scope_id.get(),
+            Some(
+                crate::state_scope::StateScopeId::Routine(_)
+                    | crate::state_scope::StateScopeId::Type(_)
+            )
+        )
     }
 
     /// The value of a per-call anonymous state, which the state store owns
@@ -609,11 +610,6 @@ impl Interpreter {
             .and_then(|s| s.strip_suffix('>'))
     }
 }
-
-/// Tag bit for an anonymous-state scope taken from a routine invocation id
-/// (`next_invocation_id`) rather than a closure clone id (`next_instance_id`,
-/// which never reaches this bit), so a dead clone's id cannot name it.
-const ROUTINE_INVOCATION_SCOPE: u64 = 1 << 63;
 
 /// The default ("zero") value for a native array element type.
 /// Native integer types default to 0, native floats (num/num32/num64) to 0e0,

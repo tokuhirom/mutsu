@@ -82,14 +82,7 @@ pub(crate) fn package_body_block_with_terms<'a>(
     for term in terms {
         simple::register_user_term_symbol(term);
     }
-    hoisted_methods::push_frame();
     let mut result = block_inner(input);
-    // Named methods declared in expression position inside the body
-    // (`has @.x = method TOP ($/) { ... }`) are the package's methods too.
-    let hoisted = hoisted_methods::pop_frame();
-    if let Ok((_, body)) = &mut result {
-        body.extend(hoisted);
-    }
     simple::finish_block_anon_states(&mut result);
     simple::pop_scope();
     result

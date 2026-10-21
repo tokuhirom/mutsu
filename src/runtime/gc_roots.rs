@@ -212,6 +212,13 @@ impl Interpreter {
                 visitor.visit_value(v);
             }
         }
+        for prototypes in self.registry().method_value_prototypes.values() {
+            for prototype in prototypes.values() {
+                if let Some(wrappers) = prototype.wrappers() {
+                    for (_, value) in wrappers { visitor.visit_value(value); }
+                }
+            }
+        }
         for def in self.registry().subsets.values() {
             visit_opt(visitor, &def.predicate_closure);
             visit_opt(visitor, &def.refinement);

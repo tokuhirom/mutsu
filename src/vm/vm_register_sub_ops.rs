@@ -112,6 +112,7 @@ impl Interpreter {
         let is_pointy =
             cc_idx.is_some_and(|i| code.closure_compiled_codes[i as usize].is_pointy_block);
         let spec = crate::vm::vm_closure_build::ClosureSpec {
+            routine_cell: None,
             name: crate::symbol::well_known::anon(),
             empty_sig: signature.params.is_empty() && signature.param_defs.is_empty(),
             signature,
@@ -146,6 +147,7 @@ impl Interpreter {
             return Err(RuntimeError::new("MakeBlockClosure expects Block"));
         };
         let spec = crate::vm::vm_closure_build::ClosureSpec {
+            routine_cell: None,
             name: crate::symbol::well_known::anon(),
             signature: crate::opcode::ClosureSignature {
                 params: crate::value::empty_params(),

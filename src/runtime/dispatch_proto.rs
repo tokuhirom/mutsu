@@ -303,6 +303,7 @@ impl Interpreter {
         // accepts is not rejected by the proto's parameter types (#13250).
         let only_star = super::dispatch_proto_rewrite::is_only_star_block(&proto.body);
         let mut method_def = MethodDef {
+            value_prototype: None,
             syms: Default::default(),
             lexical_package: proto.package,
             params: if only_star { Vec::new() } else { proto.params.clone() },

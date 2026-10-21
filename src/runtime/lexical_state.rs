@@ -270,19 +270,19 @@ pub(crate) struct LexicalState {
     /// pays a single empty-set check on the variable hot path.
     pub(crate) our_scalar_cell_names: std::sync::Arc<std::collections::HashSet<String>>,
     /// Keyed by `(base key symbol, closure scope id)` instead of a formatted
-    /// `String` — see `scoped_state_key`/`state_key_display`. The `Option<u64>`
-    /// distinguishes an un-scoped (named-sub/module-level) `state` var from one
-    /// scoped to a specific closure clone. `FxHashMap`, not the SipHash
+    /// `String` — see `scoped_state_key`/`state_key_display`. Typed scopes
+    /// distinguish routines, block clones, invocations and method-owning types.
+    /// `FxHashMap`, not the SipHash
     /// default: every `state` read/write on a call hashes this tuple, and the
     /// key is two small integers (no DoS surface).
-    pub(crate) state_vars: rustc_hash::FxHashMap<(Symbol, Option<u64>), Value>,
+    pub(crate) state_vars: rustc_hash::FxHashMap<crate::state_scope::StateKey, Value>,
     /// Keys inserted into `state_vars` since the last `start` spawn migrated
     /// them into the cross-thread store (see `seed_unmigrated_state_vars`).
     /// Every key whose entry existed at an earlier spawn was already seeded
     /// then (`seed_if_absent`, so a second seed is a no-op), so the spawn only
     /// has to visit what was inserted since: O(new keys) per spawn instead of
     /// O(every state entry the program ever created) (#9504).
-    pub(crate) state_vars_unmigrated: Vec<(Symbol, Option<u64>)>,
+    pub(crate) state_vars_unmigrated: Vec<crate::state_scope::StateKey>,
     /// Cells a hoisted named-sub registration seeded for a free variable whose
     /// declaration has not run yet (#9911, ADR-0024's textual-order edge); the
     /// declaration's store adopts its cell. See `vm/vm_hoist_capture_cells.rs`.
@@ -382,14 +382,14 @@ pub(crate) struct LexicalState {
     /// above: `vm_call_state_guard::StateScopeGuard::Drop` restores it via a
     /// raw pointer into this separate heap allocation, immune to Stacked
     /// Borrows retags of `Interpreter`'s own memory.
-    pub(crate) state_scope_id: Box<Cell<Option<u64>>>,
+    pub(crate) state_scope_id: Box<Cell<Option<crate::state_scope::StateScopeId>>>,
     /// One-shot handoff of a `state` scope into the next nested run: the
     /// interpreter-fallback call path runs a routine body via `run_nested`,
     /// whose register reset clears `state_scope_id` — this field survives the
     /// reset and is consumed by `with_nested_registers` as the nested run's
     /// initial scope, so a fallback-dispatched named sub still keys its state
     /// by its registration clone id (per-clone `state` in nested named subs).
-    pub(crate) pending_nested_state_scope: Option<u64>,
+    pub(crate) pending_nested_state_scope: Option<crate::state_scope::StateScopeId>,
     /// Bare names that appear as a `&`-sigil parameter in some registered sub
     /// (e.g. `foo` from `sub callit(&foo) {...}`). A call to such a name may be
     /// shadowed by a lexical `&name` binding in the current frame, so the

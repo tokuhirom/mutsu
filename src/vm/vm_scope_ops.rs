@@ -299,6 +299,7 @@ impl Interpreter {
         owned: &[crate::symbol::Symbol],
     ) -> Value {
         let spec = crate::vm::vm_closure_build::ClosureSpec {
+            routine_cell: None,
             name: crate::symbol::well_known::anon(),
             signature: code.closure_signature(idx as usize),
             // A body without a signature takes the emitted value as its topic,

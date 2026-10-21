@@ -2644,6 +2644,9 @@ pub(crate) enum Stmt {
         trait_order: Vec<attr_trait::AttrTrait>,
     },
     MethodDecl {
+        /// Compiler-owned correspondence between a Method initializer and
+        /// its declaration prototype. Source trees keep this absent.
+        value_prototype: Option<Symbol>,
         name: Symbol,
         name_expr: Option<Expr>,
         params: Vec<String>,
@@ -2662,10 +2665,6 @@ pub(crate) enum Stmt {
         /// True for `submethod` declarations (not inherited, but dispatched on own class).
         /// Distinct from `is_my` which means `my method` (lexical, not in method table).
         is_submethod: bool,
-        /// True for `our &name = method name(...) { ... }` form.
-        /// Unlike `our method name()`, this form keeps the method in the class
-        /// method table in addition to registering it as a package function.
-        our_variable_form: bool,
         return_type: Option<String>,
         /// `is default` trait for multi dispatch tie-breaking.
         is_default_candidate: bool,

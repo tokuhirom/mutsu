@@ -776,7 +776,7 @@ impl Interpreter {
             // runs via `run_nested`, whose register reset would otherwise
             // clear the scope, so hand it across (consumed by
             // `with_nested_registers`).
-            self.lexicals.pending_nested_state_scope = registration_id;
+            self.lexicals.pending_nested_state_scope = registration_id.map(Into::into);
             let result = self.eval_block_value_with_pre_post(&def.body);
             self.lexicals.pending_nested_state_scope = None;
             self.pending_eval_placeholder_params = saved_eval_placeholders;

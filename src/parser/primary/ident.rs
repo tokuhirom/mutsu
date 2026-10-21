@@ -5,7 +5,10 @@ mod listop;
 mod loop_control;
 pub(crate) mod predicates;
 mod supply;
-pub(crate) use anon_sub::{anon_method_expr, anon_method_expr_declared, folded_invocant};
+pub(crate) use anon_sub::{
+    anon_method_expr, anon_method_expr_declared, bind_invocant_aliases, folded_invocant,
+    method_literal_params,
+};
 pub(crate) use supply::supply_block;
 mod statement_terminator;
 mod term_literals;

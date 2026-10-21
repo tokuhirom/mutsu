@@ -1216,6 +1216,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Ok(Some(statement_expression(node)))
         }
         Stmt::MethodDecl {
+            value_prototype: _,
             name,
             name_expr,
             param_defs,
@@ -1227,7 +1228,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             is_our,
             is_my,
             is_submethod,
-            our_variable_form,
             return_type,
             is_default_candidate,
             deprecated_message,
@@ -1257,7 +1257,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_export != !export_tags.is_empty(),
                     "method with a bare `is export`",
                 ),
-                (*our_variable_form, "`our &m = method` form"),
                 (
                     !handles.is_empty() && !super::routine_source::keeps_handles(body),
                     "method with `handles`",
@@ -5510,8 +5509,12 @@ fn method_literal_node(
     };
     let mut node = anon_routine_node(rest, folded.body, returns)?;
     node.class = class;
-    if folded.type_constraint.is_some() || folded.alias.is_some() {
-        let invocant = declared_invocant_parameter(folded.type_constraint, folded.alias.as_ref())?;
+    if folded.type_constraint.is_some() || folded.alias.is_some() || folded.default.is_some() {
+        let invocant = declared_invocant_parameter(
+            folded.type_constraint,
+            folded.alias.as_ref(),
+            folded.default,
+        )?;
         add_leading_parameter(&mut node, invocant);
     }
     Ok(node)
@@ -5521,10 +5524,11 @@ fn method_literal_node(
 /// invocant a method literal declared (measured on rakudo 2026.09). Without a
 /// written type it is the `Any` of every routine parameter; without a name it
 /// has no target (`method (Mu:D:)`).
-// Cost: O(1).
+// Cost: O(t + d), t = type-name bytes, d = default-initializer AST nodes.
 fn declared_invocant_parameter(
     type_constraint: Option<&str>,
     alias: Option<&(String, bool)>,
+    default: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let type_node = match type_constraint {
         Some(t) => build_type_node(t)?,
@@ -5558,10 +5562,14 @@ fn declared_invocant_parameter(
         };
         fields.push(node_field(Some("target"), target));
     }
-    fields.push(RakuAstField {
-        name: Some("optional"),
-        value: RakuAstFieldValue::Node(Value::truth(false)),
-    });
+    if let Some(default) = default {
+        fields.push(node_field(Some("default"), convert_expr(default)?));
+    } else {
+        fields.push(RakuAstField {
+            name: Some("optional"),
+            value: RakuAstFieldValue::Node(Value::truth(false)),
+        });
+    }
     Ok(RakuAstNode {
         class: RakuAstClass::Parameter,
         fields,

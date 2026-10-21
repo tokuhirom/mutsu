@@ -18,7 +18,10 @@ pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
-pub(crate) use primary::ident::{anon_method_expr, anon_method_expr_declared, folded_invocant};
+pub(crate) use primary::ident::{
+    anon_method_expr, anon_method_expr_declared, bind_invocant_aliases, folded_invocant,
+    method_literal_params,
+};
 pub(crate) use primary::ident::{is_loop_control_label, loop_control_expr};
 pub(crate) use primary::regex::{
     SubstFlags, parse_adverb_argument, regex_execution_value, rx_execution_value,

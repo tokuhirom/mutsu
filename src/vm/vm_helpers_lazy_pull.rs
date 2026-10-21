@@ -160,7 +160,11 @@ impl Interpreter {
             .map(|m| m.lock().unwrap().state_scope_id)
             .unwrap_or(0);
         if gather_scope_id != 0 {
-            self.lexicals.state_scope_id.set(Some(gather_scope_id));
+            self.lexicals
+                .state_scope_id
+                .set(Some(crate::state_scope::StateScopeId::Block(
+                    gather_scope_id,
+                )));
         }
 
         // Determine starting IP and locals from coroutine state or fresh start
