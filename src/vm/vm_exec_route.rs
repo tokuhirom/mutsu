@@ -333,6 +333,7 @@ impl Interpreter {
             OpCode::CheckPhaserEnd
             | OpCode::CheckPhaserStart { .. }
             | OpCode::ClearPackageStub { .. }
+            | OpCode::CoverageHit(..)
             | OpCode::DeclareRequireStub { .. }
             | OpCode::FlipFlopExpr { .. }
             | OpCode::HyperFuncOp { .. }
@@ -353,7 +354,6 @@ impl Interpreter {
             | OpCode::SymbolicDeref { .. }
             | OpCode::SymbolicDerefStore(..)
             | OpCode::Trace(..)
-            | OpCode::CoverageHit(..)
             | OpCode::TypeCheck(..)
             | OpCode::TypeCheckBind(..) => self.exec_ops_group_13(code, ip, compiled_fns),
             OpCode::AugmentClass { .. }
