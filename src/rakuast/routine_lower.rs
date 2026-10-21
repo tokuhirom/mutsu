@@ -51,7 +51,7 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // the parser records it.
         associativity,
         precedence_trait: is_traits.precedence.clone(),
-        signature_alternates: Vec::new(),
+        signature_alternates: super::routine_source::lower_alternates(node)?,
         body,
         multi,
         is_rw: is_traits.is_rw,
@@ -59,7 +59,7 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_export: !is_traits.export_tags.is_empty(),
         export_tags: is_traits.export_tags,
         is_test_assertion: custom_traits.iter().any(|(t, _)| t == "test-assertion"),
-        supersede: false,
+        supersede: super::routine_source::has_supersede(node),
         custom_traits,
     })
 }

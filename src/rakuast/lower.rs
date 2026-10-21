@@ -112,6 +112,9 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let label = node_label(node)?;
     let _label_scope = super::label_context::enter(label.as_deref())?;
+    if let Some(doc) = super::doc_phaser::lower(node) {
+        return doc;
+    }
     if node.class == RakuAstClass::StatementExpression
         && let Some(label) = label
     {
@@ -610,8 +613,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 named_child(node, "type")?,
             )?),
         }),
-        // `augment class C { ... }`.
-        RakuAstClass::Class if leaf_str(node, "scope").is_ok_and(|s| s == "augment") => {
+        // `augment class/role C { ... }`.
+        RakuAstClass::Class | RakuAstClass::Role
+            if leaf_str(node, "scope").is_ok_and(|s| s == "augment") =>
+        {
             let (node, roles) = take_does_roles(node)?;
             Ok(Stmt::AugmentClass {
                 name: crate::symbol::Symbol::intern(&call_name_str(&node)?),
@@ -620,7 +625,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     .iter()
                     .map(|role| crate::symbol::Symbol::intern(role))
                     .collect(),
-                is_role: false,
+                is_role: node.class == RakuAstClass::Role,
             })
         }
         RakuAstClass::Class => super::package_header::lower_with_header(node, lower_class),

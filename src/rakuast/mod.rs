@@ -32,6 +32,7 @@ mod declarator_docs;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
+mod doc_phaser;
 mod dynamic_method;
 mod enum_term;
 mod feed_op;
