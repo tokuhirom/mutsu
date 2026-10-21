@@ -90,6 +90,10 @@ def run(cmd, cwd, timeout, sandbox, sbx_home, writable=()):
     # MUTSU_FUDGE is roast-only: with it set, a stray `#?rakudo skip` comment in
     # a distribution would silently drop the next statement.
     env = {k: v for k, v in os.environ.items() if k != "MUTSU_FUDGE"}
+    # The baseline is rakudo's RakuAST frontend (its default; docs/ecosystem-parity.md).
+    # Pin it so a caller's RAKUDO_RAKUAST=0 cannot turn a legacy-only distribution,
+    # which mutsu does not have to run, into a baseline. mutsu ignores the variable.
+    env["RAKUDO_RAKUAST"] = "1"
     # `$*EXECUTABLE-NAME` is the interpreter's basename on both sides, so a suite
     # that does `run($*EXECUTABLE-NAME, ...)` needs that interpreter on PATH. raku
     # is; a MUTSU_BIN under target/ is not, and such a suite failed on mutsu only.

@@ -513,6 +513,12 @@ release targets (Linux/macOS × x64/arm64) are required; do not weaken one to pa
   fix, run the distribution the issue names against your build next to `raku`, say in the PR body
   whether it now matches, and file each additional problem that run exposes as its own issue. The
   procedure is the `ecosystem-dist-fix` skill's "Closing an `ecosystem` ticket" section.
+- **The ecosystem oracle is rakudo's RakuAST frontend** (user decision, 2026-10-21): a
+  distribution that does not work on rakudo under RakuAST, its default frontend, does not have to
+  work on mutsu. That covers modules written for the pre-RakuAST legacy frontend (`$*W`,
+  `Perl6::World`, QAST built in slang actions), which are no longer maintained. Its files are
+  `no_baseline`, not a mutsu gap. Never look for a baseline under `RAKUDO_RAKUAST=0`.
+  `scripts/ecosystem-sweep.py` pins the frontend.
 - **Claim an issue before working it** — agents run in parallel. Post a comment whose **first
   line** is `Claiming: <branch>`, re-read the comments, and yield if a live claim with a lower
   comment id exists; the **lowest comment id is the whole tiebreaker** ("I'm further along" or "the

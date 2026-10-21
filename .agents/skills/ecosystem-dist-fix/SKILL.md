@@ -45,7 +45,10 @@ the mapping table in [docs/agent-environments.md](../../../docs/agent-environmen
    `no_baseline`: it is never charged to mutsu and never worth fixing. Run `raku` on the exact same
    file with the exact same `-I` list *before* calling anything a mutsu bug. Suites that need the
    network, a database, or a `zef`-installed repository fail on both sides — that is the expected
-   outcome, not a finding.
+   outcome, not a finding. "rakudo" means its default **RakuAST** frontend (user decision,
+   2026-10-21; AGENTS.md). A distribution that works only under the legacy frontend
+   (`RAKUDO_RAKUAST=0`), such as Test::Async with its `$*W`/QAST slang actions, is unmaintained and
+   `no_baseline`. Never run `raku` with `RAKUDO_RAKUAST=0` to manufacture a baseline.
 2. **`MUTSU_FUDGE` must be unset.** It is roast-only; a stray `#?rakudo skip` in a distribution
    would silently drop the next statement and hand you a fake pass.
 3. **Never edit the distribution to make the test pass.** The extracted tree under `tmp/ecosystem/`
