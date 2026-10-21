@@ -112,10 +112,24 @@ impl Interpreter {
                 *pos + available / group * group
             };
             let max_matches = Some(needed - (out.produced.len() - produced_base));
-            if self.pull_chunk_step(func, fatal, mode, plan, items, pos, end, max_matches, out)? {
+            plan.chunk_open = !chain.exhausted();
+            let last =
+                self.pull_chunk_step(func, fatal, mode, plan, items, pos, end, max_matches, out);
+            plan.chunk_open = false;
+            if last? {
                 return Ok(true);
             }
         }
-        Ok(*pos >= items.len() && chain.exhausted())
+        let at_end = *pos >= items.len() && chain.exhausted();
+        if at_end && plan.last_phaser_due() {
+            if out.produced.len() - produced_base >= needed {
+                // The loop that read the last element stopped on its limit:
+                // `LAST` waits for a consumer that sees the end.
+                return Ok(false);
+            }
+            plan.stream_slips = true;
+            self.pull_chunk_step(func, fatal, mode, plan, items, pos, items.len(), Some(1), out)?;
+        }
+        Ok(at_end)
     }
 }

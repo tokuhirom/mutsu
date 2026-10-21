@@ -575,6 +575,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let consumed_base = out.consumed;
         let produced_base = out.produced.len();
+        src.open_end = slot.chunk_open;
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
