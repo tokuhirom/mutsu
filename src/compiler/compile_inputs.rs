@@ -5,7 +5,7 @@
 //! handed therefore go through the wrappers here. While a recording is open
 //! (the compile of a cacheable module mainline), each wrapper logs its
 //! question and the answer it got. A later load re-asks every logged question
-//! ([`CompileInputs::still_hold`]) and uses the cached result only if every
+//! ([`CompileInputs::first_changed`]) and uses the cached result only if every
 //! answer is unchanged.
 //!
 //! A read that cannot be summarised as a question and an answer, such as a
