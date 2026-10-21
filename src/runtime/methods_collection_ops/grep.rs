@@ -443,7 +443,7 @@ impl Interpreter {
                     let _guard = lock();
                     items.get(start + i).cloned()
                 };
-                let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(&fetch, max_matches);
+                let feed = crate::runtime::resolution_grep_loop::LoopFeed::new(&fetch, max_matches);
                 self.eval_grep_over_feed_into(func, feed, plan, &mut matches)
             }
             None => {
