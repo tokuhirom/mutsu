@@ -55,6 +55,11 @@ pub(crate) struct RankProfile {
     /// candidate cannot bind these arguments, and its distances say nothing
     /// about its narrowness (see [`assign_tiers`]).
     unrelated: bool,
+    /// Some positional argument carries a mixed-in role that its parameter
+    /// names: that parameter scores nearer than the value's own type would,
+    /// though the role and another candidate's nominal type may be unrelated
+    /// (see [`MultiRank::narrower_by_rank`]).
+    role_mixin: bool,
 }
 
 impl RankProfile {
@@ -66,6 +71,7 @@ impl RankProfile {
         unreached: 0,
         refined: false,
         unrelated: false,
+        role_mixin: false,
     };
 
     /// Record positional parameter `slot`: its type-hierarchy distance from the
@@ -120,6 +126,13 @@ impl RankProfile {
     // Cost: O(1).
     pub(crate) fn mark_unrelated(&mut self) {
         self.unrelated = true;
+    }
+
+    /// Record that a positional argument's mixed-in role satisfies its
+    /// parameter's type.
+    // Cost: O(1).
+    pub(crate) fn mark_role_mixin(&mut self) {
+        self.role_mixin = true;
     }
 
     /// Whether a coercion parameter appears in the positional prefix shared
@@ -409,7 +422,11 @@ impl MultiRank {
         // candidate's nominal type are unrelated) must not put a candidate
         // ahead of one that is narrower on a declared type it does not lose
         // (#14176: `(R, Numeric)` vs `(Rational:D, Rational:D)`).
-        let (decl_self, decl_other) = self.profile.declared_wins(&other.profile, conforms);
+        let (decl_self, decl_other) = if self.profile.role_mixin || other.profile.role_mixin {
+            self.profile.declared_wins(&other.profile, conforms)
+        } else {
+            (false, false)
+        };
         if decl_other && !decl_self {
             return false;
         }

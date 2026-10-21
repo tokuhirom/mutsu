@@ -277,6 +277,10 @@ impl Interpreter {
                 let distance = self.typed_param_distance(pd, &base, &arg, var_type.as_deref());
                 if distance >= UNRELATED_DISTANCE {
                     profile.mark_unrelated();
+                } else if let ValueView::Mixin(_, mixins) = arg.view()
+                    && mixins.contains_key(crate::meta_ns::MetaNs::Role.str_key_for_str(&base))
+                {
+                    profile.mark_role_mixin();
                 }
                 total += distance;
                 continue;
