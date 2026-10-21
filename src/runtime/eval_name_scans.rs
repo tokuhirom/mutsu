@@ -224,6 +224,12 @@ impl UndeclaredName<'_> {
             || interp.get_our_var(name).is_some()
             // A file-scope constant of the running routine's own module.
             || interp.module_scope_lexical(name).is_some()
+            // A type of the running package's own (a module routine's
+            // `EVAL 'Bar'` for its `class Bar`).
+            || interp.resolve_type_in_current_package(name).is_some()
+            // The running package itself (`unit module Foo`'s `Foo`).
+            || crate::qualified::package_ancestors(interp.current_package_sym())
+                .any(|p| p.as_str() == name)
             || (crate::runtime::enum_bare_names::enum_bare_keys_in_use()
                 && interp
                     .module_scope_lexical(&crate::runtime::enum_bare_names::enum_bare_key(name))

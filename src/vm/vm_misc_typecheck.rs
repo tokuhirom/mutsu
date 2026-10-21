@@ -465,6 +465,12 @@ impl Interpreter {
             // is merged (ADR-11136).
             || self.module_name_hidden_here(declared_constraint))
             && !is_core_raku_type(declared_constraint)
+            // A type the running package declares: a module routine's `EVAL`
+            // of `class Foo {...}; my Foo $x`, whose bare `Foo` binding is
+            // not in that routine's view of the env (ADR-12529).
+            && self
+                .resolve_type_in_current_package(declared_constraint)
+                .is_none()
             && !loan_env!(self, has_type_capture_binding(declared_constraint))
             // A role body statement runs under the composing class's package,
             // but its short type names (`my Level $x` with `enum Level` in the

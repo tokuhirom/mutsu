@@ -787,6 +787,14 @@ impl Interpreter {
             // sub mk { Params.new } }` reached from another package's call site,
             // where the bareword `Params` is `Foo::Params`.
             Value::package(Symbol::intern(&qualified))
+        } else if crate::qualified::package_ancestors(self.current_package_sym())
+            .any(|pkg| pkg == name_sym)
+        {
+            // The running package itself, or one enclosing it: `Foo` inside
+            // `unit module Foo` names the module however it was loaded. Its
+            // bare binding is in the loading scope's env, which a loaded
+            // module's routine does not see (ADR-12529).
+            Value::package(name_sym)
         } else if Self::is_builtin_type(name) || Self::is_type_with_smiley(name, self) {
             Value::package(Symbol::intern(self.resolve_core_type_alias(name)))
         } else if let Some(enum_val) =

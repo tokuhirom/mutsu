@@ -570,7 +570,20 @@ impl Interpreter {
             if is_private_attr && let Some(err) = self.missing_private_attr_read_error(name) {
                 return Err(err);
             }
-            if !is_internal && !is_special && !is_private_attr && !self.env().contains_key(name) {
+            // TODO: a Nil slot of a declared local is an unreached `my`
+            // (raku reads `Any`, e.g. a CATCH after a `die` before the `my`),
+            // not an undeclared name; this probe only stands in for that
+            // distinction, and an unbound required sub-signature leaf relies
+            // on it to fail its bind. It reads through the callers, as it did
+            // before a loaded module's routine stopped seeing the program
+            // scope (ADR-12529), so it does not change what it accepts.
+            if !is_internal
+                && !is_special
+                && !is_private_attr
+                && !self
+                    .env()
+                    .contains_key_sym_through_callers(Symbol::intern(name))
+            {
                 return Err(RuntimeError::undeclared_variable(name));
             }
             // `is default(...)`: return the default value instead of Nil.

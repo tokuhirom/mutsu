@@ -400,7 +400,9 @@ impl Interpreter {
         let owns_state = cf.code.uses_routine_state || (cf.code.reads_topic && cf.code.is_routine);
         let caller_env = if self.env().overlay_is_shared_empty()
             && (!outer_is_unit
-                || (self.env().is_empty_unit_frame() && cf.code.unit_hidden_lexicals.is_none()))
+                || (self.env().is_empty_unit_frame()
+                    && cf.code.unit_hidden_lexicals.is_none()
+                    && self.env().outer_is_foreign_unit() == self.code_is_foreign_unit(&cf.code)))
             && (!owns_state || self.env().owns_routine_state())
         {
             None
@@ -430,7 +432,11 @@ impl Interpreter {
         // variables in the caller.
         let seed_through_link = !params_fill_frame && outer_is_unit && caller_env.is_some();
         if seed_through_link {
-            self.env_mut().mark_outer_is_unit();
+            if self.code_is_foreign_unit(&cf.code) {
+                self.env_mut().mark_outer_is_foreign_unit();
+            } else {
+                self.env_mut().mark_outer_is_unit();
+            }
         }
         if params_fill_frame {
             // Every local is a parameter, so both arms below would skip every
@@ -968,8 +974,7 @@ impl Interpreter {
         // Marked once the parameters are bound: the binder resolves each
         // argument's source variable, which is the caller's (ADR-12529).
         if outer_is_unit && caller_env.is_some() {
-            self.env_mut().mark_outer_is_unit();
-            self.hide_unit_names_from_frame(&cf.code);
+            self.link_frame_to_code_unit(&cf.code);
         }
         let body_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut ip = 0;

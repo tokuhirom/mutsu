@@ -89,6 +89,11 @@ pub(crate) struct ModuleVisibility {
     pub(crate) module_routine_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// ADR-11136: the compunit each loaded module's source is.
     pub(crate) module_units: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// The values of `module_units`: the compunits of the modules whose body
+    /// has run. A routine compiled from one of them links its frame to its
+    /// own compunit, not to the program scope
+    /// (`Interpreter::code_is_foreign_unit`, ADR-12529).
+    pub(crate) loaded_unit_set: std::sync::Arc<rustc_hash::FxHashSet<Symbol>>,
     /// ADR-11136: the modules a compunit merged at its top level. A
     /// block-level merge lives in the block's env tier instead
     /// (`MetaNs::ModuleMerge`).
@@ -122,6 +127,10 @@ impl Interpreter {
         let module_sym = Symbol::intern(module);
         crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_units)
             .insert(module_sym, unit);
+        if !self.module.module_visibility.loaded_unit_set.contains(&unit) {
+            crate::runtime::cow_table_mut(&mut self.module.module_visibility.loaded_unit_set)
+                .insert(unit);
+        }
         let mut names = names.into_iter().peekable();
         if names.peek().is_none() {
             return;
@@ -635,6 +644,10 @@ impl Interpreter {
         !self.bare_name_visible_here(sym)
             && self.resolve_suppressed_type(name).is_none()
             && self.resolve_type_in_current_package(name).is_none()
+            // The running package itself, or one enclosing it: inside
+            // `unit module Foo`, `Foo` is the module however it was loaded
+            // (a `require` merges nothing).
+            && !crate::qualified::package_ancestors(self.current_package_sym()).any(|p| p == sym)
             // A `constant` the running package declared in its own file scope
             // is what the bareword means there, even when a package-less
             // module published a same-named one (`unit module A` and a plain
