@@ -47,6 +47,18 @@ pub(crate) fn refuse_map_removal(target: &Value) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+/// Rakudo's refusal of `$map.ASSIGN-KEY($key, ...)` and `$map{$key} = ...` on an
+/// immutable `Map`: it names whether the key would have been added or changed.
+// Cost: O(k) expected, k = key string length.
+pub(crate) fn refuse_map_assignment(map: &Value, key: &Value) -> RuntimeError {
+    let key = key.to_string_value();
+    let (verb, prep) = match map.view() {
+        ValueView::Hash(data) if data.contains_key(&key) => ("change", "in"),
+        _ => ("add", "to"),
+    };
+    RuntimeError::new(format!("Cannot {verb} key '{key}' {prep} an immutable Map"))
+}
+
 impl Interpreter {
     /// `%h.DELETE-KEY($key)` on a hash value: remove the entry and return the
     /// value it held, or the hash's `is default(...)` value (else its element

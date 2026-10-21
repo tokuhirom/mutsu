@@ -1311,7 +1311,11 @@ impl Interpreter {
                             .collect(),
                     ));
                 } else {
-                    return Err(RuntimeError::assignment_ro_typename("Map", "Map"));
+                    let map = self.env().get(&var_name).map(Value::deref_container);
+                    return Err(match map {
+                        Some(map) => crate::runtime::refuse_map_assignment(&map, &idx),
+                        None => RuntimeError::assignment_ro_typename("Map", "Map"),
+                    });
                 }
             }
         }
