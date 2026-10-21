@@ -83,15 +83,7 @@ pub(super) fn hash_assign_key(
     // A `Map` is immutable: Rakudo's `Map.ASSIGN-KEY` dies, naming whether the
     // key would have been added or changed.
     if hash.is_immutable_map() {
-        let key = key_arg.to_string_value();
-        let verb = match hash.view() {
-            ValueView::Hash(map) if map.contains_key(&key) => "change key",
-            _ => "add key",
-        };
-        let prep = if verb == "add key" { "to" } else { "in" };
-        return Some(Err(RuntimeError::new(format!(
-            "Cannot {verb} '{key}' {prep} an immutable Map"
-        ))));
+        return Some(Err(crate::runtime::refuse_map_assignment(&hash, &key_arg)));
     }
     let written = hash.with_hash_mut(|gc| -> Result<(), RuntimeError> {
         let data = crate::value::gc_data_mut(gc);
