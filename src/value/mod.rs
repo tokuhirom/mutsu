@@ -113,7 +113,21 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
 }
 
 /// Shared mutable attribute storage for Proxy subclasses.
-pub(crate) type ProxySubclassAttrs = Arc<Mutex<ValueMap>>;
+/// The attribute store of a `Proxy` subclass instance (`class AP is Proxy
+/// { has $!x }`): the same shared cell an ordinary instance carries, so the
+/// subclass's methods read and write `$!x` on it in place (#14259).
+pub(crate) type ProxySubclassAttrs = crate::gc::Gc<InstanceAttrs>;
+
+/// A fresh attribute store for a `Proxy` subclass instance of `class_name`.
+// Cost: O(1) plus the map move.
+pub(crate) fn proxy_subclass_attrs(class_name: Symbol, attributes: AttrMap) -> ProxySubclassAttrs {
+    crate::gc::Gc::new(InstanceAttrs::new(
+        class_name,
+        attributes,
+        next_instance_id(),
+        false,
+    ))
+}
 
 /// The mutable state attached to a [`ValueRepr::Mixin`].
 ///
@@ -555,6 +569,9 @@ pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) mod render_guard;
 mod varref_declared;
+pub(crate) use dispatch_shape::iterator_kind::{
+    MAP_GREP_STREAM_ATTR, shape_of as iterator_shape_of,
+};
 pub(crate) use dispatch_shape::{
     ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
     ROLES_WITH_ROWS, const_str_eq, cool_numeric_method,
@@ -580,6 +597,7 @@ pub(crate) mod identity_index;
 pub(crate) mod label;
 pub(crate) mod lazy_attrs;
 mod method_site;
+mod regex_source;
 mod type_decl_site;
 pub mod user_key_map;
 pub use hash_key::HashKey;
@@ -601,7 +619,7 @@ pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_payload;
 mod param_copy;
 pub(crate) mod routine_cell;
-pub(crate) use routine_cell::RoutineCell;
+pub(crate) use routine_cell::{RoutineCell, RoutinePrototype};
 mod quanthash_store;
 pub(crate) mod raku_repr;
 pub(crate) mod shaped_array;
@@ -3381,6 +3399,11 @@ pub(crate) struct MapGrepSpec {
     /// multi-operand adaptors, from its own operands) on demand. See
     /// [`PipeAdaptor`] and `vm/vm_helpers_lazy_adaptor.rs`.
     pub(crate) adaptor: Option<Box<PipeAdaptor>>,
+    /// A lazy list a `map` callback slipped that cannot be seen to end (#14295),
+    /// with the index of its next element: the stage reads it before it calls
+    /// the callback again, as Rakudo's map iterator does. `None` when the last
+    /// callback result was a plain value or a Slip that ended.
+    pub(crate) pending_slip: Option<(Value, usize)>,
 }
 
 /// A stateful iterator adaptor over one or more pull sources, carried by a
@@ -3394,7 +3417,12 @@ pub(crate) enum PipeAdaptor {
     Skip { remaining: usize },
     /// `.map` with a callback taking `arity` (> 1) positionals per call.
     /// The callback is the owning spec's `func`.
-    MultiMap { arity: usize },
+    MultiMap {
+        arity: usize,
+        /// A lazy list the callback slipped that cannot be seen to end, with
+        /// the index of its next element (see `MapGrepSpec::pending_slip`).
+        pending: Option<(Value, usize)>,
+    },
     /// `.rotor` / `.batch`: a cycle of `(count, gap)` chunk specs.
     Chunk {
         specs: Vec<(usize, i64)>,
@@ -3870,6 +3898,10 @@ pub(crate) struct LazyList {
     /// Mutually exclusive with `array_context` in practice. Typed field (was
     /// the `__mutsu_lazylist_list_context` env marker).
     pub(crate) list_context: bool,
+    /// `.hyper` / `.race` of a lazy sequence (#13918): the sequence stays a
+    /// lazy pull and reports `HyperSeq` / `RaceSeq`. The work is not batched
+    /// across threads, as for the settled `HyperSeq`.
+    pub(crate) hyper_kind: HyperKind,
     /// Set by `.cache` on a genuinely-lazy list: the result is a cached,
     /// re-iterable view, so sinking it is a no-op (it must NOT drain the
     /// underlying source). A bare lazy Seq sunk still drains; only the
@@ -3894,6 +3926,27 @@ pub(crate) struct LazyList {
     /// fresh array starts without any (ADR-0097; it was the
     /// `__mutsu_deleted_index::` env key).
     pub(crate) deleted_indices: Mutex<Option<std::collections::HashSet<usize>>>,
+    /// The `is default(...)` value and element type of the `@` array this list
+    /// was placed in (`my Int @t = lazy 1..*`): the container descriptor an
+    /// eager `ArrayData` carries, so `Array.default`/`.of` answer from the
+    /// value and survive the list leaving its variable (#14101).
+    pub(crate) descriptor: Option<Arc<LazyArrayDescriptor>>,
+}
+
+/// See [`LazyList::hyper_kind`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum HyperKind {
+    #[default]
+    Plain,
+    Hyper,
+    Race,
+}
+
+/// See [`LazyList::descriptor`].
+#[derive(Debug)]
+pub(crate) struct LazyArrayDescriptor {
+    pub(crate) default: Option<Value>,
+    pub(crate) value_type: Option<String>,
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under

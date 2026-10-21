@@ -185,6 +185,7 @@ impl Interpreter {
         let f5_gen_before = self.registry().method_generation;
         if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
+            name_is_prequalified,
             name_chunk,
             parents,
             class_is_rw,
@@ -222,7 +223,7 @@ impl Interpreter {
                 // `class GLOBAL::Foo` declares Foo in the global namespace
                 stripped.to_string()
             } else if current_package_sym == crate::symbol::wk::global_package()
-                || crate::qualified::is_inside_package(resolved_sym, current_package_sym)
+                || *name_is_prequalified
                 // `require "Foo.rakumod"` runs the file with the package set to
                 // `Foo` before `class Foo` is declared; only a class that is
                 // already registered (we are inside its body) makes a same-named
@@ -703,7 +704,9 @@ impl Interpreter {
                 source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias));
             let skip_identity_binding =
                 self.qualified_identity_binding_is_redundant(&qualified_name, &storage_name);
-            let env = self.env_mut();
+            if !*is_lexical {
+                self.record_compound_type_binding(qualified_sym, resolved_sym);
+            }
             // NB: registering a type must NOT touch `$_`. A `class`/`role`
             // declaration is not an expression whose value becomes the topic,
             // and writing the type object there clobbered the enclosing
@@ -711,12 +714,21 @@ impl Interpreter {
             // three times instead of 0, 1, 2.
             // Always insert the class type object so that class names take
             // precedence over same-named `$`-sigiled variables (whose stripped
-            // name may already be in the env).
+            // name may already be in the env). A module mainline's qualified
+            // name whose storage name differs (`X::Imported::Boom` declared
+            // in `unit module M`, stored as `M::X::Imported::Boom`) is a
+            // package symbol of the program, not a frame binding (ADR-0084
+            // §2 group 2, #7817).
             if !skip_identity_binding {
-                env.insert(
-                    qualified_name.clone(),
-                    Value::package(Symbol::intern(&storage_name)),
-                );
+                let value = Value::package(Symbol::intern(&storage_name));
+                if self.at_module_toplevel()
+                    && crate::qualified::is_qualified(qualified_sym)
+                    && !self.env().contains_key(&qualified_name)
+                {
+                    self.bind_package_symbol(qualified_name.clone(), value);
+                } else {
+                    self.env_mut().insert(qualified_name.clone(), value);
+                }
             }
             // A *nested* declared name stays reachable under the name as written,
             // too. Rakudo installs `class X::Imported::Boom` inside
@@ -726,14 +738,35 @@ impl Interpreter {
             // (`t/imported-exception-when.t`, the shape Zef uses). Register the
             // written name as an alias for the qualified declaration rather than
             // modelling that installation rule, and never over an existing entry.
+            // A module mainline's alias is a package symbol of the program,
+            // kept off the frame env (ADR-0084 §2 group 2, #7817).
             if resolved_name != qualified_name && resolved_is_qualified {
                 let storage = storage_name.clone();
-                env.entry_or_insert_with(resolved_name.clone(), || {
-                    Value::package(Symbol::intern(&storage))
-                });
+                if self.at_module_toplevel() {
+                    self.bind_package_symbol_if_absent(
+                        resolved_name.clone(),
+                        Value::package(Symbol::intern(&storage)),
+                    );
+                } else {
+                    self.env_mut()
+                        .entry_or_insert_with(resolved_name.clone(), || {
+                            Value::package(Symbol::intern(&storage))
+                        });
+                }
             }
+            // The name as written in the source, when the compiler qualified
+            // it: a package symbol of the program too for a module mainline's
+            // qualified spelling (#7817).
             if let Some(alias) = source_alias {
-                env.insert(alias, Value::package(Symbol::intern(&storage_name)));
+                let value = Value::package(Symbol::intern(&storage_name));
+                if self.at_module_toplevel()
+                    && crate::qualified::is_qualified(Symbol::intern(&alias))
+                    && !self.env().contains_key(&alias)
+                {
+                    self.bind_package_symbol(alias, value);
+                } else {
+                    self.env_mut().insert(alias, value);
+                }
             }
             // When a nested class is registered inside another class (e.g. class B inside class A
             // becomes A::B), suppress the short name (B) so it cannot be used outside.
@@ -1009,6 +1042,9 @@ impl Interpreter {
             {
                 self.mop_compose(vec![Value::package(Symbol::intern(&storage_name))])?;
             }
+            // A HOW mixin overriding `create_BUILDPLAN` / `publish_method_cache`
+            // (AttrX::Mooish) has them called as the class composes (ADR-14162).
+            self.run_how_compose_overrides(&storage_name)?;
 
             // Slice F: write the deferred body's outer-lexical mutations through
             // to this caller frame's local slots (`register_class_decl` ran the
@@ -1244,6 +1280,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if let Some(crate::opcode::CompiledRoleDeclPlan {
             name,
+            name_is_prequalified,
             type_params,
             type_param_defs,
             is_export,
@@ -1277,7 +1314,7 @@ impl Interpreter {
                 stripped.to_string()
             } else if current_package_sym == crate::symbol::wk::global_package()
                 || name_str == current_package
-                || crate::qualified::is_inside_package(name_sym, current_package_sym)
+                || *name_is_prequalified
             {
                 name_str.clone()
             } else {
@@ -1430,6 +1467,9 @@ impl Interpreter {
                 self.compile_role_methods(&qualified_name);
             }
             // See `exec_register_class_op`: a declaration does not set the topic.
+            if !is_mangled {
+                self.record_compound_type_binding(Symbol::intern(&qualified_name), name_sym);
+            }
             if is_mangled {
                 self.bind_lexical_role_names(&qualified_name, &source_qualified_name, &name_str);
             } else if !self
@@ -1440,7 +1480,7 @@ impl Interpreter {
                     Value::package(Symbol::intern(&qualified_name)),
                 );
             }
-            if !is_mangled && qualified_name != name_str && !name_is_qualified {
+            if !is_mangled && qualified_name != name_str {
                 self.env_mut().insert(
                     name_str.clone(),
                     Value::package(Symbol::intern(&qualified_name)),
@@ -1449,8 +1489,17 @@ impl Interpreter {
             if let Some(alias) =
                 source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias))
             {
-                self.env_mut()
-                    .insert(alias, Value::package(Symbol::intern(&qualified_name)));
+                // See the class twin: a module mainline's qualified spelling
+                // is a package symbol of the program (#7817).
+                let value = Value::package(Symbol::intern(&qualified_name));
+                if self.at_module_toplevel()
+                    && crate::qualified::is_qualified(Symbol::intern(&alias))
+                    && !self.env().contains_key(&alias)
+                {
+                    self.bind_package_symbol(alias, value);
+                } else {
+                    self.env_mut().insert(alias, value);
+                }
             }
             // When a role is declared with an already-qualified name
             // (e.g. the compiler pre-qualified `role R1` inside

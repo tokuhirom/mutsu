@@ -11,73 +11,7 @@ enum BakeCtx {
 }
 
 impl Interpreter {
-    /// Heuristic: returns true if a regex subrule arg expression syntactically
-    /// looks like a fat-arrow Pair (`a => 1`), a colonpair (`:b(2)`), or a
-    /// `|`-flattening prefix (`|...`). For these forms we cannot easily
-    /// round-trip the value through a regex source string, so we keep the
-    /// original expression and let the match-time evaluator handle them.
-    pub(in crate::runtime) fn regex_arg_is_complex(arg: &str) -> bool {
-        let trimmed = arg.trim_start();
-        if trimmed.starts_with(':') || trimmed.starts_with('|') {
-            return true;
-        }
-        // Detect top-level `=>` (fat-arrow Pair).
-        let bytes: Vec<char> = arg.chars().collect();
-        let mut paren = 0i32;
-        let mut bracket = 0i32;
-        let mut brace = 0i32;
-        let mut quote: Option<char> = None;
-        let mut escaped = false;
-        let mut i = 0;
-        while i < bytes.len() {
-            let ch = bytes[i];
-            if let Some(q) = quote {
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == q {
-                    quote = None;
-                }
-                i += 1;
-                continue;
-            }
-            match ch {
-                '\'' | '"' => quote = Some(ch),
-                '(' => paren += 1,
-                ')' => paren -= 1,
-                '[' => bracket += 1,
-                ']' => bracket -= 1,
-                '{' => brace += 1,
-                '}' => brace -= 1,
-                '=' if paren == 0
-                    && bracket == 0
-                    && brace == 0
-                    && i + 1 < bytes.len()
-                    && bytes[i + 1] == '>' =>
-                {
-                    return true;
-                }
-                _ => {}
-            }
-            i += 1;
-        }
-        false
-    }
 
-    /// Returns true if a value can be safely formatted into a regex argument
-    /// list and re-evaluated to the same value. Conservative: only simple
-    /// scalar literals.
-    pub(in crate::runtime) fn value_is_round_trippable(value: &Value) -> bool {
-        matches!(
-            value.view(),
-            ValueView::Int(_)
-                | ValueView::Num(_)
-                | ValueView::Str(_)
-                | ValueView::Bool(_)
-                | ValueView::Nil
-        )
-    }
 
     /// Scan a `<…>` construct whose `<` sits at `chars[start]`. Returns the body
     /// between the delimiters, whether a matching `>` was found, and the index
@@ -654,25 +588,16 @@ impl Interpreter {
         out
     }
 
-    /// Does this argument expression mention a `:my`/`:let` lexical of the regex
-    /// it appears in? Such an expression has to stay unrendered (see
-    /// [`Self::instantiate_named_regex_arg_calls`]).
-    fn regex_arg_names_local(arg: &str, locals: &std::collections::HashSet<String>) -> bool {
-        if locals.is_empty() {
-            return false;
-        }
-        crate::runtime::regex_parse_core::scalar_names_in_decl(arg)
-            .iter()
-            .any(|n| locals.contains(n))
-    }
 
-    pub(in crate::runtime) fn instantiate_named_regex_arg_calls(
-        &mut self,
+    /// Specialize only bound parameters in argument source, without running it.
+    // Cost: O(n * p), n = pattern source length, p = enclosing parameters.
+    pub(in crate::runtime) fn bake_bound_params_into_regex_arguments(
+        &self,
         pattern: &str,
-    ) -> Result<String, RuntimeError> {
+        param_names: &[String],
+    ) -> String {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
-        let default_caps = RegexCaptures::default();
         // An argument naming an in-regex `:my`/`:let` lexical must NOT be rendered
         // here: this pass runs before the match, when that lexical has no value
         // yet, and baking the resulting `Nil` into the pattern text is permanent.
@@ -758,7 +683,7 @@ impl Interpreter {
                 {
                     let head_len = inner.len() - rest.len();
                     let head = &inner[..head_len];
-                    let rendered_inner = self.instantiate_named_regex_arg_calls(rest)?;
+                    let rendered_inner = self.bake_bound_params_into_regex_arguments(rest, param_names);
                     out.push('<');
                     out.push_str(head);
                     out.push_str(&rendered_inner);
@@ -787,47 +712,34 @@ impl Interpreter {
                 continue;
             };
 
-            let mut rendered_args = Vec::new();
-            for arg in &spec.arg_exprs {
-                // For complex / non-round-trippable values (Pair, Slip, Array, Hash, ...),
-                // keep the original argument expression so the match-time evaluator can
-                // re-evaluate and route them as named arguments or flatten Slips.
-                if Self::regex_arg_is_complex(arg)
-                    || Self::regex_arg_names_local(arg, &regex_local_vars)
-                {
-                    rendered_args.push(arg.clone());
-                    continue;
-                }
-                let Some(value) = self.eval_regex_expr_value(arg, &default_caps) else {
-                    return Err(RuntimeError::new(format!(
-                        "Failed to evaluate regex argument expression: {arg}"
-                    )));
-                };
-                if Self::value_is_round_trippable(&value) {
-                    let rendered = Self::format_named_regex_arg_value(&value);
-                    // `<::($name)>`: whether the name is written out or computed
-                    // decides if the call is filed under it, and a baked value
-                    // is a plain literal either way. Keep a computed name
-                    // computed (`"alpha".Str`) so baking it does not turn
-                    // `<::($n)>` into `<::("alpha")>`.
-                    if spec.lookup_name == "::" && !self.symbolic_name_is_constant(arg) {
-                        rendered_args.push(format!("{rendered}.Str"));
+            // Preserve the argument expression until the cursor reaches the call.
+            // Only the enclosing rule's already-bound parameters may be rendered;
+            // captures, lexical reads and arbitrary code need the live call frame.
+            let params: Vec<String> = param_names.iter()
+                .filter(|name| !regex_local_vars.contains(*name))
+                .cloned().collect();
+            let rendered_args: Vec<String> = spec.arg_exprs.iter()
+                .map(|arg| {
+                    let rendered = self.bake_params_in_code_text(arg, &params);
+                    // A computed symbolic name does not create a capture under
+                    // that name. Specializing a parameter must not make it static.
+                    if spec.lookup_name == "::"
+                        && !self.symbolic_name_is_constant(arg)
+                        && self.symbolic_name_is_constant(&rendered)
+                    {
+                        format!("{rendered}.Str")
                     } else {
-                        rendered_args.push(rendered);
+                        rendered
                     }
-                } else {
-                    // Fallback: keep the raw expression so it is re-evaluated later.
-                    rendered_args.push(arg.clone());
-                }
-            }
-
+                })
+                .collect();
             out.push('<');
             out.push_str(&inner[..open_idx + 1]);
             out.push_str(&rendered_args.join(", "));
             out.push_str(&inner[close_idx..]);
             out.push('>');
         }
-        Ok(out)
+        out
     }
 
     pub(super) fn restore_env_entries(&mut self, restore: HashMap<String, Option<Value>>) {

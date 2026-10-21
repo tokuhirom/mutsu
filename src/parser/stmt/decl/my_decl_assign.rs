@@ -6,15 +6,13 @@ use super::super::keyword;
 use super::helpers::shaped_array_new_with_data_expr;
 use super::my_decl::MyDeclState;
 use super::{
-    consume_scalar_decl_trailing_comma, default_decl_expr, method_decl_body,
-    parse_assign_expr_or_comma, parse_comma_chained_decls, parse_statement_modifier,
-    rewrite_decl_assignment_or_chain, wrap_with_will_phasers,
+    consume_scalar_decl_trailing_comma, default_decl_expr, parse_assign_expr_or_comma,
+    parse_comma_chained_decls, parse_statement_modifier, rewrite_decl_assignment_or_chain,
+    wrap_with_will_phasers,
 };
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
-
-use super::super::super::helpers::ws1;
 
 /// Handle the assignment/binding/default portion of a `my`/`our`/`state`
 /// variable declaration, after the variable name, type constraint, and
@@ -400,45 +398,6 @@ fn malformed_initializer(err: PError, rhs_input: &str) -> PError {
 
 fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
-    // class-scope routine aliasing form:
-    //   our &name = method name(...) { ... }
-    if s.is_our && s.is_code {
-        if let Some(r) = keyword("method", rest) {
-            let (r, _) = ws1(r)?;
-            let (r, mut stmt) = method_decl_body(r, false, true)?;
-            // Mark as `our &name = method` form so the method stays in the
-            // class method table (unlike `our method name()` which does not).
-            if let Stmt::MethodDecl {
-                ref mut our_variable_form,
-                ..
-            } = stmt
-            {
-                *our_variable_form = true;
-            }
-            if s.apply_modifier {
-                return parse_statement_modifier(r, stmt);
-            }
-            return Ok((r, stmt));
-        }
-        if let Some(r) = keyword("multi", rest) {
-            let (r, _) = ws1(r)?;
-            if let Some(r) = keyword("method", r) {
-                let (r, _) = ws1(r)?;
-                let (r, mut stmt) = method_decl_body(r, true, true)?;
-                if let Stmt::MethodDecl {
-                    ref mut our_variable_form,
-                    ..
-                } = stmt
-                {
-                    *our_variable_form = true;
-                }
-                if s.apply_modifier {
-                    return parse_statement_modifier(r, stmt);
-                }
-                return Ok((r, stmt));
-            }
-        }
-    }
     // Save flags before `s` is partially moved.
     let is_scalar = !s.is_array && !s.is_hash;
     let var_name_for_leave = s.name.clone();

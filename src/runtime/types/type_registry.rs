@@ -511,7 +511,10 @@ impl Interpreter {
         // A sigil-less `constant Bar = Foo::Bar` alias lives in the term
         // namespace (#9962) and is consulted first.
         if !crate::env::is_magic_sigilless_key(name) {
-            let alias = self.term_value(name).or_else(|| self.env.get(name));
+            let alias = self
+                .term_value(name)
+                .or_else(|| self.env.get(name))
+                .or_else(|| self.package_symbol_alias(name));
             if let Some(ValueView::Package(target)) = alias.map(Value::view) {
                 let resolved = target.resolve();
                 if resolved != name && self.has_type_direct(&resolved) {
@@ -977,6 +980,14 @@ impl Interpreter {
         let find = |declared_only: bool| {
             let matches = |key: &&String| {
                 key.starts_with(&prefix)
+                    // The declaration itself, not a type nested in it
+                    // (`Outer\0<id>::Inner\0<id>` also starts with
+                    // `Outer\0`); a `[..]` suffix is a curried
+                    // specialization of the declaration.
+                    && !key[prefix.len()..]
+                        .split('[')
+                        .next()
+                        .is_some_and(crate::qualified::is_qualified_str)
                     && !(declared_only && is_curried_lexical_key(key, prefix.len()))
             };
             reg.classes

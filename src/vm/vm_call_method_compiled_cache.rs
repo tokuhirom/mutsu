@@ -737,6 +737,26 @@ impl Interpreter {
         can_skip_merge: Option<bool>,
     ) -> Result<Value, RuntimeError> {
         let method: &str = method_sym.as_str();
+        // A `Proxy` subclass instance (`class AP is Proxy { has $!x }`) is
+        // `self` itself, while its attributes live in the cell the Proxy
+        // carries: run the method against that cell (#14259).
+        if let ValueView::Proxy {
+            subclass: Some((_, attrs_cell)),
+            ..
+        } = target.view()
+        {
+            let attrs_cell = attrs_cell.clone();
+            return self.dispatch_compiled_method_with_attrs_cell(
+                cn,
+                owner_class.as_str(),
+                method,
+                method_def,
+                cc,
+                target,
+                &attrs_cell,
+                args,
+            );
+        }
         let target_id = match target.view() {
             ValueView::Instance { id, .. } => Some(id),
             _ => None,
@@ -758,7 +778,13 @@ impl Interpreter {
             let invocant_for_dispatch = target.clone();
             let pushed_dispatch = loan_env!(
                 self,
-                push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
+                push_method_dispatch_frame(
+                    cn,
+                    method,
+                    &args,
+                    invocant_for_dispatch,
+                    Some((owner_class.as_str(), method_def))
+                )
             );
             let result = self.call_compiled_method_fast(
                 cn,
@@ -782,7 +808,13 @@ impl Interpreter {
             let invocant_for_dispatch = target.clone();
             let pushed_dispatch = loan_env!(
                 self,
-                push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
+                push_method_dispatch_frame(
+                    cn,
+                    method,
+                    &args,
+                    invocant_for_dispatch,
+                    Some((owner_class.as_str(), method_def))
+                )
             );
             let invocant = Some(target);
             let result = self.call_compiled_method(
@@ -865,7 +897,13 @@ impl Interpreter {
         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let pushed_dispatch = loan_env!(
             self,
-            push_method_dispatch_frame(cn, method, &args, target.clone(),)
+            push_method_dispatch_frame(
+                cn,
+                method,
+                &args,
+                target.clone(),
+                Some((owner_class, method_def))
+            )
         );
         let invocant = Some(target);
         let result = self.call_compiled_method(

@@ -38,6 +38,12 @@ impl Interpreter {
         }
         self.package_type_alias(name)
             .or_else(|| self.resolve_type_in_current_package(name))
+            .or_else(|| match self.package_symbol_alias(name).map(Value::view) {
+                Some(ValueView::Package(target)) if self.has_type_direct(&target.resolve()) => {
+                    Some(target.resolve())
+                }
+                _ => None,
+            })
     }
 
     /// The value an `EXPORT` hook installed under the CORE term keyword `name`,
@@ -140,6 +146,14 @@ impl Interpreter {
         over_scalar: bool,
     ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
+        if self
+            .registry()
+            .compound_identity_bindings
+            .contains_key(&name_sym)
+            && let Some((package, member)) = crate::qualified::split_qualified(name_sym)
+        {
+            return Err(self.no_such_qualified_symbol(package.as_str(), member.as_str()));
+        }
         // A lexical `my class foo` is bound under its own `env` key space
         // (`lexical_type_key`) as well as the bare name a same-named `$foo`
         // shares (#12109). The bare binding is the ordinary resolution; the
@@ -356,6 +370,7 @@ impl Interpreter {
                 .get(base)
                 .cloned()
                 .or_else(|| self.term_binding(base))
+                .or_else(|| self.package_symbol_alias(base).cloned())
             && let ValueView::Package(pkg) = v.view()
         {
             let resolved = format!("{}{}", pkg.resolve(), smiley);
@@ -779,6 +794,14 @@ impl Interpreter {
             // sub mk { Params.new } }` reached from another package's call site,
             // where the bareword `Params` is `Foo::Params`.
             Value::package(Symbol::intern(&qualified))
+        } else if crate::qualified::package_ancestors(self.current_package_sym())
+            .any(|pkg| pkg == name_sym)
+        {
+            // The running package itself, or one enclosing it: `Foo` inside
+            // `unit module Foo` names the module however it was loaded. Its
+            // bare binding is in the loading scope's env, which a loaded
+            // module's routine does not see (ADR-12529).
+            Value::package(name_sym)
         } else if Self::is_builtin_type(name) || Self::is_type_with_smiley(name, self) {
             Value::package(Symbol::intern(self.resolve_core_type_alias(name)))
         } else if let Some(enum_val) =
@@ -912,6 +935,7 @@ impl Interpreter {
                 // = 1` creates the package `foo`, and `OUR::foo` must resolve
                 // to it rather than report a missing `&foo`.
                 && !self.package_namespace_exists(Interpreter::strip_pseudo_packages(name))
+                && !self.export_namespace_exists(name)
             {
                 // The last segment starts with lowercase, indicating a qualified
                 // function/sub call (e.g. `Our::Package::pkg`). If the prefix
@@ -931,8 +955,16 @@ impl Interpreter {
                         || self.package_namespace_exists(bare))
                 {
                     Value::package(Symbol::intern(self.resolve_core_type_alias(bare)))
-                } else {
+                } else if self.is_known_package(name)
+                    || self.has_type(name)
+                    || self.export_namespace_exists(name)
+                    || Self::is_builtin_type(name)
+                    || crate::core_type_names::contains(name)
+                    || crate::rakuast::is_registered_type_object(name)
+                {
                     Value::package(Symbol::intern(name))
+                } else {
+                    return Err(self.no_such_qualified_symbol(pkg, sym));
                 }
             }
         } else if name.chars().count() == 1 && !self.is_name_suppressed(name) {
@@ -1111,9 +1143,7 @@ impl Interpreter {
         }
         // A term the running code imported is its own binding.
         let term_key = crate::runtime::term_names::term_key_sym(name_sym);
-        if self.module.imported_env_aliases.contains_key(&term_key)
-            || self.module.imported_env_aliases.contains_key(&name_sym)
-        {
+        if self.env_key_imported_here(term_key) || self.env_key_imported_here(name_sym) {
             return None;
         }
         let own = self.resolve_type_in_current_package(name)?;
@@ -1141,6 +1171,16 @@ impl Interpreter {
         // on the second call of the same routine, and on the first as soon as
         // an unrelated `use` has run in between — so a placeholder-only rule
         // fixes one call and leaves the next one wrong.
+        // An enum key the module imported lives in the enum-key namespace of
+        // the module tables (#7914), where a same-named `$`-scalar read cannot
+        // reach it (#14255).
+        if crate::runtime::enum_bare_names::enum_bare_keys_in_use()
+            && !name.starts_with(['$', '@', '%', '&'])
+            && let Some(v) =
+                self.module_imported_lexical(&crate::runtime::enum_bare_names::enum_bare_key(name))
+        {
+            return Some(v.clone());
+        }
         if let Some(v) = self.module_imported_lexical(name) {
             return Some(v.clone());
         }
@@ -1177,6 +1217,13 @@ impl Interpreter {
         };
         if !env_entry_is_placeholder {
             return None;
+        }
+        if crate::runtime::enum_bare_names::enum_bare_keys_in_use()
+            && !name.starts_with(['$', '@', '%', '&'])
+            && let Some(v) =
+                self.module_scope_lexical(&crate::runtime::enum_bare_names::enum_bare_key(name))
+        {
+            return Some(v.clone());
         }
         self.module_scope_lexical(name).cloned()
     }

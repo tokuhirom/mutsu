@@ -9,6 +9,7 @@ use super::MethodRow;
 
 pub(crate) mod attribute;
 mod class_how;
+mod class_how_buildplan;
 mod ctor_late;
 mod enum_how;
 mod grammar;
@@ -44,6 +45,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     attribute::ROWS,
     variable::ROWS,
     class_how::ROWS,
+    class_how_buildplan::ROWS,
     ctor_late::ROWS,
     enum_how::ROWS,
     grammar::ROWS,

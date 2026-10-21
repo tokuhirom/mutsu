@@ -64,76 +64,8 @@ pub(super) struct Moved {
     pub(super) needs_prologue: bool,
 }
 
-/// One enclosing package a moved phaser re-enters, outermost first.
-#[derive(Clone)]
-pub(super) struct Enclosing {
-    name: crate::symbol::Symbol,
-    decl: PackageRuntimeDecl,
-    lexicals: Vec<String>,
-}
-
-impl Enclosing {
-    /// The package a class or brace-scoped package declaration declares, with
-    /// the `my` lexicals its body shares through the package's static store.
-    /// `None` for any other statement, a `unit` declarator, and a class whose
-    /// name is computed.
-    // Cost: O(n), n = size of the body's top-level statement list.
-    pub(super) fn of_decl(stmt: &Stmt) -> Option<(Enclosing, &[Stmt])> {
-        let (name, decl, body) = match stmt {
-            Stmt::ClassDecl {
-                name,
-                name_expr: None,
-                is_unit: false,
-                is_lexical,
-                decl_id,
-                body,
-                ..
-            } => (
-                *name,
-                PackageRuntimeDecl::Class {
-                    is_lexical: *is_lexical,
-                    decl_id: *decl_id,
-                },
-                body,
-            ),
-            Stmt::Package {
-                name,
-                is_unit: false,
-                body,
-                ..
-            } => (*name, PackageRuntimeDecl::Package, body),
-            _ => return None,
-        };
-        let mut lexicals: Vec<String> = crate::compiler::Compiler::package_body_lexical_names(body)
-            .into_iter()
-            .collect();
-        lexicals.sort();
-        Some((
-            Enclosing {
-                name,
-                decl,
-                lexicals,
-            },
-            body,
-        ))
-    }
-
-    /// The `my` lexicals the package's static store holds.
-    pub(super) fn lexicals(&self) -> &[String] {
-        &self.lexicals
-    }
-
-    /// `body`, run inside this package: [`Stmt::PackageRuntimeBody`] re-enters
-    /// the package and binds its lexicals from the store.
-    pub(super) fn run_in(&self, body: Vec<Stmt>) -> Vec<Stmt> {
-        vec![Stmt::PackageRuntimeBody {
-            name: self.name,
-            body,
-            lexicals: self.lexicals.clone(),
-            decl: self.decl,
-        }]
-    }
-}
+mod context;
+pub(super) use context::Enclosing;
 
 /// Move the INIT and CHECK phasers out of `stmt`, a top-level statement of a
 /// unit. Statements other than type, package and routine declarations are
@@ -215,10 +147,15 @@ impl Mover<'_> {
         // What the store does not hold: `our` variables, code variables,
         // `state` and dynamic ones. A phaser that reads one stays put.
         let unshared = unshared_names(body, &lexicals);
+        let mut our_names: Vec<String> = crate::compiler::Compiler::package_body_our_names(body)
+            .into_iter()
+            .collect();
+        our_names.sort();
         self.enclosing.push(Enclosing {
             name,
             decl,
             lexicals,
+            our_names,
         });
         let mut i = 0;
         while i < body.len() {
@@ -380,6 +317,7 @@ impl Mover<'_> {
                 name: enclosing.name,
                 body: inner,
                 lexicals: enclosing.lexicals.clone(),
+                our_names: enclosing.our_names.clone(),
                 decl: enclosing.decl,
             }];
         }

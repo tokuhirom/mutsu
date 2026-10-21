@@ -83,6 +83,7 @@ impl Interpreter {
         let target = Self::routine_current_view(&target).unwrap_or(target);
         // A lazy-tail Slip answers as the lazy list it reifies from (#13117).
         let target = Self::lazy_slip_receiver(target, method);
+        let target = Self::shaped_iteration_receiver(target, method);
         // `Mu.perl` is `self.raku` (ADR-11276 §9.152).
         let method = if method == "perl" {
             self.perl_as_raku(&target, crate::symbol::wk::perl())
@@ -626,10 +627,6 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
             return result;
         }
-        // `Kernel.cpu-cores`, `Thread.usage`, ... on the type object.
-        if let Some(result) = self.try_core_type_object_method(&target, method, &args) {
-            return result;
-        }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             return result;
@@ -734,6 +731,11 @@ impl Interpreter {
         if let Some(result) = self.exception_control_by_mro(&target, method, &args) {
             return result;
         }
+        // A built-in exception's `message`, `gist`, `Str`, `backtrace` and
+        // `X::AdHoc.payload` are rows found by its owner chain (§9.39).
+        if let Some(result) = self.exception_rows_by_owner(&target, method, &args) {
+            return result;
+        }
         // Unhandled Failure explosion
         if let ValueView::Instance { class_name, .. } = target.view()
             && class_name.resolve() == "Failure"
@@ -833,22 +835,6 @@ impl Interpreter {
         {
             return self.dispatch_instance_and_fallback(target, method, args);
         }
-        // A built-in iterator's protocol methods are rows of the `Iterator` and
-        // `PredictiveIterator` roles, found by their owner (ADR-11276 §9.126).
-        // They commit through the instance's shared attribute cell, so an
-        // iterator held in an array element or a temporary advances in place
-        // and every alias sees the step.
-        if let Some(owners) = crate::builtins::method_table::iterator_owners_of(&target)
-            && let Some(result) = crate::builtins::method_table::invoke_owner(
-                self,
-                owners,
-                method,
-                &args,
-                || target.clone(),
-            )
-        {
-            return result;
-        }
         // DateTime/Date formatter rendering. The formatter runs against this
         // invocant on every stringification (nothing is cached), so a value
         // derived by `.utc`, `.later`, `.clone`, `+` ... renders its own
@@ -943,6 +929,9 @@ impl Interpreter {
             return result;
         }
         // Private method call on non-Instance
+        if let Some(result) = self.dispatch_private_method_on_proxy_subclass(&target, method, &args) {
+            return result;
+        }
         if let Some(result) = self.dispatch_private_method_on_non_instance(&target, method) {
             return result;
         }
@@ -966,7 +955,7 @@ impl Interpreter {
             let pushed = if self.is_role(&qualifier) {
                 self.push_qualified_method_dispatch_frame(&qualifier, &args, target.clone())
             } else {
-                self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone())
+                self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone(), None)
             };
             let result = self.dispatch_qualified_method(&target, method, &args);
             if pushed {

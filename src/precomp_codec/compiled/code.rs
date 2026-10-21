@@ -87,6 +87,7 @@ impl Encode for CompiledCode {
             expr_declared_syms,
             free_var_syms,
             lexical_import_chains,
+            eval_site_chains,
             free_var_parent_slots,
             upvalue_parent_slots,
             outer_ref_names,
@@ -246,6 +247,7 @@ impl Encode for CompiledCode {
         encode_sym_set(expr_declared_syms, encoder)?;
         free_var_syms.encode(encoder)?;
         lexical_import_chains.encode(encoder)?;
+        eval_site_chains.encode(encoder)?;
         free_var_parent_slots.encode(encoder)?;
         upvalue_parent_slots.encode(encoder)?;
         outer_ref_names.encode(encoder)?;
@@ -393,6 +395,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             expr_declared_syms: decode_set(decoder)?,
             free_var_syms: Decode::decode(decoder)?,
             lexical_import_chains: Decode::decode(decoder)?,
+            eval_site_chains: Decode::decode(decoder)?,
             free_var_parent_slots: Decode::decode(decoder)?,
             upvalue_parent_slots: Decode::decode(decoder)?,
             outer_ref_names: Decode::decode(decoder)?,

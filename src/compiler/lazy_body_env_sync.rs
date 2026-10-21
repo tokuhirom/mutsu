@@ -245,7 +245,7 @@ impl Compiler {
         }
         self.attr_decls_by_name_reads(&plan.attr_decls, &mut names)?;
         self.methods_by_name_reads(&plan.method_name_chunks, &plan.method_decls, &mut names)?;
-        let package = self.qualified_role_decl_name(&plan.name.resolve());
+        let package = self.declared_type_name(&plan.name.resolve(), plan.name_is_prequalified);
         for op in &plan.deferred_body_ops {
             match (op.kind, &op.chunk) {
                 (DeferredBodyOpKind::TokenRule, _) => {
@@ -333,13 +333,8 @@ impl Compiler {
         out: &mut Vec<Symbol>,
     ) -> Option<()> {
         for (_, attr) in attrs {
-            for (_, _, arg) in &attr.unknown_traits {
-                if let Some(expr) = arg {
-                    self.ast_expr_reads(expr, out)?;
-                }
-            }
-            for arg in [&attr.default, &attr.where_constraint, &attr.is_default] {
-                self.decl_arg_reads(arg.as_ref(), out)?;
+            for arg in attr.declaration_args() {
+                self.decl_arg_reads(Some(arg), out)?;
             }
             for type_name in attr.type_constraint.iter().chain(&attr.is_type) {
                 push_type_name_tokens(type_name, out);

@@ -503,6 +503,11 @@ impl Interpreter {
         crate::runtime::cow_table_mut(&mut self.module.class_declaring_units)
             .insert(name.to_string(), declaring_unit);
         self.install_class_exporthow(name, &final_parents)?;
+        // Loading a child module can vivify this namespace before the class
+        // is published. The completed class uses its own HOW.
+        if self.registry().package_kinds.get(name) == Some(&crate::ast::PackageKind::Package) {
+            self.registry_mut().package_kinds.remove(name);
+        }
         Ok(deferred_custom_traits)
     }
 }

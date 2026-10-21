@@ -5,7 +5,7 @@ use crate::ast::{Expr, Stmt};
 use crate::value::ValueView;
 
 /// Precompiled replacements for `CompiledAttrDecl::from_stmt`'s AST-only
-/// declaration-time expressions (`is_default`, `default`, `where_constraint`),
+/// declaration-time expressions (defaults, constraints and custom traits),
 /// supplied by a caller with compiler access at plan-lowering time (ADR-0019
 /// D2c-1/D2c-4). Each `None` field falls back to `DeclTraitArg::Ast` wrapping
 /// the raw AST expression — the same guarded-fallback shape every other
@@ -17,6 +17,7 @@ pub(crate) struct AttrDeclChunks {
     pub(crate) is_default: Option<DeclTraitArg>,
     pub(crate) default: Option<DeclTraitArg>,
     pub(crate) where_constraint: Option<DeclTraitArg>,
+    pub(crate) unknown_traits: Option<Vec<(String, String, Option<DeclTraitArg>)>>,
 }
 
 /// A typed mirror of `Stmt::HasDecl` (ADR-0019 D2b), built once by
@@ -25,7 +26,7 @@ pub(crate) struct AttrDeclChunks {
 /// mainline/EVAL `has`-registration sites. `name` is the resolved (twigil-free)
 /// attribute name and `is_default` is unboxed, matching what every consumer
 /// actually reads; everything else mirrors the AST field for field.
-/// `default`/`where_constraint` are `DeclTraitArg` rather than a raw `Expr`
+/// Defaults, constraints and custom trait arguments are `DeclTraitArg` rather than a raw `Expr`
 /// (ADR-0019 D2c-4, matching `ClassAttributeDef`'s own D2c-2 field type) —
 /// every reader runs them through `Interpreter::eval_decl_trait_arg`/
 /// `.literal()` instead of matching `Expr::Literal` directly.
@@ -57,8 +58,7 @@ pub(crate) struct CompiledAttrDecl {
     pub(crate) is_type: Option<String>,
     pub(crate) deprecated_message: Option<String>,
     pub(crate) is_built: Option<bool>,
-    #[bincode(with_serde)]
-    pub(crate) unknown_traits: Vec<(String, String, Option<crate::ast::Expr>)>,
+    pub(crate) unknown_traits: Vec<(String, String, Option<DeclTraitArg>)>,
     /// Declared shape dimensions for an `@`-sigil attribute (`has @.a[2]`),
     /// extracted once from the raw `default` expression's compiler-generated
     /// `Array.new(:shape(...))` pattern (ADR-0019 D2c-4, the D2a precompute
@@ -82,6 +82,9 @@ pub(crate) struct CompiledAttrDecl {
     /// `default` is the parser's synthesized seed, not a written initializer.
     /// See `Stmt::HasDecl::default_is_seed`.
     pub(crate) default_is_seed: bool,
+    /// `default` is the value of an `is default(...)` trait, not an
+    /// initializer the source wrote. See `Stmt::HasDecl::default_is_trait`.
+    pub(crate) default_is_trait: bool,
     /// The line the `has` keyword sits on, filled in by the class-body walk
     /// (`Compiler::compile_class_attr_decls`) that tracks `Stmt::SetLine`
     /// markers as it visits each declaration -- `from_stmt` itself has no
@@ -92,6 +95,23 @@ pub(crate) struct CompiledAttrDecl {
 }
 
 impl CompiledAttrDecl {
+    /// Executable attribute expressions share capture and environment analysis.
+    // Cost: O(t), t = custom traits.
+    pub(crate) fn declaration_args(&self) -> impl Iterator<Item = &DeclTraitArg> {
+        [
+            self.default.as_ref(),
+            self.where_constraint.as_ref(),
+            self.is_default.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(
+            self.unknown_traits
+                .iter()
+                .filter_map(|(_, _, argument)| argument.as_ref()),
+        )
+    }
+
     /// Build a typed descriptor from a `Stmt::HasDecl`. Panics on any other
     /// statement kind — every call site already matched on `Stmt::HasDecl`
     /// before reaching here.
@@ -131,7 +151,7 @@ impl CompiledAttrDecl {
             unknown_traits,
             default_is_bind,
             default_is_seed,
-            default_is_trait: _,
+            default_is_trait,
             trait_order: _,
         } = stmt
         else {
@@ -176,11 +196,27 @@ impl CompiledAttrDecl {
             is_type: is_type.clone(),
             deprecated_message: deprecated_message.clone(),
             is_built: *is_built,
-            unknown_traits: unknown_traits.clone(),
+            unknown_traits: chunks.unknown_traits.unwrap_or_else(|| {
+                // Existing AST-only registration adapters have no compiler plan.
+                // TODO: migrate those adapters to immutable declaration plans.
+                unknown_traits
+                    .iter()
+                    .map(|(kind, name, argument)| {
+                        (
+                            kind.clone(),
+                            name.clone(),
+                            argument
+                                .clone()
+                                .map(|expr| DeclTraitArg::Ast(Box::new(expr))),
+                        )
+                    })
+                    .collect()
+            }),
             declared_shape,
             dynamic_shape,
             default_is_bind: *default_is_bind,
             default_is_seed: *default_is_seed,
+            default_is_trait: *default_is_trait,
             decl_line: None,
         }
     }

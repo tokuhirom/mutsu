@@ -77,7 +77,7 @@ fn lexref_parts(proxy: &Value) -> Result<(Value, NqpAttrConv), RuntimeError> {
     } = proxy.view()
         && let Some(conv) = lexref_conv(name.as_str())
     {
-        let attrs = attrs.lock().unwrap_or_else(|e| e.into_inner());
+        let attrs = attrs.as_map();
         if let Some(cell) = attrs.get("cell") {
             return Ok((cell.clone(), conv));
         }
@@ -271,7 +271,7 @@ impl Interpreter {
                 "Lexical with name '{name}' has no container to refer to"
             )));
         };
-        let mut attrs = crate::value::ValueMap::default();
+        let mut attrs = crate::value::AttrMap::new();
         attrs.insert("cell".to_string(), Value::container_ref(cell));
         let routine =
             |name: &str| Value::routine_parts(Symbol::intern(""), Symbol::intern(name), false);
@@ -280,7 +280,7 @@ impl Interpreter {
             routine(LEXREF_STORE),
             Some((
                 Symbol::intern(lexref_type_name(conv)),
-                std::sync::Arc::new(std::sync::Mutex::new(attrs)),
+                crate::value::proxy_subclass_attrs(Symbol::intern(lexref_type_name(conv)), attrs),
             )),
             false,
         ))

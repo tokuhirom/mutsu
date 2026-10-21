@@ -266,10 +266,11 @@ impl Interpreter {
         // Mirror this export into the unit-module export table so that
         // `import_module` can validate tags for `unit module X` files whose
         // runtime package registration used "GLOBAL".
-        if let Some(unit_mod) = self.module.unit_module_loading_stack.last() {
+        if let Some(unit_mod) = self.module.unit_module_loading_stack.last().cloned() {
+            self.declare_export_namespaces(&unit_mod, tags);
             record_export_tags(
                 &mut self.module.unit_module_exported_subs,
-                unit_mod,
+                &unit_mod,
                 name,
                 tags,
             );
@@ -286,10 +287,12 @@ impl Interpreter {
         // is different, so `use Lingua::EN::Numbers :short` can validate the
         // export even though the file says `unit module Numbers`.
         if self.module.unit_module_loading_stack.last().is_some()
-            && let Some(module) = self.module.module_load_stack.last()
+            && let Some(module) = self.module.module_load_stack.last().cloned()
         {
-            record_export_tags(&mut self.module.exported_subs, module, name, tags);
+            self.declare_export_namespaces(&module, tags);
+            record_export_tags(&mut self.module.exported_subs, &module, name, tags);
         }
+        self.declare_export_namespaces(package, tags);
         record_export_tags(&mut self.module.exported_subs, package, name, tags);
     }
 

@@ -80,6 +80,11 @@ pub(super) fn hash_assign_key(
         Err(error) => return Some(Err(error)),
     };
     let value = args[1].clone();
+    // A `Map` is immutable: Rakudo's `Map.ASSIGN-KEY` dies, naming whether the
+    // key would have been added or changed.
+    if hash.is_immutable_map() {
+        return Some(Err(crate::runtime::refuse_map_assignment(&hash, &key_arg)));
+    }
     let written = hash.with_hash_mut(|gc| -> Result<(), RuntimeError> {
         let data = crate::value::gc_data_mut(gc);
         let object_hash = data.key_type.is_some();

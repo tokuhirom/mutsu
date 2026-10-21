@@ -9,7 +9,7 @@ plan 5;
 my $x = "ab";
 is ("abc" ~~ / "$x" | a /).Str, "a", '"$x" is not declarative';
 is ("abc" ~~ / "{$x}" | a /).Str, "a", '"{$x}" is not declarative';
-is ("abc" ~~ / "${x}" | a /).Str, "a", '"${x}" is not declarative';
+is ("abc" ~~ / "$($x)" | a /).Str, "a", '"$($x)" is not declarative';
 is ("abc" ~~ / "ab" | a /).Str, "ab", 'plain literal stays declarative';
 constant $c = "ab";
 is ("abc" ~~ / "$c" | a /).Str, "ab", 'constant stays declarative';

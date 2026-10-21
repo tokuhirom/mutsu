@@ -140,7 +140,7 @@ impl Interpreter {
                 // survives assignment as a reify-on-demand LazyList in array
                 // context (L2b step 6 — docs/lazy-arrays.md).
                 if list.preserve_lazy_on_array_assign() {
-                    Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+                    self.lazy_array_value(&list, name)
                 } else {
                     let forced = self.force_lazy_list_vm(&list)?;
                     Value::real_array(self.decay_nil_vec_elements(forced))
@@ -271,7 +271,9 @@ impl Interpreter {
         let attr_constraint = (!val.is_nil())
             .then(|| self.scalar_attr_type_constraint(name))
             .flatten();
-        if let Some(constraint) = loan_env!(self, var_type_constraint(name)).or(attr_constraint)
+        if let Some(constraint) = self
+            .slot_type_constraint(code, idx, name, code.local_sym(idx))
+            .or(attr_constraint)
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
@@ -336,7 +338,8 @@ impl Interpreter {
         // before it is stored, so the embedded `HashData` metadata (or array
         // side-table entry) is carried by every copy below.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = loan_env!(self, var_type_constraint(name))
+            && let Some(value_type) =
+                self.slot_type_constraint(code, idx, name, code.local_sym(idx))
         {
             let info = crate::runtime::ContainerTypeInfo {
                 declared_type: if name.starts_with('@')
@@ -348,7 +351,7 @@ impl Interpreter {
                 },
                 value_type,
                 key_type: if name.starts_with('%') {
-                    loan_env!(self, var_hash_key_constraint(name))
+                    self.slot_hash_key_constraint(code, idx, name, code.local_sym(idx))
                 } else {
                     None
                 },

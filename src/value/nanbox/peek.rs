@@ -734,7 +734,14 @@ impl NanBox {
                 let bits = self.0.get();
                 // SAFETY: Instance words carry a `Gc<InstanceAttrs>`.
                 let attrs = unsafe { peek_gc::<InstanceAttrs>(bits) };
-                DispatchShape::from_instance_class(attrs.class_name())
+                let class = attrs.class_name();
+                // One class, two shapes: a built-in iterator's is decoded from
+                // its attributes (`dispatch_shape/iterator_kind.rs`).
+                if class == "Iterator" {
+                    let map = attrs.as_map();
+                    return Some(crate::value::iterator_shape_of(|key| map.get(key)));
+                }
+                DispatchShape::from_instance_class(class)
             }
             _ => None,
         }

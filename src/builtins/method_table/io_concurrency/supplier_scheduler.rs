@@ -68,7 +68,15 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("ThreadPoolScheduler", "cue", 0, SCHED_SLURPY, false, named: CUE_NAMED),
     row!("ThreadPoolScheduler", "loads", 0, SCHED_ONE, false),
     row!("ThreadPoolScheduler", "max_threads", 0, SCHED_ONE, false),
-    row!("ThreadPoolScheduler", "usage", 0, SCHED_ONE, false),
+    // The pool's figures; the type object answers an all-zero row.
+    MethodRow {
+        owner: "ThreadPoolScheduler",
+        name: "usage",
+        arity: 0,
+        handler: Handler::Narrow(scheduler_usage),
+        flags: SCHED_ONE.or(RowFlags::TYPE_OBJECT_OK),
+        named: &[],
+    },
     // The getter reads the handler; the setter (one argument) installs it.
     row!(
         "ThreadPoolScheduler",
@@ -107,3 +115,33 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// `Channel`'s subclasses carry their payloads), so `Supplier`'s rows answer
 /// it like any supplier.
 pub(crate) const SUPPLIER_SUBCLASS: &str = "__mutsu_supplier_subclass";
+
+/// How many columns `ThreadPoolScheduler.usage` reports: supervisor, then
+/// workers / queued / completed for general, timer and affinity workers.
+pub(crate) const SCHEDULER_USAGE_COLUMNS: usize = 10;
+
+/// `ThreadPoolScheduler.usage` (what `Telemetry` samples): the supervisor,
+/// then workers / queued / completed tasks of the general, timer and affinity
+/// pools. mutsu runs every task on one worker pool, with no supervisor thread,
+/// so only the general columns are non-zero; the type object's answer is an
+/// all-zero row.
+// Cost: O(1) under the pool lock.
+fn scheduler_usage(target: &Value, _args: &[Value]) -> Answer {
+    let mut row = [0i64; SCHEDULER_USAGE_COLUMNS];
+    if matches!(target.view(), crate::value::ValueView::Instance { .. }) {
+        let (workers, queued) = crate::runtime::worker_pool::usage();
+        row[1] = workers as i64;
+        row[2] = queued as i64;
+        row[3] = crate::runtime::thread_usage::tasks_completed();
+    }
+    Some(Ok(native_int_row(&row)))
+}
+
+/// A native int list (`nqp::list_i`) holding `row`.
+// Cost: O(n), n = elements.
+pub(crate) fn native_int_row(row: &[i64]) -> Value {
+    Value::nqp_typed_list(
+        row.iter().map(|n| Value::int(*n)).collect(),
+        crate::value::NqpElemKind::Int,
+    )
+}

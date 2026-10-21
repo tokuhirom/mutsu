@@ -48,6 +48,6 @@ impl Compiler {
             custom_traits: Vec::new(),
         });
         self.code
-            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false));
+            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
     }
 }

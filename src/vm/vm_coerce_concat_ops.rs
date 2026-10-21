@@ -66,6 +66,21 @@ impl Interpreter {
             self.stack.push(symbols);
             return self.exec_make_slip_op();
         }
+        // An `is Hash` / `is Array` subclass instance is its storage, so
+        // `|$obj` slips what `|%h` / `|@a` would: pairs (named arguments, in
+        // an argument list) or elements.
+        if let ValueView::Instance { attributes, .. } = val.view()
+            && let Some(storage) = {
+                let attrs = attributes.as_map();
+                attrs
+                    .get("__mutsu_hash_storage")
+                    .or_else(|| attrs.get("__mutsu_array_storage"))
+                    .cloned()
+            }
+        {
+            self.stack.push(storage);
+            return self.exec_make_slip_op();
+        }
         // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines`) must first
         // pull all elements from its source (ADR-0034), else `|$seq` yields
         // nothing. `|EXPR` steals the source like `.iterator`/`.list` (a
@@ -124,11 +139,14 @@ impl Interpreter {
             // element here, at the one place that knows these came from a
             // positional container, rather than trying to recover that
             // context later in `append_slip_item`.
-            ValueView::Array(items, ..) => items
-                .iter()
-                .cloned()
-                .map(Self::containerize_pair_item)
-                .collect(),
+            // A multi-dimensional shaped array slips its leaves (#14248).
+            ValueView::Array(items, ..) => {
+                crate::value::shaped_array::shaped_array_iteration_leaves(&val)
+                    .unwrap_or_else(|| items.to_vec())
+                    .into_iter()
+                    .map(Self::containerize_pair_item)
+                    .collect()
+            }
             // A nested Slip's items were already finalized by the
             // `exec_make_slip_op` call that built it (positional-source
             // elements containerized, a bare-Pair/Hash source promoted to

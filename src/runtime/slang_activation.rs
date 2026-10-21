@@ -61,10 +61,10 @@ pub(crate) enum SlangRoleKind {
     /// `L10N::XX` vocabulary role, `<category>2ast` methods carrying a
     /// spelling map).
     Grammar,
-    /// Mixed into `slang_actions('MAIN')`. An actions role has one *method*
-    /// per production it overrides — `method statement-control:sym<use>` in
-    /// the `if` pragma — so its method names are the override names
-    /// (ADR-0098).
+    /// Mixed into `slang_actions('MAIN')`. An actions role overrides a
+    /// production with a *method* of the production's name — `method
+    /// statement-control:sym<use>` in the `if` pragma (ADR-0098). Its other
+    /// methods are helpers the actions call themselves (ADR-13220).
     Actions,
 }
 
@@ -254,12 +254,27 @@ impl Interpreter {
     /// a slang can put its whole registration there: the `if` pragma
     /// overrides exactly one production, `statement-control:sym<use>`, and
     /// does it from an actions role.
+    ///
+    /// An actions-role method is an override only when it names a production
+    /// (ADR-13220): one the grammar half of this registration declares, or one
+    /// of Rakudo's own grammar. Any other method is a helper the action bodies
+    /// call (`self.add_phaser($/)` in Test::Async::Decl) and, like every action
+    /// body, is never run, so it is skipped rather than rejected.
     fn slang_define_slang(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let Some(grammar) = args.get(1) else {
             return Err(RuntimeError::new("define_slang requires a grammar handle"));
         };
         let mut rules: Vec<SlangRuleOverride> = Vec::new();
         let mut declarators: Vec<SlangDeclarator> = Vec::new();
+        // The productions the slang's own grammar declares, for telling the
+        // actions half's handlers from its helpers. The grammar half is read
+        // first, so this is complete by the time the actions half is.
+        let mut slang_productions: HashSet<String> = self
+            .regex_state
+            .defined_slang_rules
+            .iter()
+            .map(|r| r.name.clone())
+            .collect();
         let halves = [
             (Some(grammar), SlangRoleKind::Grammar),
             (args.get(2), SlangRoleKind::Actions),
@@ -268,6 +283,23 @@ impl Interpreter {
             let Some(handle) = handle else { continue };
             for role in Self::slang_handle_roles(handle) {
                 for over in self.slang_role_rule_names(&role, kind)? {
+                    match kind {
+                        SlangRoleKind::Grammar => {
+                            slang_productions.insert(over.name.clone());
+                        }
+                        // A vocabulary map is read as before; any other method
+                        // overrides something only if it names a production.
+                        SlangRoleKind::Actions
+                            if over.aliases.is_empty()
+                                && !super::slang_productions::is_production_handler(
+                                    &over.name,
+                                    &slang_productions,
+                                ) =>
+                        {
+                            continue;
+                        }
+                        SlangRoleKind::Actions => {}
+                    }
                     // A `package_declarator:sym<name>` candidate *adds* a
                     // keyword rather than overriding an existing rule
                     // (ADR-0091), so it is read as a declarator registration
@@ -321,159 +353,6 @@ impl Interpreter {
             .find(|d| d.keyword == keyword && !d.how_type.is_empty())
             .map(|d| Value::package(crate::symbol::Symbol::intern(&d.how_type)))
     }
-
-    /// The roles recorded on a `Mutsu::Slang::Grammar`/`Actions` handle.
-    /// A handle that never went through `.^mixin` (Slangify passes the plain
-    /// `slang_grammar('MAIN')` result when the module gave no grammar) has an
-    /// empty list; any non-handle value contributes nothing.
-    fn slang_handle_roles(handle: &Value) -> Vec<Value> {
-        if let ValueView::Instance { attributes, .. } = handle.view()
-            && let Some(roles) = attributes.as_map().get("roles")
-            && let ValueView::Array(items, ..) = roles.view()
-        {
-            return items.iter().cloned().collect();
-        }
-        Vec::new()
-    }
-
-    /// The grammar-rule overrides a slang role declares: its `token`/`rule`
-    /// members, each with the raw regex source of its body. Role tokens live in
-    /// the role's deferred body (`DeferredBodyOpKind::TokenRule`), not its
-    /// `methods` map.
-    ///
-    /// An `Actions` role (ADR-0098) additionally contributes every one of its
-    /// plain methods: an actions role has one method per production it
-    /// overrides, so the method *name* is the override name. A grammar role's
-    /// plain methods are not read that way — only its `<category>2ast` /
-    /// `<category>2str` vocabulary maps are, exactly as before.
-    fn slang_role_rule_names(
-        &self,
-        role: &Value,
-        kind: SlangRoleKind,
-    ) -> Result<Vec<SlangRuleOverride>, RuntimeError> {
-        let role_name = match role.view() {
-            ValueView::Package(name) => name.resolve(),
-            _ => role.to_string_value(),
-        };
-        let registry = self.registry();
-        let Some(def) = registry.roles.get(&role_name) else {
-            return Err(RuntimeError::new(format!(
-                "Slang activation: '{role_name}' is not a known role"
-            )));
-        };
-        let mut names = Vec::new();
-        for op in &def.deferred_body {
-            if op.kind != crate::opcode::DeferredBodyOpKind::TokenRule {
-                continue;
-            }
-            match &op.raw {
-                crate::ast::Stmt::TokenDecl { name, body, .. }
-                | crate::ast::Stmt::RuleDecl { name, body, .. } => names.push(SlangRuleOverride {
-                    name: name.resolve(),
-                    body: regex_literal_source(body),
-                    aliases: Vec::new(),
-                }),
-                _ => {}
-            }
-        }
-        // An L10N role translates identifier-position names (core routine
-        // names, `is` trait arguments) through a `<category>2ast` method rather
-        // than through a token, so read those maps too. `def.methods` is a hash,
-        // so walk it in name order: the set of overrides decides which mode
-        // flags flip, but the *first unsupported* one decides the error message.
-        let mut method_names: Vec<&String> = def.methods.keys().collect();
-        method_names.sort_unstable();
-        for method_name in method_names {
-            let defs = &def.methods[method_name];
-            let vocabulary = method_name
-                .strip_suffix("2ast")
-                .or_else(|| method_name.strip_suffix("2str"))
-                .filter(|category| !category.is_empty())
-                .and_then(|_| defs.first())
-                .and_then(|d| constant_mapping_pairs(&d.body));
-            match vocabulary {
-                Some(aliases) => names.push(SlangRuleOverride {
-                    name: method_name.clone(),
-                    body: None,
-                    aliases,
-                }),
-                // An actions role's every other method is a production
-                // override by construction; a grammar role's is not.
-                None if kind == SlangRoleKind::Actions => names.push(SlangRuleOverride {
-                    name: method_name.clone(),
-                    body: None,
-                    aliases: Vec::new(),
-                }),
-                None => {}
-            }
-        }
-        Ok(names)
-    }
-}
-
-/// The `localized => canonical` pairs of a `my constant %mapping = "a", "b",
-/// ...;` declaration in `body`.
-///
-/// The L10N roles are machine-generated and always spell the map this way: a
-/// flat list of string literals, alternating localized spelling and canonical
-/// Raku name. A declaration that is not exactly that yields `None` rather than
-/// a half-read map.
-///
-/// `constant` is not required: the generators have shipped both `my constant
-/// %mapping = ...` (`L10N::JA` 0.0.3) and a plain `my %mapping = ...`
-/// (`L10N::TLH` 0.0.3). The name inside a `<category>2ast` method is what
-/// identifies the map.
-fn constant_mapping_pairs(body: &[crate::ast::Stmt]) -> Option<Vec<(String, String)>> {
-    for stmt in body {
-        let crate::ast::Stmt::VarDecl {
-            name,
-            expr: crate::ast::Expr::ArrayLiteral(items),
-            ..
-        } = stmt
-        else {
-            continue;
-        };
-        if name != "%mapping" {
-            continue;
-        }
-        if items.len() % 2 != 0 {
-            return None;
-        }
-        let mut pairs = Vec::with_capacity(items.len() / 2);
-        for [first, second] in items.as_chunks::<2>().0 {
-            let (Some(localized), Some(canonical)) =
-                (string_literal(first), string_literal(second))
-            else {
-                return None;
-            };
-            pairs.push((localized, canonical));
-        }
-        return Some(pairs);
-    }
-    None
-}
-
-fn string_literal(expr: &crate::ast::Expr) -> Option<String> {
-    let crate::ast::Expr::Literal(value) = expr else {
-        return None;
-    };
-    match value.view() {
-        ValueView::Str(s) => Some(s.to_string()),
-        _ => None,
-    }
-}
-
-/// The raw regex source of a `token`/`rule` body, when the body is the single
-/// regex literal the declarator compiles to. Anything else (a token with
-/// embedded code, an empty body) yields `None`.
-fn regex_literal_source(body: &[crate::ast::Stmt]) -> Option<String> {
-    match body {
-        [crate::ast::Stmt::Expr(crate::ast::Expr::Literal(value))] => match value.view() {
-            ValueView::Regex(source, ..) => Some(source.to_string()),
-            _ => None,
-        },
-        _ => None,
-    }
 }
 
 impl Interpreter {
@@ -525,40 +404,5 @@ mod tests {
         let name =
             crate::gc::block_quiescent(|| handle.join()).expect("activation thread panicked");
         assert_eq!(name.as_deref(), Some(ACTIVATION_THREAD_NAME));
-    }
-
-    fn mapping_of(source: &str) -> Option<Vec<(String, String)>> {
-        let (stmts, _) = crate::parser::parse_program(source).expect("fixture must parse");
-        constant_mapping_pairs(&stmts)
-    }
-
-    /// The L10N generators have shipped the `<category>2ast` translation map in
-    /// two spellings: `my constant %mapping = ...` (`L10N::JA` 0.0.3) and a
-    /// plain `my %mapping = ...` (`L10N::TLH` 0.0.3). Reading only the first
-    /// left `jatlh` (Klingon for `say`) untranslated and `L10N::TLH` red while
-    /// its eleven sibling languages were green.
-    #[test]
-    fn both_spellings_of_the_generated_mapping_are_read() {
-        let expected = Some(vec![
-            ("jatlh".to_string(), "say".to_string()),
-            ("Hoch".to_string(), "elems".to_string()),
-        ]);
-        assert_eq!(
-            mapping_of(r#"my constant %mapping = "jatlh", "say", "Hoch", "elems";"#),
-            expected
-        );
-        assert_eq!(
-            mapping_of(r#"my %mapping = "jatlh", "say", "Hoch", "elems";"#),
-            expected
-        );
-    }
-
-    /// A map mutsu cannot read exactly yields nothing, rather than a
-    /// half-translated vocabulary that would mis-resolve names.
-    #[test]
-    fn a_mapping_that_is_not_a_flat_string_list_is_refused() {
-        assert_eq!(mapping_of(r#"my %mapping = "jatlh", "say", "odd";"#), None);
-        assert_eq!(mapping_of(r#"my %mapping = "jatlh", 42;"#), None);
-        assert_eq!(mapping_of(r#"my %other = "jatlh", "say";"#), None);
     }
 }

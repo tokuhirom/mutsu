@@ -73,6 +73,10 @@ pub(crate) struct ModuleState {
     /// blocks, and a script's own top-level `unit module`, never populate
     /// this table, so they are never mistakenly gated).
     pub(crate) package_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
+    /// Generated EXPORT stashes belong to their declaring compilation unit.
+    pub(crate) unit_export_namespaces: std::sync::Arc<HashSet<(Symbol, Symbol)>>,
+    /// Qualified export stashes of named packages, gated by module visibility.
+    pub(crate) package_export_namespaces: std::sync::Arc<HashSet<Symbol>>,
     /// Which module declarations resolve where: the #7797 package grants and
     /// ADR-11136's GLOBAL-merge provenance and merges
     /// (`runtime::module_merge::ModuleVisibility`).
@@ -358,6 +362,12 @@ pub(crate) struct ModuleState {
     /// deferred body run (`enter_source_file`), which is that role's
     /// compunit's mainline code re-run from the composing scope.
     pub(crate) module_loading_unit_stack: Vec<(Symbol, usize)>,
+    /// How many runs of a loaded module's code in the module's own scope
+    /// are open: a re-`use` re-running the module's `sub EXPORT` over the
+    /// env its body left (`rerun_module_export`). That env is the code's
+    /// lexical outer, so its frames link to it as a module body's do
+    /// (`Interpreter::code_is_foreign_unit`).
+    pub(crate) module_scope_runs: u32,
     /// Exports each module registered while it was the module currently being
     /// loaded (attributed via `module_load_stack`), mapping module -> name ->
     /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
@@ -405,17 +415,23 @@ pub(crate) struct ModuleState {
     /// exported proto. Rakudo exports the whole family, including the local
     /// candidate, under those tags.
     pub(crate) imported_exported_proto_tags: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
-    /// Environment keys installed by imports, paired with the spelling that
-    /// should appear in a lexical pseudo-stash. Scalar exports are stored in
-    /// `env` without their `$` sigil, so the display spelling cannot be
-    /// reconstructed from the environment key alone.
-    pub(crate) imported_env_aliases: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// Environment keys installed by imports, with the units that imported
+    /// each and its pseudo-stash spelling (`runtime::unit_env_imports`).
+    pub(crate) unit_env_imports: crate::runtime::unit_env_imports::UnitEnvImports,
     /// ADR-8751 stage 1: the routines each block-scoped `use` binds, keyed by
     /// the use's lexical import set id (`OpCode::UseModule::lexical_set_idx`)
     /// and then by routine name. Filled the first time such a `use` runs; the
     /// `OpCode::LexImportCall` sites lexically inside the block read it.
     pub(crate) lexical_import_sets:
         HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
+    /// The multi candidates each lexical import set binds per family, merged
+    /// with those of the earlier `use`s of its scope: a later `use` of the
+    /// same family name adds its candidates to the earlier ones rather than
+    /// hiding them.
+    pub(crate) lexical_set_families: HashMap<
+        Symbol,
+        HashMap<Symbol, Vec<std::sync::Arc<crate::ast::FunctionDef>>>,
+    >,
     /// The values a `sub EXPORT` hook returned for the names the importing
     /// block declares itself (ADR-8751), keyed by the use's lexical import
     /// set id and then by the name's declaration key (`x`, `@a`, the term key
@@ -427,6 +443,11 @@ pub(crate) struct ModuleState {
     /// dispatcher (ADR-8751 stage 2). A built-in op compiled under an import
     /// chain asks the chain only while one exists (#13906).
     pub(crate) lexical_operator_import_sets: HashSet<Symbol>,
+    /// While an EVAL'd unit runs: the import sets lexically around the `EVAL`
+    /// call (`Interpreter::eval_lexical_import_chain`), innermost first. A
+    /// by-name lookup in the unit reads them instead of the sets of the
+    /// `use`-blocks open around the call, which the EVAL cannot see.
+    pub(crate) eval_import_chain: Option<Vec<Symbol>>,
     /// The routine-table version an import scope's exit last found free of
     /// a module-declared `GLOBAL::MAIN` candidate
     /// (`drop_foreign_global_main_candidates`), so a later exit over the same
@@ -580,6 +601,8 @@ impl ModuleState {
             unit_private_names: Default::default(),
             class_declaring_units: Default::default(),
             package_declaring_units: Default::default(),
+            unit_export_namespaces: Default::default(),
+            package_export_namespaces: Default::default(),
             module_visibility: Default::default(),
             prelude_sub_names: Default::default(),
             lib_paths: Default::default(),
@@ -623,6 +646,7 @@ impl ModuleState {
             unit_module_loading_stack: Vec::new(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
+            module_scope_runs: 0,
             module_owned_exports: Default::default(),
             module_owned_types: Default::default(),
             suppress_exports: false,
@@ -632,10 +656,12 @@ impl ModuleState {
             imported_routine_aliases: Default::default(),
             module_body_import_aliases: Default::default(),
             imported_exported_proto_tags: Default::default(),
-            imported_env_aliases: Default::default(),
+            unit_env_imports: Default::default(),
             lexical_import_sets: HashMap::new(),
+            lexical_set_families: HashMap::new(),
             lexical_import_hook_values: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
+            eval_import_chain: None,
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
             lexical_operator_candidate_defs: Default::default(),
@@ -669,6 +695,8 @@ impl ModuleState {
             unit_private_names: self.unit_private_names.clone(),
             class_declaring_units: self.class_declaring_units.clone(),
             package_declaring_units: self.package_declaring_units.clone(),
+            unit_export_namespaces: self.unit_export_namespaces.clone(),
+            package_export_namespaces: self.package_export_namespaces.clone(),
             module_visibility: self.module_visibility.clone(),
             prelude_sub_names: self.prelude_sub_names.clone(),
             lib_paths: self.lib_paths.clone(),
@@ -712,6 +740,7 @@ impl ModuleState {
             unit_module_loading_stack: Vec::new(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
+            module_scope_runs: 0,
             module_owned_exports: self.module_owned_exports.clone(),
             module_owned_types: self.module_owned_types.clone(),
             suppress_exports: false,
@@ -721,10 +750,12 @@ impl ModuleState {
             imported_routine_aliases: self.imported_routine_aliases.clone(),
             module_body_import_aliases: self.module_body_import_aliases.clone(),
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
-            imported_env_aliases: self.imported_env_aliases.clone(),
+            unit_env_imports: self.unit_env_imports.clone(),
             lexical_import_sets: self.lexical_import_sets.clone(),
+            lexical_set_families: self.lexical_set_families.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
+            eval_import_chain: self.eval_import_chain.clone(),
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),
             lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),

@@ -645,6 +645,17 @@ impl Interpreter {
         {
             return true;
         }
+        // A short name of a type the running package declares (`Foo` in
+        // `unit module M` for `M::Foo`). Its bare binding is in the scope the
+        // package was declared in, which a loaded module's routine does not
+        // see (ADR-12529): a constraint recorded before the type existed (an
+        // `EVAL`'d `class Foo {}; my Foo $x`) still names it.
+        if !constraint.contains(['\u{0}', ':', '[', '(', '{', ' '])
+            && let Some(own) = self.resolve_type_in_current_package(constraint)
+            && own != constraint
+        {
+            return self.type_matches_value_resolved_why(&own, value, why);
+        }
         // A lexical type (`my role R` / `my class C`) is stored under
         // `R\u{0}<decl-id>` and only its declaring scope's env maps the
         // source spelling to that name. A multi candidate exported from a

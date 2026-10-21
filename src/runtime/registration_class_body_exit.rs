@@ -307,7 +307,19 @@ impl Interpreter {
                     .insert(short.to_string());
             }
         }
-        for bare in nested_short_names.into_iter().chain(nested_enum_keys) {
+        // The type-only key (`lexical_type_key`) a `my role`/`my class` in the
+        // body also bound belongs to the body as well: left behind it stays in
+        // every copy of the loading program's frame (#14331).
+        let nested_type_keys: Vec<String> = nested_short_names
+            .iter()
+            .map(|bare| crate::term_names::lexical_type_key(bare))
+            .filter(|key| self.env.get(key.as_str()).is_some())
+            .collect();
+        for bare in nested_short_names
+            .into_iter()
+            .chain(nested_enum_keys)
+            .chain(nested_type_keys)
+        {
             match saved_env.get(&bare) {
                 Some(previous) => {
                     let previous = previous.clone();

@@ -405,6 +405,7 @@ impl Interpreter {
                     source_line: None,
                     source_file: None,
                     default_is_seed: false,
+                    default_is_trait: false,
                 }
             };
             let nil_default = || Some(Expr::Literal(Value::NIL));
@@ -922,6 +923,7 @@ impl Interpreter {
                     source_line: None,
                     source_file: None,
                     default_is_seed: false,
+                    default_is_trait: false,
                 }],
                 native_methods: [
                     "path",
@@ -1452,6 +1454,7 @@ impl Interpreter {
                             source_line: None,
                             source_file: None,
                             default_is_seed: false,
+                            default_is_trait: false,
                         })
                         .collect(),
                     native_methods: HashSet::new(),
@@ -2498,6 +2501,7 @@ impl Interpreter {
                     source_line: None,
                     source_file: None,
                     default_is_seed: false,
+                    default_is_trait: false,
                 });
             }
         }
@@ -2830,6 +2834,7 @@ impl Interpreter {
                     args: vec![], listop: false,
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
+                    value_prototype: None,
                     syms: Default::default(),
                     lexical_package: crate::symbol::wk::global_package(),
                     params: Vec::new(),
@@ -2897,6 +2902,7 @@ impl Interpreter {
                     args: vec![], listop: false,
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
+                    value_prototype: None,
                     syms: Default::default(),
                     lexical_package: crate::symbol::wk::global_package(),
                     params: Vec::new(),
@@ -3256,6 +3262,7 @@ fn systemic_attributes(names: &[&str]) -> Vec<ClassAttributeDef> {
             source_line: None,
             source_file: None,
             default_is_seed: false,
+            default_is_trait: false,
         })
         .collect()
 }

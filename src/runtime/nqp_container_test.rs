@@ -109,12 +109,13 @@ impl Interpreter {
     }
 
     /// Whether nqp op `id` must see its operands unFETCHed: the container
-    /// tests ask about the `Proxy` itself.
+    /// tests ask about the `Proxy` itself, and `decont` hands it back unfetched
+    /// (rakudo; AttrX::Mooish's FETCH relies on it).
     // Cost: O(1).
     pub(crate) fn nqp_op_keeps_proxy_operands(id: u16) -> bool {
         matches!(
             crate::runtime::nqp_op_ids::nqp_op_name(id),
-            "iscont" | "iscont_i" | "iscont_n" | "iscont_s" | "isrwcont"
+            "iscont" | "iscont_i" | "iscont_n" | "iscont_s" | "isrwcont" | "decont" | "istype_nd"
         )
     }
 }

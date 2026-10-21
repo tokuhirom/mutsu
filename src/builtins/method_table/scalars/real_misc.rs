@@ -38,6 +38,20 @@ macro_rules! row {
     };
 }
 
+/// A one-argument row.
+macro_rules! row1 {
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
+        MethodRow {
+            owner: $owner,
+            name: $name,
+            arity: 1,
+            handler: Handler::Pure($handler),
+            flags: $flags,
+            named: &[],
+        }
+    };
+}
+
 /// The native integer coercions `Cool` and `Int` both declare.
 macro_rules! native_int_rows {
     ($owner:literal) => {
@@ -66,6 +80,9 @@ pub(super) static INT_ROWS: &[MethodRow] = &[
     row!("Int", "msb", msb, RowFlags::DEFINITE),
     row!("Int", "chr", chr, RowFlags::DEFINITE_MULTI),
     row!("Int", "rand", rand, RowFlags::RANDOM),
+    row!("Int", "bits", bits, RowFlags::TYPE_OBJECT_OK),
+    row1!("Int", "power-up", power_up, RowFlags::DEFINITE),
+    row1!("Int", "power-down", power_down, RowFlags::DEFINITE),
 ];
 pub(super) static NUM_ROWS: &[MethodRow] = &[
     row!("Num", "is-prime", is_prime),
@@ -175,6 +192,69 @@ fn approx_zero(part: f64, other: f64) -> bool {
 // Cost: O(1) (O(d) for a big Int or rational, d = limbs).
 fn bridge(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::num(target.to_f64()))
+}
+
+/// `Int.bits`: `Inf`, the width of an `Int` type object (`multi method
+/// bits(Int:U:)`); an instance is refused as a `:U` invocant is.
+// Cost: O(1).
+fn bits(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    if matches!(target.view(), ValueView::Package(_)) {
+        return Ok(Value::num(f64::INFINITY));
+    }
+    Err(RuntimeError::parameter_invalid_concreteness(
+        "Int", "Int", "bits", "self", false, true,
+    ))
+}
+
+/// The exponent of `power-up`/`power-down` (`Int:D $b`) as an integer value.
+// Cost: O(1).
+fn exponent(args: &[Value]) -> Result<Value, RuntimeError> {
+    match args {
+        [b] => match b.view() {
+            ValueView::Int(_) | ValueView::BigInt(_) => Ok(b.clone()),
+            ValueView::Bool(flag) => Ok(Value::int(i64::from(flag))),
+            _ => Err(RuntimeError::new("power exponent must be an Int")),
+        },
+        _ => Err(RuntimeError::new("power exponent must be an Int")),
+    }
+}
+
+/// Whether the integer value `b` is below zero.
+// Cost: O(1).
+fn is_negative(b: &Value) -> bool {
+    match b.view() {
+        ValueView::Int(n) => n < 0,
+        ValueView::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
+        _ => false,
+    }
+}
+
+/// `Int.power-up($b)`: `self ** $b` for a non-negative exponent; a negative
+/// one is an `X::Numeric::Overflow` failure.
+// Cost: O(1) for a word-sized result; as `**` otherwise.
+fn power_up(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    let b = exponent(args)?;
+    if is_negative(&b) {
+        return Ok(RuntimeError::numeric_overflow_failure());
+    }
+    Ok(crate::builtins::arith::arith_pow(target.clone(), b))
+}
+
+/// `Int.power-down($b)`: `self ** $b` for a negative exponent (a `Rat`, or a
+/// `Num` once the denominator leaves 64 bits); `1.0` for a zero exponent or a
+/// base of one; any other positive exponent is an `X::Numeric::Underflow`
+/// failure, as the power would be an integer greater than one.
+// Cost: O(1) for a word-sized result; as `**` otherwise.
+fn power_down(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    let b = exponent(args)?;
+    let one = matches!(target.view(), ValueView::Int(1) | ValueView::Bool(true));
+    if one || matches!(b.view(), ValueView::Int(0)) {
+        return Ok(Value::rat_raw(1, 1));
+    }
+    if is_negative(&b) {
+        return Ok(crate::builtins::arith::arith_pow(target.clone(), b));
+    }
+    Ok(RuntimeError::numeric_underflow_failure())
 }
 
 /// `Int.lsb`: the index of the least significant set bit, `Nil` for zero.

@@ -1077,7 +1077,7 @@ impl Value {
                     .join(", ");
                 format!("{}({})", kind_str, elems)
             }
-            ValueView::Regex(pattern) => format!("/{}/", *pattern),
+            ValueView::Regex(pattern) => self.regex_display_source(pattern.as_str()),
             ValueView::RegexWithAdverbs(a) => {
                 let mut pattern = a.pattern.as_str();
                 // Adverbs are prepended to the execution spelling so the

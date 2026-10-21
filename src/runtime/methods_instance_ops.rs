@@ -97,7 +97,7 @@ impl Interpreter {
     /// (or inherits from) the owner marks code that was written inside that
     /// class. DBDish's Pg StatementHandle BUILD calls `self!get-meta` inside a
     /// block passed to `$!parent.protect-connection` this way.
-    fn lexical_self_allows_private(&mut self, resolved_owner: &str) -> bool {
+    pub(super) fn lexical_self_allows_private(&mut self, resolved_owner: &str) -> bool {
         let Some(self_cls) = self.lexical_self_class() else {
             return false;
         };
@@ -135,6 +135,10 @@ impl Interpreter {
         match self.env.get("self").map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),
             Some(ValueView::Package(name)) => Some(name),
+            Some(ValueView::Proxy {
+                subclass: Some((name, _)),
+                ..
+            }) => Some(*name),
             _ => None,
         }
     }
@@ -1383,7 +1387,19 @@ impl Interpreter {
                 .resolve_user_method_or_accessor(&class_name.resolve(), method)
                 .is_none()
         {
-            return self.call_method_with_values(payload, method, args);
+            let payload_type = crate::runtime::value_type_name(&payload);
+            return match self.call_method_with_values(payload, method, args) {
+                // The payload has no such method either: the error names the
+                // receiver (`I`), not the payload's type (`Int`) (#14318).
+                Err(err) if err.is_method_not_found() && err.message.contains(&format!("of type '{payload_type}'")) => {
+                    Err(make_method_not_found_error(
+                        method,
+                        &class_name.resolve(),
+                        false,
+                    ))
+                }
+                other => other,
+            };
         }
 
         // Package (type object) dispatch -- private method call
@@ -1443,7 +1459,7 @@ impl Interpreter {
                 // Split at the LAST `::` so a nested owner class name
                 // (`$c!Jar::Cookie::secret` → owner `Jar::Cookie`, method `secret`)
                 // resolves correctly.
-                let (pm_name, resolved) = if let Some((owner_class, pm_name)) =
+                let (pm_name, resolved, owner_only) = if let Some((owner_class, pm_name)) =
                     crate::qualified::split_qualified(crate::qualified::known_symbol(private_rest))
                         .map(|(head, tail)| (head.as_str(), tail.as_str()))
                 {
@@ -1466,20 +1482,37 @@ impl Interpreter {
                             caller_class.as_deref().unwrap_or("GLOBAL"),
                         ));
                     }
-                    (
+                    let resolved = self.resolve_private_method_with_owner(
+                        &name.resolve(),
+                        &canonical_owner,
                         pm_name,
-                        self.resolve_private_method_with_owner(
-                            &name.resolve(),
-                            &canonical_owner,
-                            pm_name,
-                            &args,
-                        ),
-                    )
+                        &args,
+                    );
+                    (pm_name, resolved, Some(canonical_owner))
                 } else {
                     (
                         private_rest,
                         self.resolve_private_method_any_owner(&name.resolve(), private_rest, &args),
+                        None,
                     )
+                };
+                // As on the instance path: no signature match is not "no such
+                // private method". A single candidate by name runs, so its
+                // binding reports the real error; several are a multi no-match.
+                let resolved = match resolved {
+                    Some(r) => Some(r),
+                    None => {
+                        let mut candidates = self.private_method_candidates_by_name(
+                            &name.resolve(),
+                            owner_only.as_deref(),
+                            pm_name,
+                        );
+                        match candidates.len() {
+                            0 => None,
+                            1 => Some(candidates.remove(0)),
+                            _ => return Err(make_multi_no_match_error(pm_name)),
+                        }
+                    }
                 };
                 if let Some((resolved_owner, method_def)) = resolved {
                     let caller_allowed = self
@@ -2350,18 +2383,17 @@ impl Interpreter {
     // Cost: the row's own cost, plus one lock round trip.
     pub(crate) fn proxy_subclass_array_mutate(
         &mut self,
-        attrs_ref: &Arc<std::sync::Mutex<ValueMap>>,
+        attrs_ref: &crate::value::ProxySubclassAttrs,
         attr_name: &str,
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         // The lock is not held across the row, which may run user code.
         let mut array = attrs_ref
-            .lock()
-            .unwrap()
-            .entry(attr_name.to_string())
-            .or_insert_with(|| Value::real_array(Vec::new()))
-            .clone();
+            .as_map()
+            .get(attr_name)
+            .cloned()
+            .unwrap_or_else(|| Value::real_array(Vec::new()));
         let answer = crate::builtins::method_table::invoke_mut(
             self,
             &mut crate::builtins::method_table::ReceiverPlace::Detached(&mut array),
@@ -2374,10 +2406,7 @@ impl Interpreter {
                 method
             )));
         };
-        attrs_ref
-            .lock()
-            .unwrap()
-            .insert(attr_name.to_string(), array);
+        attrs_ref.set_attribute_value(Symbol::intern(attr_name), array);
         answer
     }
 

@@ -101,6 +101,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             }
         }
         Stmt::MethodDecl {
+            value_prototype: _,
             name,
             name_expr,
             params: flat,
@@ -113,7 +114,6 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             is_our: _,
             is_my: _,
             is_submethod: _,
-            our_variable_form: _,
             return_type,
             is_default_candidate: _,
             deprecated_message: _,
@@ -138,6 +138,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
         }
         Stmt::RoleDecl {
             name,
+            header_order: _,
             type_params,
             type_param_defs,
             is_export: _,

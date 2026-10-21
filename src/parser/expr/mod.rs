@@ -57,6 +57,11 @@ pub(crate) use whatever::{
 // `Expr::WhateverCurry` markers instead of eagerly building closures.
 use whatever_wrap::{try_wrap_whatevercode_call_chain, wrap_composition_operands};
 
+/// Restore the same composition operand shaping after RakuAST lowering.
+pub(crate) fn lower_composition(expr: Expr) -> Expr {
+    wrap_composition_operands(expr)
+}
+
 thread_local! {
     static EXPR_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::new());
     static EXPR_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());

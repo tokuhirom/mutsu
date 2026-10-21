@@ -264,9 +264,20 @@ impl Interpreter {
     /// whole argument list to do this (`auto_fetch_proxy_args`); an nqp op's
     /// operands are almost never `Proxy`, so probe and only write back the
     /// ones that are.
+    ///
+    /// A decontainerized Proxy is the Proxy object itself (its `.VAR`, and
+    /// what FETCH and STORE receive), not a container to read: an op takes
+    /// it as it is. AttrX::Mooish's FETCH does `nqp::decont($proxy)` and then
+    /// reads the proxy's own attributes; fetching it there recursed forever.
     fn fetch_nqp_proxy_operands(&mut self, args: &mut [Value]) -> Result<(), RuntimeError> {
         for arg in args {
-            if arg.is_proxy_value() {
+            if matches!(
+                arg.view(),
+                ValueView::Proxy {
+                    decontainerized: false,
+                    ..
+                }
+            ) {
                 let fetched = loan_env!(self, auto_fetch_proxy(arg))?;
                 *arg = fetched;
             }

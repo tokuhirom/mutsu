@@ -183,18 +183,11 @@ impl Interpreter {
         // required file's `package Pod { class Ber {} }` as
         // `Test::Compile::Pod::Ber`). Mirrors `load_module`.
         //
-        // The package hint names the package a *hintless* file's declarations
-        // belong to. A file that declares its own `unit module Foo;` sets the
-        // package itself (and the compiler qualifies relative to whatever is
-        // already current), so pre-setting it here would nest it inside itself
-        // as `Foo::Foo`.
-        let unit_declared = Self::detect_unit_package_name(&stmts).is_some();
-        match package_hint {
-            Some(pkg) if !pkg.is_empty() && !unit_declared => {
-                self.set_current_package(pkg.to_string())
-            }
-            _ => self.set_current_package("GLOBAL".to_string()),
-        }
+        // The file's top level runs in GLOBAL, whatever the package hint names:
+        // Rakudo declares a package-less file's types under their own names, as
+        // the first `use`/`need` of the same file does (#14336). The hint only
+        // adds the `pkg::name` function/env aliases below.
+        self.set_current_package("GLOBAL".to_string());
         // See `hide_toplevel_global_routines`: a package-less top-level routine
         // in the required file (e.g. its own `sub MAIN`) must not collide with
         // -- or silently overwrite -- a same-named one the requiring scope
@@ -576,55 +569,45 @@ impl Interpreter {
         // NOTE: callers must bump `fn_resolve_gen` after this (no `self` here).
     }
 
-    fn import_single_require_symbol(&mut self, module: &str, symbol: &str) -> bool {
+    /// The value of the symbol `symbol` a `require` of `module` lists, and how
+    /// an import into the env spells it, or `None` when the module does not
+    /// provide it. Nothing is written: a scope that binds the symbol
+    /// lexically takes the value alone (`require_scoped_symbols`).
+    // Cost: O(|symbol|) plus a few table probes; a routine's code object is
+    // resolved by name.
+    fn required_symbol(&self, module: &str, symbol: &str) -> Option<(Value, RequiredKey)> {
         if symbol.is_empty() {
-            return true;
+            return Some((Value::NIL, RequiredKey::None));
         }
         if module == "Test" {
-            return true;
+            // Test's routines are imported by the module load itself.
+            let value = match symbol.strip_prefix('&') {
+                Some(name) => self.resolve_code_var(name),
+                None => self.env.get(symbol).cloned().unwrap_or(Value::NIL),
+            };
+            return Some((value, RequiredKey::None));
         }
         if let Some(name) = symbol.strip_prefix('&') {
-            let source_single =
-                crate::qualified::qualified(Symbol::intern(module), Symbol::intern(name)).as_str();
-            let source_prefix = format!("{source_single}/");
-            let target_single = format!("GLOBAL::{name}");
-            let target_prefix = format!("GLOBAL::{name}/");
-            let mut found = false;
-            let function_entries: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = self
+            let source =
+                crate::qualified::qualified(Symbol::intern(module), Symbol::intern(name));
+            let value = self.resolve_code_var(source.as_str());
+            if value.truthy() {
+                return Some((value, RequiredKey::Routine));
+            }
+            // A package-less module declares its routines in GLOBAL.
+            let global = Symbol::intern(&format!("GLOBAL::{name}"));
+            return self
                 .registry()
                 .functions
-                .iter()
-                .filter_map(|(k, v)| {
-                    let ks = k.resolve();
-                    if ks == source_single {
-                        found = true;
-                        Some((Symbol::intern(&target_single), v.clone()))
-                    } else if ks.starts_with(&source_prefix) {
-                        found = true;
-                        Some((
-                            Symbol::intern(&ks.replacen(&source_prefix, &target_prefix, 1)),
-                            v.clone(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            for (k, v) in function_entries {
-                self.registry_mut().functions_mut().insert(k, v);
-            }
-            // Invalidate name-keyed resolution caches.
-            self.invalidate_fn_resolution();
-            return found
-                || self
-                    .registry()
-                    .functions
-                    .contains_key(&Symbol::intern(&format!("GLOBAL::{name}")));
+                .contains_key(&global)
+                .then(|| (self.resolve_code_var(name), RequiredKey::Routine));
         }
-
         if let Some(sigil) = symbol.chars().next()
-            && matches!(sigil, '$' | '@' | '%' | '&')
+            && matches!(sigil, '$' | '@' | '%')
         {
+            if let Some(value) = self.required_export_value(module, symbol) {
+                return Some((value, RequiredKey::Var));
+            }
             let bare = &symbol[1..];
             let candidates = [
                 format!("{sigil}{module}::{bare}"),
@@ -634,90 +617,181 @@ impl Interpreter {
                     .to_string(),
                 bare.to_string(),
             ];
-            for source in candidates {
-                if let Some(value) = self.env.get(&source).cloned() {
-                    self.env.insert(symbol.to_string(), value);
-                    self.record_import_env_key(symbol);
-                    return true;
-                }
-            }
-            return false;
+            return candidates
+                .iter()
+                .find_map(|source| self.env.get(source).cloned())
+                .map(|value| (value, RequiredKey::Var));
         }
 
         let source_single =
-            crate::qualified::qualified(Symbol::intern(module), Symbol::intern(symbol))
-                .as_str()
-                .to_string();
-        if self.has_class(&source_single) || self.is_role(&source_single) {
-            self.env.insert(
-                symbol.to_string(),
-                Value::package(Symbol::intern(&source_single)),
-            );
-            self.env
-                .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
-            self.record_import_env_key(symbol);
-            return true;
+            crate::qualified::qualified(Symbol::intern(module), Symbol::intern(symbol));
+        if self.has_class(source_single.as_str()) || self.is_role(source_single.as_str()) {
+            return Some((Value::package(source_single), RequiredKey::Term));
         }
         if self.has_class(symbol) || self.is_role(symbol) {
-            self.env
-                .insert(symbol.to_string(), Value::package(Symbol::intern(symbol)));
-            self.env
-                .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
-            self.record_import_env_key(symbol);
-            return true;
+            return Some((Value::package(Symbol::intern(symbol)), RequiredKey::Term));
         }
         // An exported enum key (`enum HashAlgorithm is export (ARGON2I13 => ..)`)
         // is in the module's export table like any `use`-imported symbol, and
         // goes into the enum-key namespace exactly as `use` puts it there (see
         // `runtime::enum_bare_names`).
         if !crate::qualified::is_qualified_str(symbol)
-            && self
-                .module
-                .exported_vars
-                .get(module)
-                .is_some_and(|vars| vars.contains_key(symbol))
-            && let Some(value) = self.exported_var_value(module, symbol)
+            && let Some(value) = self.required_export_value(module, symbol)
             && matches!(value.view(), ValueView::Enum { .. })
         {
-            let key = crate::runtime::enum_bare_names::enum_bare_key_for_insert(symbol);
-            self.unsuppress_name(symbol);
-            self.record_import_env_key(&key);
-            self.env.insert(key, value);
-            return true;
+            return Some((value, RequiredKey::EnumKey));
         }
-        if let Some(value) = self.env.get(&source_single).cloned() {
-            if self
-                .registry()
-                .functions
-                .contains_key(&Symbol::intern(&source_single))
+        if let Some(value) = self.env.get_sym(source_single).cloned() {
+            if self.registry().functions.contains_key(&source_single)
                 && matches!(value.view(), ValueView::Int(_))
             {
-                return false;
+                return None;
             }
-            self.env.insert(symbol.to_string(), value);
-            self.env
-                .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
-            self.record_import_env_key(symbol);
-            return true;
+            return Some((value, RequiredKey::Term));
         }
         // A sigil-less constant the module declared is a term (#9962): it is
         // imported as one, under its term key.
         let term = crate::runtime::term_names::term_key(symbol);
+        if let Some(value) = self.required_export_value(module, &term) {
+            return Some((value, RequiredKey::TermKey(term)));
+        }
         if let Some(value) = self.env.get(&term).cloned() {
-            let is_nil = value.is_nil();
-            self.record_import_env_key(&term);
-            self.env.insert(term, value);
-            return !is_nil;
+            return (!value.is_nil()).then_some((value, RequiredKey::TermKey(term)));
         }
-        if let Some(value) = self.env.get(symbol).cloned() {
-            let is_nil = value.is_nil();
-            self.env.insert(symbol.to_string(), value);
-            self.env
-                .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
-            self.record_import_env_key(symbol);
-            return !is_nil;
+        let value = self.env.get(symbol).cloned()?;
+        (!value.is_nil()).then_some((value, RequiredKey::Term))
+    }
+
+    /// Import the symbol `symbol` a top-level `require` of `module` lists
+    /// ([`Self::required_symbol`]) under its env spelling, and return its
+    /// value. A routine is installed in the function registry under its
+    /// `GLOBAL::` name.
+    // TODO: compile to a lexical binding (`Compiler::compile_block_require`)
+    // for a `require` whose module the compiler cannot name either; this
+    // run-time alias is rolled back only by the enclosing import scope.
+    fn import_single_require_symbol(&mut self, module: &str, symbol: &str) -> Option<Value> {
+        let (value, key) = self.required_symbol(module, symbol)?;
+        match key {
+            RequiredKey::None => {}
+            RequiredKey::Routine => self.install_required_routine(module, &symbol[1..]),
+            RequiredKey::Var => {
+                self.env.insert(symbol.to_string(), value.clone());
+                self.record_import_env_key(symbol);
+            }
+            RequiredKey::Term => {
+                self.env.insert(symbol.to_string(), value.clone());
+                self.env
+                    .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
+                self.record_import_env_key(symbol);
+            }
+            RequiredKey::EnumKey => {
+                let key = crate::runtime::enum_bare_names::enum_bare_key_for_insert(symbol);
+                self.unsuppress_name(symbol);
+                self.record_import_env_key(&key);
+                self.env.insert(key, value.clone());
+            }
+            RequiredKey::TermKey(term) => {
+                self.record_import_env_key(&term);
+                self.env.insert(term, value.clone());
+            }
         }
-        false
+        Some(value)
+    }
+
+    /// Install `module`'s routine `name` (each multi candidate too) under
+    /// its `GLOBAL::` name.
+    // Cost: O(r), r = registry routines (scanned for the candidates).
+    fn install_required_routine(&mut self, module: &str, name: &str) {
+        let source_single =
+            crate::qualified::qualified(Symbol::intern(module), Symbol::intern(name)).as_str();
+        let source_prefix = format!("{source_single}/");
+        let target_single = format!("GLOBAL::{name}");
+        let target_prefix = format!("GLOBAL::{name}/");
+        let function_entries: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = self
+            .registry()
+            .functions
+            .iter()
+            .filter_map(|(k, v)| {
+                let ks = k.resolve();
+                if ks == source_single {
+                    Some((Symbol::intern(&target_single), v.clone()))
+                } else if ks.starts_with(&source_prefix) {
+                    Some((
+                        Symbol::intern(&ks.replacen(&source_prefix, &target_prefix, 1)),
+                        v.clone(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (k, v) in function_entries {
+            self.registry_mut().functions_mut().insert(k, v);
+        }
+        // Invalidate name-keyed resolution caches.
+        self.invalidate_fn_resolution();
+    }
+
+    /// The value of the variable or constant `module` exports under `name`
+    /// (`$x`, or a constant's term key). `require` loads a module without
+    /// importing its exports, so a listed one is read from the export table,
+    /// not from an alias in the env.
+    // Cost: O(|name|) plus the export-value lookup's few table probes.
+    fn required_export_value(&self, module: &str, name: &str) -> Option<Value> {
+        self.module
+            .exported_vars
+            .get(module)
+            .is_some_and(|vars| vars.contains_key(name))
+            .then(|| self.exported_var_value(module, name))
+            .flatten()
+    }
+
+    /// The values a `require` below the unit's top level imports, recorded
+    /// under their listed spellings in the hook-value set `set` its scope's
+    /// bindings read (`OpCode::GetHookExport`, #14140). A routine is read
+    /// from the module's own registry entry and is never installed in the
+    /// registry as a `GLOBAL::` name, which every routine called while the
+    /// scope runs would see; the scope binds `&f` instead. A variable or a
+    /// term is imported as before (the scope's import snapshot rolls its env
+    /// alias back) and its value read from the env.
+    // Cost: O(s * r), s = listed symbols, r = registry routines (a
+    // non-routine symbol's import scans them, as a top-level `require`'s).
+    fn require_scoped_symbols(
+        &mut self,
+        module: &str,
+        imports: &[String],
+        set: Symbol,
+    ) -> Result<(), RuntimeError> {
+        let mut values = HashMap::new();
+        let mut missing = Vec::new();
+        for symbol in imports {
+            match self.required_symbol(module, symbol) {
+                Some((value, key)) => {
+                    // A bare type or term name a module provides is visible
+                    // only where it is imported (`bare_name_visible_here`):
+                    // the scope records the import, though it binds the name
+                    // itself.
+                    match &key {
+                        RequiredKey::Term => self.record_import_env_key(symbol),
+                        RequiredKey::TermKey(term) => self.record_import_env_key(term),
+                        _ => {}
+                    }
+                    values.insert(Symbol::intern(symbol), value);
+                }
+                None => missing.push(symbol.clone()),
+            }
+        }
+        self.module
+            .lexical_import_hook_values
+            .insert(set, std::sync::Arc::new(values));
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err(RuntimeError::new(format!(
+                "X::Import::MissingSymbols: {}",
+                missing.join(" ")
+            )))
+        }
     }
 
     fn require_import_symbols(
@@ -727,7 +801,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let mut missing = Vec::new();
         for symbol in imports {
-            if !self.import_single_require_symbol(module, symbol) {
+            if self.import_single_require_symbol(module, symbol).is_none() {
                 missing.push(symbol.clone());
             }
         }
@@ -746,6 +820,7 @@ impl Interpreter {
         let mut file_target: Option<String> = None;
         let mut dist_selectors = String::new();
         let mut imports: Vec<String> = Vec::new();
+        let mut require_set: Option<Symbol> = None;
         for arg in args {
             match arg.view() {
                 ValueView::Pair(key, value) if key == "__mutsu_require_file" => {
@@ -757,6 +832,12 @@ impl Interpreter {
                 // installed below and the package this returns stay bare.
                 ValueView::Pair(key, value) if key == "__mutsu_require_dist_selectors" => {
                     dist_selectors = value.to_string_value();
+                }
+                // A `require` below the unit's top level: the set its scope's
+                // bindings of the listed symbols read
+                // (`Compiler::compile_block_require`).
+                ValueView::Pair(key, value) if key == "__mutsu_require_set" => {
+                    require_set = Some(Symbol::intern(&value.to_string_value()));
                 }
                 ValueView::Array(items, ..) => {
                     imports.extend(items.iter().map(|v| v.to_string_value()));
@@ -818,10 +899,15 @@ impl Interpreter {
                 crate::runtime::cow_table_mut(&mut self.module.loaded_modules).remove(module);
             }
             let saved = std::mem::replace(&mut self.module.require_propagates_missing_module, true);
-            let result = if dist_selectors.is_empty() {
-                self.use_module(module)
+            // `require` loads the module without importing its exports: only
+            // the symbols it lists are imported (below), as Rakudo does.
+            // Test's routines are still imported by the load
+            // (`import_single_require_symbol`).
+            let target = format!("{module}{dist_selectors}");
+            let result = if module == "Test" {
+                self.use_module(&target)
             } else {
-                self.use_module(&format!("{module}{dist_selectors}"))
+                self.preload_module(&target)
             };
             self.module.require_propagates_missing_module = saved;
             result?;
@@ -837,12 +923,18 @@ impl Interpreter {
             self.env
                 .insert(module.clone(), Value::package(Symbol::intern(module)));
             if !imports.is_empty() {
-                self.require_import_symbols(module, &imports)?;
+                match require_set {
+                    Some(set) => self.require_scoped_symbols(module, &imports, set)?,
+                    None => self.require_import_symbols(module, &imports)?,
+                }
             }
         } else if let Some(module) = module_name.as_ref()
             && !imports.is_empty()
         {
-            self.require_import_symbols(module, &imports)?;
+            match require_set {
+                Some(set) => self.require_scoped_symbols(module, &imports, set)?,
+                None => self.require_import_symbols(module, &imports)?,
+            }
         }
 
         if return_is_str {
@@ -852,4 +944,21 @@ impl Interpreter {
             Ok(Value::package(Symbol::intern(&name)))
         }
     }
+}
+
+/// How a top-level `require`'s import spells a listed symbol in the env
+/// (`Interpreter::import_single_require_symbol`).
+enum RequiredKey {
+    /// Nothing to bind (an empty name, or Test's load-time import).
+    None,
+    /// `&f`: the routine is installed under its `GLOBAL::` name.
+    Routine,
+    /// `$x`, `@a`, `%h`: under the symbol.
+    Var,
+    /// A type or a sigil-less value: under the symbol, read-only.
+    Term,
+    /// An enum key: in the enum-key namespace.
+    EnumKey,
+    /// A sigil-less constant: under its term key.
+    TermKey(String),
 }

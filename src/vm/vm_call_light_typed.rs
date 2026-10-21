@@ -116,7 +116,9 @@ impl Interpreter {
         let owns_state = cf.code.uses_routine_state || (cf.code.reads_topic && cf.code.is_routine);
         let caller_env = if self.env().overlay_is_shared_empty()
             && (!outer_is_unit
-                || (self.env().is_empty_unit_frame() && cf.code.unit_hidden_lexicals.is_none()))
+                || (self.env().is_empty_unit_frame()
+                    && cf.code.unit_hidden_lexicals.is_none()
+                    && self.env().outer_is_foreign_unit() == self.code_is_foreign_unit(&cf.code)))
             && (!owns_state || self.env().owns_routine_state())
         {
             None
@@ -418,7 +420,10 @@ impl Interpreter {
                 bind_value!(npb.slot, true, seed);
                 continue;
             };
-            let v = v.clone();
+            // Extracted named values carry the same resolved VarRef as a
+            // positional argument. This light plan excludes rw/raw bindings;
+            // bind the supplied value rather than leaking its source cell.
+            let v = deref_arg(v).clone().into_deref();
             // An untyped named parameter is implicitly `Any` too (#10878).
             if matches!(
                 cf.param_fast_types.get(i),
@@ -594,8 +599,7 @@ impl Interpreter {
         // (ADR-12529) is marked before the seed: a local is never one of its
         // callers' variables, and the seed reads through the link (#12478).
         if outer_is_unit && caller_env.is_some() {
-            self.env_mut().mark_outer_is_unit();
-            self.hide_unit_names_from_frame(&cf.code);
+            self.link_frame_to_code_unit(&cf.code);
         }
         if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {

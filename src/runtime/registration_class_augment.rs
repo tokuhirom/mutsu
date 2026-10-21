@@ -249,7 +249,11 @@ impl Interpreter {
                         .iter()
                         .map(|p| p.name.clone())
                         .collect();
+                    let method_cell = crate::value::RoutineCell::default();
+                    let prototype = decl.value_prototype.map(|site| std::sync::Arc::new(
+                        crate::value::RoutinePrototype::new(site, method_cell.clone())));
                     let def = MethodDef {
+                        value_prototype: prototype.clone(),
                         syms: Default::default(),
                         lexical_package: self.current_package_sym(),
                         params: effective_params.clone(),
@@ -285,7 +289,7 @@ impl Interpreter {
                         role_param_bindings: None,
                         nested_capture_index: None,
                         captured_readonly: Some(self.capture_declaring_readonly_state()),
-                        routine_cell: Default::default(),
+                        routine_cell: method_cell.clone(),
                     };
                     // ADR-0019 D3-5: `my method`/`our method` are not part of
                     // the class method table — only callable as functions,
@@ -296,7 +300,8 @@ impl Interpreter {
                     // still go in the table even though they also carry
                     // `is_my=true` from the parser.
                     let is_lexical_only = decl.is_my && !decl.is_submethod;
-                    let is_our_only = decl.is_our && !decl.our_variable_form;
+                    let is_our_only = decl.is_our;
+                    let mut candidate_idx = 0;
                     // #10234: the core type itself declares `only` this method.
                     if !is_lexical_only
                         && !is_our_only
@@ -324,7 +329,7 @@ impl Interpreter {
                         let owner = Symbol::intern(name);
                         let method_sym = Symbol::intern(&resolved_method_name);
                         if decl.multi {
-                            self.registry_mut().push_user_method(owner, method_sym, def);
+                            candidate_idx = self.registry_mut().push_user_method(owner, method_sym, def);
                         } else {
                             // Check for duplicate non-multi method
                             // definition. Only error if the existing
@@ -355,9 +360,15 @@ impl Interpreter {
                                 .retain_user_methods(owner, method_sym, |m| {
                                     m.is_private != new_is_private
                                 });
-                            self.registry_mut().push_user_method(owner, method_sym, def);
+                            candidate_idx = self.registry_mut().push_user_method(owner, method_sym, def);
                         }
                     }
+                    self.apply_method_is_traits(
+                        name, &resolved_method_name, &effective_params, &effective_param_defs,
+                        &decl.body, decl.is_rw, false, decl.return_type.as_deref(),
+                        &decl.custom_traits, &method_cell, candidate_idx,
+                    )?;
+                    self.finish_method_value_prototype(prototype.as_deref(), name, &resolved_method_name, candidate_idx)?;
                     // ADR-0019 D3-5: `our method` also registers as a
                     // package-scoped sub, and `my method` as a
                     // lexically-scoped function — matching the class
@@ -398,7 +409,7 @@ impl Interpreter {
                             body_fp_cache: std::sync::OnceLock::new(),
                             captured_readonly: None,
                             body_facts_cache: std::sync::OnceLock::new(),
-                            routine_cell: Default::default(),
+                            routine_cell: method_cell.clone(),
                         };
                         self.registry_mut().functions_mut().insert(
                             Symbol::intern(&qualified_name),
@@ -436,7 +447,7 @@ impl Interpreter {
                             body_fp_cache: std::sync::OnceLock::new(),
                             captured_readonly: None,
                             body_facts_cache: std::sync::OnceLock::new(),
-                            routine_cell: Default::default(),
+                            routine_cell: method_cell.clone(),
                         };
                         self.registry_mut().functions_mut().insert(
                             Symbol::intern(&resolved_method_name),
@@ -471,72 +482,6 @@ impl Interpreter {
                             &effective_param_defs,
                             tags,
                         );
-                    }
-                    // ADR-0019 D3-6: apply user-defined `trait_mod:<is>`
-                    // traits on an augmented method, matching the class
-                    // walker (confirmed against `raku`).
-                    if !decl.custom_traits.is_empty() {
-                        let has_trait_mod = self.has_proto("trait_mod:<is>")
-                            || self.has_multi_candidates("trait_mod:<is>");
-                        if has_trait_mod {
-                            for (trait_name, trait_arg) in &decl.custom_traits {
-                                let mut trait_env = self.env.clone();
-                                trait_env.insert(
-                                    "__mutsu_lookup_class".to_string(),
-                                    Value::str(name.to_string()),
-                                );
-                                trait_env.insert(
-                                    "__mutsu_lookup_method".to_string(),
-                                    Value::str(resolved_method_name.clone()),
-                                );
-                                trait_env.insert(
-                                    "__mutsu_lookup_candidate_idx".to_string(),
-                                    Value::int(0),
-                                );
-                                // The code object passed to a user
-                                // `trait_mod:<is>` candidate must report as a
-                                // `Method`, not a `Sub` — see the class
-                                // walker's identical marker
-                                // (`registration_class_body_method.rs`).
-                                trait_env.insert(
-                                    "__mutsu_callable_type".to_string(),
-                                    Value::str_from("Method"),
-                                );
-                                let sub_val = Value::make_sub(
-                                    Symbol::intern(name),
-                                    Symbol::intern(&resolved_method_name),
-                                    effective_params.clone(),
-                                    effective_param_defs.clone(),
-                                    decl.body.clone(),
-                                    decl.is_rw,
-                                    trait_env,
-                                );
-                                let trait_arg_val = if let Some(arg_expr) = trait_arg {
-                                    Some(self.eval_block_value(&[crate::ast::Stmt::Expr(
-                                        arg_expr.clone(),
-                                    )])?)
-                                } else {
-                                    None
-                                };
-                                let type_obj = self.resolve_type_object(trait_name);
-                                let mut args = vec![sub_val];
-                                if let Some(type_val) = type_obj {
-                                    args.push(type_val);
-                                    if let Some(arg_val) = trait_arg_val {
-                                        args.push(arg_val);
-                                    }
-                                    let _ = self.call_function("trait_mod:<is>", args);
-                                } else {
-                                    let named_val = if let Some(arg_val) = trait_arg_val {
-                                        Value::pair(trait_name.clone(), arg_val)
-                                    } else {
-                                        Value::pair(trait_name.clone(), Value::TRUE)
-                                    };
-                                    args.push(named_val);
-                                    let _ = self.call_function("trait_mod:<is>", args);
-                                }
-                            }
-                        }
                     }
                     // ADR-0019 D3-5 follow-up: `handles` on a method
                     // synthesizes forwarder methods, matching the
@@ -625,6 +570,7 @@ impl Interpreter {
                             source_line: None,
                             source_file: None,
                             default_is_seed: decl.default_is_seed,
+                            default_is_trait: decl.default_is_trait,
                         });
                         if decl.where_constraint.is_some() {
                             Self::mark_attr_where_constraint_seen();

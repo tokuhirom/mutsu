@@ -184,6 +184,13 @@ impl Interpreter {
                     list_items = feed.window();
                 }
                 let mut matched = Vec::new();
+                if let Some(first) = list_items.first() {
+                    self.call_block_loop_phasers(
+                        &data,
+                        crate::ast::PhaserKind::First,
+                        vec![first.clone()],
+                    )?;
+                }
                 for (i, item) in list_items.iter().enumerate() {
                     *consumed = consumed_base + i + 1;
                     let callable = Value::sub_value(data.clone());
@@ -289,7 +296,13 @@ impl Interpreter {
             let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope `state` variables to the closure instance (see
                 // `eval_map_over_items`).
-                vm.lexicals.state_scope_id.set(Some(data.id));
+                vm.lexicals.state_scope_id.set(Some(vm.callable_state_scope(&data)));
+                // A grep block's FIRST runs before the first test; Rakudo runs
+                // no LAST for one. A block with a FIRST is never fed a chunk
+                // at a time (`map_grep_pullable_by_prefix`).
+                if !list_items.is_empty() {
+                    vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
+                }
                 let mut i = 0usize;
                 let mut stop = false;
                 loop {

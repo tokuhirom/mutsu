@@ -259,6 +259,9 @@ impl Interpreter {
             let items = self.force_lazy_list_vm(&ll)?;
             val = Value::seq(items);
         }
+        // `take` of a lazy-tail Slip adds the elements of its ending lazy
+        // items (#13117).
+        let val = self.reify_lazy_slip_tail(val)?;
         if self.gather_items_len() > 0 {
             // Raku's `take` ALWAYS raises a `CX::Take` control exception, and
             // `gather` is only its outermost handler: a lexically nearer

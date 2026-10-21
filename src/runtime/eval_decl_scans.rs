@@ -60,10 +60,22 @@ impl<'ast> Visit<'ast> for EvalLexicalKeys {
                 is_state: false,
                 is_our: false,
                 is_dynamic: false,
+                custom_traits,
                 ..
             } => {
                 if let Some(key) = env_key(name) {
                     self.keys.insert(key);
+                }
+                // A sigilless `my \Name` is stored under its term key, which
+                // `env_key` rejects for an uppercase name (a type-like
+                // spelling the capture must keep). Declared by the snippet it
+                // is still the snippet's own lexical, so it must not outlive
+                // the EVAL.
+                if custom_traits.iter().any(|(t, _)| t == "__sigilless_decl") {
+                    let term = crate::term_names::term_key(name);
+                    self.keys
+                        .insert(crate::runtime::sigilless_readonly_key(&term).to_string());
+                    self.keys.insert(term);
                 }
                 walk_stmt(self, stmt);
             }

@@ -322,7 +322,10 @@ impl Interpreter {
         let name_sym = code.const_sym(name_idx);
         // Element type constraint of the variable, used to fill array holes with
         // the proper type object (`(Int)`) instead of Nil when autovivifying.
-        let declared_constraint_incdec = loan_env!(self, var_type_constraint_sym(name_sym));
+        let declared_constraint_incdec = match slot {
+            Some(slot) => self.slot_type_constraint(code, slot as usize, &name, Some(name_sym)),
+            None => loan_env!(self, var_type_constraint_sym(name_sym)),
+        };
         let declared_type_incdec = self
             .env()
             .get_sym(name_sym)
@@ -1329,7 +1332,7 @@ impl Interpreter {
             self.writeback_critical_var(&name);
         } else {
             // Autovivify typed containers for inc/dec on undefined variables
-            let constraint = loan_env!(self, var_type_constraint_sym(name_sym));
+            let constraint = declared_constraint_incdec.clone();
             let effective_type = declared_type_incdec.as_deref().or(constraint.as_deref());
             if let Some(type_name) = effective_type
                 && matches!(type_name, "MixHash" | "BagHash" | "SetHash")

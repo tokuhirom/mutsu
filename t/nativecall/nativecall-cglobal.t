@@ -15,7 +15,7 @@ plan 10;
 is cglobal('libc.so.6', 'optind', int32), 1,
     'cglobal reads the value at the symbol, not its address';
 
-# A pointer-typed global comes back as a Pointer holding what it points at.
+# A Pointer target wraps the address of the global, without dereferencing it.
 my $environ = cglobal('libc.so.6', 'environ', Pointer);
 isa-ok $environ, Pointer, 'a Pointer-typed global reads back as a Pointer';
 isnt $environ.Int, 0, 'and environ is not NULL in a live process';

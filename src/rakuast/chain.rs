@@ -64,6 +64,14 @@ pub(super) fn lower_chain(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeErr
     let mut links = Vec::new();
     let mut cursor = node;
     while let Some(l) = link(cursor) {
+        // A regex smartmatch is a complete operand of any later comparison
+        // chain. Its result (a Match) is compared, not the regex itself.
+        if l.op == TokenKind::SmartMatch
+            && named_child(l.operands, "right")
+                .is_ok_and(|right| right.class == RakuAstClass::QuotedRegex)
+        {
+            break;
+        }
         let left = named_child(l.operands, "left")?;
         links.push(l);
         cursor = left;

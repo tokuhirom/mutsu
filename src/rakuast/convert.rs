@@ -14,6 +14,9 @@ use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
 use super::origin;
 use super::placeholder::{is_placeholder_name, placeholder_node};
+use super::regex_declaration::{
+    convert as regex_declaration, with_body as regex_declaration_with_body,
+};
 use super::routine_source::return_type_spelling;
 pub(super) use super::routine_source::routine_node;
 use super::source_identifier::{named_routine_call, written_identifier, written_variable};
@@ -79,15 +82,23 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     // The line of the statement about to be converted: the `SetLine` marker
     // in front of it becomes the node's hidden origin (see `origin`).
     let mut line = None;
+    let mut trace = None;
     for (at, stmt) in stmts.iter().enumerate() {
         if let Stmt::SetLine(n) = stmt {
             line = Some(*n);
+            continue;
+        }
+        if matches!(stmt, Stmt::Trace { .. }) {
+            trace = Some(stmt);
             continue;
         }
         // `unit module M;` / `unit package P;`: rakudo holds the rest of the
         // unit in the declaration's body; the parser leaves it beside it.
         if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
             if let Some(mut node) = convert_stmt(&unit)? {
+                if let Some(field) = trace.take().and_then(origin::trace_field) {
+                    node.fields.push(field);
+                }
                 if let Some(n) = line.take() {
                     node.fields.push(origin::field(n));
                 }
@@ -103,6 +114,9 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         if let Some(expansion) = done_value_expansion(stmt) {
             for part in expansion {
                 if let Some(mut node) = convert_stmt(part)? {
+                    if let Some(field) = trace.take().and_then(origin::trace_field) {
+                        node.fields.push(field);
+                    }
                     if let Some(n) = line.take() {
                         node.fields.push(origin::field(n));
                     }
@@ -112,6 +126,9 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             continue;
         }
         if let Some(mut node) = convert_stmt(stmt)? {
+            if let Some(field) = trace.take().and_then(origin::trace_field) {
+                node.fields.push(field);
+            }
             if let Some(n) = line.take() {
                 node.fields.push(origin::field(n));
             }
@@ -256,6 +273,16 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         return zip.map(|node| Some(statement_expression(node)));
     }
     match stmt {
+        Stmt::SyntheticBlock(stmts)
+            if matches!(stmts.as_slice(), [Stmt::ProtoDecl { .. }, Stmt::Use { .. }]) =>
+        {
+            let [proto, use_stmt] = stmts.as_slice() else {
+                unreachable!("guarded inline proto shape")
+            };
+            Ok(Some(super::use_stmt::convert_inline_proto(
+                proto, use_stmt,
+            )?))
+        }
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
         Stmt::SetLine(_) | Stmt::Trace { .. } => Ok(None),
@@ -294,6 +321,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             name,
             params,
             param_defs,
+            body,
             source_regex,
             regex_kind,
             multi,
@@ -324,7 +352,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     return Err(unsupported("rule declaration in TokenDecl"));
                 }
             };
-            Ok(Some(statement_expression(regex_declaration(
+            let mut declaration = regex_declaration(
                 class,
                 &name.resolve(),
                 tree,
@@ -335,7 +363,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_export || !export_tags.is_empty(),
                     export_tags,
                 ),
-            )?)))
+            )?;
+            super::regex_declaration::retain_source(&mut declaration, body);
+            Ok(Some(statement_expression(declaration)))
         }
         // `proto token t {*}`: the declaration with no regex, only the
         // dispatcher.
@@ -374,6 +404,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             name,
             params,
             param_defs,
+            body,
             source_regex,
             multi,
             is_export,
@@ -388,7 +419,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let Some(tree) = source_regex else {
                 return Err(unsupported("rule declaration without a source tree"));
             };
-            Ok(Some(statement_expression(regex_declaration(
+            let mut declaration = regex_declaration(
                 RakuAstClass::RuleDeclaration,
                 &name.resolve(),
                 tree,
@@ -399,7 +430,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_export || !export_tags.is_empty(),
                     export_tags,
                 ),
-            )?)))
+            )?;
+            super::regex_declaration::retain_source(&mut declaration, body);
+            Ok(Some(statement_expression(declaration)))
         }
         // A signature declaration (`my ($a, @b) = …`): the parser keeps its
         // source form as the expansion's first statement.
@@ -687,6 +720,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             var_decl_statement(var_decl_parts(decl)?, true)
         }
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
+        Stmt::DocPhaser(inner) => Ok(Some(super::doc_phaser::convert(inner)?)),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(signature_block_node(body)?))),
         // `BEGIN { … }` / `INIT { … }` / `LEAVE { … }` / … -> a
@@ -1143,14 +1177,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             // Phase 2 slice 7 covers the plain named `sub NAME (params) { body }`
             // form; return types are covered too (`-->` via `Signature.returns`,
             // `returns`/`of` via `Trait::Returns`/`Trait::Of`). Other traits,
-            // multi, export, operator subs, and alternate signatures carry extra
-            // RakuAST shape, deferred.
+            // Multi, export and operator subs carry their public RakuAST shape.
+            // The S13 alternate-signature and supersede forms have no Rakudo
+            // node shape; their execution data stays as hidden source metadata.
             let spelling = return_type_spelling(custom_traits)?;
             let deferred = [
-                (
-                    !signature_alternates.is_empty(),
-                    "sub with alternate signatures",
-                ),
                 (
                     *is_export != !export_tags.is_empty(),
                     "sub with an untagged `is export`",
@@ -1159,7 +1190,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_test_assertion && !custom_traits.iter().any(|(t, _)| t == "test-assertion"),
                     "sub with `is test-assertion`",
                 ),
-                (*supersede, "`supersede` sub"),
                 (
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__")
@@ -1189,6 +1219,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            super::routine_source::mark_legacy_sub_forms(
+                &mut node,
+                signature_alternates,
+                *supersede,
+            )?;
             super::symbolic_deref::replace_declarator_name(&mut node, name_expr.as_ref())?;
             if super::routine_source::apply(&mut node, body)? {
                 routine_traits::add_flags(&mut node, *multi, false, &Default::default())?;
@@ -1216,6 +1251,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Ok(Some(statement_expression(node)))
         }
         Stmt::MethodDecl {
+            value_prototype: _,
             name,
             name_expr,
             param_defs,
@@ -1227,7 +1263,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             is_our,
             is_my,
             is_submethod,
-            our_variable_form,
             return_type,
             is_default_candidate,
             deprecated_message,
@@ -1257,7 +1292,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     *is_export != !export_tags.is_empty(),
                     "method with a bare `is export`",
                 ),
-                (*our_variable_form, "`our &m = method` form"),
                 (
                     !handles.is_empty() && !super::routine_source::keeps_handles(body),
                     "method with `handles`",
@@ -1519,12 +1553,13 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             class: RakuAstClass::StatementTrusts,
             fields: vec![node_field(Some("type"), build_type_node(&name.resolve())?)],
         })),
-        // `augment class C { ... }` is a `Class` with `scope => "augment"`.
+        // `augment class/role C { ... }` keeps its package kind and the
+        // `scope => "augment"` declarator.
         Stmt::AugmentClass {
             name,
             body,
             does_roles,
-            is_role: false,
+            is_role,
         } => {
             let mut fields = vec![
                 leaf_field(Some("scope"), Value::str_from("augment")),
@@ -1548,7 +1583,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 block_node(&crate::parser::unhoist_nested_methods(body))?,
             ));
             Ok(Some(statement_expression(RakuAstNode {
-                class: RakuAstClass::Class,
+                class: if *is_role {
+                    RakuAstClass::Role
+                } else {
+                    RakuAstClass::Class
+                },
                 fields,
             })))
         }
@@ -1616,6 +1655,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             name,
             body,
             kind,
+            custom_traits,
             is_unit,
             is_my,
         } => {
@@ -1638,7 +1678,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Some("body"),
                 block_node(&crate::parser::unhoist_nested_methods(body))?,
             ));
-            Ok(Some(statement_expression(RakuAstNode { class, fields })))
+            let mut node = RakuAstNode { class, fields };
+            super::package_traits::apply(&mut node, custom_traits, body)?;
+            Ok(Some(statement_expression(node)))
         }
         // `subset S of T where P` -> `RakuAST::Type::Subset`. The `of T` base
         // type is a `Trait::Of` in the `traits` list (raku models it exactly as
@@ -1749,6 +1791,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         )?)),
         Stmt::RoleDecl {
             name,
+            header_order,
             type_params,
             type_param_defs,
             is_export,
@@ -1760,6 +1803,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         } => Ok(Some(statement_expression(super::role::convert(
             super::role::RoleDecl {
                 name: *name,
+                header_order,
                 type_params,
                 type_param_defs,
                 is_export: *is_export,
@@ -2734,6 +2778,14 @@ pub(super) fn var_declaration(
 /// including an operator name that merely contains `::` (`infix:<::=>`),
 /// stays one `Name.from-identifier("<s>")` string.
 pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
+    if let Some(name) = crate::qualified::type_capture_name(s)
+        && !name.is_empty()
+        && name_parts::identifier_segments(name).all(crate::parser::is_raku_identifier)
+    {
+        let mut parts = vec![name_parts::leading_empty()];
+        parts.extend(name_parts::identifier_segments(name).map(name_parts::simple_part));
+        return name_parts::name_from_parts(parts);
+    }
     if name_parts::is_qualified_identifier(s) && !s.starts_with("::?") {
         return name_parts::qualified_name(s);
     }
@@ -3236,29 +3288,31 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 let Expr::BareWord(name) = &spelled.expr else {
                     return Err(unsupported("imported term spelling without a value lookup"));
                 };
-                if let Some(node) = bareword::convert(name) {
-                    return Ok(node);
-                }
-                Ok(RakuAstNode {
-                    class: RakuAstClass::TermName,
-                    fields: vec![node_field(None, name_from_identifier(name))],
-                })
+                Ok(super::term_name::imported(name))
             }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::ParenthesizedDeclaratorAdverb => parenthesized_expression(&spelled.expr),
+            Spelling::BracketTraitArgument => convert_expr(&spelled.expr),
             Spelling::Heredoc { stop } => heredoc_node(&spelled.expr, stop),
             Spelling::WordQuote {
                 quotewords,
                 val,
                 text,
             } => Ok(word_quote_with(*quotewords, *val, text)),
-            Spelling::InterpolatingWords { val, text } => super::word_quote::convert(*val, text),
+            Spelling::InterpolatingWords {
+                val,
+                text,
+                delimiter,
+            } => super::word_quote::convert(*val, text, *delimiter),
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
             Spelling::PackageIndirect { package, key } => {
                 super::symbolic_deref::convert_package_indirect(package, key)
             }
             Spelling::NamedSubscript { .. } | Spelling::ConflictingSubscript { .. } => {
                 Err(unsupported("subscript adverb source form"))
+            }
+            Spelling::CompositionWhatever(source) => {
+                super::composition_source::convert(source, &spelled.expr)
             }
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
@@ -3362,6 +3416,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if let Some(hyper) = super::hyper_prefix::convert(name.as_str(), args) {
                 return hyper;
+            }
+            if name.as_str() == crate::ast::quote_processing::FORMAT {
+                return super::quoted_string::convert_format(args);
             }
             if let Some(words) = super::word_quote::convert_words_atom(name.as_str(), args) {
                 return words;
@@ -3674,14 +3731,23 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // A bareword the setting or the unit's own declarations resolve; any
         // other one stays the boundary (the catch-all arm below).
         Expr::BareWord(name) if bareword::convert(name).is_some() => {
-            Ok(bareword::convert(name).expect("just checked"))
+            let mut node = bareword::convert(name).expect("just checked");
+            if matches!(
+                node.class,
+                RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses
+            ) {
+                node.fields.push(super::declared_routines::bareword_field());
+            }
+            Ok(node)
         }
         // A qualified name that did not resolve in this parse scope is still
         // a valid Raku name term (`A::B`). Rakudo represents it as an
         // argument-less Call::Name, including when it is later used as a
         // method-call operand; the failed lookup remains catchable at runtime.
         Expr::BareWord(name) if name_parts::is_qualified_identifier(name) => {
-            call_name(name, &[], false)
+            let mut node = call_name(name, &[], false)?;
+            node.fields.push(super::declared_routines::bareword_field());
+            Ok(node)
         }
         // Any other unresolved word: rakudo's `.AST` refuses it, and an
         // argument-less call renders the same as `foo()`, so a hidden field
@@ -3725,6 +3791,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if matches!(
                 stmt.as_ref(),
                 Stmt::ClassDecl { .. }
+                    | Stmt::Package { .. }
                     | Stmt::RoleDecl { .. }
                     | Stmt::VarDecl { .. }
                     | Stmt::SubDecl { .. }
@@ -4724,7 +4791,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // interpolation would lose.
         Expr::HeredocInterpolation(content, closes_block_same_line) => {
             if *closes_block_same_line {
-                return Err(unsupported("heredoc closing an enclosing block"));
+                return super::quoted_string::convert_closed_block_heredoc(content);
             }
             convert_expr(&crate::parser::interpolate_heredoc_content(content))
         }
@@ -4950,10 +5017,18 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             RakuAstClass::RegexCapturingGroup,
             vec![node_field(None, regex_node(child)?)],
         ),
-        RegexNode::NamedCapture { name, array, regex } => {
+        RegexNode::NamedCapture {
+            name,
+            array,
+            hash,
+            regex,
+        } => {
             let mut fields = vec![leaf_field(Some("name"), Value::str(name.clone()))];
             if *array {
                 fields.push(leaf_field(Some("array"), Value::truth(true)));
+            }
+            if *hash {
+                fields.push(leaf_field(Some("hash"), Value::truth(true)));
             }
             fields.push(node_field(Some("regex"), regex_node(regex)?));
             (RakuAstClass::RegexNamedCapture, fields)
@@ -5227,68 +5302,6 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
     Ok(RakuAstNode { class, fields })
 }
 
-/// `[my|our] token NAME(SIG) { … }`: rakudo's `scope` leads the node (the
-/// default `has` renders none), and a parameter list is the method-style
-/// `signature` between `name` and `body` (measured on rakudo 2026.09).
-// Cost: O(r + p), r = size of the regex, p = size of the parameters.
-fn regex_declaration(
-    class: RakuAstClass,
-    name: &str,
-    tree: &RegexTree,
-    scope: Option<&str>,
-    multiness: Option<&str>,
-    param_defs: &[ParamDef],
-    export_trait: Option<Value>,
-) -> Result<RakuAstNode, RuntimeError> {
-    let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
-    regex_declaration_with_body(
-        class,
-        Some(name),
-        scope,
-        multiness,
-        param_defs,
-        regex_node(&tree.body)?,
-        export_trait.into_iter().collect(),
-    )
-}
-
-/// [`regex_declaration`] over an already converted body (the `{*}` of a proto).
-// Cost: O(p), p = size of the parameters.
-fn regex_declaration_with_body(
-    class: RakuAstClass,
-    name: Option<&str>,
-    scope: Option<&str>,
-    multiness: Option<&str>,
-    param_defs: &[ParamDef],
-    body: RakuAstNode,
-    traits: Vec<Value>,
-) -> Result<RakuAstNode, RuntimeError> {
-    let mut fields = Vec::with_capacity(6);
-    if let Some(scope) = scope {
-        fields.push(leaf_field(Some("scope"), Value::str_from(scope)));
-    }
-    if let Some(multiness) = multiness {
-        fields.push(leaf_field(Some("multiness"), Value::str_from(multiness)));
-    }
-    if let Some(name) = name {
-        fields.push(node_field(Some("name"), name_from_identifier(name)));
-    }
-    if !param_defs.is_empty() {
-        fields.push(node_field(
-            Some("signature"),
-            signature(param_defs, true, None)?,
-        ));
-    }
-    if !traits.is_empty() {
-        fields.push(RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(traits),
-        });
-    }
-    fields.push(node_field(Some("body"), body));
-    Ok(RakuAstNode { class, fields })
-}
-
 fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
     if tree.match_immediately {
@@ -5529,8 +5542,12 @@ fn method_literal_node(
     };
     let mut node = anon_routine_node(rest, folded.body, returns)?;
     node.class = class;
-    if folded.type_constraint.is_some() || folded.alias.is_some() {
-        let invocant = declared_invocant_parameter(folded.type_constraint, folded.alias.as_ref())?;
+    if folded.type_constraint.is_some() || folded.alias.is_some() || folded.default.is_some() {
+        let invocant = declared_invocant_parameter(
+            folded.type_constraint,
+            folded.alias.as_ref(),
+            folded.default,
+        )?;
         add_leading_parameter(&mut node, invocant);
     }
     Ok(node)
@@ -5540,10 +5557,11 @@ fn method_literal_node(
 /// invocant a method literal declared (measured on rakudo 2026.09). Without a
 /// written type it is the `Any` of every routine parameter; without a name it
 /// has no target (`method (Mu:D:)`).
-// Cost: O(1).
+// Cost: O(t + d), t = type-name bytes, d = default-initializer AST nodes.
 fn declared_invocant_parameter(
     type_constraint: Option<&str>,
     alias: Option<&(String, bool)>,
+    default: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let type_node = match type_constraint {
         Some(t) => build_type_node(t)?,
@@ -5577,10 +5595,14 @@ fn declared_invocant_parameter(
         };
         fields.push(node_field(Some("target"), target));
     }
-    fields.push(RakuAstField {
-        name: Some("optional"),
-        value: RakuAstFieldValue::Node(Value::truth(false)),
-    });
+    if let Some(default) = default {
+        fields.push(node_field(Some("default"), convert_expr(default)?));
+    } else {
+        fields.push(RakuAstField {
+            name: Some("optional"),
+            value: RakuAstFieldValue::Node(Value::truth(false)),
+        });
+    }
     Ok(RakuAstNode {
         class: RakuAstClass::Parameter,
         fields,
@@ -5931,7 +5953,12 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         .traits
         .iter()
         .map(String::as_str)
-        .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
+        .filter(|t| {
+            !matches!(
+                *t,
+                "invocant" | IMPLICIT_INVOCANT_TRAIT | crate::ast::does_target::DOES_TARGET_TRAIT
+            )
+        })
         .collect();
     let refusal = if pd.literal_value.is_some()
         && (pd.named
@@ -6194,7 +6221,12 @@ pub(super) fn parameter_traits(pd: &ParamDef) -> Result<Option<RakuAstField>, Ru
         .traits
         .iter()
         .map(String::as_str)
-        .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
+        .filter(|t| {
+            !matches!(
+                *t,
+                "invocant" | IMPLICIT_INVOCANT_TRAIT | crate::ast::does_target::DOES_TARGET_TRAIT
+            )
+        })
         .collect();
     if traits.is_empty() {
         return Ok(None);
@@ -6879,7 +6911,7 @@ fn anon_regex_declaration(v: &Value, tree: &RegexTree) -> Result<RakuAstNode, Ru
         .regex_signature()
         .map(|p| (*p).clone())
         .unwrap_or_default();
-    regex_declaration_with_body(
+    let mut declaration = regex_declaration_with_body(
         class,
         None,
         None,
@@ -6887,7 +6919,9 @@ fn anon_regex_declaration(v: &Value, tree: &RegexTree) -> Result<RakuAstNode, Ru
         &params,
         regex_node(&tree.body)?,
         Vec::new(),
-    )
+    )?;
+    super::regex_declaration::retain_value_source(&mut declaration, v);
+    Ok(declaration)
 }
 
 /// `FakeSignature.new(Signature(parameters => (...)[, returns => Type]))` for a
@@ -7483,16 +7517,18 @@ fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
         is_unit: true,
         is_my,
         body,
+        custom_traits,
     } = declaration
     else {
         return None;
     };
-    if !body.is_empty() {
+    if body.iter().any(|stmt| !stmt.is_marker()) {
         return None;
     }
     let package = Stmt::Package {
         name: *name,
-        body: rest.to_vec(),
+        body: body.iter().cloned().chain(rest.iter().cloned()).collect(),
+        custom_traits: custom_traits.clone(),
         kind: *kind,
         is_unit: true,
         is_my: *is_my,

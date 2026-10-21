@@ -2123,7 +2123,7 @@ fn postfix_expr_loop_from(
                         Expr::Index {
                             target: Box::new(expr),
                             index: Box::new(crate::parser::primary::spelled_subscript_index_expr(
-                                content,
+                                content, '«',
                             )),
                             is_positional: false,
                             spelling: crate::ast::IndexSpelling::Angle,
@@ -2160,7 +2160,7 @@ fn postfix_expr_loop_from(
                         Expr::Index {
                             target: Box::new(expr),
                             index: Box::new(crate::parser::primary::spelled_subscript_index_expr(
-                                content,
+                                content, '<',
                             )),
                             is_positional: false,
                             spelling: crate::ast::IndexSpelling::Angle,
@@ -2383,7 +2383,7 @@ fn postfix_expr_loop_from(
                         if let Some((r_after, exists_expr)) =
                             try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
                         {
-                            expr = delete_with_exists(delete_adv, exists_expr);
+                            expr = delete_with_exists(delete_adv, exists_expr, true);
                             rest = r_after;
                             continue;
                         }
@@ -2459,7 +2459,7 @@ fn postfix_expr_loop_from(
                 && let Some((r_after, exists_expr)) =
                     try_parse_exists_adverb(r_after_delete, expr.clone())
             {
-                expr = delete_with_exists(delete_adv, exists_expr);
+                expr = delete_with_exists(delete_adv, exists_expr, true);
                 rest = r_after;
                 continue;
             }
@@ -2549,7 +2549,7 @@ fn postfix_expr_loop_from(
                 // the *answer* in `DELETE-KEY` (which would call it on a Bool,
                 // or on the List a slice answers with).
                 if let Expr::Exists { delete: false, .. } = &expr {
-                    expr = delete_with_exists(delete_adv, expr);
+                    expr = delete_with_exists(delete_adv, expr, false);
                     continue;
                 }
                 // `:delete:k` — a value adverb after the `:delete` reads the

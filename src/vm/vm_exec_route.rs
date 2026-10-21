@@ -309,7 +309,8 @@ impl Interpreter {
             | OpCode::TryCatch { .. }
             | OpCode::When { .. }
             | OpCode::WhileLoop { .. } => self.exec_ops_group_11(code, ip, compiled_fns),
-            OpCode::BlockMagic
+            OpCode::ApplyPackageTrait { .. }
+            | OpCode::BlockMagic
             | OpCode::ExistsEnvIndex(..)
             | OpCode::ExistsExpr
             | OpCode::ExistsIndexAdv(..)

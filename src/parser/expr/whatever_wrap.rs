@@ -27,6 +27,12 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                     bare_count += 1;
                 }
                 if bare_count > 0 {
+                    let source = Expr::Binary {
+                        left: Box::new(left.clone()),
+                        op: op.clone(),
+                        right: Box::new(right.clone()),
+                        form,
+                    };
                     let mut params = Vec::new();
                     let mut param_defs = Vec::new();
                     let left_expr = if is_whatever(&left) {
@@ -56,24 +62,30 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         form: Default::default(),
                     };
                     if params.len() == 1 {
-                        return Expr::Lambda {
-                            param: params[0].clone(),
-                            body: vec![Stmt::Expr(body_expr)],
-                            is_whatever_code: false,
-                            param_sigilless: false,
-                        };
+                        return Expr::spelled(
+                            Expr::Lambda {
+                                param: params[0].clone(),
+                                body: vec![Stmt::Expr(body_expr)],
+                                is_whatever_code: false,
+                                param_sigilless: false,
+                            },
+                            || crate::ast::spelled::Spelling::CompositionWhatever(Box::new(source)),
+                        );
                     }
-                    return Expr::AnonSubParams {
-                        params,
-                        param_defs,
-                        return_type: None,
-                        body: vec![Stmt::Expr(body_expr)],
-                        is_rw: false,
-                        is_raw: false,
-                        custom_traits: Default::default(),
-                        is_whatever_code: false,
-                        declarator: crate::ast::RoutineDeclarator::Block,
-                    };
+                    return Expr::spelled(
+                        Expr::AnonSubParams {
+                            params,
+                            param_defs,
+                            return_type: None,
+                            body: vec![Stmt::Expr(body_expr)],
+                            is_rw: false,
+                            is_raw: false,
+                            custom_traits: Default::default(),
+                            is_whatever_code: false,
+                            declarator: crate::ast::RoutineDeclarator::Block,
+                        },
+                        || crate::ast::spelled::Spelling::CompositionWhatever(Box::new(source)),
+                    );
                 }
                 let left_wrapped = if should_wrap_whatevercode(&left) {
                     Expr::WhateverCurry(Box::new(left))

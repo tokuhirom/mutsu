@@ -146,6 +146,10 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("value", Absent::Required)]
         }
         VarLexical | VarDynamic => &[("name", Absent::Required)],
+        QuotedString => &[
+            ("segments", Absent::Required),
+            ("processors", Absent::EmptyList),
+        ],
         VarPackage => &[("name", Absent::Required), ("sigil", Absent::Required)],
         Name => &[
             ("parts", Absent::EmptyList),
@@ -203,7 +207,16 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         VarDeclarationPlaceholderSlurpyArray => &[],
         VarDeclarationPlaceholderSlurpyHash => &[],
         StubFail | StubDie | StubWarn => &[("args", Absent::EmptyNode(ArgList))],
-        Sub | Method | Submethod => &[
+        Sub => &[
+            ("multiness", Absent::Str("")),
+            ("name", Absent::TypeObject("RakuAST::Name")),
+            ("signature", Absent::EmptyNode(Signature)),
+            ("traits", Absent::EmptyList),
+            ("body", Absent::Required),
+        ],
+        Method | Submethod => &[
+            ("multiness", Absent::Str("")),
+            ("private", Absent::False),
             ("name", Absent::TypeObject("RakuAST::Name")),
             ("signature", Absent::EmptyNode(Signature)),
             ("traits", Absent::EmptyList),
@@ -316,6 +329,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         RegexNamedCapture => &[
             ("name", Absent::Required),
             ("array", Absent::False),
+            ("hash", Absent::False),
             ("regex", Absent::Required),
         ],
         RegexAssertionNamed => &[("name", Absent::Required), ("capturing", Absent::False)],
@@ -391,7 +405,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("repr", Absent::TypeObject("Str")),
             ("traits", Absent::EmptyList),
             ("body", Absent::Required),
+            ("parameterization", Absent::EmptyNode(Signature)),
         ],
+        RoleBody => &[("body", Absent::Required)],
         Grammar => &[
             ("scope", Absent::Str("our")),
             ("parsed-declarator", Absent::Str("grammar")),

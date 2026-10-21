@@ -1515,3 +1515,278 @@ On the tested tree, 8,052 / 8,094 files pass the frontend survey, and all
 8,052 ratchet files / 83,488 assertions pass under the release binary. The
 16 added entries comprise the two feed tests and 14 refreshed-main tests;
 the remaining cause survey has 27 DIFF and 15 REFUSE files.
+
+### 6.85 S10: package scalar binding authority (2026-10-20)
+
+TRIR outer seeding now consults the declaring package's canonical `our`
+scalar cell after exact activation captures and before file/env fallbacks.
+The cell remains live rather than entering a value snapshot cache. The
+ordinary parser's incidental callsite marker had hidden this first-call
+binding error; RakuAST lowering need not recreate that marker.
+
+VM plain stores resolve the same cell before the generic bare-env write
+shortcut. Container arguments carry that cell through `WrapVarRef`; the
+parameter binder preserves an already-resolved lvalue instead of re-resolving
+its name and scheduling an unrelated name-based copyback. Readonly decisions
+and scalar constraints consult the target binding. `DeclareOurScalar` carries
+its own optional constraint constant, including an explicit absence, rather
+than attaching a caller's same-named type. Split runtime package bodies carry
+their own `our` aliases separately from their private lexicals: compilation
+hides caller slots for both, but binds only private lexicals from the static
+store. The cache format advances to 38.
+
+Class-body exit restores the bare aliases of top-level `our` declarations
+while preserving their qualified storage and changes to shared outer cells.
+The executable contract is `t/rakuast/rakuast-package-our-bindings.t`, with
+string and AST EVAL coverage measured against Rakudo 2026.07. Existing routine
+package-switch and in-file package-variable regressions exercise both
+frontends as well.
+
+Package declarations retain their written `is` traits and executable trait
+arguments in the internal AST. Conversion, construction and lowering preserve
+the same Module/Package fields, including written trait order beside export
+traits and unit bodies. The compiler evaluates arguments and emits
+`ApplyPackageTrait`, whose VM handler uses compiled `trait_mod:<is>` dispatch.
+Missing parents and unsupported core HOW operations raise the shared typed
+exceptions. Qualified declarations register their namespace ancestors;
+unresolved qualified terms fail instead of manufacturing package objects.
+Execution and conversion share the generated CORE type-name catalogue.
+Generated export namespaces have separate unit and qualified-package indexes;
+they do not become user package declarations or change custom EXPORT lookup.
+An ancestor vivified during a pending class's load does not replace its HOW.
+Class/role plans explicitly record compiler
+qualification instead of guessing it from a repeated package prefix.
+The matching method/body chunks use the same declaration-name provenance.
+Relative compound type identities remain distinct from their written package
+bindings; a registry identity does not manufacture another bareword binding.
+A reverse index resolves qualified regex subrules through the public grammar
+binding to that identity, for static patterns, callable token definitions and
+candidate-less protos. Binding changes invalidate the existing regex caches.
+Literal package stash subscripts remain index expressions rather than becoming
+qualified-name lookups, so an absent member yields Nil. EVAL's caller namespace
+classification includes the generated export indexes without declaring them
+as user packages.
+The static module scan reads retained literal stash assignments as export
+names without executing BEGIN or an initializer. Ancestor publication belongs
+to the package-kind operation and carries explicit public/private provenance.
+The existing relative-class regression now measures constructor dispatch
+against Rakudo instead of accepting a fabricated package value's name.
+Post-declaration checks include modules and packages, and semicolon forms
+raise the corresponding unit-scope syntax exceptions. These contracts are
+measured in `t/rakuast/rakuast-package-namespaces-traits.t`.
+
+Package/module declarations used as terms retain their declaration and lexical
+scope through the existing compiler value path. `roast/S10-packages/basic.t`
+now passes all 83 assertions through both frontends and joins the
+whitelist; its completed blocker entry is removed.
+
+Trait application uses the existing compiled declaration-registration timing;
+the remaining compile-time argument/callback scheduling gap is measured in
+#14146, including its pre-existing class reproduction.
+
+### 6.86 S10: grammar argument expressions and binding windows (2026-10-21)
+
+The regex source renderer retains `$<name>` and the distinction between named
+fat-arrow arguments and positional Pair data, including nested calls. Pattern
+specialization substitutes only already-bound enclosing parameters; it never
+evaluates the argument expression against empty captures. The compiled match
+engine evaluates the complete argument list as a Capture at the actual call,
+using the ordinary compiler's named/positional/flattening rules. Binding
+windows classify Pair data by its existing value marker, so an object inside
+a positional Pair stays live across the callee's match and backtracking.
+
+Grammar construction shares the Class/Native package-body contract, and
+regex/token/rule construction retains signatures, scopes and multiness.
+`t/rakuast/rakuast-grammar-argument-bindings.t` covers both directions and
+hand-built grammar declarations; the existing capture-exception and binding
+window files exercise the same behavior through the round-trip frontend.
+
+### 6.87 S10: role composition provenance and caller bindings (2026-10-21)
+
+`Stmt::RoleDecl::header_order` records the written interleaving of the
+separately stored parent, export, rw and custom-trait families. Both block
+and unit role parsers record it before normalization; conversion orders the
+public traits from that record, and lowering records the order of constructed
+trait lists. The serialized AST cache format is bumped for the new field.
+The role header parser is split out of the declaration-body parser.
+
+Anonymous role nodes retain their already minted declaration name as private
+model metadata, following the existing source-metadata pattern. Lowering
+reuses it; a newly constructed node still allocates a fresh name. No global
+counter is reset, and the metadata is absent from public constructor rendering.
+Absolute type names retain their leading empty edge without changing type
+capture names at unrelated lowering sites. Source-only parameterized type
+arguments support plain string and numeric literals; parsed argument lists
+continue through the ordinary expression converter.
+
+The lowerer reuses ADR-14144's `does` parameter analysis for subs, methods and
+closures, including hand-built routines. Parenthesized expressions retain
+`Grouped`, so a grouped role call stays an ordinary coercion rather than
+becoming a mixin initializer. The existing compiler and VM own all execution.
+The outer parentheses of `:key(EXPR)` remain colonpair delimiters, so they do
+not add a `Grouped` operand that would hide the argument's source container.
+`Role.new` and `RoleBody.new` share the package-construction helpers and retain
+their body, traits and parameterization. The measured executable contract is
+`t/rakuast/rakuast-role-composition-boundaries.t`.
+
+### 6.88 S10: regex declaration provenance and shared code scanning (2026-10-21)
+
+Parsed regex declarations retain their existing verbatim declaration text as
+private model metadata. Conversion and lowering carry it independently of the
+execution tree; rendering the RakuAST constructor omits it. Named method-table
+entries and anonymous Regex values display that source through `.gist` and
+`.raku`, including after module caching and scope capture. Regex closure
+construction shares the source handle alongside the signature, tree and topic.
+
+The Rakudo oracle distinguishes provenance from a deparser: an ArgList edit
+changes EVAL's matching but the resulting Regex still displays its original
+declaration. The implementation follows that contract without executing or
+reparsing the reflection text. Anonymous source boundaries use checked UTF-8
+slice access and report a parse error if the boundary is invalid.
+
+RegexTree code blocks reuse `regex_code_nested::code_block_body_len`. The
+shared scanner recognizes identifier apostrophes and Unicode quotes, and both
+it and main-slang whitespace use one bracketed-comment primitive. Delimiter
+nesting is iterative, with byte and char offsets computed together. Regex
+declaration conversion, anonymous declaration parsing and value-provenance
+helpers now have separate small modules. The executable contract is
+`t/rakuast/rakuast-regex-source-provenance.t`.
+
+### 6.89 S10: format quote processors and preview setting types (2026-10-21)
+
+Format quotes cross the boundary as `QuotedString(processors => <format>,
+segments => (...))`, retaining interpolation segments. The parser and lowerer
+share the executable format-call builder. The existing format primitive
+checks its Str parameter, so word processing after format installation raises
+the same binding failure as Rakudo; it does not stringify a List into a format.
+Plain word processors retain a List for one element, while `:val` and angle
+word literals keep their existing scalar behavior.
+
+Additional 6.e setting types are generated by comparing the same reference
+Rakudo's 6.d and 6.e catalogs, using the existing catalog walker. Conversion
+consults these additions only for a preview unit. This restores the
+`Formatter::Syntax` type operand without fabricating an unresolved package or
+making the additions part of the default catalog. Quote declaration adverbs
+also no longer collide with loop labels sharing a keyword prefix.
+
+The executable contract is `t/rakuast/rakuast-format-quote-setting-types.t`.
+The formatter grammar's symbol captures and anchors are measured separately
+against Rakudo; its existing regression retains all assertions.
+
+### 6.90 S10: conditional lvalues, type receivers and subscript adverbs (2026-10-21)
+
+A statement modifier on an assignment inside a compound-assignment target
+lowers to an assignment expression, preserving its writable container. The
+existing compound-assignment expansion then writes through the taken branch
+and leaves an untaken modifier as a no-op. This matches the ordinary parser's
+execution shape without adding a separate evaluator.
+
+Bare type operands round-trip through `Type::Simple` and lower to term
+lookups. A method call on `Any` therefore uses the term namespace rather than
+a same-named scalar slot; an EVAL unit also uses that namespace for a term
+whose declaration is outside its compile unit. Constructor calls retain the
+ordinary bareword key because they do not write their type receiver, and raw
+constructor arguments must keep their source containers. These choices
+preserve an immutable type receiver while leaving a lexical type alias or
+sigilless binding dynamically resolvable.
+
+An invalid multi-dimensional `:!exists:delete` subscript still raises
+`X::Adverb`, but its parser expansion now retains the original index and the
+ordered colonpairs as spelling. Conversion emits the public postcircumfix
+tree; lowering uses the existing subscript-adverb expansion to restore the
+same exception. The order is retained in both directions, including
+`:delete:!exists`. The executable contract is
+`t/rakuast/rakuast-lvalue-contracts.t`, alongside the existing three focused
+regressions for conditional assignment, bare `Any` growth and combined
+subscript adverbs.
+
+### 6.91 S10: declaration and source boundaries (2026-10-21)
+
+The parser accepts legacy alternate signatures and `supersede` routines that
+the current Rakudo oracle does not parse. Their executable data is retained as
+private fields on the public `Sub` node. A DOC phaser exposes Rakudo's ordinary
+`Nil` expression, with its original phaser retained privately so `--doc` can
+still execute it after lowering. A role augmentation retains the role package
+kind and its existing legality checks.
+
+Composition with a bare Whatever operand keeps the written `o` expression in
+`Spelling::CompositionWhatever` while its executable closure remains the
+parser's normal expansion. RakuAST conversion recovers the public infix and
+lowering reuses the parser's composition wrapper. The new serialized spelling
+bumps the cache format to 43. A heredoc whose marker closes an enclosing block
+retains that lexical boundary privately on its public `QuotedString`, so
+lowering preserves the existing scope diagnostic without executing source in
+the analysis path. Private source fields are omitted from constructor output.
+
+`t/rakuast/rakuast-source-declaration-boundaries.t` checks the public shapes
+and executable round trips; the seven affected language test files run in
+both frontends. The captured-closure regex case remains a separate RegexTree
+boundary (#14350) because its `%<chars>=` alias is not represented by the
+static tree.
+
+### 6.92 S10: hash capture aliases in static regex trees (2026-10-21)
+
+`%<name>=ATOM` and `%name=ATOM` now parse into the shared `RegexNode::NamedCapture`
+with a hash kind distinct from scalar and array capture aliases. RakuAST uses
+`Regex::NamedCapture(hash => True)` for this mutsu extension: the current
+Rakudo oracle rejects hash variables in regexes as reserved, while mutsu's
+ordinary frontend implements the spec's hash capture semantics. Constructed
+nodes validate mutually exclusive array/hash kinds; lowering sets the existing
+matcher token's `hash_capture`, so each iteration files its key in the same
+execution path. The serialized node shape bumps the cache format to 44.
+Static hash alias names are capped at 1,024 characters; larger names decline
+conversion with a catchable boundary error.
+
+The same source file also contains an intentionally invalid unpaired `~`.
+Structural regex validation now recognizes a leftover tilde marker across
+nested patterns before the RakuAST conversion boundary. The check only walks
+the already parsed token tree, with bounded recursion; it does not evaluate
+regex code. `t/rakuast/rakuast-regex-hash-capture-alias.t` covers source and
+constructed nodes, hash filing, and the diagnostic. The language regression
+`t/regex/regex-last-declines-compiled.t` runs in both frontends.
+The frontend-mode TAP test now checks the newly supported alias in the main
+unit and an EVAL unit. A converter-level unit test supplies a deliberately
+unmodelled Regex value to keep the no-fallback invariant stable as source
+coverage grows.
+
+### 6.93 S10: remaining source and lowering distinctions (2026-10-21)
+
+Eight previously divergent files now execute through the RakuAST frontend.
+Nested `<< >>` and `« »` word quotes retain their own source delimiter in the
+serialized spelling and become child `QuotedString` segments. Lowering flattens
+the nested words through the existing quote-word expression path. The cache
+format advances to 45 for the changed spelling variant. A regex smartmatch
+ends its comparison chain before a following `eq`; later comparisons chain
+over its Match result. Qualified and routine-valued source barewords retain
+their parser binding as private node metadata, so enum values and post-declared
+listops keep the ordinary frontend's behavior.
+
+The whole-frame `p6stateinit` lowering runs after the RakuAST round trip, when
+the rebuilt statement tree is complete. A `with` statement modifier binds a
+bare block's placeholders to its topic. Uninitialized native declarations use
+the parser's shared native default when rebuilt. The overloaded `<=>` candidate
+uses the same `InfixFunc` dispatch as the ordinary frontend. The focused
+`t/rakuast/rakuast-final-diffs.t` test checks quote read and write directions;
+`t/rakuast/rakuast-final-diffs-frontends.t` keeps the eight complete language
+regressions green in frontend mode.
+
+The inline-proto `use` argument and `use trace` still need model-level source
+representation; they remain in #14359.
+
+### 6.94 S10: inline proto imports and statement traces (2026-10-21)
+
+The parser's transparent `SyntheticBlock(ProtoDecl, Use)` for an inline proto
+argument now converts to Rakudo's single `Statement::Use` node with the proto
+`Sub` in its argument list. Lowering extracts that proto into the same
+transparent declaration-and-import sequence, then passes its code object to
+the module's `EXPORT`. This also accepts a constructed use node with a direct
+proto argument.
+
+`use trace` already records exact statement text, source line and statement
+attempt number during parsing. Each traced statement now carries that data in
+private RakuAST metadata and restores the existing `Stmt::Trace` hook before
+compilation. The public node shape and `.raku` output stay Rakudo-compatible;
+no tracing runs during `.AST` analysis. The two remaining language files pass
+in frontend mode, bringing the tracked corpus to parity in all ten files from
+#14359. The frontend ratchet and the inline-proto read/write assertions in
+`t/rakuast/rakuast-final-diffs.t` pin the behavior.

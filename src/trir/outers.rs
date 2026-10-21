@@ -184,6 +184,19 @@ impl Interpreter {
         {
             return Some(celled(v.clone()));
         }
+        // A package's `our` scalar resolves to its one canonical cell before
+        // the containing file's same-named lexical. A TRIR entry has no own
+        // bytecode frame here, so use the callee's package explicitly rather
+        // than the caller's local-name exclusions. Captured lexical bindings
+        // above remain authoritative.
+        if let Some(binding) = self.our_package_scalar_binding_in(
+            crate::symbol::Symbol::intern(name),
+            self.current_package_sym(),
+        ) {
+            // Rebinding the package store is not covered by unit_lexical_gen.
+            // Keep the cell, but resolve its home again on the next entry.
+            return Some((binding, false));
+        }
         // A module routine's free `my` lives in a package-keyed store, not in
         // the environment: the compunit's own unit lexicals, the loaded
         // module's scope lexicals, or a package block's lexicals. The untyped

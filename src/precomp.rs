@@ -132,7 +132,18 @@ pub(crate) fn interpreter_version() -> String {
     // 32: named method calls carry their resolved receiver slot; BindingDesc
     // lost scalar_no_container_sym, replaced by the binding's readonly kind.
     // 33: variable and call-assignment declarations carry anonymous provenance.
-    const CACHE_FORMAT_VERSION: u32 = 33;
+    // 34: our scalar declarations carry their own optional constraint.
+    // 35: split package runtime bodies carry their own our aliases.
+    // 36: package declarations and bytecode retain executable traits.
+    // 37: class/role plans distinguish compiler-qualified declaration names.
+    // 38: ancestor publication; 39: compiled attribute traits and bracket spelling.
+    // 40: Method initializers retain their declaration/prototype identity.
+    // 41: Role headers retain the written interleaving of trait families.
+    // 42: `ModuleLoadFacts` gained `my_constant_names` (#14330).
+    // 43: composition Whatever spelling retains the unexpanded source operand.
+    // 44: static regex named captures distinguish hash aliases.
+    // 45: interpolating word quotes retain their source delimiter.
+    const CACHE_FORMAT_VERSION: u32 = 45;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

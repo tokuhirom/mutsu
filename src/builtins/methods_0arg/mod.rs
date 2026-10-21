@@ -1,4 +1,4 @@
-use crate::builtins::method_table::receiver_step::Step;
+use crate::builtins::method_table::receiver_step::{MixinStep, Step};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
@@ -139,25 +139,6 @@ pub(crate) fn native_method_0arg(
     native_method_0arg_cascade(target, method_sym)
 }
 
-/// The row a plain `Match` reaches for `method` (its own, then `Cool`'s
-/// audited text rows and `Mu`'s and `Any`'s audited ones), invoked on a match
-/// the table has no shape for (a grammar cursor, an instance of a `Match`
-/// subclass): their structure is a `Match`'s, so every such row reads them as
-/// it reads a plain match.
-// Cost: O(1) to find the row, plus the row's own cost.
-pub(crate) fn match_owner_row(
-    target: &Value,
-    method: Symbol,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    crate::builtins::method_table::answer_as(
-        crate::value::DispatchShape::Match,
-        target,
-        method,
-        args,
-    )
-}
-
 /// [`native_method_0arg`] without the method table: the name-matching
 /// cascade, which `method_table`'s debug cross-check also runs.
 pub(crate) fn native_method_0arg_cascade(
@@ -192,26 +173,6 @@ pub(crate) fn native_method_0arg_cascade(
         None => {}
     }
 
-    // A lazy Match the table has no shape for (a grammar cursor) answers
-    // `Match`'s rows here, straight from the capture node, so the probe
-    // gauntlet in between (each a `view()`, which would materialize the Match)
-    // never runs for the scalar accessors (`from`, `to`, `pos`, `Str`, ...).
-    // Cost: O(k) to find the row, k = rows named `method`, plus the row's own.
-    if target.is_lazy_match_value()
-        && let Some(result) = match_owner_row(target, method_sym, &[])
-    {
-        return Some(result);
-    }
-
-    // ADR-0064: a `.VAR` container descriptor answers only its own properties
-    // natively. Every other method is a question about the value the container
-    // holds, and only the interpreter can resolve that (a variable descriptor
-    // reads the variable's live env entry) -- so defer to the slow path rather
-    // than answering out of the descriptor's attribute map.
-    if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method) {
-        return None;
-    }
-
     // Seq consumed/cached state checks.
     // Only handle operations that are fully dispatched here in native_method_0arg.
     // Do NOT pre-check methods that fall through to the runtime (like "iterator"),
@@ -244,224 +205,21 @@ pub(crate) fn native_method_0arg_cascade(
         }
     }
 
-    // `Failure`'s `exception`, `handled`, `gist`, `raku`, `Str` and `Bool` are rows of
-    // the method table (`method_table::failure`, ADR-11276 §9.51). `exception` and
-    // `handled` are in the interpreter's no-explode safe list, so answering them
-    // here is correct; a non-safe method (`.message`) is not a row, so it reaches
-    // the interpreter, which explodes an unhandled Failure.
-    if let Some(answer) = crate::builtins::method_table::failure::answer(target, method) {
-        return Some(answer);
-    }
-
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
     // payload (`builtins::native_base`).
     if let Some(result) = super::native_base::dispatch(target, method_sym, &[]) {
         return Some(result);
     }
 
-    // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
-    if let ValueView::Mixin(inner, mixins) = target.view() {
-        // A plain allomorph's method with a row is the row's (§9.101).
-        if crate::builtins::method_table::allomorph::answers(target, method_sym, &[]) {
-            return None;
-        }
-        if method == "Bool"
-            && let Some(bool_val) = mixins.get("Bool")
-        {
-            return Some(Ok(bool_val.clone()));
-        }
-        if (method == "Str" || method == "~")
-            && let Some(str_val) = mixins.get("Str")
-        {
-            return Some(Ok(str_val.clone()));
-        }
-        // A Bool with a mixed-in Bool override and no `Str` or role mixin
-        // (`True but False`) is that Bool for every method, as in Rakudo
-        // (`.Str`, `.Int`, `.not` and `.raku` all follow the effective truth,
-        // ADR-11276 §9.111).
-        if matches!(inner.as_ref().view(), ValueView::Bool(_))
-            && mixins.get("Str").is_none()
-            && !mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
-            && let Some(ValueView::Bool(b)) = mixins.get("Bool").map(Value::view)
-        {
-            return native_method_0arg(&Value::truth(b), method_sym);
-        }
-        // An allomorph (IntStr/NumStr/…) gists as its preserved source string,
-        // not the inner numeric's gist: `<1e3>.gist` → `1e3` (not `1000`). Only
-        // allomorphs; a general `but`-mixin gists via its inner value (below).
-        // A `Str` mixed into any value (`5 but "x"`) wins for the stringifying
-        // methods too, as in Rakudo: `.gist` and `.raku`/`.perl` answer it.
-        if matches!(method, "gist" | "raku")
-            && let Some(str_val) = mixins.get("Str")
-            && matches!(str_val.view(), ValueView::Str(_))
-            && (method == "gist"
-                || crate::value::types::allomorph_type_name(inner, mixins).is_none())
-        {
-            return Some(Ok(str_val.clone()));
-        }
-        // An allomorph's `wordcase` reads the Str part but preserves the
-        // allomorph type (see `allomorph_wordcase_result`); its other string
-        // methods are `Str`'s and `Cool`'s rows on the Str part (§9.101).
-        if method == "wordcase"
-            && let Some(str_val) = mixins.get("Str")
-        {
-            let wordcased = crate::value::wordcase_str(&str_val.to_string_value());
-            return Some(Ok(crate::value::types::allomorph_wordcase_result(
-                inner, wordcased,
-            )));
-        }
-        // A Set/Bag/Mix names its own type in `.raku` and `.gist`, so a
-        // `but`-mixed one has to name the role with it (`Set+{R}.new("a")`,
-        // `Set+{R}(a)`). Delegating to the inner value below renders the bare
-        // `Set`, dropping the role the way `^name` would without its own arm
-        // just above. Only the wrapper knows the mixed name, so pass it down.
-        if matches!(method, "raku" | "gist") && crate::value::role_mixin_suffix(mixins).is_some() {
-            let type_name = crate::value::what_type_name(target);
-            let rendered = if method == "gist" {
-                crate::runtime::utils::setbagmix_gist_named(inner, Some(&type_name))
-            } else {
-                raku_repr::setbagmix_raku_named(inner, Some(&type_name))
-            };
-            if let Some(rendered) = rendered {
-                return Some(Ok(Value::str(rendered)));
-            }
-        }
-        // A type object (a bare `Package`, e.g. `Any but role Meows {...}`)
-        // names its own composed type in `.gist`/`.raku`/`.perl`, the same
-        // way a Set/Bag/Mix does just above — but unlike an INSTANCE (which
-        // reaches a composed-name-aware retargeting step further down the
-        // slow path, in `methods_call_dispatch.rs`, when this fast path
-        // returns `None`), a bare type object's `inner` here IS the terminal
-        // value (there's no user-class dispatch below it to fall through
-        // to), so without this arm it fell straight to `native_method_0arg
-        // (inner, ...)` at the bottom of this function and rendered the
-        // plain base type, silently dropping the mixin (`(Any but role
-        // Meows{}).gist` was `(Any)`, losing the `+{Meows}` that `.^name`
-        // already reports correctly via `what_type_name`).
-        if matches!(method, "raku" | "gist")
-            && matches!(inner.view(), ValueView::Package(_))
-            && crate::value::role_mixin_suffix(mixins).is_some()
-        {
-            // A type object renamed by `.^set_name` renders by that name.
-            let composed = mixins
-                .get("__mutsu_type_name__")
-                .map(Value::to_string_value)
-                .unwrap_or_else(|| crate::value::what_type_name(target));
-            let rendered = if method == "gist" {
-                format!("({composed})")
-            } else {
-                composed
-            };
-            return Some(Ok(Value::str(rendered)));
-        }
-        // `^name` on a role-mixed value is deliberately NOT fast-pathed here
-        // (ADR-0060): a rename can live on the composition-keyed shared
-        // `.WHAT` node instead of this instance's own `overrides` (e.g.
-        // `Hash::Restricted`'s `v.var.WHAT.^set_name(...)`), and this
-        // function has no interpreter access to consult that cache. Falling
-        // through to `None` (via the `inner` delegation below, which finds
-        // no arm for `"^name"` either) reaches `dispatch_caret_name`/
-        // `dispatch_classhow_method`'s `"name"` handler, both of which
-        // resolve the composition cache correctly.
-        // `.clone` on a mixed-in value must PRESERVE the mixin: `(5 but False).clone`
-        // stays `Int+{...}` (Bool=False), and a Match — which is modelled as a
-        // string carrying its match state as a mixin — must stay a Match. Delegating
-        // to the inner value's clone drops the wrapper (and, now that scalar `.clone`
-        // is a real method, returns the bare inner instead of falling through to the
-        // slow path). Clone the inner and re-apply the mixins here. Role mixins with
-        // `:attr(val)` overrides are left to the slow-path handler
-        // (`methods_mixin_dispatch`), which threads the override args.
-        if method == "clone"
-            && !mixins
-                .keys()
-                .any(|k| k.starts_with("__mutsu_role__") || k.starts_with("__mutsu_attr__"))
-        {
-            let inner_clone = match native_method_0arg(inner, method_sym) {
-                Some(Ok(v)) => v,
-                Some(Err(e)) => return Some(Err(e)),
-                None => inner.as_ref().clone(),
-            };
-            return Some(Ok(Value::mixin_with_state(
-                inner_clone,
-                mixins.as_ref().clone(),
-            )));
-        }
-        // Role mixins need the interpreter-backed clone path below so their
-        // private role cell is deep-copied. Delegating this one method to the
-        // native inner value would silently drop the wrapper.
-        if method == "clone"
-            && mixins
-                .keys()
-                .any(|k| k.starts_with("__mutsu_role__") || k.starts_with("__mutsu_attr__"))
-        {
-            return None;
-        }
-        // A role mixed in may parameterize the element or key type
-        // (`%h but Associative[Int, Int]`) or declare `of` itself: the
-        // interpreter's mixin dispatch reads the composition before it asks
-        // the wrapped container's row (ADR-11276 §9.86).
-        if matches!(method, "of" | "keyof")
-            && mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
-        {
-            return None;
-        }
-        // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
-        // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.
-        if let Some(mixin_val) = mixins.get(method) {
-            return Some(Ok(mixin_val.clone()));
-        }
-        // `.flat` must run on the WHOLE mixin, not the bare `inner` the
-        // fallback below delegates to: `flat_val` (see `flat.rs`'s `Mixin`
-        // arm) already knows to flatten through a container inner while
-        // preserving a non-container inner's composition, but only if it
-        // receives the mixin itself rather than already-unwrapped `inner`.
-        if method == "flat" {
-            let mut result = Vec::new();
-            crate::builtins::flat_val(
-                &crate::builtins::deitemize_flat_operand(target),
-                &mut result,
-                true,
-            );
-            return Some(Ok(Value::seq(result)));
-        }
-        // A role mixin over a SCALAR value is itself the single element of its
-        // `.list`/`.List`/`.Array` (`(5 but R).list[0].r`): only an aggregate's
-        // mixin folds into its elements. The inner's scalar fallback answers
-        // `[inner]`, so put the whole mixin back as that one element.
-        // Cost: O(1) for the single-element check.
-        if matches!(method, "list" | "List" | "Array") {
-            let result = native_method_0arg(inner, method_sym);
-            if let Some(Ok(res)) = &result
-                && let ValueView::Array(items, kind) = res.view()
-                && items.len() == 1
-                && items
-                    .iter()
-                    .next()
-                    .is_some_and(|e| e.deref_container() == *inner.as_ref())
-            {
-                return Some(Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![target.clone()])),
-                    kind,
-                )));
-            }
-            return result;
-        }
-        // A collection's `raku` row needs the interpreter (a typed container
-        // names its type); a mixed-in one renders its own source form, the
-        // `$` of an itemized inner included.
-        // Cost: O(n), n = chars of the rendering.
-        if method == "raku"
-            && matches!(
-                inner.as_ref().view(),
-                ValueView::Array(..)
-                    | ValueView::Seq(_)
-                    | ValueView::Hash(..)
-                    | ValueView::Pair(..)
-            )
-        {
-            return crate::builtins::method_table::collection_render_names::raku(inner, &[]);
-        }
-        return native_method_0arg(inner, method_sym);
+    // A `but`-mixed value: the mixin's overrides answer first, any other
+    // method is the wrapped value's (`method_table::receiver_step::mixin_step`).
+    if let Some(step) = crate::builtins::method_table::receiver_step::mixin_step(target, method_sym)
+    {
+        return match step {
+            MixinStep::Decline => None,
+            MixinStep::Answer(answer) => Some(answer),
+            MixinStep::Delegate(inner) => native_method_0arg(&inner, method_sym),
+        };
     }
     // A call the method table answers has no arm below this point: the row is
     // the method's only implementation (ADR-11276 §9.88). `native_method_0arg`
@@ -489,12 +247,7 @@ pub(crate) fn native_method_0arg_cascade(
             method,
         ));
     }
-    // Try core string/numeric/array methods first
-    if let result @ Some(_) = dispatch_core(target, method) {
-        return result;
-    }
-    // Then type coercion and specialized methods
-    coercion::dispatch(target, method)
+    dispatch_core(target, method)
 }
 
 /// True for a value whose element count cannot be reported, so numeric/count
@@ -600,9 +353,6 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     }
 }
 
-/// Re-export raku_value for backward compatibility.
-pub use raku_repr::raku_value;
-
 /// Re-export complex_trig for external use.
 pub(crate) use crate::builtins::method_table::complex_math::complex_trig;
 
@@ -630,57 +380,12 @@ pub(crate) fn unicode_foldcase(s: &str) -> String {
 }
 
 fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
-    fn has_date_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
-        attributes.contains_key("year")
-            && attributes.contains_key("month")
-            && attributes.contains_key("day")
-    }
-    fn has_datetime_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
-        has_date_attrs(attributes)
-            && attributes.contains_key("hour")
-            && attributes.contains_key("minute")
-            && attributes.contains_key("second")
-            && attributes.contains_key("timezone")
-    }
-
     // `Code.Capture` and `Code.clone` are rows of the method table
     // (`method_table::code`, ADR-12523 slice 5).
     if matches!(method, "Capture" | "clone")
         && let Some(answer) = crate::builtins::method_table::code::pure_answer(target, method)
     {
         return Some(answer);
-    }
-
-    // Date/DateTime 0-arg methods of a receiver with no shape (an instance of
-    // a subclass): the rows of `Date` / `DateTime` answer it, the instance as
-    // invocant (ADR-11276 §9.87). A plain `Date`/`DateTime` was answered by
-    // its shape before the cascade.
-    // Cost: O(k) to find the row, k = rows named `method`, plus the handler's.
-    fn temporal_owner_row(
-        target: &Value,
-        owner: &str,
-        method: &str,
-    ) -> Option<Result<Value, RuntimeError>> {
-        // `Mu.perl` is `.raku`.
-        let id = crate::builtins::method_table::owner_row(
-            Symbol::intern(owner),
-            Symbol::intern(method),
-            0,
-        )?;
-        crate::builtins::method_table::invoke(id, target, &[])
-    }
-    match target.view() {
-        ValueView::Instance { attributes, .. } if has_datetime_attrs(&attributes) => {
-            if let Some(result) = temporal_owner_row(target, "DateTime", method) {
-                return Some(result);
-            }
-        }
-        ValueView::Instance { attributes, .. } if has_date_attrs(&attributes) => {
-            if let Some(result) = temporal_owner_row(target, "Date", method) {
-                return Some(result);
-            }
-        }
-        _ => {}
     }
 
     // RakuAST node accessors (Phase 3): `.condition`, `.expression`, `.args`,
@@ -696,53 +401,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // table (`method_table::instances::instant`): `Instant.Instant`, `succ`/`pred`,
     // `to-posix`, `DateTime`, `Date`, `tai` and `narrow` have no arm here.
 
-    // `Any.values` is `self.list`, and a buffer's `list` its `Blob` row's.
-    if method == "values" && crate::runtime::Interpreter::is_buf_value(target) {
-        return crate::builtins::method_table::blob::list(target, &[]);
-    }
-
-    // `Signature`'s `arity`, `count`, `params` and `returns` are rows of the method
-    // table (`method_table::signature`, ADR-11276 §9.55).
-    if matches!(method, "arity" | "count" | "params" | "returns")
-        && let Some(answer) = crate::builtins::method_table::signature::answer(target, method)
-    {
-        return Some(answer);
-    }
-
     // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace` and
-    // `X::AdHoc.payload` are rows of the method table (`method_table::exception`,
-    // ADR-11276 §9.39); `line`, `file` and `filename` are mutsu's own accessors.
-    // The control methods (`throw`, `resume`, ...) are interpreter rows (§9.163).
-    if let Some(answer) = crate::builtins::method_table::exception::answer(target, method) {
-        return Some(answer);
-    }
-    // Backtrace and Backtrace::Frame: their own methods are rows of the method
-    // table (`method_table::backtrace`, ADR-11276 §9.35); a call the table's
-    // entry did not take reaches the same handlers here. `Any`'s
-    // `self.list.METHOD` methods were answered on the frames before the call
-    // reached here (`Value::match_list_receiver`, §9.111).
-    if let Some(answer) = crate::builtins::method_table::backtrace::answer(target, method, &[]) {
-        return Some(answer);
-    }
-
-    // Match object methods
-    if let ValueView::Instance { .. } = target.view()
-        && target.is_match_instance()
-    {
-        // `Match`'s rows answer a match the table has no shape for (a grammar
-        // cursor, an instance of a subclass) through their owner.
-        if let Some(result) = match_owner_row(target, Symbol::intern(method), &[]) {
-            return Some(result);
-        }
-        // `Any`'s list methods (`self.list.METHOD`) were answered on the
-        // positional captures before the call reached here
-        // (`method_table::receiver_step`, §9.98); every other name is
-        // answered on the Match itself, never on its matched string (§9.96):
-        // a row of `Mu`, `Any`, `Capture` or `Cool` it reaches, or the generic
-        // arms below. `.so` of a zero-width match is True (#9180), and a name
-        // Rakudo's `Match` lacks is `X::Method::NotFound`.
-    }
-
+    // `X::AdHoc.payload` are rows of the method table, reached through
+    // `method_table::instances::exception::redirect` (ADR-11276 §9.39);
+    // `line`, `file` and `filename` are mutsu's own accessors. The control
+    // methods (`throw`, `resume`, ...) are interpreter rows (§9.163).
     // A receiver with no shape that is a `Cool` reaches `Cool`'s text rows
     // once the cascade declined it (ADR-11276 §9.79); an instance needs the
     // interpreter's MRO and is answered by the entries that have one.

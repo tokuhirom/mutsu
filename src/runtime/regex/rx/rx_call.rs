@@ -17,7 +17,7 @@ use super::rx_entry::{markless_program_for, program_for};
 use super::rx_scope::CallWindow;
 use crate::runtime::Interpreter;
 use crate::runtime::regex::regex_dynparams::{
-    ANY_DYNAMIC_TOKEN_PARAM, SavedDynParams, regex_args_have_opaque,
+    ANY_DYNAMIC_TOKEN_PARAM, ANY_RULE_READS_ROUTINE, SavedDynParams, regex_args_have_opaque,
 };
 use crate::runtime::regex::regex_helpers::{
     grammar_dynvar_scope_pop, grammar_dynvar_scope_push, strip_marks_pattern,
@@ -285,9 +285,9 @@ impl Interpreter {
         } else {
             self.enter_grammar_rule_dynvars(&name.spec().lookup_name)
         };
-        let routine = self
-            .has_any_wrap_chains()
-            .then(|| (pkg, name.spec().lookup_sym));
+        let routine = (self.has_any_wrap_chains()
+            || ANY_RULE_READS_ROUTINE.load(std::sync::atomic::Ordering::Relaxed))
+        .then(|| (pkg, name.spec().lookup_sym));
         if params.is_none() && rule_frame.is_none() && routine.is_none() {
             return None;
         }

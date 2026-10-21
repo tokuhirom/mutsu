@@ -106,6 +106,53 @@ impl Interpreter {
         Some(Value::mixin_parts(inner, current))
     }
 
+    /// `value` as its routine currently is, when roles composed into the
+    /// routine's identity cell provide a `CALL-ME` that calling `value` must
+    /// go through. `None` for every other value, including one that already
+    /// carries the current composition.
+    // Cost: O(1) for a routine never mixed into; else O(r), r = composed roles.
+    pub(crate) fn routine_call_me_view(&self, value: &Value) -> Option<Value> {
+        let current = Self::routine_current_view(value)?;
+        let ValueView::Mixin(_, overrides) = current.view() else {
+            return None;
+        };
+        overrides
+            .keys()
+            .any(|key| {
+                key.strip_prefix("__mutsu_role__")
+                    .is_some_and(|role| self.role_has_method(role, "CALL-ME"))
+            })
+            .then_some(current)
+    }
+
+    /// [`Self::routine_call_me_view`] of the routine `def` declares.
+    // Cost: O(1) when the routine was never mixed into; else a def clone.
+    pub(crate) fn call_me_view_of_def(&self, def: &crate::ast::FunctionDef) -> Option<Value> {
+        def.routine_cell.get()?;
+        self.routine_call_me_view(&self.sub_value_from_function_def(def.clone()))
+    }
+
+    /// The routine a by-name call of `name` reaches, viewed through a
+    /// composed `CALL-ME` role (see [`Self::routine_call_me_view`]): the
+    /// interpreter's call path, which has no env `&name` binding to find it
+    /// by once the declaring module's load is over (#12907). A proto or multi
+    /// name is left to dispatch.
+    // Cost: O(1) unless some routine was mixed into; then a name resolution.
+    pub(crate) fn call_me_routine_for_name(&self, name: &str) -> Option<Value> {
+        if !crate::value::RoutineCell::any_composed()
+            || self.has_proto(name)
+            || self.has_multi_candidates_unindexed(name)
+        {
+            return None;
+        }
+        let def = if crate::qualified::is_qualified_str(name) {
+            self.registry().function_def(Symbol::intern(name))
+        } else {
+            self.resolve_function(name)
+        }?;
+        self.call_me_view_of_def(&def)
+    }
+
     /// Record `composed` -- the result of a `does` on a routine -- as that
     /// routine's composition, and return the value to hand back. When the
     /// routine already had a composition (`earlier`), the new one keeps its

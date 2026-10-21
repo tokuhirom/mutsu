@@ -66,7 +66,7 @@ impl Interpreter {
         // its parent is that core type, spelled so it cannot resolve back to
         // the role.
         if op.from_is
-            && role_name_str == name
+            && crate::qualified::type_capture_name(&role_name_str).unwrap_or(&role_name_str) == name
             && crate::builtin_types::catalog::builtin_type_info(name).is_some()
         {
             self.registry_mut()

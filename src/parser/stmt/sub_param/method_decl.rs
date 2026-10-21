@@ -70,7 +70,7 @@ pub(crate) fn submethod_decl(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws_before_method_name(r)?;
         (r, false)
     };
-    method_decl_body_with_my(r, multi, false, true, true)
+    method_decl_body_with_my(r, multi, false, false, true)
 }
 
 pub(crate) fn method_decl_body(input: &str, multi: bool, is_our: bool) -> PResult<'_, Stmt> {
@@ -82,9 +82,9 @@ pub(crate) fn method_decl_body_my(input: &str, multi: bool, is_our: bool) -> PRe
 }
 
 /// A named `method NAME ...` / `submethod NAME ...` written in expression
-/// position: parsed as a lexical (`my`) declaration, whose value is the method.
+/// position: retains its default method scope and yields a Method value.
 pub(crate) fn expr_position_method_decl(input: &str, is_submethod: bool) -> PResult<'_, Stmt> {
-    method_decl_body_with_my(input, false, false, true, is_submethod)
+    method_decl_body_with_my(input, false, false, false, is_submethod)
 }
 
 fn method_decl_body_with_my(
@@ -186,10 +186,13 @@ fn method_decl_body_with_my(
     } else {
         (params, param_defs)
     };
+    let mut param_defs = param_defs;
+    crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     Ok((
         rest,
         Stmt::MethodDecl {
+            value_prototype: None,
             name: Symbol::intern(&name),
             name_expr,
             params,
@@ -202,7 +205,6 @@ fn method_decl_body_with_my(
             is_our,
             is_my,
             is_submethod,
-            our_variable_form: false,
             return_type,
             is_default_candidate: traits.custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message: traits.custom_traits.iter().find_map(|(t, _)| {

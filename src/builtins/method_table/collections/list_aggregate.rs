@@ -520,8 +520,10 @@ pub(crate) fn permutations(target: &Value, args: &[Value]) -> Option<Result<Valu
             cat_pull: None,
             array_context: false,
             list_context: false,
+            hyper_kind: Default::default(),
             cached_no_sink: false,
             deleted_indices: Default::default(),
+            descriptor: None,
             itemized: false,
         };
         return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));

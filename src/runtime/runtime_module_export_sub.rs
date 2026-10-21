@@ -249,7 +249,9 @@ impl Interpreter {
                 // with an earlier importing block's scope; EXPORT reads them
                 // through `UNIT::` (#11246).
                 let reinstated = self.reinstate_own_families(module);
+                self.module.module_scope_runs += 1;
                 let r = self.compile_and_call_function_def(&d, export_args, &empty_fns);
+                self.module.module_scope_runs -= 1;
                 self.remove_reinstated_families(reinstated);
                 self.current_unit = saved_unit;
                 r?
@@ -482,6 +484,30 @@ impl Interpreter {
         if let Some(symbol) = Interpreter::term_symbol_from_name(&env_key) {
             self.record_import_env_key(symbol);
             self.env.insert(symbol.to_string(), value.clone());
+        }
+        // A module body's own import is part of the LOADING module's scope,
+        // not of the scope that loads it: the load's restore takes the env
+        // key back out of its loader's env, and the module's routines find it
+        // in the module's scope tables (`module_imported_names`), as an
+        // `is export` variable's (#14140). Left in the env, a hook routine a
+        // module imported for itself was callable from the program that
+        // `use`d the module. A sigilless term is kept out: its key is shared
+        // with a same-named `$scalar` (see `module_export_terms` above).
+        let sigiled = sigil.is_some_and(|c| matches!(c, '$' | '@' | '%' | '&'));
+        for key in [&env_key, &normalized_env_key] {
+            if sigiled && !self.module.module_load_stack.is_empty() {
+                let previous = self.env.get(key).cloned();
+                if !self.module.module_imported_names.iter().any(|(k, ..)| k == key) {
+                    self.module.module_imported_names.push((
+                        key.clone(),
+                        value.clone(),
+                        previous,
+                    ));
+                }
+            }
+            if key == &normalized_env_key && normalized_env_key == env_key {
+                break;
+            }
         }
         self.env.insert(env_key.clone(), value.clone());
         if normalized_env_key != env_key {

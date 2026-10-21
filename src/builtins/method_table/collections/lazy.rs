@@ -22,7 +22,41 @@ macro_rules! row {
     };
 }
 
+/// A one-argument row.
+macro_rules! row1 {
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
+        MethodRow {
+            owner: $owner,
+            name: $name,
+            arity: 1,
+            handler: Handler::Narrow($handler),
+            flags: $flags,
+            named: &[],
+        }
+    };
+}
+
 pub(super) static ROWS: &[MethodRow] = &[
+    row1!(
+        "List",
+        "lazy-if",
+        lazy_if,
+        RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)
+    ),
+    row1!(
+        "Map",
+        "lazy-if",
+        lazy_if,
+        RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)
+    ),
+    row1!("Range", "lazy-if", lazy_if, RowFlags::ANY_ARGS),
+    // `Any.lazy-if` ignores the flag: only an `Iterable` can be made lazy.
+    row1!(
+        "Any",
+        "lazy-if",
+        any_lazy_if,
+        RowFlags::TYPE_OBJECT_OK.or(RowFlags::ANY_ARGS)
+    ),
     row!("List", "hyper", hyper),
     row!("Map", "hyper", hyper),
     row!("Range", "hyper", hyper),
@@ -125,11 +159,30 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
             cat_pull: None,
             array_context: false,
             list_context: false,
+            hyper_kind: Default::default(),
             cached_no_sink: false,
             deleted_indices: Default::default(),
+            descriptor: None,
             itemized: false,
         },
     ))))
+}
+
+/// `Iterable.lazy-if($flag)`: `self.lazy` when the flag is true, `self`
+/// otherwise.
+// Cost: O(1) for a false flag, else as `lazy`.
+pub(crate) fn lazy_if(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match args {
+        [flag] if flag.truthy() => lazy(target, &[]),
+        [_] => Some(Ok(target.clone())),
+        _ => None,
+    }
+}
+
+/// `Any.lazy-if($flag)`: the receiver itself.
+// Cost: O(1).
+fn any_lazy_if(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    matches!(args, [_]).then(|| Ok(target.clone()))
 }
 
 /// A lazy `LazyList` re-tagged so that assigning it to an array keeps it
@@ -178,8 +231,10 @@ fn retag_lazy_list(list: &crate::value::LazyList) -> Value {
             .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
         array_context: list.array_context,
         list_context: list.list_context,
+        hyper_kind: list.hyper_kind,
         cached_no_sink: list.cached_no_sink,
         deleted_indices: Default::default(),
+        descriptor: None,
         itemized: list.itemized,
     }))
 }

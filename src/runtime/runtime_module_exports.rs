@@ -610,6 +610,7 @@ impl Interpreter {
         name: String,
         mut tags: Vec<String>,
     ) {
+        self.declare_export_namespaces(&package, &tags);
         if tags.is_empty() {
             tags.push("DEFAULT".to_string());
         }

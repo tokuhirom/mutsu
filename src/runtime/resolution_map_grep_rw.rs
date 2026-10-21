@@ -111,8 +111,15 @@ impl Interpreter {
                     .then(|| data.param_defs.get(data.assumed_positional.len()))
                     .flatten()
                     .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
+                let chunk_at = |items: &[Value], i: usize| items[i..(i + arity).min(items.len())].to_vec();
+                if !list_items.is_empty() {
+                    let first = chunk_at(list_items, 0);
+                    self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first)?;
+                }
+                let mut last_start = None;
                 let mut i = 0usize;
                 while i < list_items.len() {
+                    last_start = Some(i);
                     out.consumed = consumed_base + (i + arity).min(list_items.len());
                     let value = if rw_param.is_some() {
                         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
@@ -162,14 +169,14 @@ impl Interpreter {
                         v
                     };
                     let value = self.reify_finite_pipe_value(value)?;
-                    if let ValueView::Slip(elems) = value.view() {
-                        out.produced.extend(elems.iter().cloned());
-                    } else {
-                        out.produced.push(value);
-                    }
+                    super::resolution_map_grep::push_map_value(&mut out.produced, value);
                     i += arity;
                 }
                 self.env.remove_sym(topic_key);
+                if let Some(start) = last_start {
+                    let last = chunk_at(list_items, start);
+                    self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last)?;
+                }
                 return Ok(());
             }
 
@@ -242,7 +249,10 @@ impl Interpreter {
                 // Scope `state` variables to the closure instance — the body was
                 // re-compiled fresh, so two distinct blocks share compile-time
                 // state keys (see the same line in `eval_map_over_items`).
-                vm.lexicals.state_scope_id.set(Some(data.id));
+                vm.lexicals.state_scope_id.set(Some(vm.callable_state_scope(&data)));
+                if !list_items.is_empty() {
+                    vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
+                }
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
@@ -367,11 +377,7 @@ impl Interpreter {
                                 .unwrap_or(Value::NIL);
                             writeback(list_items, vm);
                             let val = vm.reify_finite_pipe_value(val)?;
-                            if let ValueView::Slip(elems) = val.view() {
-                                result.extend(elems.iter().cloned());
-                            } else {
-                                result.push(val);
-                            }
+                            super::resolution_map_grep::push_map_value(result, val);
                         }
                         Err(e) if e.is_next() => {
                             writeback(list_items, vm);
@@ -390,11 +396,7 @@ impl Interpreter {
                             let val = e.return_value.unwrap_or(Value::NIL);
                             writeback(list_items, vm);
                             let val = vm.reify_finite_pipe_value(val)?;
-                            if let ValueView::Slip(elems) = val.view() {
-                                result.extend(elems.iter().cloned());
-                            } else {
-                                result.push(val);
-                            }
+                            super::resolution_map_grep::push_map_value(result, val);
                         }
                         Err(e) => {
                             return Err(e);
@@ -402,6 +404,11 @@ impl Interpreter {
                     }
                     drop(_readonly_guard);
                     i += arity;
+                }
+                // A map block's LAST runs once the loop ends (naturally or by
+                // `last`), best-effort as in `eval_map_over_items_into`.
+                if i > 0 {
+                    let _ = vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Last);
                 }
 
                 Ok(())

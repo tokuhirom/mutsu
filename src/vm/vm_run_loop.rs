@@ -725,12 +725,22 @@ impl Interpreter {
     /// which is minted afresh by each `MakeClosure` and so IS the clone.
     pub(crate) fn sub_state_scope_id(&self, data: &crate::value::SubData) -> u64 {
         let name = data.name.resolve();
-        if name.is_empty() {
+        if name.is_empty() || (data.compiled_routine.is_none() && data.compiled_code.is_some()) {
             return data.id;
         }
         let key = crate::runtime::Interpreter::callable_id_key_for_syms(data.package, data.name);
         self.registration_callable_id(key)
             .map_or(data.id, |i| i as u64)
+    }
+
+    /// A direct block owns its clone; a routine also bounds per-call blocks.
+    // Cost: O(1) expected, including a named routine's registration probe.
+    pub(crate) fn callable_state_scope(
+        &self,
+        data: &crate::value::SubData,
+    ) -> crate::state_scope::StateScopeId {
+        let id = self.sub_state_scope_id(data);
+        crate::state_scope::StateScopeId::for_callable(id, data.is_bare_block)
     }
 
     /// Publish a just-written local to the state store when that slot holds a
@@ -772,7 +782,7 @@ impl Interpreter {
     /// runs on every `SetLocal`/`SetLocalDecl` write to a `state` local
     /// (including the JIT shims, see `vm_jit_helpers::{set_local,
     /// set_local_decl}`), so this must be free.
-    pub(crate) fn scoped_state_key(&self, key: Symbol) -> (Symbol, Option<u64>) {
+    pub(crate) fn scoped_state_key(&self, key: Symbol) -> crate::state_scope::StateKey {
         (key, self.lexicals.state_scope_id.get())
     }
 

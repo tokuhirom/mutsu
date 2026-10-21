@@ -1433,6 +1433,8 @@ impl Compiler {
                     custom_traits,
                     *is_whatever_code,
                     *declarator,
+                    crate::symbol::well_known::anon(),
+                    None,
                 );
             }
             Expr::Lambda {
@@ -1462,12 +1464,14 @@ impl Compiler {
                 self.compile_expr_multidim_index_assign(target, dimensions, value, *is_positional);
             }
             Expr::IndirectTypeLookup(inner) => {
+                self.note_eval_site_chain();
                 self.compile_expr(inner);
                 self.code.emit(OpCode::IndirectTypeLookup);
             }
             // `::(EXPR)::A::B` looks up `EXPR ~ "::A::B"`; a trailing `::`
             // names the same package (Rakudo resolves `::($n)::` to it).
             Expr::IndirectTypeLookupTail { head, tail, .. } => {
+                self.note_eval_site_chain();
                 self.compile_expr(head);
                 if !tail.is_empty() {
                     let tail_idx = self.code.add_constant(Value::str(tail.to_string()));
@@ -1477,11 +1481,13 @@ impl Compiler {
                 self.code.emit(OpCode::IndirectTypeLookup);
             }
             Expr::IndirectCodeLookup { package, name } => {
+                self.note_eval_site_chain();
                 self.compile_expr(package);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::IndirectCodeLookup(name_idx));
             }
             Expr::SymbolicDeref { sigil, expr } => {
+                self.note_eval_site_chain();
                 self.compile_expr(expr);
                 let sigil_idx = self.code.add_constant(Value::str(sigil.clone()));
                 let scopes_idx = self.bake_lex_scope_chain();

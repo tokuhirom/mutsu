@@ -836,12 +836,17 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        if let Some(slip) = Self::lazy_slip_coercion(&target, method, args.len()) {
+        if let Some(slip) = self.lazy_slip_coercion(&target, method, args.len())? {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-slip");
             self.stack.push(slip);
             return Ok(());
         }
         let target = Self::lazy_slip_receiver(target, method);
+        let target = Self::shaped_iteration_receiver(target, method);
+        if let Some(found) = self.first_over_map_grep_seq(&target, method, &args)? {
+            self.stack.push(found);
+            return Ok(());
+        }
         let target = match self.take_seq_prefix(&target, method, &args)? {
             Some(prefix) => prefix,
             None => target,
@@ -1471,14 +1476,22 @@ impl Interpreter {
                 "VAR" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
             ) {
             let has_subclass_attr = if let Some((_, attrs)) = subclass {
-                attrs.lock().unwrap().contains_key(method)
+                attrs.as_map().contains_key(method)
             } else {
                 false
             };
             if has_subclass_attr {
                 target
             } else {
-                self.auto_fetch_proxy(&target)?
+                let fetched = self.auto_fetch_proxy(&target)?;
+                // The shadow query above saw the Proxy, not the value it
+                // holds: a user method of the fetched value's class (a
+                // `Blob`-doing class's own `Str`) takes the call from the
+                // built-in row exactly as it does without the Proxy.
+                if !skip_native {
+                    skip_native = self.user_shadows_builtin(&fetched, method_sym, &args, quoted);
+                }
+                fetched
             }
         } else {
             target

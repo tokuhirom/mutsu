@@ -1,14 +1,9 @@
 //! RakuAST — a reflection/model layer over the internal AST (ADR-0011).
 //!
-//! Phase 1: read-only introspection. `Str.AST` parses source, converts the
-//! internal `Stmt`/`Expr` AST into a [`RakuAstNode`] tree (wrapped in
-//! `Value::RakuAst`), whose `.gist`/`.raku`/`.Str` renders the
-//! `RakuAST::*.new(...)` constructor form and whose `.^name` returns the
-//! printed class name.
-//!
-//! RakuAST is deliberately NOT mutsu's compiler IR — it is a model layer that
-//! maps to/from the internal AST. See docs/adr/0011 for the full design and
-//! phasing (construction, EVAL, macros are later phases).
+//! `Str.AST` converts the internal AST into a [`RakuAstNode`] tree, whose
+//! rendering exposes RakuAST constructors. EVAL lowers those nodes to the
+//! existing compiler input. ADR-10723 proposes making this model the frontend
+//! IR; its round-trip mode currently exercises that boundary.
 
 mod anon_state;
 mod atomic_op;
@@ -21,6 +16,7 @@ mod callable_context;
 mod capture_term;
 mod chain;
 mod class_constructor;
+mod composition_source;
 mod compound_stmt;
 mod constructor_positional;
 mod contextualizer;
@@ -29,7 +25,7 @@ mod trait_is_constructor;
 use constructor_positional::single_positional_class;
 mod convert;
 mod core_term_names;
-mod core_type_names;
+use crate::core_type_names;
 mod decl_compound_assign;
 mod decl_tail;
 mod decl_traits;
@@ -37,6 +33,7 @@ mod declarator_docs;
 mod declare_how;
 mod declared_routines;
 mod deferred_name;
+mod doc_phaser;
 mod dynamic_method;
 mod enum_term;
 mod feed_op;
@@ -61,6 +58,7 @@ mod name_parts;
 mod named_param;
 mod origin;
 mod package_header;
+mod package_traits;
 mod parameter_destructure;
 mod parameter_shape;
 mod parameter_signature;
@@ -69,15 +67,20 @@ mod placeholder;
 mod postfix_grouping;
 mod prefix_call;
 mod proto;
+mod quoted_string;
 mod react;
 mod regex_char_class;
 mod regex_code;
+mod regex_decl_constructor;
+mod regex_declaration;
 mod regex_enumeration;
 mod regex_extension;
 mod regex_quantifier;
 mod regex_sym;
 mod render;
 mod role;
+mod role_header;
+mod routine_ctor;
 mod routine_is_traits;
 mod routine_lower;
 mod routine_source;
@@ -93,6 +96,7 @@ mod subscript_adverb;
 mod substitution;
 mod symbolic_deref;
 mod temporize;
+mod term_name;
 mod thunk;
 mod type_args;
 mod type_build;
@@ -927,7 +931,11 @@ impl RakuAstClass {
         const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
         const EXPR: &[&str] = &["RakuAST::Expression"];
         match self {
+            TraitIs | TraitReturns | TraitOf | TraitDoes | TraitHides | TraitWillBuild
+            | TraitHandles | TraitWill | TraitTrusts => &["RakuAST::Trait"],
             Native => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
+            Role => &["RakuAST::Package", "RakuAST::Term", "RakuAST::Expression"],
+            RoleBody => &["RakuAST::Sub", "RakuAST::Routine", "RakuAST::Term", "RakuAST::Expression"],
             CallBlockMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
             StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],
             IntLiteral
@@ -1796,6 +1804,16 @@ pub fn construct(
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
     if method == "new"
+        && let Some(result) = routine_ctor::construct(class_name, args)
+    {
+        return result.map(Some);
+    }
+    if method == "new"
+        && let Some(result) = package_traits::construct(class_name, args)
+    {
+        return result.map(Some);
+    }
+    if method == "new"
         && let Some(result) = control_signature::construct(class_name, args)
     {
         return result.map(Some);
@@ -2068,70 +2086,6 @@ pub fn construct(
                 name: None,
                 value: RakuAstFieldValue::Node(args[0].clone()),
             }],
-        }))));
-    }
-    if class_name == "RakuAST::Sub" && method == "new" {
-        let name = named_arg(args, "name");
-        if let Some(value) = &name {
-            require_rakuast_class(value, RakuAstClass::Name, "RakuAST::Sub.new")?;
-        }
-        let signature = named_arg(args, "signature");
-        if let Some(value) = &signature {
-            require_rakuast_class(value, RakuAstClass::Signature, "RakuAST::Sub.new")?;
-        }
-        let traits = named_arg(args, "traits")
-            .map(|value| {
-                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
-                    RuntimeError::new("RakuAST::Sub.new expects `traits` to be a list")
-                })
-            })
-            .transpose()?;
-        if let Some(traits) = &traits {
-            for trait_node in traits {
-                if !matches!(
-                    trait_node.view(),
-                    ValueView::RakuAst(node)
-                        if matches!(node.class, RakuAstClass::TraitReturns | RakuAstClass::TraitOf)
-                ) {
-                    return Err(RuntimeError::new(
-                        "RakuAST::Sub.new expects `traits` to contain return-type traits",
-                    ));
-                }
-            }
-        }
-        let body = match named_arg(args, "body") {
-            Some(value) => {
-                require_rakuast_class(&value, RakuAstClass::Blockoid, "RakuAST::Sub.new")?;
-                value
-            }
-            None => empty_blockoid(),
-        };
-        let mut fields = Vec::with_capacity(4);
-        if let Some(name) = name {
-            fields.push(RakuAstField {
-                name: Some("name"),
-                value: RakuAstFieldValue::Node(name),
-            });
-        }
-        if let Some(signature) = signature {
-            fields.push(RakuAstField {
-                name: Some("signature"),
-                value: RakuAstFieldValue::Node(signature),
-            });
-        }
-        if let Some(traits) = traits {
-            fields.push(RakuAstField {
-                name: Some("traits"),
-                value: RakuAstFieldValue::List(traits),
-            });
-        }
-        fields.push(RakuAstField {
-            name: Some("body"),
-            value: RakuAstFieldValue::Node(body),
-        });
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::Sub,
-            fields,
         }))));
     }
     if class_name == "RakuAST::Signature" && method == "new" {
@@ -2420,6 +2374,19 @@ pub fn construct(
                 "RakuAST::Regex::NamedCapture.new expects `array` to be Bool",
             ));
         }
+        let hash = named_arg(args, "hash").unwrap_or_else(|| Value::truth(false));
+        if !matches!(hash.view(), ValueView::Bool(_)) {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::NamedCapture.new expects `hash` to be Bool",
+            ));
+        }
+        if matches!(array.view(), ValueView::Bool(true))
+            && matches!(hash.view(), ValueView::Bool(true))
+        {
+            return Err(RuntimeError::new(
+                "RakuAST::Regex::NamedCapture.new cannot combine `array` and `hash`",
+            ));
+        }
         let mut fields = vec![RakuAstField {
             name: Some("name"),
             value: RakuAstFieldValue::Node(name),
@@ -2428,6 +2395,12 @@ pub fn construct(
             fields.push(RakuAstField {
                 name: Some("array"),
                 value: RakuAstFieldValue::Node(array),
+            });
+        }
+        if matches!(hash.view(), ValueView::Bool(true)) {
+            fields.push(RakuAstField {
+                name: Some("hash"),
+                value: RakuAstFieldValue::Node(hash),
             });
         }
         fields.push(RakuAstField {
@@ -2847,84 +2820,19 @@ pub fn construct(
             fields,
         }))));
     }
-    if matches!(
-        class_name,
-        "RakuAST::RegexDeclaration" | "RakuAST::TokenDeclaration" | "RakuAST::RuleDeclaration"
-    ) && method == "new"
-    {
-        // The name is optional: an anonymous `regex { }` term has none.
-        let name = named_arg(args, "name");
-        if let Some(name) = &name {
-            require_rakuast_class(name, RakuAstClass::Name, "RakuAST regex declaration")?;
+    if method == "new" {
+        if class_name == "RakuAST::Grammar" {
+            return class_constructor::construct_grammar(args).map(Some);
         }
-        let body = named_arg(args, "body")
-            .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `body`")))?;
-        require_regex_node(&body, class_name)?;
-        let traits = named_arg(args, "traits")
-            .map(|value| {
-                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
-                    RuntimeError::new(format!("{class_name}.new expects `traits` to be a list"))
-                })
-            })
-            .transpose()?;
-        if let Some(traits) = &traits {
-            for trait_node in traits {
-                require_rakuast_class(
-                    trait_node,
-                    RakuAstClass::TraitIs,
-                    "RakuAST regex declaration",
-                )?;
-            }
+        if class_name == "RakuAST::Role" {
+            return class_constructor::construct_role(args).map(Some);
         }
-        let class = match class_name {
-            "RakuAST::RegexDeclaration" => RakuAstClass::RegexDeclaration,
-            "RakuAST::TokenDeclaration" => RakuAstClass::TokenDeclaration,
-            _ => RakuAstClass::RuleDeclaration,
-        };
-        let mut fields: Vec<_> = name
-            .map(|name| RakuAstField {
-                name: Some("name"),
-                value: RakuAstFieldValue::Node(name),
-            })
-            .into_iter()
-            .collect();
-        if let Some(traits) = traits {
-            fields.push(RakuAstField {
-                name: Some("traits"),
-                value: RakuAstFieldValue::List(traits),
-            });
+        if class_name == "RakuAST::RoleBody" {
+            return class_constructor::construct_role_body(args).map(Some);
         }
-        fields.push(RakuAstField {
-            name: Some("body"),
-            value: RakuAstFieldValue::Node(body),
-        });
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class,
-            fields,
-        }))));
-    }
-    if class_name == "RakuAST::Grammar" && method == "new" {
-        let name = named_arg(args, "name")
-            .ok_or_else(|| RuntimeError::new("RakuAST::Grammar.new requires `name`"))?;
-        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Grammar.new")?;
-        if named_arg(args, "body").is_some() {
-            return Err(RuntimeError::new(
-                "RakuAST::Grammar.new does not accept a `body` argument",
-            ));
+        if let Some(result) = regex_decl_constructor::construct(class_name, args) {
+            return result.map(Some);
         }
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::Grammar,
-            fields: vec![
-                RakuAstField {
-                    name: Some("name"),
-                    value: RakuAstFieldValue::Node(name),
-                },
-                RakuAstField {
-                    name: Some("body"),
-                    value: RakuAstFieldValue::Node(empty_block()),
-                },
-            ],
-        }))));
     }
     if let Some(node) = regex_char_class::construct(class_name, method, args) {
         return node.map(Some);
@@ -2932,7 +2840,7 @@ pub fn construct(
     if let Some(node) = regex_enumeration::construct(class_name, method, args) {
         return node.map(Some);
     }
-    if let Some(node) = role::construct(class_name, method, args) {
+    if let Some(node) = role_header::construct(class_name, method, args) {
         return node.map(Some);
     }
     // `Regex::InternalModifier::IgnoreCase.new(:modifier<ignorecase>, :negated)`:
@@ -3700,6 +3608,9 @@ fn class_from_name(class_name: &str) -> Option<RakuAstClass> {
 }
 
 fn constructor_is_supported(class: RakuAstClass) -> bool {
+    if matches!(class, RakuAstClass::Module | RakuAstClass::Package) {
+        return true;
+    }
     if control_signature::constructor_schema(class.printed_name()).is_some() {
         return true;
     }
@@ -3775,6 +3686,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
             | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
             | RakuAstClass::Sub
+            | RakuAstClass::Method
+            | RakuAstClass::Submethod
             | RakuAstClass::Signature
             | RakuAstClass::TraitReturns
             | RakuAstClass::TraitOf
@@ -3839,6 +3752,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RuleDeclaration
             | RakuAstClass::Grammar
             | RakuAstClass::NamePartSimple
+            | RakuAstClass::Role
+            | RakuAstClass::RoleBody
             | RakuAstClass::NamePartExpression
             | RakuAstClass::NamePartEmpty
             | RakuAstClass::NamePartEmptyEdge

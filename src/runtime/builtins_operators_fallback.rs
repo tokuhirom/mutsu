@@ -531,6 +531,9 @@ impl Interpreter {
                 }
             }
         }
+        if let Some(callable) = self.call_me_routine_for_name(name) {
+            return self.call_method_with_values(callable, "CALL-ME", args.to_vec());
+        }
         if let Some((proto_name, proto_def)) = self.resolve_proto_function_with_alias(name) {
             return self.call_proto_function(&proto_name, &proto_def, args);
         }
@@ -773,7 +776,7 @@ impl Interpreter {
             // runs via `run_nested`, whose register reset would otherwise
             // clear the scope, so hand it across (consumed by
             // `with_nested_registers`).
-            self.lexicals.pending_nested_state_scope = registration_id;
+            self.lexicals.pending_nested_state_scope = registration_id.map(Into::into);
             let result = self.eval_block_value_with_pre_post(&def.body);
             self.lexicals.pending_nested_state_scope = None;
             self.pending_eval_placeholder_params = saved_eval_placeholders;
@@ -1383,7 +1386,7 @@ impl Interpreter {
         Some(qualified(pkg, rest).as_str().to_string())
     }
 
-    pub(super) fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
+    pub(crate) fn no_such_qualified_symbol(&self, package: &str, short_name: &str) -> RuntimeError {
         // An explicitly written `GLOBAL::` qualifier resolves through the
         // pseudo-package, and raku then names the symbol without its `&` sigil:
         // `GLOBAL::index(…)` is "Could not find symbol 'index' in 'GLOBAL'",

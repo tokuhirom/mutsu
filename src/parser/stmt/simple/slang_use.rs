@@ -51,10 +51,9 @@ pub(crate) fn apply_slang_overrides(
         }
         return Err(format!(
             "Slang activation NYI: grammar rule override '{}' is not supported by this \
-             implementation (recognized: term:sym<identifier>, methodop, \
-             routine-declarator:sym<sub>, identifier, name, statement-control:sym<use>, \
-             and the L10N vocabulary token categories)",
-            over.name
+             implementation (recognized: {}, and the L10N vocabulary token categories)",
+            over.name,
+            RECOGNIZED_PRODUCTION_OVERRIDES.join(", ")
         ));
     }
     let vocabulary = (!vocabulary.is_empty()).then(|| std::rc::Rc::new(vocabulary));

@@ -146,7 +146,7 @@ pub(super) fn scan_chunk(
         let mut ast_slots: HashSet<u32> = HashSet::new();
         for op in &code.ops {
             if let OpCode::MakeAnonSub(idx, cc, _)
-            | OpCode::MakeAnonSubParams(idx, cc, _)
+            | OpCode::MakeAnonSubParams(idx, cc, _, _)
             | OpCode::MakeLambda(idx, cc, _)
             | OpCode::MakeBlockClosure(idx, cc) = op
             {

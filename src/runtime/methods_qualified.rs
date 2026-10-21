@@ -121,6 +121,75 @@ impl Interpreter {
 
     /// Handle private method calls on non-Instance, non-Package values.
     /// Returns Some(err) if handled, None to continue.
+    /// `$proxy.VAR!m(...)` on a `Proxy` subclass instance: the class's
+    /// private method, run with the Proxy as `self` (its attributes are the
+    /// cell the Proxy carries, #14259). The access rules are an instance's:
+    /// an unqualified call is allowed from the class itself (or code whose
+    /// lexical `self` is one), a qualified one from a trusted caller.
+    pub(super) fn dispatch_private_method_on_proxy_subclass(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let private_rest = method.strip_prefix('!')?;
+        let ValueView::Proxy {
+            subclass: Some((class_sym, _)),
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        let class_name = class_sym.resolve();
+        let caller_class = self.private_calling_package();
+        let (pm_name, resolved) = match crate::qualified::split_qualified(
+            crate::qualified::known_symbol(private_rest),
+        )
+        .map(|(head, tail)| (head.as_str(), tail.as_str()))
+        {
+            Some((owner_class, pm_name)) => {
+                let (canonical_owner, _) = self.resolve_and_check_private_owner_on(
+                    caller_class.as_deref(),
+                    owner_class,
+                    Some(&class_name),
+                );
+                let resolved = self.resolve_private_method_with_owner(
+                    &class_name,
+                    &canonical_owner,
+                    pm_name,
+                    args,
+                );
+                (pm_name, resolved)
+            }
+            None => (
+                private_rest,
+                self.resolve_private_method_any_owner(&class_name, private_rest, args),
+            ),
+        };
+        let (owner, method_def) = resolved?;
+        if !self.private_owner_trusts_caller(caller_class.as_deref(), &owner)
+            && !self.lexical_self_allows_private(&owner)
+        {
+            return Some(Err(make_private_permission_error(
+                pm_name,
+                &class_name,
+                caller_class.as_deref().unwrap_or("GLOBAL"),
+            )));
+        }
+        Some(
+            self.run_resolved_method_compiled_or_treewalk(
+                &class_name,
+                &owner,
+                pm_name,
+                method_def,
+                AttrMap::new(),
+                args.to_vec(),
+                Some(target.clone()),
+            )
+            .map(|(result, _)| result),
+        )
+    }
+
     pub(super) fn dispatch_private_method_on_non_instance(
         &mut self,
         target: &Value,
@@ -1305,13 +1374,13 @@ impl Interpreter {
         };
 
         {
-            let attrs = subclass_attrs.lock().unwrap();
-            if let Some(val) = attrs.get(method)
+            let val = subclass_attrs.as_map().get(method).cloned();
+            if let Some(val) = val
                 && args.is_empty()
             {
                 self.types.pending_proxy_subclass_attr =
                     Some((subclass_attrs.clone(), method.to_string()));
-                return Some(Ok(val.clone()));
+                return Some(Ok(val));
             }
         }
         // Handle .raku on Proxy subclass

@@ -59,17 +59,27 @@ fn method_positional_params(def: &MethodDef) -> impl Iterator<Item = &crate::ast
 pub(crate) fn method_def_binds_container_at(def: &MethodDef, positional: usize) -> bool {
     method_positional_params(def)
         .nth(positional)
-        .is_some_and(|p| p.binds_caller_container())
+        .is_some_and(|p| p.binds_caller_container() || p.is_does_target())
 }
 
 /// Whether `def` binds *any* positional parameter to the caller's container —
 /// the registration-time half of the same question, feeding
 /// [`Registry::any_container_binding_method_param`].
 pub(crate) fn method_def_binds_container_positionally(def: &MethodDef) -> bool {
-    method_positional_params(def).any(|p| p.binds_caller_container())
+    method_positional_params(def).any(|p| p.binds_caller_container() || p.is_does_target())
 }
 
 impl Registry {
+    /// Metadata follows the declaration even when a role or alias installs
+    /// that method into another owner. It contains no executable body.
+    // Cost: O(1) expected.
+    pub(crate) fn note_method_value_prototype(&mut self, owner: Symbol, def: &MethodDef) {
+        if let Some(prototype) = &def.value_prototype {
+            self.method_value_prototypes.entry(owner).or_default()
+                .insert(prototype.site, prototype.clone());
+        }
+    }
+
     /// F4c-1 read accessor for [`owner_method_names`](Registry::owner_method_names):
     /// every user-declared method/attribute-accessor name `owner` currently
     /// has a non-empty candidate row for, i.e. the F4c replacement for
@@ -278,6 +288,10 @@ impl Registry {
     /// entirely once no column keeps it alive (ADR-0019 F4c design note
     /// (3)).
     pub(crate) fn set_user_methods(&mut self, owner: Symbol, name: Symbol, defs: Vec<MethodDef>) {
+        for def in &defs {
+            if def.is_multi { def.routine_cell.note_method_family(owner, name); }
+        }
+        for def in &defs { self.note_method_value_prototype(owner, def); }
         self.note_raw_invocant_methods(&defs);
         if !defs.is_empty() {
             note_user_find_method_row(name);
@@ -297,18 +311,22 @@ impl Registry {
     /// Appends one candidate to `(owner, name)`'s user candidate list -- the
     /// `multi` declaration case, where a later declaration adds a candidate
     /// rather than replacing the row.
-    pub(crate) fn push_user_method(&mut self, owner: Symbol, name: Symbol, def: MethodDef) {
+    pub(crate) fn push_user_method(&mut self, owner: Symbol, name: Symbol, def: MethodDef) -> usize {
+        if def.is_multi { def.routine_cell.note_method_family(owner, name); }
+        self.note_method_value_prototype(owner, &def);
         self.note_raw_invocant_methods(std::slice::from_ref(&def));
         note_user_find_method_row(name);
         let key = MethodEntryKey { owner, name };
-        self.method_entries
+        let candidates = &mut self.method_entries
             .entry(key)
             .or_default()
-            .user_candidates
-            .push(def);
+            .user_candidates;
+        let index = candidates.len();
+        candidates.push(def);
         self.reindex_user_method_name(owner, name, true);
         self.bump_method_generation();
         self.debug_verify_owner_method_names_index();
+        index
     }
 
     /// Filters `(owner, name)`'s user candidate list in place -- the
@@ -348,6 +366,7 @@ impl Registry {
     /// with an empty `user_candidates`; a row with nothing else live is
     /// dropped.
     pub(crate) fn clear_user_methods_for_owner(&mut self, owner: Symbol) {
+        self.method_value_prototypes.remove(&owner);
         let names = self.owner_method_names.remove(&owner).unwrap_or_default();
         for name in names {
             let key = MethodEntryKey { owner, name };

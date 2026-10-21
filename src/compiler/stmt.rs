@@ -164,6 +164,7 @@ impl Compiler {
             }
             Stmt::RoleDecl {
                 type_params,
+                header_order,
                 type_param_defs,
                 is_export,
                 export_tags,
@@ -175,6 +176,7 @@ impl Compiler {
                 ..
             } => Stmt::RoleDecl {
                 name: qualified_sym,
+                header_order: header_order.clone(),
                 type_params: type_params.clone(),
                 type_param_defs: type_param_defs.clone(),
                 is_export: *is_export,
@@ -1001,6 +1003,9 @@ impl Compiler {
                         routines: routines.clone(),
                     },
                 )));
+            }
+            Stmt::Expr(expr) if let Some(symbols) = Self::static_require_import(expr) => {
+                self.compile_block_require(expr, &symbols);
             }
             Stmt::Expr(expr) => {
                 // See `Compiler::sunk_list_assign_result` — the statement's
@@ -2061,9 +2066,13 @@ impl Compiler {
                             .our_locals
                             .push((slot as usize, qualified.clone()));
                         let qualified_idx = self.code.add_constant(Value::str(qualified));
+                        let constraint_idx = type_constraint
+                            .as_ref()
+                            .map(|tc| self.code.add_constant(Value::str(tc.clone())));
                         self.code.emit(OpCode::DeclareOurScalar {
                             slot,
                             qualified_idx,
+                            constraint_idx,
                         });
                     } else {
                         // For `our` we need a second copy of the value to store into the
@@ -3799,6 +3808,7 @@ impl Compiler {
                 name,
                 body,
                 kind,
+                custom_traits,
                 is_unit,
                 is_my,
             } => {
@@ -3825,7 +3835,9 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: true,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     // Keep the runtime package in step with the compiler's, so
                     // routines declared after this point register under
                     // `Foo::name` instead of leaking into `GLOBAL::` (PLAN 8.22).
@@ -3837,7 +3849,9 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: true,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     self.code.emit(OpCode::RegisterPackageStub { name_idx });
                 } else {
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
@@ -3850,7 +3864,9 @@ impl Compiler {
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
                         kind: *kind,
+                        declare_ancestors: !*is_my,
                     });
+                    self.emit_package_traits(name_idx, custom_traits);
                     // Clear any previous stub status for this package
                     self.code.emit(OpCode::ClearPackageStub { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {
@@ -3928,9 +3944,10 @@ impl Compiler {
                 name,
                 body,
                 lexicals,
+                our_names,
                 decl,
             } => {
-                self.compile_package_runtime_body(*name, body, lexicals, *decl);
+                self.compile_package_runtime_body(*name, body, lexicals, our_names, *decl);
             }
 
             // ADR-0048 Phase 2: no phaser body takes a signature in raku
@@ -4300,6 +4317,10 @@ impl Compiler {
                 body,
                 multi,
                 is_rw,
+                is_raw,
+                is_export,
+                export_tags,
+                custom_traits,
                 return_type,
                 is_submethod,
                 is_my,
@@ -4337,7 +4358,7 @@ impl Compiler {
                 // `t/oo/method/nested-method-captured-writeback-coherence.t`
                 // calling one with no arguments. Prepending an invocant there
                 // would only break a spelling this ticket has no baseline for.
-                let (sub_params, mut sub_param_defs) = if *is_my || *is_our {
+                let (sub_params, mut sub_param_defs) = if *is_my || *is_our || *is_submethod {
                     crate::runtime::registration_class_body_method_forms::method_sub_form_params(
                         params, param_defs,
                     )
@@ -4369,13 +4390,17 @@ impl Compiler {
                     body: body.clone(),
                     multi: *multi,
                     is_rw: *is_rw,
-                    is_raw: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
+                    is_raw: *is_raw,
+                    is_export: *is_export,
+                    export_tags: export_tags.clone(),
                     is_test_assertion: false,
                     supersede: false,
                     custom_traits: {
-                        let mut traits = vec![("__mutsu_method_decl".to_string(), None)];
+                        let mut traits = custom_traits.clone();
+                        traits.push(("__mutsu_method_decl".to_string(), None));
+                        if *is_our {
+                            traits.push(("__our_scoped".to_string(), None));
+                        }
                         if let Some(marker) = declarator.literal_marker() {
                             traits.push((marker.to_string(), None));
                         }
@@ -4402,7 +4427,7 @@ impl Compiler {
                             *multi,
                             None,
                             *is_rw,
-                            false,
+                            *is_raw,
                             false,
                             false,
                         )
@@ -4880,7 +4905,8 @@ impl Compiler {
             }
             Stmt::AugmentClass { name, body, .. } => {
                 let site_id = self.augment_site_id(&name.resolve(), body);
-                let idx = self.code.add_stmt(stmt.clone());
+                let expanded = Self::with_expression_methods(stmt);
+                let idx = self.code.add_stmt(expanded.unwrap_or_else(|| stmt.clone()));
                 self.code.emit(OpCode::AugmentClass { idx, site_id });
             }
             // ADR-0048 D7/Phase 5, VALUE half: NOT implemented — a role body

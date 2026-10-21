@@ -601,7 +601,7 @@ include!("modules_supply_system.rs");
 include!("modules_utilities.rs");
 pub(crate) use self::any_cool_method_gate::cool_method_not_found as cool_method_not_found_on_any;
 pub(crate) use self::locals::Locals;
-pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
+pub(crate) use self::methods_subscript_protocol::{refuse_map_assignment, refuse_map_removal};
 pub(crate) use self::output_sink::OutputSink;
 pub(crate) use self::regex_types::*;
 pub(crate) use self::registration_class::{ClassDeclModifiers, HoistedShell};
@@ -688,6 +688,10 @@ pub(crate) struct ClassAttributeDef {
     /// stores it as the slot's seed, which `nqp::attrinited` reports as not
     /// initialized (ADR-0121 D4).
     pub(crate) default_is_seed: bool,
+    /// `default` is the value of an `is default(...)` trait with no written
+    /// initializer: it seeds the slot, but the attribute has no build value
+    /// (`.build` is `Mu`) and its BUILDPLAN entry is a no-op.
+    pub(crate) default_is_trait: bool,
 }
 
 /// Attribute declarations with the same bare name but different sigils are
@@ -2556,6 +2560,15 @@ pub(crate) fn embedded_container_type_info(value: &Value) -> Option<ContainerTyp
         ValueView::Set(items, _) => embedded_type_info!(items),
         ValueView::Bag(items, _) => embedded_type_info!(items),
         ValueView::Hash(items) => Interpreter::hashdata_type_info(&items),
+        // A lazy `@` array carries its element type (#14101).
+        ValueView::LazyList(list) => {
+            let value_type = list.descriptor.as_deref()?.value_type.clone()?;
+            Some(ContainerTypeInfo {
+                value_type,
+                key_type: None,
+                declared_type: None,
+            })
+        }
         _ => None,
     }
 }
@@ -2709,8 +2722,9 @@ pub(crate) struct ImportScopeSnapshot {
     /// instead of removing the key (`use M :t; { use M } t` still sees the
     /// outer import of `t`).
     pub(crate) shadowed_env_values: HashMap<Symbol, Value>,
-    /// Imported environment aliases visible before this scope was pushed.
-    pub(crate) imported_env_aliases: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// The env-key import record (`ModuleState::unit_env_imports`) as it was
+    /// before this scope was pushed.
+    pub(crate) unit_env_imports: crate::runtime::unit_env_imports::UnitEnvImports,
     /// Imported routine aliases visible before this scope was pushed. The
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.
@@ -2744,6 +2758,9 @@ pub(crate) struct ImportScopeSnapshot {
     /// (ADR-8751): what a by-name lookup the compiler could not resolve
     /// (`::('&f')`, an `EVAL` in the block) still sees while it runs.
     pub(crate) lexical_sets: Vec<Symbol>,
+    /// `routine_stack` depth when the scope opened: a frame pushed later (a
+    /// routine the block calls) runs outside the block's lexical extent.
+    pub(crate) routine_depth: usize,
     /// The compilation unit whose code opened this scope
     /// (`executing_unit_sym_for_module_load` at the push). An import made here
     /// shadows that unit's own top-level routines, but not another unit's

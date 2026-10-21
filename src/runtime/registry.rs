@@ -109,6 +109,9 @@ pub(crate) struct Registry {
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
     pub(crate) method_entries: CowTable<HashMap<MethodEntryKey, MethodEntry>>,
+    /// Declaration prototypes, including copies owned by composed classes.
+    /// Replacing a method row does not change an already declared initializer.
+    pub(crate) method_value_prototypes: HashMap<Symbol, HashMap<Symbol, Arc<crate::value::RoutinePrototype>>>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
     /// ADR-0067 slice 3a: has any user method with a **raw invocant**
@@ -354,6 +357,11 @@ pub(crate) struct Registry {
     /// the package-qualified `Foo::Bar::Foo::Bar`) and the outer class is no
     /// longer reachable by it. Maps the written name to that qualified name.
     pub(crate) compound_name_overrides: HashMap<String, String>,
+    /// A relative compound declaration's registry identity is not an extra
+    /// package binding. Maps that identity to the written binding it uses.
+    pub(crate) compound_identity_bindings: HashMap<Symbol, Symbol>,
+    /// Reverse index for consumers resolving a published binding to its type.
+    pub(crate) compound_binding_identities: HashMap<Symbol, Symbol>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.
@@ -449,6 +457,9 @@ pub(crate) struct Registry {
     /// whose name the composing class declares too; a role method composed
     /// into `K` runs in its scope (`role_composition_scope`, #14177).
     pub(crate) role_composition_scopes: HashSet<crate::symbol::Symbol>,
+    /// BUILDPLANs the meta-object protocol stored per class: built by
+    /// `create_BUILDPLAN` or bound by a module (ADR-14162, `buildplan.rs`).
+    pub(crate) buildplans: HashMap<String, super::buildplan::BuildPlanState>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
     pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.
@@ -683,9 +694,9 @@ impl Registry {
     /// run — for 7,236 `resolve_lexical_type_key` calls, ~17,000 instructions
     /// apiece ([#8830]).
     ///
-    /// A key matches `"{unmangled}\u{0}"` exactly when its segment before the
-    /// FIRST NUL is `unmangled`, so the set of those segments answers the
-    /// question exactly rather than approximately, in one hash probe. Programs
+    /// A key matches `"{unmangled}\u{0}"` exactly when `unmangled` is the part
+    /// of the key before one of its NULs, so the set of those prefixes answers
+    /// the question exactly rather than approximately, in one hash probe. Programs
     /// that declare no `my class`/`my grammar` at all have an empty set and
     /// never scan again.
     ///
@@ -703,8 +714,13 @@ impl Registry {
                     .chain(self.roles.keys())
                     .chain(self.enum_types.keys())
                     .chain(self.subsets.keys())
-                    .filter_map(|key| key.split_once('\u{0}'))
-                    .map(|(bare, _)| Box::<str>::from(bare))
+                    .flat_map(|key| {
+                        // Every NUL-terminated prefix: a type nested in a
+                        // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
+                        // and a scan for `Outer\0<id>::Inner` is a prefix of it.
+                        key.match_indices('\u{0}')
+                            .map(|(at, _)| Box::<str>::from(&key[..at]))
+                    })
                     .collect()
             })
             .contains(unmangled)
@@ -2285,6 +2301,7 @@ mod tests {
         let mut registry = Registry::default();
         let seeded_generation = registry.method_generation;
         let method = MethodDef {
+            value_prototype: None,
             syms: Default::default(),
             lexical_package: crate::symbol::wk::global_package(),
             params: Vec::new(),
@@ -2473,10 +2490,11 @@ mod tests {
     }
 
     /// A key with more than one NUL segment (`Store\u{0}1::Session\u{0}2`)
-    /// belongs to its FIRST segment, which is what `starts_with("{name}\0")`
-    /// tests.
+    /// belongs to every prefix that ends at one of its NULs, which is what
+    /// `starts_with("{name}\0")` tests: the lookup of a type nested in a
+    /// lexical class asks for `Store\u{0}1::Session` (#14143).
     #[test]
-    fn lexical_type_key_filter_uses_the_first_nul_segment() {
+    fn lexical_type_key_filter_uses_every_nul_prefix() {
         let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
         {
             let mut reg = RegistryWriteGuard::new(&lock, "test");
@@ -2485,6 +2503,8 @@ mod tests {
         }
         let reg = RegistryReadGuard::new(&lock, "test");
         assert!(reg.has_lexical_type_key_for("Store"));
-        assert!(!reg.has_lexical_type_key_for("Store\u{0}1::Session"));
+        assert!(reg.has_lexical_type_key_for("Store\u{0}1::Session"));
+        assert!(!reg.has_lexical_type_key_for("Store\u{0}1"));
+        assert!(!reg.has_lexical_type_key_for("Session"));
     }
 }

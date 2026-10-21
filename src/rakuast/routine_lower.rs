@@ -26,8 +26,9 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let mut body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     super::routine_source::retain(node, &mut body)?;
     // A sub with no signature of its own takes its placeholder variables.
-    let (params, param_defs) =
+    let (params, mut param_defs) =
         crate::ast::implicit_placeholder_signature(params, param_defs, &body);
+    crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     let associativity = is_traits
         .assoc
         .clone()
@@ -50,7 +51,7 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // the parser records it.
         associativity,
         precedence_trait: is_traits.precedence.clone(),
-        signature_alternates: Vec::new(),
+        signature_alternates: super::routine_source::lower_alternates(node)?,
         body,
         multi,
         is_rw: is_traits.is_rw,
@@ -58,7 +59,7 @@ pub(super) fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_export: !is_traits.export_tags.is_empty(),
         export_tags: is_traits.export_tags,
         is_test_assertion: custom_traits.iter().any(|(t, _)| t == "test-assertion"),
-        supersede: false,
+        supersede: super::routine_source::has_supersede(node),
         custom_traits,
     })
 }

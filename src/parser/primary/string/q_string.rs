@@ -72,6 +72,7 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         && !flags.function
         && !flags.closure
         && !flags.execute
+        && !flags.format
     {
         return parse_q_quoted_content(rest, true, false);
     }
@@ -83,6 +84,7 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         && !flags.function
         && !flags.closure
         && !flags.execute
+        && !flags.format
     {
         return parse_q_quoted_content(rest, false, false);
     }
@@ -97,7 +99,11 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
         let items = parse_quotewords_items(content, &flags)?;
         return Ok((
             after,
-            spell_word_quote(&flags, content, make_word_result_expr(items)),
+            spell_word_quote(
+                &flags,
+                content,
+                make_processed_word_result(items, flags.val),
+            ),
         ));
     }
     let expr = process_content_with_flags(content, &flags);
@@ -115,11 +121,25 @@ fn spell_word_quote(
     text: &str,
     expr: Expr,
 ) -> Expr {
-    if !super::word_quote_text_is_plain(text) {
+    let processed = spell_word_quote_contents(flags, text, expr);
+    if flags.format {
+        crate::ast::quote_processing::format(processed)
+    } else {
+        processed
+    }
+}
+
+fn spell_word_quote_contents(
+    flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
+    text: &str,
+    expr: Expr,
+) -> Expr {
+    if !super::word_quote_text_is_plain_mode(text, flags.has_interpolation()) {
         if flags.quotewords && flags.has_interpolation() {
             return Expr::spelled(expr, || Spelling::InterpolatingWords {
                 val: flags.val,
                 text: text.into(),
+                delimiter: None,
             });
         }
         return expr;
@@ -133,6 +153,20 @@ fn spell_word_quote(
 
 /// Apply execute, word-split, and format post-processing to a quote expression.
 pub(crate) fn apply_post_processing<'a>(
+    after: &'a str,
+    expr: Expr,
+    flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
+) -> PResult<'a, Expr> {
+    if flags.format {
+        let mut inner = flags.clone();
+        inner.format = false;
+        let (after, string) = apply_plain_post_processing(after, expr, &inner)?;
+        return Ok((after, crate::ast::quote_processing::format(string)));
+    }
+    apply_plain_post_processing(after, expr, flags)
+}
+
+fn apply_plain_post_processing<'a>(
     after: &'a str,
     expr: Expr,
     flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
@@ -157,7 +191,7 @@ pub(crate) fn apply_post_processing<'a>(
         let items = parse_quotewords_items(&s, flags)?;
         return Ok((
             after,
-            spell_word_quote(flags, &s, make_word_result_expr(items)),
+            spell_word_quote(flags, &s, make_processed_word_result(items, flags.val)),
         ));
     }
 
@@ -176,7 +210,7 @@ pub(crate) fn apply_post_processing<'a>(
             };
             return Ok((
                 after,
-                spell_word_quote(flags, &s, make_word_result_expr(words)),
+                spell_word_quote(flags, &s, make_processed_word_result(words, flags.val)),
             ));
         }
         let func_name = if flags.val {
@@ -188,17 +222,6 @@ pub(crate) fn apply_post_processing<'a>(
             after,
             Expr::Call {
                 name: Symbol::intern(func_name),
-                args: vec![expr],
-                listop: false,
-            },
-        ));
-    }
-
-    if flags.format {
-        return Ok((
-            after,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_make_format"),
                 args: vec![expr],
                 listop: false,
             },
@@ -351,7 +374,11 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
         let items = parse_quotewords_items(content, &flags)?;
         return Ok((
             rest,
-            spell_word_quote(&flags, content, make_word_result_expr(items)),
+            spell_word_quote(
+                &flags,
+                content,
+                make_processed_word_result(items, flags.val),
+            ),
         ));
     }
     let expr = process_content_with_flags(content, &flags);

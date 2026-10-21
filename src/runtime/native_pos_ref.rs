@@ -94,7 +94,7 @@ pub(crate) fn is_native_pos_ref_routine(name: &str) -> bool {
 /// A reference to element `idx` of `holder`'s native storage.
 // Cost: O(1).
 pub(crate) fn native_pos_ref(holder: Value, idx: i64, kind: NativeRefKind) -> Value {
-    let mut attrs = crate::value::ValueMap::default();
+    let mut attrs = crate::value::AttrMap::new();
     attrs.insert("target".to_string(), holder);
     attrs.insert("index".to_string(), Value::int(idx));
     let routine =
@@ -104,7 +104,7 @@ pub(crate) fn native_pos_ref(holder: Value, idx: i64, kind: NativeRefKind) -> Va
         routine(STORE),
         Some((
             Symbol::intern(kind.type_name()),
-            std::sync::Arc::new(std::sync::Mutex::new(attrs)),
+            crate::value::proxy_subclass_attrs(Symbol::intern(kind.type_name()), attrs),
         )),
         false,
     )
@@ -143,7 +143,7 @@ fn parts(proxy: &Value) -> Result<(Value, i64, NativeRefKind), RuntimeError> {
     } = proxy.view()
         && let Some(kind) = NativeRefKind::of_type_name(name.as_str())
     {
-        let attrs = attrs.lock().unwrap_or_else(|e| e.into_inner());
+        let attrs = attrs.as_map();
         if let (Some(target), Some(index)) = (attrs.get("target"), attrs.get("index")) {
             return Ok((target.clone(), crate::runtime::to_int(index), kind));
         }

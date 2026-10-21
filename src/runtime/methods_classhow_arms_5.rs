@@ -31,6 +31,7 @@ impl Interpreter {
                 Some(env)
             };
             let def = MethodDef {
+                value_prototype: None,
                 syms: Default::default(),
                 lexical_package: sub_data.package,
                 params: sub_data.params.to_vec(),
@@ -283,6 +284,7 @@ impl Interpreter {
                         source_line: None,
                         source_file: None,
                         default_is_seed: false,
+                        default_is_trait: false,
                     });
                     if let Some(tc) = type_constraint {
                         class_def.attribute_types.insert(bare_name, tc);

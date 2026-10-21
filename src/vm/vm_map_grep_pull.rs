@@ -56,6 +56,14 @@ impl Interpreter {
         // One loop run over the whole rest: the plan is built once either
         // way, so a scratch copy of the slot costs nothing.
         let mut plan = plan.clone();
+        plan.stream_slips = false;
+        if let Some((slipped, mut at)) = plan.pending_slip.take() {
+            // What an earlier prefix pull left slipped comes before the rest.
+            while let Some(elem) = self.pull_source_element(&slipped, at)? {
+                out.produced.push(elem);
+                at += 1;
+            }
+        }
         if matches!(items, MapGrepItems::Chain(_)) {
             // A scratch copy, as for the plan: the chain itself is shared.
             let mut source = source.clone();
@@ -149,6 +157,7 @@ impl Interpreter {
         let consumed_base = out.consumed;
         let produced_base = out.produced.len();
         if !plan.prefix_pullable(|| map_grep_pullable_by_prefix(func.as_ref(), mode)) {
+            plan.stream_slips = false;
             let pulled = self.run_map_grep_chunk(
                 func,
                 *fatal,
@@ -166,37 +175,85 @@ impl Interpreter {
             return Ok(true);
         }
         let group = map_group_size(func.as_ref(), mode);
-        while out.produced.len() - produced_base < needed && *pos < items.len() {
+        // A map callback can answer any number of elements, so a chunk of
+        // `missing` groups may run callbacks the consumer never needed (the
+        // second callback of `map({ slip(1..*) }).head(2)`). It starts one group
+        // at a time and widens to `missing` groups only once a chunk answered
+        // exactly one element per group (#14312).
+        let mut batch = mode.is_grep();
+        while out.produced.len() - produced_base < needed
+            && (*pos < items.len() || plan.pending_slip.is_some())
+        {
             let missing = needed - (out.produced.len() - produced_base);
+            // A lazy list the last callback slipped is read before the
+            // callback runs again (#14295).
+            if let Some((slipped, at)) = plan.pending_slip.take() {
+                if let Some(elem) = self.pull_source_element(&slipped, at)? {
+                    plan.pending_slip = Some((slipped, at + 1));
+                    out.produced.push(elem);
+                }
+                continue;
+            }
+            plan.stream_slips = true;
             // A grep runs until it has the missing matches (one loop run for
             // the whole pull, #11515); a map needs one call, of `group` source
             // elements, per element missing (#14196).
+            let groups = if batch { missing } else { 1 };
             let end = pos
-                .saturating_add(missing.saturating_mul(group))
+                .saturating_add(groups.saturating_mul(group))
                 .min(items.len());
+            let (consumed_before, produced_before) = (out.consumed, out.produced.len());
             let max_matches = mode.is_grep().then_some(missing);
-            let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
-            self.async_state.map_grep_last_depth = None;
-            let pulled = self.run_map_grep_chunk(
-                func,
-                *fatal,
-                mode,
-                plan,
-                items,
-                *pos,
-                end,
-                max_matches,
-                out,
-            );
-            *pos = start_pos + (out.consumed - consumed_base);
-            pulled?;
-            // The loop the chunk ran in sat one handler level below us; a
-            // `last` a loop nested inside the callback caught sits deeper.
-            if self.async_state.map_grep_last_depth.take() == Some(depth + 1) {
+            let last =
+                self.pull_chunk_step(func, *fatal, mode, plan, items, pos, end, max_matches, out)?;
+            if !mode.is_grep() {
+                batch = (out.produced.len() - produced_before) * group
+                    == out.consumed - consumed_before;
+            }
+            if last {
                 return Ok(true);
             }
         }
-        Ok(*pos >= items.len())
+        Ok(*pos >= items.len() && plan.pending_slip.is_none())
+    }
+
+    /// One chunk of a prefix pull: run the callback over the source elements
+    /// `*pos..end` and advance `*pos` past the ones consumed, also when the
+    /// callback dies (#12401). Returns whether a `last` the callback's own
+    /// loop did not catch ended the Seq: the loop the chunk ran in sat one
+    /// handler level below this frame, so a `last` caught one level deeper
+    /// than that belongs to a loop nested inside the callback.
+    // Cost: as [`Self::run_map_grep_chunk`].
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn pull_chunk_step(
+        &mut self,
+        func: &Option<Value>,
+        fatal: bool,
+        mode: &MapGrepMode,
+        plan: &mut MapGrepPlanSlot,
+        items: &MapGrepItems,
+        pos: &mut usize,
+        end: usize,
+        max_matches: Option<usize>,
+        out: &mut PullOut,
+    ) -> Result<bool, RuntimeError> {
+        let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
+        self.async_state.map_grep_last_depth = None;
+        let (pos_before, consumed_before) = (*pos, out.consumed);
+        let pulled = self.run_map_grep_chunk(
+            func,
+            fatal,
+            mode,
+            plan,
+            items,
+            pos_before,
+            end,
+            max_matches,
+            out,
+        );
+        *pos = pos_before + (out.consumed - consumed_before);
+        pulled?;
+        Ok(self.async_state.map_grep_last_depth.take() == Some(depth + 1))
     }
 
     /// Run a deferred `.map`/`.grep` callback over the source elements
@@ -258,6 +315,7 @@ impl Interpreter {
         out: &mut PullOut,
     ) -> Result<usize, RuntimeError> {
         let consumed_base = out.consumed;
+        let produced_base = out.produced.len();
         // Same contract as `force_lazy_list_vm`: this force IS the
         // effective call site for the callbacks it runs, so a
         // captured-outer lexical the callback mutated (`LAST $ran =
@@ -359,6 +417,16 @@ impl Interpreter {
             self.current_unit = unit;
         }
         self.reconcile_caller_after_lazy_force(caller_code);
+        // A lazy list the callback slipped that cannot be seen to end waits in
+        // the plan for the next prefix pull (#14295).
+        let result = result.and_then(|()| {
+            let slipped =
+                self.settle_map_slip_markers(&mut out.produced, produced_base, plan.stream_slips)?;
+            if let Some(slipped) = slipped {
+                plan.pending_slip = Some((slipped, 0));
+            }
+            Ok(())
+        });
         // A `fail` (and `...`, which IS a `fail`) raised by the
         // callback escapes as a `Control::Fail` error, which the next
         // routine boundary would soften into a returned `Failure`.
@@ -566,7 +634,12 @@ pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMo
             }
         )
     });
-    (callback_positionals(func) <= 1 || !mode.is_grep()) && !slurpy && !loop_phaser
+    // A map block's slurpy parameter takes one element per call (the eager
+    // loop batches by the required positionals, at least 1), so a map can be
+    // cut into chunks of `map_group_size`; a grep's cannot (#14300).
+    (callback_positionals(func) <= 1 || !mode.is_grep())
+        && !(slurpy && mode.is_grep())
+        && !loop_phaser
 }
 
 /// How many positional parameters `func`, a `.map`/`.grep` callback, binds
@@ -586,12 +659,31 @@ fn callback_positionals(func: &Value) -> usize {
 
 /// The source elements one call of a `.map` callback consumes, so a prefix
 /// pull cuts its chunks at whole groups (`.map(-> $a, $b { ... })` takes two
-/// per call, as Rakudo's iterator pulls them). A grep tests one element at a
-/// time.
+/// per call, as Rakudo's iterator pulls them). A block with a slurpy
+/// parameter takes its required positionals per call, at least one, as the
+/// eager loop's batch does. A grep tests one element at a time.
 // Cost: O(p), p = parameters.
 pub(super) fn map_group_size(func: Option<&Value>, mode: &MapGrepMode) -> usize {
     if mode.is_grep() {
         return 1;
+    }
+    if let Some(func) = func
+        && let ValueView::Sub(data) = func.view()
+        && data.param_defs.iter().any(|pd| pd.slurpy && !pd.named)
+    {
+        return data
+            .param_defs
+            .iter()
+            .filter(|pd| {
+                !pd.named
+                    && !pd.is_invocant
+                    && !pd.slurpy
+                    && !pd.optional_marker
+                    && pd.default.is_none()
+            })
+            .count()
+            .saturating_sub(data.assumed_positional.len())
+            .max(1);
     }
     func.map_or(1, callback_positionals).max(1)
 }

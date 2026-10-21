@@ -190,6 +190,22 @@ impl Interpreter {
         }
     }
 
+    /// Whether `module` computes its import set in a `sub EXPORT` hook (#13441).
+    // Cost: O(m), m = size of the module's source.
+    pub(super) fn module_imports_through_export_hook(&self, module: &str) -> bool {
+        let file = self.env.get("?FILE").map(|v| v.to_string_value());
+        let lib_dirs = scan(
+            UseLibDirs {
+                file: file.as_deref(),
+                program: self.io.program_path.as_deref(),
+                out: Vec::new(),
+            },
+            &[],
+        )
+        .out;
+        collect_use_declared_type_names(self, module, &lib_dirs, &mut HashSet::new())
+    }
+
     /// Every type name this unit declares, plus those its `use`d modules
     /// declare (found through the unit's own `use lib` paths too).
     // Cost: O(n + m), n = size of the unit's AST, m = size of the used

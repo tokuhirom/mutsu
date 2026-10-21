@@ -708,12 +708,13 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        if let Some(slip) = Self::lazy_slip_coercion(&target, method, args.len()) {
+        if let Some(slip) = self.lazy_slip_coercion(&target, method, args.len())? {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-slip");
             self.stack.push(slip);
             return Ok(());
         }
         let target = Self::lazy_slip_receiver(target, method);
+        let target = Self::shaped_iteration_receiver(target, method);
         let target = match self.take_seq_prefix(&target, method, &args)? {
             Some(prefix) => prefix,
             None => target,

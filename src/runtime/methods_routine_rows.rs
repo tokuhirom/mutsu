@@ -64,7 +64,8 @@ impl Interpreter {
     /// mutsu cannot yet tell `&mm` from `&mm.candidates[0]` -- neither carries
     /// the `__mutsu_is_multi_candidate` fact [`Self::routine_multi`] reads -- so
     /// it answers a handle to itself.
-    // Cost: O(c), c = multi candidates.
+    // Cost: O(m + s + n), m = owner MRO length, s = family signature metadata,
+    // n = qualified routine name bytes. Rakudo: O(1) -- see #14279.
     pub(crate) fn routine_dispatcher(&mut self, target: &Value) -> Option<Value> {
         match target.view() {
             ValueView::Routine { name, package, .. } => {
@@ -75,6 +76,10 @@ impl Interpreter {
                 }
             }
             ValueView::Sub(data) => {
+                if let Some((owner, name)) = data.routine_cell.method_family() {
+                    return Some(self.classhow_lookup(&Value::package(owner), name.as_str())
+                        .unwrap_or(Value::NIL));
+                }
                 let name = data.name.resolve();
                 let qualified = crate::qualified::qualified_text(data.package.resolve(), &name)
                     .as_str()

@@ -135,8 +135,8 @@ pub(super) fn lower_term(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 /// An anonymous variable as a statement of its own: `state $ = 0;`.
 // Cost: O(n), n = size of the initializer.
 pub(super) fn lower_statement(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let (sigil, _) = parts(node)?;
-    if sigil == "$" {
+    let (sigil, explicit) = parts(node)?;
+    if sigil == "$" && (is_my(node)? || explicit) {
         super::lower::lower_var_decl(node)
     } else {
         Ok(Stmt::Expr(lower_term(node)?))

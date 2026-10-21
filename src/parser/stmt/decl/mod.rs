@@ -6,6 +6,7 @@ mod enum_decl_traits;
 mod handles;
 mod has_compound_assign;
 mod has_decl;
+mod has_trait_argument;
 pub(crate) use has_compound_assign::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use has_decl::attribute_type_seed;
 pub(crate) use my_decl_helpers::{build_sigilless_bind_stmt, is_anon_sigilless_source};
@@ -124,7 +125,7 @@ pub(super) fn strip_type_smiley_suffix(type_name: &str) -> &str {
         .unwrap_or(type_name)
 }
 
-fn typed_default_expr(type_name: &str) -> Expr {
+pub(crate) fn typed_default_expr(type_name: &str) -> Expr {
     let base = strip_type_smiley_suffix(type_name);
     // A user type (`my subset int8 of Int ...`) shadows the native spelling,
     // so `my int8 $c` is its type object (Nil here), not the native 0/""/0e0.

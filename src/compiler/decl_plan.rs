@@ -5,6 +5,7 @@
 //! trait (`is native(LIB)`). They are compiled here, once, into child chunks the
 //! VM runs through its normal re-entrant bytecode entry at registration time.
 use super::*;
+mod attribute_chunks;
 
 impl Compiler {
     /// Lower a declaration-time expression to its own bytecode chunk (ADR-0019 C5).
@@ -38,6 +39,7 @@ impl Compiler {
         chunk_compiler.lexically_in_routine = self.lexically_in_routine;
         chunk_compiler.in_closure_body = self.in_closure_body;
         chunk_compiler.return_routineness = self.return_routineness;
+        chunk_compiler.static_class_hidden = self.static_class_hidden;
         chunk_compiler.enclosing_package = Some(
             self.enclosing_package
                 .clone()
@@ -117,11 +119,12 @@ impl Compiler {
         class_body_static_code_vars: &std::collections::HashSet<String>,
         class_body_type_aliases: &std::collections::HashMap<String, String>,
         package_body_lexicals: &std::collections::HashSet<String>,
-        static_class: Option<&str>,
+        static_class: Option<(&str, bool)>,
     ) -> crate::opcode::CompiledDeclExpr {
         let mut chunk_compiler = self.new_decl_chunk_compiler();
         chunk_compiler.set_current_package(package.to_string());
-        chunk_compiler.static_class = static_class.map(str::to_string);
+        chunk_compiler.static_class = static_class.map(|(name, _)| name.to_string());
+        chunk_compiler.static_class_hidden = static_class.is_some_and(|(_, hidden)| hidden);
         chunk_compiler.class_body_static_code_vars = class_body_static_code_vars.clone();
         chunk_compiler.package_body_lexicals = package_body_lexicals.clone();
         chunk_compiler
@@ -208,6 +211,8 @@ impl Compiler {
 
     /// [`Self::add_sub_decl_plan`] for a class declaration.
     pub(crate) fn add_class_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let expanded = Self::with_expression_methods(stmt);
+        let stmt = expanded.as_ref().unwrap_or(stmt);
         let Stmt::ClassDecl {
             name,
             name_expr,
@@ -256,7 +261,12 @@ impl Compiler {
         // closure nesting — see its doc comment), so no special-casing is
         // needed at this call site.
         let package_name = if name_expr.is_none() && !is_hoisted_shell {
-            Some(self.qualified_class_decl_name(&name.resolve(), *is_lexical, *decl_id))
+            Some(self.declared_class_storage_name(
+                &name.resolve(),
+                self.decl_name_is_prequalified(),
+                *is_lexical,
+                *decl_id,
+            ))
         } else {
             None
         };
@@ -282,9 +292,10 @@ impl Compiler {
             true,
             is_hoisted_shell,
         );
-        let body_plan = self.compile_class_body_plan(body, package_name.as_deref());
+        let body_plan = self.compile_class_body_plan(body, package_name.as_deref(), *is_hidden);
         self.code.add_class_decl_plan(
             stmt,
+            name_expr.is_none() && self.decl_name_is_prequalified(),
             name_chunk,
             trait_args,
             attr_decls,
@@ -334,6 +345,7 @@ impl Compiler {
         &self,
         body: &[Stmt],
         package_name: Option<&str>,
+        is_hidden: bool,
     ) -> Vec<crate::opcode::ClassBodyOp> {
         let mut ops = crate::opcode::class_body_plan(body);
         let Some(package_name) = package_name else {
@@ -430,7 +442,7 @@ impl Compiler {
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
                     &body_lexicals,
-                    Some(package_name),
+                    Some((package_name, is_hidden)),
                 ));
                 continue;
             }
@@ -447,7 +459,7 @@ impl Compiler {
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
                     &body_lexicals,
-                    Some(package_name),
+                    Some((package_name, is_hidden)),
                 ));
                 let hoisted_raw = Self::hoisted_class_sub_decl(raw);
                 *hoist_chunk = Some(self.compile_decl_stmts_chunk_in_package(
@@ -456,7 +468,7 @@ impl Compiler {
                     &class_body_static_code_vars,
                     &class_body_type_aliases,
                     &body_lexicals,
-                    Some(package_name),
+                    Some((package_name, is_hidden)),
                 ));
                 continue;
             }
@@ -472,7 +484,7 @@ impl Compiler {
                 &class_body_static_code_vars,
                 &class_body_type_aliases,
                 &body_lexicals,
-                Some(package_name),
+                Some((package_name, is_hidden)),
             ));
         }
         ops
@@ -695,10 +707,7 @@ impl Compiler {
         let reads = self.attr_decl_free_var_syms(attr_decls);
         let mut writes: Vec<Symbol> = Vec::new();
         for (_, decl) in attr_decls {
-            for arg in [decl.default.as_ref(), decl.where_constraint.as_ref()]
-                .into_iter()
-                .flatten()
-            {
+            for arg in decl.declaration_args() {
                 let crate::opcode::DeclTraitArg::Compiled(chunk) = arg else {
                     continue;
                 };
@@ -748,10 +757,7 @@ impl Compiler {
     ) -> Vec<Symbol> {
         let mut out: Vec<Symbol> = Vec::new();
         for (_, decl) in attr_decls {
-            for arg in [decl.default.as_ref(), decl.where_constraint.as_ref()]
-                .into_iter()
-                .flatten()
-            {
+            for arg in decl.declaration_args() {
                 let syms: Vec<Symbol> = match arg {
                     crate::opcode::DeclTraitArg::Compiled(chunk) => chunk
                         .code
@@ -776,37 +782,18 @@ impl Compiler {
     }
 
     /// Build one attribute's typed descriptor, precompiling its `is
-    /// default(...)`, `default`, and `where_constraint` trait/expr arguments
+    /// default(...)`, defaults, constraints and custom trait arguments
     /// (ADR-0019 D2c-1/D2c-4) inline instead of leaving them as raw `Expr`s
     /// for a registration-time `eval_block_value`/`.as_expr()` call.
     fn compile_class_attr_decl(&self, stmt: &Stmt) -> crate::opcode::CompiledAttrDecl {
         crate::opcode::CompiledAttrDecl::from_stmt(stmt, self.compile_attr_decl_chunks(stmt))
     }
 
-    /// Build the `AttrDeclChunks` override for one `Stmt::HasDecl`, shared by
-    /// the class and role attribute-descriptor collectors.
-    fn compile_attr_decl_chunks(&self, stmt: &Stmt) -> crate::opcode::AttrDeclChunks {
-        let Stmt::HasDecl {
-            default,
-            where_constraint,
-            is_default,
-            ..
-        } = stmt
-        else {
-            unreachable!("compile_attr_decl_chunks called on a non-HasDecl statement");
-        };
-        crate::opcode::AttrDeclChunks {
-            is_default: is_default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
-            default: default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
-            where_constraint: where_constraint
-                .as_deref()
-                .map(|e| self.compile_decl_trait_arg(e)),
-        }
-    }
-
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is
     /// always compile-time known, so only its trait arguments are lowered.
     pub(crate) fn add_role_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let expanded = Self::with_expression_methods(stmt);
+        let stmt = expanded.as_ref().unwrap_or(stmt);
         let Stmt::RoleDecl {
             name,
             custom_traits,
@@ -838,7 +825,7 @@ impl Compiler {
         let package_name = if is_hoisted_shell {
             None
         } else {
-            Some(self.qualified_role_decl_name(&name.resolve()))
+            Some(self.declared_type_name(&name.resolve(), self.decl_name_is_prequalified()))
         };
         let lexical_type_name = custom_traits
             .iter()
@@ -900,11 +887,14 @@ impl Compiler {
         // that names it never ran). Always compute it.
         let deferred_body_ops = self.compile_role_deferred_body(
             body,
-            &package_name.unwrap_or_else(|| self.qualified_role_decl_name(&name.resolve())),
+            &package_name.unwrap_or_else(|| {
+                self.declared_type_name(&name.resolve(), self.decl_name_is_prequalified())
+            }),
         );
         let method_outer_lexical_slots = self.local_slots_by_name();
         self.code.add_role_decl_plan(
             stmt,
+            self.decl_name_is_prequalified(),
             trait_args,
             attr_decls,
             method_name_chunks,

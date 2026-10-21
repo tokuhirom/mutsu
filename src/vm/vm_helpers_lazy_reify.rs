@@ -5,7 +5,7 @@ use super::*;
 /// [`Interpreter::reify_finite_pipe_value`]). Matches the historical strict-force
 /// prefix cap; a gather that has not finished by then is treated as possibly
 /// infinite and keeps its suspended coroutine so later pulls resume it.
-const MAP_RESULT_GATHER_FORCE_CAP: usize = 100_000;
+pub(super) const MAP_RESULT_GATHER_FORCE_CAP: usize = 100_000;
 
 impl Interpreter {
     /// Reify a `.map`/`.grep` callback result that would otherwise reach the
@@ -35,6 +35,11 @@ impl Interpreter {
     /// Cost: O(k) for a finite pipe or gather producing k elements
     /// (k ≤ MAP_RESULT_GATHER_FORCE_CAP for a gather); O(1) for other values.
     pub(crate) fn reify_finite_pipe_value(&mut self, val: Value) -> Result<Value, RuntimeError> {
+        // A lazy-tail Slip flattens into the result: its ending lazy items
+        // are reified first (#13117).
+        if val.is_lazy_tail_slip() {
+            return self.reify_lazy_slip_tail(val);
+        }
         if let ValueView::LazyList(ll) = val.view() {
             // A `lazy`-marked pipe (`lazy gather take 5`, `(1..3).lazy.map(..)`)
             // is `.is-lazy` in Rakudo whatever its source, so it stays lazy.

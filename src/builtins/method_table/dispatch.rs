@@ -443,6 +443,12 @@ fn dispatch(
                 let receiver = Receiver::of_settled(&payload)?;
                 (&payload, super::resolve(receiver, method, arity)?)
             }
+            // A grammar cursor or an instance of a `Match` subclass has no
+            // shape, but its structure is a `Match`'s: it reads as one.
+            None if target.is_match_instance() => (
+                target,
+                super::resolve(Receiver::instance(DispatchShape::Match), method, arity)?,
+            ),
             // An allomorph is answered on the part the row reads (§9.101).
             None => {
                 let (part, id) = super::allomorph::redirect(target, method, arity)?;
@@ -530,7 +536,7 @@ fn instance_shape_of_type_object(target: &Value) -> Option<DispatchShape> {
 /// the built-in class it is a form of ([`answer_shapeless`]): Rakudo declares
 /// them on `List`, `Seq` and `Map`, not on `Any` (`5.lazy` is
 /// `X::Method::NotFound`).
-const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
+const ITERABLE_FOR_SHAPELESS: [&str; 4] = ["lazy", "race", "hyper", "lazy-if"];
 
 /// The container methods `Array` and `Hash` declare, which an array or hash
 /// with no settled shape (a typed, shaped or lazy one) answers from its own
@@ -761,6 +767,24 @@ pub(crate) fn answer_shapeless(
     if method == "comb" && args.len() == 2 {
         return None;
     }
+    // A user subset's type object coerces as the type it refines
+    // (`subset S of Int; S.Int` is `Int.Int` of the invocant `S`), so a
+    // coercion that answers its invocant answers the subset's type object
+    // (#14045). `UInt` and the subsets' bases are resolved the same way.
+    if let crate::value::ValueView::Package(name) = target.view()
+        && COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str())
+        && let Some(interp) = interp.as_deref()
+    {
+        let base = interp.resolve_subset_base_type(name.as_str());
+        if base != name.as_str() {
+            let base = Value::package(Symbol::intern(&base));
+            if let Some((Ok(answer), _)) = call(row(id), None, &base, args, Named::NONE)
+                && answer == base
+            {
+                return Some(Ok(target.clone()));
+            }
+        }
+    }
     // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91) and
     // `Cool.UInt` reads `$*TOLERANCE` for a `Complex` (§9.92); the other rows
     // found here are pure.
@@ -836,6 +860,7 @@ pub(crate) fn shapeless_row(
                     | "comb"
                     | "flat"
                     | "isa"
+                    | "lazy-if"
                     | "AT-POS"
                     | "EXISTS-POS"
                     | "AT-KEY"
@@ -991,7 +1016,9 @@ pub(crate) fn shapeless_row(
         // `Iterable.hyper` does (the `hyperize` dist reads
         // `Iterable.hyper.configuration`).
         ValueView::Package(name) if iterable && name == "Iterable" => Symbol::intern("List"),
-        _ if iterable => return None,
+        // `lazy-if` is `Any`'s too: a receiver `Iterable` does not reach answers
+        // from `Any`'s row, which is the receiver itself.
+        _ if iterable && !list => return None,
         ValueView::Array(..) if container => Symbol::intern("Array"),
         ValueView::Hash(_) if container => Symbol::intern("Hash"),
         _ if container => return None,
@@ -1150,9 +1177,18 @@ pub(crate) fn shapeless_row(
         ValueView::Array(..) if coerce => cool,
         ValueView::Package(name) if coerce => {
             // `UInt`, the one built-in subset, is not in the catalog: it is
-            // an `Int`.
+            // an `Int`; a user subset is the type it refines (`subset S of
+            // Int` coerces as `Int`, #14045).
             let name = name.resolve();
-            let class = if name == "UInt" { "Int" } else { name.as_ref() };
+            let refined;
+            let class = if name == "UInt" {
+                "Int"
+            } else if let Some(interp) = interp.as_deref() {
+                refined = interp.resolve_subset_base_type(&name);
+                refined.as_str()
+            } else {
+                name.as_ref()
+            };
             crate::builtin_types::catalog::builtin_type_mro_strs(class)?
                 .contains(&"Cool")
                 .then_some(cool)?

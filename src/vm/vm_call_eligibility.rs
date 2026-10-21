@@ -115,12 +115,14 @@ impl Interpreter {
         &mut self,
         cf: &CompiledFunction,
         fn_name: &str,
-    ) -> Option<Option<u64>> {
+    ) -> Option<Option<crate::state_scope::StateScopeId>> {
         if cf.code.state_locals.is_empty() || fn_name.is_empty() {
             return None;
         }
         let key = crate::meta_ns::MetaNs::CallableId.key_pair_for_strs(&cf.package, fn_name);
-        let id = self.registration_callable_id(key).map(|i| i as u64);
+        let id = self
+            .registration_callable_id(key)
+            .map(|i| (i as u64).into());
         let saved = self.lexicals.state_scope_id.get();
         if id.is_some() {
             self.lexicals.state_scope_id.set(id);
@@ -129,7 +131,10 @@ impl Interpreter {
     }
 
     /// Restore the scope saved by [`Self::enter_routine_state_scope`].
-    pub(super) fn leave_routine_state_scope(&mut self, saved: Option<Option<u64>>) {
+    pub(super) fn leave_routine_state_scope(
+        &mut self,
+        saved: Option<Option<crate::state_scope::StateScopeId>>,
+    ) {
         if let Some(prev) = saved {
             self.lexicals.state_scope_id.set(prev);
         }

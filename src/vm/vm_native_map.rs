@@ -166,11 +166,11 @@ impl Interpreter {
                 }
                 v
             };
-            if let ValueView::Slip(elems) = value.view() {
-                result.extend(elems.iter().cloned());
-            } else {
-                result.push(value);
-            }
+            let value = match self.reify_lazy_slip_tail(value) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            crate::runtime::resolution_map_grep::push_map_value(&mut result, value);
             i += arity;
         }
 

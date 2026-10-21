@@ -877,6 +877,16 @@ impl Interpreter {
     /// hashing.
     pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32, slot: u32) {
         let mut value = self.stack.pop().unwrap_or(Value::NIL);
+        let sym = code.const_sym(name_idx);
+        // `$.x` names whatever container `self.x` returns. A user `x` method
+        // that returns a `Proxy` hands back its own container: binding the
+        // name to it must not alias the attribute `x` (a later read of the
+        // binding stored the Proxy there, and the Proxy's FETCH, reading
+        // `$!x`, then recursed forever -- PDF's `my \encoded = $.encoded`).
+        if sym.as_str().starts_with('.') && matches!(value.view(), ValueView::Proxy { .. }) {
+            self.stack.push(value);
+            return;
+        }
         // GetGlobal intentionally dereferences a captured cell for ordinary
         // value reads. WrapVarRef is different: it denotes the variable's
         // container (`key => $outer`, `Pair.new(..., $outer)`, rw args), so keep
@@ -884,7 +894,6 @@ impl Interpreter {
         // This is the no-local-slot half of capture_var_cell: an outer lexical
         // cannot be found in the callee's `code.locals`, but its creator slot and
         // this env entry share the same ContainerRef.
-        let sym = code.const_sym(name_idx);
         // A free variable that a package / compunit / escaped-`our` store
         // owns: its container is that store's cell, not this call's env copy
         // (see `outer_store_lexical_cell`, #10372).

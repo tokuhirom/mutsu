@@ -1057,6 +1057,7 @@ impl Interpreter {
         origin: Option<&crate::opcode::CompiledCode>,
     ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
         let (mut compiler, compile_unit) = self.block_compiler();
+        compiler.static_class_hidden = self.current_class_is_hidden();
         if let Some(origin) = origin {
             compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
             compiler.seed_enclosing_terms_from(origin);
@@ -1080,6 +1081,13 @@ impl Interpreter {
         }
         self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
         (code, fns)
+    }
+
+    /// Interface context for class bodies compiled after registration,
+    /// including augment bodies.
+    // Cost: O(n), n = current package name bytes.
+    pub(super) fn current_class_is_hidden(&self) -> bool {
+        self.registry().hidden_classes.contains(self.current_package_sym().as_str())
     }
 
     pub(crate) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {

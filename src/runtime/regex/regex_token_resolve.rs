@@ -372,6 +372,7 @@ impl Interpreter {
     /// candidate registered under this exact qualified name, including the proto
     /// variants and the ones the qualifier's ancestors contribute.
     fn collect_qualified_token_defs(&self, name_sym: Symbol) -> Vec<Arc<FunctionDef>> {
+        let name_sym = self.qualified_token_identity(name_sym);
         let name = name_sym.as_str();
         let mut out = Vec::new();
         if let Some(defs) = self.registry().token_defs.get(&name_sym) {
@@ -653,10 +654,9 @@ impl Interpreter {
                 let pattern =
                     interp.bake_bound_params_into_regex_code_blocks(&pattern, &param_names);
                 let pattern = interp.interpolate_bound_regex_scalars(&pattern);
-                if let Ok(instantiated) = interp.instantiate_named_regex_arg_calls(&pattern) {
-                    let sym_val = Self::extract_sym_adverb(&def.name.resolve());
-                    out.push((instantiated, def.package, sym_val));
-                }
+                let instantiated = interp.bake_bound_params_into_regex_arguments(&pattern, &param_names);
+                let sym_val = Self::extract_sym_adverb(&def.name.resolve());
+                out.push((instantiated, def.package, sym_val));
             }
             Ok(out)
         })

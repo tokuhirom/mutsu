@@ -145,12 +145,10 @@ pub(crate) fn bigint_ratio_to_f64(n: &NumBigInt, d: &NumBigInt) -> f64 {
 
 /// Floored modulo for f64: result has the same sign as the divisor.
 pub(crate) fn float_mod_floor(a: f64, b: f64) -> f64 {
-    let r = a % b;
-    if (r > 0.0 && b < 0.0) || (r < 0.0 && b > 0.0) {
-        r + b
-    } else {
-        r
-    }
+    // Rakudo's `Num` modulus is `$a - floor($a / $b) * $b`, so the rounding of
+    // the quotient and of the product shows (`1e0 % 0.3`), and an infinite
+    // divisor gives `NaN` (`3e0 % Inf`) where `fmod` would give the dividend.
+    a - (a / b).floor() * b
 }
 
 pub(crate) fn as_bigint(value: &Value) -> Option<NumBigInt> {

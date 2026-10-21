@@ -106,8 +106,7 @@ impl Interpreter {
                 self.env_mut().set_capture_fallback(capture.capture_view());
                 self.env_mut().link_static_outer_to_unit(true, true, None);
             } else if cf.code.links_frame_to_unit() {
-                self.env_mut().mark_outer_is_unit();
-                self.hide_unit_names_from_frame(&cf.code);
+                self.link_frame_to_code_unit(&cf.code);
             }
             // A routine owns its `$/`: a match-state lookup that misses the
             // frame does not reach the caller's (ADR-12529, `env::routine_owned`).
@@ -365,7 +364,7 @@ impl Interpreter {
         // restores `state_scope_id` on drop, including on a Rust panic
         // unwind through the body loop below.
         let state_scope_guard = callable_id
-            .map(|id| crate::vm::vm_call_state_guard::StateScopeGuard::new(self, Some(id)));
+            .map(|id| crate::vm::vm_call_state_guard::StateScopeGuard::new(self, Some(id.into())));
         // Load persisted state variable values
         for (slot, key) in &cf.code.state_locals {
             let scoped_key = self.scoped_state_key(*key);

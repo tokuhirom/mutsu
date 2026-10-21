@@ -277,7 +277,10 @@ impl Interpreter {
         // binding: the read itself derefs the unit lexical's cell.
         let binding = match self.unit_lexical_slot(name, Some(sym)) {
             Some(v) => v.clone(),
-            None => self.env().get_sym(sym)?.clone(),
+            None => match self.our_package_scalar_cell(name) {
+                Some((_, cell)) => Value::container_ref(cell),
+                None => self.env().get_sym(sym)?.clone(),
+            },
         };
         Self::binding_chain_decision(binding)
     }

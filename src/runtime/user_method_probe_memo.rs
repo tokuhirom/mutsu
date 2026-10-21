@@ -16,8 +16,8 @@
 //! cache answers in O(1).
 //!
 //! Every memo is keyed on the registry write generation, which every registry
-//! mutation bumps (`Interpreter::registry_mut` is the only write path; see
-//! `numeric_bridge_probe.rs`), so no answer can outlive a declaration.
+//! mutation bumps (`Interpreter::registry_mut` is the only write path and bumps it on
+//! acquisition), so no answer can outlive a declaration.
 
 use super::Interpreter;
 use crate::runtime::UserMethodOrAccessor;

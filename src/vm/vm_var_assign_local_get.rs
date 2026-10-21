@@ -290,9 +290,7 @@ impl Interpreter {
             // atomic and should go through the normal array read path.
             let is_atomic_int = !name.starts_with('@')
                 && (self
-                    .var_type_constraint_value_sym(
-                        code.local_sym(idx).unwrap_or_else(|| Symbol::intern(name)),
-                    )
+                    .slot_type_constraint_value(code, idx, name, code.local_sym(idx))
                     .is_some_and(|constraint| constraint.as_str() == Some("atomicint"))
                     || (atomic_name != name
                         && self
@@ -462,7 +460,12 @@ impl Interpreter {
             && !self_val.with_deref(|value| {
                 matches!(
                     value.view(),
-                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                    ValueView::Instance { .. }
+                        | ValueView::Mixin(..)
+                        | ValueView::Proxy {
+                            subclass: Some(_),
+                            ..
+                        }
                 )
             })
         {
@@ -554,8 +557,6 @@ impl Interpreter {
                 self.stack.push(shared_val);
                 return Ok(());
             }
-            let is_internal = name.starts_with("__");
-            let is_special = matches!(name, "_" | "/" | "!" | "¢");
             // Private attribute locals (!attr) are populated directly from
             // instance attributes in fast-path method calls; they may not be
             // in the env (when skip_env_setup is active) but are still valid.
@@ -567,8 +568,21 @@ impl Interpreter {
             if is_private_attr && let Some(err) = self.missing_private_attr_read_error(name) {
                 return Err(err);
             }
-            if !is_internal && !is_special && !is_private_attr && !self.env().contains_key(name) {
-                return Err(RuntimeError::undeclared_variable(name));
+            // A Nil slot of a declared local is a declared variable: an
+            // unreached `my` (a CATCH after a `die` before the `my`) reads as
+            // the slot's Nil, never as an undeclared name -- the compiler
+            // resolved the name to this slot, so there is nothing to probe
+            // (#14325). An unbound required sub-signature leaf fails its bind
+            // instead (`bind_sub_signature_from_value`).
+            // An unreached `my @a` / `my %h` is the empty aggregate.
+            if name.starts_with('@') && Interpreter::is_plain_lexical_name(name) {
+                self.stack.push(Value::real_array(Vec::new()));
+                return Ok(());
+            }
+            if name.starts_with('%') && Interpreter::is_plain_lexical_name(name) {
+                self.stack
+                    .push(Value::hash(crate::value::ValueMap::default()));
+                return Ok(());
             }
             // `is default(...)`: return the default value instead of Nil.
             if let Some(def) = self.var_default(name) {

@@ -1,4 +1,5 @@
 use crate::symbol::Symbol;
+pub(crate) mod quote_processing;
 use crate::token_kind::TokenKind;
 use crate::value::{Value, ValueView};
 use std::collections::hash_map::DefaultHasher;
@@ -71,6 +72,16 @@ pub(crate) mod decl_id_serde {
             crate::ast::next_class_decl_id()
         })
     }
+}
+
+/// The source order of the separately stored role-header trait families.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum RoleHeaderTrait {
+    Parent(usize),
+    Hidden,
+    Export,
+    Rw,
+    Custom(usize),
 }
 
 /// Specifies how delegation (`handles`) should forward methods.
@@ -2186,6 +2197,7 @@ pub(crate) enum Stmt {
         /// determines `package-kind` in the X::Attribute::Package error raised
         /// when a `has` attribute is declared in this package's body.
         kind: PackageKind,
+        custom_traits: Vec<(String, Option<Expr>)>,
         /// True for `unit module Foo;` / `unit package Foo;` where the scope
         /// extends to the rest of the enclosing scope, false for brace-scoped
         /// `package Foo { ... }`.
@@ -2205,6 +2217,9 @@ pub(crate) enum Stmt {
         /// The `my` lexicals the declaration's body declares, which `body`
         /// reads and writes through the package's static store.
         lexicals: Vec<String>,
+        /// The body's own package aliases, which shadow caller local slots
+        /// without becoming entries in the private lexical store.
+        our_names: Vec<String>,
         /// Which declaration the body belongs to, so the package name is
         /// qualified the way that declaration's own registration qualifies it.
         decl: PackageRuntimeDecl,
@@ -2640,6 +2655,9 @@ pub(crate) enum Stmt {
         trait_order: Vec<attr_trait::AttrTrait>,
     },
     MethodDecl {
+        /// Compiler-owned correspondence between a Method initializer and
+        /// its declaration prototype. Source trees keep this absent.
+        value_prototype: Option<Symbol>,
         name: Symbol,
         name_expr: Option<Expr>,
         params: Vec<String>,
@@ -2658,10 +2676,6 @@ pub(crate) enum Stmt {
         /// True for `submethod` declarations (not inherited, but dispatched on own class).
         /// Distinct from `is_my` which means `my method` (lexical, not in method table).
         is_submethod: bool,
-        /// True for `our &name = method name(...) { ... }` form.
-        /// Unlike `our method name()`, this form keeps the method in the class
-        /// method table in addition to registering it as a package function.
-        our_variable_form: bool,
         return_type: Option<String>,
         /// `is default` trait for multi dispatch tie-breaking.
         is_default_candidate: bool,
@@ -2681,6 +2695,8 @@ pub(crate) enum Stmt {
     },
     RoleDecl {
         name: Symbol,
+        /// Written interleaving of the role's header trait families.
+        header_order: Vec<RoleHeaderTrait>,
         type_params: Vec<String>,
         type_param_defs: Vec<ParamDef>,
         is_export: bool,
@@ -2939,6 +2955,7 @@ mod chains;
 pub(crate) mod decl_compound_assign;
 pub(crate) mod decl_modifier;
 pub(crate) mod decl_tail;
+pub(crate) mod does_target;
 pub(crate) mod dotty_assign;
 pub(crate) mod immediate_call;
 pub(crate) mod inline_subset_term;

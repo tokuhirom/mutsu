@@ -384,7 +384,13 @@ impl Interpreter {
                         let invocant_for_dispatch = target.clone();
                         let pushed_dispatch = loan_env!(
                             self,
-                            push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
+                            push_method_dispatch_frame(
+                                cn,
+                                method,
+                                &args,
+                                invocant_for_dispatch,
+                                Some((owner_class.as_str(), &method_def))
+                            )
                         );
                         let invocant = Some(target);
                         let empty_fns = CompiledFns::default();

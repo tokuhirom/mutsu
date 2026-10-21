@@ -21,8 +21,26 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The node for the interpolating `quotewords` quote written as `text`.
 // Cost: O(n), n = length of `text`.
-pub(super) fn convert(val: bool, text: &str) -> Result<RakuAstNode, RuntimeError> {
-    let parts = crate::parser::quotewords_spelled_parts(text)
+pub(super) fn convert(
+    val: bool,
+    text: &str,
+    delimiter: Option<char>,
+) -> Result<RakuAstNode, RuntimeError> {
+    convert_nested(val, text, delimiter, 0)
+}
+
+fn convert_nested(
+    val: bool,
+    text: &str,
+    delimiter: Option<char>,
+    depth: usize,
+) -> Result<RakuAstNode, RuntimeError> {
+    if depth >= 128 {
+        return Err(super::convert::unsupported(
+            "a word quote nested beyond 128 levels",
+        ));
+    }
+    let parts = crate::parser::quotewords_spelled_parts(text, delimiter)
         .ok_or_else(|| super::convert::unsupported("a word quote that does not parse"))?;
     let mut segments = Vec::new();
     for part in &parts {
@@ -40,6 +58,14 @@ pub(super) fn convert(val: bool, text: &str) -> Result<RakuAstNode, RuntimeError
                     class: RakuAstClass::QuoteWordsAtom,
                     fields: vec![node_field(None, convert_expr(expr)?)],
                 })));
+            }
+            QuoteWordsPart::Nested(inner) => {
+                segments.push(Value::rakuast(Box::new(convert_nested(
+                    val,
+                    inner,
+                    delimiter,
+                    depth + 1,
+                )?)));
             }
         }
     }
@@ -146,6 +172,20 @@ pub(super) fn lower_words_atom(string: Expr, val: bool) -> Expr {
 /// touches, a `QuoteWordsAtom` is a word of its own.
 // Cost: O(s + n), s = segments, n = their text.
 pub(super) fn lower(node: &RakuAstNode, val: bool) -> Result<Expr, RuntimeError> {
+    Ok(crate::parser::quotewords_from_words(
+        val,
+        lower_parts(node, val, 0)?,
+    ))
+}
+
+fn lower_parts(
+    node: &RakuAstNode,
+    val: bool,
+    depth: usize,
+) -> Result<Vec<(bool, Expr)>, RuntimeError> {
+    if depth >= 128 {
+        return Err(unsupported(node));
+    }
     let mut words: Vec<(bool, Expr)> = Vec::new();
     let mut current: Vec<Expr> = Vec::new();
     let flush = |words: &mut Vec<(bool, Expr)>, current: &mut Vec<Expr>| {
@@ -185,6 +225,10 @@ pub(super) fn lower(node: &RakuAstNode, val: bool) -> Result<Expr, RuntimeError>
                 flush(&mut words, &mut current);
                 words.push((true, lower_expr(named_child_or_positional(seg)?)?));
             }
+            RakuAstClass::QuotedString if is_nested_quotewords(seg, val) => {
+                flush(&mut words, &mut current);
+                words.extend(lower_parts(seg, val, depth + 1)?);
+            }
             // An interpolated block is evaluated, not a closure value.
             RakuAstClass::Block => {
                 current.push(Expr::DoStmt(Box::new(Stmt::Block(
@@ -195,5 +239,18 @@ pub(super) fn lower(node: &RakuAstNode, val: bool) -> Result<Expr, RuntimeError>
         }
     }
     flush(&mut words, &mut current);
-    Ok(crate::parser::quotewords_from_words(val, words))
+    Ok(words)
+}
+
+fn is_nested_quotewords(node: &RakuAstNode, val: bool) -> bool {
+    let Ok(processors) = list_field(node, "processors") else {
+        return false;
+    };
+    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
+    names.as_slice()
+        == if val {
+            &["quotewords", "val"][..]
+        } else {
+            &["quotewords"][..]
+        }
 }

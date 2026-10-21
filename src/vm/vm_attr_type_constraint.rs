@@ -5,8 +5,7 @@
 //! declaring class's type, and the nested-class qualification of that type --
 //! and it depends on nothing but the class, the attribute name and the
 //! registry. So it is memoized per `(class, attribute name)` and keyed on
-//! [`Interpreter::registry_write_generation`], exactly as
-//! `numeric_bridge_probe` does: every registry write goes through
+//! [`Interpreter::registry_write_generation`]: every registry write goes through
 //! `registry_mut()`, which bumps that generation on acquisition, so a later
 //! class declaration, `augment` or MOP change cannot leave a stale answer
 //! behind. It over-invalidates (any registry write drops every answer), which

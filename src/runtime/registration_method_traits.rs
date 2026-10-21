@@ -14,6 +14,20 @@ pub(super) fn is_parser_marker(trait_name: &str) -> bool {
 }
 
 impl Interpreter {
+    /// Seal a declaration's wrapper snapshot before any initializer clones it.
+    // Cost: O(w), w = wrappers installed on this declaration.
+    pub(super) fn finish_method_value_prototype(
+        &self, prototype: Option<&crate::value::RoutinePrototype>,
+        owner: &str, name: &str, candidate: usize,
+    ) -> Result<(), RuntimeError> {
+        if let Some(prototype) = prototype {
+            let wrappers = self.registry().method_wrap_chain(owner, name, candidate)
+                .cloned().unwrap_or_default();
+            prototype.finish(wrappers).map_err(|_| RuntimeError::new("Method prototype completed twice"))?;
+        }
+        Ok(())
+    }
+
     /// Apply every user (non-marker) trait of a method declared in package
     /// `pkg` by calling `trait_mod:<is>(Method $m, ...)`, with `$*PACKAGE`
     /// bound to `pkg` for the duration of the call (a trait handler such as
@@ -32,6 +46,7 @@ impl Interpreter {
         return_type: Option<&str>,
         traits: &[(String, Option<crate::ast::Expr>)],
         cell: &crate::value::RoutineCell,
+        candidate_idx: usize,
     ) -> Result<(), RuntimeError> {
         if !traits.iter().any(|(t, _)| !is_parser_marker(t)) {
             return Ok(());
@@ -51,6 +66,7 @@ impl Interpreter {
             return_type,
             traits,
             cell,
+            candidate_idx,
         );
         self.restore_trait_package(saved_package_var);
         result
@@ -130,6 +146,7 @@ impl Interpreter {
             return_type.as_deref(),
             trait_args,
             &Default::default(),
+            0,
         )
     }
 
@@ -146,6 +163,7 @@ impl Interpreter {
         return_type: Option<&str>,
         traits: &[(String, Option<crate::ast::Expr>)],
         cell: &crate::value::RoutineCell,
+        candidate_idx: usize,
     ) -> Result<(), RuntimeError> {
         // One code object for the whole declaration: every trait handler
         // composes onto, and binds `$!do` on, the same Method (ADR-11827
@@ -165,7 +183,7 @@ impl Interpreter {
         // candidate index: that absence is what makes `.is_dispatcher`
         // answer True (`sub_multi_method_dispatcher_name`).
         if !is_proto {
-            trait_env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+            trait_env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(candidate_idx as i64));
         }
         // The code object passed to a user `trait_mod:<is>` candidate
         // must report as a `Method`, not a `Sub`, the same way

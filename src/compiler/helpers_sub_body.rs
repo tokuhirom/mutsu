@@ -295,6 +295,7 @@ impl Compiler {
         // Propagate distribution context so $?DISTRIBUTION works inside subs
         sub_compiler.current_distribution = self.current_distribution.clone();
         sub_compiler.static_class = self.static_class.clone();
+        sub_compiler.static_class_hidden = self.static_class_hidden;
         let arity = param_defs
             .iter()
             .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
@@ -718,7 +719,17 @@ impl Compiler {
             .map(|p| p.name)
             .collect();
         frame_lexicals.dedup();
-        if !multi && !is_rw && !is_raw && !is_cached && !cf.has_inner_subs && !cf.code.uses_capture
+        // A routine whose calls resolve through a block's lexical import sets
+        // (`LexImportCall`, ADR-8751) declines too: TRIR compiles from the AST
+        // and links its calls by name, so it would never consult the sets and
+        // an imported routine would be an unknown function (#14140).
+        if !multi
+            && !is_rw
+            && !is_raw
+            && !is_cached
+            && !cf.has_inner_subs
+            && !cf.code.uses_capture
+            && cf.code.lexical_import_chains.is_empty()
         {
             cf.trir = crate::trir::compile::compile_routine(
                 crate::symbol::Symbol::intern(name),
@@ -935,7 +946,16 @@ impl Compiler {
         }
         let is_bind_decl = matches!(stmt, Stmt::VarDecl { custom_traits, .. }
             if custom_traits.iter().any(|(t, _)| t == "__scalar_bind"));
-        if self.rw_tail && !is_bind_decl && Self::is_plain_lexical_name(name) {
+        let anonymous_scalar = matches!(
+            stmt,
+            Stmt::VarDecl {
+                anonymous: true,
+                ..
+            }
+        ) && (name == "__ANON_STATE#"
+            || crate::ast::anon_state::is_scalar(name));
+        if self.rw_tail && !is_bind_decl && (Self::is_plain_lexical_name(name) || anonymous_scalar)
+        {
             self.emit_wrap_var_ref(name);
             self.code.emit(OpCode::CaptureVarCell);
         }
@@ -1376,6 +1396,7 @@ impl Compiler {
         // compiled through this closure-body path), not Nil.
         sub_compiler.current_distribution = self.current_distribution.clone();
         sub_compiler.static_class = self.static_class.clone();
+        sub_compiler.static_class_hidden = self.static_class_hidden;
         // Propagate last_source_line so closures inside blocks that
         // lack their own SetLine can still inherit the line from the
         // enclosing statement, and seed the body chunk's ip -> line table with it.

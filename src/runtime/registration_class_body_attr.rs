@@ -98,6 +98,7 @@ impl Interpreter {
             source_line: decl.decl_line,
             source_file: self.current_source_file_sym(),
             default_is_seed: decl.default_is_seed,
+            default_is_trait: decl.default_is_trait,
         });
         if let Some(tc) = &decl.type_constraint {
             let resolved_tc = tc.replace("::?CLASS", class_name);
@@ -323,6 +324,7 @@ impl Interpreter {
             source_line: decl.decl_line,
             source_file: self.current_source_file_sym(),
             default_is_seed: decl.default_is_seed,
+            default_is_trait: decl.default_is_trait,
         });
         if decl.where_constraint.is_some() {
             Self::mark_attr_where_constraint_seen();

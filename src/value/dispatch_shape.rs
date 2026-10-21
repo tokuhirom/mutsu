@@ -37,6 +37,7 @@
 //!   decodes `Package("Int")`; only a row flagged `TYPE_OBJECT_OK` answers it.
 
 mod instances;
+pub(super) mod iterator_kind;
 mod opaque;
 
 use crate::symbol::Symbol;
@@ -283,9 +284,17 @@ pub(crate) enum DispatchShape {
     RakuSystemic,
     /// `Compiler` (opaque).
     Compiler,
+    /// A built-in iterator that is not a `PredictiveIterator` (opaque; the
+    /// shape is decoded from the instance's attributes, `iterator_kind.rs`).
+    Iterator,
+    /// A built-in iterator that knows its count (opaque).
+    PredictiveIterator,
     /// `Stash` (opaque): its associative indexing stays with the hash paths,
     /// which read [`Value::dispatch_shape`](crate::value::Value::dispatch_shape).
     Stash,
+    /// `Signature` (opaque): its renderings and parameter list are
+    /// attributes the compiler set.
+    Signature,
     /// A member of an `Int`-valued enum (opaque): a value kind, answering the
     /// rows of the roles Rakudo composes into the enum type.
     EnumNumeric,
@@ -306,7 +315,7 @@ impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into seven bits of a byte (the eighth marks a type object) and the
     /// table keeps a bit of a `u128` per shape, so this stays under 128.
-    pub(crate) const ALL: [DispatchShape; 96] = [
+    pub(crate) const ALL: [DispatchShape; 99] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -402,7 +411,10 @@ impl DispatchShape {
         DispatchShape::RakuAstNode,
         DispatchShape::RakuAstOrigin,
         DispatchShape::RakuAstOriginSource,
+        DispatchShape::Iterator,
+        DispatchShape::PredictiveIterator,
         DispatchShape::Stash,
+        DispatchShape::Signature,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -877,7 +889,7 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 41] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 42] = [
     // `Any`'s list coercions (`method_table::any_coerce`, §9.110).
     "List",
     "list",
@@ -931,6 +943,8 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 41] = [
     "tree",
     // `Any.chrs` (§9.112): `self.list.chrs`.
     "chrs",
+    // `Any.lazy-if` ignores its flag: the receiver itself.
+    "lazy-if",
 ];
 
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];

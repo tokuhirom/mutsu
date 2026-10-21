@@ -36,8 +36,9 @@ pub(super) fn attach_constraint(
 pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, RuntimeError> {
     use super::lower::{lower_block, signature_positional_params};
     use crate::ast::Expr;
-    let (params, param_defs) = signature_positional_params(node)?;
+    let (params, mut param_defs) = signature_positional_params(node)?;
     let body = lower_block(node)?;
+    crate::ast::does_target::mark_does_targets("", &mut param_defs, &body);
     let return_type = match named_child(node, "signature") {
         Ok(signature)
             if signature

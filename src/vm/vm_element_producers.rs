@@ -309,8 +309,11 @@ impl Interpreter {
             "kv" => Some(crate::value::PositionalMode::Kv),
             _ => None,
         };
+        // A multi-dimensional shaped array produces its leaves, not its rows
+        // (#14248): it takes the coercion rows instead.
         if let Some(mode) = lazy_mode
             && Self::promotable_array_len(target).is_some()
+            && !crate::value::shaped_array::shaped_array_has_rows(target)
         {
             return Some(Value::seq_list_gen(
                 crate::value::ListGen::positional(target.clone(), mode, true),

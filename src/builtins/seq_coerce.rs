@@ -19,7 +19,11 @@ use crate::value::{Value, ValueView};
 pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
     match target.view() {
         ValueView::Seq(_) => Some(target.clone()),
-        ValueView::Array(items, ..) => Some(Value::seq(items.to_vec())),
+        // A multi-dimensional shaped array's Seq is its leaves (#14248).
+        ValueView::Array(items, ..) => Some(Value::seq(
+            crate::value::shaped_array::shaped_array_iteration_leaves(target)
+                .unwrap_or_else(|| items.to_vec()),
+        )),
         ValueView::Slip(items) => Some(Value::seq(items.to_vec())),
         // An unbounded range of any element type: its lazy `.succ` sequence.
         _ if let Some(ll) = crate::runtime::unbounded_range::lazy_list(target) => {

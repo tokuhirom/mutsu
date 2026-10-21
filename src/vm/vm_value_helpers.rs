@@ -282,6 +282,7 @@ impl Interpreter {
                 | "Whatever"
                 | "Format"
                 | "Formatter"
+                | "Formatter::Syntax"
                 | "Instant"
                 | "Buf"
                 | "Blob"

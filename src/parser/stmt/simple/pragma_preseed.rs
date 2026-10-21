@@ -276,16 +276,15 @@ pub(crate) fn register_imported_enum_value(name: &str) {
 }
 
 /// Register a sigilless value term (`constant FOO = ...`, `my \foo = ...`) a
-/// `use`d module declares. Registered in the **outermost** scope for the same
-/// reason as an enum value: a `use`d module's constants must stay visible for
-/// the rest of the importing file.
+/// `use`d module declares. Value imports belong to the importing lexical
+/// scope; the module scanner records possible re-exports separately.
 pub(crate) fn register_imported_value_term(name: &str) {
     SCOPES.with(|s| {
         let mut scopes = s.borrow_mut();
-        let outermost = scopes
-            .first_mut()
+        let scope = scopes
+            .last_mut()
             .expect("scope stack should never be empty");
-        outermost.imported_value_terms.insert(name.to_string());
+        scope.imported_value_terms.insert(name.to_string());
     });
 }
 

@@ -60,6 +60,26 @@ impl Interpreter {
         loan_env!(self, var_type_constraint_value_for(name, name_sym))
     }
 
+    /// The object-hash key type a store into `code`'s slot `idx` (named
+    /// `name`) checks against: a slot the code declares reads only the
+    /// running frame's record (and the unit's own lane), any other slot asks
+    /// by name through the whole lookup.
+    // Cost: O(1) expected for a slot the code declares; else
+    // `var_hash_key_constraint_sym`'s probe, O(d), d = the env tiers walked.
+    pub(super) fn slot_hash_key_constraint(
+        &mut self,
+        code: &CompiledCode,
+        idx: usize,
+        name: &str,
+        name_sym: Option<Symbol>,
+    ) -> Option<String> {
+        let sym = name_sym.unwrap_or_else(|| Symbol::intern(name));
+        if code.declares_slot(idx) {
+            return self.own_var_hash_key_constraint_sym(sym);
+        }
+        loan_env!(self, var_hash_key_constraint_sym(name, sym))
+    }
+
     /// The declared type of the variable a `WrapVarRef` in `code` tags, for
     /// the `VarRef` to carry: resolved here, in the variable's own frame, so
     /// the binder and the multi dispatcher never probe for it by name from
@@ -74,6 +94,13 @@ impl Interpreter {
         slot: u32,
         name_sym: Symbol,
     ) -> VarRefDeclared {
+        if slot == u32::MAX
+            && let Some((_, cell)) = self.our_package_scalar_cell(name_sym.as_str())
+        {
+            return VarRefDeclared::Resolved(
+                crate::value::lookup_cell_constraint(&cell).map(|c| Value::str(c.ty)),
+            );
+        }
         if slot != u32::MAX
             && code.declared_constraint(slot as usize) == DeclaredConstraint::Untyped
         {

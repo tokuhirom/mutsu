@@ -110,6 +110,14 @@ pub(crate) fn answers_as_itself(method: &str) -> bool {
     ANSWERS_AS_ITSELF.contains(&method)
 }
 
+/// A lazy `.hyper` / `.race` (#13918) is a `LazyList` that reports
+/// `HyperSeq`, so the owner walk reaches these rows with it: they hold a
+/// settled body, so they decline and the lazy step answers.
+// Cost: O(1).
+fn lazy_hyper(t: &Value) -> bool {
+    matches!(t.view(), crate::value::ValueView::LazyList(_))
+}
+
 /// The call's arguments as the routines take them.
 // Cost: O(a), a = arguments of the call.
 fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
@@ -121,35 +129,56 @@ fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
 
 // Cost: O(1).
 fn hyper(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    if lazy_hyper(t) {
+        return None;
+    }
     Some(i.hyper_seq_rewrap(t, true))
 }
 
 // Cost: O(1).
 fn race(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    if lazy_hyper(t) {
+        return None;
+    }
     Some(i.hyper_seq_rewrap(t, false))
 }
 
 // Cost: O(1).
 fn configuration(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    if lazy_hyper(t) {
+        return None;
+    }
     Some(i.hyper_seq_configuration(t))
 }
 
 // Cost: O(1).
-fn is_lazy(_: &mut Interpreter, _: &Value, _: &[Value], _: Named<'_>) -> Answer {
+fn is_lazy(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    if lazy_hyper(t) {
+        return None;
+    }
     Some(Ok(Value::FALSE))
 }
 
 // Cost: O(n), n = elements of the sequence.
 fn iterator(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    if lazy_hyper(t) {
+        return None;
+    }
     Some(i.hyper_seq_iterator(t))
 }
 
 // Cost: O(n), n = elements of the sequence (one mapper call each).
 fn map(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    if lazy_hyper(t) {
+        return None;
+    }
     Some(i.hyper_seq_map_grep(t, "map", joined(args, named)))
 }
 
 // Cost: O(n), n = elements of the sequence (one test call each).
 fn grep(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
+    if lazy_hyper(t) {
+        return None;
+    }
     Some(i.hyper_seq_map_grep(t, "grep", joined(args, named)))
 }

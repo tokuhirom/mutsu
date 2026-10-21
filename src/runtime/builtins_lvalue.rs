@@ -21,7 +21,7 @@ impl Interpreter {
         if !is_rw || self.in_lvalue_assignment {
             return Ok(result);
         }
-        if let Some((fetcher, _storer, _subclass, decontainerized)) =
+        if let Some((fetcher, storer, subclass, decontainerized)) =
             result.clone().into_proxy_parts()
         {
             if decontainerized {
@@ -30,7 +30,10 @@ impl Interpreter {
             if fetcher.is_nil() {
                 return Ok(Value::NIL);
             }
-            return self.call_sub_value(fetcher, vec![result], true);
+            // FETCH receives the Proxy as its `.VAR`, as `auto_fetch_proxy`
+            // hands it over.
+            let invocant = Value::proxy_parts(fetcher.clone(), storer, subclass, true);
+            return self.call_sub_value(fetcher, vec![invocant], true);
         }
         Ok(result)
     }
@@ -68,8 +71,18 @@ impl Interpreter {
             // FETCH is a READ, so DISCARD every env effect afterwards: a
             // leaked capture would let two map-produced Proxies sharing a
             // captured `$v` name both freeze to the first FETCHed value.
+            // FETCH receives the Proxy as its `.VAR` (decontainerized), as
+            // `proxy_fetch` hands it over: `nqp::decont($proxy)` inside it is
+            // the Proxy object, not another FETCH (AttrX::Mooish's
+            // `AttrProxy`).
+            let invocant = match current.clone().into_proxy_parts() {
+                Some((fetcher, storer, subclass, _)) => {
+                    Value::proxy_parts(fetcher, storer, subclass, true)
+                }
+                None => current.clone(),
+            };
             let saved_env = self.env.clone();
-            let result = self.vm_call_on_value(fetcher.clone(), vec![current.clone()], None);
+            let result = self.vm_call_on_value(fetcher.clone(), vec![invocant], None);
             self.env = saved_env;
             // A FETCH that ends in a call to an `is rw` routine answers that
             // routine's container (`FETCH => method { $obj.rw-accessor }`,

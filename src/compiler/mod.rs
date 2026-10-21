@@ -1134,6 +1134,7 @@ mod lazy_body_reads;
 pub(crate) mod lex_scope;
 mod lexical_stash;
 mod lexsub_aliases;
+mod method_values;
 mod mixin_rhs;
 mod native_str_coercion;
 mod nqp_atomic_forms;
@@ -1146,9 +1147,12 @@ mod nqp_p6_forms;
 mod numeric_operand_names;
 mod outer_ref;
 mod package_runtime_body;
+mod package_stash_assign;
+mod package_traits;
 mod proto_decl;
 mod require_stubs;
 mod type_alias_resolve;
+mod type_decl_names;
 mod type_decl_value;
 pub(crate) use hoist_nested_types::nested_type_decls;
 pub(crate) use package_runtime_body::CLASS_LEXICAL;
@@ -1415,6 +1419,7 @@ pub(crate) struct Compiler {
     /// it does not depend on whichever class body ran last. `None` in a role
     /// body, where `$?CLASS` is the consuming class.
     pub(crate) static_class: Option<String>,
+    pub(crate) static_class_hidden: bool,
     /// Compile-time aliases from a constant type object to its target spelling.
     /// Native storage and arithmetic need the target (`int64`), while runtime
     /// diagnostics retain the source alias (`time`).
@@ -2089,6 +2094,7 @@ impl Compiler {
             class_body_static_code_vars: HashSet::new(),
             package_body_lexicals: HashSet::new(),
             static_class: None,
+            static_class_hidden: false,
             type_aliases: HashMap::new(),
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),

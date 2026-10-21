@@ -274,7 +274,7 @@ impl Interpreter {
     /// header roles before the class body registers them. Publish the pending
     /// declarations for the duration of the body so introspection agrees.
     ///
-    /// Cost: O(a), a = pending attribute declarations, plus the body itself.
+    /// Cost: O(a + m), a = pending attributes, m = the role's methods, plus the body.
     pub(super) fn run_composed_role_deferred_body(
         &mut self,
         cx: &mut RoleCompositionCx<'_>,
@@ -285,6 +285,18 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if role.deferred_body.is_empty() {
             return Ok(());
+        }
+        // Initializers run before the pending composed method rows are
+        // published. Their declaration metadata must already be bound to the
+        // composing owner, without changing method-table publication timing.
+        {
+            let owner = Symbol::intern(cx.name);
+            let mut registry = self.registry_mut();
+            for methods in role.methods.values() {
+                for method in methods {
+                    registry.note_method_value_prototype(owner, method);
+                }
+            }
         }
         let mut peeked: Vec<(String, char)> = Vec::new();
         let mut unpublished = false;
@@ -312,6 +324,7 @@ impl Interpreter {
                     source_line: decl.decl_line,
                     source_file: None,
                     default_is_seed: decl.default_is_seed,
+                    default_is_trait: decl.default_is_trait,
                 });
             }
             // Only the class's own declarations: Rakudo has not yet composed

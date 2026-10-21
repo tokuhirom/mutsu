@@ -188,10 +188,16 @@ impl Value {
                 end.gc_trace(visit);
             }
             ValueView::Proxy {
-                fetcher, storer, ..
+                fetcher,
+                storer,
+                subclass,
+                ..
             } => {
                 fetcher.gc_trace(visit);
                 storer.gc_trace(visit);
+                if let Some((_, attrs)) = subclass {
+                    visit(&attrs.erased());
+                }
             }
             // An enum value can carry an arbitrary `Value` payload.
             ValueView::Enum {

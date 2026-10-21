@@ -652,7 +652,9 @@ impl Interpreter {
         // (`sub f(Str $s is raw)` accepts a Proxy over a Str). An `is rw` /
         // `is raw` parameter that must keep the caller's Proxy re-binds it from
         // the caller's cell below, so only the checked value is the fetched one.
-        if pd.type_constraint.is_some() {
+        // `Mu` accepts the Proxy as it is, so its FETCH has nothing to decide
+        // (and AttrX::Mooish's builder re-entering its own FETCH would hang).
+        if pd.type_constraint.as_deref().is_some_and(|tc| tc != "Mu") {
             if value.is_proxy_value() {
                 value = self.auto_fetch_proxy(&value)?;
             } else {
@@ -2482,7 +2484,14 @@ impl Interpreter {
                         // (named scalar params are readonly). A `$`-scalar source
                         // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
                         // by reference already, like the positional scalar source.
-                        let mut bound_value = val.clone();
+                        let mut bound_value = unwrap_varref_value(val.clone());
+                        // Only an rw/raw parameter aliases the supplied Scalar.
+                        // Ordinary and copy parameters bind its current value;
+                        // retaining the argument cell would make their local
+                        // stores (or a returned value) reach the caller.
+                        if !pd.binds_caller_container() {
+                            bound_value = bound_value.into_deref();
+                        }
                         // A named `%`-sigil parameter decontainerizes exactly
                         // like the positional one (`sub f(:%o)` bound from
                         // `f(o => %outer<a>)` is `{:b(1)}`, not `${:b(1)}`).
@@ -2673,7 +2682,7 @@ impl Interpreter {
                                         .first()
                                         .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
                                 });
-                            if let Some(src) = source_name {
+                            if let Some(src) = source_name.filter(|_| !bound_value.is_container_ref()) {
                                 rw_bindings.push((storage_name.to_string(), src.clone()));
                                 let descriptor = src.clone();
                                 let existing = self
@@ -2819,6 +2828,10 @@ impl Interpreter {
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
+                    // A `$` parameter's default is an item binding, like a
+                    // supplied argument -- after any coercion (`List() :$a =
+                    // []` binds `$()`), so it is one subscript key, not a slice.
+                    let value = Self::itemize_plain_scalar_param(pd, value);
                     let mut value = if pd.captured_type_name().is_some() {
                         self.normalize_type_capture_value(value)
                     } else {
@@ -3089,7 +3102,11 @@ impl Interpreter {
                             .or_else(|| {
                                 varref_from_value(&args[positional_idx]).map(|(name, _)| name)
                             });
-                        if let Some(source_name) = source_name {
+                        // A resolved lvalue already carries its authoritative
+                        // container. Re-resolving its spelling through the
+                        // callee env can select a same-named caller lexical;
+                        // that container also needs no by-name exit writeback.
+                        if let Some(source_name) = source_name.filter(|_| !arg_is_container_ref) {
                             // Write back to the root of a sigilless alias chain.
                             // The argument may itself be a `\name` parameter in
                             // the caller. Using the immediate source name here
@@ -3230,7 +3247,7 @@ impl Interpreter {
                                 .insert_sym_noting(alias_key, Value::str(source_name));
                             self.lexicals.sigilless_alias_seen = true;
                         } else if matches!(
-                            args[positional_idx].view(),
+                            args[positional_idx].unwrap_varref().view(),
                             ValueView::ContainerRef(_)
                                 | ValueView::HashEntryRef { .. }
                                 | ValueView::Proxy { .. }
@@ -3291,6 +3308,18 @@ impl Interpreter {
                     if alias_plain_container
                         && let Some(source_name) = &source_name
                         && source_name.starts_with(['@', '%'])
+                    {
+                        rw_bindings.push((storage_name.to_string(), source_name.clone()));
+                    }
+                    // ADR-14144: a readonly scalar parameter the body applies
+                    // `does` to hands the composed `Mixin` back to the caller's
+                    // container at return, as Rakudo's rebless of the shared
+                    // object does. `$v = ...` stays an X::Assignment::RO.
+                    if pd.is_does_target()
+                        && !is_rw
+                        && !is_raw
+                        && !is_copy
+                        && let Some(source_name) = &source_name
                     {
                         rw_bindings.push((storage_name.to_string(), source_name.clone()));
                     }
@@ -3947,6 +3976,10 @@ impl Interpreter {
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
                     } else if !pd.name.is_empty() {
+                        // A `$` parameter's default is an item binding, like a
+                        // supplied argument: `sub f($a = [])` binds `$[]`, a
+                        // single subscript key rather than a slice.
+                        let value = Self::itemize_plain_scalar_param(pd, value);
                         self.bind_param_value_sym(binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
                             binding_name,

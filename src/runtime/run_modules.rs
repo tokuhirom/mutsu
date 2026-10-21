@@ -1248,7 +1248,6 @@ impl Interpreter {
             let saved_export_terms = std::mem::take(&mut self.module.module_export_terms);
             let saved_imported_routine_aliases =
                 std::mem::take(&mut self.module.imported_routine_aliases);
-            let saved_imported_env_aliases = std::mem::take(&mut self.module.imported_env_aliases);
             let saved_pending_rw_writeback_len = self.pending_rw_writeback_sources.len();
             // A module is its own lexical scope: a `my role R` in its body must
             // not read as a further candidate of the loading scope's (or an
@@ -1354,7 +1353,6 @@ impl Interpreter {
                 &mut self.module.imported_routine_aliases,
                 saved_imported_routine_aliases,
             );
-            self.module.imported_env_aliases = saved_imported_env_aliases;
             if !module_routine_aliases.is_empty() {
                 crate::runtime::cow_table_mut(&mut self.module.module_body_import_aliases)
                     .extend(module_routine_aliases.iter().copied());
@@ -1366,16 +1364,13 @@ impl Interpreter {
                 std::mem::replace(&mut self.module.module_export_terms, saved_export_terms);
             module_scope_names.extend(export_terms);
             // `module_imported_names` records the ENV KEY the import landed under,
-            // because the restore loop below has to undo that exact key. For the
-            // two scope tables it feeds, the key wanted is the name the importing
-            // code SPELLS — which for an enum key is its bare form, not the
-            // enum-key namespace key the value lives at (#7914).
-            let imported_spelling = |name: &String| -> String {
-                match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
-                    Some(bare) => bare.to_string(),
-                    None => name.clone(),
-                }
-            };
+            // because the restore loop below has to undo that exact key. The two
+            // scope tables it feeds are keyed by the same text: an enum key stays
+            // under its enum-key namespace key (#7914), so a scalar read of a
+            // same-named `$literal` in the module's own routines cannot be
+            // answered by the imported enum value (#14255); the bareword reader
+            // (`running_module_bareword`) probes that namespace.
+            let imported_spelling = |name: &String| -> String { name.clone() };
             // A re-import of a name an earlier module already installed adds
             // nothing to `env`, so the diff misses it even though it is part of
             // this module's scope (see `module_imported_names`).
@@ -1481,6 +1476,9 @@ impl Interpreter {
             for name in &leaked_packages {
                 self.env.remove(name);
             }
+            // The module's trait-composed routines' `&name` write-backs are
+            // its own lexicals, not the importer's (#12907).
+            self.drop_module_trait_routine_bindings(&before_env_keys);
             // A `unit` compunit's own file-scope `constant`s and enum values are
             // package symbols of that compunit in rakudo, not names the importer
             // sees bare (#7787). The module body ran in the CALLER's env, so drop
@@ -1536,6 +1534,9 @@ impl Interpreter {
                     self.env
                         .remove(&crate::runtime::enum_bare_names::enum_bare_key(name));
                 }
+            }
+            for name in &facts.my_constant_names {
+                self.env.remove(name);
             }
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
             // Take the compunit's own file-scope lexicals out of `env` and into
@@ -2285,6 +2286,45 @@ impl Interpreter {
         names
     }
 
+    /// The env keys of a compunit's file-scope `my constant`s. Such a constant
+    /// is lexical to the compunit in every file, `unit` or not: unlike a bare
+    /// `constant` (an `our` one, which the importer's `EVAL` can still reach), it
+    /// is no symbol of any package. The module body runs in the loader's env, so
+    /// the key is dropped there after the load and the value stays in
+    /// `module_scope_names` for the module's own routines (#14330).
+    // Cost: O(n), n = the unit's top-level statements.
+    pub(super) fn collect_my_constant_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for s in crate::ast::scope_statements(stmts) {
+            let crate::ast::Stmt::VarDecl {
+                name,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                custom_traits,
+                ..
+            } = s
+            else {
+                continue;
+            };
+            if !custom_traits.iter().any(|(t, _)| t == "__constant")
+                || crate::qualified::is_qualified_str(name)
+                || name.contains("__ANON")
+            {
+                continue;
+            }
+            let key = if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+                crate::runtime::term_names::term_key(name)
+            } else {
+                name.clone()
+            };
+            if !names.contains(&key) {
+                names.push(key);
+            }
+        }
+        names
+    }
+
     /// The env keys of a `unit` compunit's own ordinary `our` variables
     /// (`our $x` / `our @a` / `our %h`, exported or not), declared after its
     /// `unit` statement. A `constant` (also `is_our`) and an `our $*x` are
@@ -2349,13 +2389,16 @@ impl Interpreter {
                 continue;
             }
             let name = key.resolve();
-            // An enum key is a module-scope declaration under its BARE name; the
-            // enum-key namespace (#7914) is only where the value is *stored*, so
-            // record it the way the module's own routines will look it up.
-            let name = match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
-                Some(bare) => bare.to_string(),
-                None => name.to_string(),
-            };
+            // An enum key is a module-scope declaration, recorded under its
+            // enum-key namespace key (#7914) like the env entry it came from:
+            // under its bare name it would answer a same-named `$`-scalar read
+            // in the module's own routines (#14255). The name checks below
+            // apply to the key without that prefix.
+            let (enum_key, name) =
+                match name.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
+                    Some(bare) => (true, bare.to_string()),
+                    None => (false, name.to_string()),
+                };
             // Twigils, qualified names and the `__mutsu_*` / `?FILE`-style
             // metadata keys are never plain module-scope declarations. A scalar
             // `my $x` is stored sigil-less (key `x`); `@`/`%` keep their sigil.
@@ -2377,7 +2420,12 @@ impl Interpreter {
                 continue;
             }
             if let Some(value) = self.env.get_sym(*key) {
-                names.insert(name.to_string(), value.clone());
+                let recorded = if enum_key {
+                    crate::runtime::enum_bare_names::enum_bare_key(&name)
+                } else {
+                    name.to_string()
+                };
+                names.insert(recorded, value.clone());
             }
         }
         names

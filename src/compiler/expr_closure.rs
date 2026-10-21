@@ -36,6 +36,32 @@ impl Compiler {
     /// `is_block` = true for bare blocks `{ }`, false for `sub { }`.
     /// Bare blocks are NOT routine boundaries for `return`.
     pub(super) fn compile_expr_anon_sub(&mut self, body: &[Stmt], is_rw: bool, is_block: bool) {
+        // A routine that uses legacy argument aggregates has an inferred
+        // slurpy signature, just like the shared signature-less block builder.
+        // Keep it explicit in the compiled signature so named arguments are
+        // accepted only when the body actually declares the hash aggregate.
+        if !is_block
+            && (crate::ast::body_reads_args_array(body) || crate::ast::body_reads_args_hash(body))
+            && let Expr::AnonSubParams {
+                params, param_defs, ..
+            } = crate::ast::make_anon_sub(body.to_vec())
+        {
+            self.pending_immutable_topic_block = false;
+            self.compile_expr_anon_sub_params(
+                &params,
+                &param_defs,
+                &None,
+                body,
+                is_rw,
+                false,
+                &[],
+                false,
+                crate::ast::RoutineDeclarator::Sub,
+                crate::symbol::well_known::anon(),
+                None,
+            );
+            return;
+        }
         // One-shot, consumed here so only THIS block (not one nested inside it)
         // picks up the enclosing `.map`/`.grep`-over-a-literal verdict the
         // caller set -- see `CompiledCode::immutable_topic`.
@@ -74,7 +100,7 @@ impl Compiler {
                 custom_traits: Vec::new(),
             });
             self.code
-                .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false));
+                .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
         } else {
             // Conflict checking, like params, uses the *shallow* collector: a
             // placeholder belongs to its innermost enclosing block, so a
@@ -145,7 +171,7 @@ impl Compiler {
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(stmt.clone());
         self.code
-            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false));
+            .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false, None));
     }
 
     /// Compile Lambda expression.
@@ -409,105 +435,7 @@ impl Compiler {
     /// Out of line so its locals stay out of `compile_expr_index_assign`'s
     /// frame, which the compiler re-enters recursively.
     #[inline(never)]
-    fn try_compile_named_package_stash_assign(
-        &mut self,
-        target: &Expr,
-        index: &Expr,
-        value: &Expr,
-    ) -> bool {
-        let Expr::PseudoStash(stash_name) = target else {
-            return false;
-        };
-        let named = stash_name.strip_suffix("::").is_some_and(|pkg| {
-            !pkg.is_empty()
-                && (pkg == "GLOBAL" || !pkg.split("::").any(crate::parser::is_pseudo_package))
-        });
-        if !named {
-            return false;
-        }
-        // `Pkg::<$v> {=,:=} value` is the stash spelling of `$Pkg::v {=,:=}
-        // value`: route it through the qualified-variable assignment, which
-        // writes through the variable's container (and so checks its declared
-        // constraint, ADR-0042) instead of replacing the stash entry. Only a
-        // `$` key: an `@`/`%` stash entry is the Array/Hash itself, not a
-        // Scalar, and rakudo refuses `Pkg::<@a> = ...` as an assignment to an
-        // immutable value.
-        if let Expr::Literal(lit) = index
-            && let Some(key) = lit.as_str()
-            && !key.starts_with('&')
-        {
-            // `Pkg::<@a> = ...` / `Pkg::<%h> = ...` (assignment, not bind).
-            if key.starts_with(['@', '%'])
-                && key.len() > 1
-                && !matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
-            {
-                self.compile_expr(&Expr::Call {
-                    name: Symbol::intern("die"),
-                    args: vec![Expr::Literal(Value::str(
-                        "Cannot assign to an immutable value".to_string(),
-                    ))],
-                    listop: false,
-                });
-                return true;
-            }
-            // `Pkg::<@a> := v` / `Pkg::<%h> := v`: the stash spelling of
-            // `@Pkg::a := v`, which rebinds the package variable (#10546).
-            if let Some(Expr::Call { name, args, .. }) = Some(value)
-                && *name == "__mutsu_bind_index_value"
-                && let Some(sigil) = key.chars().next().filter(|c| matches!(c, '@' | '%'))
-                && key[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
-            {
-                let rhs = args.first().cloned().unwrap_or(Expr::Literal(Value::NIL));
-                self.compile_expr(&Expr::AssignExpr {
-                    name: format!("{sigil}{stash_name}{}", &key[1..]),
-                    expr: Box::new(rhs),
-                    is_bind: true,
-                });
-                return true;
-            }
-            let Some(bare) = key
-                .strip_prefix('$')
-                .filter(|bare| bare.starts_with(|c: char| c.is_alphabetic() || c == '_'))
-            else {
-                return false;
-            };
-            let (is_bind, rhs) = match value {
-                Expr::Call { name, args, .. } if *name == "__mutsu_bind_index_value" => (
-                    true,
-                    args.first().cloned().unwrap_or(Expr::Literal(Value::NIL)),
-                ),
-                other => (false, other.clone()),
-            };
-            // `GLOBAL::<$x> = v` (plain assign): the statement form's store, so
-            // a never-declared `$GLOBAL::x` lands where the GLOBAL stash reads
-            // it back (the expression-form `AssignExpr` op does not register it).
-            if !is_bind && stash_name == "GLOBAL::" {
-                self.with_escape(true, |c| c.compile_expr(&rhs));
-                let qualified = format!("GLOBAL::{bare}");
-                self.emit_set_named_var(&qualified);
-                let name_idx = self
-                    .code
-                    .add_constant(Value::str(self.qualify_variable_name(&qualified)));
-                self.code.emit(OpCode::GetGlobal(name_idx));
-                return true;
-            }
-            // `$Pkg::v` compiles to AssignExpr name "Pkg::v" (sigil dropped).
-            self.compile_expr(&Expr::AssignExpr {
-                name: format!("{stash_name}{bare}"),
-                expr: Box::new(rhs),
-                is_bind,
-            });
-            return true;
-        }
-        self.compile_bind_index_value(value);
-        self.compile_expr(index);
-        let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
-        self.code
-            .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
-        true
-    }
-
-    fn compile_bind_index_value(&mut self, value: &Expr) {
+    pub(super) fn compile_bind_index_value(&mut self, value: &Expr) {
         let is_bind = matches!(
             value,
             Expr::Call { name, .. } if *name == "__mutsu_bind_index_value"

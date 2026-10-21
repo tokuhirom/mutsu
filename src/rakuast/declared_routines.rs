@@ -30,10 +30,9 @@ thread_local! {
 /// reclassify it as a builtin after the parser's lexical import scope is gone.
 const USER_CALL: &str = "source-user-routine";
 
-/// An argument-less `Call::Name` built from a bareword nothing resolves.
-/// Rakudo has no such tree (its `.AST` throws `X::Undeclared::Symbols`), and
-/// `foo()` prints identically, so this hidden field tells lowering to restore
-/// the parser's `BareWord` instead of a call.
+/// A source bareword that lowering must preserve: an unresolved `Call::Name`
+/// rather than `foo()`, or an imported `Term::Name` rather than a setting
+/// constant. The printed nodes do not retain the parser's binding choice.
 const SOURCE_BAREWORD: &str = "source-bareword";
 
 // Cost: O(1).

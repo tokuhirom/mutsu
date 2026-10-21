@@ -637,7 +637,7 @@ pub(crate) fn validate_regex_structurally(pattern: &str) -> Result<(), RuntimeEr
     check_spaces_in_bare_range(pattern)?;
     PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = None);
     let _ = take_regex_sorrows();
-    let _ = VALIDATE_INTERP
+    let parsed = VALIDATE_INTERP
         .with(|interp| interp.parse_regex_with_mode(pattern, RegexParseMode::Validate));
     // Surface any error the structural parse recorded. The parser sometimes
     // sets a pending error and then `continue`s past the bad construct (so it
@@ -665,10 +665,66 @@ pub(crate) fn validate_regex_structurally(pattern: &str) -> Result<(), RuntimeEr
         err.exception = Some(Box::new(group));
         return Err(err);
     }
-    match pending {
-        Some(err) => Err(err),
-        None => Ok(()),
+    if let Some(err) = pending {
+        return Err(err);
     }
+    if pattern.contains('~')
+        && let Some(parsed) = &parsed
+        && contains_bare_tilde(parsed, 0)?
+    {
+        return Err(RuntimeError::new(
+            "Unrecognized regex metacharacter ~ (must be quoted to match literally)",
+        ));
+    }
+    Ok(())
+}
+
+// Cost: O(n), n = tokens in the structurally parsed regex.
+fn contains_bare_tilde(pattern: &RegexPattern, depth: usize) -> Result<bool, RuntimeError> {
+    if depth >= 128 {
+        return Err(RuntimeError::new("Regex nesting exceeds validation limit"));
+    }
+    for token in &pattern.tokens {
+        if let Some(separator) = &token.separator
+            && contains_bare_tilde(&separator.pattern, depth + 1)?
+        {
+            return Ok(true);
+        }
+        match &token.atom {
+            RegexAtom::TildeMarker => return Ok(true),
+            RegexAtom::Group(inner)
+            | RegexAtom::CaptureGroup(inner)
+            | RegexAtom::CaptureIsolatedGroup(inner)
+            | RegexAtom::CaptureIsolatedGroupScoped(inner, _)
+            | RegexAtom::Lookaround { pattern: inner, .. } => {
+                if contains_bare_tilde(inner, depth + 1)? {
+                    return Ok(true);
+                }
+            }
+            RegexAtom::QqInterp { fallback, .. } => {
+                if contains_bare_tilde(fallback, depth + 1)? {
+                    return Ok(true);
+                }
+            }
+            RegexAtom::Alternation(branches)
+            | RegexAtom::SequentialAlternation(branches)
+            | RegexAtom::Conjunction(branches) => {
+                for branch in branches {
+                    if contains_bare_tilde(branch, depth + 1)? {
+                        return Ok(true);
+                    }
+                }
+            }
+            RegexAtom::GoalMatch { goal, inner, .. }
+                if contains_bare_tilde(goal, depth + 1)?
+                    || contains_bare_tilde(inner, depth + 1)? =>
+            {
+                return Ok(true);
+            }
+            _ => {}
+        }
+    }
+    Ok(false)
 }
 
 /// Consume one opaque variable interpolation reference (`$name`, `${...}`,

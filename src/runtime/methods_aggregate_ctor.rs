@@ -261,6 +261,24 @@ impl Interpreter {
                 {
                     items.extend(crate::runtime::utils::value_to_list(arg));
                 }
+                // A native array's one-argument `new` takes any Iterable,
+                // itemized or not, and stores its elements -- a `$[...]`, a
+                // `$(...)` or a Blob/Buf (`array[uint8].new($buf)`), as
+                // rakudo's `array.new(\values)` does.
+                ValueView::Array(..)
+                    if base_class_name == "array" && args.len() == 1 =>
+                {
+                    items.extend(crate::runtime::utils::value_to_list(
+                        &crate::value::flat::deitemize_flat_operand(arg),
+                    ));
+                }
+                ValueView::Instance { .. }
+                    if base_class_name == "array"
+                        && args.len() == 1
+                        && let Some(bytes) = Self::buf_as_byte_items(arg) =>
+                {
+                    items.extend(bytes);
+                }
                 _ => items.push(arg.clone()),
             }
         }

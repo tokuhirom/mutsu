@@ -19,13 +19,25 @@
 
 use std::hash::{Hash, Hasher};
 
-use super::{ExistsAdverb, Expr, SUBSCRIPT_ASSOCIATIVE_MARKER, SUBSCRIPT_POSITIONAL_MARKER};
+use super::{
+    BinaryForm, ExistsAdverb, Expr, SUBSCRIPT_ASSOCIATIVE_MARKER, SUBSCRIPT_POSITIONAL_MARKER,
+};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
 /// The builtin a value adverb (`:k` / `:v` / `:kv` / `:p`) lowers to.
 pub(crate) const SUBSCRIPT_ADVERB_FN: &str = "__mutsu_subscript_adverb";
 pub(crate) const SUBSCRIPT_NAMED_ADVERBS_FN: &str = "__mutsu_subscript_named_adverbs";
+
+/// Retain the written colonpair beside a subscript's execution expansion.
+pub(crate) fn source_pair(key: &str, value: Expr, form: BinaryForm) -> Expr {
+    Expr::Binary {
+        left: Box::new(Expr::Literal(Value::str(key.to_string()))),
+        op: crate::token_kind::TokenKind::FatArrow,
+        right: Box::new(value),
+        form,
+    }
+}
 
 // Cost: O(1).
 pub(crate) fn is_builtin_name(name: &str) -> bool {
@@ -219,9 +231,9 @@ pub(crate) fn delete_flag() -> Expr {
 
 /// The deleting form of a single-dimension subscript's read, `read` being
 /// the subscript itself, its `:exists` node or its value-adverb call.
-pub(crate) fn deleting(read: &Expr) -> Expr {
+pub(crate) fn deleting(read: &Expr, delete_first: bool) -> Expr {
     match read {
-        Expr::Exists { .. } => apply_delete_to_exists(read.clone()),
+        Expr::Exists { .. } => apply_delete_to_exists(read.clone(), delete_first),
         Expr::Call { name, args, .. } if *name == SUBSCRIPT_ADVERB_FN => {
             let mut args = args.clone();
             args.push(delete_flag());
@@ -297,7 +309,7 @@ pub(crate) fn multidim_target_var_name(target: &Expr) -> String {
 /// and only the by-name `_dyn` builtin can mutate the variable — so lower to
 /// that here, the same form the dynamic `:$delete` produces with a runtime-true
 /// flag. `:!exists:delete` has no candidate at all there and is an X::Adverb.
-pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
+pub(crate) fn apply_delete_to_exists(expr: Expr, delete_first: bool) -> Expr {
     let Expr::Exists {
         target,
         negated,
@@ -324,13 +336,33 @@ pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
     };
     let var_name = multidim_target_var_name(mdt);
     if negated {
-        return build_adverb_error_call(
+        let error = build_adverb_error_call(
             "slice",
             &var_name,
             Some(mdt),
             &["!exists".to_string(), "delete".to_string()],
             &[],
         );
+        return Expr::spelled(error, || {
+            let exists = source_pair(
+                "exists",
+                Expr::Literal(Value::FALSE),
+                BinaryForm::ColonPairFalse,
+            );
+            let delete = source_pair(
+                "delete",
+                Expr::Literal(Value::TRUE),
+                BinaryForm::ColonPairTrue,
+            );
+            super::spelled::Spelling::ConflictingSubscript {
+                subscript: target,
+                pairs: if delete_first {
+                    vec![delete, exists]
+                } else {
+                    vec![exists, delete]
+                },
+            }
+        });
     }
     let adverb_str = match adverb {
         ExistsAdverb::Kv => "kv",
@@ -656,7 +688,9 @@ pub(crate) fn expand(subscript: Expr, adverbs: &[Adverb], six_e: bool) -> Option
             conditional_delete(delete.clone(), call, read)
         });
     }
-    let deleting = deleting(&read);
+    let delete_first = adverbs.iter().position(|(key, _)| key == "delete")
+        < adverbs.iter().position(|(key, _)| key == "exists");
+    let deleting = deleting(&read, delete_first);
     Some(if is_bool_literal(delete, true) {
         deleting
     } else {

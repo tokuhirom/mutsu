@@ -226,7 +226,7 @@ impl Interpreter {
             // living in `@` array context so gist/`.WHAT` render
             // `[...]`/`Array` rather than `(...)`/`Seq`.
             ValueView::LazyList(list) if list.coroutine.is_some() || list.is_genuinely_lazy() => {
-                Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+                self.lazy_array_value(&list, name)
             }
             ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
             ValueView::Seq(body) if body.is_io_lines_source() => {
@@ -559,7 +559,12 @@ impl Interpreter {
         }
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();
-        let Some(declared) = self.var_type_constraint_value_for(name, name_sym) else {
+        let declared = if code.declares_slot(idx) {
+            self.own_var_type_constraint_value_sym(name_sym.unwrap_or_else(|| Symbol::intern(name)))
+        } else {
+            self.var_type_constraint_value_for(name, name_sym)
+        };
+        let Some(declared) = declared else {
             // The per-name latch is a "maybe": no constraint is actually
             // registered, so there is nothing for the typed branch to do.
             return true;
@@ -1060,7 +1065,15 @@ impl Interpreter {
             // Read through a ContainerRef: `$outer := self` rewrites the frame's
             // `self` into the bind's shared cell, but it still holds the instance.
             && !self_val.with_deref(|v| {
-                matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+                matches!(
+                    v.view(),
+                    ValueView::Instance { .. }
+                        | ValueView::Mixin(..)
+                        | ValueView::Proxy {
+                            subclass: Some(_),
+                            ..
+                        }
+                )
             })
         {
             // self is a type object - determine class name for error message
@@ -1897,7 +1910,7 @@ impl Interpreter {
                         // a pipe over one) is `.is-lazy` False and
                         // materializes eagerly.
                         if list.preserve_lazy_on_array_assign() {
-                            Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+                            self.lazy_array_value(&list, name)
                         } else {
                             let forced = self.force_lazy_list_vm(&list)?;
                             Value::real_array(self.decay_nil_vec_elements(forced))
@@ -3234,7 +3247,7 @@ impl Interpreter {
                 },
                 value_type,
                 key_type: if name.starts_with('%') {
-                    loan_env!(self, var_hash_key_constraint(name))
+                    self.slot_hash_key_constraint(code, idx, name, name_sym)
                 } else {
                     None
                 },

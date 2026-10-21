@@ -37,6 +37,8 @@ pub(crate) enum Spelling {
     /// A parenthesized package declarator adverb, including when its expression
     /// normalizes to the same value as an angle adverb.
     ParenthesizedDeclaratorAdverb,
+    /// An attribute trait's direct `[ ... ]` argument, not `([ ... ])`.
+    BracketTraitArgument,
     /// `q:to/END/`: the terminator line as written, indentation and newline
     /// included (`    END\n`).
     Heredoc { stop: Box<str> },
@@ -56,6 +58,8 @@ pub(crate) enum Spelling {
         /// Words become allomorphs (`val`).
         val: bool,
         text: Box<str>,
+        /// The source delimiter for nested `<< >>` or `« »` word quotes.
+        delimiter: Option<char>,
     },
     /// `gather say 1`, `try say 1`, `start say 1`, `once say 1`, `BEGIN say 1`:
     /// a statement prefix written over a bare statement. The wrapped
@@ -78,6 +82,9 @@ pub(crate) enum Spelling {
         subscript: Box<Expr>,
         pairs: Vec<Expr>,
     },
+    /// A bare Whatever operand of `o` is expanded to a closure for execution;
+    /// the public RakuAST keeps the written composition and Whatever argument.
+    CompositionWhatever(Box<Expr>),
 }
 
 /// A term and the way it was spelled; see the module documentation.

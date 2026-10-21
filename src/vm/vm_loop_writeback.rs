@@ -531,6 +531,22 @@ impl Interpreter {
         } else {
             idx
         };
+        // A multi-dimensional shaped array iterates its leaves (#14248).
+        if kind == crate::value::ArrayKind::Shaped
+            && let Some(updated) =
+                Self::shaped_leaf_writeback(raw_source.as_ref(), actual_idx, &current_topic)
+        {
+            if let Some(updated_value) = updated {
+                self.write_back_container_source(
+                    code,
+                    source,
+                    source_slot,
+                    &raw_source,
+                    updated_value,
+                );
+            }
+            return;
+        }
         // `items` is the source's live node, which another thread can be
         // restructuring (ADR-0068, #13016): probe and copy it under its stripe.
         // A leaf: nothing below runs user code until the store.

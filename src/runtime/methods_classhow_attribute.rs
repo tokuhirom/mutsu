@@ -225,8 +225,12 @@ impl Interpreter {
             Self::required_meta_value(is_required),
         );
         // A seeded default (the parser's type-object seed for `has Int $.id`)
-        // is not a user-written initializer: `.build` stays `Mu` for it.
-        if let Some(default_arg) = default.as_ref().filter(|_| !attr.default_is_seed) {
+        // is not a user-written initializer: `.build` stays `Mu` for it, as
+        // for the value of an `is default(...)` trait with no initializer.
+        if let Some(default_arg) = default
+            .as_ref()
+            .filter(|_| !attr.default_is_seed && !attr.default_is_trait)
+        {
             meta.insert("__mutsu_has_build".to_string(), Value::TRUE);
             if let Some(v) = default_arg.literal() {
                 meta.insert("build".to_string(), v.clone());
@@ -577,7 +581,7 @@ impl Interpreter {
                     fresh
                 };
                 let trait_arg_val = if let Some(arg_expr) = trait_arg {
-                    Some(self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?)
+                    Some(self.eval_decl_trait_arg(arg_expr)?)
                 } else {
                     None
                 };

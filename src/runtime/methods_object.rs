@@ -664,6 +664,14 @@ impl Interpreter {
         class_name: Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // A class whose BUILDPLAN the MOP replaced runs that plan when the
+        // default constructor is the one called (ADR-14162 §4).
+        if self.buildplan_replaced_in_mro(class_name)
+            && (!self.mro_declares_user_new(class_name)
+                || self.user_new_declines(class_name, args))
+        {
+            return self.construct_by_buildplan(class_name, args);
+        }
         let plan = self.native_ctor_plan(class_name);
         if !(plan.eligible
             || plan.eligible_when_user_new_declines

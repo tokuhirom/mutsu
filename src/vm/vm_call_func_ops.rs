@@ -302,12 +302,10 @@ impl Interpreter {
     /// name, and (unless `&name` is an imported alias) no same-named package
     /// sub / proto / multi, whose shadow case is handled separately.
     ///
-    /// Cost: O(1) hashed probes.
+    /// Cost: O(1) hashed probes, plus the anchor-unit walk of
+    /// `env_key_imported_here` when some unit imported `&name`.
     pub(crate) fn lexical_amp_call_eligible(&mut self, name: &str) -> bool {
-        let imported_alias = self
-            .module
-            .imported_env_aliases
-            .contains_key(&Symbol::intern(&format!("&{name}")));
+        let imported_alias = self.env_key_imported_here(Symbol::intern(&format!("&{name}")));
         !(Self::is_control_flow_function_name(name)
             || Self::is_interpreter_carrier_function(name)
             || self.is_interpreter_handled_function(name)
@@ -499,7 +497,13 @@ impl Interpreter {
             for e in &spec.entries {
                 let slot = &mut self.stack[base + e.pos as usize];
                 let val = std::mem::replace(slot, Value::NIL);
-                *slot = Value::pair(e.key.clone(), val);
+                // The VarRef is call-site provenance, not the Pair's value.
+                // Keep an already-resolved container inside it (rw binding),
+                // while native named-value readers receive the actual value.
+                *slot = Value::pair(
+                    e.key.clone(),
+                    crate::runtime::types::unwrap_varref_value(val),
+                );
             }
         }
         // `_inner`, not the wrapper: this frame's mask is already published by
@@ -1826,6 +1830,15 @@ impl Interpreter {
             );
         }
         crate::vm::vm_stats::record_function_dispatch();
+        // An imported routine a trait composed a CALL-ME role into is called
+        // through that role, as its code object is (ADR-11827).
+        let binding = match binding {
+            CodeVarBinding::Routine(def) => match self.call_me_view_of_def(&def) {
+                Some(current) => CodeVarBinding::Bound(current),
+                None => CodeVarBinding::Routine(def),
+            },
+            other => other,
+        };
         if let CodeVarBinding::Routine(def) = &binding
             && self.try_lex_import_light_call(
                 code,
@@ -2039,26 +2052,26 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         trir_args: Option<&[Value]>,
     ) -> Result<Value, RuntimeError> {
-        let qualified_def =
-            if call_me_override.is_none() && crate::qualified::is_qualified(name_sym) {
-                self.registry().function_def(name_sym)
+        // A trait may have composed a role with CALL-ME onto the routine a
+        // call names. The composition lives in the routine's identity cell
+        // (ADR-11827), not in an env `&name` binding -- a module's binding
+        // does not outlive its load (#12907) -- so consult the cell of the
+        // routine the name resolves to before taking the ordinary
+        // compiled-function path. A multi's candidates are left to dispatch.
+        let composed_def =
+            if call_me_override.is_none() && crate::value::RoutineCell::any_composed() {
+                if crate::qualified::is_qualified(name_sym) {
+                    self.registry().function_def(name_sym)
+                } else if !self.has_multi_candidates_cached_sym(name_sym) {
+                    self.resolve_function(name)
+                } else {
+                    None
+                }
             } else {
                 None
             };
-        // A package-qualified call names a routine definition directly, so it
-        // normally skips the routine value's CALL-ME dispatch. A trait may have
-        // composed a role with CALL-ME onto that routine; consult the def-owned
-        // identity cell before taking the ordinary compiled-function path.
-        // This is deliberately limited to qualified names: bare-name calls
-        // retain their existing lexical and multi-dispatch resolution.
-        if let Some(def) = qualified_def
-            && let Some(current) =
-                Self::routine_current_view(&self.sub_value_from_function_def((*def).clone()))
-            && let ValueView::Mixin(_, mixins) = current.view()
-            && mixins.keys().any(|key| {
-                key.strip_prefix("__mutsu_role__")
-                    .is_some_and(|role| self.role_has_method(role, "CALL-ME"))
-            })
+        if let Some(def) = composed_def
+            && let Some(current) = self.call_me_view_of_def(&def)
         {
             return self.vm_call_on_value(current, args, Some(compiled_fns));
         }
@@ -2632,10 +2645,7 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
-                } else if self
-                    .module
-                    .imported_env_aliases
-                    .contains_key(&Symbol::intern(&format!("&{name}")))
+                } else if self.env_key_imported_here(Symbol::intern(&format!("&{name}")))
                     && let Some(callable) = self.lexical_amp_var_callable(Some(code), name)
                 {
                     // A custom EXPORT hook can install an imported CODE alias
@@ -2804,8 +2814,19 @@ impl Interpreter {
                         self.invalidate_fn_resolution();
                     }
                     // substr-rw / subbuf-rw return a Proxy that must be preserved
-                    // (not auto-FETCHed)
-                    let auto_fetch = name != "substr-rw" && name != "subbuf-rw";
+                    // (not auto-FETCHed). So does a re-dispatch: it hands back
+                    // what the next candidate returned, and a Proxy subclass's
+                    // `new` doing `callwith(:$FETCH, :$STORE).VAR` wants the
+                    // Proxy itself (AttrX::Mooish's `AttrProxy`).
+                    let auto_fetch = !matches!(
+                        name,
+                        "substr-rw"
+                            | "subbuf-rw"
+                            | "callwith"
+                            | "callsame"
+                            | "nextwith"
+                            | "nextsame"
+                    );
                     let result = result?;
                     if name == "make" {
                         self.attach_made_to_match_topic(code, result.clone());
@@ -3380,7 +3401,7 @@ impl Interpreter {
                 matches!(
                     t.as_str(),
                     "copy" | "rw" | "raw" | "readonly" | "required" | "encoded"
-                )
+                ) || t == crate::ast::does_target::DOES_TARGET_TRAIT
             })
         })
     }

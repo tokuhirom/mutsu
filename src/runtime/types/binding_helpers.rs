@@ -74,6 +74,20 @@ impl Interpreter {
             None
         };
         let value = self.eval_param_default_expr(pd, default_expr);
+        // A readonly parameter binds the value a Proxy default fetches
+        // (`method decode($encoded = $.encoded)` with an `is rw` accessor
+        // returning a Proxy), as it binds a supplied Proxy argument: its
+        // multi dispatch and type checks see the Blob, not the container.
+        // An `is rw` / `is raw` parameter keeps the container.
+        let value = match value {
+            Ok(v)
+                if v.is_proxy_value()
+                    && !pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")) =>
+            {
+                self.auto_fetch_proxy(&v)
+            }
+            other => other,
+        };
         // Restore the parameter's prior env binding; the caller performs the
         // real bind right after. On the error path this prevents the shadow
         // from leaking.

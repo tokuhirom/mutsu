@@ -7,6 +7,7 @@ pub(crate) use type_qualify::qualify_program as qualify_type_names;
 // construction that moved out of the parser) needs these priming-scope
 // predicates, so re-export them at crate visibility without making the whole
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
+pub(crate) use expr::lower_composition;
 pub(crate) use expr::{
     contains_whatever, is_frozen_whatever, is_whatever, should_wrap_whatevercode,
 };
@@ -18,7 +19,10 @@ pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
-pub(crate) use primary::ident::{anon_method_expr, anon_method_expr_declared, folded_invocant};
+pub(crate) use primary::ident::{
+    anon_method_expr, anon_method_expr_declared, bind_invocant_aliases, folded_invocant,
+    method_literal_params,
+};
 pub(crate) use primary::ident::{is_loop_control_label, loop_control_expr};
 pub(crate) use primary::regex::{
     SubstFlags, parse_adverb_argument, regex_execution_value, rx_execution_value,
@@ -85,7 +89,8 @@ pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;
 mod outer_redecl;
-mod p6_frame_state;
+pub(crate) mod p6_frame_state;
+pub(crate) use stmt::decl::typed_default_expr;
 mod parse_result;
 mod primary;
 pub(crate) use primary::container::finalize_array_sections;
@@ -263,6 +268,8 @@ pub(crate) fn colonpair_source_expr(source: &str) -> Option<crate::ast::Expr> {
 /// Slang activation surface for the runtime (ADR-0026): the runtime's
 /// `$*LANG.define_slang` maps overridden grammar-rule names onto these
 /// parser modes.
+#[cfg(test)]
+pub(crate) use stmt::simple::RECOGNIZED_PRODUCTION_OVERRIDES;
 pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_modes};
 
 /// The module search paths a parse-time slang activation must run under — the

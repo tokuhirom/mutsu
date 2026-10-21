@@ -550,6 +550,8 @@ pub(crate) fn sub_decl_body(
         return Err(PError::fatal_with_exception(msg, Box::new(ex)));
     }
     let merged_return_type = return_type.or(traits.return_type);
+    let mut param_defs = param_defs;
+    crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     let sub_name_sym = Symbol::intern(&name);
     let sub_decl = Stmt::SubDecl {

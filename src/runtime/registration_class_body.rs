@@ -425,6 +425,7 @@ impl Interpreter {
             self.run_pending_attr_composes(&mut cx)?;
             self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
             self.persist_class_body_statics(&cx, declared_static_names);
+            self.restore_class_body_our_aliases(&cx, body_plan);
             self.restore_nested_type_short_names(&cx);
             Ok(())
         })();
@@ -691,6 +692,7 @@ impl Interpreter {
             return_type.as_deref(),
             trait_args,
             &proto_cell,
+            0,
         )
     }
 

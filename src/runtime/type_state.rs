@@ -84,10 +84,6 @@ pub(crate) struct TypeState {
     /// checked". `AtomicU64` (not `Cell`) so `Interpreter` stays `Send`/`Sync` —
     /// `registry_mut()` takes `&self`.
     pub(crate) registry_write_gen: std::sync::atomic::AtomicU64,
-    /// Per-class memo of the native-dispatch numeric-bridge probe, keyed by the
-    /// `registry_write_gen` above. See [`numeric_bridge_probe`] for why that
-    /// generation is a sound invalidation key (#7712).
-    pub(crate) numeric_bridge_probe: numeric_bridge_probe::NumericBridgeProbeCache,
     /// Per-`(class, attribute)` memo of `self_attr_type_constraint`, keyed by
     /// the same `registry_write_gen` (ADR-0121). See `vm_attr_type_constraint`.
     pub(crate) attr_type_constraint_cache: std::cell::RefCell<crate::vm::AttrTypeConstraintCache>,
@@ -294,7 +290,6 @@ impl TypeState {
             type_metadata: Default::default(),
             registry: Arc::new(RwLock::new(Interpreter::shared_builtin_registry())),
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
-            numeric_bridge_probe: Default::default(),
             attr_type_constraint_cache: Default::default(),
             package_stash_hidden: Default::default(),
             predictive_seq_iters: HashMap::new(),
@@ -354,7 +349,6 @@ impl TypeState {
             // side writes the registry, the deep clone (and its drop) never happens.
             registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
-            numeric_bridge_probe: Default::default(),
             attr_type_constraint_cache: Default::default(),
             package_stash_hidden: self.package_stash_hidden.clone(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
