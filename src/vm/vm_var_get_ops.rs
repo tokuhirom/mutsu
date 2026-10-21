@@ -163,7 +163,11 @@ impl Interpreter {
         // outlive the scope that made the bare binding invisible (module
         // visibility, suppressed names), which the ordinary path still honours.
         let lexical_type = if let Some(binding) = self.lexical_type_binding_sym(name_sym) {
+            // A bare binding this frame hides (a block-scoped `use`'s import
+            // of the same name, ADR-8751) is no binding of the frame's: the
+            // type-only key is the frame's own declaration.
             let taken_over = over_scalar
+                || self.env().frame_hides_unit_name(name_sym)
                 || !matches!(
                     self.env().get(name).map(Value::view),
                     None | Some(ValueView::Package(_))
