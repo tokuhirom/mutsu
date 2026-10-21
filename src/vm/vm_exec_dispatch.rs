@@ -5066,11 +5066,6 @@ impl Interpreter {
                             self.sink_seq_body(&body)?;
                         }
                         _ => {
-                            // `.sink` of a Proxy reads it: the FETCH runs (and may
-                            // die) although nothing uses the value.
-                            if val.is_proxy_value() {
-                                self.auto_fetch_proxy(&val)?;
-                            }
                             // Sinking an unhandled Failure throws (Raku behavior) —
                             // except inside a regex `{ ... }` code block, whose
                             // statements rakudo compiles as wanted, not sunk: a
