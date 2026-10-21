@@ -139,11 +139,14 @@ impl Interpreter {
             // element here, at the one place that knows these came from a
             // positional container, rather than trying to recover that
             // context later in `append_slip_item`.
-            ValueView::Array(items, ..) => items
-                .iter()
-                .cloned()
-                .map(Self::containerize_pair_item)
-                .collect(),
+            // A multi-dimensional shaped array slips its leaves (#14248).
+            ValueView::Array(items, ..) => {
+                crate::value::shaped_array::shaped_array_iteration_leaves(&val)
+                    .unwrap_or_else(|| items.to_vec())
+                    .into_iter()
+                    .map(Self::containerize_pair_item)
+                    .collect()
+            }
             // A nested Slip's items were already finalized by the
             // `exec_make_slip_op` call that built it (positional-source
             // elements containerized, a bare-Pair/Hash source promoted to

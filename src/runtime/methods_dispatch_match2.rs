@@ -35,6 +35,15 @@ impl Interpreter {
             };
             return Some(self.call_method_with_values(Value::array(items), method, args));
         }
+        // `Array.list` is `self`, shaped or not (#14248); only a native shaped
+        // array's `.list` is the flat List of its leaves.
+        if method == "list"
+            && args.is_empty()
+            && crate::runtime::utils::is_shaped_array(&target)
+            && !crate::builtins::method_table::is_native_array(&target)
+        {
+            return Some(Ok(target));
+        }
         // `.List`/`.list`/`.Array` on a shaped array flattens all dimensions and
         // replaces uninitialized (`Nil`) slots with the container's type-default.
         if matches!(method, "List" | "list" | "Array")

@@ -83,6 +83,7 @@ impl Interpreter {
         let target = Self::routine_current_view(&target).unwrap_or(target);
         // A lazy-tail Slip answers as the lazy list it reifies from (#13117).
         let target = Self::lazy_slip_receiver(target, method);
+        let target = Self::shaped_iteration_receiver(target, method);
         // `Mu.perl` is `self.raku` (ADR-11276 §9.152).
         let method = if method == "perl" {
             self.perl_as_raku(&target, crate::symbol::wk::perl())

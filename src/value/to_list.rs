@@ -46,8 +46,14 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         // yields the container's `is default(...)` value (`items_with_default`).
         // The copy holds the node's stripe: another thread may be
         // restructuring a shared node (ADR-0068 §20).
-        ValueView::Array(items, ..) => {
+        ValueView::Array(items, kind) => {
             let _read = crate::value::container_lock::ContainerStructGuard::acquire_for(None, val);
+            // A multi-dimensional shaped array iterates its leaves (#14248).
+            if kind == crate::value::ArrayKind::Shaped
+                && let Some(leaves) = crate::value::shaped_array::shaped_array_iteration_leaves(val)
+            {
+                return leaves;
+            }
             items.items_with_default().into_owned()
         }
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
