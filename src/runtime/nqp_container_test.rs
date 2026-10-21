@@ -110,12 +110,14 @@ impl Interpreter {
 
     /// Whether nqp op `id` must see its operands unFETCHed: the container
     /// tests ask about the `Proxy` itself, and `decont` hands it back unfetched
-    /// (rakudo; AttrX::Mooish's FETCH relies on it).
+    /// (rakudo; AttrX::Mooish's FETCH relies on it); `bindattr` stores its value
+    /// operand as it is, so a `Proxy` becomes the attribute's container.
     // Cost: O(1).
     pub(crate) fn nqp_op_keeps_proxy_operands(id: u16) -> bool {
         matches!(
             crate::runtime::nqp_op_ids::nqp_op_name(id),
             "iscont" | "iscont_i" | "iscont_n" | "iscont_s" | "isrwcont" | "decont" | "istype_nd"
+            | "bindattr" | "bindattr_i" | "bindattr_n" | "bindattr_s" | "p6bindattrinvres"
         )
     }
 }
