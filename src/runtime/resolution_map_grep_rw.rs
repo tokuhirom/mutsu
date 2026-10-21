@@ -113,7 +113,7 @@ impl Interpreter {
                     .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
                 let chunk_at = |items: &[Value], i: usize| items[i..(i + arity).min(items.len())].to_vec();
                 if !list_items.is_empty() {
-                    let first = chunk_at(&list_items, 0);
+                    let first = chunk_at(list_items, 0);
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first)?;
                 }
                 let mut last_start = None;
@@ -178,7 +178,7 @@ impl Interpreter {
                 }
                 self.env.remove_sym(topic_key);
                 if let Some(start) = last_start {
-                    let last = chunk_at(&list_items, start);
+                    let last = chunk_at(list_items, start);
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last)?;
                 }
                 return Ok(());
