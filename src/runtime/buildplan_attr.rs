@@ -37,11 +37,10 @@ impl Interpreter {
             state.all_plan_bound = true;
         } else {
             state.plan = Some(plan.clone());
-            // A BUILDALLPLAN `create_BUILDPLAN` derived from the old plan is
-            // stale now; one a module bound is the module's to keep.
-            if !state.all_plan_bound {
-                state.all_plan = None;
-            }
+            // `@!BUILDALLPLAN` was derived by `create_BUILDPLAN` already
+            // (rakudo computes both in one call), so rebinding only
+            // `@!BUILDPLAN` leaves what the class constructs by alone; a
+            // subclass composed later derives its own from this plan.
         }
         state.replaced = true;
         Some(Ok(plan.clone()))
