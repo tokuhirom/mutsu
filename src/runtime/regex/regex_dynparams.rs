@@ -121,7 +121,7 @@ pub(crate) fn note_token_def_routine_reads(body: &[crate::ast::Stmt]) {
 pub(crate) fn resolve_rule_routine_reads(body: &mut [crate::ast::Stmt], package: &str, name: &str) {
     use crate::ast::{Expr, Stmt};
     const NEEDLE: &str = "&?ROUTINE";
-    if package.is_empty() || package == "GLOBAL" {
+    if crate::qualified::is_global_package(Symbol::intern(package)) {
         return;
     }
     let lookup = format!(
