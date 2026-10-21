@@ -10,7 +10,8 @@
 # takes its metaclass from a `set_how` in the EXPORT body, while `gadget`
 # declares `$*PKGDECL := 'role'` and swaps the metaclass from inside the
 # candidate itself — the two shapes Test::Async's `test-hub` and `test-bundle`
-# use respectively.
+# use respectively. The actions role also carries a helper method next to its
+# production handlers, as Test::Async::Decl's does.
 use v6;
 use nqp;
 
@@ -48,8 +49,14 @@ sub EXPORT is raw {
         method package_declarator:sym<widget>(Mu $/) {
             $/.make( mkey($/, 'package_def').ast );
         }
+        # A helper, not a production handler (ADR-13220): no grammar has a
+        # production called `gadget-ast`, so no parse calls it; the action
+        # below does, as Test::Async::Decl's actions call `self.add_phaser($/)`.
+        method gadget-ast(Mu $/) {
+            mkey($/, 'package_def').ast
+        }
         method package_declarator:sym<gadget>(Mu $/) {
-            $/.make( mkey($/, 'package_def').ast );
+            $/.make( self.gadget-ast($/) );
         }
     }
 
