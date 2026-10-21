@@ -344,7 +344,12 @@ impl Interpreter {
                 Some(LexicalImport::Code(value.clone()))
             } else if let Some(def) = capture.lexical_defs.get(&name) {
                 Some(LexicalImport::Routine(std::sync::Arc::clone(def)))
-            } else if let Some(candidates) = multi_defs.get(&name) {
+            } else if let Some(candidates) = multi_defs
+                .get(&name)
+                .filter(|_| !capture.amp_env_keys.contains(&amp))
+            {
+                // (A family a `sub EXPORT` hook also handed candidates of
+                // keeps the env alias that carries both.)
                 // A multi family binds as its dispatcher value over the
                 // candidates the import installed (ADR-8751 stage 2), which a
                 // closure keeps after the block's registry aliases are gone.
