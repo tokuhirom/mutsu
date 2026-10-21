@@ -2038,6 +2038,15 @@ impl Interpreter {
                     self.coerce_constant_hash_value(&name, raw_val)?
                 } else if raw_mode {
                     raw_val
+                } else if name.starts_with('%')
+                    && (is_bind_ctx || is_rebind)
+                    && raw_val.is_proxy_value()
+                {
+                    // `%!attr := Proxy.new(...)`: the Proxy is the container.
+                    // Its FETCHed value passed the Associative bind check
+                    // already (`check_hash_bind_value`); coercing it here would
+                    // replace the Proxy with a Hash of its parts.
+                    raw_val
                 } else if name.starts_with('%') {
                     // Apply quant-hash (SetHash/BagHash/MixHash) coercion first
                     // so that typed container assignment sees a Set/Bag/Mix,
@@ -2209,7 +2218,14 @@ impl Interpreter {
                 // to the enclosing method's invocant.  Update the invocant's
                 // shared attribute cell directly, just as the local-slot path
                 // does, so topic selection cannot retarget the write.
-                if is_array_hash_attr_twigil && !Self::is_non_mirrorable_attr_value(&val) {
+                // A Proxy bound to `@!attr`/`%!attr` (`:=`) is the attribute's
+                // container, so it is seated in the cell like any other bind
+                // (AttrX::Mooish's `AttrProxy`); only a plain store of one is
+                // left to the Proxy arm below.
+                let seats_bound_proxy = (is_bind_ctx || is_rebind) && val.is_proxy_value();
+                if is_array_hash_attr_twigil
+                    && (seats_bound_proxy || !Self::is_non_mirrorable_attr_value(&val))
+                {
                     self.write_self_attr_cell(&name, val.clone());
                     // Attribute assignments have no lexical/global store to
                     // reconcile.  Finish them here so a stale by-name mirror

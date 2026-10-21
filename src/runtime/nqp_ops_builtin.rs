@@ -555,7 +555,14 @@ impl Interpreter {
         }
         match obj.view() {
             ValueView::Instance { attributes, .. } => {
-                attributes.bind_attr_through(attr_key, val);
+                // A Proxy or a cell is the attribute's container, so it
+                // replaces the slot (a bind); anything else is stored through a
+                // `:=`-bound cell the slot already holds.
+                if Self::is_non_mirrorable_attr_value(&val) {
+                    attributes.bind_attr_replace(attr_key, val);
+                } else {
+                    attributes.bind_attr_through(attr_key, val);
+                }
             }
             ValueView::Proxy {
                 subclass: Some((_, attributes)),

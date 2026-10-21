@@ -408,6 +408,22 @@ impl InstanceAttrs {
         write_attrs(self.cell()).insert_through(key, value);
     }
 
+    /// Replace the attribute `key` with `value` (a bind: the value is the
+    /// container itself), in place under one write lock, queued the way
+    /// [`Self::bind_attr_through`] queues one when this thread holds a read
+    /// guard on the cell.
+    // Cost: O(1).
+    pub(crate) fn bind_attr_replace<K: AttrKey + Copy>(&self, key: K, value: Value) {
+        let addr = cell_addr(self.cell());
+        if HELD_READ_CELLS.with(|c| c.borrow().contains(&addr)) {
+            let mut map = self.to_map();
+            map.insert(key, value);
+            self.commit_attrs(map);
+            return;
+        }
+        write_attrs(self.cell()).insert(key, value);
+    }
+
     /// Store `value` in declared slot `slot` of an instance laid out by layout
     /// `layout_id`, the way [`Self::store_through_container`] stores by key --
     /// the write half of a per-site attribute cache hit (ADR-0121 D3). Returns
