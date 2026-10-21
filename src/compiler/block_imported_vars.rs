@@ -195,7 +195,10 @@ impl Compiler {
     /// there binds its imports in that scope.
     // Cost: O(1).
     pub(super) fn binds_required_symbols_here(&self) -> bool {
-        self.decl_scope_depth > 0 || self.is_routine || self.lexically_in_routine || self.in_closure_body
+        self.decl_scope_depth > 0
+            || self.is_routine
+            || self.lexically_in_routine
+            || self.in_closure_body
     }
 
     /// The module and the literal import list of a statement-level
