@@ -413,6 +413,24 @@ impl Interpreter {
             // own (it is synthesized on demand by the frame's `code`
             // accessor), so it is rebuilt here the same way and rendered
             // through the ordinary Code `.raku` dispatch.
+            // `HyperSeq.configuration` has no class declaration to read its
+            // public attributes from: its two fields are the whole object.
+            "HyperConfiguration" if method == "raku" => {
+                let attrs = attributes.as_map();
+                let fields: Vec<String> = ["batch", "degree"]
+                    .iter()
+                    .filter_map(|k| {
+                        attrs.get(*k).map(|a| {
+                            let a = crate::builtins::methods_0arg::raku_repr::raku_value(a);
+                            format!("{k} => {a}")
+                        })
+                    })
+                    .collect();
+                return Some(Ok(Value::str(format!(
+                    "HyperConfiguration.new({})",
+                    fields.join(", ")
+                ))));
+            }
             "Backtrace::Frame" => {
                 let attr_map = attributes.as_map();
                 let file_value = attr_map

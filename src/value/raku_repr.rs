@@ -1317,20 +1317,6 @@ fn raku_value_node(v: &Value) -> String {
             let which = attributes.as_map().objat_which().unwrap_or_default();
             format!("{}.new(\"{}\")", class_name.resolve(), which)
         }
-        // `HyperSeq.configuration`: its two public attributes, like Rakudo's
-        // `HyperConfiguration.new(batch => 4, degree => 2)`.
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "HyperConfiguration" => {
-            let attrs = attributes.as_map();
-            let fields: Vec<String> = ["batch", "degree"]
-                .iter()
-                .filter_map(|k| attrs.get(*k).map(|a| format!("{k} => {}", raku_value(a))))
-                .collect();
-            format!("HyperConfiguration.new({})", fields.join(", "))
-        }
         ValueView::Mixin(inner, mixins) => {
             // An allomorphic value (IntStr/RatStr/NumStr/ComplexStr) renders as
             // `TypeStr.new(<numeric>, "<original string>")` — e.g. `<42>.raku`
