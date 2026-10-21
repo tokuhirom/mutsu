@@ -599,9 +599,9 @@ impl Interpreter {
         // `Array.AT-POS` answers the element's container (rw), so an
         // overriding `method AT-POS($i) is rw { callsame }` stays assignable.
         if method_name == "AT-POS"
-            && self.in_lvalue_assignment
             && let [idx] = args
-            && let ValueView::Int(i) = idx.view()
+            && let idx = crate::runtime::types::unwrap_varref_value(idx.clone())
+            && let ValueView::Int(i) = idx.deref_container().view()
             && i >= 0
             && let Some(slot) = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
                 storage.array_slot_ref(i as usize, true)

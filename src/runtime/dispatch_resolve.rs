@@ -312,6 +312,55 @@ impl Interpreter {
         self.resolve_function(name)
     }
 
+    /// How a `Proxy` argument of a call to the multi `name` is handled by
+    /// candidate selection, per positional slot: `true` where it must be
+    /// FETCHed first because some candidate constrains that slot by type (a
+    /// `%`/`@`/`&` sigil counts), `false` where every candidate takes `Mu`/`Any`
+    /// or an untyped parameter (a FETCH there would only run twice). `None`
+    /// when a candidate takes an argument by container (`is rw`, `is raw`): the
+    /// `Proxy` must reach it as it is.
+    // Cost: O(c * p), c = candidates of the family, p = parameters.
+    fn multi_proxy_slots(&mut self, name: &str, arity: usize) -> Option<Vec<bool>> {
+        let keys = self.fn_keys_for_base_sym(name, Symbol::intern(name));
+        let registry = self.registry();
+        let mut typed = vec![false; arity];
+        for key in keys.iter() {
+            let Some(def) = registry.functions.get(key) else {
+                continue;
+            };
+            let mut slot = 0usize;
+            for pd in &def.param_defs {
+                if pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")) {
+                    return None;
+                }
+                if pd.named || pd.is_invocant {
+                    continue;
+                }
+                if pd.slurpy {
+                    // A typed slurpy ranks every slot it swallows.
+                    if pd.type_constraint.as_deref().is_some_and(|tc| !matches!(tc, "Mu" | "Any")) {
+                        for t in typed.iter_mut().skip(slot) {
+                            *t = true;
+                        }
+                    }
+                    break;
+                }
+                let constrained = pd
+                    .type_constraint
+                    .as_deref()
+                    .is_some_and(|tc| !matches!(tc, "Mu" | "Any"))
+                    || pd.name.starts_with(['@', '%', '&'])
+                    || pd.where_constraint.is_some()
+                    || pd.sub_signature.is_some();
+                if constrained && let Some(t) = typed.get_mut(slot) {
+                    *t = true;
+                }
+                slot += 1;
+            }
+        }
+        Some(typed)
+    }
+
     pub(crate) fn resolve_function_with_types(
         &mut self,
         name: &str,
@@ -330,6 +379,28 @@ impl Interpreter {
         arg_values: &[Value],
         arg_keys: Option<&[Symbol]>,
     ) -> Resolved {
+        // A `Proxy` argument ranks by what its FETCH answers (see
+        // `choose_best_in_scope_candidate`); resolving over the fetched values
+        // also keeps the arity walk and the memo keys below honest.
+        if arg_values
+            .iter()
+            .any(|v| v.unwrap_varref().is_proxy_value())
+            && self.has_multi_candidates_cached_sym(crate::qualified::known_symbol(name))
+            && let Some(typed) = self.multi_proxy_slots(name, arg_values.len())
+            && arg_values.iter().enumerate().any(|(i, v)| {
+                typed.get(i).copied().unwrap_or(false) && v.unwrap_varref().is_proxy_value()
+            })
+        {
+            let mut fetched = Vec::with_capacity(arg_values.len());
+            for (i, v) in arg_values.iter().enumerate() {
+                if typed.get(i).copied().unwrap_or(false) && v.unwrap_varref().is_proxy_value() {
+                    fetched.push(self.auto_fetch_proxy(v.unwrap_varref())?);
+                } else {
+                    fetched.push(v.clone());
+                }
+            }
+            return self.resolve_function_with_types_keyed(name, &fetched, None);
+        }
         // The plain-routine tail below does not read the arguments, so its
         // answer is memoized (#9081, `plain_fn_resolve_memo.rs`).
         let plain_key = self.plain_fn_resolve_key(name);

@@ -285,9 +285,16 @@ impl Interpreter {
             });
         }
 
+        // A `Proxy` argument (a `:=`-bound variable, a sigilless parameter, a
+        // callable multi's call) ranks by what its FETCH answers, as the binder
+        // type-checks it: `multi f(%h)` must beat `multi f(Mu)` for a Proxy over
+        // a Hash. The ranking walk cannot run a FETCH, so the fetched values
+        // stand in for the arguments there; binding still gets the originals.
+        let fetched = self.args_with_proxies_fetched(args)?;
+        let rank_args = fetched.as_deref().unwrap_or(args);
         let mut ranked: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::with_capacity(candidates.len());
         for (_, def) in candidates {
-            let key = self.candidate_rank_key(&def, args);
+            let key = self.candidate_rank_key(&def, rank_args);
             ranked.push((key, def));
         }
         multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
@@ -295,6 +302,27 @@ impl Interpreter {
         });
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, ranked, rejected)
+    }
+
+    /// `args` with every `Proxy` argument (also under a `VarRef`) replaced by
+    /// its FETCHed value, or `None` when there is no `Proxy` among them.
+    // Cost: O(a) plus one FETCH body per Proxy, a = arguments.
+    fn args_with_proxies_fetched(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        if !args.iter().any(|v| v.unwrap_varref().is_proxy_value()) {
+            return Ok(None);
+        }
+        let mut fetched = Vec::with_capacity(args.len());
+        for v in args {
+            if v.unwrap_varref().is_proxy_value() {
+                fetched.push(self.auto_fetch_proxy(v.unwrap_varref())?);
+            } else {
+                fetched.push(v.clone());
+            }
+        }
+        Ok(Some(fetched))
     }
 
     /// The bind half of [`Self::choose_best_matching_candidate_excluding`]:

@@ -654,7 +654,10 @@ impl Interpreter {
         // the caller's cell below, so only the checked value is the fetched one.
         // `Mu` accepts the Proxy as it is, so its FETCH has nothing to decide
         // (and AttrX::Mooish's builder re-entering its own FETCH would hang).
-        if pd.type_constraint.as_deref().is_some_and(|tc| tc != "Mu") {
+        // A `@`/`%` parameter carries an implicit `Positional`/`Associative` check.
+        if pd.type_constraint.as_deref().is_some_and(|tc| tc != "Mu")
+            || (pd.name.starts_with(['@', '%']) && !pd.slurpy)
+        {
             if value.is_proxy_value() {
                 value = self.auto_fetch_proxy(&value)?;
             } else {
