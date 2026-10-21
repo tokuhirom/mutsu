@@ -7,7 +7,7 @@ use Test;
 # re-exported as `Red::Operators::EXPORT::ALL::`): after `{ $obj.col eq 'x' }()`
 # the caller's own `$a` held the rejected candidate's first argument (#12512).
 
-plan 2;
+plan 3;
 
 my $lib = $*TMPDIR.add("mutsu-infix-rollback-{$*PID}");
 $lib.mkdir;
@@ -47,3 +47,17 @@ my $proc2 = run($*EXECUTABLE, '-I', $lib.Str, '-e', q:to/CODE/, :out, :err);
     CODE
 is $proc2.out.slurp, 'hit', 'a matching exported candidate still dispatches';
 $proc2.err.slurp;
+
+# The same family handed out by the hook into a block: a call none of its
+# candidates accepts is still the built-in operator's own.
+my $proc3 = run($*EXECUTABLE, '-I', $lib.Str, '-e', q:to/CODE/, :out, :err);
+    {
+        use RFront;
+        class Holder { method thing { RThing.new(n => 1) } }
+        my $h = Holder.new;
+        my &f = { $h.thing eq 'x' };
+        print f();
+    }
+    CODE
+is $proc3.out.slurp, 'False', 'a block-scoped hook family still falls back to the built-in operator';
+$proc3.err.slurp;

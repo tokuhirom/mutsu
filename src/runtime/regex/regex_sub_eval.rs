@@ -55,7 +55,9 @@ impl Interpreter {
         let saved_in_code_block =
             std::mem::replace(&mut self.regex_state.in_regex_code_block, false);
         let saved_readonly = self.take_readonly_state();
+        let saved_sub_eval = std::mem::replace(&mut self.regex_state.in_regex_sub_eval, true);
         let result = f(self);
+        self.regex_state.in_regex_sub_eval = saved_sub_eval;
         self.restore_readonly_state(saved_readonly);
         self.regex_state.in_regex_code_block = saved_in_code_block;
         self.pending_local_updates = saved_pending;

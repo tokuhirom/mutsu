@@ -453,6 +453,9 @@ impl Interpreter {
             return cached.clone();
         }
         let mut compiler = crate::compiler::Compiler::new();
+        // The predicate calls what the `use`s around the check imported (the
+        // first check's context is frozen with the rest).
+        compiler.seed_lexical_import_chain(self.eval_lexical_import_chain());
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
         let scope = if let Some(frame) = self.routine_stack.last() {

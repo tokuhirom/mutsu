@@ -424,7 +424,22 @@ impl Interpreter {
     /// fallback of a dispatcher over imported candidates of the operator,
     /// whose own `&name` binding a by-name call would find again.
     // Cost: the operator's own cost.
+    // Cost: O(1) plus the operator's own work.
     fn call_builtin_operator(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // The built-in operator's own evaluation (it may compile the operator
+        // as an expression) must not dispatch back to the user candidates that
+        // fell back to it.
+        self.module.builtin_op_fallback_depth += 1;
+        let result = self.call_builtin_operator_inner(name, args);
+        self.module.builtin_op_fallback_depth -= 1;
+        result
+    }
+
+    fn call_builtin_operator_inner(
         &mut self,
         name: &str,
         args: &[Value],
@@ -862,7 +877,19 @@ impl Interpreter {
                                 )
                             })
                         });
-                    if live_single_is_captured || captured_match {
+                    // A same-named `&name` the caller's scope holds that is no
+                    // candidate of this family (a later import of a single
+                    // routine of the name) takes the by-name call from it.
+                    let amp_shadows = self
+                        .env
+                        .get(&format!("&{}", name.as_str()))
+                        .is_some_and(|bound| {
+                            matches!(bound.view(), ValueView::Sub(d)
+                                if !d.env.contains_key("__mutsu_multi_dispatch_candidates")
+                                    && !candidates.iter().any(|c| matches!(c.view(),
+                                        ValueView::Sub(cd) if cd.id == d.id)))
+                        });
+                    if (live_single_is_captured || captured_match) && !amp_shadows {
                         return self.call_user_family_by_name(&name, call_args);
                     }
                     // The family is not reachable by its bare name from here

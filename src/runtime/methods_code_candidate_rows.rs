@@ -107,7 +107,23 @@ impl Interpreter {
                         return Some(Ok(Value::array(builtin)));
                     }
                 }
-                return Some(Ok(Value::array(cands.to_vec())));
+                // A module registers each candidate twice (the hoist pass and
+                // the in-sequence pass), and an import's family can hold both
+                // copies: report one per declaration, as the by-name walk does.
+                let mut seen = std::collections::HashSet::new();
+                let once = cands
+                    .iter()
+                    .filter(|cand| match cand.view() {
+                        ValueView::Sub(d) => seen.insert(crate::ast::function_body_fingerprint(
+                            &d.params,
+                            &d.param_defs,
+                            &d.body,
+                        )),
+                        _ => true,
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                return Some(Ok(Value::array(once)));
             }
             if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
                 && let Some(ValueView::Str(meth)) =
