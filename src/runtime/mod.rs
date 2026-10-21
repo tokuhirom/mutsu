@@ -451,6 +451,9 @@ struct CarrierCompileCtxKey {
     /// mode (an `is rw`/`is raw` routine body). Part of the key because it
     /// changes the tail's bytecode.
     rw_tail: bool,
+    /// The import sets a regex code block compiles under (empty for every
+    /// other body): they change which routines its calls reach.
+    import_chain: Vec<Symbol>,
     distribution: Option<Value>,
     /// ADR-0037 §2.3's classification (only ever set when `is_eval_unit`),
     /// which affects the compiled bytecode beyond what `in_routine` alone

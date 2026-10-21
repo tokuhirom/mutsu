@@ -1200,8 +1200,9 @@ impl Interpreter {
     /// cost ~140 KB per executed opcode on the native stack; split into groups, a
     /// recursion only pays for the slice it passes through. Release inlines the groups
     /// back into the dispatcher.
-    #[cfg_attr(debug_assertions, inline(never))]
-    #[cfg_attr(not(debug_assertions), inline(always))]
+    // Large and cold next to the call/jump/local groups: kept out of the dispatcher's
+    // frame, which every Raku call holds while its callee runs (#9924).
+    #[inline(never)]
     pub(super) fn exec_ops_group_02(
         &mut self,
         code: &CompiledCode,
@@ -4601,8 +4602,9 @@ impl Interpreter {
     /// cost ~140 KB per executed opcode on the native stack; split into groups, a
     /// recursion only pays for the slice it passes through. Release inlines the groups
     /// back into the dispatcher.
-    #[cfg_attr(debug_assertions, inline(never))]
-    #[cfg_attr(not(debug_assertions), inline(always))]
+    // Large and cold next to the call/jump/local groups: kept out of the dispatcher's
+    // frame, which every Raku call holds while its callee runs (#9924).
+    #[inline(never)]
     pub(super) fn exec_ops_group_07(
         &mut self,
         code: &CompiledCode,
@@ -5544,8 +5546,9 @@ impl Interpreter {
     /// cost ~140 KB per executed opcode on the native stack; split into groups, a
     /// recursion only pays for the slice it passes through. Release inlines the groups
     /// back into the dispatcher.
-    #[cfg_attr(debug_assertions, inline(never))]
-    #[cfg_attr(not(debug_assertions), inline(always))]
+    // Large and cold next to the call/jump/local groups: kept out of the dispatcher's
+    // frame, which every Raku call holds while its callee runs (#9924).
+    #[inline(never)]
     pub(super) fn exec_ops_group_09(
         &mut self,
         code: &CompiledCode,
@@ -6197,8 +6200,9 @@ impl Interpreter {
     /// cost ~140 KB per executed opcode on the native stack; split into groups, a
     /// recursion only pays for the slice it passes through. Release inlines the groups
     /// back into the dispatcher.
-    #[cfg_attr(debug_assertions, inline(never))]
-    #[cfg_attr(not(debug_assertions), inline(always))]
+    // Large and cold next to the call/jump/local groups: kept out of the dispatcher's
+    // frame, which every Raku call holds while its callee runs (#9924).
+    #[inline(never)]
     pub(super) fn exec_ops_group_11(
         &mut self,
         code: &CompiledCode,
@@ -6500,8 +6504,9 @@ impl Interpreter {
     /// cost ~140 KB per executed opcode on the native stack; split into groups, a
     /// recursion only pays for the slice it passes through. Release inlines the groups
     /// back into the dispatcher.
-    #[cfg_attr(debug_assertions, inline(never))]
-    #[cfg_attr(not(debug_assertions), inline(always))]
+    // Large and cold next to the call/jump/local groups: kept out of the dispatcher's
+    // frame, which every Raku call holds while its callee runs (#9924).
+    #[inline(never)]
     pub(super) fn exec_ops_group_12(
         &mut self,
         code: &CompiledCode,
@@ -7195,8 +7200,9 @@ impl Interpreter {
     /// cost ~140 KB per executed opcode on the native stack; split into groups, a
     /// recursion only pays for the slice it passes through. Release inlines the groups
     /// back into the dispatcher.
-    #[cfg_attr(debug_assertions, inline(never))]
-    #[cfg_attr(not(debug_assertions), inline(always))]
+    // Large and cold next to the call/jump/local groups: kept out of the dispatcher's
+    // frame, which every Raku call holds while its callee runs (#9924).
+    #[inline(never)]
     pub(super) fn exec_ops_group_14(
         &mut self,
         code: &CompiledCode,

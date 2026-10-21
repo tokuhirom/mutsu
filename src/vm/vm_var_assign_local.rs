@@ -546,6 +546,13 @@ impl Interpreter {
                     .or_insert(value);
             }
         }
+        // What the unit's own top-level `use`s bound in their lexical import
+        // sets has no registry alias to find (ADR-8751).
+        for (name, value) in self.unit_lexical_import_routines() {
+            entries
+                .entry(format!("&{}", name.resolve()))
+                .or_insert(value);
+        }
     }
 
     /// Add a sigil prefix to a variable name for display in pseudo-stash.

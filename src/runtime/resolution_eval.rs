@@ -298,6 +298,12 @@ impl Interpreter {
             }
         } else if let Some(origin) = origin {
             compiler.seed_lexical_import_chain_from(origin);
+        } else {
+            // A body nothing owns (a regex code block, a `where` clause run by
+            // name, a phaser) calls what the `use`s around the running code
+            // imported. A built-in operator's fallback evaluation sees no
+            // operator candidates (`builtin_op_fallback_depth`).
+            compiler.seed_lexical_import_chain(self.eval_lexical_import_chain());
         }
         // For an EVAL'd compilation unit's mainline the question is whether a
         // *routine* lexically encloses the `EVAL` call — and a mainline
@@ -615,6 +621,11 @@ impl Interpreter {
             sigilless: self.pending_eval_sigilless.clone(),
             placeholder_params: self.pending_eval_placeholder_params.clone(),
             rw_tail: self.pending_eval_rw_tail,
+            import_chain: if !is_eval_unit {
+                self.eval_lexical_import_chain()
+            } else {
+                Vec::new()
+            },
             distribution,
             eval_context_routine: if is_eval_unit {
                 self.pending_eval_context_routine

@@ -1,0 +1,3 @@
+# A release build recurses 100000 frames deep
+
+The cold checks of a CallFunc (frame-lexical routines, `nqp::`/atomic primitives, qualified-name and empty-proto checks), its general resolution path and the six largest opcode groups are now out-of-line functions, so the native frame a Raku call holds while its callee runs shrank (`exec_one_dispatch` 2152 -> 584 bytes, `exec_call_func_op_inner` 1576 -> 280 bytes). `sub f($n) { $n == 0 ?? 0 !! 1 + f($n - 1) }; say f(100000)` now prints 100000 on a local release build, as Rakudo does (#9924); the margin there is thin (limit ~100-110k), so the regression test asserts 50000.

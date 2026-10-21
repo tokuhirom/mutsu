@@ -75,14 +75,19 @@ impl Interpreter {
     /// attributes are written back into in place (Phase 3 registry-removal).
     pub(crate) fn proxy_store(
         &mut self,
-        storer: &Value,
+        proxy: &Value,
         target_var: Option<&str>,
         class_name: Symbol,
         attributes: &AttrMap,
         attrs_cell: &crate::gc::Gc<InstanceAttrs>,
         new_value: Value,
     ) -> Result<Value, RuntimeError> {
-        let proxy_val = Value::proxy_parts(Value::NIL, storer.clone(), None, false);
+        // STORE receives the attribute's own Proxy: a Proxy subclass keeps its
+        // type and attributes (AttrX::Mooish's `$proxy.VAR.is-set`).
+        let proxy_val = proxy.clone();
+        let ValueView::Proxy { storer, .. } = proxy.view() else {
+            return Ok(new_value);
+        };
         let (_result, _unchanged) =
             self.call_proxy_callback(storer, vec![proxy_val, new_value.clone()], attributes)?;
         // Propagate attribute changes back to the instance's live cell.

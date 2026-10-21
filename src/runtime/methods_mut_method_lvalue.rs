@@ -1303,10 +1303,23 @@ impl Interpreter {
                         if target_var == Some("__ANON_STATE#") {
                             return Ok(value);
                         }
-                        return Err(RuntimeError::new(format!(
-                            "X::Assignment::RO: method '{}' is not rw",
-                            method
-                        )));
+                        // Rakudo's accessor hands back the attribute's value, so
+                        // the refusal names it: "Cannot modify an immutable Str
+                        // (is baz)", or the type object when it holds none.
+                        let held = attributes.get_attribute_value(Symbol::intern(method));
+                        return Err(match held.view() {
+                            ValueView::Nil | ValueView::Package(_) => {
+                                let type_name = match held.view() {
+                                    ValueView::Package(sym) => sym.resolve(),
+                                    _ => attr
+                                        .type_constraint
+                                        .clone()
+                                        .unwrap_or_else(|| "Any".to_string()),
+                                };
+                                RuntimeError::assignment_ro_type_object(&type_name)
+                            }
+                            _ => RuntimeError::assignment_ro_value(held.clone()),
+                        });
                     }
                     found_public_rw = true;
                     attr_sigil = attr.sigil;
@@ -1314,7 +1327,7 @@ impl Interpreter {
                 }
             }
             if found_public_rw {
-                // A `$` attribute that holds a `Proxy` (bound there by
+                // An attribute that holds a `Proxy` (bound there by
                 // `Attribute.set_value`, as Red does for every model column)
                 // is assigned through the Proxy: the accessor hands out that
                 // very container, so `$obj.attr = v` is its STORE. Replacing
@@ -1323,18 +1336,17 @@ impl Interpreter {
                 // The storer is cloned out so the attribute map's read guard
                 // is gone before STORE runs: a STORE body that writes this
                 // very instance's attributes would otherwise queue behind it.
-                let proxy_storer = if attr_sigil == '$' {
-                    match attributes.as_map().get(method).map(Value::view) {
-                        Some(ValueView::Proxy { storer, .. }) => Some(Value::clone(storer)),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
-                if let Some(storer) = proxy_storer {
+                // An `@`/`%` attribute bound to a Proxy (AttrX::Mooish's
+                // `AttrProxy`) is assigned through it the same way.
+                let bound_proxy = attributes
+                    .as_map()
+                    .get(method)
+                    .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
+                    .cloned();
+                if let Some(proxy) = bound_proxy {
                     let current_attrs = attributes.to_map();
                     return self.proxy_store(
-                        &storer,
+                        &proxy,
                         target_var,
                         class_name,
                         &current_attrs,
@@ -1864,13 +1876,13 @@ impl Interpreter {
         self.set_pending_call_arg_sources(saved_sources);
         self.in_lvalue_assignment = was_lvalue;
         let method_result = method_result?;
-        if let ValueView::Proxy { storer, .. } = method_result.view() {
+        if matches!(method_result.view(), ValueView::Proxy { .. }) {
             // The method call above shares `attributes`' underlying cell with
             // `target`, so any self-mutation the method body made is already
             // visible here — re-snapshot rather than reuse a pre-call copy.
             let updated_attrs = attributes.to_map();
             return self.proxy_store(
-                storer,
+                &method_result,
                 target_var,
                 class_name,
                 &updated_attrs,

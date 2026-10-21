@@ -699,6 +699,18 @@ impl Interpreter {
             );
         }
 
+        // A routine an enclosing `use` bound in its lexical import set wins
+        // over the registry's (ADR-8751): the set is read through the chain of
+        // the open scopes and the running unit.
+        if let Some(callable) = self.active_lexical_import_value(name) {
+            let was_lvalue = self.in_lvalue_assignment;
+            self.in_lvalue_assignment = true;
+            self.lexicals.readonly_rw_tail = None;
+            let result = self.call_sub_value(callable, call_args, false);
+            self.in_lvalue_assignment = was_lvalue;
+            return self.assign_through_rw_result(result?, value);
+        }
+
         if let Some(def) = self.resolve_function_with_alias(name, &call_args)? {
             // ADR-0059: the routine always runs, and the assignment writes
             // through the container it hands back. That container is produced
