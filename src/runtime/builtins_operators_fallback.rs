@@ -1289,6 +1289,13 @@ impl Interpreter {
             return self.eval_call_on_value(sub_val, args.to_vec());
         }
 
+        // A routine a `sub EXPORT` hook handed the running unit's top-level
+        // `use`, called from a closure that outlived the frame holding its env
+        // alias (a lazy `map` callback, #14385).
+        if let Some(sub_val) = self.unit_hook_routine(name) {
+            return self.eval_call_on_value(sub_val, args.to_vec());
+        }
+
         // A CORE term constant called as a routine is `X::Undeclared` naming
         // `&name`, not the undeclared-routine class -- see CORE_TERM_CONSTANTS.
         if crate::runtime::undeclared_routines::CORE_TERM_CONSTANTS.contains(&name) {

@@ -432,6 +432,7 @@ impl Interpreter {
             if self.bind_hook_routine_lexically(&env_key[1..], &value) {
                 return;
             }
+            self.note_unit_hook_routine(&env_key[1..], &value);
         }
         // Record the alias the same way the tag-based `is export` path does
         // (`import_module` in `runtime_module_exports.rs`), so the MY::/LEXICAL

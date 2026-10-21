@@ -423,6 +423,12 @@ pub(crate) struct ModuleState {
     /// its own, `ImportScopeSnapshot::lexical_sets`). A lookup by a run-time
     /// name reads the running unit's after every open scope's.
     pub(crate) unit_lexical_sets: HashMap<Symbol, Vec<Symbol>>,
+    /// The plain routines a `sub EXPORT` hook handed each unit's top-level
+    /// `use` (`name` -> routine), kept past the env alias the import writes:
+    /// a closure of that unit that runs later, in another frame's env (a
+    /// lazy `map` callback a routine returned), still reaches them
+    /// (`Interpreter::unit_hook_routine`, #14385).
+    pub(crate) unit_hook_routines: HashMap<Symbol, HashMap<Symbol, Value>>,
     /// Set while the `&name` read of code compiled before its unit's `use`
     /// resolves: the unit's sets are not in scope there, so the by-name
     /// reader skips them.
@@ -671,6 +677,7 @@ impl ModuleState {
             imported_exported_proto_tags: Default::default(),
             unit_env_imports: Default::default(),
             unit_lexical_sets: HashMap::new(),
+            unit_hook_routines: HashMap::new(),
             unit_sets_hidden: false,
             builtin_op_fallback_depth: 0,
             lexical_import_sets: HashMap::new(),
@@ -768,6 +775,7 @@ impl ModuleState {
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             unit_env_imports: self.unit_env_imports.clone(),
             unit_lexical_sets: self.unit_lexical_sets.clone(),
+            unit_hook_routines: self.unit_hook_routines.clone(),
             unit_sets_hidden: false,
             builtin_op_fallback_depth: 0,
             lexical_import_sets: self.lexical_import_sets.clone(),
