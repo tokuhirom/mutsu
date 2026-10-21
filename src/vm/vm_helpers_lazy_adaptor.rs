@@ -337,7 +337,10 @@ impl Interpreter {
                     }
                 }
                 let next = idx + *arity;
-                match self.vm_call_on_value(func.clone(), args, None) {
+                match self
+                    .vm_call_on_value(func.clone(), args, None)
+                    .and_then(|v| self.reify_lazy_slip_tail(v))
+                {
                     Ok(v) => Ok(one(
                         match v.view() {
                             ValueView::Slip(items) => items.as_ref().clone(),
