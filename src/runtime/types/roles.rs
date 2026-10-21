@@ -530,7 +530,7 @@ impl Interpreter {
     /// parametric roles, which have no `RoleDef` -- as a `Package` whose name is
     /// already bracketed; the call form arrives as a `Pair` of the role name and
     /// its argument list.
-    fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>, bool)> {
+    pub(crate) fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>, bool)> {
         // A *built-in* role (`Positional`, `Associative[Int,Int]`, ...) has no
         // `RoleDef` in the registry — mutsu models its behaviour natively — but
         // it is still a role and still composes, so every arm below accepts it

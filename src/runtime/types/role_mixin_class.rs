@@ -77,6 +77,7 @@ impl Interpreter {
         };
         self.register_class_decl(&name, &parents, modifiers)?;
         self.compose_mixin_role_submethods(&name, &fresh);
+        self.compose_mixin_class_how(&name)?;
         // A mixin type is synthesized, not written by the user: it must inherit
         // the base's accessor authority rather than claim its own. Marked
         // user-declared (which `register_class_decl` does for everything), a
@@ -297,6 +298,7 @@ impl Interpreter {
         for (attr, value) in initializers {
             attributes.insert(attr.as_str(), value);
         }
+        self.run_mixin_buildplan(&reblessed, &mixin_class)?;
         // 6.e runs a composed role's BUILD/TWEAK on the object it was mixed into.
         for name in &role_names {
             self.run_mixin_role_build(&reblessed, &attributes, name)?;
