@@ -1684,9 +1684,11 @@ execution shape without adding a separate evaluator.
 Bare type operands round-trip through `Type::Simple` and lower to term
 lookups. A method call on `Any` therefore uses the term namespace rather than
 a same-named scalar slot; an EVAL unit also uses that namespace for a term
-whose declaration is outside its compile unit. Both choices preserve an
-immutable type receiver while leaving a lexical type alias or sigilless
-binding dynamically resolvable.
+whose declaration is outside its compile unit. Constructor calls retain the
+ordinary bareword key because they do not write their type receiver, and raw
+constructor arguments must keep their source containers. These choices
+preserve an immutable type receiver while leaving a lexical type alias or
+sigilless binding dynamically resolvable.
 
 An invalid multi-dimensional `:!exists:delete` subscript still raises
 `X::Adverb`, but its parser expansion now retains the original index and the

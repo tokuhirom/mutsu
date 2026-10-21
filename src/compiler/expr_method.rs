@@ -201,9 +201,13 @@ impl Compiler {
             // to the type object. Lexical term aliases and `my \\Any` also
             // live in that namespace and remain dynamically resolved.
             Expr::BareWord(n) if n == "Any" => crate::runtime::term_names::term_key(n),
+            // A constructor call does not write its type receiver. Keep the
+            // ordinary bareword key so raw constructor arguments retain
+            // their source containers through the existing call path.
+            Expr::BareWord(n) if name.resolve() == "new" => self.sigilless_storage_key(n),
             // An EVAL'd term can come from the caller's lexical constant;
-            // the compile unit cannot see its declaration, so follow the
-            // same unknown-term key choice as sigilless assignment.
+            // this compile unit cannot see its declaration. Use the term key
+            // chosen for an unknown sigilless assignment target.
             Expr::BareWord(n) => self
                 .sigilless_assign_target_key(n)
                 .unwrap_or_else(|| n.clone()),
