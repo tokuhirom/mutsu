@@ -159,6 +159,16 @@ impl Interpreter {
         if !is_readonly_public_scalar {
             return Ok(false);
         }
+        // An explicit `method x is rw` replaces the generated read-only accessor
+        // (`has $.x; method x is rw { Proxy.new(...) }`): the assignment goes
+        // through that method, not to the attribute.
+        if self.class_mro(&class_name).iter().any(|owner| {
+            self.registry()
+                .get_method_overloads(owner.as_str(), attr)
+                .is_some_and(|defs| defs.iter().any(|d| d.is_rw && !d.is_private))
+        }) {
+            return Ok(false);
+        }
         if rmw {
             return Ok(true);
         }

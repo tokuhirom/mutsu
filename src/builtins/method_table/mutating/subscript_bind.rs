@@ -129,7 +129,19 @@ fn array_bind_pos(
         .arg_source(1)
         .filter(|n| !n.contains('\0'))?
         .to_string();
-    let target = place.value().deref_container().descalarize().clone();
+    let mut target = place.value().deref_container().descalarize().clone();
+    // An `is Array` subclass instance keeps its elements in a storage array the
+    // instance shares with every holder, so bind in that node.
+    let storage = match target.view() {
+        ValueView::Instance { attributes, .. } => attributes
+            .as_map()
+            .get(crate::runtime::instance_backing::InstanceBacking::Array.attr())
+            .cloned(),
+        _ => None,
+    };
+    if let Some(storage) = storage {
+        target = storage;
+    }
     let ValueView::Array(items, _) = target.view() else {
         return None;
     };

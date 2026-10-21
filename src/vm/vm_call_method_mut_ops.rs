@@ -1746,9 +1746,30 @@ impl Interpreter {
                         // untyped backing array are performed in Rust and the
                         // updated storage written back, with no interpreter
                         // dispatch. Richer methods fall through below.
-                        if let Some(result) =
+                        // `BIND-POS` binds the element to the caller's variable
+                        // (`self.BIND-POS($pos, $lval)`), so its row needs the
+                        // call's argument sources, which a detached place has none of.
+                        let bound = if method == "BIND-POS" && modifier.is_none() {
+                            let mut place = crate::builtins::method_table::ReceiverPlace::var_in(
+                                "", &storage, code,
+                            )
+                            .with_arg_sources(
+                                arg_sources
+                                    .as_ref()
+                                    .map_or(&[], |sources| sources.as_slice()),
+                            );
+                            crate::builtins::method_table::invoke_mut(
+                                self,
+                                &mut place,
+                                method_sym,
+                                &args,
+                            )
+                        } else {
+                            None
+                        };
+                        if let Some(result) = bound.or_else(|| {
                             self.native_array_storage_mut(&mut storage, method, &args)
-                        {
+                        }) {
                             let result = result?;
                             let updated_instance = self.write_back_array_storage_instance(
                                 target_name,
