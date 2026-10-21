@@ -311,7 +311,7 @@ fn field_align_width(node: &RakuAstNode) -> usize {
 fn is_inline_field(f: &RakuAstField) -> bool {
     match &f.value {
         RakuAstFieldValue::List(_) => false,
-        RakuAstFieldValue::Node(v) => !matches!(v.view(), ValueView::RakuAst(_)),
+        RakuAstFieldValue::Node(v) => !super::is_node_value(v),
         RakuAstFieldValue::Adverb(_) => true,
     }
 }
@@ -364,10 +364,9 @@ fn render_processors(fv: &RakuAstFieldValue, indent: usize) -> String {
 
 fn render_field_value(fv: &RakuAstFieldValue, indent: usize) -> String {
     match fv {
-        RakuAstFieldValue::Node(v) => match v.view() {
-            ValueView::RakuAst(node) => render_node(node, indent),
-            _ => render_leaf(v),
-        },
+        RakuAstFieldValue::Node(v) => {
+            render_node_value(v, indent).unwrap_or_else(|| render_leaf(v))
+        }
         RakuAstFieldValue::List(items) => render_paren_list(items, indent),
         RakuAstFieldValue::Adverb(name) => format!(":{name}"),
     }
@@ -386,15 +385,36 @@ fn render_paren_list(items: &[Value], indent: usize) -> String {
     let mut s = String::from("(\n");
     for item in items {
         s.push_str(&pad);
-        match item.view() {
-            ValueView::RakuAst(node) => s.push_str(&render_node(node, child_indent)),
-            _ => s.push_str(&render_leaf(item)),
-        }
+        s.push_str(&render_node_value(item, child_indent).unwrap_or_else(|| render_leaf(item)));
         s.push_str(",\n");
     }
     s.push_str(&" ".repeat(indent));
     s.push(')');
     s
+}
+
+fn render_node_value(value: &Value, indent: usize) -> Option<String> {
+    let mut current = value;
+    loop {
+        match current.view() {
+            ValueView::RakuAst(node) => return Some(render_node(node, indent)),
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } => {
+                let base = attributes.rakuast_base()?;
+                let ValueView::RakuAst(node) = base.view() else {
+                    return None;
+                };
+                let name = class_name.resolve();
+                let display = crate::value::user_facing_type_name(&name);
+                return Some(super::subclass_gist_at(display.as_ref(), node, indent));
+            }
+            ValueView::Mixin(inner, _) => current = inner,
+            _ => return None,
+        }
+    }
 }
 
 fn render_leaf(v: &Value) -> String {

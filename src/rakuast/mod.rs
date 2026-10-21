@@ -1795,11 +1795,27 @@ pub fn node_gist(node: &RakuAstNode) -> String {
 /// Render a node inherited by a user subclass under that subclass's name.
 // Cost: O(n), n = constructor text length.
 pub fn subclass_gist(class_name: &str, node: &RakuAstNode) -> String {
-    let rendered = node_gist(node);
+    subclass_gist_at(class_name, node, 0)
+}
+
+pub(super) fn subclass_gist_at(class_name: &str, node: &RakuAstNode, indent: usize) -> String {
+    let rendered = render::render_node(node, indent);
     let parent = node.class.printed_name();
     match rendered.strip_prefix(parent) {
         Some(rest) => format!("{class_name}{rest}"),
         None => rendered,
+    }
+}
+
+pub(crate) fn is_node_value(value: &Value) -> bool {
+    let mut current = value;
+    loop {
+        match current.view() {
+            ValueView::RakuAst(_) => return true,
+            ValueView::Instance { attributes, .. } => return attributes.rakuast_base().is_some(),
+            ValueView::Mixin(inner, _) => current = inner,
+            _ => return false,
+        }
     }
 }
 

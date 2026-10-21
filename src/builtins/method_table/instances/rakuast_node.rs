@@ -120,28 +120,19 @@ fn children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = Vec::new();
     for field in &node.fields {
         match &field.value {
-            RakuAstFieldValue::Node(v) if is_node_value(v) => {
+            RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
                 out.push(v.clone());
             }
-            RakuAstFieldValue::List(items) => {
-                out.extend(items.iter().filter(|v| is_node_value(v)).cloned())
-            }
+            RakuAstFieldValue::List(items) => out.extend(
+                items
+                    .iter()
+                    .filter(|v| crate::rakuast::is_node_value(v))
+                    .cloned(),
+            ),
             _ => {}
         }
     }
     out
-}
-
-fn is_node_value(value: &Value) -> bool {
-    let mut current = value;
-    loop {
-        match current.view() {
-            ValueView::RakuAst(_) => return true,
-            ValueView::Instance { attributes, .. } => return attributes.rakuast_base().is_some(),
-            ValueView::Mixin(inner, _) => current = inner,
-            _ => return false,
-        }
-    }
 }
 
 /// `visit-children(&callable)`: call `callable` once with each direct child.

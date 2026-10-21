@@ -5,7 +5,7 @@ use experimental :rakuast;
 # (FINALIZER's `my class LeavePhaser is RakuAST::StatementPrefix::Phaser::Leave`),
 # and the phaser / block nodes it builds on are constructible.
 
-plan 26;
+plan 27;
 
 isa-ok RakuAST::Block.new, RakuAST::Block, 'RakuAST::Block.new needs no body';
 is RakuAST::Block.new.body.^name, 'RakuAST::Blockoid', '... it defaults to an empty blockoid';
@@ -73,6 +73,8 @@ my class NumberNode is RakuAST::IntLiteral {
 my $number = NumberNode.new;
 my $expression = RakuAST::Statement::Expression.new(expression => $number);
 is $expression.expression.^name, 'NumberNode', 'a parent node preserves its subclass child';
+like $expression.gist, /'expression => NumberNode.new(42)'/,
+    'a parent node renders its subclass child';
 my @nested-children;
 $expression.visit-children({ @nested-children.push(.^name) });
 is-deeply @nested-children, ['NumberNode'], 'the visitor sees a subclass child';
