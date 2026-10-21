@@ -300,7 +300,8 @@ impl Interpreter {
         let left = self.iterable_instance_elements(left)?;
         let right = self.iterable_instance_elements(right)?;
         // A multi-dimensional shaped array is one through its leaves (#14308).
-        let shaped = |v: Value| crate::value::shaped_array::shaped_array_leaves_list(&v).unwrap_or(v);
+        let shaped =
+            |v: Value| crate::value::shaped_array::shaped_array_leaves_list(&v).unwrap_or(v);
         let (left, right) = (shaped(left), shaped(right));
         // Every set operator walks its operands, and may run user code over
         // them (an element's `.WHICH`), so a shared Array/Hash operand is read
