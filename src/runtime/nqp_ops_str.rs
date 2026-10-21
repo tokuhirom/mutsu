@@ -192,15 +192,9 @@ impl Interpreter {
                     )));
                 }
                 Ok(match v.view() {
-                    ValueView::Hash(map) => {
-                        let copied: Vec<(String, Value)> =
-                            map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                        let mut fresh = ValueMap::default();
-                        for (k, v) in copied {
-                            fresh.insert(k, v);
-                        }
-                        Value::hash_with_data(Value::hash_arc(fresh))
-                    }
+                    // The copy keeps the hash's element/key type (`Hash[Int:D]`),
+                    // as the array copy above keeps its own.
+                    ValueView::Hash(map) => Value::hash_with_data(crate::gc::Gc::new((**map).clone())),
                     _ => v.clone(),
                 })
             }
