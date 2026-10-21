@@ -49,6 +49,10 @@ pub(crate) struct RegexGrammarState {
     /// outer-lexical-write fallback to exactly this context so ordinary `our`/
     /// package-qualified writes elsewhere are unaffected.
     pub(crate) in_regex_code_block: bool,
+    /// True while a regex code block or interpolation runs in
+    /// `run_regex_sub_eval`: its body, owned by no code object, compiles under
+    /// the import sets of the running code.
+    pub(crate) in_regex_sub_eval: bool,
     /// The rule whose program the compiled engine is running a `{ … }` /
     /// `<?{ … }>` code atom of, when it runs one in a subrule frame: the
     /// code closes over the scope of the file declaring that rule (#13915,

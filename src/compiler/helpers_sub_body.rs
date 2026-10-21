@@ -277,6 +277,7 @@ impl Compiler {
         self.inherit_fold_ctx(&mut sub_compiler);
         self.inherit_outer_code_var_names(&mut sub_compiler);
         self.inherit_enclosing_scopes(&mut sub_compiler);
+        self.inherit_deferred_unit_sets(&mut sub_compiler);
         sub_compiler.user_listop_shadows = self.user_listop_shadows.clone();
         sub_compiler.is_routine = true;
         sub_compiler.lexically_in_routine = true;

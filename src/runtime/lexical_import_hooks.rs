@@ -43,7 +43,9 @@ impl Interpreter {
     /// built-in op or bareword reads.
     // Cost: O(|name|).
     pub(crate) fn bind_hook_routine_lexically(&mut self, name: &str, value: &Value) -> bool {
-        if name.contains(':') || !matches!(value.view(), ValueView::Sub(_)) {
+        // `&MAIN` is read by name when the program ends, not through a call
+        // site, so it stays an env binding.
+        if name.contains(':') || name == "MAIN" || !matches!(value.view(), ValueView::Sub(_)) {
             return false;
         }
         let importer = self.executing_unit_sym_for_module_load();

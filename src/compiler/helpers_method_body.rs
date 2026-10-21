@@ -88,6 +88,10 @@ impl Compiler {
         method_compiler.current_distribution = self.current_distribution.clone();
         method_compiler.lexically_in_method = true;
         method_compiler.static_class_hidden = is_hidden;
+        // A method sees the routines the `use`s around its class declaration
+        // bound (ADR-8751).
+        method_compiler.lexical_import_chain = self.lexical_import_chain.clone();
+        self.inherit_deferred_unit_sets(&mut method_compiler);
         // Only the enclosing `my &k` Callable containers are handed down (not the
         // whole scope chain, design decision 2): `&k = ...` in a method body
         // must assign through the outer container rather than being rejected as

@@ -862,7 +862,19 @@ impl Interpreter {
                                 )
                             })
                         });
-                    if live_single_is_captured || captured_match {
+                    // A same-named `&name` the caller's scope holds that is no
+                    // candidate of this family (a later import of a single
+                    // routine of the name) takes the by-name call from it.
+                    let amp_shadows = self
+                        .env
+                        .get(&format!("&{}", name.as_str()))
+                        .is_some_and(|bound| {
+                            matches!(bound.view(), ValueView::Sub(d)
+                                if !d.env.contains_key("__mutsu_multi_dispatch_candidates")
+                                    && !candidates.iter().any(|c| matches!(c.view(),
+                                        ValueView::Sub(cd) if cd.id == d.id)))
+                        });
+                    if (live_single_is_captured || captured_match) && !amp_shadows {
                         return self.call_user_family_by_name(&name, call_args);
                     }
                     // The family is not reachable by its bare name from here

@@ -197,6 +197,15 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        // A routine a trait wrapped (`is native` binds the routine's `$!do`)
+        // runs its wrapper, as a by-name call does.
+        if self.any_routine_wrapped()
+            && let Some(wrapped) = self.wrapped_sub_for_call(&def.name.resolve())
+            && let ValueView::Sub(data) = Self::unwrap_callable_mixin(wrapped.clone()).view()
+            && data.package == def.package
+        {
+            return self.vm_call_sub_value(wrapped, args, false);
+        }
         let junction_indices: Vec<usize> = args
             .iter()
             .enumerate()

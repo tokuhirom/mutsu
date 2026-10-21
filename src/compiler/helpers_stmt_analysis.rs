@@ -124,6 +124,9 @@ impl Compiler {
                 let id = Self::with_block_multis(id, local);
                 if !self.lexical_import_chain.contains(&id) {
                     self.lexical_import_chain.push(id);
+                    let mark = self.inherited_scope_routine_decls.len()
+                        + self.scope_routine_decls.len();
+                    self.lexical_set_decl_mark.insert(id, mark);
                 }
             }
         }
@@ -172,24 +175,74 @@ impl Compiler {
     /// The lexical import set the `use` statement `stmt` fills: its id as
     /// [`Self::enter_lexical_use_block`] opened it for the innermost block.
     // Cost: O(c + n), c = open import sets, n = length of an id.
-    pub(super) fn open_lexical_use_set(&self, stmt: &Stmt) -> Option<Symbol> {
+    pub(super) fn open_lexical_use_set(&mut self, stmt: &Stmt) -> Option<Symbol> {
         let full = Self::lexical_use_set_id(stmt)?;
+        // The unit's own top-level `use` opens its set where it stands
+        // (`defer_unit_lexical_use_sets`).
+        let base_text = full.resolve();
+        if let Some(i) = self
+            .deferred_unit_sets
+            .iter()
+            .position(|id| Self::set_id_matches(*id, base_text.as_str()))
+        {
+            let id = self.deferred_unit_sets.remove(i);
+            if !self.lexical_import_chain.contains(&id) {
+                self.lexical_import_chain.push(id);
+            }
+        }
         // An `EVAL` unit's sets leave the variables out
         // (`enter_eval_unit_lexical_uses`).
         [full, Self::eval_unit_set_id(full)]
             .into_iter()
             .find_map(|base| {
                 let base_text = base.resolve();
-                self.lexical_import_chain.iter().rev().copied().find(|id| {
-                    *id == base
-                        || id
-                            .resolve()
-                            .strip_prefix(base_text.as_str())
-                            .is_some_and(|rest| {
-                                rest.starts_with(crate::runtime::lexical_imports::BLOCK_MULTIS_MARK)
-                            })
-                })
+                self.lexical_import_chain
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|id| Self::set_id_matches(*id, base_text.as_str()))
             })
+    }
+
+    /// Whether the set `id` is the one for the import list `base_text`: the
+    /// list itself or the list plus the multi families its block declares.
+    // Cost: O(n), n = length of an id.
+    fn set_id_matches(id: Symbol, base_text: &str) -> bool {
+        let text = id.resolve();
+        text.as_str() == base_text
+            || text
+                .strip_prefix(base_text)
+                .is_some_and(|rest| {
+                    rest.starts_with(crate::runtime::lexical_imports::BLOCK_MULTIS_MARK)
+                })
+    }
+
+    /// Declare the import sets of the main unit's top-level `use`s (ADR-8751).
+    /// A set becomes part of the unit's own chain where its `use` stands
+    /// ([`Self::open_lexical_use_set`]): a statement before it, such as
+    /// `&ok` in a block that `use`s Test, still means the name it meant.
+    /// Routines and closures compiled meanwhile (the hoisted `sub`s) see
+    /// every set, since a routine body is late-bound.
+    // Cost: O(s), s = statements of the unit.
+    pub(crate) fn defer_unit_lexical_use_sets(&mut self, stmts: &[Stmt]) {
+        let mut local_multis: Option<Vec<String>> = None;
+        let mut line = None;
+        for stmt in stmts {
+            if let Stmt::SetLine(n) = stmt {
+                line = Some(*n);
+            }
+            if let Some(id) = Self::lexical_use_set_id(stmt) {
+                let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
+                let id = Self::with_block_multis(id, local);
+                if !self.deferred_unit_sets.contains(&id) {
+                    self.deferred_unit_sets.push(id);
+                    self.lexical_set_decl_mark.insert(id, 0);
+                    if let Some(line) = line {
+                        self.unit_set_line.insert(id, line);
+                    }
+                }
+            }
+        }
     }
 
     /// The lexical import set id of `stmt` when it is a `use` that binds
@@ -459,7 +512,33 @@ impl Compiler {
         {
             return None;
         }
-        let chain: Vec<Symbol> = self.lexical_import_chain.iter().rev().copied().collect();
+        let chain: Vec<Symbol> = self
+            .lexical_import_chain
+            .iter()
+            .rev()
+            .copied()
+            .filter(|id| {
+                // The unit's top-level `use` binds from its line on: mainline
+                // code above it (outside any routine, whose body is
+                // late-bound) means what the name meant before.
+                if let Some(&use_line) = self.unit_set_line.get(id)
+                    && !self.lexically_in_routine
+                    && self.last_source_line.is_some_and(|line| line < use_line)
+                {
+                    return false;
+                }
+                let mark = self.lexical_set_decl_mark.get(id).copied().unwrap_or(0);
+                !self
+                    .inherited_scope_routine_decls
+                    .iter()
+                    .chain(self.scope_routine_decls.iter())
+                    .skip(mark)
+                    .any(|&(_, decl)| decl == name)
+            })
+            .collect();
+        if chain.is_empty() {
+            return None;
+        }
         let chains = &mut self.code.lexical_import_chains;
         if let Some(i) = chains.iter().position(|c| *c == chain) {
             return Some(i as u32);

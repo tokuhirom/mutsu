@@ -117,9 +117,20 @@ impl Interpreter {
             .exported_var_value(module, name)
             // An exported type the module declared outside any package.
             .or_else(|| {
-                (!name.starts_with(['$', '@', '%', '&', '\\'])
-                    && self.has_type_or_package_kind(name))
-                .then(|| Value::package(crate::symbol::Symbol::intern(name)))
+                if name.starts_with(['$', '@', '%', '&', '\\']) {
+                    return None;
+                }
+                // The type's own name; else the module that is the type
+                // (`unit role A::B::R is export` in `A/B/R.rakumod`) or one
+                // it declares inside its package.
+                let in_module = format!("{module}::{name}");
+                [name, module, in_module.as_str()]
+                    .into_iter()
+                    .filter(|candidate| {
+                        *candidate == name || candidate.rsplit("::").next() == Some(name)
+                    })
+                    .find(|candidate| self.has_type_or_package_kind(candidate))
+                    .map(|candidate| Value::package(crate::symbol::Symbol::intern(candidate)))
             })
             .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
         self.stack.push(value);

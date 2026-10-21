@@ -80,6 +80,15 @@ pub(crate) struct LexicalImportCapture {
     /// The multi families the importing block declares itself: the import
     /// merges with them, so they keep the registry path.
     block_multis: HashSet<Symbol>,
+    /// Whether the `use` is at the importing unit's top level (no import scope
+    /// of the unit is open). Its multi families keep the registry path:
+    /// (an operator family binds: its uses are not routine calls with
+    /// containers) -- their dispatcher value does not carry the caller's argument containers
+    /// to a candidate's raw or `rw` parameter yet (a block-scoped `use` has
+    /// the same gap).
+    // TODO: bind a top-level family lexically once a dispatcher value passes
+    // the caller's containers to its winner.
+    top_level: bool,
     /// The proto of each family in `multi_defs` whose body does more than
     /// dispatch: the family's dispatcher value runs it.
     protos: HashMap<Symbol, std::sync::Arc<crate::ast::FunctionDef>>,
@@ -109,10 +118,17 @@ impl Interpreter {
         let text = id.resolve();
         let block_multis = id_section(&text, BLOCK_MULTIS_MARK);
         let block_vars = id_section(&text, BLOCK_VARS_MARK);
+        let importer = self.executing_unit_sym_for_module_load();
+        let top_level = self
+            .module
+            .import_scope_stack
+            .last()
+            .is_none_or(|scope| scope.unit != importer);
         let capture = LexicalImportCapture {
             block_multis,
             block_vars,
-            unit: self.executing_unit_sym_for_module_load(),
+            top_level,
+            unit: importer,
             routines: Vec::new(),
             amp_env_keys: HashSet::new(),
             lexical_defs: HashMap::new(),
@@ -186,7 +202,8 @@ impl Interpreter {
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
             || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
-                capture.block_multis.contains(&Symbol::intern(name))
+                (capture.top_level && !name.contains(":<"))
+                    || capture.block_multis.contains(&Symbol::intern(name))
             })
         {
             return false;
@@ -273,12 +290,19 @@ impl Interpreter {
         // a module extending its exported proto) is one family: this set's
         // dispatcher spans the earlier candidates as well.
         let mut multi_defs = capture.multi_defs;
-        let earlier_sets: Vec<Symbol> = self
-            .module
-            .import_scope_stack
-            .last()
-            .map(|scope| scope.lexical_sets.iter().copied().filter(|s| *s != id).collect())
-            .unwrap_or_default();
+        let importer = self.executing_unit_sym_for_module_load();
+        let earlier_sets: Vec<Symbol> = match self.module.import_scope_stack.last() {
+            Some(scope) if scope.unit == importer => scope.lexical_sets.clone(),
+            _ => self
+                .module
+                .unit_lexical_sets
+                .get(&importer)
+                .cloned()
+                .unwrap_or_default(),
+        }
+        .into_iter()
+        .filter(|s| *s != id)
+        .collect();
         for (name, defs) in multi_defs.iter_mut() {
             for earlier in &earlier_sets {
                 let Some(prior) = self
@@ -306,7 +330,12 @@ impl Interpreter {
                 continue;
             }
             let amp = Symbol::intern(&format!("&{}", name.resolve()));
-            let binding = if let Some(def) = capture.lexical_defs.get(&name) {
+            // A value the `sub EXPORT` hook handed out under the name is the
+            // import, ahead of a same-named routine a module the hook `use`d
+            // for itself left in the capture.
+            let binding = if let Some(value) = capture.hook_routines.get(&name) {
+                Some(LexicalImport::Code(value.clone()))
+            } else if let Some(def) = capture.lexical_defs.get(&name) {
                 Some(LexicalImport::Routine(std::sync::Arc::clone(def)))
             } else if let Some(candidates) = multi_defs.get(&name) {
                 // A multi family binds as its dispatcher value over the
@@ -328,14 +357,21 @@ impl Interpreter {
                     Some(proto) => self.with_dispatch_proto(dispatcher, proto),
                     None => dispatcher,
                 }))
-            } else if let Some(value) = capture.hook_routines.get(&name) {
-                Some(LexicalImport::Code(value.clone()))
             } else if capture.amp_env_keys.contains(&amp) {
-                self.env
-                    .get_sym(amp)
-                    .filter(|value| matches!(value.view(), ValueView::Sub(_)))
-                    .cloned()
-                    .map(LexicalImport::Code)
+                // A hook handed out candidates of a built-in operator: they
+                // join the operator through its env alias (the operator's own
+                // dispatch finds them there, with the built-in as fallback), a
+                // set binding would shadow the built-in for a call none of
+                // them accepts.
+                if extends_builtin_operator(&name.resolve()) {
+                    None
+                } else {
+                    self.env
+                        .get_sym(amp)
+                        .filter(|value| matches!(value.view(), ValueView::Sub(_)))
+                        .cloned()
+                        .map(LexicalImport::Code)
+                }
             } else {
                 self.registry()
                     .function_def(crate::qualified::qualified(package, name))
@@ -408,6 +444,7 @@ impl Interpreter {
         let importer = self.executing_unit_sym_for_module_load();
         if let Some(capture) = self.module.lexical_import_capture.as_mut()
             && capture.unit == importer
+            && !(capture.top_level && !name.contains(":<"))
             && !capture.block_multis.contains(&Symbol::intern(name))
         {
             capture
@@ -448,11 +485,58 @@ impl Interpreter {
     /// Record that the innermost import scope's block filled set `id`.
     // Cost: O(s), s = sets the scope already holds (usually 0).
     pub(crate) fn note_active_lexical_import_set(&mut self, id: Symbol) {
-        if let Some(top) = self.module.import_scope_stack.last_mut()
-            && !top.lexical_sets.contains(&id)
-        {
-            top.lexical_sets.push(id);
+        let importer = self.executing_unit_sym_for_module_load();
+        // A `use` at the unit's own top level, or in a module's body loaded
+        // while an importer's block is open, belongs to the unit (the scope on
+        // top is the importer's).
+        match self.module.import_scope_stack.last_mut() {
+            Some(top) if top.unit == importer => {
+                if !top.lexical_sets.contains(&id) {
+                    top.lexical_sets.push(id);
+                }
+            }
+            _ => {
+                let sets = self.module.unit_lexical_sets.entry(importer).or_default();
+                if !sets.contains(&id) {
+                    sets.push(id);
+                }
+            }
         }
+    }
+
+    /// The routines the running unit's top-level `use`s bound in their import
+    /// sets, by name.
+    // Cost: O(r), r = routines those sets bind.
+    pub(crate) fn unit_lexical_import_routines(&self) -> Vec<(Symbol, Value)> {
+        let mut routines: Vec<(Symbol, Value)> = Vec::new();
+        for id in self.running_unit_lexical_sets() {
+            let Some(set) = self.module.lexical_import_sets.get(&id) else {
+                continue;
+            };
+            for (name, binding) in set.iter() {
+                if routines.iter().any(|(seen, _)| seen == name) {
+                    continue;
+                }
+                let value = match binding {
+                    LexicalImport::Code(value) => value.clone(),
+                    LexicalImport::Routine(def) => self.sub_value_from_function_def((**def).clone()),
+                };
+                routines.push((*name, value));
+            }
+        }
+        routines
+    }
+
+    /// The import sets the running unit's top-level `use`s filled, innermost
+    /// first.
+    // Cost: O(s), s = sets the unit filled.
+    fn running_unit_lexical_sets(&self) -> impl Iterator<Item = Symbol> + '_ {
+        self.module
+            .unit_lexical_sets
+            .get(&self.executing_unit_sym())
+            .filter(|_| !self.module.unit_sets_hidden)
+            .into_iter()
+            .flat_map(|sets| sets.iter().rev().copied())
     }
 
     /// The lexical import sets of the blocks whose import scope is open,
@@ -468,6 +552,7 @@ impl Interpreter {
             .rev()
             .flat_map(|scope| scope.lexical_sets.iter().rev())
             .copied()
+            .chain(self.running_unit_lexical_sets())
             .collect()
     }
 
@@ -501,6 +586,11 @@ impl Interpreter {
             .flat_map(|scope| scope.lexical_sets.iter().rev())
             .copied()
             .collect();
+        for set in self.running_unit_lexical_sets() {
+            if !chain.contains(&set) {
+                chain.push(set);
+            }
+        }
         // Innermost first, so the sets every EVAL site shares are a suffix.
         let mut common: &[Symbol] = first;
         for site in sites {
@@ -524,7 +614,10 @@ impl Interpreter {
     /// the sets an `EVAL` running now starts inside.
     // Cost: O(s), s = open import scopes' sets.
     pub(crate) fn lexically_imported_routine(&self, name: &str) -> bool {
-        if self.module.import_scope_stack.is_empty() && self.module.eval_import_chain.is_none() {
+        if self.module.import_scope_stack.is_empty()
+            && self.module.eval_import_chain.is_none()
+            && self.module.unit_lexical_sets.is_empty()
+        {
             return false;
         }
         let chain = self.active_lexical_import_chain();
@@ -534,16 +627,34 @@ impl Interpreter {
                 .is_some()
     }
 
+    /// Whether the running unit declares a routine `name` itself (in its own
+    /// file), as opposed to importing one.
+    // Cost: O(1) hashed probes plus one unit lookup.
+    pub(crate) fn running_unit_declares_routine(&self, name: &str) -> bool {
+        let anchor = self.current_unit;
+        self.resolve_function(name).is_some_and(|def| {
+            def.source_file.is_some()
+                && self.unit_of_declaring_file(def.source_file.as_deref()) == anchor
+        })
+    }
+
     /// The code object `&name` is lexically imported as in an open block, for
     /// a by-name lookup (`::('&name')`, `&::("name")`).
     // Cost: O(s) plus building the code object.
     pub(crate) fn active_lexical_import_value(&self, name: &str) -> Option<Value> {
-        if self.module.import_scope_stack.is_empty() {
+        if self.module.import_scope_stack.is_empty() && self.module.unit_lexical_sets.is_empty() {
             return None;
         }
         // The sets lexically around the lookup site, as for an `EVAL`: a
         // routine called from the `use`-block is outside them.
-        let chain = self.eval_lexical_import_chain();
+        let mut chain = self.eval_lexical_import_chain();
+        // A routine the running unit declares itself wins over what its
+        // top-level `use`s import (Rakudo reports a redeclaration there);
+        // a block's own `use` still wins over the unit's routine.
+        if self.running_unit_declares_routine(name) {
+            let unit_sets: Vec<Symbol> = self.running_unit_lexical_sets().collect();
+            chain.retain(|id| !unit_sets.contains(id));
+        }
         if chain.is_empty() {
             return None;
         }

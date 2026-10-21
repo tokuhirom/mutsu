@@ -1203,6 +1203,19 @@ pub(crate) struct Compiler {
     /// compiled while it is non-empty gets an `OpCode::LexImportCall`
     /// prefix. Nested routines and closures inherit it.
     lexical_import_chain: Vec<Symbol>,
+    /// For each set of `lexical_import_chain`, how many routine declarations
+    /// (`inherited_scope_routine_decls` then `scope_routine_decls`) were noted
+    /// when it was opened. A plain routine noted after that mark is declared
+    /// in the set's block or below it, and wins over the set's imports of the
+    /// same name (`{ use M <f>; sub f {...} }` is a redeclaration in Rakudo;
+    /// mutsu lets the local sub win), so a call of the name carries no
+    /// `LexImportCall` for the set.
+    lexical_set_decl_mark: HashMap<Symbol, usize>,
+    /// The main unit's top-level import sets whose `use` the compile has not
+    /// reached yet (`defer_unit_lexical_use_sets`).
+    deferred_unit_sets: Vec<Symbol>,
+    /// The source line of each main-unit top-level `use` that has a set.
+    unit_set_line: HashMap<Symbol, i64>,
     /// The implicit definedness smiley (`":D"` / `":U"`) a textually active
     /// `use variables :D/:U` adds to every typed variable declared from this
     /// point on in the same lexical scope (#9990). `None` for no pragma or
@@ -1247,6 +1260,8 @@ pub(crate) struct Compiler {
     /// scope-frame entries (an `&name` entry there means a `my &name`
     /// binding), so a `MY::` naming the frame lists them from here.
     scope_routine_decls: Vec<(usize, Symbol)>,
+    /// `scope_routine_decls` of the compiler this body is nested in.
+    inherited_scope_routine_decls: Vec<(usize, Symbol)>,
     /// The plain routines each active block scope of this compilation binds
     /// for the closures nested in it, as `(local_scopes depth, name)`; see
     /// `block_lexsubs.rs` (ADR-12529 phase 2).
@@ -2059,12 +2074,16 @@ impl Compiler {
             loop_exit_guards: Vec::new(),
             fatal_pragma_active: false,
             lexical_import_chain: Vec::new(),
+            lexical_set_decl_mark: HashMap::new(),
+            deferred_unit_sets: Vec::new(),
+            unit_set_line: HashMap::new(),
             variables_pragma: None,
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![lex_scope::ScopeFrame::new()],
             import_scope_levels: Vec::new(),
             scope_routine_decls: Vec::new(),
+            inherited_scope_routine_decls: Vec::new(),
             block_lexsub_decls: Vec::new(),
             enclosing_lexsubs: Vec::new(),
             top_level_is_block_body: false,
@@ -2849,6 +2868,16 @@ impl Compiler {
         }
     }
 
+    /// Give the body of a named routine or method, which is late-bound, the
+    /// import sets of the unit's `use`s the compile has not reached yet.
+    fn inherit_deferred_unit_sets(&self, sub: &mut Compiler) {
+        for id in &self.deferred_unit_sets {
+            if !sub.lexical_import_chain.contains(id) {
+                sub.lexical_import_chain.insert(0, *id);
+            }
+        }
+    }
+
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
         sub.enclosing_scopes = self.full_scope_chain();
         // Code nested in a closure body is still inside it (ADR-12529).
@@ -2897,6 +2926,16 @@ impl Compiler {
         sub.variables_pragma = self.variables_pragma;
         sub.role_type_param_names = self.role_type_param_names.clone();
         sub.lexical_import_chain = self.lexical_import_chain.clone();
+        sub.lexical_set_decl_mark = self.lexical_set_decl_mark.clone();
+        sub.unit_set_line = self.unit_set_line.clone();
+        // The routines declared in the scopes around this body shadow as
+        // they do at the enclosing level.
+        sub.inherited_scope_routine_decls = self
+            .inherited_scope_routine_decls
+            .iter()
+            .chain(self.scope_routine_decls.iter())
+            .copied()
+            .collect();
         sub.lexical_type_shadows
             .extend(self.lexical_type_shadows.iter().cloned());
         sub.lexical_types_in_scope

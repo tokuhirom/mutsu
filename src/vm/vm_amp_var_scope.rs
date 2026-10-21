@@ -93,7 +93,14 @@ impl Interpreter {
         if let Some(imported) = self.imported_amp_over_inherited(code, name) {
             return imported;
         }
-        loan_env!(self, resolve_code_var(name))
+        // A `&name` read finds the unit's top-level imports through its own
+        // `LexImportCall` prefix, which is emitted only for code that follows
+        // the `use`: the by-name reader must not find them for code before it
+        // (`do { use Test; &ok }` above a later `use` of another `ok`).
+        self.module.unit_sets_hidden = true;
+        let value = loan_env!(self, resolve_code_var(name));
+        self.module.unit_sets_hidden = false;
+        value
     }
 
     /// The binding a routine's free `&name` closes over when it lives in a

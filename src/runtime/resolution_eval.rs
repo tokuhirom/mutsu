@@ -298,6 +298,13 @@ impl Interpreter {
             }
         } else if let Some(origin) = origin {
             compiler.seed_lexical_import_chain_from(origin);
+        } else if self.regex_state.in_regex_sub_eval {
+            // A regex code block nothing owns calls what the `use`s around
+            // the running code imported. (Other unowned bodies are built by
+            // the interpreter itself, such as the operator a builtin
+            // fallback evaluates, and must not see an import that would
+            // dispatch to the very candidates that fell back to it.)
+            compiler.seed_lexical_import_chain(self.eval_lexical_import_chain());
         }
         // For an EVAL'd compilation unit's mainline the question is whether a
         // *routine* lexically encloses the `EVAL` call — and a mainline
@@ -615,6 +622,11 @@ impl Interpreter {
             sigilless: self.pending_eval_sigilless.clone(),
             placeholder_params: self.pending_eval_placeholder_params.clone(),
             rw_tail: self.pending_eval_rw_tail,
+            import_chain: if self.regex_state.in_regex_sub_eval && !is_eval_unit {
+                self.eval_lexical_import_chain()
+            } else {
+                Vec::new()
+            },
             distribution,
             eval_context_routine: if is_eval_unit {
                 self.pending_eval_context_routine

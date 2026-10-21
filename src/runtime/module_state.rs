@@ -418,6 +418,15 @@ pub(crate) struct ModuleState {
     /// Environment keys installed by imports, with the units that imported
     /// each and its pseudo-stash spelling (`runtime::unit_env_imports`).
     pub(crate) unit_env_imports: crate::runtime::unit_env_imports::UnitEnvImports,
+    /// The lexical import set ids each unit's own top-level `use`s filled,
+    /// oldest first: the sets no import scope holds (a block's scope holds
+    /// its own, `ImportScopeSnapshot::lexical_sets`). A lookup by a run-time
+    /// name reads the running unit's after every open scope's.
+    pub(crate) unit_lexical_sets: HashMap<Symbol, Vec<Symbol>>,
+    /// Set while the `&name` read of code compiled before its unit's `use`
+    /// resolves: the unit's sets are not in scope there, so the by-name
+    /// reader skips them.
+    pub(crate) unit_sets_hidden: bool,
     /// ADR-8751 stage 1: the routines each block-scoped `use` binds, keyed by
     /// the use's lexical import set id (`OpCode::UseModule::lexical_set_idx`)
     /// and then by routine name. Filled the first time such a `use` runs; the
@@ -657,6 +666,8 @@ impl ModuleState {
             module_body_import_aliases: Default::default(),
             imported_exported_proto_tags: Default::default(),
             unit_env_imports: Default::default(),
+            unit_lexical_sets: HashMap::new(),
+            unit_sets_hidden: false,
             lexical_import_sets: HashMap::new(),
             lexical_set_families: HashMap::new(),
             lexical_import_hook_values: HashMap::new(),
@@ -751,6 +762,8 @@ impl ModuleState {
             module_body_import_aliases: self.module_body_import_aliases.clone(),
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             unit_env_imports: self.unit_env_imports.clone(),
+            unit_lexical_sets: self.unit_lexical_sets.clone(),
+            unit_sets_hidden: false,
             lexical_import_sets: self.lexical_import_sets.clone(),
             lexical_set_families: self.lexical_set_families.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
