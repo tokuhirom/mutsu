@@ -112,6 +112,46 @@ pub(crate) fn note_token_def_routine_reads(body: &[crate::ast::Stmt]) {
     }
 }
 
+/// Resolve `&?ROUTINE` in a rule's pattern to the rule itself, at declaration
+/// time as Rakudo does: the engine pushes no routine frame per rule call, so
+/// a code block or call argument could otherwise only see the routine the
+/// parse was entered through (#13246). A proto candidate `b:sym<t>` is the
+/// candidate, not the proto.
+// Cost: O(s), s = the pattern length (a substring probe when it has none).
+pub(crate) fn resolve_rule_routine_reads(body: &mut [crate::ast::Stmt], package: &str, name: &str) {
+    use crate::ast::{Expr, Stmt};
+    const NEEDLE: &str = "&?ROUTINE";
+    if package.is_empty() || package == "GLOBAL" {
+        return;
+    }
+    let lookup = format!(
+        "({package}.^lookup(\"{}\"))",
+        name.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    for stmt in body.iter_mut() {
+        let (Stmt::Expr(Expr::Literal(v)) | Stmt::Return(Expr::Literal(v))) = stmt else {
+            continue;
+        };
+        let rewritten = match v.view() {
+            crate::value::ValueView::Regex(p) if p.contains(NEEDLE) => Value::regex_closure(
+                Arc::new(p.replace(NEEDLE, &lookup)),
+                v.regex_closure_scope(),
+                v.regex_signature(),
+                None,
+                v.regex_captured_topic(),
+                v.regex_declared_source_arc(),
+            ),
+            crate::value::ValueView::RegexWithAdverbs(a) if a.pattern.contains(NEEDLE) => {
+                let mut adv = a.clone();
+                adv.pattern = Arc::new(a.pattern.replace(NEEDLE, &lookup));
+                Value::regex_with_adverbs(adv)
+            }
+            _ => continue,
+        };
+        *v = rewritten;
+    }
+}
+
 /// Set the first time a rule with a defaulted, lexically-scoped parameter
 /// (`token t(Int $n = 0)` or `token t(:$n = 0)`) is registered; gates the probe in
 /// [`token_defs_need_binding`] the way [`ANY_DYNAMIC_TOKEN_PARAM`] gates the
