@@ -101,6 +101,7 @@ impl Interpreter {
     // Cost: see `construct_by_buildplan`.
     fn run_buildallplan(&mut self, class: Symbol, args: &[Value]) -> Result<Value, RuntimeError> {
         let instance = self.create_instance(class);
+        self.seed_trait_defaults(&instance, class)?;
         let plan = self.buildallplan_of(class.as_str());
         let ValueView::Array(tasks, _) = plan.view() else {
             return Ok(instance);
@@ -193,27 +194,7 @@ impl Interpreter {
         let native_thunk = matches!(payload.view(),
             ValueView::Sub(data) if data.name.as_str() == "<attribute-build>");
         let value = if native_thunk {
-            let def = self.plan_attr_def(task);
-            match def.as_ref().and_then(|d| d.default.clone()) {
-                Some(arg) => {
-                    let def = def.as_ref().expect("attribute definition");
-                    let attrs = match instance.view() {
-                        ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
-                        _ => AttrMap::default(),
-                    };
-                    let value = self.eval_attr_default_expr(
-                        &task.owner,
-                        Symbol::intern(&task.owner),
-                        &arg,
-                        instance,
-                        &attrs,
-                        super::attr_build_defaults::AttrDeclScope::of(def),
-                    )?;
-                    self.reify_list_attr_value(&value, sigil)?;
-                    value
-                }
-                None => Value::NIL,
-            }
+            self.plan_native_default(instance, task)?
         } else if self.type_matches_value("Code", &payload) {
             let type_obj = self
                 .plan_attr_def(task)
@@ -226,6 +207,69 @@ impl Interpreter {
         };
         let value = Self::coerce_attr_value_by_sigil(value, sigil);
         Ok(Self::itemize_attr_store_value(sigil, value))
+    }
+
+    /// The value of the attribute's own declared default, evaluated natively in
+    /// its declaration's scope (`NIL` when it declares none).
+    // Cost: O(1) plus the default's own evaluation.
+    fn plan_native_default(&mut self, instance: &Value, task: &PlanTask) -> Result<Value, RuntimeError> {
+        let (sigil, _) = task.sigil_and_bare();
+        let def = self.plan_attr_def(task);
+        let Some(arg) = def.as_ref().and_then(|d| d.default.clone()) else {
+            return Ok(Value::NIL);
+        };
+        let def = def.as_ref().expect("attribute definition");
+        let attrs = match instance.view() {
+            ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
+            _ => AttrMap::default(),
+        };
+        let value = self.eval_attr_default_expr(
+            &task.owner,
+            Symbol::intern(&task.owner),
+            &arg,
+            instance,
+            &attrs,
+            super::attr_build_defaults::AttrDeclScope::of(def),
+        )?;
+        self.reify_list_attr_value(&value, sigil)?;
+        Ok(value)
+    }
+
+    /// Seed each `is default(...)` attribute of `class`'s MRO with its default,
+    /// as Rakudo's allocation does: the default belongs to the attribute's
+    /// container, so it holds before any plan task runs and survives a plan
+    /// that has no task for the attribute.
+    // Cost: O(m * a) plus the defaults' own evaluation, m = the MRO's length,
+    // a = attributes per class.
+    fn seed_trait_defaults(&mut self, instance: &Value, class: Symbol) -> Result<(), RuntimeError> {
+        let mro = self.class_mro(class.as_str());
+        for layer in mro.iter().rev() {
+            let owner = layer.as_str();
+            let names: Vec<(char, String)> = self
+                .registry()
+                .classes
+                .get(owner)
+                .map(|def| {
+                    def.attributes
+                        .iter()
+                        .filter(|a| a.default_is_trait && a.default.is_some())
+                        .map(|a| (a.sigil, a.name.clone()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            for (sigil, name) in names {
+                let task = PlanTask {
+                    code: task_code::DEFAULT_OBJ,
+                    owner: owner.to_string(),
+                    name: format!("{sigil}!{name}"),
+                    payload: None,
+                };
+                let value = self.plan_native_default(instance, &task)?;
+                let value = Self::coerce_attr_value_by_sigil(value, sigil);
+                self.plan_bind_attr(instance, &task, Self::itemize_attr_store_value(sigil, value));
+            }
+        }
+        Ok(())
     }
 
     /// The registered declaration of the task's attribute.

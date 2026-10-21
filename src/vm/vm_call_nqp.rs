@@ -215,7 +215,16 @@ impl Interpreter {
         }
         loan_env!(self, set_pending_callsite_line(None));
         crate::vm::vm_stats::record_function_dispatch();
-        self.fetch_nqp_proxy_operands(&mut ops[..site.operands()])?;
+        // A bind stores its value operand as it is: a `Proxy` bound into an
+        // attribute is the attribute's container (AttrX::Mooish's `AttrProxy`),
+        // not something to FETCH on the way in.
+        if !matches!(
+            site.kind,
+            crate::runtime::nqp_attr::NqpAttrSiteKind::Bind
+                | crate::runtime::nqp_attr::NqpAttrSiteKind::BindInvres
+        ) {
+            self.fetch_nqp_proxy_operands(&mut ops[..site.operands()])?;
+        }
         let [obj, _class, val] = ops;
         let val = (site.operands() == 3).then_some(val);
         if site.name.code_do
