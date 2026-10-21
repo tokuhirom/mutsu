@@ -447,11 +447,35 @@ impl Interpreter {
         }
     }
 
+    /// A Range endpoint that is a user subclass or role mixin of a
+    /// Positional or Associative (`class A is Array`, `[1, 2] but R`) numifies
+    /// to its element count, as the built-in containers do (`^$a`, `0..$a`).
+    // Cost: O(1) for any other value; a type check for an Instance/Mixin.
+    pub(super) fn numify_container_endpoint(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        let candidate = match value.view() {
+            ValueView::Instance { .. } => !value.is_match_instance(),
+            ValueView::Mixin(inner, mixins) => {
+                crate::value::types::allomorph_type_name(inner, mixins).is_none()
+            }
+            _ => false,
+        };
+        if !candidate
+            || !(self.type_matches_value("Positional", &value)
+                || self.type_matches_value("Associative", &value))
+        {
+            return Ok(value);
+        }
+        self.stack.push(value);
+        self.exec_num_coerce_op()?;
+        Ok(self.stack.pop().unwrap_or(Value::NIL))
+    }
+
     pub(super) fn exec_upto_range_op(&mut self) -> Result<(), RuntimeError> {
         // The bound is read by value: a `Proxy` (an element of a native
         // `CArray`) is FETCHed first, as `prefix:<+>` does.
         let popped = self.stack.pop().unwrap();
         let popped = loan_env!(self, auto_fetch_proxy(&popped))?;
+        let popped = self.numify_container_endpoint(popped)?;
         let val = Self::scalarize_range_endpoint(popped);
         let numeric = if val.is_numeric() {
             val
