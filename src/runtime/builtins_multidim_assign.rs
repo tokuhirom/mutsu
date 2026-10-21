@@ -190,11 +190,37 @@ impl Interpreter {
         // aggregate; keeping the Proxy opaque makes the later Hash/Array arms
         // miss the store entirely. The eventual accessor writeback still uses
         // the Proxy's STORE when the modified aggregate is installed.
-        let current = if current.is_proxy_value() {
+        let was_proxy = current.is_proxy_value();
+        let current = if was_proxy {
             self.auto_fetch_proxy(&current)?
         } else {
             current
         };
+        // The element is stored into the aggregate FETCH handed back, in place,
+        // and STORE is not called: that is what rakudo does (a Proxy-bound
+        // attribute's trigger fires on assigning the attribute, not an
+        // element of it). A FETCH that answers a copy loses the store there
+        // too.
+        if was_proxy && !is_bind {
+            match (current.view(), index.view()) {
+                (ValueView::Array(items, _), ValueView::Int(i)) if i >= 0 => {
+                    let idx = i as usize;
+                    if idx >= items.len() && !crate::runtime::utils::is_shaped_array(&current) {
+                        current.array_grow_to(idx);
+                    }
+                    if current.array_set_in_place(idx, value.clone()) {
+                        return Ok(value);
+                    }
+                }
+                (ValueView::Hash(h), ValueView::Str(_)) if h.key_type.is_none() => {
+                    if let Some(entry) = current.hash_autovivify(&index.to_string_value()) {
+                        entry.hash_entry_write(value.clone());
+                        return Ok(value);
+                    }
+                }
+                _ => {}
+            }
+        }
         // An object that implements the subscript protocol itself (a class
         // with its own ASSIGN-POS, a `CArray[T]` mixin) takes the store through
         // it, as rakudo does; the accessor's container paths below would
