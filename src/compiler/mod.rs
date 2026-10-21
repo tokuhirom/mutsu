@@ -1216,6 +1216,9 @@ pub(crate) struct Compiler {
     deferred_unit_sets: Vec<Symbol>,
     /// The source line of each main-unit top-level `use` that has a set.
     unit_set_line: HashMap<Symbol, i64>,
+    /// The sets of `lexical_import_chain` the main unit's own top-level `use`
+    /// opened (as opposed to a block's `use` of the same import list).
+    unit_active_sets: HashSet<Symbol>,
     /// The implicit definedness smiley (`":D"` / `":U"`) a textually active
     /// `use variables :D/:U` adds to every typed variable declared from this
     /// point on in the same lexical scope (#9990). `None` for no pragma or
@@ -2077,6 +2080,7 @@ impl Compiler {
             lexical_set_decl_mark: HashMap::new(),
             deferred_unit_sets: Vec::new(),
             unit_set_line: HashMap::new(),
+            unit_active_sets: HashSet::new(),
             variables_pragma: None,
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
@@ -2928,6 +2932,7 @@ impl Compiler {
         sub.lexical_import_chain = self.lexical_import_chain.clone();
         sub.lexical_set_decl_mark = self.lexical_set_decl_mark.clone();
         sub.unit_set_line = self.unit_set_line.clone();
+        sub.unit_active_sets = self.unit_active_sets.clone();
         // The routines declared in the scopes around this body shadow as
         // they do at the enclosing level.
         sub.inherited_scope_routine_decls = self

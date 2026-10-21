@@ -122,7 +122,9 @@ impl Compiler {
             if let Some(id) = Self::lexical_use_set_id(stmt) {
                 let local = local_multis.get_or_insert_with(|| Self::block_multi_names(stmts));
                 let id = Self::with_block_multis(id, local);
-                if !self.lexical_import_chain.contains(&id) {
+                // A block's `use` of the import list the unit's own `use`
+                // opened is the block's own set: it takes a second entry.
+                if !self.lexical_import_chain.contains(&id) || self.unit_active_sets.contains(&id) {
                     self.lexical_import_chain.push(id);
                     let mark =
                         self.inherited_scope_routine_decls.len() + self.scope_routine_decls.len();
@@ -180,15 +182,15 @@ impl Compiler {
         // The unit's own top-level `use` opens its set where it stands
         // (`defer_unit_lexical_use_sets`).
         let base_text = full.resolve();
-        if let Some(i) = self
-            .deferred_unit_sets
-            .iter()
-            .position(|id| Self::set_id_matches(*id, base_text.as_str()))
-        {
+        // A block's `use` of the same import list (already in the chain) is
+        // that block's own, not the unit's.
+        if let Some(i) = self.deferred_unit_sets.iter().position(|id| {
+            Self::set_id_matches(*id, base_text.as_str()) && !self.lexical_import_chain.contains(id)
+        }) {
             let id = self.deferred_unit_sets.remove(i);
-            if !self.lexical_import_chain.contains(&id) {
-                self.lexical_import_chain.push(id);
-            }
+            self.lexical_import_chain.push(id);
+            // Only the unit's set is subject to `unit_set_line`.
+            self.unit_active_sets.insert(id);
         }
         // An `EVAL` unit's sets leave the variables out
         // (`enter_eval_unit_lexical_uses`).
@@ -520,6 +522,8 @@ impl Compiler {
                 // code above it (outside any routine, whose body is
                 // late-bound) means what the name meant before.
                 if let Some(&use_line) = self.unit_set_line.get(id)
+                    && self.unit_active_sets.contains(id)
+                    && self.lexical_import_chain.iter().filter(|c| *c == id).count() == 1
                     && !self.lexically_in_routine
                     && self.last_source_line.is_some_and(|line| line < use_line)
                 {
@@ -533,7 +537,12 @@ impl Compiler {
                     .skip(mark)
                     .any(|&(_, decl)| decl == name)
             })
-            .collect();
+            .fold(Vec::new(), |mut acc: Vec<Symbol>, id| {
+                if !acc.contains(&id) {
+                    acc.push(id);
+                }
+                acc
+            });
         if chain.is_empty() {
             return None;
         }
