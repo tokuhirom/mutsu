@@ -438,6 +438,11 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
         Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } => !is_positional_pragma(stmt),
         Stmt::VarDecl { custom_traits, .. } => custom_traits.iter().any(|(t, _)| t == "__constant"),
         Stmt::SyntheticBlock(inner) => is_will_begin_group(inner),
+        // A user `trait_mod:<is>` runs when the declaration is compiled, so its
+        // argument sees the unit's lexicals in their static state (#14146).
+        Stmt::ClassDecl { custom_traits, .. }
+        | Stmt::RoleDecl { custom_traits, .. }
+        | Stmt::Package { custom_traits, .. } => !custom_traits.is_empty(),
         _ => false,
     }
 }
