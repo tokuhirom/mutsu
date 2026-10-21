@@ -261,7 +261,7 @@ impl Walker<'_> {
         if self.frames.is_empty() || self.in_detached_type() {
             return false;
         }
-        let Some((name, applied)) = liftable_traits(stmt, false) else {
+        let Some((name, applied)) = liftable_traits(stmt, true) else {
             return false;
         };
         // `Variable.block.add_phaser` files its phaser under this site; the
