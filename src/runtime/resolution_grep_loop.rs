@@ -1,7 +1,7 @@
 //! The inline `.grep` loop: a callback run over a list of source elements,
 //! reporting the matches, the `$_`-written-back source elements and the
 //! matched indices. A deferred `.grep` pulled a prefix at a time runs it over
-//! a [`GrepFeed`] instead of a copied chunk, so one loop run serves a whole
+//! a [`LoopFeed`] instead of a copied chunk, so one loop run serves a whole
 //! pull however many source elements it has to skip (#11515).
 
 use super::*;
@@ -17,20 +17,22 @@ use crate::value::{PullOut, ValueView};
 /// are reported by the loop rather than re-derived by the caller.
 pub(crate) type GrepOutcome = (Value, Vec<Value>, Option<Vec<usize>>);
 
-/// Where a lazily fed grep loop reads its source elements: `fetch(i)` is the
-/// `i`-th element from where the pull starts, read when the loop reaches it,
-/// `None` past the end. A Live array's elements are therefore read as they
-/// are when the loop gets there, as Rakudo's array iterator reads them.
-pub(crate) struct GrepFeed<'a> {
+/// Where a lazily fed `.map`/`.grep` loop reads its source elements:
+/// `fetch(i)` is the `i`-th element from where the pull starts, read when the
+/// loop reaches it, `None` past the end. A Live array's elements are
+/// therefore read as they are when the loop gets there, as Rakudo's array
+/// iterator reads them.
+pub(crate) struct LoopFeed<'a> {
     fetch: &'a dyn Fn(usize) -> Option<Value>,
-    /// The loop stops after this many matches.
-    pub(crate) max_matches: usize,
+    /// The loop stops after this many matches (grep) or produced elements
+    /// (map).
+    pub(crate) limit: usize,
 }
 
-impl<'a> GrepFeed<'a> {
+impl<'a> LoopFeed<'a> {
     // Cost: O(1).
-    pub(crate) fn new(fetch: &'a dyn Fn(usize) -> Option<Value>, max_matches: usize) -> Self {
-        Self { fetch, max_matches }
+    pub(crate) fn new(fetch: &'a dyn Fn(usize) -> Option<Value>, limit: usize) -> Self {
+        Self { fetch, limit }
     }
 
     // Cost: O(1) plus `fetch`'s cost.
@@ -38,12 +40,60 @@ impl<'a> GrepFeed<'a> {
         (self.fetch)(i)
     }
 
-    /// The first `max_matches` elements: what a chunked pull greps when the
+    /// The first `limit` elements: what a chunked pull greps when the
     /// callback cannot run over a feed (every match needs a source element,
     /// so the chunk never runs the callback over one the pull does not need).
-    // Cost: O(max_matches).
+    // Cost: O(limit).
     fn window(self) -> Vec<Value> {
-        (0..self.max_matches).map_while(|i| self.fetch(i)).collect()
+        (0..self.limit).map_while(|i| self.fetch(i)).collect()
+    }
+}
+
+/// The source elements of a map loop: a list held up front, or a
+/// [`LoopFeed`] read as the loop reaches each element. `buf` holds the
+/// elements read so far.
+pub(crate) struct LoopSource<'a> {
+    pub(crate) buf: Vec<Value>,
+    feed: Option<LoopFeed<'a>>,
+}
+
+impl<'a> LoopSource<'a> {
+    // Cost: O(1).
+    pub(crate) fn list(buf: Vec<Value>) -> Self {
+        Self { buf, feed: None }
+    }
+
+    // Cost: O(1).
+    pub(crate) fn fed(feed: LoopFeed<'a>) -> Self {
+        Self {
+            buf: Vec::new(),
+            feed: Some(feed),
+        }
+    }
+
+    /// Whether the source has at least `n` elements, reading them from the
+    /// feed as needed.
+    // Cost: O(1) per element newly read, plus `fetch`'s cost.
+    pub(crate) fn has(&mut self, n: usize) -> bool {
+        while self.buf.len() < n {
+            match self.feed.as_ref().and_then(|feed| feed.fetch(self.buf.len())) {
+                Some(item) => self.buf.push(item),
+                None => return false,
+            }
+        }
+        true
+    }
+
+    /// Whether a fed loop has what its pull asked for: `limit` elements
+    /// produced since `produced_base`, or a lazy slip it cannot see the end
+    /// of (the pull reads that before the callback runs again, #14295).
+    // Cost: O(1).
+    pub(crate) fn satisfied(&self, produced: &[Value], produced_base: usize) -> bool {
+        self.feed.as_ref().is_some_and(|feed| {
+            produced.len() - produced_base >= feed.limit
+                || (produced.len() > produced_base
+                    && produced.last().is_some_and(Value::is_lazy_tail_slip))
+        })
     }
 }
 
@@ -105,16 +155,16 @@ impl Interpreter {
     }
 
     /// [`Self::eval_grep_over_items_into`] over the source elements `feed`
-    /// reads, stopping at its `max_matches`-th match: one loop run (one env
+    /// reads, stopping at its `limit`-th match: one loop run (one env
     /// merge, one register reset) for a whole prefix pull, however many source
     /// elements it skips. The returned source items are the elements the loop
     /// consumed — the pull advances by their count.
     // Cost: one callback call per element consumed, up to the
-    // `max_matches`-th match.
+    // `limit`-th match.
     pub(crate) fn eval_grep_over_feed_into(
         &mut self,
         func: Option<Value>,
-        feed: GrepFeed<'_>,
+        feed: LoopFeed<'_>,
         slot: &mut MapGrepPlanSlot,
         out: &mut PullOut,
     ) -> Result<(Vec<Value>, Option<Vec<usize>>), RuntimeError> {
@@ -130,7 +180,7 @@ impl Interpreter {
         &mut self,
         func: Option<Value>,
         mut list_items: Vec<Value>,
-        mut feed: Option<GrepFeed<'_>>,
+        mut feed: Option<LoopFeed<'_>>,
         slot: &mut MapGrepPlanSlot,
         out: &mut PullOut,
     ) -> Result<(Vec<Value>, Option<Vec<usize>>), RuntimeError> {
@@ -309,7 +359,7 @@ impl Interpreter {
                     if let Some(feed) = &feed {
                         // `i` is always the next element to read here: a feed
                         // runs one element per call.
-                        if result.len() - produced_base >= feed.max_matches {
+                        if result.len() - produced_base >= feed.limit {
                             break;
                         }
                         match feed.fetch(i) {
@@ -478,7 +528,7 @@ impl Interpreter {
             }
             let mut matched = Vec::new();
             if let Some(feed) = feed {
-                while result.len() - produced_base < feed.max_matches
+                while result.len() - produced_base < feed.limit
                     && let Some(item) = feed.fetch(list_items.len())
                 {
                     *consumed = consumed_base + list_items.len() + 1;

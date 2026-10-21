@@ -180,6 +180,7 @@ impl Interpreter {
         // second callback of `map({ slip(1..*) }).head(2)`). It starts one group
         // at a time and widens to `missing` groups only once a chunk answered
         // exactly one element per group (#14312).
+        let fed = !matches!(mode, MapGrepMode::MapRw(_));
         let mut batch = mode.is_grep();
         while out.produced.len() - produced_base < needed
             && (*pos < items.len() || plan.pending_slip.is_some())
@@ -198,15 +199,15 @@ impl Interpreter {
             // A grep runs until it has the missing matches (one loop run for
             // the whole pull, #11515); a map needs one call, of `group` source
             // elements, per element missing (#14196).
-            let groups = if batch { missing } else { 1 };
+            let groups = if batch || fed { missing } else { 1 };
             let end = pos
                 .saturating_add(groups.saturating_mul(group))
                 .min(items.len());
             let (consumed_before, produced_before) = (out.consumed, out.produced.len());
-            let max_matches = mode.is_grep().then_some(missing);
+            let max_matches = fed.then_some(missing);
             let last =
                 self.pull_chunk_step(func, *fatal, mode, plan, items, pos, end, max_matches, out)?;
-            if !mode.is_grep() {
+            if !fed {
                 batch = (out.produced.len() - produced_before) * group
                     == out.consumed - consumed_before;
             }
@@ -408,9 +409,18 @@ impl Interpreter {
                 plan,
                 out,
             ),
-            MapGrepMode::Map => {
-                self.eval_map_over_items_into(func.clone(), items.slice(start, end), plan, out)
-            }
+            MapGrepMode::Map => match max_matches {
+                Some(limit) => {
+                    let fetch = |i: usize| items.get(start + i);
+                    let feed = crate::runtime::resolution_grep_loop::LoopFeed::new(&fetch, limit);
+                    let result = self.eval_map_over_feed_into(func.clone(), feed, plan, out);
+                    consumed_end = start + (out.consumed - consumed_base);
+                    result
+                }
+                None => {
+                    self.eval_map_over_items_into(func.clone(), items.slice(start, end), plan, out)
+                }
+            },
         };
         self.module.fatal_mode = saved_fatal;
         if let Some(unit) = saved_unit {
@@ -463,7 +473,7 @@ impl Interpreter {
         let (consumed, _) = match max_matches {
             Some(max_matches) => {
                 let fetch = |i: usize| items.get(start + i);
-                let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(&fetch, max_matches);
+                let feed = crate::runtime::resolution_grep_loop::LoopFeed::new(&fetch, max_matches);
                 self.eval_grep_over_feed_into(func.clone(), feed, plan, out)?
             }
             None => {
