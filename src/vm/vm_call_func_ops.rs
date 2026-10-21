@@ -304,6 +304,17 @@ impl Interpreter {
     ///
     /// Cost: O(1) hashed probes, plus the anchor-unit walk of
     /// `env_key_imported_here` when some unit imported `&name`.
+    /// Whether `data` is a multi dispatcher value one of whose captured
+    /// candidates returns a container (`is rw`).
+    // Cost: O(c), c = captured candidates.
+    fn dispatcher_has_container_candidate(data: &crate::value::SubData) -> bool {
+        matches!(
+            data.env.get("__mutsu_multi_dispatch_candidates").map(Value::view),
+            Some(ValueView::Array(cands, _))
+                if cands.iter().any(|c| matches!(c.view(), ValueView::Sub(d) if d.returns_container()))
+        )
+    }
+
     pub(crate) fn lexical_amp_call_eligible(&mut self, name: &str) -> bool {
         let imported_alias = self.env_key_imported_here(Symbol::intern(&format!("&{name}")));
         !(Self::is_control_flow_function_name(name)
@@ -1897,7 +1908,10 @@ impl Interpreter {
             self.set_pending_call_arg_sources_shared(arg_sources);
             let result = self.call_lexical_import_routine(def, args, compiled_fns);
             self.set_pending_call_arg_sources(None);
-            let result = loan_env!(self, maybe_fetch_rw_proxy(result?, true))?;
+            // A routine that returns a container (`is rw`) hands its Proxy on
+            // un-fetched, as a by-name call does.
+            let fetch = !Self::routine_is_rw_capable(def);
+            let result = loan_env!(self, maybe_fetch_rw_proxy(result?, fetch))?;
             self.apply_pending_rw_writeback(code);
             self.stack.push(result);
             return Ok(());
@@ -1967,9 +1981,12 @@ impl Interpreter {
                 "&{name}"
             )));
         }
+        let mut fetch_tail = true;
         let result = if !target.is_nil() {
             let sub_is_rw = if let ValueView::Sub(data) = target.view() {
-                !data.returns_container()
+                // A family dispatcher hands on the container one of its `is rw`
+                // candidates returns.
+                !data.returns_container() && !Self::dispatcher_has_container_candidate(&data)
             } else {
                 false
             };
@@ -1978,11 +1995,12 @@ impl Interpreter {
                 source: Self::topic_alias_source(&args, arg_sources.as_deref()),
             };
             self.set_pending_call_arg_sources_shared(arg_sources);
-            let rw_callable = self.in_lvalue_assignment
-                && matches!(
-                    target.view(),
-                    ValueView::Sub(data) if data.returns_container()
-                );
+            let rw_callable = matches!(
+                target.view(),
+                ValueView::Sub(data)
+                    if (self.in_lvalue_assignment && data.returns_container())
+                        || Self::dispatcher_has_container_candidate(&data)
+            );
             let saved_rw_context = self.rw_return_context;
             self.rw_return_context |= rw_callable;
             let result = match self.activation_routine_of(&target) {
@@ -2002,6 +2020,9 @@ impl Interpreter {
             self.rw_return_context = saved_rw_context;
             self.set_pending_call_arg_sources(None);
             let result = result?;
+            // The final fetch below must not undo this one: a routine that
+            // returns a container keeps it.
+            fetch_tail = sub_is_rw;
             loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?
         } else if let Some(native_result) = self.try_native_function(name_sym, &mut args) {
             native_result?
@@ -2015,6 +2036,7 @@ impl Interpreter {
                 self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
             self.set_pending_call_arg_sources(None);
             let result = result?;
+            fetch_tail = cf_auto_fetch;
             loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))?
         } else {
             // Sync Interpreter locals to env before spawning threads so closures capture them
@@ -2026,7 +2048,7 @@ impl Interpreter {
             self.set_pending_call_arg_sources(None);
             result?
         };
-        let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
+        let result = loan_env!(self, maybe_fetch_rw_proxy(result, fetch_tail))?;
         self.apply_pending_rw_writeback(code);
         self.stack.push(result);
         Ok(())
