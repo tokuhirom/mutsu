@@ -240,7 +240,7 @@ impl Interpreter {
         body: MainlineBody<'_>,
         slot: &ModuleCodeSlot,
     ) -> Result<(CompiledCode, CompiledFns), RuntimeError> {
-        let (compiler, compile_unit) = self.block_compiler();
+        let (mut compiler, compile_unit) = self.block_compiler();
         let context = CompileContext {
             environment: compile_inputs::environment_fingerprint(),
             is_routine: compiler.is_routine,
@@ -270,7 +270,9 @@ impl Interpreter {
                 );
                 if verify_enabled() {
                     let _session = compile_session::enter_session(session);
-                    let fresh = compiler.compile(body.stmts()?);
+                    let stmts = body.stmts()?;
+                    compiler.defer_unit_lexical_use_sets(stmts);
+                    let fresh = compiler.compile(stmts);
                     verify_same(&unit.source_path, &decoded, &fresh);
                 }
                 decoded
@@ -279,6 +281,7 @@ impl Interpreter {
                 let stmts = body.stmts()?;
                 let _session = compile_session::enter_session(session);
                 let recording = compile_inputs::start();
+                compiler.defer_unit_lexical_use_sets(stmts);
                 let compiled = compiler.compile(stmts);
                 let recorded = recording.map(compile_inputs::RecordingGuard::finish);
                 let encoded = match &recorded {
