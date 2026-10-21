@@ -885,6 +885,29 @@ impl Interpreter {
     /// so it must not allocate more than the one `VarRef` payload. The name is
     /// taken from the chunk's pre-interned constant symbols: no `String`, no
     /// hashing.
+    /// [`Self::exec_wrap_var_ref_op`] for a `$.x` whose `x` returned a `Proxy`:
+    /// `$.x` is `self.x` itemized in Rakudo, which reads the container, so the
+    /// Proxy is FETCHed here and the binding (`my \e = $.x`) holds the value
+    /// (PDF's `my \encoded = $.encoded` relies on the FETCH running at the bind).
+    // Cost: O(1), plus the FETCH body when the operand is a Proxy.
+    pub(super) fn exec_wrap_var_ref_op_fetching(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        slot: u32,
+    ) -> Result<(), RuntimeError> {
+        if code.const_sym(name_idx).as_str().starts_with('.')
+            && self.stack.last().is_some_and(Value::is_proxy_value)
+        {
+            let proxy = self.stack.pop().unwrap_or(Value::NIL);
+            let fetched = self.fetch_proxy_operand(proxy)?;
+            self.stack.push(fetched);
+            return Ok(());
+        }
+        self.exec_wrap_var_ref_op(code, name_idx, slot);
+        Ok(())
+    }
+
     pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32, slot: u32) {
         let mut value = self.stack.pop().unwrap_or(Value::NIL);
         let sym = code.const_sym(name_idx);

@@ -3695,7 +3695,7 @@ impl Interpreter {
             // Cost: O(c), c = the chunk's container-ref capture names (a linear
             // `Vec::contains`), O(1) when it has none.
             OpCode::WrapVarRef { name_idx, slot } => {
-                self.exec_wrap_var_ref_op(code, *name_idx, *slot);
+                self.exec_wrap_var_ref_op_fetching(code, *name_idx, *slot)?;
                 *ip += 1;
             }
             // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.
