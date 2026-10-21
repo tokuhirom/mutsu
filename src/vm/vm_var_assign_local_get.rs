@@ -557,8 +557,6 @@ impl Interpreter {
                 self.stack.push(shared_val);
                 return Ok(());
             }
-            let is_internal = name.starts_with("__");
-            let is_special = matches!(name, "_" | "/" | "!" | "¢");
             // Private attribute locals (!attr) are populated directly from
             // instance attributes in fast-path method calls; they may not be
             // in the env (when skip_env_setup is active) but are still valid.

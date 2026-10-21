@@ -1192,7 +1192,10 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             if sub_pd.named && sub_pd.required && sub_pd.default.is_none() {
                 return Err(RuntimeError::typed_msg(
                     "X::AdHoc",
-                    format!("Required named parameter '{}' not passed", sub_pd.name),
+                    format!(
+                        "Required named argument '{}' not passed in sub-signature",
+                        sub_pd.name
+                    ),
                 ));
             }
             // If the param is required (not optional, no default), error
