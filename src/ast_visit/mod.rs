@@ -306,6 +306,7 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
         RegexNode::NamedCapture {
             name,
             array: _,
+            hash: _,
             regex,
         } => {
             v.visit_name(name, NameKind::Regex);

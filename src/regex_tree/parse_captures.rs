@@ -10,7 +10,7 @@ impl Parser {
         }
         let name: String = self.chars[start..self.pos].iter().collect();
         name.parse::<u32>().ok()?;
-        self.parse_capture_body(name, false)
+        self.parse_capture_body(name, false, false)
     }
 
     pub(super) fn parse_named_capture(&mut self, array: bool) -> Option<RegexNode> {
@@ -23,10 +23,40 @@ impl Parser {
             return None;
         }
         let name: String = self.chars[start..self.pos - 1].iter().collect();
-        self.parse_capture_body(name, array)
+        self.parse_capture_body(name, array, false)
     }
 
-    fn parse_capture_body(&mut self, name: String, array: bool) -> Option<RegexNode> {
+    // Cost: O(n), n = alias name length.
+    pub(super) fn parse_hash_capture(&mut self) -> Option<RegexNode> {
+        self.pos += 1; // '%'
+        let bracketed = self.consume_if('<');
+        let start = self.pos;
+        if bracketed {
+            while self.chars.get(self.pos).is_some_and(|ch| *ch != '>') {
+                self.pos += 1;
+            }
+            if self.pos == start || !self.consume_if('>') {
+                return None;
+            }
+            let name: String = self.chars[start..self.pos - 1].iter().collect();
+            self.parse_capture_body(name, false, true)
+        } else {
+            while self
+                .chars
+                .get(self.pos)
+                .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '-')
+            {
+                self.pos += 1;
+            }
+            if self.pos == start {
+                return None;
+            }
+            let name: String = self.chars[start..self.pos].iter().collect();
+            self.parse_capture_body(name, false, true)
+        }
+    }
+
+    fn parse_capture_body(&mut self, name: String, array: bool, hash: bool) -> Option<RegexNode> {
         self.skip_whitespace();
         if !self.consume_if('=') {
             return None;
@@ -83,6 +113,7 @@ impl Parser {
             let mut nodes = vec![RegexNode::NamedCapture {
                 name,
                 array,
+                hash,
                 regex: Box::new(RegexNode::Literal(first.to_string())),
             }];
             if let Some(quantifier) = quantifier {
@@ -113,6 +144,7 @@ impl Parser {
         Some(RegexNode::NamedCapture {
             name,
             array,
+            hash,
             regex: Box::new(regex),
         })
     }

@@ -147,6 +147,8 @@ pub(crate) enum RegexNode {
         name: String,
         #[serde(default)]
         array: bool,
+        #[serde(default)]
+        hash: bool,
         regex: Box<RegexNode>,
     },
     Subrule {
@@ -733,7 +735,12 @@ impl RegexTree {
                         ratchet,
                     )])
                 }
-                RegexNode::NamedCapture { name, array, regex } => {
+                RegexNode::NamedCapture {
+                    name,
+                    array,
+                    hash,
+                    regex,
+                } => {
                     // Numeric aliases set the capture counter for their entire
                     // level. The established matcher owns that numbering pass.
                     if !name.is_empty() && name.bytes().all(|c| c.is_ascii_digit()) {
@@ -751,7 +758,8 @@ impl RegexTree {
                     // does a capturing lookaround (`$<a>=<after x>?`): it is a
                     // subrule call, so a `?` that skips it must publish neither
                     // name, which a wrapper that always runs could not (#9212).
-                    if let RegexNode::Quantified { atom, .. } = regex.as_ref()
+                    if !*hash
+                        && let RegexNode::Quantified { atom, .. } = regex.as_ref()
                         && !matches!(
                             atom.as_ref(),
                             RegexNode::CapturingGroup(_)
@@ -794,6 +802,10 @@ impl RegexTree {
                         anchor_start,
                     )?;
                     let first = tokens.first_mut()?;
+                    if *hash {
+                        first.hash_capture = Some(name.clone());
+                        return Some(tokens);
+                    }
                     // The aliased atom's own capture (`before` for an aliased
                     // `<before …>`) survives alongside the alias.
                     first.secondary_named_capture = first.named_capture.take();
@@ -1308,9 +1320,20 @@ impl RegexNode {
             Self::CapturingGroup(child) => {
                 format!("({}{})", child.to_source(), trailing_space(child))
             }
-            Self::NamedCapture { name, array, regex } => {
-                let sigil = if *array { '@' } else { '$' };
-                if !array && !name.is_empty() && name.bytes().all(|c| c.is_ascii_digit()) {
+            Self::NamedCapture {
+                name,
+                array,
+                hash,
+                regex,
+            } => {
+                let sigil = if *hash {
+                    '%'
+                } else if *array {
+                    '@'
+                } else {
+                    '$'
+                };
+                if !array && !hash && !name.is_empty() && name.bytes().all(|c| c.is_ascii_digit()) {
                     format!("${name} = {}", regex.to_source())
                 } else {
                     format!("{sigil}<{name}> = {}", regex.to_source())

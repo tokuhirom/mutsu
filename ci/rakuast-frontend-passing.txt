@@ -5266,6 +5266,7 @@ t/rakuast/rakuast-regex-decl-trivia-and-modifiers.t
 t/rakuast/rakuast-regex-declaration-code-blocks.t
 t/rakuast/rakuast-regex-declaration-export-traits.t
 t/rakuast/rakuast-regex-dynamic-arguments.t
+t/rakuast/rakuast-regex-hash-capture-alias.t
 t/rakuast/rakuast-regex-internal-modifier.t
 t/rakuast/rakuast-regex-literal-hash-index.t
 t/rakuast/rakuast-regex-match-markers.t
@@ -5669,6 +5670,7 @@ t/regex/regex-interpolated-module-our-var.t
 t/regex/regex-interpolation-compiled-forms.t
 t/regex/regex-interpolation-hyphen-var.t
 t/regex/regex-interpolation.t
+t/regex/regex-last-declines-compiled.t
 t/regex/regex-lazy-candidate-enumeration.t
 t/regex/regex-leaf-atoms-compiled.t
 t/regex/regex-left-recursion-key-identity.t

@@ -3843,11 +3843,21 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
         RakuAstClass::RegexCapturingGroup => Ok(RegexNode::CapturingGroup(Box::new(
             lower_regex_node(named_child_or_positional(node)?)?,
         ))),
-        RakuAstClass::RegexNamedCapture => Ok(RegexNode::NamedCapture {
-            name: leaf_str(node, "name")?,
-            array: bool_field(node, "array")?,
-            regex: Box::new(lower_regex_node(named_child(node, "regex")?)?),
-        }),
+        RakuAstClass::RegexNamedCapture => {
+            let array = bool_field(node, "array")?;
+            let hash = bool_field(node, "hash")?;
+            if array && hash {
+                return Err(RuntimeError::new(
+                    "RakuAST::Regex::NamedCapture cannot combine `array` and `hash`",
+                ));
+            }
+            Ok(RegexNode::NamedCapture {
+                name: leaf_str(node, "name")?,
+                array,
+                hash,
+                regex: Box::new(lower_regex_node(named_child(node, "regex")?)?),
+            })
+        }
         RakuAstClass::RegexAssertionNamed
             if let Some(NameShape::Indirect {
                 expr,

@@ -141,7 +141,8 @@ pub(crate) fn interpreter_version() -> String {
     // 41: Role headers retain the written interleaving of trait families.
     // 42: `ModuleLoadFacts` gained `my_constant_names` (#14330).
     // 43: composition Whatever spelling retains the unexpanded source operand.
-    const CACHE_FORMAT_VERSION: u32 = 43;
+    // 44: static regex named captures distinguish hash aliases.
+    const CACHE_FORMAT_VERSION: u32 = 44;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

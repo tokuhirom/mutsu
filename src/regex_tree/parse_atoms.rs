@@ -64,6 +64,14 @@ impl Parser {
                 })
             }
             '@' if self.chars.get(self.pos + 1) == Some(&'<') => self.parse_named_capture(true),
+            '%' if self.chars.get(self.pos + 1) == Some(&'<')
+                || self
+                    .chars
+                    .get(self.pos + 1)
+                    .is_some_and(|ch| ch.is_alphabetic() || *ch == '_') =>
+            {
+                self.parse_hash_capture()
+            }
             '^' if self.chars.get(self.pos + 1) == Some(&'^') => {
                 self.pos += 2;
                 Some(RegexNode::AnchorBeginningOfLine)
