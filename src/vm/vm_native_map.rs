@@ -170,11 +170,7 @@ impl Interpreter {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
-            if let ValueView::Slip(elems) = value.view() {
-                result.extend(elems.iter().cloned());
-            } else {
-                result.push(value);
-            }
+            crate::runtime::resolution_map_grep::push_map_value(&mut result, value);
             i += arity;
         }
 

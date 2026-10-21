@@ -323,7 +323,17 @@ impl Interpreter {
                 };
                 Ok(one(vec![elem], at + 1))
             }
-            PipeAdaptor::MultiMap { arity } => {
+            PipeAdaptor::MultiMap { arity, pending } => {
+                // A lazy list the last callback slipped is read to its end
+                // (or as far as the consumer pulls) before the callback runs
+                // again (#14295).
+                if let Some((list, at)) = pending.take() {
+                    if let Some(elem) = self.pull_source_element(&list, at)? {
+                        *pending = Some((list, at + 1));
+                        return Ok(one(vec![elem], idx));
+                    }
+                    return Ok(one(Vec::new(), idx));
+                }
                 let mut args = Vec::with_capacity(*arity);
                 for i in 0..*arity {
                     match self.pull_source_element(source, idx + i)? {
@@ -341,6 +351,10 @@ impl Interpreter {
                     .vm_call_on_value(func.clone(), args, None)
                     .and_then(|v| self.reify_lazy_slip_tail(v))
                 {
+                    Ok(v) if v.is_lazy_tail_slip() => {
+                        *pending = Some((Self::lazy_slip_receiver(v, ""), 0));
+                        Ok(one(Vec::new(), next))
+                    }
                     Ok(v) => Ok(one(
                         match v.view() {
                             ValueView::Slip(items) => items.as_ref().clone(),
