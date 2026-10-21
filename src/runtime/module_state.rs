@@ -424,6 +424,14 @@ pub(crate) struct ModuleState {
     /// `OpCode::LexImportCall` sites lexically inside the block read it.
     pub(crate) lexical_import_sets:
         HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
+    /// The multi candidates each lexical import set binds per family, merged
+    /// with those of the earlier `use`s of its scope: a later `use` of the
+    /// same family name adds its candidates to the earlier ones rather than
+    /// hiding them.
+    pub(crate) lexical_set_families: HashMap<
+        Symbol,
+        HashMap<Symbol, Vec<std::sync::Arc<crate::ast::FunctionDef>>>,
+    >,
     /// The values a `sub EXPORT` hook returned for the names the importing
     /// block declares itself (ADR-8751), keyed by the use's lexical import
     /// set id and then by the name's declaration key (`x`, `@a`, the term key
@@ -650,6 +658,7 @@ impl ModuleState {
             imported_exported_proto_tags: Default::default(),
             unit_env_imports: Default::default(),
             lexical_import_sets: HashMap::new(),
+            lexical_set_families: HashMap::new(),
             lexical_import_hook_values: HashMap::new(),
             lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
@@ -743,6 +752,7 @@ impl ModuleState {
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             unit_env_imports: self.unit_env_imports.clone(),
             lexical_import_sets: self.lexical_import_sets.clone(),
+            lexical_set_families: self.lexical_set_families.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
