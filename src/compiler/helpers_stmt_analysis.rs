@@ -182,10 +182,14 @@ impl Compiler {
         // The unit's own top-level `use` opens its set where it stands
         // (`defer_unit_lexical_use_sets`).
         let base_text = full.resolve();
+        // A module unit's sets leave the variables out, like an `EVAL`'s.
+        let eval_text = Self::eval_unit_set_id(full).resolve();
         // A block's `use` of the same import list (already in the chain) is
         // that block's own, not the unit's.
         if let Some(i) = self.deferred_unit_sets.iter().position(|id| {
-            Self::set_id_matches(*id, base_text.as_str()) && !self.lexical_import_chain.contains(id)
+            (Self::set_id_matches(*id, base_text.as_str())
+                || Self::set_id_matches(*id, eval_text.as_str()))
+                && !self.lexical_import_chain.contains(id)
         }) {
             let id = self.deferred_unit_sets.remove(i);
             self.lexical_import_chain.push(id);
