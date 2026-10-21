@@ -2,7 +2,7 @@ use crate::value::AttrMap;
 use crate::value::{Value, ValueMap, ValueView};
 use num_bigint::BigInt;
 
-/// Depth cap for the gist-dispatch probe. Cycles are caught by container
+/// Depth cap for the dispatch probes. Cycles are caught by container
 /// identity (below); this only keeps a pathologically deep structure from
 /// blowing the stack.
 const GIST_PROBE_MAX_DEPTH: usize = 256;
@@ -20,61 +20,10 @@ fn container_id(value: &Value) -> Option<usize> {
     }
 }
 
-/// `seen` holds every container already walked — not just the ancestors. A
-/// circular structure (`my @c; @c = 42, @c`) would otherwise be re-walked once
-/// per path reaching it, which is exponential for a graph with two cyclic
-/// edges. This mirrors the `.raku` twin, `contains_dispatch_leaf_seen` in
-/// `runtime::methods_raku_dispatch`.
-fn contains_instance_seen(
-    value: &Value,
-    seen: &mut std::collections::HashSet<usize>,
-    depth: usize,
-) -> bool {
-    if depth > GIST_PROBE_MAX_DEPTH {
-        return false;
-    }
-    if matches!(
-        value.view(),
-        ValueView::Instance { .. }
-            // A Code element needs interpreter dispatch for a different reason
-            // than a user `method gist`: `gist_value` has no Code arm, so it
-            // fell through to `to_string_value()` -- Code's `.Str` rule, the
-            // bare name. That rendered an anonymous block as the EMPTY STRING
-            // inside a list (`say (&b,)` printed `()`, so a one-element list
-            // read as empty) and dropped a named routine's sigil (`(&f)` came
-            // out as `(f)`). The real `Code.gist` lives in the `Sub` method
-            // handler, so defer to it rather than growing a second copy.
-            | ValueView::Sub(_)
-            | ValueView::WeakSub(_)
-            | ValueView::Routine { .. }
-    ) {
-        return true;
-    }
-    if let Some(id) = container_id(value)
-        && !seen.insert(id)
-    {
-        return false;
-    }
-    if let Some(items) = value.as_list_items() {
-        // Only the rendered head can need dispatch.
-        return items
-            .iter()
-            .take(GIST_ELEM_CAP)
-            .any(|v| contains_instance_seen(v, seen, depth + 1));
-    }
-    match value.view() {
-        ValueView::Hash(map) => map
-            .values()
-            .any(|v| contains_instance_seen(v, seen, depth + 1)),
-        _ => false,
-    }
-}
-
 /// Whether stringifying `value` with `.Str` needs the interpreter: it is, or
 /// (through nested lists and hashes, at any position) contains, an instance or
-/// mixin whose `.Str` may be user-defined. Unlike [`collection_contains_instance`]
-/// this walks every element, because `.Str`/`.join` render all of them, not
-/// just a gist's head. Cycle-guarded like the gist probe.
+/// mixin whose `.Str` may be user-defined. It walks every element, because
+/// `.Str`/`.join` render all of them. Cycle-guarded.
 // Cost: O(t), t = nodes reachable from `value`.
 pub(crate) fn str_needs_dispatch(value: &Value) -> bool {
     fn walk(v: &Value, seen: &mut std::collections::HashSet<usize>, depth: usize) -> bool {
@@ -166,43 +115,6 @@ pub(crate) fn contains_cycle(value: &Value) -> bool {
         &mut std::collections::HashSet::new(),
         0,
     )
-}
-
-/// Whether `value` is a *collection* holding (transitively) an `Instance` whose
-/// `.gist` may need interpreter dispatch — the guard for the VM's collection
-/// gist bypass (`vm::vm_native_dispatch`).
-///
-/// Only a collection receiver triggers the bypass. A bare instance (e.g. a
-/// `Buf`, whose gist `native_method_0arg` renders purely via
-/// `dispatch_core_repr`) is dispatched normally — the builtins layer itself
-/// defers a collection whose elements may have a user `method gist`, so
-/// bypassing a bare instance here only forced a pure native gist (Buf/Blob/Uni)
-/// onto the interpreter for nothing.
-///
-/// The walk is cycle-guarded. Without that guard a circular container aborted
-/// the whole process on a stack overflow *here*, in the dispatch probe, before
-/// [`gist_value`] — which does detect the cycle — was ever reached.
-/// A list is probed only as far as its gist renders -- its first
-/// [`GIST_ELEM_CAP`] elements -- since nothing past them is ever dispatched.
-/// Cost: O(t), t = nodes reachable through at most the first 100 elements of
-/// each list level (a hash level is walked whole) when no instance is found.
-pub(crate) fn collection_contains_instance(value: &Value) -> bool {
-    let mut seen = std::collections::HashSet::new();
-    if let Some(id) = container_id(value) {
-        seen.insert(id);
-    }
-    if let Some(items) = value.as_list_items() {
-        return items
-            .iter()
-            .take(GIST_ELEM_CAP)
-            .any(|v| contains_instance_seen(v, &mut seen, 1));
-    }
-    match value.view() {
-        ValueView::Hash(map) => map
-            .values()
-            .any(|v| contains_instance_seen(v, &mut seen, 1)),
-        _ => false,
-    }
 }
 
 /// Render the `.gist` form of a Set/Bag/Mix (and their mutable `*Hash`

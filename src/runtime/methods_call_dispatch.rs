@@ -627,10 +627,6 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {
             return result;
         }
-        // `Kernel.cpu-cores`, `Thread.usage`, ... on the type object.
-        if let Some(result) = self.try_core_type_object_method(&target, method, &args) {
-            return result;
-        }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             return result;

@@ -21,7 +21,6 @@ lexical_class_scopes
 method_class_stack
 method_fallbacks
 my_scoped_package_items
-numeric_bridge_probe
 open_role_group
 our_scoped_package_items
 package_stash_hidden

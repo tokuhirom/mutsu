@@ -204,3 +204,86 @@ fn self_list_overridden(interp: &mut Interpreter, target: &Value, method: &str) 
         ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
     ) && interp.has_user_method(crate::runtime::utils::value_type_name(target), method)
 }
+
+/// Whether only the general (by-name) entry, `call_method_with_values`,
+/// answers `method` on `target`: a receiver state the rows and the pure
+/// cascades cannot read, so a native entry declines the call before it asks
+/// either. The states (ADR-11276 slice 5, #11276):
+///
+/// - a `Proxy`, which the general entry FETCHes (its identity methods are the
+///   container's own);
+/// - a receiver whose elements live behind an iterator the rows cannot pull:
+///   an `IterationBuffer`, a user instance or a role mixin with its own
+///   `iterator` (and no method of this name), for the iteration methods;
+/// - a lazy source a `map`/`grep` turns into a pipeline stage;
+/// - `pick`/`roll` of an enum type object (or its name), whose values only the
+///   enum registry knows;
+/// - `.raku` of a typed or `Map`-declared `Hash`, which names its type.
+// Cost: O(1) name and tag probes; for an instance or mixin with an iteration
+// name, two memoized method probes; for a typed `Hash.raku`, one metadata
+// lookup.
+pub(crate) fn general_entry_owns(
+    interp: &mut Interpreter,
+    target: &Value,
+    method: &str,
+    argc: usize,
+) -> bool {
+    if target.is_proxy_value() {
+        return !matches!(
+            method,
+            "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+        );
+    }
+    if matches!(
+        method,
+        "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
+    ) && iterates_elsewhere(interp, target, method)
+    {
+        return true;
+    }
+    if matches!(method, "map" | "grep")
+        && target.is_lazy_list_value()
+        && Interpreter::is_lazy_pipe_source(target)
+    {
+        return true;
+    }
+    if matches!(method, "pick" | "roll") && argc <= 1 {
+        return match target.view() {
+            ValueView::Package(name) => interp.registry().enum_types.contains_key(name.as_str()),
+            ValueView::Str(name) => interp.registry().enum_types.contains_key(name.as_str()),
+            _ => false,
+        };
+    }
+    method == "raku"
+        && argc == 0
+        && !target.is_lazy_match_value()
+        && matches!(target.view(), ValueView::Hash(_))
+        && interp.container_type_metadata(target).is_some()
+}
+
+/// Whether `target`'s elements are pulled through an iterator the rows cannot
+/// run for `method`.
+// Cost: O(1) tag probes, plus two memoized method probes for an instance or
+// a mixin.
+fn iterates_elsewhere(interp: &mut Interpreter, target: &Value, method: &str) -> bool {
+    if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
+        return true;
+    }
+    match target.view() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if !attributes.contains_key("__mutsu_array_storage")
+            && !attributes.contains_key("__mutsu_hash_storage") =>
+        {
+            interp.has_user_method(class_name.as_str(), "iterator")
+                && !interp.has_user_method(class_name.as_str(), method)
+        }
+        ValueView::Mixin(..) => {
+            interp.mixin_composes_method(target, "iterator")
+                && !interp.mixin_composes_method(target, method)
+        }
+        _ => false,
+    }
+}
