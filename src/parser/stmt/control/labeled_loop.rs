@@ -15,12 +15,9 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     let has_space_after_colon = rest.chars().next().is_some_and(char::is_whitespace);
     if !has_space_after_colon
         && !rest.starts_with('{')
-        && !rest.starts_with("for")
-        && !rest.starts_with("while")
-        && !rest.starts_with("until")
-        && !rest.starts_with("loop")
-        && !rest.starts_with("repeat")
-        && !rest.starts_with("do")
+        && !["for", "while", "until", "loop", "repeat", "do"]
+            .iter()
+            .any(|word| keyword(word, rest).is_some())
     {
         return Err(PError::expected("labeled loop"));
     }

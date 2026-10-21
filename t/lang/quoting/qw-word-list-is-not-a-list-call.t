@@ -56,10 +56,10 @@ plan 17;
 {
     is-deeply qw<a b c>, ("a", "b", "c"), 'plain qw';
     my $x = qw<a>;
-    is-deeply $x, "a", 'a one-word list is that word, not a List';
+    is-deeply $x, ("a",), 'a one-word qw is still a List';
     my @a = qw<a b>;
     is-deeply @a, ["a", "b"], 'assigning a word list to an array flattens it';
-    is-deeply (qw<a b>, qw<c>), (("a", "b"), "c"),
+    is-deeply (qw<a b>, qw<c>), (("a", "b"), ("c",)),
         'a word list nested in a list stays one element';
     my $n = 2;
     is-deeply qqw<a $n>, ("a", "2"), 'qqw interpolates';

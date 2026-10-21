@@ -8,7 +8,7 @@ use crate::runtime::source_code_text::CodeText;
 /// a `panic` (an unsupported directive letter) or a `literal` run.
 pub(super) const FORMATTER_SYNTAX_PRELUDE: &str = r#"
 grammar GLOBAL::Formatter::Syntax {
-    token TOP { <statement>* }
+    token TOP { ^ <statement>* $ }
     token statement { <?[%]> [ <directive> || <panic> ] || <literal> }
     token literal { <-[%]>+ }
     token idx { \d+ '$' }
@@ -24,11 +24,11 @@ grammar GLOBAL::Formatter::Syntax {
     token directive:sym<f> { '%' <idx>? <flags>* <size> <precision>? $<sym>=<[fF]> }
     token directive:sym<g> { '%' <idx>? <flags>* <size> <precision>? $<sym>=<[gG]> }
     token directive:sym<a> { '%' <idx>? <flags>* <size> <precision>? $<sym>=<[aA]> }
-    token directive:sym<c> { '%' <idx>? <flags>* <size> <precision>? 'c' }
-    token directive:sym<s> { '%' <idx>? <flags>* <size> <precision>? 's' }
-    token directive:sym<o> { '%' <idx>? <flags>* <size> <precision>? 'o' }
-    token directive:sym<O> { '%' <idx>? <flags>* <size> <precision>? 'O' }
-    token directive:sym<u> { '%' <idx>? <flags>* <size> <precision>? 'u' }
+    token directive:sym<c> { '%' <idx>? <flags>* <size> $<sym>='c' }
+    token directive:sym<s> { '%' <idx>? <flags>* <size> <precision>? $<sym>='s' }
+    token directive:sym<o> { '%' <idx>? <flags>* <size> <precision>? $<sym>='o' }
+    token directive:sym<O> { '%' <idx>? <flags>* <size> <precision>? $<sym>='O' }
+    token directive:sym<u> { '%' <idx>? <flags>* <size> $<sym>='u' }
     token panic { '%' <idx>? <flags>* <size> <precision>? $<sym>=<[\s\S]> }
 }
 "#;
