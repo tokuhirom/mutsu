@@ -120,6 +120,39 @@ impl Interpreter {
         self.env.insert(name, value);
     }
 
+    /// The value a module mainline bound under the package-qualified `name`
+    /// in the top-level table ([`Self::bind_package_symbol`]): a written
+    /// spelling of a type (`X::Imported::Boom` for `M::X::Imported::Boom`) or
+    /// an enum value. `None` for an unqualified name.
+    // Cost: O(|name|) to classify, plus one table probe.
+    pub(crate) fn package_symbol_alias(&self, name: &str) -> Option<&Value> {
+        if self.module.module_toplevel.package_symbols.is_empty() {
+            return None;
+        }
+        let sym = Symbol::intern(name);
+        if !crate::qualified::is_qualified(sym) {
+            return None;
+        }
+        self.module.module_toplevel.package_symbols.get(&sym)
+    }
+
+    /// [`Self::bind_package_symbol`] unless `name` is already bound: in the
+    /// frame env or in the top-level table. An alias never replaces an
+    /// existing binding.
+    // Cost: as `bind_package_symbol`, plus one env probe and one table probe.
+    pub(crate) fn bind_package_symbol_if_absent(&mut self, name: String, value: Value) {
+        if self.env.contains_key(&name)
+            || self
+                .module
+                .module_toplevel
+                .package_symbols
+                .contains_key(&Symbol::intern(&name))
+        {
+            return;
+        }
+        self.bind_package_symbol(name, value);
+    }
+
     /// A private enum's short qualified name in the running module's scope,
     /// or the value [`Self::bind_package_symbol`] recorded in the top-level
     /// table. Readers ask the env first, so a lexical binding shadows either.

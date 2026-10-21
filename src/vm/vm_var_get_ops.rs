@@ -38,6 +38,12 @@ impl Interpreter {
         }
         self.package_type_alias(name)
             .or_else(|| self.resolve_type_in_current_package(name))
+            .or_else(|| match self.package_symbol_alias(name).map(Value::view) {
+                Some(ValueView::Package(target)) if self.has_type_direct(&target.resolve()) => {
+                    Some(target.resolve())
+                }
+                _ => None,
+            })
     }
 
     /// The value an `EXPORT` hook installed under the CORE term keyword `name`,
@@ -364,6 +370,7 @@ impl Interpreter {
                 .get(base)
                 .cloned()
                 .or_else(|| self.term_binding(base))
+                .or_else(|| self.package_symbol_alias(base).cloned())
             && let ValueView::Package(pkg) = v.view()
         {
             let resolved = format!("{}{}", pkg.resolve(), smiley);

@@ -511,7 +511,10 @@ impl Interpreter {
         // A sigil-less `constant Bar = Foo::Bar` alias lives in the term
         // namespace (#9962) and is consulted first.
         if !crate::env::is_magic_sigilless_key(name) {
-            let alias = self.term_value(name).or_else(|| self.env.get(name));
+            let alias = self
+                .term_value(name)
+                .or_else(|| self.env.get(name))
+                .or_else(|| self.package_symbol_alias(name));
             if let Some(ValueView::Package(target)) = alias.map(Value::view) {
                 let resolved = target.resolve();
                 if resolved != name && self.has_type_direct(&resolved) {
