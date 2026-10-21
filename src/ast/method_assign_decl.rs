@@ -7,6 +7,11 @@ use crate::symbol::Symbol;
 /// the redeclaration check must not treat that as a premature self-read.
 pub(crate) const METHOD_ASSIGN_DECL_TRAIT: &str = "__method_assign_decl";
 
+/// The `op` of the `Expr::CompoundAssign` marker an expression-position `.=`
+/// declaration keeps as its initializer. It is not the dotty `.=` of
+/// `$x .= meth` (a declaration may also be assigned one: `my $r = $x .= meth`).
+pub(crate) const DECL_INITIALIZER_OP: &str = ".=decl";
+
 /// The source spelling of `my [Type] $x .= method(...)`.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MethodAssignDecl {
@@ -122,13 +127,19 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
             },
         ];
     }
+    vec![single_declaration(form, target, call)]
+}
+
+/// The one-statement declaration `my T $x = T.method(...)` a `.=` in
+/// expression position is, with its call as the initializer.
+fn single_declaration(form: &MethodAssignDecl, target: Expr, call: Expr) -> Stmt {
     let mut custom_traits = form.custom_traits.clone();
     if !matches!(target, Expr::BareWord(_)) {
         custom_traits.push((METHOD_ASSIGN_DECL_TRAIT.to_string(), None));
     } else if form.shape.is_none() && !custom_traits.iter().any(|(n, _)| n == "__has_initializer") {
         custom_traits.push(("__has_initializer".to_string(), None));
     }
-    vec![Stmt::VarDecl {
+    Stmt::VarDecl {
         anonymous: form.anonymous,
         name: form.name.clone(),
         expr: call,
@@ -140,7 +151,54 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Vec<Stmt> {
         export_tags: form.export_tags.clone(),
         custom_traits,
         where_constraint: form.where_constraint.clone(),
-    }]
+    }
+}
+
+/// The declaration of `form` in expression position (`(my Int $x .= new)`):
+/// one `VarDecl` whose initializer keeps the `.=` spelling in the transparent
+/// dotty marker, as the parser builds it. `None` for a shaped declaration or one
+/// with a postfix chain, which stay statements.
+// Cost: O(n), n = size of the call.
+pub(crate) fn expression_declaration(form: &MethodAssignDecl) -> Option<Stmt> {
+    if form.shape.is_some() || form.chain.is_some() {
+        return None;
+    }
+    let target = invocant(&form.name, form.type_constraint.as_deref(), form.is_v6c);
+    let call = method_call(form, target.clone());
+    let Stmt::VarDecl {
+        anonymous,
+        name,
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic,
+        is_export,
+        export_tags,
+        custom_traits,
+        where_constraint,
+    } = single_declaration(form, target.clone(), call)
+    else {
+        return None;
+    };
+    Some(Stmt::VarDecl {
+        anonymous,
+        name,
+        expr: Expr::CompoundAssign {
+            target: Box::new(target),
+            op: DECL_INITIALIZER_OP.to_string(),
+            rhs: Box::new(expr.clone()),
+            expanded: Box::new(expr),
+        },
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic,
+        is_export,
+        export_tags,
+        custom_traits,
+        where_constraint,
+    })
 }
 
 /// The `.=` call on `target`.

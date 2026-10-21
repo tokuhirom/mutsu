@@ -2448,6 +2448,7 @@ fn var_decl_statement(
             // The parser's own mark of a declaration whose initializer reads
             // the new binding; the lowering marks it again.
             || n == "__init_sees_self"
+            || n == crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT
             || n == crate::ast::shaped_decl::SHAPED_DECL
             || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
             || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
@@ -2514,6 +2515,10 @@ fn var_decl_statement(
         Some(Initializer::Bind(expr))
     } else if shaped.as_ref().is_some_and(|(_, data)| data.is_none()) {
         None
+    } else if let Expr::CompoundAssign { op, rhs, .. } = expr
+        && op == crate::ast::method_assign_decl::DECL_INITIALIZER_OP
+    {
+        Some(Initializer::CallAssignMarker(rhs))
     } else {
         custom_traits
             .iter()
@@ -2662,6 +2667,9 @@ pub(super) enum Initializer<'a> {
     Assign(&'a Expr),
     Bind(&'a Expr),
     CallAssign(&'a crate::ast::method_assign_decl::MethodAssignDecl),
+    /// The call of a `.=` marker (`Expr::CompoundAssign` with op `.=`) that an
+    /// expression-position declaration keeps as its initializer.
+    CallAssignMarker(&'a Expr),
 }
 
 /// `my $x` / `my @a` / `my $x = EXPR` -> `VarDeclaration::Simple`. The sigil is
@@ -2728,6 +2736,16 @@ pub(super) fn var_declaration(
             Initializer::Bind(e) => RakuAstNode {
                 class: RakuAstClass::InitializerBind,
                 fields: vec![node_field(None, convert_expr(e)?)],
+            },
+            Initializer::CallAssignMarker(call) => RakuAstNode {
+                class: RakuAstClass::InitializerCallAssign,
+                fields: vec![node_field(
+                    None,
+                    match crate::ast::dotty_assign::method_call(call) {
+                        Some(c) => call_method(c.name, c.args, None)?,
+                        None => super::dynamic_method::call_assign_postfix(call)?,
+                    },
+                )],
             },
             Initializer::CallAssign(form) => RakuAstNode {
                 class: RakuAstClass::InitializerCallAssign,

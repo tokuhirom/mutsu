@@ -782,6 +782,26 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             is_v6c: crate::parser::current_language_version_starts_with("6.c"),
         })
     } else {
+        // Without the statement-level source-form record (an expression-position
+        // declaration, or a list continuing it) the `.=` initializer keeps its
+        // spelling in a transparent `Expr::CompoundAssign` marker; the
+        // RakuAST boundary reads it back as `Initializer::CallAssign` (#11431).
+        let expr = if s.shape_dims.is_none() {
+            let target = match &expr {
+                Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. } => {
+                    target.as_ref().clone()
+                }
+                _ => Expr::BareWord(String::new()),
+            };
+            Expr::CompoundAssign {
+                target: Box::new(target),
+                op: crate::ast::method_assign_decl::DECL_INITIALIZER_OP.to_string(),
+                rhs: Box::new(expr.clone()),
+                expanded: Box::new(expr),
+            }
+        } else {
+            expr
+        };
         let declaration = Stmt::VarDecl {
             anonymous: s.anonymous,
             name: s.name,
