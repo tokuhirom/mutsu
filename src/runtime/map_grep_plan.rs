@@ -115,6 +115,10 @@ pub(crate) struct MapGrepPlanSlot {
     /// its upstream: running out of the chunk's elements is not the end, so
     /// `LAST` must wait (#14196).
     pub(crate) chunk_open: bool,
+    /// The arguments of the last call of a signature-bearing map block, which
+    /// its `LAST` phaser runs with. A pull that finds the source already read
+    /// to its end has no call of its own to take them from (#14196).
+    pub(crate) last_call_args: Option<Vec<Value>>,
 }
 
 /// The address a plan is keyed by.

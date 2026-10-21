@@ -119,11 +119,10 @@ impl Interpreter {
                     let first = chunk_at(&src.buf, 0);
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first)?;
                 }
-                let mut last_start = None;
                 let mut i = 0usize;
                 while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
                     src.has(i + arity);
-                    last_start = Some(i);
+                    slot.last_call_args = Some(chunk_at(&src.buf, i));
                     out.consumed = consumed_base + (i + arity).min(src.buf.len());
                     let value = if rw_param.is_some() {
                         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
@@ -177,10 +176,10 @@ impl Interpreter {
                     i += arity;
                 }
                 self.env.remove_sym(topic_key);
-                if let Some(start) = last_start
+                if slot.last_call_args.is_some()
                     && slot.take_last_phaser(src.ran_out(&out.produced, produced_base, i))
+                    && let Some(last) = slot.last_call_args.take()
                 {
-                    let last = chunk_at(&src.buf, start);
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last)?;
                 }
                 return Ok(());
@@ -418,8 +417,22 @@ impl Interpreter {
                 }
                 // A map block's LAST runs once the loop ends (naturally or by
                 // `last`), best-effort as in `eval_map_over_items_into`.
+                if i > 0 {
+                    slot.last_call_args = Some(src.buf[i.saturating_sub(arity)..i].to_vec());
+                }
                 if slot.take_last_phaser(by_last || src.ran_out(result, produced_base, i)) {
-                    let _ = vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Last);
+                    match slot.last_call_args.take() {
+                        Some(args) if i == 0 => {
+                            let _ = vm.call_block_loop_phasers(
+                                &data,
+                                crate::ast::PhaserKind::Last,
+                                args,
+                            );
+                        }
+                        _ => {
+                            let _ = vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Last);
+                        }
+                    }
                 }
 
                 Ok(())
