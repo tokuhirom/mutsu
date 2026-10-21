@@ -61,7 +61,12 @@ impl QuoteFlags {
             "w" | "words" => self.words = true,
             "ww" | "quotewords" => self.quotewords = true,
             "to" | "heredoc" => self.heredoc = true,
-            "o" | "format" => self.format = true,
+            "o" | "format" => {
+                self.format = true;
+                self.words = false;
+                self.quotewords = false;
+                self.val = false;
+            }
             "v" | "val" => self.val = true,
             "q" | "single" => self.q_mode = true,
             "qq" | "double" => self.qq_mode = true,
@@ -96,7 +101,9 @@ impl QuoteFlags {
             "w" | "words" => self.words = false,
             "ww" | "quotewords" => self.quotewords = false,
             "to" | "heredoc" => self.heredoc = false,
-            "o" | "format" => self.format = false,
+            // A processor already installed by a positive adverb remains
+            // installed when that adverb is later negated (Rakudo).
+            "o" | "format" => {}
             "v" | "val" => self.val = false,
             "q" | "single" => self.q_mode = false,
             "qq" | "double" => self.qq_mode = false,
