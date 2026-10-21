@@ -175,6 +175,7 @@ impl Interpreter {
                             || tree.interpolation_names().is_empty()
                     }),
                     topic,
+                    base.regex_declared_source_arc(),
                 );
                 // A `set_name` given to the literal's code object survives
                 // attaching the defining scope.

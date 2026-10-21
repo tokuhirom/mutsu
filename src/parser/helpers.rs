@@ -1,4 +1,5 @@
 use super::parse_result::{PError, PResult, take_while_opt, take_while1};
+pub(crate) use crate::source_comments::matching_bracket;
 use unicode_normalization::UnicodeNormalization;
 
 /// Skip whitespace, line comments (`#` to end of line), and Pod blocks.
@@ -149,62 +150,11 @@ pub(crate) fn skip_bracketed_comment(input: &str) -> Option<&str> {
 /// Supports block forms such as `#|{ ... }` and `#={ ... }`, including multiline
 /// content and nested delimiters.
 pub(super) fn skip_declarator_doc_comment(input: &str) -> Option<&str> {
-    let rest = input
-        .strip_prefix("#|")
-        .or_else(|| input.strip_prefix("#="))?;
-    if rest.is_empty() {
+    if !input.starts_with("#|") && !input.starts_with("#=") {
         return None;
     }
-
-    let mut chars = rest.chars();
-    let open_char = chars.next()?;
-    let close_char = matching_bracket(open_char)?;
-
-    // Support repeated delimiters like `#|{{ ... }}`.
-    let mut count = 1usize;
-    let mut scan = chars.as_str();
-    while scan.starts_with(open_char) {
-        count += 1;
-        scan = &scan[open_char.len_utf8()..];
-    }
-
-    let close_seq: String = std::iter::repeat_n(close_char, count).collect();
-    let open_seq: String = std::iter::repeat_n(open_char, count).collect();
-
-    if count == 1 {
-        let mut depth = 1i32;
-        while !scan.is_empty() {
-            let c = scan.chars().next().unwrap();
-            if c == open_char {
-                depth += 1;
-            } else if c == close_char {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(&scan[close_char.len_utf8()..]);
-                }
-            }
-            scan = &scan[c.len_utf8()..];
-        }
-        None
-    } else {
-        let mut depth = 1i32;
-        while !scan.is_empty() {
-            if scan.starts_with(&close_seq[..]) {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(&scan[close_seq.len()..]);
-                }
-                scan = &scan[close_seq.len()..];
-            } else if scan.starts_with(&open_seq[..]) {
-                depth += 1;
-                scan = &scan[open_seq.len()..];
-            } else {
-                let c = scan.chars().next().unwrap();
-                scan = &scan[c.len_utf8()..];
-            }
-        }
-        None
-    }
+    let span = crate::source_comments::bracketed_comment_len(input.chars())?;
+    input.get(span.bytes..)
 }
 
 /// `X::Syntax::Pod::BeginWithoutIdentifier` — a `=begin` with no block name.
@@ -476,98 +426,11 @@ fn embedded_comment_opener(input: &str) -> Option<char> {
 }
 
 pub(super) fn skip_embedded_comment(input: &str) -> Option<&str> {
-    // Must start with #`
-    let after_hash_backtick = input.strip_prefix("#`")?;
-    if after_hash_backtick.is_empty() {
+    if !input.starts_with("#\x60") {
         return None;
     }
-    // The next character(s) must be an opening bracket (no space allowed)
-    let mut chars = after_hash_backtick.chars();
-    let open_char = chars.next()?;
-    let close_char = matching_bracket(open_char)?;
-
-    // Count how many consecutive identical open brackets
-    let mut count = 1usize;
-    let mut rest = chars.as_str();
-    while rest.starts_with(open_char) {
-        count += 1;
-        rest = &rest[open_char.len_utf8()..];
-    }
-
-    // Build the closing sequence
-    let close_seq: String = std::iter::repeat_n(close_char, count).collect();
-
-    // Find the closing sequence (brackets may nest if count == 1)
-    let open_seq: String = std::iter::repeat_n(open_char, count).collect();
-    if count == 1 {
-        // Track nesting depth for single-char brackets
-        let mut depth = 1i32;
-        let mut scan = rest;
-        while !scan.is_empty() {
-            let c = scan.chars().next().unwrap();
-            if c == open_char {
-                depth += 1;
-            } else if c == close_char {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(&scan[close_char.len_utf8()..]);
-                }
-            }
-            scan = &scan[c.len_utf8()..];
-        }
-        None
-    } else {
-        // Multi-char delimiters: count nesting of same-length bracket pairs
-        let mut depth = 1i32;
-        let mut scan = rest;
-        while !scan.is_empty() {
-            if scan.starts_with(&close_seq[..]) {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(&scan[close_seq.len()..]);
-                }
-                scan = &scan[close_seq.len()..];
-            } else if scan.starts_with(&open_seq[..]) {
-                depth += 1;
-                scan = &scan[open_seq.len()..];
-            } else {
-                let c = scan.chars().next().unwrap();
-                scan = &scan[c.len_utf8()..];
-            }
-        }
-        None
-    }
-}
-
-/// Return the matching closing bracket for an opening bracket.
-pub(crate) fn matching_bracket(c: char) -> Option<char> {
-    match c {
-        '(' => Some(')'),
-        '[' => Some(']'),
-        '{' => Some('}'),
-        '<' => Some('>'),
-        '\u{00AB}' => Some('\u{00BB}'), // « »
-        '\u{2018}' => Some('\u{2019}'), // ' '
-        '\u{201C}' => Some('\u{201D}'), // " "
-        '\u{300C}' => Some('\u{300D}'), // 「 」
-        '\u{300E}' => Some('\u{300F}'), // 『 』
-        '\u{FF08}' => Some('\u{FF09}'), // （ ）
-        '\u{300A}' => Some('\u{300B}'), // 《 》
-        '\u{3008}' => Some('\u{3009}'), // 〈 〉
-        '\u{169B}' => Some('\u{169C}'), // ᚛ ᚜
-        '\u{2045}' => Some('\u{2046}'), // ⁅ ⁆
-        '\u{207D}' => Some('\u{207E}'), // ⁽ ⁾
-        '\u{2768}' => Some('\u{2769}'), // ❨ ❩
-        '\u{276E}' => Some('\u{276F}'), // ❮ ❯
-        '\u{2770}' => Some('\u{2771}'), // ❰ ❱
-        '\u{2772}' => Some('\u{2773}'), // ❲ ❳
-        '\u{27E6}' => Some('\u{27E7}'), // ⟦ ⟧
-        '\u{2985}' => Some('\u{2986}'), // ⦅ ⦆
-        '\u{2993}' => Some('\u{2994}'), // ⦓ ⦔
-        '\u{2995}' => Some('\u{2996}'), // ⦕ ⦖
-        '\u{301D}' => Some('\u{301E}'), // 〝 〞
-        _ => None,
-    }
+    let span = crate::source_comments::bracketed_comment_len(input.chars())?;
+    input.get(span.bytes..)
 }
 
 /// Check if a byte is a valid identifier continuation character.

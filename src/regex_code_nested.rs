@@ -10,8 +10,8 @@
 /// string (`{ say "a}b" }`), a `#` line comment, or a nested regex literal
 /// (`{ $s ~~ / '}' / }`) do not. An apostrophe opens no string inside a
 /// comment (`# Don't …`) or an identifier (`don't`, which Raku allows
-/// between two letters) (#13928). A `#` followed by a backtick opens an
-/// embedded comment, whose bracket is left to the count.
+/// between two letters) (#13928). Embedded comments use the same delimiter
+/// scanner as main-slang whitespace, including repeated and Unicode brackets.
 // Cost: O(n), n = chars scanned.
 pub(crate) fn code_block_body_len(rest: &[char]) -> Option<usize> {
     let mut depth = 1usize;
@@ -27,18 +27,20 @@ pub(crate) fn code_block_body_len(rest: &[char]) -> Option<usize> {
                 i += 2;
                 continue;
             }
-            '#' if rest.get(i + 1) != Some(&'`') => {
-                while i < rest.len() && rest[i] != '\n' {
-                    i += 1;
-                }
+            '#' => {
+                i = comment_end(rest, i)?;
                 continue;
             }
             '/' if slash_opens_regex_after(prev_sig) => {
-                if let Some(len) = nested_regex_literal_len(&rest[i + 1..]) {
-                    prev_sig = '/';
-                    i += 1 + len;
-                    continue;
-                }
+                let len = nested_regex_literal_len(&rest[i + 1..])?;
+                prev_sig = '/';
+                i += 1 + len;
+                continue;
+            }
+            '<' if starts_enumerated_class(rest, i) => {
+                i = enumerated_class_end(rest, i)?;
+                prev_sig = '>';
+                continue;
             }
             '\'' if i > 0
                 && rest[i - 1].is_alphanumeric()
@@ -52,15 +54,8 @@ pub(crate) fn code_block_body_len(rest: &[char]) -> Option<usize> {
             }
             _ => {
                 if let Some(closer) = crate::regex_qq_atoms::quote_closer(ch) {
-                    i += 1;
-                    while i < rest.len() && rest[i] != closer {
-                        if rest[i] == '\\' {
-                            i += 1;
-                        }
-                        i += 1;
-                    }
+                    i = quoted_end(rest, i)? + 1;
                     prev_sig = closer;
-                    i += 1;
                     continue;
                 }
             }
@@ -69,6 +64,66 @@ pub(crate) fn code_block_body_len(rest: &[char]) -> Option<usize> {
             prev_sig = ch;
         }
         i += 1;
+    }
+    None
+}
+
+// Cost: O(n), n = comment length; O(1) auxiliary space.
+fn comment_end(source: &[char], start: usize) -> Option<usize> {
+    let marker = source.get(start + 1);
+    let bracketed = marker == Some(&'\x60')
+        || matches!(marker, Some('|' | '='))
+            && source
+                .get(start + 2)
+                .copied()
+                .and_then(crate::source_comments::matching_bracket)
+                .is_some();
+    if bracketed {
+        let span = crate::source_comments::bracketed_comment_len(source[start..].iter().copied())?;
+        return Some(start + span.chars);
+    }
+    let mut end = start;
+    while end < source.len() && source[end] != '\n' {
+        end += 1;
+    }
+    Some(end)
+}
+
+// Cost: O(n), n = quoted source length; O(1) auxiliary space.
+fn quoted_end(source: &[char], start: usize) -> Option<usize> {
+    let open = source[start];
+    let mut end = start + 1;
+    while let Some(&ch) = source.get(end) {
+        if crate::regex_qq_atoms::quote_closes(open, ch) {
+            return Some(end);
+        }
+        end += if ch == '\\' && open != '\u{FF62}' {
+            2
+        } else {
+            1
+        };
+    }
+    None
+}
+
+// Cost: O(1).
+fn starts_enumerated_class(source: &[char], start: usize) -> bool {
+    source.get(start + 1) == Some(&'[')
+        || matches!(source.get(start + 1), Some('-' | '+' | '!'))
+            && source.get(start + 2) == Some(&'[')
+}
+
+// Cost: O(n), n = enumerated class length; O(1) auxiliary space.
+fn enumerated_class_end(source: &[char], start: usize) -> Option<usize> {
+    let mut end = start + 2;
+    while end < source.len() {
+        if source[end] == '\\' {
+            end += 2;
+        } else if source[end] == ']' && source.get(end + 1) == Some(&'>') {
+            return Some(end + 2);
+        } else {
+            end += 1;
+        }
     }
     None
 }
@@ -97,36 +152,60 @@ pub(crate) fn nested_regex_literal_len(rest: &[char]) -> Option<usize> {
         match rest[i] {
             '\\' => i += 2,
             '/' => return Some(i + 1),
-            '<' if rest.get(i + 1) == Some(&'[')
-                || (matches!(rest.get(i + 1), Some('-' | '+' | '!'))
-                    && rest.get(i + 2) == Some(&'[')) =>
-            {
-                // Skip to the class's closing `]>`.
-                i += 2;
-                while i < rest.len() {
-                    if rest[i] == '\\' {
-                        i += 2;
-                        continue;
-                    }
-                    if rest[i] == ']' && rest.get(i + 1) == Some(&'>') {
-                        i += 2;
-                        break;
-                    }
-                    i += 1;
-                }
-            }
-            q @ ('\'' | '"') => {
-                i += 1;
-                while i < rest.len() && rest[i] != q {
-                    if rest[i] == '\\' {
-                        i += 1;
-                    }
-                    i += 1;
-                }
-                i += 1;
-            }
+            '#' => i = comment_end(rest, i)?,
+            '<' if starts_enumerated_class(rest, i) => i = enumerated_class_end(rest, i)?,
+            ch if crate::regex_qq_atoms::quote_closer(ch).is_some() => i = quoted_end(rest, i)? + 1,
             _ => i += 1,
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check_body(source: &str) {
+        let chars: Vec<_> = source.chars().collect();
+        let end = code_block_body_len(&chars).expect("the code block closes");
+        assert_eq!(chars[end], '}');
+        assert_eq!(
+            chars[..end].iter().collect::<String>(),
+            source.strip_suffix("}tail").unwrap()
+        );
+    }
+
+    #[test]
+    fn braces_in_comments_and_quotes_are_not_code() {
+        for source in [
+            " #\x60( } don't \" ) 7 }tail",
+            " #|{ text { nested } } 7 }tail",
+            " #\x60{{ text {{ nested }} }} 7 }tail",
+            " \u{201c}}\u{201d} }tail",
+            " \u{ff62}\\\u{ff63} }tail",
+            " don't(); 7 }tail",
+        ] {
+            check_body(source);
+        }
+    }
+
+    #[test]
+    fn nested_regexes_keep_their_own_literals_and_comments() {
+        for source in [
+            " my $x = <[ } ]>; 7 }tail",
+            " my $m = / <[{]> /; 7 }tail",
+            " my $m = / a # } don't / ignored\n b /; 7 }tail",
+            " my $m = / \u{201c}/\u{201d} /; 7 }tail",
+        ] {
+            check_body(source);
+        }
+    }
+
+    #[test]
+    fn missing_delimiters_fail_without_rescanning_suffixes() {
+        for source in [" #\x60(unclosed }", " my $r = /unclosed", " \"unclosed }"] {
+            let chars: Vec<_> = source.chars().collect();
+            assert!(code_block_body_len(&chars).is_none());
+        }
+    }
 }

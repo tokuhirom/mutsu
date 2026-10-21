@@ -1,3 +1,4 @@
+use super::anon_regex::{anon_regex_value, parse_anon_regex_signature};
 use crate::ast::{Expr, RoutineDeclarator, Stmt, make_anon_sub, spelled::Spelling};
 use crate::parser::expr::{
     expression, expression_no_sequence, parse_fat_arrow_value, should_wrap_whatevercode, term_expr,
@@ -1467,7 +1468,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
                 let (r_body, pat) = parse_raw_braced_regex_body(r)?;
-                let value = anon_regex_value(r, r_body, &pat, kind, None);
+                let value = anon_regex_value(input, r, r_body, &pat, kind, None)?;
                 return Ok((r_body, Expr::Literal(value)));
             }
             if r.starts_with('(')
@@ -1475,7 +1476,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 && r.starts_with('{')
             {
                 let (r_body, pat) = parse_raw_braced_regex_body(r)?;
-                let value = anon_regex_value(r, r_body, &pat, kind, Some(param_defs));
+                let value = anon_regex_value(input, r, r_body, &pat, kind, Some(param_defs))?;
                 return Ok((r_body, Expr::Literal(value)));
             }
         }
@@ -2720,60 +2721,6 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         expr
     };
     Ok((rest, expr))
-}
-
-/// The optional `<signature>` of an anonymous `token`/`regex`/`rule` term
-/// (`token ( Str:D $text! where { … } ) { … }`). Mirrors the named
-/// declarator's signature parse in `grammar_module::token_decl`; the caller
-/// only commits to the declarator reading once a `{` body follows, so a
-/// parse failure here simply falls through to the ordinary term handling.
-fn parse_anon_regex_signature(input: &str) -> PResult<'_, Vec<crate::ast::ParamDef>> {
-    let (r, _) = parse_char(input, '(')?;
-    let (r, _) = ws(r)?;
-    let (r, param_defs) = crate::parser::stmt::parse_param_list_pub(r)?;
-    let (r, _) = ws(r)?;
-    let (r, _) = parse_char(r, ')')?;
-    let (r, _) = ws(r)?;
-    Ok((r, param_defs))
-}
-
-/// The execution pattern of an anonymous `token`/`regex`/`rule` term: the
-/// body normalized the way a named declarator's is, then given that
-/// declarator's implicit `rule` whitespace and ratchet semantics.
-/// The value of an anonymous `regex`/`token`/`rule` term. `body_region` is the
-/// input at the body's `{` and `after` what follows its `}`, which locate the
-/// body in the unit; the value carries the source tree (with the declarator
-/// kind) so the RakuAST frontend can render it as a declaration.
-fn anon_regex_value(
-    body_region: &str,
-    after: &str,
-    raw_body: &str,
-    kind: crate::regex_tree::RegexDeclKind,
-    params: Option<Vec<crate::ast::ParamDef>>,
-) -> Value {
-    use crate::parser::stmt::class::token_body::normalize_token_pattern;
-    let source = normalize_token_pattern(raw_body);
-    let unit_base = crate::parser::primary::fragment_attempts::unit_offset_of_copy(
-        &body_region[..body_region.len() - after.len()],
-        &source,
-    );
-    let tree =
-        crate::regex_tree::RegexTree::parse_static_at(&source, true, unit_base).map(|mut tree| {
-            tree.declaration_kind = Some(kind);
-            tree
-        });
-    let value = Value::anon_regex_code(finalize_anon_regex_pattern(raw_body, kind), params);
-    match tree {
-        Some(tree) => value.with_regex_source_tree(tree),
-        None => value,
-    }
-}
-
-fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKind) -> String {
-    use crate::parser::stmt::class::token_body::{
-        finalize_anon_declarator_pattern, normalize_token_pattern,
-    };
-    finalize_anon_declarator_pattern(&normalize_token_pattern(body), kind)
 }
 
 /// The optional loop label after an expression-position `next` / `last` /

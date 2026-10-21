@@ -1628,3 +1628,26 @@ not add a `Grouped` operand that would hide the argument's source container.
 `Role.new` and `RoleBody.new` share the package-construction helpers and retain
 their body, traits and parameterization. The measured executable contract is
 `t/rakuast/rakuast-role-composition-boundaries.t`.
+
+### 6.88 S10: regex declaration provenance and shared code scanning (2026-10-21)
+
+Parsed regex declarations retain their existing verbatim declaration text as
+private model metadata. Conversion and lowering carry it independently of the
+execution tree; rendering the RakuAST constructor omits it. Named method-table
+entries and anonymous Regex values display that source through `.gist` and
+`.raku`, including after module caching and scope capture. Regex closure
+construction shares the source handle alongside the signature, tree and topic.
+
+The Rakudo oracle distinguishes provenance from a deparser: an ArgList edit
+changes EVAL's matching but the resulting Regex still displays its original
+declaration. The implementation follows that contract without executing or
+reparsing the reflection text. Anonymous source boundaries use checked UTF-8
+slice access and report a parse error if the boundary is invalid.
+
+RegexTree code blocks reuse `regex_code_nested::code_block_body_len`. The
+shared scanner recognizes identifier apostrophes and Unicode quotes, and both
+it and main-slang whitespace use one bracketed-comment primitive. Delimiter
+nesting is iterative, with byte and char offsets computed together. Regex
+declaration conversion, anonymous declaration parsing and value-provenance
+helpers now have separate small modules. The executable contract is
+`t/rakuast/rakuast-regex-source-provenance.t`.

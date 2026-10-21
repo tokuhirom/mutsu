@@ -247,6 +247,7 @@ fn with_scope_entries(regex: &Value, entries: &crate::value::ValueMap) -> Value 
             regex.regex_signature(),
             None,
             regex.regex_captured_topic(),
+            regex.regex_declared_source_arc(),
         ),
         ValueView::RegexWithAdverbs(a) => {
             let mut adv = a.clone();

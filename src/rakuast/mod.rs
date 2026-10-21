@@ -69,6 +69,7 @@ mod react;
 mod regex_char_class;
 mod regex_code;
 mod regex_decl_constructor;
+mod regex_declaration;
 mod regex_enumeration;
 mod regex_extension;
 mod regex_quantifier;

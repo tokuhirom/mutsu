@@ -597,6 +597,7 @@ pub(crate) mod identity_index;
 pub(crate) mod label;
 pub(crate) mod lazy_attrs;
 mod method_site;
+mod regex_source;
 mod type_decl_site;
 pub mod user_key_map;
 pub use hash_key::HashKey;

@@ -1992,62 +1992,12 @@ impl Parser {
         let start = self.pos;
         self.pos += 1; // '{'
         let body_start = self.pos;
-        let mut depth = 1usize;
-        let mut quote = None;
-        while let Some(ch) = self.chars.get(self.pos).copied() {
-            if let Some(closer) = quote {
-                self.pos += 1;
-                if ch == '\\' {
-                    self.pos += usize::from(self.pos < self.chars.len());
-                } else if ch == closer {
-                    quote = None;
-                }
-                continue;
-            }
-            match ch {
-                '\\' => {
-                    self.pos += 1;
-                    self.pos += usize::from(self.pos < self.chars.len());
-                }
-                '\'' | '"' => {
-                    quote = Some(ch);
-                    self.pos += 1;
-                }
-                // A character class of a nested regex literal (`<["']>`) may
-                // hold quotes and braces that are not code.
-                '<' if self.chars.get(self.pos + 1) == Some(&'[') => {
-                    self.pos += 2;
-                    while let Some(&inner) = self.chars.get(self.pos) {
-                        self.pos += 1;
-                        if inner == '\\' {
-                            self.pos += usize::from(self.pos < self.chars.len());
-                        } else if inner == ']' {
-                            break;
-                        }
-                    }
-                }
-                // A comment may hold quotes and braces of its own.
-                '#' if self.pos == body_start || self.chars[self.pos - 1] != '$' => {
-                    self.skip_comment();
-                }
-                '{' => {
-                    depth += 1;
-                    self.pos += 1;
-                }
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        break;
-                    }
-                    self.pos += 1;
-                }
-                _ => self.pos += 1,
-            }
-        }
-        if depth != 0 || quote.is_some() || self.chars.get(self.pos) != Some(&'}') {
+        let Some(length) = crate::regex_code_nested::code_block_body_len(&self.chars[body_start..])
+        else {
             self.pos = start;
             return None;
-        }
+        };
+        self.pos = body_start + length;
         let code: String = self.chars[body_start..self.pos].iter().collect();
         self.pos += 1; // '}'
         let unit_offset = self.unit_base.map(|base| {
