@@ -213,6 +213,15 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 })
             {
                 Stmt::Expr(lower_expr(expression)?)
+            } else if conditional_block
+                && expression.class == RakuAstClass::ApplyInfix
+                && infix_is_assignment(expression)
+            {
+                // A modifier on an assignment expression can itself be an
+                // lvalue, as in `($s = "a" if 1) ~= "y"`. Preserve the
+                // expression form so compound assignment can write through
+                // the selected branch.
+                Stmt::Expr(lower_expr(expression)?)
             } else {
                 lower_stmt_inner(expression)?
             };

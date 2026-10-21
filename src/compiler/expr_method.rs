@@ -195,7 +195,18 @@ impl Compiler {
     ) {
         let target_name = match target {
             // A sigil-less constant is reached through its term key (#9962).
-            Expr::BareWord(n) => self.sigilless_storage_key(n),
+            // RakuAST lowers `Type::Simple(Any)` to a bareword. Resolve it
+            // through the term namespace, just like the parser's folded Any
+            // literal, so a same-named `$Any` slot cannot lend its container
+            // to the type object. Lexical term aliases and `my \\Any` also
+            // live in that namespace and remain dynamically resolved.
+            Expr::BareWord(n) if n == "Any" => crate::runtime::term_names::term_key(n),
+            // An EVAL'd term can come from the caller's lexical constant;
+            // the compile unit cannot see its declaration, so follow the
+            // same unknown-term key choice as sigilless assignment.
+            Expr::BareWord(n) => self
+                .sigilless_assign_target_key(n)
+                .unwrap_or_else(|| n.clone()),
             // The parser folds the `Any` keyword to a type-object literal.
             // It names no variable (a plain `Any` key would collide with a
             // scalar `$Any`, and the root env holds a `Nil` slot under it), so
