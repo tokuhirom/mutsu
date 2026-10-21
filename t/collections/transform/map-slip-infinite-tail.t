@@ -6,7 +6,7 @@ use Test;
 # mutsu kept the lazy list as one element, rendered `(...)`. Expected values
 # are the `raku` (v2026.09) output.
 
-plan 10;
+plan 13;
 
 sub inf { gather { my $i = 0; loop { take $i++ } } }
 
@@ -35,3 +35,9 @@ is-deeply $s.head(2).List, (1, 2), 'head of a stored map Seq';
 sub lz(*@v) { (gather { take $_ for @v }).lazy }
 is (1, 2).map({ slip(lz($_, $_ * 10)) }).List.raku, '(1, 10, 2, 20)',
     'a lazy Slip that ends still flattens';
+
+is (1, 2).map({ slip(1..*) }).first(* > 4), 5,
+    'first(matcher) stops at the match without reading the whole Seq';
+my $calls = 0;
+is (1..10).map({ $calls++; $_ }).first(* > 2), 3, 'first(matcher) on a deferred map';
+is $calls, 3, '... runs the callback only as far as the match';

@@ -139,6 +139,49 @@ impl Interpreter {
         answer(scan(self, &items, false))
     }
 
+    /// `.first(matcher)` on a Seq nobody has read whose source is a not-yet-run
+    /// `.map`/`.grep`: pull it one element at a time and stop at the match, so
+    /// the callback runs only as far as the match and a callback that slips an
+    /// infinite list does not make the scan read the whole Seq (#14312). The Seq
+    /// is consumed, as Rakudo's `.first` consumes it. `Ok(None)` for any other
+    /// call: a different method, an adverb or `Bool` matcher, or another source.
+    // Cost: O(i) pulls and matcher calls, i = index of the first match.
+    pub(crate) fn first_over_map_grep_seq(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        let [matcher] = args else {
+            return Ok(None);
+        };
+        if method != "first" || matches!(matcher.view(), ValueView::Pair(..) | ValueView::Bool(_)) {
+            return Ok(None);
+        }
+        let ValueView::Seq(body) = target.view() else {
+            return Ok(None);
+        };
+        if !body.is_map_grep_source() {
+            return Ok(None);
+        }
+        let Some(crate::value::PrefixSource::MapGrep(mut source)) = body.take_prefix_source()
+        else {
+            return Ok(None);
+        };
+        let matcher = Self::unwrap_callable_mixin(matcher.clone());
+        loop {
+            let (items, exhausted) = self.pull_map_grep_prefix(&mut source, 1)?;
+            for item in items {
+                if VmFirstMatcher(self).item_matches(&matcher, &item)? {
+                    return Ok(Some(item.deref_container()));
+                }
+            }
+            if exhausted {
+                return Ok(Some(Value::NIL));
+            }
+        }
+    }
+
     /// Lazy `.first` over a gather-sourced `LazyList`: pull elements
     /// incrementally via the coroutine and test the matcher, instead of forcing
     /// the whole (possibly infinite) list. Returns `Some` when handled, `None`
