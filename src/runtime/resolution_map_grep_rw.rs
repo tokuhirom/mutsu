@@ -169,11 +169,7 @@ impl Interpreter {
                         v
                     };
                     let value = self.reify_finite_pipe_value(value)?;
-                    if let ValueView::Slip(elems) = value.view() {
-                        out.produced.extend(elems.iter().cloned());
-                    } else {
-                        out.produced.push(value);
-                    }
+                    super::resolution_map_grep::push_map_value(&mut out.produced, value);
                     i += arity;
                 }
                 self.env.remove_sym(topic_key);
@@ -381,11 +377,7 @@ impl Interpreter {
                                 .unwrap_or(Value::NIL);
                             writeback(list_items, vm);
                             let val = vm.reify_finite_pipe_value(val)?;
-                            if let ValueView::Slip(elems) = val.view() {
-                                result.extend(elems.iter().cloned());
-                            } else {
-                                result.push(val);
-                            }
+                            super::resolution_map_grep::push_map_value(result, val);
                         }
                         Err(e) if e.is_next() => {
                             writeback(list_items, vm);
@@ -404,11 +396,7 @@ impl Interpreter {
                             let val = e.return_value.unwrap_or(Value::NIL);
                             writeback(list_items, vm);
                             let val = vm.reify_finite_pipe_value(val)?;
-                            if let ValueView::Slip(elems) = val.view() {
-                                result.extend(elems.iter().cloned());
-                            } else {
-                                result.push(val);
-                            }
+                            super::resolution_map_grep::push_map_value(result, val);
                         }
                         Err(e) => {
                             return Err(e);

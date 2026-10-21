@@ -450,6 +450,28 @@ impl Interpreter {
                 }
             }
 
+            // A lazy list the last `map` callback slipped is read before the
+            // callback runs again (#14295).
+            let pending = list
+                .lazy_pipe
+                .as_ref()
+                .and_then(|p| p.lock().unwrap_or_else(|e| e.into_inner()).pending_slip.take());
+            if let Some((slipped, at)) = pending {
+                let elem = self.pull_source_element(&slipped, at)?;
+                if let Some(pipe) = list.lazy_pipe.as_ref() {
+                    pipe.lock().unwrap_or_else(|e| e.into_inner()).pending_slip =
+                        elem.is_some().then(|| (slipped, at + 1));
+                }
+                if let Some(elem) = elem {
+                    list.cache
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_or_insert_with(Vec::new)
+                        .push(elem);
+                }
+                continue;
+            }
+
             // A stateful adaptor stage (`.skip`/`.rotor`/`Z`/`X`/..., #9159)
             // runs its own pull step instead of the map/grep callback.
             if list.lazy_pipe.as_ref().is_some_and(|p| {
@@ -535,6 +557,7 @@ impl Interpreter {
                     if source_idx == 0 {
                         self.run_callback_first_phasers(&func, &elem)?;
                     }
+                    let mut pending_slip: Option<Value> = None;
                     let applied: Result<Vec<Value>, RuntimeError> = if is_grep {
                         match self.vm_grep_item_matches(&func, &elem) {
                             Ok(true) => Ok(vec![elem]),
@@ -547,9 +570,17 @@ impl Interpreter {
                         // (`reify_finite_pipe_value`, #9584).
                         self.vm_call_on_value(func, vec![elem], None)
                             .and_then(|v| self.reify_finite_pipe_value(v))
-                            .map(|v| match v.view() {
-                                ValueView::Slip(items) => items.as_ref().clone(),
-                                _ => vec![v],
+                            .map(|v| {
+                                if v.is_lazy_tail_slip() {
+                                    // Its tail cannot be seen to end: the stage
+                                    // reads it before the next callback call.
+                                    pending_slip = Some(Self::lazy_slip_receiver(v, ""));
+                                    return Vec::new();
+                                }
+                                match v.view() {
+                                    ValueView::Slip(items) => items.as_ref().clone(),
+                                    _ => vec![v],
+                                }
                             })
                     };
                     let produced: Vec<Value> = match applied {
@@ -567,6 +598,7 @@ impl Interpreter {
                     {
                         let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
                         spec.source_idx = source_idx + 1;
+                        spec.pending_slip = pending_slip.map(|slipped| (slipped, 0));
                     }
                     let mut cache = list.cache.lock().unwrap();
                     cache.get_or_insert_with(Vec::new).extend(produced);

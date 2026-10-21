@@ -99,6 +99,13 @@ pub(crate) struct MapGrepPlanSlot {
     /// The package the callback runs under when a pull happens elsewhere
     /// (`run_map_grep_chunk`), likewise fixed for the Seq.
     callback_package: Option<Option<Symbol>>,
+    /// A lazy list a `.map` callback slipped that cannot be seen to end
+    /// (#14295), with the index of its next element: the next prefix pull
+    /// reads it before it calls the callback again. A Seq's own slot only.
+    pub(crate) pending_slip: Option<(Value, usize)>,
+    /// Whether the chunk being run is a prefix pull, which keeps a slipped
+    /// lazy list in `pending_slip`; any other loop reads it to its end.
+    pub(crate) stream_slips: bool,
 }
 
 /// The address a plan is keyed by.

@@ -3398,6 +3398,11 @@ pub(crate) struct MapGrepSpec {
     /// multi-operand adaptors, from its own operands) on demand. See
     /// [`PipeAdaptor`] and `vm/vm_helpers_lazy_adaptor.rs`.
     pub(crate) adaptor: Option<Box<PipeAdaptor>>,
+    /// A lazy list a `map` callback slipped that cannot be seen to end (#14295),
+    /// with the index of its next element: the stage reads it before it calls
+    /// the callback again, as Rakudo's map iterator does. `None` when the last
+    /// callback result was a plain value or a Slip that ended.
+    pub(crate) pending_slip: Option<(Value, usize)>,
 }
 
 /// A stateful iterator adaptor over one or more pull sources, carried by a
@@ -3411,7 +3416,12 @@ pub(crate) enum PipeAdaptor {
     Skip { remaining: usize },
     /// `.map` with a callback taking `arity` (> 1) positionals per call.
     /// The callback is the owning spec's `func`.
-    MultiMap { arity: usize },
+    MultiMap {
+        arity: usize,
+        /// A lazy list the callback slipped that cannot be seen to end, with
+        /// the index of its next element (see `MapGrepSpec::pending_slip`).
+        pending: Option<(Value, usize)>,
+    },
     /// `.rotor` / `.batch`: a cycle of `(count, gap)` chunk specs.
     Chunk {
         specs: Vec<(usize, i64)>,

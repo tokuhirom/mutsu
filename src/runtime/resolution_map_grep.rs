@@ -201,10 +201,13 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
     }
 }
 
-/// Append one map-block result to `result`, flattening a `Slip`.
+/// Append one map-block result to `result`, flattening a `Slip`. A lazy-tail
+/// Slip stays whole, one Slip element for `settle_map_slip_markers` to read
+/// as its lazy tail (#14295).
 // Cost: O(1) (O(k) for a Slip, k = its elements).
-fn push_map_value(result: &mut Vec<Value>, val: Value) {
+pub(crate) fn push_map_value(result: &mut Vec<Value>, val: Value) {
     match val.view() {
+        ValueView::Slip(_) if val.is_lazy_tail_slip() => result.push(val),
         ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
         _ => result.push(val),
     }
@@ -521,7 +524,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut out = PullOut::default();
         self.eval_map_over_items_into(func, list_items, slot, &mut out)?;
-        Ok(Value::array(out.produced))
+        Ok(Self::map_produced_value(out.produced))
     }
 
     /// [`Self::eval_map_over_items_planned`] into `out`: each element the
