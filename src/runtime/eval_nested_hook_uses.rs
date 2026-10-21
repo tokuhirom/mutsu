@@ -42,12 +42,12 @@ struct Lifter<'a> {
     depth: usize,
 }
 
-/// Whether a `use` argument can be evaluated ahead of its block: literals only.
+/// Whether a `use` argument can be evaluated ahead of its block: a literal or
+/// a flat list of literals (`use M <A B>`, `use M "a", 3`).
 fn is_literal_arg(expr: &Expr) -> bool {
     match expr {
-        Expr::Literal(_) => true,
-        Expr::ArrayLiteral(items) => items.iter().all(is_literal_arg),
-        _ => false,
+        Expr::ArrayLiteral(items) => items.iter().all(|i| matches!(i, Expr::Literal(_))),
+        other => matches!(other, Expr::Literal(_)),
     }
 }
 
