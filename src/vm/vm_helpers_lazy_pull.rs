@@ -452,10 +452,12 @@ impl Interpreter {
 
             // A lazy list the last `map` callback slipped is read before the
             // callback runs again (#14295).
-            let pending = list
-                .lazy_pipe
-                .as_ref()
-                .and_then(|p| p.lock().unwrap_or_else(|e| e.into_inner()).pending_slip.take());
+            let pending = list.lazy_pipe.as_ref().and_then(|p| {
+                p.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .pending_slip
+                    .take()
+            });
             if let Some((slipped, at)) = pending {
                 let elem = self.pull_source_element(&slipped, at)?;
                 if let Some(pipe) = list.lazy_pipe.as_ref() {

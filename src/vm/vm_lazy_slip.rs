@@ -123,7 +123,10 @@ impl Interpreter {
     /// among them ([`Self::settle_map_slip_markers`]).
     // Cost: O(p), p = elements produced.
     pub(crate) fn map_produced_value(produced: Vec<Value>) -> Value {
-        if produced.iter().any(|v| matches!(v.view(), ValueView::Slip(_))) {
+        if produced
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Slip(_)))
+        {
             Self::lazy_map_parts(produced)
         } else {
             Value::array(produced)
