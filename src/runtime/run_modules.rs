@@ -1535,6 +1535,9 @@ impl Interpreter {
                         .remove(&crate::runtime::enum_bare_names::enum_bare_key(name));
                 }
             }
+            for name in &facts.my_constant_names {
+                self.env.remove(name);
+            }
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
             // Take the compunit's own file-scope lexicals out of `env` and into
             // `unit_lexicals`, restoring the loading scope's values under those
@@ -2278,6 +2281,45 @@ impl Interpreter {
                     }
                 }
                 _ => {}
+            }
+        }
+        names
+    }
+
+    /// The env keys of a compunit's file-scope `my constant`s. Such a constant
+    /// is lexical to the compunit in every file, `unit` or not: unlike a bare
+    /// `constant` (an `our` one, which the importer's `EVAL` can still reach), it
+    /// is no symbol of any package. The module body runs in the loader's env, so
+    /// the key is dropped there after the load and the value stays in
+    /// `module_scope_names` for the module's own routines (#14330).
+    // Cost: O(n), n = the unit's top-level statements.
+    pub(super) fn collect_my_constant_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for s in crate::ast::scope_statements(stmts) {
+            let crate::ast::Stmt::VarDecl {
+                name,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                custom_traits,
+                ..
+            } = s
+            else {
+                continue;
+            };
+            if !custom_traits.iter().any(|(t, _)| t == "__constant")
+                || crate::qualified::is_qualified_str(name)
+                || name.contains("__ANON")
+            {
+                continue;
+            }
+            let key = if crate::runtime::term_names::is_term_constant_decl(name, custom_traits) {
+                crate::runtime::term_names::term_key(name)
+            } else {
+                name.clone()
+            };
+            if !names.contains(&key) {
+                names.push(key);
             }
         }
         names
