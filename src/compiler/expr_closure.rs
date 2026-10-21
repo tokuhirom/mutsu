@@ -36,6 +36,32 @@ impl Compiler {
     /// `is_block` = true for bare blocks `{ }`, false for `sub { }`.
     /// Bare blocks are NOT routine boundaries for `return`.
     pub(super) fn compile_expr_anon_sub(&mut self, body: &[Stmt], is_rw: bool, is_block: bool) {
+        // A routine that uses legacy argument aggregates has an inferred
+        // slurpy signature, just like the shared signature-less block builder.
+        // Keep it explicit in the compiled signature so named arguments are
+        // accepted only when the body actually declares the hash aggregate.
+        if !is_block
+            && (crate::ast::body_reads_args_array(body) || crate::ast::body_reads_args_hash(body))
+            && let Expr::AnonSubParams {
+                params, param_defs, ..
+            } = crate::ast::make_anon_sub(body.to_vec())
+        {
+            self.pending_immutable_topic_block = false;
+            self.compile_expr_anon_sub_params(
+                &params,
+                &param_defs,
+                &None,
+                body,
+                is_rw,
+                false,
+                &[],
+                false,
+                crate::ast::RoutineDeclarator::Sub,
+                crate::symbol::well_known::anon(),
+                None,
+            );
+            return;
+        }
         // One-shot, consumed here so only THIS block (not one nested inside it)
         // picks up the enclosing `.map`/`.grep`-over-a-literal verdict the
         // caller set -- see `CompiledCode::immutable_topic`.

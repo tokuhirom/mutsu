@@ -123,8 +123,10 @@ impl Compiler {
         else {
             unreachable!()
         };
-        let effective =
-            crate::method_signature_shared::effective_method_param_defs(param_defs, false);
+        let effective = crate::method_signature_shared::effective_method_param_defs(
+            param_defs,
+            self.static_class_hidden,
+        );
         let declared_receiver = param_defs
             .first()
             .is_some_and(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"));

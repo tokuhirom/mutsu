@@ -48,6 +48,12 @@ ok $default-invocant.invocant, 'a defaulted invocant retains its invocant flag';
 is $default-invocant.default.value, 42, 'a defaulted invocant retains its initializer';
 
 for
+    Q[use MONKEY-TYPING; class BindingHiddenAugment is hidden {}; augment class BindingHiddenAugment { our &alias = method actual($x) { $x } }; &BindingHiddenAugment::alias.signature.raku.contains('*%_')], False,
+    Q[my &f = sub { @_.join(',') }; f(1,2)], '1,2',
+    Q[my &f = sub { @_.elems }; try { f(:extra) }; $!.defined], True,
+    Q[my &f = sub { %_.elems }; f(:extra)], 1,
+    Q[class BindingHidden is hidden { our &alias = method actual($x) { $x } }; &BindingHidden::alias.signature.raku.contains('*%_')], False,
+    Q[class BindingHiddenArgs is hidden { our &alias = method actual($x) { $x } }; try { BindingHiddenArgs::alias(BindingHiddenArgs,42,:extra) }; $!.defined], True,
     Q[use MONKEY-TYPING; multi sub trait_mod:<is>(Method $m,:$paint!) { $m.wrap: method (|) { state $n=0; callsame() ~ ':' ~ ++$n } }; class BindingAugmentWrap {}; augment class BindingAugmentWrap { our &alias = method actual() is paint {'v'} }; (BindingAugmentWrap.actual, BindingAugmentWrap::alias(BindingAugmentWrap)).join(',')], 'v:1,v:2',
     Q[class BindingMultiOrigin { multi method actual(Str $x) { 'str' }; our &alias = multi method actual(Int $x) { $x } }; (&BindingMultiOrigin::alias.multi, &BindingMultiOrigin::alias.dispatcher.^name, &BindingMultiOrigin::alias.dispatcher.candidates.elems, (&BindingMultiOrigin::alias.dispatcher)(BindingMultiOrigin,'x')).join(',')], 'True,Method,2,str',
     Q[use MONKEY-TYPING; class BindingAugment {}; augment class BindingAugment { our &alias = method actual() {42} }; (BindingAugment.actual, BindingAugment::alias(BindingAugment)).join(',')], '42,42',

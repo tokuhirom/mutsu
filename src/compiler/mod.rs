@@ -1419,6 +1419,7 @@ pub(crate) struct Compiler {
     /// it does not depend on whichever class body ran last. `None` in a role
     /// body, where `$?CLASS` is the consuming class.
     pub(crate) static_class: Option<String>,
+    pub(crate) static_class_hidden: bool,
     /// Compile-time aliases from a constant type object to its target spelling.
     /// Native storage and arithmetic need the target (`int64`), while runtime
     /// diagnostics retain the source alias (`time`).
@@ -2093,6 +2094,7 @@ impl Compiler {
             class_body_static_code_vars: HashSet::new(),
             package_body_lexicals: HashSet::new(),
             static_class: None,
+            static_class_hidden: false,
             type_aliases: HashMap::new(),
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),

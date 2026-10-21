@@ -73,8 +73,10 @@ impl Compiler {
         let method_defs;
         let method_params;
         let (params, param_defs) = if method_literal {
-            method_defs =
-                crate::method_signature_shared::effective_method_param_defs(param_defs, false);
+            method_defs = crate::method_signature_shared::effective_method_param_defs(
+                param_defs,
+                self.static_class_hidden,
+            );
             method_params = method_defs
                 .iter()
                 .map(|pd| pd.name.clone())

@@ -283,6 +283,7 @@ impl Interpreter {
         let _unit_file =
             crate::unit_source_file::UnitSourceFileGuard::enter(self.current_source_file_sym());
         let mut compiler = crate::compiler::Compiler::new();
+        compiler.static_class_hidden = self.current_class_is_hidden();
         if is_eval_unit {
             compiler.mark_as_eval_unit();
             // An `EVAL` inside a block that `use`s a module sees what the
