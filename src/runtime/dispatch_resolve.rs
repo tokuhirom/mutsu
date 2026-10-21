@@ -312,6 +312,21 @@ impl Interpreter {
         self.resolve_function(name)
     }
 
+    /// Whether a candidate of the multi `name` takes an argument by container
+    /// (`is rw`, `is raw`): a `Proxy` argument must reach it as it is.
+    // Cost: O(c * p), c = candidates of the family, p = parameters.
+    fn multi_family_takes_containers(&mut self, name: &str) -> bool {
+        let keys = self.fn_keys_for_base_sym(name, Symbol::intern(name));
+        let registry = self.registry();
+        keys.iter().any(|key| {
+            registry.functions.get(key).is_some_and(|def| {
+                def.param_defs
+                    .iter()
+                    .any(|pd| pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
+            })
+        })
+    }
+
     pub(crate) fn resolve_function_with_types(
         &mut self,
         name: &str,
@@ -337,6 +352,7 @@ impl Interpreter {
             .iter()
             .any(|v| v.unwrap_varref().is_proxy_value())
             && self.has_multi_candidates_cached_sym(crate::qualified::known_symbol(name))
+            && !self.multi_family_takes_containers(name)
         {
             let mut fetched = Vec::with_capacity(arg_values.len());
             for v in arg_values {
