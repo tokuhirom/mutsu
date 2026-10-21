@@ -25,7 +25,9 @@ The native node remains the single implementation of its model fields and
 mutators. Accessors, visitor rows, builders, rendering, and `EVAL` consult the
 attached node after the subclass's own methods have had precedence. Lowering
 still feeds the existing compiler and VM; it does not execute a second AST
-interpreter.
+interpreter. When a subclass appears as a child of another node, lowering
+substitutes its attached native node in a copy of the affected ancestry; the
+user-facing tree and visitor retain the original subclass value.
 
 This representation follows ADR-0011's dedicated node variant without
 registering a separate `Value` variant for each user subclass. It is also

@@ -5,7 +5,7 @@ use experimental :rakuast;
 # (FINALIZER's `my class LeavePhaser is RakuAST::StatementPrefix::Phaser::Leave`),
 # and the phaser / block nodes it builds on are constructible.
 
-plan 23;
+plan 26;
 
 isa-ok RakuAST::Block.new, RakuAST::Block, 'RakuAST::Block.new needs no body';
 is RakuAST::Block.new.body.^name, 'RakuAST::Blockoid', '... it defaults to an empty blockoid';
@@ -66,3 +66,15 @@ my class OverrideListChild is RakuAST::StatementList {
 }
 is OverrideListChild.new.statements, 'own accessor', 'a subclass accessor overrides the node';
 is OverrideListChild.new.visit-children(-> $child { }), 'own visitor', 'a subclass method overrides the visitor';
+
+my class NumberNode is RakuAST::IntLiteral {
+    method new() { callwith(42) }
+}
+my $number = NumberNode.new;
+my $expression = RakuAST::Statement::Expression.new(expression => $number);
+is $expression.expression.^name, 'NumberNode', 'a parent node preserves its subclass child';
+my @nested-children;
+$expression.visit-children({ @nested-children.push(.^name) });
+is-deeply @nested-children, ['NumberNode'], 'the visitor sees a subclass child';
+is EVAL(RakuAST::StatementList.new($expression)), 42,
+    'a nested subclass node lowers through its native parent';
