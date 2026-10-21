@@ -48,7 +48,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("gist", 0, Handler::Narrow(gist)),
     row!("Str", 0, Handler::Narrow(str_row)),
     row!("container", 0, Handler::Narrow(container)),
-    row!("auto_viv_container", 0, Handler::Narrow(auto_viv_container)),
+    row!("auto_viv_container", 0, Handler::Interp(auto_viv_container)),
     row!("DEPRECATED", 0, Handler::Narrow(deprecated)),
     row!("set_rw", 0, Handler::Interp(set_rw)),
     row!("build", 0, Handler::Interp(build)),
@@ -203,14 +203,28 @@ fn container(target: &Value, _args: &[Value]) -> Answer {
 
 /// `Attribute.auto_viv_container`: a fresh container of the attribute's
 /// kind, as an instance's attribute starts out: a Scalar holding the type's
-/// default for `$`, an empty Array for `@`, an empty Hash for `%`.
-// Cost: O(1).
-fn auto_viv_container(target: &Value, _args: &[Value]) -> Answer {
+/// default for `$`, an empty `Array[T]`/`Hash[T]` carrying the declared element
+/// type for `@`/`%`.
+// Cost: O(a), a = the owner's attributes (`seed_attr_value`) for `@`/`%`; O(1) for `$`.
+fn auto_viv_container(
+    i: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Answer {
     with_meta(target, |meta| {
         let sigil = fact_str(meta, "sigil").unwrap_or_else(|| "$".to_string());
         Ok(match sigil.as_str() {
-            "@" => Value::real_array(Vec::new()),
-            "%" => Value::hash(crate::value::ValueMap::default()),
+            "@" | "%" => {
+                let owner = fact_str(meta, "__mutsu_attr_owner").unwrap_or_default();
+                let bare = fact_str(meta, "name")
+                    .unwrap_or_default()
+                    .trim_start_matches(['$', '@', '%', '&', '!', '.'])
+                    .to_string();
+                let sigil_char = sigil.chars().next().unwrap_or('@');
+                let constraints = i.collect_attribute_type_constraints(&owner);
+                i.seed_attr_value(&owner, &bare, sigil_char, &constraints)
+            }
             _ => {
                 let default = match meta.as_map().get("type").map(Value::view) {
                     Some(ValueView::Package(name)) if name != "Mu" => Value::package(name),
