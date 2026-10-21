@@ -27,6 +27,12 @@ impl LazyList {
                 Value::TRUE,
             );
         }
+        // A `map`/`grep` stage of a lazy `.hyper` / `.race` stays one, with
+        // its configuration (Rakudo's `HyperSeq.map` answers a `HyperSeq`).
+        let (hyper_kind, hyper_config) = match source.view() {
+            ValueView::LazyList(ll) => (ll.hyper_kind(), ll.hyper_config()),
+            _ => Default::default(),
+        };
         Self {
             body: Vec::new(),
             env,
@@ -53,8 +59,8 @@ impl LazyList {
             cat_pull: None,
             array_context: false,
             list_context: false,
-            hyper_kind: Default::default(),
-            hyper_config: None,
+            hyper_kind,
+            hyper_config,
             cached_no_sink: false,
             deleted_indices: Default::default(),
             descriptor: None,
@@ -117,6 +123,8 @@ impl LazyList {
     /// operand list.
     pub(crate) fn new_adaptor_pipe(source: Value, func: Value, adaptor: PipeAdaptor) -> Self {
         let mut ll = Self::new_pipe(source, func, false);
+        ll.hyper_kind = Default::default();
+        ll.hyper_config = None;
         if let Some(spec) = ll.lazy_pipe.as_mut() {
             spec.get_mut().unwrap_or_else(|e| e.into_inner()).adaptor = Some(Box::new(adaptor));
         }
