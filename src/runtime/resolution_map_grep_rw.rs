@@ -260,7 +260,10 @@ impl Interpreter {
                 let mut i = 0usize;
                 while !src.satisfied(result, produced_base) && src.has(i + 1) {
                     if arity > 1 && !src.has(i + arity) {
-                        return Err(RuntimeError::new("Not enough elements for map block arity"));
+                        return Err(RuntimeError::new(format!(
+                            "Too few positionals passed; expected {arity} arguments but got {}",
+                            src.buf.len() - i
+                        )));
                     }
                     // The elements taken, this one included: if the callback
                     // dies, the Seq resumes after it (#12401).

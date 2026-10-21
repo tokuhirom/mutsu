@@ -408,7 +408,8 @@ impl Interpreter {
             }
             MapGrepMode::Map => match max_matches {
                 Some(limit) => {
-                    let fetch = |i: usize| items.get(start + i);
+                    let fetch =
+                        |i: usize| (start + i < end).then(|| items.get(start + i)).flatten();
                     let feed = crate::runtime::resolution_grep_loop::LoopFeed::new(&fetch, limit);
                     let result = self.eval_map_over_feed_into(func.clone(), feed, plan, out);
                     consumed_end = start + (out.consumed - consumed_base);
@@ -469,7 +470,7 @@ impl Interpreter {
     ) -> Result<usize, RuntimeError> {
         let (consumed, _) = match max_matches {
             Some(max_matches) => {
-                let fetch = |i: usize| items.get(start + i);
+                let fetch = |i: usize| (start + i < end).then(|| items.get(start + i)).flatten();
                 let feed = crate::runtime::resolution_grep_loop::LoopFeed::new(&fetch, max_matches);
                 self.eval_grep_over_feed_into(func.clone(), feed, plan, out)?
             }
@@ -520,8 +521,7 @@ impl Interpreter {
         if native_candidate
             && !self.native_lever_a_user_override_sym(&source, crate::symbol::wk::map())
             && let Some(args) = func.clone().map(|f| vec![f])
-            && let Some(native) =
-                self.try_native_rw_map_over(&source, &args, start..native_end)
+            && let Some(native) = self.try_native_rw_map_over(&source, &args, start..native_end)
         {
             let (result_items, source_after) = native?;
             self.publish_rw_map_writeback(&source, source_after, start);
@@ -530,7 +530,11 @@ impl Interpreter {
             return Ok(());
         }
         let wrote_back = std::cell::Cell::new(false);
-        let fetch = |i: usize| items.get(start + i);
+        let fetch = |i: usize| {
+            (start + i < range.end)
+                .then(|| items.get(start + i))
+                .flatten()
+        };
         let mut src = match limit {
             Some(limit) => LoopSource::fed(LoopFeed::new(&fetch, limit)),
             None => LoopSource::list(items.slice(start, range.end)),

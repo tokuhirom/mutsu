@@ -2,7 +2,7 @@ use Test;
 
 # A deferred .map read by prefix runs its callback only for the elements the
 # reader needs, in one loop run, whatever shape the callback has (#14196).
-plan 15;
+plan 19;
 
 my $n = 0;
 my $s = (1..*).map(-> Int $x { $n++; $x });
@@ -44,3 +44,12 @@ $k = 0;
 my $rp = @q.map(-> $x is rw { $k++; $x += 100; $x });
 is $rp[1], 102, 'rw param map: second element';
 is $k, 2, 'rw param map: two callbacks';
+
+$k = 0; my $k2 = 0;
+my $c = (1..*).map({ $k++; $_ * 2 }).map(-> $x, $y { $k2++; $x + $y });
+is $c[1], 14, 'chained map, two-parameter second stage: second element';
+is "$k $k2", '4 2', 'chained map: callbacks interleave per group';
+
+throws-like { (1..7).map(-> $x, $y { $x + $y }).eager }, Exception, message => /'Too few positionals passed; expected 2 arguments but got 1'/,
+    'a short final group is a binding error';
+is-deeply (1..6).map(-> $x, $y { $x + $y }).list, (3, 7, 11), 'whole groups map';

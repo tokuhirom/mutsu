@@ -707,7 +707,10 @@ impl Interpreter {
                 let mut i = 0usize;
                 while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
                     if arity > 1 && !src.has(i + arity) {
-                        return Err(RuntimeError::new("Not enough elements for map block arity"));
+                        return Err(RuntimeError::new(format!(
+                            "Too few positionals passed; expected {arity} arguments but got {}",
+                            src.buf.len() - i
+                        )));
                     }
                     let chunk: Vec<Value> = if arity == 1 {
                         vec![src.buf[i].clone()]
@@ -784,7 +787,10 @@ impl Interpreter {
                 let mut i = 0usize;
                 while !src.satisfied(produced, produced_base) && src.has(i + 1) {
                     if arity > 1 && !src.has(i + arity) {
-                        return Err(RuntimeError::new("Not enough elements for map block arity"));
+                        return Err(RuntimeError::new(format!(
+                            "Too few positionals passed; expected {arity} arguments but got {}",
+                            src.buf.len() - i
+                        )));
                     }
                     // The source elements consumed, the one in flight
                     // included: if the callback dies, the Seq resumes after it
