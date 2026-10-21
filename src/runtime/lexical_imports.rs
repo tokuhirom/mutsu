@@ -269,6 +269,36 @@ impl Interpreter {
                 .lexical_import_hook_values
                 .insert(id, std::sync::Arc::new(capture.hook_values));
         }
+        // A family an earlier `use` of this scope bound too (the provider and
+        // a module extending its exported proto) is one family: this set's
+        // dispatcher spans the earlier candidates as well.
+        let mut multi_defs = capture.multi_defs;
+        let earlier_sets: Vec<Symbol> = self
+            .module
+            .import_scope_stack
+            .last()
+            .map(|scope| scope.lexical_sets.iter().copied().filter(|s| *s != id).collect())
+            .unwrap_or_default();
+        for (name, defs) in multi_defs.iter_mut() {
+            for earlier in &earlier_sets {
+                let Some(prior) = self
+                    .module
+                    .lexical_set_families
+                    .get(earlier)
+                    .and_then(|families| families.get(name))
+                else {
+                    continue;
+                };
+                for def in prior.iter().rev() {
+                    if !defs.iter().any(|d| std::sync::Arc::ptr_eq(d, def)) {
+                        defs.insert(0, std::sync::Arc::clone(def));
+                    }
+                }
+            }
+        }
+        self.module
+            .lexical_set_families
+            .insert(id, multi_defs.clone());
         let mut set = HashMap::new();
         for (package, name) in capture.routines {
             if set.contains_key(&name) {
@@ -278,7 +308,7 @@ impl Interpreter {
             let amp = Symbol::intern(&format!("&{}", name.resolve()));
             let binding = if let Some(def) = capture.lexical_defs.get(&name) {
                 Some(LexicalImport::Routine(std::sync::Arc::clone(def)))
-            } else if let Some(candidates) = capture.multi_defs.get(&name) {
+            } else if let Some(candidates) = multi_defs.get(&name) {
                 // A multi family binds as its dispatcher value over the
                 // candidates the import installed (ADR-8751 stage 2), which a
                 // closure keeps after the block's registry aliases are gone.
