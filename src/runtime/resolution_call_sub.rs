@@ -424,7 +424,22 @@ impl Interpreter {
     /// fallback of a dispatcher over imported candidates of the operator,
     /// whose own `&name` binding a by-name call would find again.
     // Cost: the operator's own cost.
+    // Cost: O(1) plus the operator's own work.
     fn call_builtin_operator(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // The built-in operator's own evaluation (it may compile the operator
+        // as an expression) must not dispatch back to the user candidates that
+        // fell back to it.
+        self.module.builtin_op_fallback_depth += 1;
+        let result = self.call_builtin_operator_inner(name, args);
+        self.module.builtin_op_fallback_depth -= 1;
+        result
+    }
+
+    fn call_builtin_operator_inner(
         &mut self,
         name: &str,
         args: &[Value],

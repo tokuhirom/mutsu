@@ -738,6 +738,9 @@ impl Interpreter {
         chain: &[Symbol],
         name: Symbol,
     ) -> Option<LexicalImport> {
+        if self.module.builtin_op_fallback_depth > 0 && name.with_str(|n| n.contains(":<")) {
+            return None;
+        }
         chain
             .iter()
             .find_map(|id| self.module.lexical_import_sets.get(id)?.get(&name).cloned())

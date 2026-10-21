@@ -427,6 +427,10 @@ pub(crate) struct ModuleState {
     /// resolves: the unit's sets are not in scope there, so the by-name
     /// reader skips them.
     pub(crate) unit_sets_hidden: bool,
+    /// Depth of built-in operator fallbacks running (`call_builtin_operator`):
+    /// while non-zero, an import set binds no operator, so the fallback's own
+    /// evaluation reaches the built-in.
+    pub(crate) builtin_op_fallback_depth: u32,
     /// ADR-8751 stage 1: the routines each block-scoped `use` binds, keyed by
     /// the use's lexical import set id (`OpCode::UseModule::lexical_set_idx`)
     /// and then by routine name. Filled the first time such a `use` runs; the
@@ -668,6 +672,7 @@ impl ModuleState {
             unit_env_imports: Default::default(),
             unit_lexical_sets: HashMap::new(),
             unit_sets_hidden: false,
+            builtin_op_fallback_depth: 0,
             lexical_import_sets: HashMap::new(),
             lexical_set_families: HashMap::new(),
             lexical_import_hook_values: HashMap::new(),
@@ -764,6 +769,7 @@ impl ModuleState {
             unit_env_imports: self.unit_env_imports.clone(),
             unit_lexical_sets: self.unit_lexical_sets.clone(),
             unit_sets_hidden: false,
+            builtin_op_fallback_depth: 0,
             lexical_import_sets: self.lexical_import_sets.clone(),
             lexical_set_families: self.lexical_set_families.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),

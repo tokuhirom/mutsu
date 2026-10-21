@@ -1000,6 +1000,9 @@ impl Interpreter {
         &self,
     ) -> (crate::compiler::Compiler, Option<crate::symbol::Symbol>) {
         let mut compiler = crate::compiler::Compiler::new();
+        // A phaser body (`END { rmtree($d) }`) or a class body compiled on the
+        // fly calls what the `use`s around the running code imported.
+        compiler.seed_lexical_import_chain(self.eval_lexical_import_chain());
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
         // The outermost compilation unit is the mainline: placeholder variables
