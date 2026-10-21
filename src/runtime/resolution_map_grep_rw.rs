@@ -114,7 +114,7 @@ impl Interpreter {
                     .flatten()
                     .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
                 let chunk_at = |items: &[Value], i: usize| items[i..(i + arity).min(items.len())].to_vec();
-                if src.has(1) {
+                if slot.take_first_phaser(src.has(1)) {
                     src.has(arity);
                     let first = chunk_at(&src.buf, 0);
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first)?;
@@ -177,7 +177,9 @@ impl Interpreter {
                     i += arity;
                 }
                 self.env.remove_sym(topic_key);
-                if let Some(start) = last_start {
+                if let Some(start) = last_start
+                    && slot.take_last_phaser(src.ran_out(&out.produced, produced_base, i))
+                {
                     let last = chunk_at(&src.buf, start);
                     self.call_block_loop_phasers(&data, crate::ast::PhaserKind::Last, last)?;
                 }
@@ -254,10 +256,11 @@ impl Interpreter {
                 // re-compiled fresh, so two distinct blocks share compile-time
                 // state keys (see the same line in `eval_map_over_items`).
                 vm.lexicals.state_scope_id.set(Some(vm.callable_state_scope(&data)));
-                if src.has(1) {
+                if slot.take_first_phaser(src.has(1)) {
                     vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
                 }
                 let mut i = 0usize;
+                let mut by_last = false;
                 while !src.satisfied(result, produced_base) && src.has(i + 1) {
                     if arity > 1 && !src.has(i + arity) {
                         return Err(RuntimeError::new(format!(
@@ -393,6 +396,7 @@ impl Interpreter {
                             writeback(&mut src.buf, vm);
                             vm.async_state.map_grep_last_depth =
                                 Some(crate::runtime::loop_handler_depth::loop_handler_depth());
+                            by_last = true;
                             break;
                         }
                         // A matched `when`/`default` escapes as a succeed
@@ -414,7 +418,7 @@ impl Interpreter {
                 }
                 // A map block's LAST runs once the loop ends (naturally or by
                 // `last`), best-effort as in `eval_map_over_items_into`.
-                if i > 0 {
+                if slot.take_last_phaser(by_last || src.ran_out(result, produced_base, i)) {
                     let _ = vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::Last);
                 }
 

@@ -123,11 +123,12 @@ impl Interpreter {
     /// failing element and `out` holds what was produced before it, so the
     /// caller keeps both and the next pull resumes there (#12401).
     ///
-    /// Only a callback that binds one element per call and has no `FIRST` /
-    /// `LAST` phaser can be run a chunk at a time: a multi-parameter block
-    /// consumes the source in groups, and the loops fire those phasers once
-    /// per loop run. Anything else, and a map over a shaped array's leaves,
-    /// is pulled whole.
+    /// A `grep` can be run a chunk at a time only when its callback binds one
+    /// element per call and has no `FIRST` / `LAST` phaser: the grep loop
+    /// still fires its `FIRST` once per loop run, and its multi-parameter and
+    /// slurpy shapes read a whole window. A `map`'s phasers fire once per Seq
+    /// (`MapGrepPlanSlot::take_first_phaser`). Anything else, and a map over
+    /// a shaped array's leaves, is pulled whole.
     // Cost: one callback call per source element up to the `needed`-th
     // element produced (for `.grep`, up to the `needed`-th match).
     pub(crate) fn pull_map_grep_prefix_into(
@@ -207,7 +208,28 @@ impl Interpreter {
                 return Ok(true);
             }
         }
-        Ok(*pos >= items.len() && plan.pending_slip.is_none())
+        let at_end = *pos >= items.len() && plan.pending_slip.is_none();
+        if at_end && plan.last_phaser_due() {
+            if out.produced.len() - produced_base >= needed {
+                // The loop that read the last element stopped on its limit,
+                // so the `LAST` phaser waits for a consumer that sees the
+                // end: the Seq stays open until then.
+                return Ok(false);
+            }
+            plan.stream_slips = true;
+            self.pull_chunk_step(
+                func,
+                *fatal,
+                mode,
+                plan,
+                items,
+                pos,
+                items.len(),
+                Some(1),
+                out,
+            )?;
+        }
+        Ok(at_end)
     }
 
     /// One chunk of a prefix pull: run the callback over the source elements
@@ -660,7 +682,7 @@ pub(super) fn map_grep_pullable_by_prefix(func: Option<&Value>, mode: &MapGrepMo
     // cut into chunks of `map_group_size`; a grep's cannot (#14300).
     (callback_positionals(func) <= 1 || !mode.is_grep())
         && !(slurpy && mode.is_grep())
-        && !loop_phaser
+        && !(loop_phaser && mode.is_grep())
 }
 
 /// How many positional parameters `func`, a `.map`/`.grep` callback, binds

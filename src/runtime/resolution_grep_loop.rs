@@ -95,6 +95,14 @@ impl<'a> LoopSource<'a> {
                     && produced.last().is_some_and(Value::is_lazy_tail_slip))
         })
     }
+
+    /// Whether the loop that stopped with `at` elements read ran off the end
+    /// of its source — not merely onto its limit, where the consumer has not
+    /// yet seen the end (a `map`'s `LAST` waits for that pull).
+    // Cost: O(1) beyond one source read.
+    pub(crate) fn ran_out(&mut self, produced: &[Value], produced_base: usize, at: usize) -> bool {
+        !self.satisfied(produced, produced_base) && !self.has(at + 1)
+    }
 }
 
 impl Interpreter {
