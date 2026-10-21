@@ -3225,7 +3225,10 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             match sigil.as_str() {
                 "@" => Expr::Literal(Value::real_array(Vec::new())),
                 "%" => Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer),
-                _ => crate::parser::native_type_default(&type_constraint),
+                _ => type_constraint
+                    .as_deref()
+                    .map(crate::parser::typed_default_expr)
+                    .unwrap_or_else(|| Expr::Literal(Value::NIL)),
             },
             false,
         ),
