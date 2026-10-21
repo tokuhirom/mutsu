@@ -68,6 +68,7 @@ fn spelled_quotewords<'a>(
             Expr::spelled(expr, || Spelling::InterpolatingWords {
                 val: true,
                 text: content.into(),
+                delimiter: open.chars().next(),
             }),
         ));
     }
@@ -169,7 +170,7 @@ pub(crate) fn angle_words_expr(content: &str) -> Expr {
     }
 }
 
-fn find_quote_word_close(input: &str, open: &str, close: &str) -> Option<usize> {
+pub(crate) fn find_quote_word_close(input: &str, open: &str, close: &str) -> Option<usize> {
     let mut i = 0usize;
     let mut quoted_by: Option<char> = None;
     let mut escaped = false;
@@ -295,7 +296,7 @@ pub(crate) fn angle_words_subscript_index_expr(content: &str) -> Expr {
 /// processors => <quotewords val>, ...))`, whose segments the conversion
 /// re-derives from the text (a parse that keeps no spellings gets the plain
 /// expression).
-pub(crate) fn spelled_subscript_index_expr(content: &str) -> Expr {
+pub(crate) fn spelled_subscript_index_expr(content: &str, delimiter: char) -> Expr {
     let expr = angle_words_subscript_index_expr(content);
     if crate::parser::primary::string::word_quote_text_is_plain(content) {
         Expr::spelled(expr, || Spelling::WordQuote {
@@ -307,6 +308,7 @@ pub(crate) fn spelled_subscript_index_expr(content: &str) -> Expr {
         Expr::spelled(expr, || Spelling::InterpolatingWords {
             val: true,
             text: content.into(),
+            delimiter: Some(delimiter),
         })
     }
 }

@@ -2123,7 +2123,7 @@ fn postfix_expr_loop_from(
                         Expr::Index {
                             target: Box::new(expr),
                             index: Box::new(crate::parser::primary::spelled_subscript_index_expr(
-                                content,
+                                content, '«',
                             )),
                             is_positional: false,
                             spelling: crate::ast::IndexSpelling::Angle,
@@ -2160,7 +2160,7 @@ fn postfix_expr_loop_from(
                         Expr::Index {
                             target: Box::new(expr),
                             index: Box::new(crate::parser::primary::spelled_subscript_index_expr(
-                                content,
+                                content, '<',
                             )),
                             is_positional: false,
                             spelling: crate::ast::IndexSpelling::Angle,

@@ -99,6 +99,7 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
     // The spelled parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.
     crate::parser::qualify_type_names(&mut lowered);
+    crate::parser::p6_frame_state::lower_program(&mut lowered);
     Ok(lowered)
 }
 

@@ -125,7 +125,7 @@ pub(super) fn strip_type_smiley_suffix(type_name: &str) -> &str {
         .unwrap_or(type_name)
 }
 
-fn typed_default_expr(type_name: &str) -> Expr {
+pub(crate) fn typed_default_expr(type_name: &str) -> Expr {
     let base = strip_type_smiley_suffix(type_name);
     // A user type (`my subset int8 of Int ...`) shadows the native spelling,
     // so `my int8 $c` is its type object (Nil here), not the native 0/""/0e0.
